@@ -9,8 +9,8 @@ import os
 
 # 🚨 THE ABSOLUTE FIRST COMMAND 🚨
 st.set_page_config(
-    page_title="TrustMicro Credit - Loan Management",
-    page_icon="🏦",
+    page_title="ICARE Microfinance - Core Banking",
+    page_icon="🌱",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -25,8 +25,8 @@ from utils.reports import (
 )
 
 # --- 1. CONFIGURATION & CLOUD DB SETUP ---
-COMPANY_NAME = "TrustMicro Credit"
-APP_VERSION = "2.0.0"
+COMPANY_NAME = "ICARE Microfinance"
+APP_VERSION = "2.5.0"
 
 # Initialize Supabase
 @st.cache_resource
@@ -51,102 +51,134 @@ USERS = {
 # Custom CSS for professional styling
 st.markdown("""
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+    
     .stApp { 
-        background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+        background: linear-gradient(135deg, #f4f6f5 0%, #e8edea 100%);
+        font-family: 'Inter', sans-serif !important;
     }
     h1, h2, h3, h4 { 
-        color: #003366 !important; 
-        font-family: 'Segoe UI', sans-serif;
-        font-weight: 600;
+        color: #0F4C3A !important; 
+        font-family: 'Inter', sans-serif;
+        font-weight: 800;
+        letter-spacing: -0.5px;
     }
     .stMetric {
-        background: white;
-        border-radius: 10px;
-        padding: 15px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(10px);
+        border-radius: 12px;
+        padding: 18px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.02);
+        border: 1px solid rgba(15, 76, 58, 0.1);
+        transition: transform 0.2s ease;
+    }
+    .stMetric:hover {
+        transform: translateY(-2px);
     }
     div[data-testid="stMetricValue"] { 
-        color: #003366 !important;
-        font-size: 1.5rem;
-        font-weight: bold;
+        color: #0F4C3A !important;
+        font-size: 1.8rem;
+        font-weight: 800;
     }
     div[data-testid="stMetricLabel"] { 
-        color: #666666 !important;
-        font-size: 0.9rem;
+        color: #556B60 !important;
+        font-size: 0.95rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
     .stTextInput input, .stNumberInput input, .stSelectbox div, 
     .stTextArea textarea, .stDateInput input {
         background-color: #ffffff !important;
-        color: #000000 !important;
-        border: 1px solid #d0d0d0;
-        border-radius: 6px;
+        color: #1a1a1a !important;
+        border: 1px solid #dcdfe3;
+        border-radius: 8px;
+        box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);
     }
     .stButton > button { 
-        background: linear-gradient(135deg, #003366 0%, #004488 100%) !important;
+        background: linear-gradient(135deg, #0F4C3A 0%, #156B51 100%) !important;
         color: white !important;
         font-weight: 600 !important;
         border: none;
         height: 2.8em;
         border-radius: 8px;
         transition: all 0.3s ease;
+        box-shadow: 0 2px 4px rgba(15, 76, 58, 0.2);
     }
     .stButton > button:hover { 
-        background: linear-gradient(135deg, #004488 0%, #0055aa 100%) !important;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 8px rgba(0,51,102,0.3);
+        background: linear-gradient(135deg, #156B51 0%, #1A8A68 100%) !important;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(15, 76, 58, 0.3);
     }
     .stButton > button[kind="secondary"] {
         background: white !important;
-        color: #003366 !important;
-        border: 2px solid #003366 !important;
+        color: #0F4C3A !important;
+        border: 2px solid #0F4C3A !important;
+        box-shadow: none;
+    }
+    .stButton > button[kind="secondary"]:hover {
+        background: #f0fdf4 !important;
     }
     div[data-testid="stDataFrame"] { 
         background-color: white !important;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.04);
+        border: 1px solid rgba(15, 76, 58, 0.05);
     }
     .sidebar .sidebar-content {
-        background: #003366;
+        background: linear-gradient(180deg, #0F4C3A 0%, #08291F 100%);
     }
     .stAlert {
-        border-radius: 8px;
+        border-radius: 12px;
+        border-left: 4px solid #D4AF37;
     }
     .card {
         background: white;
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        margin-bottom: 20px;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        margin-bottom: 24px;
+        border: 1px solid rgba(0,0,0,0.03);
     }
     .metric-card {
         background: white;
         border-radius: 12px;
-        padding: 20px;
+        padding: 24px;
         text-align: center;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        border-left: 4px solid #003366;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.04);
+        border-top: 4px solid #D4AF37;
+        transition: transform 0.2s ease;
+    }
+    .metric-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 15px rgba(0,0,0,0.06);
     }
     .metric-value {
-        font-size: 2rem;
-        font-weight: bold;
-        color: #003366;
+        font-size: 2.2rem;
+        font-weight: 800;
+        color: #0F4C3A;
+        letter-spacing: -1px;
     }
     .metric-label {
         font-size: 0.9rem;
-        color: #666666;
-        margin-top: 5px;
+        color: #556B60;
+        margin-top: 8px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
     .status-badge {
         display: inline-block;
-        padding: 4px 12px;
+        padding: 6px 14px;
         border-radius: 20px;
         font-size: 0.8rem;
         font-weight: 600;
+        letter-spacing: 0.3px;
     }
-    .status-pending { background: #fff3cd; color: #856404; }
-    .status-approved { background: #d4edda; color: #155724; }
-    .status-active { background: #cce5ff; color: #004085; }
-    .status-completed { background: #d1ecf1; color: #0c5460; }
+    .status-pending { background: #fef3c7; color: #92400e; }
+    .status-approved { background: #d1fae5; color: #065f46; }
+    .status-active { background: #dbeafe; color: #1e40af; }
+    .status-completed { background: #f3f4f6; color: #374151; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -158,14 +190,20 @@ DB_TO_UI_LOANS = {
     "client_name": "Client Name", "phone": "Phone", "address": "Address", "business_type": "Business Type",
     "group_name": "Group Name", "meeting_day": "Meeting Day", "loan_product": "Loan Product",
     "loan_amount": "Loan Amount", "active_credit": "Active Credit", "loan_repay": "Loan Repay",
-    "total_due": "Total Due", "status": "Status"
+    "total_due": "Total Due", "status": "Status",
+    "processing_fee": "Processing Fee", "markup": "Markup", "pass_book_fee": "Pass Book Fee"
 }
 UI_TO_DB_LOANS = {v: k for k, v in DB_TO_UI_LOANS.items()}
 
 DB_TO_UI_REP = {
     "date": "Date", "branch": "Branch", "client_id": "Client ID",
     "client_name": "Client Name", "amount_paid": "Amount Paid", "officer": "Officer", 
-    "note": "Note", "transaction_type": "Transaction Type"
+    "note": "Note", "transaction_type": "Transaction Type",
+    "savings_amount": "Savings Amount", "loan_repayment_amount": "Loan Repayment Amount",
+    "processing_fee_paid": "Processing Fee Paid", "markup_paid": "Markup Paid",
+    "pass_book_paid": "Pass Book Paid", "recovery_amount": "Recovery Amount",
+    "withdrawal_amount": "Withdrawal Amount", "mgt_fee_paid": "Mgt Fee Paid",
+    "others_amount": "Others Amount"
 }
 UI_TO_DB_REP = {v: k for k, v in DB_TO_UI_REP.items()}
 
@@ -340,20 +378,29 @@ def calculate_client_savings(client_repayments, fixed_repay):
         return 0, 0
         
     for _, row in client_repayments.iterrows():
-        amount = float(row['Amount Paid'])
-        # Default to 'Loan' if the column is missing for older records
-        trans_type = row.get('Transaction Type', 'Loan') 
+        # Backward compatibility for old records
+        amount = float(row.get('Amount Paid', 0))
+        trans_type = row.get('Transaction Type', 'Loan')
         
-        if trans_type == 'Savings':
-            # Bypass loan math entirely -> straight to piggy bank
-            total_savings += amount
+        # Explicit granular columns check
+        savings_dep = float(row.get('Savings Amount', 0))
+        loan_rep = float(row.get('Loan Repayment Amount', 0))
+        withdrawal = float(row.get('Withdrawal Amount', 0))
+        
+        if savings_dep > 0 or loan_rep > 0 or withdrawal > 0:
+            total_savings += savings_dep
+            total_savings -= withdrawal
+            total_loan_paid += loan_rep
         else:
-            # It is a standard Loan payment. 
-            if amount > fixed_repay:
-                total_savings += (amount - fixed_repay)
-                total_loan_paid += fixed_repay
+            # Fallback to old logic
+            if trans_type == 'Savings':
+                total_savings += amount
             else:
-                total_loan_paid += amount
+                if amount > fixed_repay:
+                    total_savings += (amount - fixed_repay)
+                    total_loan_paid += fixed_repay
+                else:
+                    total_loan_paid += amount
                 
     return total_savings, total_loan_paid
 
@@ -469,9 +516,9 @@ with st.sidebar:
     st.divider()
     
     if ROLE == "Officer":
-        nav_options = ["Dashboard", "New Application", "CO Ledger", "Database", "Loan Calculator", "Reports"]
+        nav_options = ["Dashboard", "Loan Origination", "Collections & Arrears", "Portfolio Management", "Loan Calculator", "Reports"]
     else:
-        nav_options = ["Branch Dashboard", "New Application", "Client Audit Ledger", "Managed Database", "Loan Calculator", "Reports & Export"]
+        nav_options = ["Branch Dashboard", "Loan Origination", "Branch Audit Ledger", "Global Portfolio Management", "Loan Calculator", "Compliance & Export"]
     
     page = st.radio("Navigation", nav_options, label_visibility="collapsed")
     
@@ -517,7 +564,7 @@ if page in ["Dashboard", "Branch Dashboard"]:
         st.markdown(f"""
             <div class='metric-card'>
                 <div class='metric-value'>₦{summary['total_cash_in']:,.0f}</div>
-                <div class='metric-label'>Total Cash In</div>
+                <div class='metric-label'>Cumulative Collections</div>
             </div>
         """, unsafe_allow_html=True)
     
@@ -525,7 +572,7 @@ if page in ["Dashboard", "Branch Dashboard"]:
         st.markdown(f"""
             <div class='metric-card'>
                 <div class='metric-value'>₦{summary['total_savings']:,.0f}</div>
-                <div class='metric-label'>Total Savings Held</div>
+                <div class='metric-label'>Deposits (Liabilities)</div>
             </div>
         """, unsafe_allow_html=True)
     
@@ -608,7 +655,7 @@ if page in ["Dashboard", "Branch Dashboard"]:
             if perf_chart:
                 st.plotly_chart(perf_chart, use_container_width=True)
 
-elif page == "New Application":
+elif page == "Loan Origination":
     st.title("📝 New Loan Application")
     
     with st.form("app_form"):
@@ -655,18 +702,24 @@ elif page == "New Application":
         total_upfront = manual_gap + setup['interest']
         st.info(f"**Total Upfront to Collect:** ₦{total_upfront:,.0f}")
         
+        st.markdown("#### Setup Fees (One-time)")
+        f1, f2, f3 = st.columns(3)
+        processing_fee = f1.number_input("Processing Fee", value=0, step=50)
+        markup = f2.number_input("Markup", value=0, step=50)
+        pass_book_fee = f3.number_input("Pass Book Fee", value=0, step=50)
+        
         active_credit = amount - manual_gap
         raw_repay = active_credit / setup['duration']
         final_repay = math.ceil(raw_repay / 10) * 10
         
         k1, k2 = st.columns(2)
-        k1.metric("Active Credit", f"₦{active_credit:,.0f}")
+        k1.metric("Outstanding Principal", f"₦{active_credit:,.0f}")
         k2.metric(f"Fixed {setup['freq']} Repayment", f"₦{final_repay:,.0f}")
         st.markdown("</div>", unsafe_allow_html=True)
         
         col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
         with col_btn2:
-            submitted = st.form_submit_button("💾 SUBMIT APPLICATION", use_container_width=True)
+            submitted = st.form_submit_button("📝 ORIGINATE LOAN", use_container_width=True)
         
         if submitted:
             if not name or not phone:
@@ -688,13 +741,16 @@ elif page == "New Application":
                     "Active Credit": active_credit,
                     "Loan Repay": final_repay,
                     "Total Due": active_credit,
-                    "Status": "Pending"
+                    "Status": "Pending",
+                    "Processing Fee": processing_fee,
+                    "Markup": markup,
+                    "Pass Book Fee": pass_book_fee
                 }
                 save_new_loan(data)
                 st.success("✅ Application Saved to Database!")
                 st.balloons()
 
-elif page in ["CO Ledger", "Client Audit Ledger"]:
+elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
     st.title(f"📂 {page}")
     
     all_loans = load_loans()
@@ -734,7 +790,7 @@ elif page in ["CO Ledger", "Client Audit Ledger"]:
         
         # Client metrics
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Active Credit", f"₦{active_credit_total:,.0f}")
+        col1.metric("Outstanding Principal", f"₦{active_credit_total:,.0f}")
         col2.metric("Total Paid to Loan", f"₦{total_loan_paid:,.0f}")
         balance_color = "normal" if loan_balance_left <= 0 else "inverse"
         col3.metric("🔻 Loan Balance", f"₦{loan_balance_left:,.0f}", delta_color=balance_color)
@@ -768,38 +824,60 @@ elif page in ["CO Ledger", "Client Audit Ledger"]:
         else:
             st.info("No transactions recorded yet.")
         
-        # Record payment
+        # Record granular payment
         st.markdown("---")
-        st.subheader("💸 Record New Payment")
+        st.subheader("💸 Record Granular Collection")
         
         with st.form("pay_form"):
-            st.caption(f"Fixed Repayment: **₦{fixed_repay:,.0f}**")
-            r1, r2, r3 = st.columns([1.5, 1.5, 2])
+            st.caption(f"Expected Fixed Repayment: **₦{fixed_repay:,.0f}**")
             
-            amount_in = r1.number_input("Amount Collected (₦)", value=int(fixed_repay), step=500)
-            trans_type = r2.selectbox(
-                "Transaction Type",
-                ["Loan", "Savings"],
-                format_func=lambda x: "Loan Payment" if x == "Loan" else "Savings Deposit"
-            )
-            note = r3.text_input("Note", placeholder="e.g. Week 4 Payment")
+            # Group into logical rows for UI clarity
+            col1, col2, col3 = st.columns(3)
+            loan_rep = col1.number_input("Loan Instalment (₦)", value=0, step=500)
+            savings_dep = col2.number_input("Savings Deposit (₦)", value=0, step=500)
+            withdrawal = col3.number_input("Savings Withdrawal (₦)", value=0, step=500)
             
-            if st.form_submit_button("💾 PUSH TRANSACTION TO CLOUD"):
+            f1, f2, f3 = st.columns(3)
+            proc_fee = f1.number_input("Processing Fee (₦)", value=0, step=100)
+            pass_book = f2.number_input("Pass Book (₦)", value=0, step=100)
+            markup_pd = f3.number_input("Markup (₦)", value=0, step=100)
+            
+            o1, o2, o3 = st.columns(3)
+            recovery = o1.number_input("Recovery (₦)", value=0, step=100)
+            mgt_fee = o2.number_input("Mgt Fee (₦)", value=0, step=100)
+            others = o3.number_input("Others (₦)", value=0, step=100)
+            
+            note_col = st.text_input("Note", placeholder="e.g. Week 4 Group Collection")
+            
+            # Auto-calculate total cache layout for sanity check
+            total_cache_in = loan_rep + savings_dep + proc_fee + pass_book + markup_pd + recovery + mgt_fee + others
+            st.info(f"**Total Cash From Client Today:** ₦{total_cache_in:,.0f} (Excluding withdrawals)")
+            
+            if st.form_submit_button("🏦 AUTHORIZE CASH POSTING"):
                 pay_data = {
                     "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
                     "Branch": BRANCH,
                     "Client ID": selected_id,
                     "Client Name": client_loan['Client Name'],
-                    "Amount Paid": amount_in,
+                    "Amount Paid": total_cache_in, # Kept for backward compatibility
                     "Officer": USER,
-                    "Note": note,
-                    "Transaction Type": trans_type
+                    "Note": note_col,
+                    "Transaction Type": "Granular",
+                    "Savings Amount": savings_dep,
+                    "Loan Repayment Amount": loan_rep,
+                    "Processing Fee Paid": proc_fee,
+                    "Markup Paid": markup_pd,
+                    "Pass Book Paid": pass_book,
+                    "Recovery Amount": recovery,
+                    "Withdrawal Amount": withdrawal,
+                    "Mgt Fee Paid": mgt_fee,
+                    "Others Amount": others
                 }
                 save_repayment(pay_data)
-                st.success(f"✅ {trans_type} Recorded Globally!")
+                st.success("✅ Detailed Collection Recorded Globally!")
                 st.rerun()
 
-elif page in ["Database", "Managed Database"]:
+elif page in ["Portfolio Management", "Global Portfolio Management"]:
     st.title(f"🗂️ {page}")
     
     all_loans = load_loans()
@@ -846,7 +924,7 @@ elif page in ["Database", "Managed Database"]:
             use_container_width=True
         )
         
-        if st.button("💾 SYNC CHANGES TO CLOUD"):
+        if st.button("🔄 POST TO GLOBAL LEDGER"):
             update_database_safe(edited, ROLE, USER, BRANCH)
             st.success("✅ Cloud Database Updated Successfully!")
             st.rerun()
@@ -894,7 +972,7 @@ elif page == "Loan Calculator":
     st.dataframe(schedule_df, use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif page in ["Reports", "Reports & Export"]:
+elif page in ["Reports", "Compliance & Export"]:
     st.title("📑 Reports & Data Export")
     
     all_loans = load_loans()

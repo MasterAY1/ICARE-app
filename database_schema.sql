@@ -183,3 +183,24 @@ $$ LANGUAGE plpgsql;
 -- ============================================
 -- END OF SCHEMA
 -- ============================================
+
+-- ============================================
+-- MIGRATION: Added on 2026-04-19
+-- Run these ALTER statements if upgrading an existing database
+-- ============================================
+
+-- Add new fee columns to loans
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS processing_fee NUMERIC DEFAULT 0;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS markup NUMERIC DEFAULT 0;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS pass_book_fee NUMERIC DEFAULT 0;
+
+-- Expand repayments table for granular daily collections
+ALTER TABLE repayments ADD COLUMN IF NOT EXISTS savings_amount NUMERIC DEFAULT 0;
+ALTER TABLE repayments ADD COLUMN IF NOT EXISTS loan_repayment_amount NUMERIC DEFAULT 0;
+ALTER TABLE repayments ADD COLUMN IF NOT EXISTS processing_fee_paid NUMERIC DEFAULT 0;
+ALTER TABLE repayments ADD COLUMN IF NOT EXISTS markup_paid NUMERIC DEFAULT 0;
+ALTER TABLE repayments ADD COLUMN IF NOT EXISTS pass_book_paid NUMERIC DEFAULT 0;
+ALTER TABLE repayments ADD COLUMN IF NOT EXISTS recovery_amount NUMERIC DEFAULT 0;
+ALTER TABLE repayments ADD COLUMN IF NOT EXISTS withdrawal_amount NUMERIC DEFAULT 0;
+ALTER TABLE repayments ADD COLUMN IF NOT EXISTS mgt_fee_paid NUMERIC DEFAULT 0;
+ALTER TABLE repayments ADD COLUMN IF NOT EXISTS others_amount NUMERIC DEFAULT 0;
