@@ -6,6 +6,8 @@ import uuid
 from supabase import create_client, Client
 import sys
 import os
+import holidays
+from pandas.tseries.offsets import CustomBusinessDay
 
 # 🚨 THE ABSOLUTE FIRST COMMAND 🚨
 st.set_page_config(
@@ -191,7 +193,14 @@ DB_TO_UI_LOANS = {
     "group_name": "Group Name", "meeting_day": "Meeting Day", "loan_product": "Loan Product",
     "loan_amount": "Loan Amount", "active_credit": "Active Credit", "loan_repay": "Loan Repay",
     "total_due": "Total Due", "status": "Status",
-    "processing_fee": "Processing Fee", "markup": "Markup", "pass_book_fee": "Pass Book Fee"
+    "processing_fee": "Processing Fee", "markup": "Markup", "pass_book_fee": "Pass Book Fee",
+    "nickname": "Nickname", "marital_status": "Marital Status", "average_monthly_income": "Average Monthly Income",
+    "other_obligations": "Other Obligations",
+    "guarantor_name": "Guarantor Name", "guarantor_nickname": "Guarantor Nickname", "guarantor_marital_status": "Guarantor Marital Status",
+    "guarantor_home_address": "Guarantor Home Address", "guarantor_occupation": "Guarantor Occupation",
+    "guarantor_office_address": "Guarantor Office Address", "guarantor_phone": "Guarantor Phone",
+    "guarantor_relationship": "Guarantor Relationship",
+    "group_location": "Group Location", "group_leader_name": "Group Leader Name", "group_formation_date": "Group Formation Date"
 }
 UI_TO_DB_LOANS = {v: k for k, v in DB_TO_UI_LOANS.items()}
 
@@ -300,8 +309,15 @@ def calculate_overdue(start_date_str, product, fixed_repay, total_loan_paid):
     today = datetime.now()
     
     if "Daily" in str(product):
-        # Only count Monday to Friday
-        business_days = len(pd.bdate_range(start_date.date(), today.date()))
+        try:
+            years = [today.year - 1, today.year, today.year + 1]
+            ng_holidays = holidays.country_holidays('NG', years=years)
+            bday_ng = CustomBusinessDay(holidays=list(ng_holidays.keys()))
+            date_range = pd.date_range(start_date.date(), today.date(), freq=bday_ng)
+            business_days = len(date_range)
+        except Exception:
+            business_days = len(pd.bdate_range(start_date.date(), today.date()))
+            
         days_passed = max(0, business_days - 1)
         capped_days = min(days_passed, 60)
         expected_paid = capped_days * fixed_repay
@@ -660,21 +676,51 @@ elif page == "Loan Origination":
     
     with st.form("app_form"):
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("1. Client Details")
-        c1, c2 = st.columns(2)
-        name = c1.text_input("Client Name", placeholder="Enter full name")
-        phone = c2.text_input("Phone Number", placeholder="e.g. 08012345678")
+        st.subheader("1. Member's Data")
+        c1, c2, c3 = st.columns(3)
+        name = c1.text_input("Full Name (Surname First)", placeholder="Enter full name")
+        nickname = c2.text_input("Nickname", placeholder="e.g. Iya Oloja")
+        phone = c3.text_input("Phone Number", placeholder="e.g. 08012345678")
         
-        c3, c4 = st.columns(2)
-        address = c3.text_area("Address", height=80, placeholder="Client's address")
-        biz_type = c4.selectbox("Business Type", ["Trader", "Artisan", "Driver", "SME", "Other"])
+        c4, c5 = st.columns(2)
+        address = c4.text_area("Home Address", height=70, placeholder="Client's home address")
+        biz_address = c5.text_area("Business / Address", height=70, placeholder="Client's business address")
+        
+        c6, c7, c8 = st.columns(3)
+        marital_status = c6.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"])
+        biz_type = c7.selectbox("Occupation", ["Trader", "Artisan", "Driver", "SME", "Other"])
+        monthly_income = c8.number_input("Average Monthly Income (₦)", value=0, step=5000)
+        
+        other_obs = st.text_input("Obligation with other institution", placeholder="If none, type 'None'")
         st.markdown("</div>", unsafe_allow_html=True)
         
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("2. Group & Officer Assignment")
-        g1, g2 = st.columns(2)
-        group_name = g1.text_input("Group Name", placeholder="e.g. Market Women A")
-        meeting_day = g2.selectbox("Meeting Day", ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"])
+        st.subheader("2. Guarantor's Undertaking")
+        g1, g2, g3 = st.columns(3)
+        g_name = g1.text_input("Guarantor Full Name", placeholder="Surname first")
+        g_nick = g2.text_input("Guarantor Nickname")
+        g_phone = g3.text_input("Guarantor Phone")
+        
+        g4, g5 = st.columns(2)
+        g_address = g4.text_area("Guarantor Home Address", height=70)
+        g_office = g5.text_area("Guarantor Office Address", height=70)
+        
+        g6, g7, g8 = st.columns(3)
+        g_marital = g6.selectbox("Guarantor Marital Status", ["Single", "Married", "Divorced", "Widowed"])
+        g_occ = g7.text_input("Guarantor Occupation")
+        g_rel = g8.text_input("Relationship with Borrower")
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.subheader("3. Group Undertaking")
+        gr1, gr2, gr3 = st.columns(3)
+        group_name = gr1.text_input("Group Name", placeholder="e.g. Market Women A")
+        group_loc = gr2.text_input("Group Location / Address")
+        meeting_day = gr3.selectbox("Meeting Day", ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"])
+        
+        gr4, gr5 = st.columns(2)
+        group_leader = gr4.text_input("Group Leader's Name")
+        group_date = gr5.date_input("Date of Formation", datetime.now())
         
         if ROLE in ["Admin", "BM"]:
             assigned_officer = st.selectbox("Assign to Officer:", ["John", "Jane"])
@@ -684,19 +730,19 @@ elif page == "Loan Origination":
         st.markdown("</div>", unsafe_allow_html=True)
         
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("3. Financial Request")
+        st.subheader("4. Financial Request (Applied Credit)")
         prod_col, amt_col = st.columns(2)
         product = prod_col.selectbox(
-            "Loan Product",
+            "Proposed Scheme",
             ["Daily Loan (60 Days)", "Weekly Loan (12 Weeks)", "Weekly Loan (24 Weeks)"]
         )
-        amount = amt_col.number_input("Loan Amount (₦)", value=100000, step=5000, min_value=10000)
+        amount = amt_col.number_input("Applied Credit Amount (Principal ₦)", value=100000, step=5000, min_value=10000)
         
         setup = calculate_loan_setup(amount, product)
         
         st.markdown("---")
         col_gap, col_int = st.columns(2)
-        manual_gap = col_gap.number_input("Initial Payment (Gap)", value=int(setup['initial_payment']), step=500)
+        manual_gap = col_gap.number_input("Savings Balance (Gap/Deposit)", value=int(setup['initial_payment']), step=500)
         col_int.metric("Interest (Fixed)", f"₦{setup['interest']:,.0f}")
         
         total_upfront = manual_gap + setup['interest']
@@ -731,10 +777,25 @@ elif page == "Loan Origination":
                     "Branch": BRANCH,
                     "Officer": assigned_officer,
                     "Client Name": name,
+                    "Nickname": nickname,
                     "Phone": phone,
                     "Address": address,
                     "Business Type": biz_type,
+                    "Marital Status": marital_status,
+                    "Average Monthly Income": monthly_income,
+                    "Other Obligations": other_obs,
+                    "Guarantor Name": g_name,
+                    "Guarantor Nickname": g_nick,
+                    "Guarantor Marital Status": g_marital,
+                    "Guarantor Home Address": g_address,
+                    "Guarantor Occupation": g_occ,
+                    "Guarantor Office Address": g_office,
+                    "Guarantor Phone": g_phone,
+                    "Guarantor Relationship": g_rel,
                     "Group Name": group_name,
+                    "Group Location": group_loc,
+                    "Group Leader Name": group_leader,
+                    "Group Formation Date": group_date.strftime("%Y-%m-%d"),
                     "Meeting Day": meeting_day,
                     "Loan Product": product,
                     "Loan Amount": amount,

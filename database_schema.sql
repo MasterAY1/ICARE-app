@@ -204,3 +204,25 @@ ALTER TABLE repayments ADD COLUMN IF NOT EXISTS recovery_amount NUMERIC DEFAULT 
 ALTER TABLE repayments ADD COLUMN IF NOT EXISTS withdrawal_amount NUMERIC DEFAULT 0;
 ALTER TABLE repayments ADD COLUMN IF NOT EXISTS mgt_fee_paid NUMERIC DEFAULT 0;
 ALTER TABLE repayments ADD COLUMN IF NOT EXISTS others_amount NUMERIC DEFAULT 0;
+
+-- ============================================
+-- MIGRATION: Added on 2026-05-02
+-- Form Expansion (Member, Guarantor, Group)
+-- ============================================
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS nickname TEXT;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS marital_status TEXT;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS average_monthly_income NUMERIC DEFAULT 0;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS other_obligations TEXT;
+
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS guarantor_name TEXT;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS guarantor_nickname TEXT;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS guarantor_marital_status TEXT;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS guarantor_home_address TEXT;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS guarantor_occupation TEXT;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS guarantor_office_address TEXT;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS guarantor_phone TEXT;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS guarantor_relationship TEXT;
+
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS group_location TEXT;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS group_leader_name TEXT;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS group_formation_date DATE;
