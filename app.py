@@ -674,53 +674,130 @@ if page in ["Dashboard", "Branch Dashboard"]:
 elif page == "Loan Origination":
     st.title("📝 New Loan Application")
     
+    client_type = st.radio("Client Type", ["New Client", "Existing Client"], horizontal=True)
+    
+    defaults = {
+        "Name": "", "Nickname": "", "Phone": "", "Address": "", "BizAddress": "",
+        "Marital": "Single", "BizType": "Trader", "Income": 0.0, "Obs": "",
+        "GName": "", "GNick": "", "GPhone": "", "GHome": "", "GOffice": "",
+        "GMarital": "Single", "GOcc": "", "GRel": "",
+        "Group": "", "GroupLoc": "", "Meeting": "Daily",
+        "Leader": "", "GroupDate": datetime.now()
+    }
+    
+    prev_client_id = None
+    prev_savings = 0.0
+    
+    if client_type == "Existing Client":
+        all_loans_df = load_loans()
+        if not all_loans_df.empty:
+            # Sort by Date descending to get the most recent loan per phone
+            all_loans_df = all_loans_df.sort_values(by="Date", ascending=False)
+            all_loans_df["DisplayName"] = all_loans_df["Client Name"] + " (" + all_loans_df["Phone"] + ")"
+            unique_clients = all_loans_df.drop_duplicates(subset=["Phone"])
+            
+            options = [""] + unique_clients["DisplayName"].tolist()
+            selected_display = st.selectbox("Search & Select Existing Client:", options)
+            if selected_display:
+                selected_row = unique_clients[unique_clients["DisplayName"] == selected_display].iloc[0]
+                prev_client_id = selected_row["Client ID"]
+                
+                full_record = all_loans_df[all_loans_df["Client ID"] == prev_client_id].iloc[0]
+                
+                defaults["Name"] = str(full_record.get("Client Name", ""))
+                defaults["Nickname"] = str(full_record.get("Nickname", ""))
+                defaults["Phone"] = str(full_record.get("Phone", ""))
+                defaults["Address"] = str(full_record.get("Address", ""))
+                defaults["Marital"] = str(full_record.get("Marital Status", "Single"))
+                defaults["BizType"] = str(full_record.get("Business Type", "Trader"))
+                try:
+                    defaults["Income"] = float(full_record.get("Average Monthly Income", 0.0))
+                except:
+                    pass
+                defaults["Obs"] = str(full_record.get("Other Obligations", ""))
+                
+                defaults["GName"] = str(full_record.get("Guarantor Name", ""))
+                defaults["GNick"] = str(full_record.get("Guarantor Nickname", ""))
+                defaults["GPhone"] = str(full_record.get("Guarantor Phone", ""))
+                defaults["GHome"] = str(full_record.get("Guarantor Home Address", ""))
+                defaults["GOffice"] = str(full_record.get("Guarantor Office Address", ""))
+                defaults["GMarital"] = str(full_record.get("Guarantor Marital Status", "Single"))
+                defaults["GOcc"] = str(full_record.get("Guarantor Occupation", ""))
+                defaults["GRel"] = str(full_record.get("Guarantor Relationship", ""))
+                
+                defaults["Group"] = str(full_record.get("Group Name", ""))
+                defaults["GroupLoc"] = str(full_record.get("Group Location", ""))
+                defaults["Meeting"] = str(full_record.get("Meeting Day", "Daily"))
+                defaults["Leader"] = str(full_record.get("Group Leader Name", ""))
+                
+                try:
+                    defaults["GroupDate"] = datetime.strptime(str(full_record.get("Group Formation Date", "")), "%Y-%m-%d").date()
+                except:
+                    pass
+                
+                reps = load_repayments()
+                client_reps = reps[reps['Client ID'] == prev_client_id]
+                fixed_repay = pd.to_numeric(full_record['Loan Repay'], errors='coerce')
+                fixed_repay = 0 if pd.isna(fixed_repay) else fixed_repay
+                savings, _ = calculate_client_savings(client_reps, fixed_repay)
+                prev_savings = float(savings)
+                
+                st.info(f"💰 **Current Accumulated Savings Balance:** ₦{prev_savings:,.0f}")
+                st.write(f"**Previous Loan Status:** {full_record['Status']}")
+        else:
+            st.warning("No existing clients found in the database.")
+            
     with st.form("app_form"):
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.subheader("1. Member's Data")
         c1, c2, c3 = st.columns(3)
-        name = c1.text_input("Full Name (Surname First)", placeholder="Enter full name")
-        nickname = c2.text_input("Nickname", placeholder="e.g. Iya Oloja")
-        phone = c3.text_input("Phone Number", placeholder="e.g. 08012345678")
+        name = c1.text_input("Full Name (Surname First)", value=defaults["Name"], placeholder="Enter full name")
+        nickname = c2.text_input("Nickname", value=defaults["Nickname"] if defaults["Nickname"] != "nan" else "", placeholder="e.g. Iya Oloja")
+        phone = c3.text_input("Phone Number", value=defaults["Phone"], placeholder="e.g. 08012345678")
         
         c4, c5 = st.columns(2)
-        address = c4.text_area("Home Address", height=70, placeholder="Client's home address")
-        biz_address = c5.text_area("Business / Address", height=70, placeholder="Client's business address")
+        address = c4.text_area("Home Address", value=defaults["Address"], height=70)
+        biz_address = c5.text_area("Business / Address", value=defaults["BizAddress"] if defaults["BizAddress"] != "nan" else "", height=70)
         
         c6, c7, c8 = st.columns(3)
-        marital_status = c6.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"])
-        biz_type = c7.selectbox("Occupation", ["Trader", "Artisan", "Driver", "SME", "Other"])
-        monthly_income = c8.number_input("Average Monthly Income (₦)", value=0, step=5000)
+        ms_index = ["Single", "Married", "Divorced", "Widowed"].index(defaults["Marital"]) if defaults["Marital"] in ["Single", "Married", "Divorced", "Widowed"] else 0
+        marital_status = c6.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"], index=ms_index)
+        bz_index = ["Trader", "Artisan", "Driver", "SME", "Other"].index(defaults["BizType"]) if defaults["BizType"] in ["Trader", "Artisan", "Driver", "SME", "Other"] else 0
+        biz_type = c7.selectbox("Occupation", ["Trader", "Artisan", "Driver", "SME", "Other"], index=bz_index)
+        monthly_income = c8.number_input("Average Monthly Income (₦)", value=float(defaults["Income"]), step=5000.0)
         
-        other_obs = st.text_input("Obligation with other institution", placeholder="If none, type 'None'")
+        other_obs = st.text_input("Obligation with other institution", value=defaults["Obs"] if defaults["Obs"] != "nan" else "")
         st.markdown("</div>", unsafe_allow_html=True)
         
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.subheader("2. Guarantor's Undertaking")
         g1, g2, g3 = st.columns(3)
-        g_name = g1.text_input("Guarantor Full Name", placeholder="Surname first")
-        g_nick = g2.text_input("Guarantor Nickname")
-        g_phone = g3.text_input("Guarantor Phone")
+        g_name = g1.text_input("Guarantor Full Name", value=defaults["GName"] if defaults["GName"] != "nan" else "")
+        g_nick = g2.text_input("Guarantor Nickname", value=defaults["GNick"] if defaults["GNick"] != "nan" else "")
+        g_phone = g3.text_input("Guarantor Phone", value=defaults["GPhone"] if defaults["GPhone"] != "nan" else "")
         
         g4, g5 = st.columns(2)
-        g_address = g4.text_area("Guarantor Home Address", height=70)
-        g_office = g5.text_area("Guarantor Office Address", height=70)
+        g_address = g4.text_area("Guarantor Home Address", value=defaults["GHome"] if defaults["GHome"] != "nan" else "", height=70)
+        g_office = g5.text_area("Guarantor Office Address", value=defaults["GOffice"] if defaults["GOffice"] != "nan" else "", height=70)
         
         g6, g7, g8 = st.columns(3)
-        g_marital = g6.selectbox("Guarantor Marital Status", ["Single", "Married", "Divorced", "Widowed"])
-        g_occ = g7.text_input("Guarantor Occupation")
-        g_rel = g8.text_input("Relationship with Borrower")
+        gm_index = ["Single", "Married", "Divorced", "Widowed"].index(defaults["GMarital"]) if defaults["GMarital"] in ["Single", "Married", "Divorced", "Widowed"] else 0
+        g_marital = g6.selectbox("Guarantor Marital Status", ["Single", "Married", "Divorced", "Widowed"], index=gm_index)
+        g_occ = g7.text_input("Guarantor Occupation", value=defaults["GOcc"] if defaults["GOcc"] != "nan" else "")
+        g_rel = g8.text_input("Relationship with Borrower", value=defaults["GRel"] if defaults["GRel"] != "nan" else "")
         st.markdown("</div>", unsafe_allow_html=True)
         
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.subheader("3. Group Undertaking")
         gr1, gr2, gr3 = st.columns(3)
-        group_name = gr1.text_input("Group Name", placeholder="e.g. Market Women A")
-        group_loc = gr2.text_input("Group Location / Address")
-        meeting_day = gr3.selectbox("Meeting Day", ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"])
+        group_name = gr1.text_input("Group Name", value=defaults["Group"] if defaults["Group"] != "nan" else "")
+        group_loc = gr2.text_input("Group Location / Address", value=defaults["GroupLoc"] if defaults["GroupLoc"] != "nan" else "")
+        md_index = ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].index(defaults["Meeting"]) if defaults["Meeting"] in ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"] else 0
+        meeting_day = gr3.selectbox("Meeting Day", ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], index=md_index)
         
         gr4, gr5 = st.columns(2)
-        group_leader = gr4.text_input("Group Leader's Name")
-        group_date = gr5.date_input("Date of Formation", datetime.now())
+        group_leader = gr4.text_input("Group Leader's Name", value=defaults["Leader"] if defaults["Leader"] != "nan" else "")
+        group_date = gr5.date_input("Date of Formation", defaults["GroupDate"])
         
         if ROLE in ["Admin", "BM"]:
             assigned_officer = st.selectbox("Assign to Officer:", ["John", "Jane"])
@@ -745,14 +822,26 @@ elif page == "Loan Origination":
         manual_gap = col_gap.number_input("Savings Balance (Gap/Deposit)", value=int(setup['initial_payment']), step=500)
         col_int.metric("Interest (Fixed)", f"₦{setup['interest']:,.0f}")
         
-        total_upfront = manual_gap + setup['interest']
-        st.info(f"**Total Upfront to Collect:** ₦{total_upfront:,.0f}")
-        
-        st.markdown("#### Setup Fees (One-time)")
         f1, f2, f3 = st.columns(3)
         processing_fee = f1.number_input("Processing Fee", value=0, step=50)
         markup = f2.number_input("Markup", value=0, step=50)
         pass_book_fee = f3.number_input("Pass Book Fee", value=0, step=50)
+        
+        total_upfront = manual_gap + setup['interest'] + processing_fee + markup + pass_book_fee
+        st.info(f"**Total Upfront to Collect:** ₦{total_upfront:,.0f}")
+        
+        savings_applied = 0.0
+        if prev_client_id and prev_savings > 0:
+            st.markdown(f"**Apply Savings:** You have ₦{prev_savings:,.0f} available.")
+            savings_applied = st.number_input(
+                "Savings to apply towards upfront fees (₦)",
+                value=0.0, max_value=float(prev_savings), step=500.0
+            )
+            remaining_upfront = max(0, total_upfront - savings_applied)
+            if remaining_upfront > 0:
+                st.warning(f"**Remaining Cash to Collect from Client:** ₦{remaining_upfront:,.0f}")
+            else:
+                st.success(f"✅ Savings fully covers the upfront fees! (Leftover transferred to savings)")
         
         active_credit = amount - manual_gap
         raw_repay = active_credit / setup['duration']
@@ -771,9 +860,49 @@ elif page == "Loan Origination":
             if not name or not phone:
                 st.error("❌ Please fill in all required fields (Name and Phone)")
             else:
+                new_client_id = str(uuid.uuid4())
+                current_date_str = datetime.now().strftime("%Y-%m-%d")
+                
+                # Perform Rollover Transactions
+                if prev_client_id and prev_savings > 0 and (savings_applied > 0 or prev_savings > 0):
+                    # Withdraw all savings from old loan
+                    withdraw_data = {
+                        "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Branch": BRANCH,
+                        "Client ID": prev_client_id,
+                        "Client Name": name,
+                        "Amount Paid": 0,
+                        "Officer": assigned_officer,
+                        "Note": f"Rollover Withdrawal for new loan {new_client_id[:8]}",
+                        "Transaction Type": "Savings",
+                        "Withdrawal Amount": prev_savings
+                    }
+                    save_repayment(withdraw_data)
+                    
+                    # Deposit remaining savings into new loan
+                    leftover_savings = prev_savings - savings_applied
+                    fee_deposit = {
+                        "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Branch": BRANCH,
+                        "Client ID": new_client_id,
+                        "Client Name": name,
+                        "Amount Paid": savings_applied + leftover_savings,
+                        "Officer": assigned_officer,
+                        "Note": f"Rollover Transfer from old loan {prev_client_id[:8]}",
+                        "Transaction Type": "Savings",
+                        "Savings Amount": leftover_savings,
+                        "Others Amount": savings_applied
+                    }
+                    save_repayment(fee_deposit)
+                    
+                    if supabase:
+                        supabase.table("loans").update({"status": "Completed"}).eq("client_id", prev_client_id).execute()
+                    
+                    st.toast("Rollover transactions logged & old loan Completed!")
+                
                 data = {
-                    "Client ID": str(uuid.uuid4()),
-                    "Date": datetime.now().strftime("%Y-%m-%d"),
+                    "Client ID": new_client_id,
+                    "Date": current_date_str,
                     "Branch": BRANCH,
                     "Officer": assigned_officer,
                     "Client Name": name,
