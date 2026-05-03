@@ -697,11 +697,19 @@ elif page == "Loan Origination":
         if not all_loans_df.empty:
             # Sort by Date descending to get the most recent loan per phone
             all_loans_df = all_loans_df.sort_values(by="Date", ascending=False)
+            all_loans_df['Group Name'] = all_loans_df['Group Name'].fillna('Ungrouped').replace('', 'Ungrouped')
             all_loans_df["DisplayName"] = all_loans_df["Client Name"] + " (" + all_loans_df["Phone"] + ")"
             unique_clients = all_loans_df.drop_duplicates(subset=["Phone"])
             
+            c_grp, c_cli = st.columns([1.5, 2.5])
+            unique_groups = ["All Groups"] + sorted([str(g) for g in unique_clients['Group Name'].unique() if str(g).strip()])
+            selected_group = c_grp.selectbox("Filter by Group:", unique_groups)
+            
+            if selected_group != "All Groups":
+                unique_clients = unique_clients[unique_clients['Group Name'] == selected_group]
+                
             options = [""] + unique_clients["DisplayName"].tolist()
-            selected_display = st.selectbox("Search & Select Existing Client:", options)
+            selected_display = c_cli.selectbox("Search & Select Existing Client:", options)
             if selected_display:
                 selected_row = unique_clients[unique_clients["DisplayName"] == selected_display].iloc[0]
                 prev_client_id = selected_row["Client ID"]
@@ -983,13 +991,29 @@ elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
     if active_clients.empty:
         st.warning("⚠️ No Active clients assigned to you.")
     else:
-        c1, c2 = st.columns([2, 1])
-        client_ids = active_clients['Client ID'].tolist()
+        c_grp, c1, c2 = st.columns([1.5, 2, 1])
+        
+        # Group Filter
+        active_clients['Group Name'] = active_clients['Group Name'].fillna('Ungrouped').replace('', 'Ungrouped')
+        unique_groups = ["All Groups"] + sorted([str(g) for g in active_clients['Group Name'].unique() if str(g).strip()])
+        selected_group = c_grp.selectbox("Filter by Group:", unique_groups)
+        
+        if selected_group != "All Groups":
+            filtered_clients = active_clients[active_clients['Group Name'] == selected_group]
+        else:
+            filtered_clients = active_clients
+            
+        client_ids = filtered_clients['Client ID'].tolist()
         
         def format_client_dropdown(cid):
-            row = active_clients[active_clients['Client ID'] == cid].iloc[0]
-            return f"{row['Client Name']} ({row['Phone']})"
+            row = filtered_clients[filtered_clients['Client ID'] == cid].iloc[0]
+            group_tag = f"[{row['Group Name']}] " if selected_group == "All Groups" else ""
+            return f"{group_tag}{row['Client Name']} ({row['Phone']})"
         
+        if not client_ids:
+            st.warning("No clients found in this group.")
+            st.stop()
+            
         selected_id = c1.selectbox("Select Client:", client_ids, format_func=format_client_dropdown)
         view_date = c2.date_input("Report Date", datetime.now())
         
