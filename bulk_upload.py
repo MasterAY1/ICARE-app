@@ -1,22 +1,26 @@
 import pandas as pd
 from supabase import create_client, Client
 import uuid
-import os
-from dotenv import load_dotenv
+import tomllib
 
-# Load your database credentials
-load_dotenv()
-url = os.environ.get("SUPABASE_URL")
-key = os.environ.get("SUPABASE_KEY")
+print("Starting Smart Bulk Upload directly from clients.xlsx...")
+
+try:
+    with open(".streamlit/secrets.toml", "rb") as f:
+        secrets = tomllib.load(f)
+    url = secrets.get("SUPABASE_URL")
+    key = secrets.get("SUPABASE_KEY")
+except Exception as e:
+    print(f"Could not load secrets.toml: {e}")
+    exit()
+
 supabase: Client = create_client(url, key)
-
-print("🚀 Starting Smart Bulk Upload directly from clients.xlsx...")
 
 # 1. Read the Excel file directly
 try:
     df = pd.read_excel("clients.xlsx", sheet_name="clients")
 except Exception as e:
-    print(f"❌ Error reading Excel file: {e}")
+    print(f"Error reading Excel file: {e}")
     exit()
 
 success_count = 0
@@ -128,10 +132,10 @@ for index, row in df.iterrows():
             }
             supabase.table("repayments").insert(savings_data).execute()
             
-        print(f"✅ Successfully uploaded: {row['client_name']} ({row['status']})")
+        print(f"Successfully uploaded: {row['client_name']} ({row['status']})")
         success_count += 1
         
     except Exception as e:
-        print(f"❌ Failed to upload {row['client_name']}: {e}")
+        print(f"Failed to upload {row['client_name']}: {e}")
 
-print(f"\n🎉 Upload Complete! Successfully migrated {success_count} accounts.")
+print(f"\nUpload Complete! Successfully migrated {success_count} accounts.")
