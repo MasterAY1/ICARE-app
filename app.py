@@ -181,6 +181,8 @@ st.markdown("""
     .status-approved { background: #d1fae5; color: #065f46; }
     .status-active { background: #dbeafe; color: #1e40af; }
     .status-completed { background: #f3f4f6; color: #374151; }
+    .status-closed { background: #fee2e2; color: #991b1b; }
+    .status-internal-account { background: #f1f5f9; color: #475569; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -200,7 +202,9 @@ DB_TO_UI_LOANS = {
     "guarantor_home_address": "Guarantor Home Address", "guarantor_occupation": "Guarantor Occupation",
     "guarantor_office_address": "Guarantor Office Address", "guarantor_phone": "Guarantor Phone",
     "guarantor_relationship": "Guarantor Relationship",
-    "group_location": "Group Location", "group_leader_name": "Group Leader Name", "group_formation_date": "Group Formation Date"
+    "group_location": "Group Location", "group_leader_name": "Group Leader Name", "group_formation_date": "Group Formation Date",
+    "product_category": "Product Category", "group_savings": "Group Savings", 
+    "branch_contingency": "Branch Contingency", "branch_contingency_2": "Branch Contingency 2"
 }
 UI_TO_DB_LOANS = {v: k for k, v in DB_TO_UI_LOANS.items()}
 
@@ -808,7 +812,9 @@ elif page == "Loan Origination":
         
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.subheader("4. Financial Request (Applied Credit)")
-        prod_col, amt_col = st.columns(2)
+        
+        cat_col, prod_col, amt_col = st.columns(3)
+        product_category = cat_col.selectbox("Product Category", ["Finance", "Asset"])
         product = prod_col.selectbox(
             "Proposed Scheme",
             ["Daily Loan (60 Days)", "Weekly Loan (12 Weeks)", "Weekly Loan (24 Weeks)"]
@@ -822,12 +828,18 @@ elif page == "Loan Origination":
         manual_gap = col_gap.number_input("Savings Balance (Gap/Deposit)", value=int(setup['initial_payment']), step=500)
         col_int.metric("Interest (Fixed)", f"₦{setup['interest']:,.0f}")
         
+        st.markdown("#### Origination Fees & Upfront Savings")
         f1, f2, f3 = st.columns(3)
         processing_fee = f1.number_input("Processing Fee", value=0, step=50)
         markup = f2.number_input("Markup", value=0, step=50)
         pass_book_fee = f3.number_input("Pass Book Fee", value=0, step=50)
         
-        total_upfront = manual_gap + setup['interest'] + processing_fee + markup + pass_book_fee
+        s1, s2, s3 = st.columns(3)
+        group_savings = s1.number_input("Group Savings", value=0, step=500)
+        branch_contingency = s2.number_input("Branch Contingency", value=0, step=500)
+        branch_contingency_2 = s3.number_input("Branch Contingency 2 (Savings)", value=0, step=500)
+        
+        total_upfront = manual_gap + setup['interest'] + processing_fee + markup + pass_book_fee + group_savings + branch_contingency + branch_contingency_2
         st.info(f"**Total Upfront to Collect:** ₦{total_upfront:,.0f}")
         
         savings_applied = 0.0
@@ -926,6 +938,7 @@ elif page == "Loan Origination":
                     "Group Leader Name": group_leader,
                     "Group Formation Date": group_date.strftime("%Y-%m-%d"),
                     "Meeting Day": meeting_day,
+                    "Product Category": product_category,
                     "Loan Product": product,
                     "Loan Amount": amount,
                     "Active Credit": active_credit,
@@ -934,9 +947,29 @@ elif page == "Loan Origination":
                     "Status": "Pending",
                     "Processing Fee": processing_fee,
                     "Markup": markup,
-                    "Pass Book Fee": pass_book_fee
+                    "Pass Book Fee": pass_book_fee,
+                    "Group Savings": group_savings,
+                    "Branch Contingency": branch_contingency,
+                    "Branch Contingency 2": branch_contingency_2
                 }
                 save_new_loan(data)
+                
+                # Deposit new Upfront Savings
+                new_savings_deposit = group_savings + branch_contingency_2
+                if new_savings_deposit > 0:
+                    savings_dep = {
+                        "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Branch": BRANCH,
+                        "Client ID": new_client_id,
+                        "Client Name": name,
+                        "Amount Paid": new_savings_deposit,
+                        "Officer": assigned_officer,
+                        "Note": "Upfront Savings and Contingency 2 Deposit",
+                        "Transaction Type": "Savings",
+                        "Savings Amount": new_savings_deposit
+                    }
+                    save_repayment(savings_dep)
+                    
                 st.success("✅ Application Saved to Database!")
                 st.balloons()
 

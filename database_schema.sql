@@ -226,3 +226,16 @@ ALTER TABLE loans ADD COLUMN IF NOT EXISTS guarantor_relationship TEXT;
 ALTER TABLE loans ADD COLUMN IF NOT EXISTS group_location TEXT;
 ALTER TABLE loans ADD COLUMN IF NOT EXISTS group_leader_name TEXT;
 ALTER TABLE loans ADD COLUMN IF NOT EXISTS group_formation_date DATE;
+
+-- ============================================
+-- MIGRATION: Added on 2026-05-03
+-- Product Category & Advanced Fees (Savings/Contingency)
+-- ============================================
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS product_category TEXT DEFAULT 'Finance';
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS group_savings NUMERIC DEFAULT 0;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS branch_contingency NUMERIC DEFAULT 0;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS branch_contingency_2 NUMERIC DEFAULT 0;
+
+-- Update Status Constraint to allow 'Closed' and 'Internal Account'
+ALTER TABLE loans DROP CONSTRAINT IF EXISTS loans_status_check;
+ALTER TABLE loans ADD CONSTRAINT loans_status_check CHECK (status IN ('Pending', 'Approved', 'Active', 'Completed', 'Closed', 'Internal Account'));
