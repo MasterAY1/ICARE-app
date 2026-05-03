@@ -1071,6 +1071,24 @@ elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
         else:
             st.info("No transactions recorded yet.")
         
+        # Smart Auto-Splitter
+        st.markdown("---")
+        st.subheader("🧮 Smart Auto-Splitter (For Overpayments)")
+        st.caption("Enter the total cash received and the client's total agreed daily payment (loan + savings) to auto-fill the form below.")
+        
+        c_split1, c_split2 = st.columns(2)
+        total_cash_received = c_split1.number_input("Total Cash Received (₦)", value=0, step=500)
+        agreed_daily_payment = c_split2.number_input("Client's Agreed Daily Total (₦)", value=int(fixed_repay) + 350, step=50)
+        
+        auto_loan_rep = 0
+        auto_savings_dep = 0
+        
+        if total_cash_received > 0 and agreed_daily_payment > 0:
+            multiplier = total_cash_received / agreed_daily_payment
+            auto_loan_rep = int(fixed_repay * multiplier)
+            auto_savings_dep = int(total_cash_received - auto_loan_rep)
+            st.info(f"💡 **Auto-Calculated Split:** ₦{auto_loan_rep:,.0f} for Loan & ₦{auto_savings_dep:,.0f} for Savings")
+            
         # Record granular payment
         st.markdown("---")
         st.subheader("💸 Record Granular Collection")
@@ -1080,8 +1098,8 @@ elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
             
             # Group into logical rows for UI clarity
             col1, col2, col3 = st.columns(3)
-            loan_rep = col1.number_input("Loan Instalment (₦)", value=0, step=500)
-            savings_dep = col2.number_input("Savings Deposit (₦)", value=0, step=500)
+            loan_rep = col1.number_input("Loan Instalment (₦)", value=int(auto_loan_rep), step=500)
+            savings_dep = col2.number_input("Savings Deposit (₦)", value=int(auto_savings_dep), step=500)
             withdrawal = col3.number_input("Savings Withdrawal (₦)", value=0, step=500)
             
             f1, f2, f3 = st.columns(3)
