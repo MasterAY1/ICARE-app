@@ -1154,7 +1154,7 @@ elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
                     "Amount Paid": total_cache_in, # Kept for backward compatibility
                     "Officer": USER,
                     "Note": note_col,
-                    "Transaction Type": "Granular",
+                    "Transaction Type": "Loan",
                     "Savings Amount": savings_dep,
                     "Loan Repayment Amount": loan_rep,
                     "Processing Fee Paid": proc_fee,
