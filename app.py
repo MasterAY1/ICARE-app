@@ -563,9 +563,9 @@ with st.sidebar:
     st.divider()
     
     if ROLE == "Officer":
-        nav_options = ["Dashboard", "Loan Origination", "Collections & Arrears", "Portfolio Management", "Loan Calculator", "Reports"]
+        nav_options = ["Dashboard", "Loan Origination", "Collections & Arrears", "Daily Collections Report", "Portfolio Management", "Loan Calculator", "Reports"]
     else:
-        nav_options = ["Branch Dashboard", "Loan Origination", "Branch Audit Ledger", "Global Portfolio Management", "Loan Calculator", "Compliance & Export"]
+        nav_options = ["Branch Dashboard", "Loan Origination", "Branch Audit Ledger", "Daily Collections Report", "Global Portfolio Management", "Loan Calculator", "Compliance & Export"]
     
     page = st.radio("Navigation", nav_options, label_visibility="collapsed")
     
@@ -1168,6 +1168,95 @@ elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
                 save_repayment(pay_data)
                 st.success("✅ Detailed Collection Recorded Globally!")
                 st.rerun()
+
+elif page == "Daily Collections Report":
+    st.title("📅 Daily Collections Report")
+    
+    view_date = st.date_input("Select Date for Report", datetime.now().date())
+    
+    all_loans = load_loans()
+    repayments = load_repayments()
+    
+    if not repayments.empty:
+        # Filter for the selected date
+        repayments['DateStr'] = pd.to_datetime(repayments['Date'], errors='coerce').dt.date.astype(str)
+        date_str = view_date.strftime("%Y-%m-%d")
+        
+        daily_reps = repayments[repayments['DateStr'] == date_str]
+        
+        if ROLE == "BM":
+            daily_reps = daily_reps[daily_reps['Branch'] == BRANCH]
+        elif ROLE == "Officer":
+            daily_reps = daily_reps[daily_reps['Officer'] == USER]
+            
+        if daily_reps.empty:
+            st.info(f"No collections found for {date_str}.")
+        else:
+            st.markdown(f"### 📊 Collection Summary for {date_str}")
+            
+            total_loans = pd.to_numeric(daily_reps['Loan Repayment Amount'], errors='coerce').fillna(0).sum()
+            total_savings = pd.to_numeric(daily_reps['Savings Amount'], errors='coerce').fillna(0).sum()
+            total_proc = pd.to_numeric(daily_reps['Processing Fee Paid'], errors='coerce').fillna(0).sum()
+            total_markup = pd.to_numeric(daily_reps['Markup Paid'], errors='coerce').fillna(0).sum()
+            total_pass = pd.to_numeric(daily_reps['Pass Book Paid'], errors='coerce').fillna(0).sum()
+            total_rec = pd.to_numeric(daily_reps['Recovery Amount'], errors='coerce').fillna(0).sum()
+            total_withdrawal = pd.to_numeric(daily_reps['Withdrawal Amount'], errors='coerce').fillna(0).sum()
+            total_mgt = pd.to_numeric(daily_reps['Mgt Fee Paid'], errors='coerce').fillna(0).sum()
+            total_others = pd.to_numeric(daily_reps['Others Amount'], errors='coerce').fillna(0).sum()
+            
+            total_cash_in = pd.to_numeric(daily_reps['Amount Paid'], errors='coerce').fillna(0).sum()
+            
+            # Use legacy fallback if detailed fields weren't used
+            if total_loans == 0 and total_savings == 0 and total_cash_in > 0:
+                pass
+                
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Total Transactions", len(daily_reps))
+            c2.metric("Total Cash Collected", f"₦{total_cash_in:,.0f}")
+            c3.metric("Total Loan Repayments", f"₦{total_loans:,.0f}")
+            c4.metric("Total Savings Deposits", f"₦{total_savings:,.0f}")
+            
+            st.markdown("#### Other Fees Collected")
+            f1, f2, f3, f4, f5 = st.columns(5)
+            f1.metric("Processing", f"₦{total_proc:,.0f}")
+            f2.metric("Markup", f"₦{total_markup:,.0f}")
+            f3.metric("Pass Book", f"₦{total_pass:,.0f}")
+            f4.metric("Recovery", f"₦{total_rec:,.0f}")
+            f5.metric("Withdrawals", f"₦{total_withdrawal:,.0f}", delta_color="inverse")
+            
+            st.markdown("### 📝 Detailed Client Breakdown")
+            
+            detailed_data = []
+            for _, row in daily_reps.iterrows():
+                cid = row.get('Client ID')
+                c_loan = all_loans[all_loans['Client ID'] == cid].iloc[0] if cid in all_loans['Client ID'].values else None
+                
+                acc_savings = 0
+                loan_bal = 0
+                
+                if c_loan is not None:
+                    c_payments = repayments[repayments['Client ID'] == cid]
+                    s_amt, l_amt = calculate_client_savings(c_payments, c_loan['Loan Repay'])
+                    acc_savings = s_amt
+                    loan_bal = c_loan['Active Credit'] - l_amt
+                    
+                detailed_data.append({
+                    "Client Name": row.get('Client Name', 'Unknown'),
+                    "Phone": c_loan['Phone'] if c_loan is not None else '',
+                    "Group": c_loan['Group Name'] if c_loan is not None else '',
+                    "Cash Paid Today": row.get('Amount Paid', 0),
+                    "Loan Paid Today": row.get('Loan Repayment Amount', 0),
+                    "Savings Paid Today": row.get('Savings Amount', 0),
+                    "Withdrawal Today": row.get('Withdrawal Amount', 0),
+                    "Current Loan Balance": loan_bal,
+                    "Total Acc. Savings": acc_savings,
+                    "Officer": row.get('Officer', ''),
+                    "Note": row.get('Note', '')
+                })
+            
+            st.dataframe(pd.DataFrame(detailed_data), use_container_width=True)
+    else:
+        st.info("No records found in database.")
 
 elif page in ["Portfolio Management", "Global Portfolio Management"]:
     st.title(f"🗂️ {page}")
