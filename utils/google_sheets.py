@@ -13,11 +13,12 @@ SCOPES = [
 def get_google_credentials():
     """Get Google credentials from Streamlit secrets"""
     try:
+        if "google_service_account" not in st.secrets:
+            return None
         creds_info = dict(st.secrets["google_service_account"])
         creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
         return creds
     except Exception as e:
-        st.error(f"Google Auth Error: {e}")
         return None
 
 def init_sheets_client():

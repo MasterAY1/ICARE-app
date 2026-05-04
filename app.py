@@ -245,7 +245,12 @@ def load_repayments():
         response = supabase.table("repayments").select("*").execute()
         if not response.data:
             return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
-        return pd.DataFrame(response.data).rename(columns=DB_TO_UI_REP)
+        df = pd.DataFrame(response.data).rename(columns=DB_TO_UI_REP)
+        num_cols = ["Amount Paid", "Savings Amount", "Loan Repayment Amount"]
+        for c in num_cols:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+        return df
     except Exception as e:
         st.error(f"Database Error: {e}")
         return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
@@ -427,8 +432,10 @@ def calculate_client_savings(client_repayments, fixed_repay):
 def get_ledger_report(client_payments, fixed_repay, loan_product, meeting_day, view_date):
     """Generate ledger report for a client"""
     report_data = []
-    if not client_payments.empty:
-        client_payments['DateObj'] = pd.to_datetime(client_payments['Date'], errors='coerce')
+    
+    cp = client_payments.copy() if not client_payments.empty else pd.DataFrame()
+    if not cp.empty:
+        cp['DateObj'] = pd.to_datetime(cp['Date'], errors='coerce')
     
     if "Daily" in str(loan_product):
         start_of_week = view_date - timedelta(days=view_date.weekday())
@@ -436,15 +443,25 @@ def get_ledger_report(client_payments, fixed_repay, loan_product, meeting_day, v
         for i in range(5):
             current_day = start_of_week + timedelta(days=i)
             daily_total = 0
-            if not client_payments.empty:
-                mask = client_payments['DateObj'].dt.date == current_day
-                daily_total = client_payments.loc[mask, 'Amount Paid'].sum()
-            if daily_total > fixed_repay:
-                sav = daily_total - fixed_repay
-                ln = fixed_repay
-            else:
-                sav = 0
-                ln = daily_total
+            sav = 0
+            ln = 0
+            if not cp.empty:
+                mask = cp['DateObj'].dt.date == current_day
+                daily_total = cp.loc[mask, 'Amount Paid'].sum()
+                sav_explicit = cp.loc[mask, 'Savings Amount'].sum() if 'Savings Amount' in cp.columns else 0
+                ln_explicit = cp.loc[mask, 'Loan Repayment Amount'].sum() if 'Loan Repayment Amount' in cp.columns else 0
+                
+                if sav_explicit > 0 or ln_explicit > 0:
+                    sav = sav_explicit
+                    ln = ln_explicit
+                else:
+                    if daily_total > fixed_repay:
+                        sav = daily_total - fixed_repay
+                        ln = fixed_repay
+                    else:
+                        sav = 0
+                        ln = daily_total
+                        
             report_data.append({
                 "Day": days[i],
                 "Date": current_day.strftime("%Y-%m-%d"),
@@ -460,15 +477,25 @@ def get_ledger_report(client_payments, fixed_repay, loan_product, meeting_day, v
         for i in range(5):
             meeting_date = last_meeting - timedelta(weeks=i)
             week_total = 0
-            if not client_payments.empty:
-                mask = client_payments['DateObj'].dt.date == meeting_date
-                week_total = client_payments.loc[mask, 'Amount Paid'].sum()
-            if week_total > fixed_repay:
-                sav = week_total - fixed_repay
-                ln = fixed_repay
-            else:
-                sav = 0
-                ln = week_total
+            sav = 0
+            ln = 0
+            if not cp.empty:
+                mask = cp['DateObj'].dt.date == meeting_date
+                week_total = cp.loc[mask, 'Amount Paid'].sum()
+                sav_explicit = cp.loc[mask, 'Savings Amount'].sum() if 'Savings Amount' in cp.columns else 0
+                ln_explicit = cp.loc[mask, 'Loan Repayment Amount'].sum() if 'Loan Repayment Amount' in cp.columns else 0
+                
+                if sav_explicit > 0 or ln_explicit > 0:
+                    sav = sav_explicit
+                    ln = ln_explicit
+                else:
+                    if week_total > fixed_repay:
+                        sav = week_total - fixed_repay
+                        ln = fixed_repay
+                    else:
+                        sav = 0
+                        ln = week_total
+                        
             report_data.append({
                 "Week": f"Week {i+1} (Ago)",
                 "Meeting Date": meeting_date.strftime("%Y-%m-%d"),
