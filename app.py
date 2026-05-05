@@ -1147,15 +1147,16 @@ elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
             st.caption(f"Expected Fixed Repayment: **₦{fixed_repay:,.0f}**")
             
             # Group into logical rows for UI clarity
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             loan_rep = col1.number_input("Loan Instalment (₦)", value=int(auto_loan_rep), step=500)
             savings_dep = col2.number_input("Savings Deposit (₦)", value=int(auto_savings_dep), step=500)
             withdrawal = col3.number_input("Savings Withdrawal (₦)", value=0, step=500)
+            pass_book = col4.number_input("Pass Book (₦)", value=0, step=100)
             
             note_col = st.text_input("Note", placeholder="e.g. Week 4 Group Collection")
             
             # Auto-calculate total cache layout for sanity check
-            total_cache_in = loan_rep + savings_dep
+            total_cache_in = loan_rep + savings_dep + pass_book
             st.info(f"**Total Cash From Client Today:** ₦{total_cache_in:,.0f} (Excluding withdrawals)")
             
             if st.form_submit_button("🏦 AUTHORIZE CASH POSTING"):
@@ -1172,7 +1173,7 @@ elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
                     "Loan Repayment Amount": loan_rep,
                     "Processing Fee Paid": 0,
                     "Markup Paid": 0,
-                    "Pass Book Paid": 0,
+                    "Pass Book Paid": pass_book,
                     "Recovery Amount": 0,
                     "Withdrawal Amount": withdrawal,
                     "Mgt Fee Paid": 0,
