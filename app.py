@@ -912,6 +912,47 @@ elif page == "Loan Origination":
                 new_client_id = str(uuid.uuid4())
                 current_date_str = datetime.now().strftime("%Y-%m-%d")
                 
+                # Save the new loan to the database FIRST to avoid Foreign Key violations
+                data = {
+                    "Client ID": new_client_id,
+                    "Date": current_date_str,
+                    "Branch": BRANCH,
+                    "Officer": assigned_officer,
+                    "Client Name": name,
+                    "Nickname": nickname,
+                    "Phone": phone,
+                    "Address": address,
+                    "Business Type": biz_type,
+                    "Marital Status": marital_status,
+                    "Average Monthly Income": monthly_income,
+                    "Other Obligations": other_obs,
+                    "Guarantor Name": g_name,
+                    "Guarantor Nickname": g_nick,
+                    "Guarantor Marital Status": g_marital,
+                    "Guarantor Home Address": g_address,
+                    "Guarantor Occupation": g_occ,
+                    "Guarantor Office Address": g_office,
+                    "Guarantor Phone": g_phone,
+                    "Guarantor Relationship": g_rel,
+                    "Group Name": group_name,
+                    "Group Location": group_loc,
+                    "Group Leader Name": group_leader,
+                    "Group Formation Date": group_date.strftime("%Y-%m-%d"),
+                    "Meeting Day": meeting_day,
+                    "Product Category": product_category,
+                    "Loan Product": product,
+                    "Loan Amount": amount,
+                    "Active Credit": active_credit,
+                    "Loan Repay": final_repay,
+                    "Total Due": active_credit,
+                    "Status": "Pending",
+                    "Processing Fee": processing_fee,
+                    "Pass Book Fee": pass_book_fee,
+                    "Group Savings": group_savings,
+                    "Branch Contingency": branch_contingency
+                }
+                save_new_loan(data)
+                
                 # Perform Rollover Transactions
                 if prev_client_id and savings_available > 0:
                     # Withdraw all savings from old loan
@@ -974,53 +1015,12 @@ elif page == "Loan Origination":
                         "Client Name": name,
                         "Amount Paid": 0,
                         "Officer": assigned_officer,
-                        "Note": "Auto-Deduction of Interest and Initial Payment",
+                        "Note": "Auto-Deduction of Management Fee (Interest + Gap)",
                         "Transaction Type": "Loan",
                         "Withdrawal Amount": required_deduction,
-                        "Markup Paid": setup['interest']
+                        "Mgt Fee Paid": required_deduction
                     }
                     save_repayment(deduct_tx)
-                
-                # Save the new loan to the database
-                data = {
-                    "Client ID": new_client_id,
-                    "Date": current_date_str,
-                    "Branch": BRANCH,
-                    "Officer": assigned_officer,
-                    "Client Name": name,
-                    "Nickname": nickname,
-                    "Phone": phone,
-                    "Address": address,
-                    "Business Type": biz_type,
-                    "Marital Status": marital_status,
-                    "Average Monthly Income": monthly_income,
-                    "Other Obligations": other_obs,
-                    "Guarantor Name": g_name,
-                    "Guarantor Nickname": g_nick,
-                    "Guarantor Marital Status": g_marital,
-                    "Guarantor Home Address": g_address,
-                    "Guarantor Occupation": g_occ,
-                    "Guarantor Office Address": g_office,
-                    "Guarantor Phone": g_phone,
-                    "Guarantor Relationship": g_rel,
-                    "Group Name": group_name,
-                    "Group Location": group_loc,
-                    "Group Leader Name": group_leader,
-                    "Group Formation Date": group_date.strftime("%Y-%m-%d"),
-                    "Meeting Day": meeting_day,
-                    "Product Category": product_category,
-                    "Loan Product": product,
-                    "Loan Amount": amount,
-                    "Active Credit": active_credit,
-                    "Loan Repay": final_repay,
-                    "Total Due": active_credit,
-                    "Status": "Pending",
-                    "Processing Fee": processing_fee,
-                    "Pass Book Fee": pass_book_fee,
-                    "Group Savings": group_savings,
-                    "Branch Contingency": branch_contingency
-                }
-                save_new_loan(data)
                 
                 st.success(f"🎉 Loan Originated Successfully for {name}!")
                 st.balloons()
@@ -1152,20 +1152,10 @@ elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
             savings_dep = col2.number_input("Savings Deposit (₦)", value=int(auto_savings_dep), step=500)
             withdrawal = col3.number_input("Savings Withdrawal (₦)", value=0, step=500)
             
-            f1, f2, f3 = st.columns(3)
-            proc_fee = f1.number_input("Processing Fee (₦)", value=0, step=100)
-            pass_book = f2.number_input("Pass Book (₦)", value=0, step=100)
-            markup_pd = f3.number_input("Markup (₦)", value=0, step=100)
-            
-            o1, o2, o3 = st.columns(3)
-            recovery = o1.number_input("Recovery (₦)", value=0, step=100)
-            mgt_fee = o2.number_input("Mgt Fee (₦)", value=0, step=100)
-            others = o3.number_input("Others (₦)", value=0, step=100)
-            
             note_col = st.text_input("Note", placeholder="e.g. Week 4 Group Collection")
             
             # Auto-calculate total cache layout for sanity check
-            total_cache_in = loan_rep + savings_dep + proc_fee + pass_book + markup_pd + recovery + mgt_fee + others
+            total_cache_in = loan_rep + savings_dep
             st.info(f"**Total Cash From Client Today:** ₦{total_cache_in:,.0f} (Excluding withdrawals)")
             
             if st.form_submit_button("🏦 AUTHORIZE CASH POSTING"):
@@ -1180,13 +1170,13 @@ elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
                     "Transaction Type": "Loan",
                     "Savings Amount": savings_dep,
                     "Loan Repayment Amount": loan_rep,
-                    "Processing Fee Paid": proc_fee,
-                    "Markup Paid": markup_pd,
-                    "Pass Book Paid": pass_book,
-                    "Recovery Amount": recovery,
+                    "Processing Fee Paid": 0,
+                    "Markup Paid": 0,
+                    "Pass Book Paid": 0,
+                    "Recovery Amount": 0,
                     "Withdrawal Amount": withdrawal,
-                    "Mgt Fee Paid": mgt_fee,
-                    "Others Amount": others
+                    "Mgt Fee Paid": 0,
+                    "Others Amount": 0
                 }
                 save_repayment(pay_data)
                 
