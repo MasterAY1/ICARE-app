@@ -587,7 +587,10 @@ with st.sidebar:
     st.divider()
     
     if st.button("🚪 LOGOUT", use_container_width=True):
-        cookie_manager.delete("icare_auth")
+        try:
+            cookie_manager.delete("icare_auth")
+        except KeyError:
+            pass
         st.session_state.clear()
         st.rerun()
 
