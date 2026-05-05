@@ -864,31 +864,33 @@ elif page == "Loan Origination":
         col_int.metric("Interest (Fixed)", f"₦{setup['interest']:,.0f}")
         
         st.markdown("#### Origination Fees & Upfront Savings")
+        
+        # Base automated fees
+        auto_proc = 500
+        auto_group = 1000
+        auto_branch = 1000
+        auto_passbook = 0
+        
         f1, f2, f3 = st.columns(3)
-        processing_fee = f1.number_input("Processing Fee", value=0, step=50)
-        markup = f2.number_input("Markup", value=0, step=50)
-        pass_book_fee = f3.number_input("Pass Book Fee", value=0, step=50)
+        processing_fee = f1.number_input("Processing Fee", value=auto_proc, step=50)
+        group_savings = f2.number_input("Group Savings", value=auto_group, step=500)
+        branch_contingency = f3.number_input("Branch Contingency", value=auto_branch, step=500)
         
-        s1, s2, s3 = st.columns(3)
-        group_savings = s1.number_input("Group Savings", value=0, step=500)
-        branch_contingency = s2.number_input("Branch Contingency", value=0, step=500)
-        branch_contingency_2 = s3.number_input("Branch Contingency 2 (Savings)", value=0, step=500)
+        s1, s2 = st.columns(2)
+        pass_book_fee = s1.number_input("Pass Book Fee (If exhausted)", value=auto_passbook, step=500)
+        extra_savings = s2.number_input("Extra Personal Savings Deposit", value=2500 if not prev_client_id else 0, step=500)
         
-        total_upfront = manual_gap + setup['interest'] + processing_fee + markup + pass_book_fee + group_savings + branch_contingency + branch_contingency_2
-        st.info(f"**Total Upfront to Collect:** ₦{total_upfront:,.0f}")
+        required_deduction = setup['interest'] + manual_gap
+        other_fees = processing_fee + group_savings + branch_contingency + pass_book_fee
         
-        savings_applied = 0.0
-        if prev_client_id and prev_savings > 0:
-            st.markdown(f"**Apply Savings:** You have ₦{prev_savings:,.0f} available.")
-            savings_applied = st.number_input(
-                "Savings to apply towards upfront fees (₦)",
-                value=0.0, max_value=float(prev_savings), step=500.0
-            )
-            remaining_upfront = max(0, total_upfront - savings_applied)
-            if remaining_upfront > 0:
-                st.warning(f"**Remaining Cash to Collect from Client:** ₦{remaining_upfront:,.0f}")
-            else:
-                st.success(f"✅ Savings fully covers the upfront fees! (Leftover transferred to savings)")
+        savings_available = prev_savings if prev_client_id else 0
+        savings_shortfall = max(0, required_deduction - savings_available)
+        
+        total_cash_to_collect = savings_shortfall + other_fees + extra_savings
+        
+        st.info(f"**Total Upfront Cash to Collect from Client:** ₦{total_cash_to_collect:,.0f}")
+        if savings_available > 0:
+            st.success(f"Client has ₦{savings_available:,.0f} in previous savings. We will automatically deduct ₦{min(required_deduction, savings_available):,.0f} from it to cover upfront Interest and Gap.")
         
         active_credit = amount - manual_gap
         raw_repay = active_credit / setup['duration']
@@ -911,7 +913,7 @@ elif page == "Loan Origination":
                 current_date_str = datetime.now().strftime("%Y-%m-%d")
                 
                 # Perform Rollover Transactions
-                if prev_client_id and prev_savings > 0 and (savings_applied > 0 or prev_savings > 0):
+                if prev_client_id and savings_available > 0:
                     # Withdraw all savings from old loan
                     withdraw_data = {
                         "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -922,23 +924,21 @@ elif page == "Loan Origination":
                         "Officer": assigned_officer,
                         "Note": f"Rollover Withdrawal for new loan {new_client_id[:8]}",
                         "Transaction Type": "Savings",
-                        "Withdrawal Amount": prev_savings
+                        "Withdrawal Amount": savings_available
                     }
                     save_repayment(withdraw_data)
                     
-                    # Deposit remaining savings into new loan
-                    leftover_savings = prev_savings - savings_applied
+                    # Deposit all savings into new loan
                     fee_deposit = {
                         "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "Branch": BRANCH,
                         "Client ID": new_client_id,
                         "Client Name": name,
-                        "Amount Paid": savings_applied + leftover_savings,
+                        "Amount Paid": 0,
                         "Officer": assigned_officer,
                         "Note": f"Rollover Transfer from old loan {prev_client_id[:8]}",
                         "Transaction Type": "Savings",
-                        "Savings Amount": leftover_savings,
-                        "Others Amount": savings_applied
+                        "Savings Amount": savings_available
                     }
                     save_repayment(fee_deposit)
                     
@@ -947,6 +947,41 @@ elif page == "Loan Origination":
                     
                     st.toast("Rollover transactions logged & old loan Completed!")
                 
+                # Collect Cash from Client
+                if total_cash_to_collect > 0:
+                    cash_collection = {
+                        "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Branch": BRANCH,
+                        "Client ID": new_client_id,
+                        "Client Name": name,
+                        "Amount Paid": total_cash_to_collect,
+                        "Officer": assigned_officer,
+                        "Note": "Upfront Cash Collection & Savings Deposit",
+                        "Transaction Type": "Loan",
+                        "Savings Amount": savings_shortfall + extra_savings,
+                        "Processing Fee Paid": processing_fee,
+                        "Pass Book Paid": pass_book_fee,
+                        "Others Amount": group_savings + branch_contingency
+                    }
+                    save_repayment(cash_collection)
+                
+                # Auto-Deduct Interest & Gap from Savings
+                if required_deduction > 0:
+                    deduct_tx = {
+                        "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Branch": BRANCH,
+                        "Client ID": new_client_id,
+                        "Client Name": name,
+                        "Amount Paid": 0,
+                        "Officer": assigned_officer,
+                        "Note": "Auto-Deduction of Interest and Initial Payment",
+                        "Transaction Type": "Loan",
+                        "Withdrawal Amount": required_deduction,
+                        "Markup Paid": setup['interest']
+                    }
+                    save_repayment(deduct_tx)
+                
+                # Save the new loan to the database
                 data = {
                     "Client ID": new_client_id,
                     "Date": current_date_str,
@@ -981,32 +1016,17 @@ elif page == "Loan Origination":
                     "Total Due": active_credit,
                     "Status": "Pending",
                     "Processing Fee": processing_fee,
-                    "Markup": markup,
                     "Pass Book Fee": pass_book_fee,
                     "Group Savings": group_savings,
-                    "Branch Contingency": branch_contingency,
-                    "Branch Contingency 2": branch_contingency_2
+                    "Branch Contingency": branch_contingency
                 }
                 save_new_loan(data)
                 
-                # Deposit new Upfront Savings
-                new_savings_deposit = group_savings + branch_contingency_2
-                if new_savings_deposit > 0:
-                    savings_dep = {
-                        "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "Branch": BRANCH,
-                        "Client ID": new_client_id,
-                        "Client Name": name,
-                        "Amount Paid": new_savings_deposit,
-                        "Officer": assigned_officer,
-                        "Note": "Upfront Savings and Contingency 2 Deposit",
-                        "Transaction Type": "Savings",
-                        "Savings Amount": new_savings_deposit
-                    }
-                    save_repayment(savings_dep)
-                    
-                st.success("✅ Application Saved to Database!")
+                st.success(f"🎉 Loan Originated Successfully for {name}!")
                 st.balloons()
+                import time
+                time.sleep(2)
+                st.rerun()
 
 elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
     st.title(f"📂 {page}")
