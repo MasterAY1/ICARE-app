@@ -1,4 +1,4 @@
-streamlit==1.32.0
+﻿streamlit==1.32.0
 pandas==2.2.0
 numpy==1.26.4
 supabase
@@ -13,3 +13,4 @@ plotly==5.19.0
 python-dotenv==1.0.1
 uuid-utils==0.9.0
 holidays
+extra-streamlit-components==0.1.71

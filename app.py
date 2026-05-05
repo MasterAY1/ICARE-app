@@ -8,6 +8,7 @@ import sys
 import os
 import holidays
 from pandas.tseries.offsets import CustomBusinessDay
+import extra_streamlit_components as stx
 
 # 🚨 THE ABSOLUTE FIRST COMMAND 🚨
 st.set_page_config(
@@ -46,8 +47,8 @@ supabase = init_connection()
 USERS = {
     "admin": {"pass": "1234", "role": "Admin", "branch": "Global", "name": "System Admin"},
     "bm": {"pass": "1234", "role": "BM", "branch": "Lagos", "name": "Lagos Manager"},
-    "john": {"pass": "1234", "role": "Officer", "branch": "Lagos", "name": "John"},
-    "jane": {"pass": "1234", "role": "Officer", "branch": "Lagos", "name": "Jane"}
+    "co2": {"pass": "1234", "role": "Officer", "branch": "Lagos", "name": "CO2"},
+    "co1": {"pass": "1234", "role": "Officer", "branch": "Lagos", "name": "CO1"}
 }
 
 # Custom CSS for professional styling
@@ -508,8 +509,22 @@ def get_ledger_report(client_payments, fixed_repay, loan_product, meeting_day, v
     return pd.DataFrame(report_data)
 
 # --- 4. AUTHENTICATION ---
-if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
+@st.cache_resource(experimental_allow_widgets=True)
+def get_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_manager()
+
+# Try to restore session from cookie
+if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
+    auth_token = cookie_manager.get(cookie="icare_auth")
+    if auth_token and auth_token in USERS:
+        st.session_state['logged_in'] = True
+        st.session_state['user'] = USERS[auth_token]['name']
+        st.session_state['role'] = USERS[auth_token]['role']
+        st.session_state['branch'] = USERS[auth_token]['branch']
+    else:
+        st.session_state['logged_in'] = False
 
 if not st.session_state['logged_in']:
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -529,8 +544,12 @@ if not st.session_state['logged_in']:
                 submitted = st.form_submit_button("LOGIN", use_container_width=True)
             
             if submitted:
-                user_data = USERS.get(username.lower())
+                user_key = username.lower()
+                user_data = USERS.get(user_key)
                 if user_data and user_data['pass'] == pw:
+                    # Set cookie to persist login
+                    cookie_manager.set("icare_auth", user_key, expires_at=datetime.now() + timedelta(days=7))
+                    
                     st.session_state['logged_in'] = True
                     st.session_state['user'] = user_data['name']
                     st.session_state['role'] = user_data['role']
@@ -539,7 +558,7 @@ if not st.session_state['logged_in']:
                 else:
                     st.error("❌ Invalid Username or Password")
         
-        st.markdown("<p style='text-align: center; color: #999; font-size: 0.8rem;'>Demo: admin/bm/john/jane (Password: 1234)</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #999; font-size: 0.8rem;'>Demo: admin/bm/co1/co2 (Password: 1234)</p>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
@@ -572,6 +591,7 @@ with st.sidebar:
     st.divider()
     
     if st.button("🚪 LOGOUT", use_container_width=True):
+        cookie_manager.delete("icare_auth")
         st.session_state.clear()
         st.rerun()
 
@@ -839,7 +859,7 @@ elif page == "Loan Origination":
         group_date = gr5.date_input("Date of Formation", defaults["GroupDate"])
         
         if ROLE in ["Admin", "BM"]:
-            assigned_officer = st.selectbox("Assign to Officer:", ["John", "Jane"])
+            assigned_officer = st.selectbox("Assign to Officer:", ["CO1", "CO2"])
         else:
             st.write(f"**Assigned Officer:** {USER}")
             assigned_officer = USER
@@ -1319,7 +1339,7 @@ elif page in ["Portfolio Management", "Global Portfolio Management"]:
                 "Status": st.column_config.SelectboxColumn("Status", options=["Pending", "Approved", "Active", "Completed"]),
                 "Meeting Day": st.column_config.SelectboxColumn("Meeting Day", options=["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]),
                 "Branch": st.column_config.TextColumn("Branch", disabled=(ROLE != "Admin")),
-                "Officer": st.column_config.SelectboxColumn("Officer", options=["John", "Jane", "System Admin"], disabled=(ROLE == "Officer")),
+                "Officer": st.column_config.SelectboxColumn("Officer", options=["CO1", "CO2", "System Admin"], disabled=(ROLE == "Officer")),
                 "Loan Balance": st.column_config.NumberColumn("Balance", disabled=True, format="₦%d"),
                 "Acc. Savings": st.column_config.NumberColumn("Savings", disabled=True, format="₦%d"),
                 "Overdue": st.column_config.NumberColumn("Overdue", disabled=True, format="₦%d"),
