@@ -786,7 +786,7 @@ elif page == "Loan Origination":
         else:
             st.warning("No existing clients found in the database.")
             
-    with st.form("app_form"):
+    with st.container():
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.subheader("1. Member's Data")
         c1, c2, c3 = st.columns(3)
@@ -903,7 +903,7 @@ elif page == "Loan Origination":
         
         col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
         with col_btn2:
-            submitted = st.form_submit_button("📝 ORIGINATE LOAN", use_container_width=True)
+            submitted = st.button("📝 ORIGINATE LOAN", use_container_width=True)
         
         if submitted:
             if not name or not phone:
