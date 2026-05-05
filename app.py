@@ -509,11 +509,7 @@ def get_ledger_report(client_payments, fixed_repay, loan_product, meeting_day, v
     return pd.DataFrame(report_data)
 
 # --- 4. AUTHENTICATION ---
-@st.cache_resource
-def get_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_manager()
+cookie_manager = stx.CookieManager(key="icare_cookies")
 
 # Try to restore session from cookie
 if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
