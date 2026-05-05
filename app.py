@@ -515,7 +515,7 @@ if not st.session_state['logged_in']:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("<h1 style='text-align: center;'>🏦 TrustMicro Credit</h1>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='text-align: center;'>🌱 {COMPANY_NAME}</h1>", unsafe_allow_html=True)
         st.markdown("<h3 style='text-align: center; color: #666;'>Loan Management System</h3>", unsafe_allow_html=True)
         st.markdown("<hr>", unsafe_allow_html=True)
         
@@ -1061,6 +1061,9 @@ elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
         st.markdown(f"<h3>👤 {client_loan['Client Name']} | <span style='color: #666;'>{prod_type}</span></h3>", unsafe_allow_html=True)
         if "Weekly" in str(prod_type):
             st.caption(f"🗓️ Meets on: **{meet_day}**")
+            
+        if loan_balance_left <= 0:
+            st.success("🎉 **FULLY PAID!** This client has completely paid off their active loan balance!")
         
         # Client metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -1166,7 +1169,15 @@ elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
                     "Others Amount": others
                 }
                 save_repayment(pay_data)
+                
+                # Check if this exact payment pays them off!
+                if loan_balance_left - loan_rep <= 0 and loan_balance_left > 0:
+                    st.balloons()
+                    
                 st.success("✅ Detailed Collection Recorded Globally!")
+                
+                import time
+                time.sleep(1.5) # Slight delay to let the user see the success/balloons
                 st.rerun()
 
 elif page == "Daily Collections Report":
