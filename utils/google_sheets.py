@@ -17,9 +17,9 @@ def get_google_credentials():
         if "GOOGLE_CREDENTIALS" not in st.secrets:
             return None, None
         
-        # Pull string and parse
+        # Pull string and parse (strict=False allows literal newlines often found in TOML secrets)
         creds_str = st.secrets["GOOGLE_CREDENTIALS"]
-        creds_info = json.loads(creds_str)
+        creds_info = json.loads(creds_str, strict=False)
         creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
         return creds, creds_info
     except Exception as e:
