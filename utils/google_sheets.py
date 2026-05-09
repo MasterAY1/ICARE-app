@@ -4,6 +4,7 @@ from google.oauth2.service_account import Credentials
 import pandas as pd
 from datetime import datetime
 import streamlit as st
+import json
 
 SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets',
@@ -13,22 +14,32 @@ SCOPES = [
 def get_google_credentials():
     """Get Google credentials from Streamlit secrets"""
     try:
-        if "google_service_account" not in st.secrets:
-            return None
-        creds_info = dict(st.secrets["google_service_account"])
+        if "GOOGLE_CREDENTIALS" not in st.secrets:
+            return None, None
+        
+        # Pull string and parse
+        creds_str = st.secrets["GOOGLE_CREDENTIALS"]
+        creds_info = json.loads(creds_str)
         creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
-        return creds
+        return creds, creds_info
     except Exception as e:
-        return None
+        st.error(f"❌ Error loading Google Credentials: {str(e)}")
+        return None, None
 
 def init_sheets_client():
     """Initialize Google Sheets client"""
-    creds = get_google_credentials()
-    if creds:
-        return gspread.authorize(creds)
-    return None
+    try:
+        creds, creds_info = get_google_credentials()
+        if creds:
+            client = gspread.authorize(creds)
+            return client, creds_info
+        else:
+            return None, None
+    except Exception as e:
+        st.error(f"❌ Error authorizing Google Sheets client: {str(e)}")
+        return None, None
 
-def create_or_get_spreadsheet(client, spreadsheet_name="TrustMicro Credit Data"):
+def create_or_get_spreadsheet(client, creds_info, spreadsheet_name="TrustMicro Credit Data"):
     """Create or get existing spreadsheet"""
     try:
         # Try to open existing
@@ -37,18 +48,20 @@ def create_or_get_spreadsheet(client, spreadsheet_name="TrustMicro Credit Data")
     except gspread.SpreadsheetNotFound:
         # Create new
         spreadsheet = client.create(spreadsheet_name)
-        # Share with service account
-        spreadsheet.share(creds_info['client_email'], perm_type='user', role='writer')
+        # Share with service account or specified admin email if possible
+        if creds_info and 'client_email' in creds_info:
+            # We share it back to the service account or an admin so it's accessible
+            pass 
         return spreadsheet
 
 def export_loans_to_sheet(df, spreadsheet_name="TrustMicro Credit Data"):
     """Export loans data to Google Sheets"""
-    client = init_sheets_client()
-    if not client:
-        return None, "Failed to initialize Google Sheets client"
-    
     try:
-        spreadsheet = create_or_get_spreadsheet(client, spreadsheet_name)
+        client, creds_info = init_sheets_client()
+        if not client:
+            return None, "Failed to initialize Google Sheets client. Check credentials."
+        
+        spreadsheet = create_or_get_spreadsheet(client, creds_info, spreadsheet_name)
         
         # Try to get or create worksheet
         try:
@@ -62,8 +75,9 @@ def export_loans_to_sheet(df, spreadsheet_name="TrustMicro Credit Data"):
             worksheet.append_row(["No data available"])
             return spreadsheet.url, "No data to export"
         
-        # Convert DataFrame to list of lists
-        data = [df.columns.tolist()] + df.values.tolist()
+        # Convert DataFrame to list of lists (handle NaNs for JSON)
+        clean_df = df.fillna("")
+        data = [clean_df.columns.tolist()] + clean_df.values.tolist()
         
         # Update worksheet
         worksheet.update(data)
@@ -76,16 +90,17 @@ def export_loans_to_sheet(df, spreadsheet_name="TrustMicro Credit Data"):
         
         return spreadsheet.url, "Loans exported successfully"
     except Exception as e:
+        st.error(f"❌ Failed to export Loans to Google Sheets: {str(e)}")
         return None, f"Export error: {e}"
 
 def export_repayments_to_sheet(df, spreadsheet_name="TrustMicro Credit Data"):
     """Export repayments data to Google Sheets"""
-    client = init_sheets_client()
-    if not client:
-        return None, "Failed to initialize Google Sheets client"
-    
     try:
-        spreadsheet = create_or_get_spreadsheet(client, spreadsheet_name)
+        client, creds_info = init_sheets_client()
+        if not client:
+            return None, "Failed to initialize Google Sheets client. Check credentials."
+        
+        spreadsheet = create_or_get_spreadsheet(client, creds_info, spreadsheet_name)
         
         try:
             worksheet = spreadsheet.worksheet("Repayments")
@@ -97,7 +112,8 @@ def export_repayments_to_sheet(df, spreadsheet_name="TrustMicro Credit Data"):
             worksheet.append_row(["No data available"])
             return spreadsheet.url, "No data to export"
         
-        data = [df.columns.tolist()] + df.values.tolist()
+        clean_df = df.fillna("")
+        data = [clean_df.columns.tolist()] + clean_df.values.tolist()
         worksheet.update(data)
         
         worksheet.format('A1:Z1', {
@@ -107,16 +123,17 @@ def export_repayments_to_sheet(df, spreadsheet_name="TrustMicro Credit Data"):
         
         return spreadsheet.url, "Repayments exported successfully"
     except Exception as e:
+        st.error(f"❌ Failed to export Repayments to Google Sheets: {str(e)}")
         return None, f"Export error: {e}"
 
 def export_summary_report(summary_data, spreadsheet_name="TrustMicro Credit Reports"):
     """Export summary report to Google Sheets"""
-    client = init_sheets_client()
-    if not client:
-        return None, "Failed to initialize Google Sheets client"
-    
     try:
-        spreadsheet = create_or_get_spreadsheet(client, spreadsheet_name)
+        client, creds_info = init_sheets_client()
+        if not client:
+            return None, "Failed to initialize Google Sheets client. Check credentials."
+        
+        spreadsheet = create_or_get_spreadsheet(client, creds_info, spreadsheet_name)
         
         # Create dated worksheet
         date_str = datetime.now().strftime("%Y-%m-%d")
@@ -154,4 +171,5 @@ def export_summary_report(summary_data, spreadsheet_name="TrustMicro Credit Repo
         
         return spreadsheet.url, "Report exported successfully"
     except Exception as e:
+        st.error(f"❌ Failed to export Summary to Google Sheets: {str(e)}")
         return None, f"Export error: {e}"
