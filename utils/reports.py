@@ -331,14 +331,9 @@ def generate_saving_withdrawal_df(loans_df):
         })
     return pd.DataFrame(data)
 
-def generate_monthly_savings_df():
-    return pd.DataFrame(columns=["Date", "Actual Deposits", "Savings Withdrawal", "Savings return", "Balance"])
-
-def generate_monthly_credit_df():
-    return pd.DataFrame(columns=["Date", "Credit Amount", "Excess Amount", "Actual Collection", "Credit Balance"])
-
 def export_to_excel(loans_df, repayments_df, filename="trustmicro_export.xlsx"):
     """Export data to Excel file"""
+    import os
     try:
         with pd.ExcelWriter(filename, engine='openpyxl') as writer:
             # Standard sheets
@@ -348,11 +343,35 @@ def export_to_excel(loans_df, repayments_df, filename="trustmicro_export.xlsx"):
             summary = generate_portfolio_summary(loans_df, repayments_df)
             pd.DataFrame([summary]).to_excel(writer, sheet_name='Summary', index=False)
             
-            # --- CUSTOM MANUAL TEMPLATES ---
-            generate_daily_collection_df(repayments_df).to_excel(writer, sheet_name='Daily Collection', index=False)
-            generate_saving_withdrawal_df(loans_df).to_excel(writer, sheet_name='Saving Withdrawal', index=False)
-            generate_monthly_savings_df().to_excel(writer, sheet_name='Monthly Savings', index=False)
-            generate_monthly_credit_df().to_excel(writer, sheet_name='Monthly Credit', index=False)
+            # --- CUSTOM MANUAL TEMPLATES FROM CSV ---
+            products = ["Daily", "12 Weeks", "24 Weeks"]
+            
+            for prod in products:
+                short_prod = prod.replace(' Weeks', 'W')
+                prod_loans = loans_df[loans_df['Loan Product'].astype(str).str.contains(prod, na=False)]
+                
+                # 1. Savings
+                if os.path.exists('Savings.csv'):
+                    sav_df = pd.read_csv('Savings.csv', header=None)
+                    sav_df.to_excel(writer, sheet_name=f'Sav {short_prod}', index=False, header=False)
+                    
+                # 2. Credit
+                if os.path.exists('Credit.csv'):
+                    cred_df = pd.read_csv('Credit.csv', header=None)
+                    cred_df.to_excel(writer, sheet_name=f'Cred {short_prod}', index=False, header=False)
+                    
+                # 3. Groupwise
+                if os.path.exists('groupwise.csv'):
+                    grp_df = pd.read_csv('groupwise.csv', header=None)
+                    groups = prod_loans['Group Name'].dropna().unique()
+                    
+                    # Fill group names starting at row 5 (0-indexed)
+                    start_row = 5
+                    for i, group in enumerate(groups):
+                        if start_row + i < len(grp_df):
+                            grp_df.iloc[start_row + i, 0] = group
+                            
+                    grp_df.to_excel(writer, sheet_name=f'Grp {short_prod}', index=False, header=False)
             
             # Get workbook and apply formatting
             workbook = writer.book
@@ -361,15 +380,13 @@ def export_to_excel(loans_df, repayments_df, filename="trustmicro_export.xlsx"):
             def style_header(ws_name):
                 if ws_name in writer.sheets:
                     ws = writer.sheets[ws_name]
-                    for cell in ws[1]:
-                        cell.font = cell.font.copy(bold=True)
-                        if 'Raw' in ws_name or ws_name == 'Summary':
+                    # Only style raw data sheets
+                    if 'Raw' in ws_name or ws_name == 'Summary':
+                        for cell in ws[1]:
+                            cell.font = cell.font.copy(bold=True)
                             cell.fill = cell.fill.copy(patternType='solid', fgColor='003366')
-                        else:
-                            # Light gray for templates
-                            cell.fill = cell.fill.copy(patternType='solid', fgColor='D9D9D9')
 
-            for sheet in ['Raw_Loans', 'Raw_Repayments', 'Daily Collection', 'Saving Withdrawal', 'Monthly Savings', 'Monthly Credit']:
+            for sheet in ['Raw_Loans', 'Raw_Repayments', 'Summary']:
                 style_header(sheet)
                 
         return True, filename
