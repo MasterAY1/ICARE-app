@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import math
 import uuid
+import hashlib
 from supabase import create_client, Client
 import sys
 import os
@@ -29,7 +30,7 @@ from utils.reports import (
 
 # --- 1. CONFIGURATION & CLOUD DB SETUP ---
 COMPANY_NAME = "ICARE Microfinance"
-APP_VERSION = "2.5.0"
+APP_VERSION = "3.0.0"
 
 # Initialize Supabase
 @st.cache_resource
@@ -44,60 +45,107 @@ def init_connection():
 
 supabase = init_connection()
 
-USERS = {
-    "admin": {"pass": "1234", "role": "Admin", "branch": "Global", "name": "System Admin"},
-    "bm": {"pass": "1234", "role": "BM", "branch": "Lagos", "name": "Lagos Manager"},
-    "co2": {"pass": "1234", "role": "Officer", "branch": "Lagos", "name": "CO2"},
-    "co1": {"pass": "1234", "role": "Officer", "branch": "Lagos", "name": "CO1"}
-}
+# --- PASSWORD HASHING ---
+def hash_password(password: str, salt: str) -> str:
+    combined = f"{salt}{password}".encode('utf-8')
+    return hashlib.sha256(combined).hexdigest()
 
-# Custom CSS for professional styling
+def authenticate_user(username: str, password: str):
+    """Authenticate user against Supabase app_users table with hashed passwords."""
+    if not supabase:
+        return None
+    try:
+        res = supabase.table("app_users").select("*").eq("username", username.lower()).eq("is_active", True).execute()
+        if res.data and len(res.data) > 0:
+            user = res.data[0]
+            computed = hash_password(password, user['salt'])
+            if computed == user['password_hash']:
+                # Update last_login
+                try:
+                    supabase.table("app_users").update({"last_login": datetime.now().isoformat()}).eq("username", username.lower()).execute()
+                except:
+                    pass
+                return {
+                    'name': user['display_name'],
+                    'role': user['role'],
+                    'branch': user['branch']
+                }
+    except:
+        pass
+    # Fallback to hardcoded users (for initial setup before DB table exists)
+    FALLBACK_USERS = {
+        "admin": {"pass": "1234", "role": "Admin", "branch": "Global", "name": "System Admin"},
+        "bm": {"pass": "1234", "role": "BM", "branch": "Lagos", "name": "Lagos Manager"},
+        "co2": {"pass": "1234", "role": "Officer", "branch": "Lagos", "name": "CO2"},
+        "co1": {"pass": "1234", "role": "Officer", "branch": "Lagos", "name": "CO1"}
+    }
+    fb = FALLBACK_USERS.get(username.lower())
+    if fb and fb['pass'] == password:
+        return {'name': fb['name'], 'role': fb['role'], 'branch': fb['branch']}
+    return None
+
+# Lookup user info by username (for cookie restore)
+def get_user_info(username: str):
+    if not supabase:
+        return None
+    try:
+        res = supabase.table("app_users").select("display_name, role, branch").eq("username", username.lower()).eq("is_active", True).execute()
+        if res.data and len(res.data) > 0:
+            u = res.data[0]
+            return {'name': u['display_name'], 'role': u['role'], 'branch': u['branch']}
+    except:
+        pass
+    # Fallback
+    FALLBACK_USERS = {
+        "admin": {"role": "Admin", "branch": "Global", "name": "System Admin"},
+        "bm": {"role": "BM", "branch": "Lagos", "name": "Lagos Manager"},
+        "co2": {"role": "Officer", "branch": "Lagos", "name": "CO2"},
+        "co1": {"role": "Officer", "branch": "Lagos", "name": "CO1"}
+    }
+    return FALLBACK_USERS.get(username.lower())
+
+# Custom CSS — ICARE Banking Design System v3.0
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     
+    /* === BASE === */
     .stApp { 
-        background: linear-gradient(135deg, #f4f6f5 0%, #e8edea 100%);
-        font-family: 'Inter', sans-serif !important;
+        background: #F0F2F5 !important;
+        font-family: 'Inter', -apple-system, sans-serif !important;
     }
-    h1, h2, h3, h4 { 
-        color: #0F4C3A !important; 
-        font-family: 'Inter', sans-serif;
-        font-weight: 800;
-        letter-spacing: -0.5px;
-    }
+    h1 { color: #0A1628 !important; font-weight: 800; font-size: 1.8rem; letter-spacing: -0.5px; }
+    h2 { color: #0A1628 !important; font-weight: 700; font-size: 1.4rem; }
+    h3 { color: #1A1D23 !important; font-weight: 700; font-size: 1.15rem; }
+    h4 { color: #1A1D23 !important; font-weight: 600; font-size: 1rem; }
+    
+    /* === METRICS === */
     .stMetric {
-        background: rgba(255, 255, 255, 0.9);
-        backdrop-filter: blur(10px);
+        background: #FFFFFF;
         border-radius: 12px;
         padding: 18px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.02);
-        border: 1px solid rgba(15, 76, 58, 0.1);
-        transition: transform 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+        border: 1px solid #E5E7EB;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
-    .stMetric:hover {
-        transform: translateY(-2px);
-    }
-    div[data-testid="stMetricValue"] { 
-        color: #0F4C3A !important;
-        font-size: 1.8rem;
-        font-weight: 800;
-    }
-    div[data-testid="stMetricLabel"] { 
-        color: #556B60 !important;
-        font-size: 0.95rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
+    .stMetric:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    div[data-testid="stMetricValue"] { color: #0A1628 !important; font-size: 1.7rem; font-weight: 800; }
+    div[data-testid="stMetricLabel"] { color: #6B7280 !important; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    
+    /* === INPUTS === */
     .stTextInput input, .stNumberInput input, .stSelectbox div, 
     .stTextArea textarea, .stDateInput input {
-        background-color: #ffffff !important;
-        color: #1a1a1a !important;
-        border: 1px solid #dcdfe3;
+        background-color: #FFFFFF !important;
+        color: #1A1D23 !important;
+        border: 1px solid #D1D5DB;
         border-radius: 8px;
-        box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);
     }
+    .stTextInput input:focus, .stNumberInput input:focus {
+        border-color: #0F4C3A !important;
+        box-shadow: 0 0 0 3px rgba(15, 76, 58, 0.1) !important;
+    }
+    
+    /* === BUTTONS === */
     .stButton > button { 
         background: linear-gradient(135deg, #0F4C3A 0%, #156B51 100%) !important;
         color: white !important;
@@ -105,85 +153,137 @@ st.markdown("""
         border: none;
         height: 2.8em;
         border-radius: 8px;
-        transition: all 0.3s ease;
-        box-shadow: 0 2px 4px rgba(15, 76, 58, 0.2);
+        transition: all 0.25s ease;
+        box-shadow: 0 2px 4px rgba(15, 76, 58, 0.15);
+        letter-spacing: 0.3px;
     }
     .stButton > button:hover { 
         background: linear-gradient(135deg, #156B51 0%, #1A8A68 100%) !important;
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(15, 76, 58, 0.3);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(15, 76, 58, 0.25);
     }
-    .stButton > button[kind="secondary"] {
-        background: white !important;
-        color: #0F4C3A !important;
-        border: 2px solid #0F4C3A !important;
-        box-shadow: none;
-    }
-    .stButton > button[kind="secondary"]:hover {
-        background: #f0fdf4 !important;
-    }
+    .stButton > button:active { transform: translateY(0); }
+    
+    /* === TABLES === */
     div[data-testid="stDataFrame"] { 
-        background-color: white !important;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.04);
-        border: 1px solid rgba(15, 76, 58, 0.05);
+        background-color: #FFFFFF !important;
+        border-radius: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        border: 1px solid #E5E7EB;
     }
-    .sidebar .sidebar-content {
-        background: linear-gradient(180deg, #0F4C3A 0%, #08291F 100%);
+    
+    /* === SIDEBAR === */
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0A1628 0%, #060E1A 100%) !important;
     }
-    .stAlert {
-        border-radius: 12px;
-        border-left: 4px solid #D4AF37;
+    section[data-testid="stSidebar"] .stRadio label { 
+        color: #CBD5E1 !important; 
+        font-weight: 500;
+        transition: color 0.2s;
     }
+    section[data-testid="stSidebar"] .stRadio label:hover { color: #FFFFFF !important; }
+    
+    /* === ALERTS === */
+    .stAlert { border-radius: 10px; }
+    
+    /* === CARDS === */
     .card {
-        background: white;
-        border-radius: 16px;
+        background: #FFFFFF;
+        border-radius: 14px;
         padding: 24px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-        margin-bottom: 24px;
-        border: 1px solid rgba(0,0,0,0.03);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+        margin-bottom: 20px;
+        border: 1px solid #E5E7EB;
     }
     .metric-card {
-        background: white;
+        background: #FFFFFF;
         border-radius: 12px;
-        padding: 24px;
+        padding: 22px;
         text-align: center;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.04);
-        border-top: 4px solid #D4AF37;
-        transition: transform 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        border-top: 3px solid #C8A951;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
     .metric-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 8px 15px rgba(0,0,0,0.06);
+        transform: translateY(-3px);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.08);
     }
-    .metric-value {
-        font-size: 2.2rem;
-        font-weight: 800;
-        color: #0F4C3A;
-        letter-spacing: -1px;
+    .metric-value { font-size: 2rem; font-weight: 800; color: #0A1628; letter-spacing: -0.5px; }
+    .metric-label { font-size: 0.8rem; color: #6B7280; margin-top: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    
+    /* === STATUS BADGES === */
+    .status-badge { display: inline-block; padding: 5px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.3px; }
+    .status-pending { background: #FEF3C7; color: #92400E; }
+    .status-approved { background: #D1FAE5; color: #065F46; }
+    .status-active { background: #DBEAFE; color: #1E40AF; }
+    .status-completed { background: #F3F4F6; color: #374151; }
+    .status-closed { background: #FEE2E2; color: #991B1B; }
+    
+    /* === WELCOME BANNER === */
+    .welcome-banner {
+        background: linear-gradient(135deg, #0A1628 0%, #0F4C3A 100%);
+        border-radius: 14px;
+        padding: 28px 32px;
+        color: white;
+        margin-bottom: 24px;
     }
-    .metric-label {
-        font-size: 0.9rem;
-        color: #556B60;
-        margin-top: 8px;
-        font-weight: 600;
+    .welcome-banner h2 { color: white !important; margin: 0; font-size: 1.4rem; }
+    .welcome-banner p { color: #94A3B8; margin: 6px 0 0 0; font-size: 0.9rem; }
+    .welcome-banner .wb-gold { color: #C8A951; font-weight: 600; }
+    
+    /* === LOGIN === */
+    .login-hero {
+        background: linear-gradient(160deg, #0A1628 0%, #0F4C3A 100%);
+        border-radius: 16px;
+        padding: 48px 36px;
+        min-height: 420px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        color: white;
+    }
+    .login-hero h1 { color: white !important; font-size: 2.5rem; margin-bottom: 4px; letter-spacing: 3px; }
+    .login-hero .org-name { color: #94A3B8; font-size: 0.85rem; line-height: 1.5; margin-top: 8px; }
+    .login-hero .version-tag { color: #C8A951; font-size: 0.8rem; font-weight: 600; margin-top: 20px; letter-spacing: 1px; }
+    .login-hero .gold-line { width: 60px; height: 3px; background: #C8A951; margin: 20px 0; border-radius: 2px; }
+    .login-hero .footer-text { color: #475569; font-size: 0.75rem; margin-top: 32px; }
+    
+    .login-form-panel {
+        background: white;
+        border-radius: 16px;
+        padding: 40px 36px;
+        border: 1px solid #E5E7EB;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+    }
+    .login-form-panel h2 { color: #0A1628 !important; font-size: 1.6rem; margin-bottom: 4px; }
+    .login-form-panel .subtitle { color: #6B7280; font-size: 0.9rem; margin-bottom: 24px; }
+    
+    /* === SECTION HEADERS === */
+    .section-header {
+        border-left: 4px solid #C8A951;
+        padding-left: 14px;
+        margin: 20px 0 14px 0;
+    }
+    .section-header h3 { margin: 0; font-size: 1.1rem; }
+    
+    /* === NAV GROUP LABELS === */
+    .nav-section-label {
+        color: #475569 !important;
+        font-size: 0.65rem !important;
+        font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 1.5px;
+        padding: 8px 0 4px 0;
+        margin: 0;
     }
-    .status-badge {
-        display: inline-block;
-        padding: 6px 14px;
-        border-radius: 20px;
-        font-size: 0.8rem;
+    
+    /* === TABS === */
+    .stTabs [data-baseweb="tab-list"] { gap: 4px; }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px 8px 0 0;
         font-weight: 600;
-        letter-spacing: 0.3px;
+        font-size: 0.85rem;
     }
-    .status-pending { background: #fef3c7; color: #92400e; }
-    .status-approved { background: #d1fae5; color: #065f46; }
-    .status-active { background: #dbeafe; color: #1e40af; }
-    .status-completed { background: #f3f4f6; color: #374151; }
-    .status-closed { background: #fee2e2; color: #991b1b; }
-    .status-internal-account { background: #f1f5f9; color: #475569; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -514,48 +614,58 @@ cookie_manager = stx.CookieManager(key="icare_cookies")
 # Try to restore session from cookie
 if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
     auth_token = cookie_manager.get(cookie="icare_auth")
-    if auth_token and auth_token in USERS:
-        st.session_state['logged_in'] = True
-        st.session_state['user'] = USERS[auth_token]['name']
-        st.session_state['role'] = USERS[auth_token]['role']
-        st.session_state['branch'] = USERS[auth_token]['branch']
+    if auth_token:
+        user_info = get_user_info(auth_token)
+        if user_info:
+            st.session_state['logged_in'] = True
+            st.session_state['user'] = user_info['name']
+            st.session_state['role'] = user_info['role']
+            st.session_state['branch'] = user_info['branch']
+        else:
+            st.session_state['logged_in'] = False
     else:
         st.session_state['logged_in'] = False
 
 if not st.session_state['logged_in']:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown(f"<h1 style='text-align: center;'>🌱 {COMPANY_NAME}</h1>", unsafe_allow_html=True)
-        st.markdown("<h3 style='text-align: center; color: #666;'>Loan Management System</h3>", unsafe_allow_html=True)
-        st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    hero_col, form_col = st.columns([2, 3])
+    
+    with hero_col:
+        st.markdown("""
+            <div class='login-hero'>
+                <h1>ICARE</h1>
+                <p class='org-name'>Initiative for Community Advancement,<br>Relief and Empowerment</p>
+                <div class='gold-line'></div>
+                <p class='version-tag'>CORE BANKING SYSTEM v3.0</p>
+                <p class='footer-text'>Empowering communities since 2015</p>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with form_col:
+        st.markdown("""
+            <div class='login-form-panel'>
+                <h2>Welcome Back</h2>
+                <p class='subtitle'>Sign in to your account</p>
+            </div>
+        """, unsafe_allow_html=True)
         
         with st.form("login"):
-            st.markdown("<h4>🔐 System Login</h4>", unsafe_allow_html=True)
-            username = st.text_input("Username", placeholder="Enter username")
-            pw = st.text_input("Password", type="password", placeholder="Enter password")
+            username = st.text_input("Username", placeholder="Enter your username")
+            pw = st.text_input("Password", type="password", placeholder="Enter your password")
             
-            col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
-            with col_btn2:
-                submitted = st.form_submit_button("LOGIN", use_container_width=True)
+            submitted = st.form_submit_button("SIGN IN", use_container_width=True)
             
             if submitted:
-                user_key = username.lower()
-                user_data = USERS.get(user_key)
-                if user_data and user_data['pass'] == pw:
-                    # Set cookie to persist login
-                    cookie_manager.set("icare_auth", user_key, expires_at=datetime.now() + timedelta(days=7))
-                    
+                auth_result = authenticate_user(username, pw)
+                if auth_result:
+                    cookie_manager.set("icare_auth", username.lower(), expires_at=datetime.now() + timedelta(days=7))
                     st.session_state['logged_in'] = True
-                    st.session_state['user'] = user_data['name']
-                    st.session_state['role'] = user_data['role']
-                    st.session_state['branch'] = user_data['branch']
+                    st.session_state['user'] = auth_result['name']
+                    st.session_state['role'] = auth_result['role']
+                    st.session_state['branch'] = auth_result['branch']
                     st.rerun()
                 else:
-                    st.error("❌ Invalid Username or Password")
-        
-        st.markdown("<p style='text-align: center; color: #999; font-size: 0.8rem;'>Demo: admin/bm/co1/co2 (Password: 1234)</p>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+                    st.error("❌ Invalid credentials. Please try again.")
     st.stop()
 
 # --- 5. SIDEBAR ---
@@ -563,30 +673,44 @@ ROLE = st.session_state['role']
 USER = st.session_state['user']
 BRANCH = st.session_state['branch']
 
+# Role badge colors
+role_colors = {"Admin": "#C8A951", "BM": "#3B82F6", "Officer": "#059669"}
+role_color = role_colors.get(ROLE, "#6B7280")
+
 with st.sidebar:
-    st.markdown(f"<h2 style='color: white;'>🏦 {COMPANY_NAME}</h2>", unsafe_allow_html=True)
-    st.markdown(f"<p style='color: #ccc; font-size: 0.8rem;'>v{APP_VERSION}</p>", unsafe_allow_html=True)
+    st.markdown(f"""
+        <div style='text-align: center; padding: 12px 0 4px 0;'>
+            <h2 style='color: white !important; font-size: 1.2rem; margin: 0; letter-spacing: 1px;'>🏦 ICARE</h2>
+            <p style='color: #475569; font-size: 0.65rem; margin: 4px 0 0 0; letter-spacing: 1px;'>CORE BANKING v{APP_VERSION}</p>
+        </div>
+    """, unsafe_allow_html=True)
     st.divider()
     
     st.markdown(f"""
-        <div style='background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin-bottom: 15px;'>
-            <p style='color: white; margin: 0; font-size: 1rem;'>👤 <strong>{USER}</strong></p>
-            <p style='color: #ccc; margin: 5px 0 0 0; font-size: 0.85rem;'>🛡️ {ROLE} | 📍 {BRANCH}</p>
+        <div style='background: rgba(255,255,255,0.06); padding: 14px 16px; border-radius: 10px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.05);'>
+            <p style='color: white; margin: 0; font-size: 0.95rem; font-weight: 600;'>👤 {USER}</p>
+            <p style='color: #94A3B8; margin: 6px 0 0 0; font-size: 0.8rem;'>
+                <span style='background: {role_color}; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600;'>{ROLE}</span>
+                &nbsp; 📍 {BRANCH}
+            </p>
         </div>
     """, unsafe_allow_html=True)
     
-    st.divider()
-    
     if ROLE == "Officer":
-        nav_options = ["Dashboard", "Loan Origination", "Collections & Arrears", "Daily Collections Report", "Portfolio Management", "Loan Calculator", "Reports"]
-    else:
-        nav_options = ["Branch Dashboard", "Loan Origination", "Branch Audit Ledger", "Daily Collections Report", "Credit Cash Book", "Global Portfolio Management", "Loan Calculator", "Compliance & Export"]
+        st.markdown("<p class='nav-section-label' style='color: #64748B;'>— Operations</p>", unsafe_allow_html=True)
+        nav_options = ["📊 Dashboard", "📝 Loan Origination", "💰 Collections & Arrears", "📅 Daily Report", "🗂️ Portfolio", "🧮 Calculator", "📑 Reports"]
+    elif ROLE == "BM":
+        st.markdown("<p class='nav-section-label' style='color: #64748B;'>— Branch Operations</p>", unsafe_allow_html=True)
+        nav_options = ["📊 Dashboard", "📝 Loan Origination", "💰 Branch Ledger", "📅 Daily Report", "📒 Cash Book", "🗂️ Portfolio", "📑 Reports & Export"]
+    else:  # Admin
+        st.markdown("<p class='nav-section-label' style='color: #64748B;'>— Administration</p>", unsafe_allow_html=True)
+        nav_options = ["📊 Dashboard", "📝 Loan Origination", "💰 Audit Ledger", "📅 Daily Report", "📒 Cash Book", "🗂️ Portfolio", "📑 Reports & Export"]
     
     page = st.radio("Navigation", nav_options, label_visibility="collapsed")
     
     st.divider()
     
-    if st.button("🚪 LOGOUT", use_container_width=True):
+    if st.button("🚪 Sign Out", use_container_width=True):
         try:
             cookie_manager.delete("icare_auth")
         except KeyError:
@@ -594,17 +718,19 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-# Status indicator
-if ROLE == "Admin":
-    st.info("🌍 **Global View Mode:** Connected to Cloud Database")
-elif ROLE == "BM":
-    st.info(f"🏢 **Branch View Mode:** Connected to Cloud Database")
-else:
-    st.info(f"👤 **Officer View Mode:** Connected to Cloud Database")
+# Welcome banner
+hour = datetime.now().hour
+greeting = "Good morning" if hour < 12 else ("Good afternoon" if hour < 17 else "Good evening")
+st.markdown(f"""
+    <div class='welcome-banner'>
+        <h2>{greeting}, {USER}</h2>
+        <p>{ROLE} — <span class='wb-gold'>{BRANCH} Branch</span> · {datetime.now().strftime('%A, %B %d, %Y')}</p>
+    </div>
+""", unsafe_allow_html=True)
 
 # --- 6. PAGES ---
 
-if page in ["Dashboard", "Branch Dashboard"]:
+if page == "📊 Dashboard":
     st.title("📊 Performance & Risk Dashboard")
     
     all_loans = load_loans()
@@ -721,7 +847,7 @@ if page in ["Dashboard", "Branch Dashboard"]:
             if perf_chart:
                 st.plotly_chart(perf_chart, use_container_width=True)
 
-elif page == "Loan Origination":
+elif page == "📝 Loan Origination":
     st.title("📝 New Loan Application")
     
     client_type = st.radio("Client Type", ["New Client", "Existing Client"], horizontal=True)
@@ -1047,7 +1173,7 @@ elif page == "Loan Origination":
                 time.sleep(2)
                 st.rerun()
 
-elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
+elif page in ["💰 Collections & Arrears", "💰 Branch Ledger", "💰 Audit Ledger"]:
     st.title(f"📂 {page}")
     
     all_loans = load_loans()
@@ -1210,7 +1336,7 @@ elif page in ["Collections & Arrears", "Branch Audit Ledger"]:
                 time.sleep(1.5) # Slight delay to let the user see the success/balloons
                 st.rerun()
 
-elif page == "Daily Collections Report":
+elif page == "📅 Daily Report":
     st.title("📅 Daily Collections Report")
     
     view_date = st.date_input("Select Date for Report", datetime.now().date())
@@ -1299,7 +1425,7 @@ elif page == "Daily Collections Report":
     else:
         st.info("No records found in database.")
 
-elif page == "Credit Cash Book":
+elif page == "📒 Cash Book":
     st.title("📒 Credit Cash Book")
     st.caption("INITIATIVE FOR COMMUNITY ADVANCEMENT, RELIEF AND EMPOWERMENT — Credit Cash Book")
     
@@ -1521,7 +1647,7 @@ elif page == "Credit Cash Book":
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-elif page in ["Portfolio Management", "Global Portfolio Management"]:
+elif page == "🗂️ Portfolio":
     st.title(f"🗂️ {page}")
     
     all_loans = load_loans()
@@ -1573,7 +1699,7 @@ elif page in ["Portfolio Management", "Global Portfolio Management"]:
             st.success("✅ Cloud Database Updated Successfully!")
             st.rerun()
 
-elif page == "Loan Calculator":
+elif page == "🧮 Calculator":
     st.title("🧮 Loan Simulator")
     
     st.markdown("<div class='card'>", unsafe_allow_html=True)
@@ -1616,7 +1742,7 @@ elif page == "Loan Calculator":
     st.dataframe(schedule_df, use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif page in ["Reports", "Compliance & Export"]:
+elif page in ["📑 Reports", "📑 Reports & Export"]:
     st.title("📑 Reports & Data Export")
     
     all_loans = load_loans()
