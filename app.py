@@ -580,7 +580,7 @@ with st.sidebar:
     if ROLE == "Officer":
         nav_options = ["Dashboard", "Loan Origination", "Collections & Arrears", "Daily Collections Report", "Portfolio Management", "Loan Calculator", "Reports"]
     else:
-        nav_options = ["Branch Dashboard", "Loan Origination", "Branch Audit Ledger", "Daily Collections Report", "Global Portfolio Management", "Loan Calculator", "Compliance & Export"]
+        nav_options = ["Branch Dashboard", "Loan Origination", "Branch Audit Ledger", "Daily Collections Report", "Credit Cash Book", "Global Portfolio Management", "Loan Calculator", "Compliance & Export"]
     
     page = st.radio("Navigation", nav_options, label_visibility="collapsed")
     
@@ -1298,6 +1298,228 @@ elif page == "Daily Collections Report":
             st.dataframe(pd.DataFrame(detailed_data), use_container_width=True)
     else:
         st.info("No records found in database.")
+
+elif page == "Credit Cash Book":
+    st.title("📒 Credit Cash Book")
+    st.caption("INITIATIVE FOR COMMUNITY ADVANCEMENT, RELIEF AND EMPOWERMENT — Credit Cash Book")
+    
+    # --- Controls ---
+    ctl1, ctl2, ctl3 = st.columns([1, 1, 1])
+    cb_month = ctl1.selectbox("Month", list(range(1, 13)), index=datetime.now().month - 1,
+                               format_func=lambda m: datetime(2026, m, 1).strftime("%B"))
+    cb_year = ctl2.number_input("Year", value=datetime.now().year, step=1, min_value=2024, max_value=2030)
+    
+    all_loans = load_loans()
+    all_repayments = load_repayments()
+    
+    branch_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
+    
+    officers = sorted(branch_loans['Officer'].dropna().unique()) if not branch_loans.empty else []
+    selected_officer = ctl3.selectbox("Officer Filter", ["All Officers"] + list(officers))
+    
+    if selected_officer != "All Officers":
+        branch_loans = branch_loans[branch_loans['Officer'] == selected_officer]
+    
+    # Filter repayments by month/year
+    if not all_repayments.empty:
+        all_repayments['_dt'] = pd.to_datetime(all_repayments['Date'], errors='coerce')
+        month_reps = all_repayments[
+            (all_repayments['_dt'].dt.month == cb_month) &
+            (all_repayments['_dt'].dt.year == cb_year)
+        ].copy()
+        
+        # Filter by branch/officer
+        if ROLE == "BM":
+            month_reps = month_reps[month_reps['Branch'] == BRANCH]
+        elif ROLE == "Officer":
+            month_reps = month_reps[month_reps['Officer'] == USER]
+        if selected_officer != "All Officers":
+            month_reps = month_reps[month_reps['Officer'] == selected_officer]
+    else:
+        month_reps = pd.DataFrame()
+    
+    if month_reps.empty:
+        st.info(f"No transactions found for {datetime(cb_year, cb_month, 1).strftime('%B %Y')}.")
+    else:
+        month_reps['_day'] = month_reps['_dt'].dt.date
+        
+        # Helper to safely sum numeric
+        def safe_sum(series):
+            return pd.to_numeric(series, errors='coerce').fillna(0).sum()
+        
+        # Build daily cashbook rows
+        cashbook_rows = []
+        unique_days = sorted(month_reps['_day'].dropna().unique())
+        
+        # Running totals for closing balance
+        cumulative_payment = 0
+        cumulative_credit_disbursed = 0
+        
+        for day in unique_days:
+            day_data = month_reps[month_reps['_day'] == day]
+            
+            # --- PAYMENT SIDE (Cash In) ---
+            loan_rep_no = len(day_data[pd.to_numeric(day_data['Loan Repayment Amount'], errors='coerce').fillna(0) > 0])
+            loan_rep_amt = safe_sum(day_data['Loan Repayment Amount'])
+            
+            savings_withdrawal_no = len(day_data[pd.to_numeric(day_data['Withdrawal Amount'], errors='coerce').fillna(0) > 0])
+            savings_withdrawal_amt = safe_sum(day_data['Withdrawal Amount'])
+            
+            savings_return_amt = safe_sum(day_data['Savings Amount'])
+            
+            risk_premium = safe_sum(day_data['Markup Paid'])
+            mgt_fee = safe_sum(day_data['Mgt Fee Paid'])
+            proc_fee = safe_sum(day_data['Processing Fee Paid'])
+            pass_book = safe_sum(day_data['Pass Book Paid'])
+            recovery = safe_sum(day_data['Recovery Amount'])
+            others = safe_sum(day_data['Others Amount'])
+            
+            # --- RECEIPT SIDE (Cash Out / Disbursements) ---
+            # Check for new loans originated on this day
+            day_str = day.strftime("%Y-%m-%d")
+            day_loans = branch_loans[branch_loans['Date'] == day_str]
+            if selected_officer != "All Officers":
+                day_loans = day_loans[day_loans['Officer'] == selected_officer]
+            
+            credit_disbursed_no = len(day_loans)
+            credit_disbursed_amt = day_loans['Active Credit'].sum() if not day_loans.empty else 0
+            
+            # Fund transfers (identifiable via transaction notes)
+            fund_to_ho = 0
+            fund_to_other_area = 0
+            staff_salaries = 0
+            office_returns = 0
+            
+            # Total Payment (cash in)
+            total_payment = (loan_rep_amt + savings_return_amt + risk_premium + 
+                           mgt_fee + proc_fee + pass_book + recovery + others)
+            
+            # Total Receipt / Cash Out
+            total_receipt = credit_disbursed_amt + savings_withdrawal_amt
+            
+            cumulative_payment += total_payment
+            cumulative_credit_disbursed += total_receipt
+            closing_balance = cumulative_payment - cumulative_credit_disbursed
+            
+            cashbook_rows.append({
+                "Date": day.strftime("%d/%m"),
+                "Credit Disbursed (No)": credit_disbursed_no,
+                "Credit Disbursed (₦)": credit_disbursed_amt,
+                "Savings Withdrawal (No)": savings_withdrawal_no,
+                "Savings Withdrawal (₦)": savings_withdrawal_amt,
+                "Savings Deposit (₦)": savings_return_amt,
+                "Risk Premium (₦)": risk_premium,
+                "Mgt Fee (₦)": mgt_fee,
+                "Processing Fee (₦)": proc_fee,
+                "Pass Book (₦)": pass_book,
+                "Recovery (₦)": recovery,
+                "Others (₦)": others,
+                "Loan Repayment (No)": loan_rep_no,
+                "Loan Repayment (₦)": loan_rep_amt,
+                "Staff Salaries (₦)": staff_salaries,
+                "Office Returns (₦)": office_returns,
+                "Total Payment (₦)": total_payment,
+                "Total Receipt (₦)": total_receipt,
+                "Closing Balance (₦)": closing_balance
+            })
+        
+        cashbook_df = pd.DataFrame(cashbook_rows)
+        
+        # --- DISPLAY ---
+        st.markdown(f"### 📅 Cash Book — {datetime(cb_year, cb_month, 1).strftime('%B %Y')}")
+        if selected_officer != "All Officers":
+            st.markdown(f"**Officer:** {selected_officer} | **Branch:** {BRANCH}")
+        else:
+            st.markdown(f"**Branch:** {BRANCH} (All Officers)")
+        
+        # Summary metrics
+        st.markdown("#### 💰 Monthly Overview")
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("Total Cash In", f"₦{cashbook_df['Total Payment (₦)'].sum():,.0f}")
+        m2.metric("Total Disbursed", f"₦{cashbook_df['Credit Disbursed (₦)'].sum():,.0f}")
+        m3.metric("Total Loan Repaid", f"₦{cashbook_df['Loan Repayment (₦)'].sum():,.0f}")
+        m4.metric("Total Savings In", f"₦{cashbook_df['Savings Deposit (₦)'].sum():,.0f}")
+        m5.metric("Closing Balance", f"₦{cashbook_df['Closing Balance (₦)'].iloc[-1]:,.0f}" if not cashbook_df.empty else "₦0")
+        
+        # Weekly breakdown
+        st.markdown("---")
+        st.markdown("#### 📊 Weekly Cash Book Ledger")
+        
+        # Group by week
+        for day in unique_days:
+            cashbook_df.loc[cashbook_df['Date'] == day.strftime("%d/%m"), '_week'] = (day.day - 1) // 7 + 1
+        
+        weeks = sorted(cashbook_df['_week'].dropna().unique())
+        
+        for week_num in weeks:
+            week_data = cashbook_df[cashbook_df['_week'] == week_num].drop(columns=['_week'], errors='ignore')
+            
+            st.markdown(f"##### 📋 Week {int(week_num)}")
+            
+            # Format the display
+            display_cols = [c for c in week_data.columns if c != '_week']
+            
+            # Style the dataframe with currency formatting
+            format_dict = {}
+            for col in display_cols:
+                if "(₦)" in col:
+                    format_dict[col] = "₦{:,.0f}"
+                elif "(No)" in col:
+                    format_dict[col] = "{:.0f}"
+            
+            st.dataframe(
+                week_data[display_cols].style.format(format_dict, na_rep="—"),
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Weekly totals
+            wt_cols = [c for c in display_cols if "(₦)" in c or "(No)" in c]
+            weekly_totals = {c: week_data[c].sum() for c in wt_cols}
+            
+            wt1, wt2, wt3, wt4 = st.columns(4)
+            wt1.metric(f"W{int(week_num)} Cash In", f"₦{weekly_totals.get('Total Payment (₦)', 0):,.0f}")
+            wt2.metric(f"W{int(week_num)} Disbursed", f"₦{weekly_totals.get('Credit Disbursed (₦)', 0):,.0f}")
+            wt3.metric(f"W{int(week_num)} Loan Repaid", f"₦{weekly_totals.get('Loan Repayment (₦)', 0):,.0f}")
+            wt4.metric(f"W{int(week_num)} Savings", f"₦{weekly_totals.get('Savings Deposit (₦)', 0):,.0f}")
+            st.markdown("---")
+        
+        # Monthly Total row
+        st.markdown("#### 📈 Monthly Totals")
+        num_cols = [c for c in cashbook_df.columns if "(₦)" in c or "(No)" in c]
+        monthly_totals = cashbook_df[num_cols].sum()
+        
+        mt_df = pd.DataFrame([monthly_totals], index=["Monthly Total"])
+        format_dict_mt = {}
+        for col in mt_df.columns:
+            if "(₦)" in col:
+                format_dict_mt[col] = "₦{:,.0f}"
+            elif "(No)" in col:
+                format_dict_mt[col] = "{:.0f}"
+        
+        st.dataframe(mt_df.style.format(format_dict_mt), use_container_width=True)
+        
+        # Download cashbook as Excel
+        st.markdown("---")
+        if st.button("⬇️ Download Cash Book as Excel", use_container_width=True):
+            import io
+            output = io.BytesIO()
+            display_df = cashbook_df.drop(columns=['_week'], errors='ignore')
+            
+            # Add totals row
+            total_row = display_df.select_dtypes(include='number').sum()
+            total_row['Date'] = 'MONTHLY TOTAL'
+            display_df = pd.concat([display_df, pd.DataFrame([total_row])], ignore_index=True)
+            
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                display_df.to_excel(writer, sheet_name='Credit Cash Book', index=False)
+            
+            st.download_button(
+                label="📄 Click to Download",
+                data=output.getvalue(),
+                file_name=f"ICARE_CashBook_{datetime(cb_year, cb_month, 1).strftime('%B_%Y')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
 elif page in ["Portfolio Management", "Global Portfolio Management"]:
     st.title(f"🗂️ {page}")
