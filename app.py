@@ -817,11 +817,12 @@ if page == "📊 Dashboard":
     st.divider()
     
     st.markdown("### 🏦 Credit Summary")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("📈 Active Loans (Count)", f"{active_loans_count}")
-    c2.metric("🎉 Fully Paid Loans", f"{fully_paid_count}")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("👥 People with Active Loans", f"{active_loans_count}")
+    c2.metric("📈 Total Active Credit Balance", f"₦{total_active_credit:,.0f}")
+    c3.metric("🎉 Fully Paid Loans", f"{fully_paid_count}")
     od_color = "inverse" if total_overdue > 0 else "normal"
-    c3.metric("🚨 Total Overdue Amount", f"₦{total_overdue:,.0f}", delta_color=od_color)
+    c4.metric("🚨 Total Overdue Amount", f"₦{total_overdue:,.0f}", delta_color=od_color)
 
 
 elif page == "📝 Loan Origination":
