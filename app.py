@@ -924,9 +924,15 @@ elif page == "📝 Loan Origination":
                 df_groups = pd.read_excel(uploaded_file, sheet_name='Groups', skiprows=2)
                 df_members = pd.read_excel(uploaded_file, sheet_name='Members', skiprows=2)
                 
-                # Filter empty rows based on required fields
-                df_groups = df_groups.dropna(subset=['Group Reference*', 'Group Name*'])
-                df_members = df_members.dropna(subset=['Member Reference*', 'Full Name*'])
+                # Standardize columns: remove *, trailing spaces, etc.
+                df_groups.columns = df_groups.columns.str.strip().str.replace('*', '')
+                df_members.columns = df_members.columns.str.strip().str.replace('*', '')
+                
+                # Filter empty rows based on required fields (now without asterisks)
+                if 'Group Reference' in df_groups.columns and 'Group Name' in df_groups.columns:
+                    df_groups = df_groups.dropna(subset=['Group Reference', 'Group Name'])
+                if 'Member Reference' in df_members.columns and 'Full Name' in df_members.columns:
+                    df_members = df_members.dropna(subset=['Member Reference', 'Full Name'])
                 
                 num_groups = len(df_groups)
                 num_members = len(df_members)
@@ -941,9 +947,12 @@ elif page == "📝 Loan Origination":
                         # Process each member
                         for index, member_row in df_members.iterrows():
                             try:
-                                group_ref = member_row.get('Group Reference*')
+                                group_ref = member_row.get('Group Reference')
                                 # Find corresponding group
-                                group_match = df_groups[df_groups['Group Reference*'] == group_ref]
+                                if 'Group Reference' in df_groups.columns:
+                                    group_match = df_groups[df_groups['Group Reference'] == group_ref]
+                                else:
+                                    group_match = pd.DataFrame()
                                 
                                 if group_match.empty:
                                     print(f"Group ref {group_ref} not found for member.")
@@ -959,14 +968,14 @@ elif page == "📝 Loan Origination":
                                 client_data = {
                                     "client_id": client_id,
                                     "date": str(datetime.now().date()),
-                                    "branch": str(group_row.get('Branch Name*', BRANCH)),
-                                    "officer": str(group_row.get('Credit Officer Name*', USER)),
-                                    "client_name": str(member_row.get('Full Name*', 'Unknown')),
-                                    "phone": str(member_row.get('Phone Number*', '')),
-                                    "address": str(member_row.get('Home Address*', '')),
+                                    "branch": str(group_row.get('Branch Name', BRANCH)),
+                                    "officer": str(group_row.get('Credit Officer Name', USER)),
+                                    "client_name": str(member_row.get('Full Name', 'Unknown')),
+                                    "phone": str(member_row.get('Phone Number', '')),
+                                    "address": str(member_row.get('Home Address', '')),
                                     "business_type": "Other",
-                                    "group_name": str(group_row.get('Group Name*', '')),
-                                    "meeting_day": str(group_row.get('Meeting Day*', 'Daily')),
+                                    "group_name": str(group_row.get('Group Name', '')),
+                                    "meeting_day": str(group_row.get('Meeting Day', 'Daily')),
                                     "loan_product": "Pending Onboarding",
                                     "product_category": "Finance",
                                     "loan_amount": 0,
