@@ -287,10 +287,10 @@ def load_loans():
         query = supabase.table("loans").select("*")
         
         # RBAC Filters
-        if st.session_state.get('user_role') == 'CO':
-            query = query.eq('Officer', st.session_state.get('user_name'))
-        elif st.session_state.get('user_role') == 'BM':
-            query = query.eq('Branch', st.session_state.get('branch_name'))
+        if st.session_state.get('role') == 'CO':
+            query = query.eq('Officer', st.session_state.get('user'))
+        elif st.session_state.get('role') == 'BM':
+            query = query.eq('Branch', st.session_state.get('branch'))
             
         response = query.execute()
         if not response.data:
@@ -324,10 +324,10 @@ def load_repayments():
         query = supabase.table("repayments").select("*")
         
         # RBAC Filters
-        if st.session_state.get('user_role') == 'CO':
-            query = query.eq('Officer', st.session_state.get('user_name'))
-        elif st.session_state.get('user_role') == 'BM':
-            query = query.eq('Branch', st.session_state.get('branch_name'))
+        if st.session_state.get('role') == 'CO':
+            query = query.eq('Officer', st.session_state.get('user'))
+        elif st.session_state.get('role') == 'BM':
+            query = query.eq('Branch', st.session_state.get('branch'))
             
         response = query.execute()
         if not response.data:
@@ -696,9 +696,9 @@ if not st.session_state['logged_in']:
                 if auth_result:
                     cookie_manager.set("icare_auth", username.lower(), expires_at=datetime.now() + timedelta(days=7))
                     st.session_state['logged_in'] = True
-                    st.session_state['user'] = auth_result['name']
-                    st.session_state['role'] = auth_result['role']
-                    st.session_state['branch'] = auth_result['branch']
+                    st.session_state['user'] = auth_result['user_name']
+                    st.session_state['role'] = auth_result['user_role']
+                    st.session_state['branch'] = auth_result['branch_name']
                     st.rerun()
                 else:
                     st.error("❌ Invalid credentials. Please try again.")
