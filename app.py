@@ -921,21 +921,37 @@ elif page == "📝 Loan Origination":
                 import pandas as pd
                 import uuid
                 
-                df_groups = pd.read_excel(uploaded_file, sheet_name='Groups', skiprows=2)
-                df_members = pd.read_excel(uploaded_file, sheet_name='Members', skiprows=2)
+                # Read without headers to manually find them
+                raw_groups = pd.read_excel(uploaded_file, sheet_name='Groups', header=None)
+                raw_members = pd.read_excel(uploaded_file, sheet_name='Members', header=None)
                 
-                # Standardize columns: remove *, trailing spaces, etc.
-                df_groups.columns = df_groups.columns.str.strip().str.replace('*', '')
-                df_members.columns = df_members.columns.str.strip().str.replace('*', '')
+                def extract_table(df, key_col1, key_col2):
+                    # Search for the header row
+                    header_idx = -1
+                    for i, row in df.iterrows():
+                        row_str = row.astype(str).str.replace('*', '', regex=False).str.strip().str.lower()
+                        if key_col1.lower() in row_str.values and key_col2.lower() in row_str.values:
+                            header_idx = i
+                            break
+                            
+                    if header_idx != -1:
+                        # Set headers and slice
+                        df.columns = df.iloc[header_idx].astype(str).str.replace('*', '', regex=False).str.strip()
+                        df = df.iloc[header_idx + 1:].reset_index(drop=True)
+                        return df
+                    return pd.DataFrame() # Return empty if headers not found
+
+                df_groups = extract_table(raw_groups, 'Group Reference', 'Group Name')
+                df_members = extract_table(raw_members, 'Member Reference', 'Full Name')
                 
-                # Filter empty rows based on required fields (now without asterisks)
-                if 'Group Reference' in df_groups.columns and 'Group Name' in df_groups.columns:
+                # Filter empty rows and example/dummy rows
+                if not df_groups.empty and 'Group Name' in df_groups.columns:
                     df_groups = df_groups.dropna(subset=['Group Reference', 'Group Name'])
-                    df_groups = df_groups[~df_groups['Group Name'].astype(str).str.contains('Group Name', case=False, na=False)]
+                    df_groups = df_groups[~df_groups['Group Name'].astype(str).str.contains('Example', case=False, na=False)]
                     
-                if 'Member Reference' in df_members.columns and 'Full Name' in df_members.columns:
+                if not df_members.empty and 'Full Name' in df_members.columns:
                     df_members = df_members.dropna(subset=['Member Reference', 'Full Name'])
-                    df_members = df_members[~df_members['Full Name'].astype(str).str.contains('Full Name', case=False, na=False)]
+                    df_members = df_members[~df_members['Full Name'].astype(str).str.contains('Example', case=False, na=False)]
                 
                 num_groups = len(df_groups)
                 num_members = len(df_members)
