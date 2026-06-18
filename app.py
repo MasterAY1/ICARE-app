@@ -931,8 +931,11 @@ elif page == "📝 Loan Origination":
                 # Filter empty rows based on required fields (now without asterisks)
                 if 'Group Reference' in df_groups.columns and 'Group Name' in df_groups.columns:
                     df_groups = df_groups.dropna(subset=['Group Reference', 'Group Name'])
+                    df_groups = df_groups[~df_groups['Group Name'].astype(str).str.contains('Group Name', case=False, na=False)]
+                    
                 if 'Member Reference' in df_members.columns and 'Full Name' in df_members.columns:
                     df_members = df_members.dropna(subset=['Member Reference', 'Full Name'])
+                    df_members = df_members[~df_members['Full Name'].astype(str).str.contains('Full Name', case=False, na=False)]
                 
                 num_groups = len(df_groups)
                 num_members = len(df_members)
