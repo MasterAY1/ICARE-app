@@ -45,64 +45,22 @@ def init_connection():
 
 supabase = init_connection()
 
-# --- PASSWORD HASHING ---
-def hash_password(password: str, salt: str) -> str:
-    combined = f"{salt}{password}".encode('utf-8')
-    return hashlib.sha256(combined).hexdigest()
-
-def authenticate_user(username: str, password: str):
-    """Authenticate user against Supabase app_users table with hashed passwords."""
+# --- RBAC AUTHENTICATION ---
+def authenticate_user(username, password):
     if not supabase:
         return None
     try:
-        res = supabase.table("app_users").select("*").eq("username", username.lower()).eq("is_active", True).execute()
+        res = supabase.table("app_users").select("*").eq("username", username).eq("password", password).execute()
         if res.data and len(res.data) > 0:
             user = res.data[0]
-            computed = hash_password(password, user['salt'])
-            if computed == user['password_hash']:
-                # Update last_login
-                try:
-                    supabase.table("app_users").update({"last_login": datetime.now().isoformat()}).eq("username", username.lower()).execute()
-                except:
-                    pass
-                return {
-                    'name': user['display_name'],
-                    'role': user['role'],
-                    'branch': user['branch']
-                }
-    except:
-        pass
-    # Fallback to hardcoded users (for initial setup before DB table exists)
-    FALLBACK_USERS = {
-        "admin": {"pass": "1234", "role": "Admin", "branch": "Global", "name": "System Admin"},
-        "bm": {"pass": "1234", "role": "BM", "branch": "Lagos", "name": "Lagos Manager"},
-        "co2": {"pass": "1234", "role": "Officer", "branch": "Lagos", "name": "CO2"},
-        "co1": {"pass": "1234", "role": "Officer", "branch": "Lagos", "name": "CO1"}
-    }
-    fb = FALLBACK_USERS.get(username.lower())
-    if fb and fb['pass'] == password:
-        return {'name': fb['name'], 'role': fb['role'], 'branch': fb['branch']}
+            return {
+                'user_name': user['username'],
+                'user_role': user['role'],
+                'branch_name': user['branch_name']
+            }
+    except Exception as e:
+        st.error(f"Auth error: {e}")
     return None
-
-# Lookup user info by username (for cookie restore)
-def get_user_info(username: str):
-    if not supabase:
-        return None
-    try:
-        res = supabase.table("app_users").select("display_name, role, branch").eq("username", username.lower()).eq("is_active", True).execute()
-        if res.data and len(res.data) > 0:
-            u = res.data[0]
-            return {'name': u['display_name'], 'role': u['role'], 'branch': u['branch']}
-    except:
-        pass
-    # Fallback
-    FALLBACK_USERS = {
-        "admin": {"role": "Admin", "branch": "Global", "name": "System Admin"},
-        "bm": {"role": "BM", "branch": "Lagos", "name": "Lagos Manager"},
-        "co2": {"role": "Officer", "branch": "Lagos", "name": "CO2"},
-        "co1": {"role": "Officer", "branch": "Lagos", "name": "CO1"}
-    }
-    return FALLBACK_USERS.get(username.lower())
 
 # Custom CSS — ICARE Banking Design System v3.0
 st.markdown("""
@@ -322,8 +280,28 @@ DB_TO_UI_REP = {
 UI_TO_DB_REP = {v: k for k, v in DB_TO_UI_REP.items()}
 
 def load_loans():
-    """Load all loans from Supabase"""
+    """Load loans filtered by RBAC"""
     if not supabase:
+        return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
+    try:
+        query = supabase.table("loans").select("*")
+        
+        # RBAC Filters
+        if st.session_state.get('user_role') == 'CO':
+            query = query.eq('Officer', st.session_state.get('user_name'))
+        elif st.session_state.get('user_role') == 'BM':
+            query = query.eq('Branch', st.session_state.get('branch_name'))
+            
+        response = query.execute()
+        if not response.data:
+            return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
+        df = pd.DataFrame(response.data).rename(columns=DB_TO_UI_LOANS)
+        num_cols = ['Loan Amount', 'Active Credit', 'Loan Repay', 'Total Due']
+        for c in num_cols:
+            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+        return df
+    except Exception as e:
+        st.error(f"Database Error: {e}")
         return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
     try:
         response = supabase.table("loans").select("*").execute()
@@ -339,8 +317,26 @@ def load_loans():
         return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
 
 def load_repayments():
-    """Load all repayments from Supabase"""
+    """Load repayments filtered by RBAC"""
     if not supabase:
+        return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
+    try:
+        query = supabase.table("repayments").select("*")
+        
+        # RBAC Filters
+        if st.session_state.get('user_role') == 'CO':
+            query = query.eq('Officer', st.session_state.get('user_name'))
+        elif st.session_state.get('user_role') == 'BM':
+            query = query.eq('Branch', st.session_state.get('branch_name'))
+            
+        response = query.execute()
+        if not response.data:
+            return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
+        df = pd.DataFrame(response.data).rename(columns=DB_TO_UI_REP)
+        
+        return df
+    except Exception as e:
+        st.error(f"Database Error: {e}")
         return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
     try:
         response = supabase.table("repayments").select("*").execute()
@@ -1517,12 +1513,30 @@ elif page == "📅 Daily Report":
         # Filter for the selected date
         repayments['DateStr'] = pd.to_datetime(repayments['Date'], errors='coerce').dt.date.astype(str)
         
+
         daily_reps = repayments[repayments['DateStr'] == date_str]
         
-        if ROLE == "BM":
-            daily_reps = daily_reps[daily_reps['Branch'] == BRANCH]
+        # --- MANAGERIAL DROPDOWN ---
+        if ROLE in ["BM", "AM"]:
+            st.markdown("### 🏢 Managerial Controls")
+            # Get unique officers for this branch today
+            if ROLE == "BM":
+                daily_reps = daily_reps[daily_reps['Branch'] == BRANCH]
+            
+            unique_officers = daily_reps['Officer'].dropna().unique().tolist()
+            if not unique_officers:
+                st.info("No officers have records for today.")
+                target_officer = "All Officers"
+            else:
+                target_officer = st.selectbox("Select Credit Officer", ["All Officers"] + unique_officers, key="daily_rep_co")
+                
+            if target_officer != "All Officers":
+                daily_reps = daily_reps[daily_reps['Officer'] == target_officer]
+                if not all_loans.empty:
+                    daily_loans = daily_loans[daily_loans['Officer'] == target_officer]
         elif ROLE == "Officer":
             daily_reps = daily_reps[daily_reps['Officer'] == USER]
+
             
         if daily_reps.empty:
             st.info(f"No collections found for {date_str}.")
@@ -1619,12 +1633,27 @@ elif page == "📖 WhatsApp Cashbook":
     
     if not repayments.empty:
         repayments['DateStr'] = pd.to_datetime(repayments['Date'], errors='coerce').dt.date.astype(str)
+
         daily_reps = repayments[repayments['DateStr'] == date_str]
         
-        if ROLE == "BM":
-            daily_reps = daily_reps[daily_reps['Branch'] == BRANCH]
+        # --- MANAGERIAL DROPDOWN ---
+        if ROLE in ["BM", "AM"]:
+            st.markdown("### 🏢 Managerial Controls")
+            if ROLE == "BM":
+                daily_reps = daily_reps[daily_reps['Branch'] == BRANCH]
+                
+            unique_officers = daily_reps['Officer'].dropna().unique().tolist()
+            if not unique_officers:
+                st.info("No officers have records for today.")
+                target_officer = "All Officers"
+            else:
+                target_officer = st.selectbox("Select Credit Officer", ["All Officers"] + unique_officers, key="wa_cashbook_co")
+                
+            if target_officer != "All Officers":
+                daily_reps = daily_reps[daily_reps['Officer'] == target_officer]
         elif ROLE == "Officer":
             daily_reps = daily_reps[daily_reps['Officer'] == USER]
+
             
         if daily_reps.empty:
             st.info(f"No transactions found for {date_str}.")
