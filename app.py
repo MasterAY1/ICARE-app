@@ -777,115 +777,52 @@ if page == "📊 Dashboard":
     all_repayments = load_repayments()
     my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
     
-    # Calculate metrics
-    summary = generate_portfolio_summary(my_loans, all_repayments)
+    total_people_with_savings = 0
+    total_savings = 0
+    active_loans_count = 0
+    total_active_credit = 0
+    fully_paid_count = 0
+    total_overdue = 0
     
-    # Top metrics row
-    st.markdown("### 💰 Liquidity Overview")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown(f"""
-            <div class='metric-card'>
-                <div class='metric-value'>{summary['active_loans']}</div>
-                <div class='metric-label'>Active Loans</div>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-            <div class='metric-card'>
-                <div class='metric-value'>₦{summary['total_cash_in']:,.0f}</div>
-                <div class='metric-label'>Cumulative Collections</div>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f"""
-            <div class='metric-card'>
-                <div class='metric-value'>₦{summary['total_savings']:,.0f}</div>
-                <div class='metric-label'>Deposits (Liabilities)</div>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    with col4:
-        st.markdown(f"""
-            <div class='metric-card'>
-                <div class='metric-value'>{summary['pending_count']}</div>
-                <div class='metric-label'>Pending Approvals</div>
-            </div>
-        """, unsafe_allow_html=True)
+    for _, loan in my_loans.iterrows():
+        cid = loan.get('Client ID')
+        c_payments = all_repayments[all_repayments['Client ID'] == cid]
+        s_amt, l_amt = calculate_client_savings(c_payments, loan.get('Loan Repay', 0))
+        
+        loan_bal = loan.get('Active Credit', 0) - l_amt
+        
+        if s_amt > 0:
+            total_people_with_savings += 1
+            total_savings += s_amt
+            
+        if loan_bal > 0:
+            active_loans_count += 1
+            total_active_credit += loan_bal
+            
+            # calculate overdue
+            start_date_str = loan.get('Date', '')
+            product = loan.get('Loan Product', '')
+            fixed_repay = loan.get('Loan Repay', 0)
+            if start_date_str and product:
+                exp_paid, overdue_amt = calculate_overdue(start_date_str, product, fixed_repay, l_amt)
+                total_overdue += overdue_amt
+        else:
+            fully_paid_count += 1
+            
+    st.markdown("### 💰 Savings Summary")
+    s1, s2 = st.columns(2)
+    s1.metric("👥 People with Savings", f"{total_people_with_savings}")
+    s2.metric("🐷 Total Savings Balance", f"₦{total_savings:,.0f}")
     
     st.divider()
     
-    # Risk metrics
-    st.markdown("### ⚠️ Portfolio Health")
-    r1, r2, r3 = st.columns(3)
-    
-    r1.metric("Total Active Portfolio", f"₦{summary['total_portfolio']:,.0f}")
-    
-    od_color = "inverse" if summary['total_overdue'] > 0 else "normal"
-    r2.metric("🚨 Total Overdue Cash", f"₦{summary['total_overdue']:,.0f}", delta_color=od_color)
-    
-    par_color = "inverse" if summary['par_percentage'] > 5 else "normal"
-    r3.metric("📈 Portfolio At Risk (PAR)", f"{summary['par_percentage']:.1f}%", delta_color=par_color)
-    
-    # Charts
-    st.divider()
-    st.markdown("### 📈 Visual Analytics")
-    
-    chart_col1, chart_col2 = st.columns(2)
-    
-    with chart_col1:
-        portfolio_chart = create_portfolio_chart(my_loans)
-        if portfolio_chart:
-            st.plotly_chart(portfolio_chart, use_container_width=True)
-        else:
-            st.info("No data for portfolio chart")
-    
-    with chart_col2:
-        trend_chart = create_weekly_trend_chart(all_repayments)
-        if trend_chart:
-            st.plotly_chart(trend_chart, use_container_width=True)
-        else:
-            st.info("No data for trend chart")
-    
-    # Officer breakdown for Admin/BM
-    if ROLE in ["Admin", "BM"] and not my_loans.empty:
-        st.divider()
-        st.markdown("### 👥 Officer Risk Breakdown")
-        
-        officer_data = []
-        for _, row in my_loans[my_loans['Status'].isin(['Approved', 'Active'])].iterrows():
-            c_payments = all_repayments[all_repayments['Client ID'] == row['Client ID']] if not all_repayments.empty else pd.DataFrame()
-            _, l_amt = calculate_client_savings(c_payments, row['Loan Repay'])
-            expected, overdue = calculate_overdue(row['Date'], row['Loan Product'], row['Loan Repay'], l_amt)
-            loan_balance = max(0, float(row['Active Credit']) - l_amt)
-            
-            officer_data.append({
-                "Officer": row['Officer'],
-                "Active Portfolio": loan_balance,
-                "Overdue Cash": overdue,
-                "PAR Balance": loan_balance if overdue > 0 else 0
-            })
-        
-        if officer_data:
-            summary_df = pd.DataFrame(officer_data).groupby("Officer").sum().reset_index()
-            summary_df["PAR %"] = (summary_df["PAR Balance"] / summary_df["Active Portfolio"] * 100).fillna(0).round(1).astype(str) + "%"
-            
-            st.dataframe(
-                summary_df.style.format({
-                    "Active Portfolio": "₦{:,.0f}",
-                    "Overdue Cash": "₦{:,.0f}",
-                    "PAR Balance": "₦{:,.0f}"
-                }),
-                use_container_width=True
-            )
-            
-            # Officer performance chart
-            perf_chart = create_officer_performance_chart(officer_data)
-            if perf_chart:
-                st.plotly_chart(perf_chart, use_container_width=True)
+    st.markdown("### 🏦 Credit Summary")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("📈 Active Loans (Count)", f"{active_loans_count}")
+    c2.metric("🎉 Fully Paid Loans", f"{fully_paid_count}")
+    od_color = "inverse" if total_overdue > 0 else "normal"
+    c3.metric("🚨 Total Overdue Amount", f"₦{total_overdue:,.0f}", delta_color=od_color)
+
 
 elif page == "📝 Loan Origination":
     st.title("📝 New Loan Application")
