@@ -288,9 +288,9 @@ def load_loans():
         
         # RBAC Filters
         if st.session_state.get('role') == 'CO':
-            query = query.eq('Officer', st.session_state.get('user'))
+            query = query.eq('officer', st.session_state.get('user'))
         elif st.session_state.get('role') == 'BM':
-            query = query.eq('Branch', st.session_state.get('branch'))
+            query = query.eq('branch', st.session_state.get('branch'))
             
         response = query.execute()
         if not response.data:
@@ -325,9 +325,9 @@ def load_repayments():
         
         # RBAC Filters
         if st.session_state.get('role') == 'CO':
-            query = query.eq('Officer', st.session_state.get('user'))
+            query = query.eq('officer', st.session_state.get('user'))
         elif st.session_state.get('role') == 'BM':
-            query = query.eq('Branch', st.session_state.get('branch'))
+            query = query.eq('branch', st.session_state.get('branch'))
             
         response = query.execute()
         if not response.data:
