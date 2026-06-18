@@ -651,13 +651,17 @@ cookie_manager = stx.CookieManager(key="icare_cookies")
 if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
     auth_token = cookie_manager.get(cookie="icare_auth")
     if auth_token:
-        user_info = get_user_info(auth_token)
-        if user_info:
-            st.session_state['logged_in'] = True
-            st.session_state['user'] = user_info['name']
-            st.session_state['role'] = user_info['role']
-            st.session_state['branch'] = user_info['branch']
-        else:
+        try:
+            res = supabase.table("app_users").select("*").eq("username", auth_token).execute()
+            if res.data and len(res.data) > 0:
+                user = res.data[0]
+                st.session_state['logged_in'] = True
+                st.session_state['user'] = user['username']
+                st.session_state['role'] = user['role']
+                st.session_state['branch'] = user['branch_name']
+            else:
+                st.session_state['logged_in'] = False
+        except:
             st.session_state['logged_in'] = False
     else:
         st.session_state['logged_in'] = False
