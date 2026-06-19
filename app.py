@@ -1219,22 +1219,22 @@ elif page == "📝 Loan Origination":
                 if not name or not phone:
                     st.error("❌ Please fill in all required fields (Name and Phone)")
                 else:
-                    new_                                # Extract member number from the sheet if present
-                                m_num_raw = member_row.get('Member Number')
-                                try:
-                                    m_num_val = int(float(m_num_raw))
-                                except:
-                                    m_num_val = index + 1 # fallback to row index
-                                    
-                                branch_val = str(group_row.get('Branch Name', BRANCH))
-                                group_ref_val = str(member_row.get('Group Reference', ''))
-                                
-                                client_id = generate_client_id(branch_val, group_ref_val, m_num_val, is_bulk=True)
-                                
-                                # Safety check: If client_id already exists, append a random string to avoid duplicate errors
-                                existing_check = supabase.table("loans").select("client_id").eq("client_id", client_id).execute()
-                                if existing_check.data and len(existing_check.data) > 0:
-                                    client_id = f"{client_id}-{str(uuid.uuid4())[:4]}"
+                    # Generate structured ID for single client
+                    g_val = group_name if group_name else "IND"
+                    
+                    # Count how many existing clients are in this group to assign the next member number
+                    try:
+                        group_count_res = supabase.table("loans").select("client_id", count="exact").eq("Branch", BRANCH).eq("Group Name", group_name).execute()
+                        next_num = group_count_res.count + 1 if group_count_res.count else 1
+                    except:
+                        next_num = 1
+                        
+                    new_client_id = generate_client_id(BRANCH, g_val, next_num)
+                    
+                    # Safety check
+                    existing_check = supabase.table("loans").select("client_id").eq("client_id", new_client_id).execute()
+                    if existing_check.data and len(existing_check.data) > 0:
+                        new_client_id = f"{new_client_id}-{str(uuid.uuid4())[:4]}"
                     current_date_str = datetime.now().strftime("%Y-%m-%d")
                 
                     # Save the new loan to the database FIRST to avoid Foreign Key violations
