@@ -5,6 +5,36 @@ import math
 import uuid
 import hashlib
 from supabase import create_client, Client
+
+def generate_client_id(branch_name, group_string, member_num_or_index, is_bulk=False):
+    import re
+    # 1. Get branch prefix (first 3 letters, uppercase)
+    b_prefix = str(branch_name)[:3].upper() if branch_name else "UNK"
+    
+    # 2. Get group prefix
+    g_str = str(group_string).strip()
+    if not g_str or g_str.lower() in ["none", "nan", "ungrouped"]:
+        g_prefix = "IND" # Individual / Ungrouped
+    else:
+        # If it looks like 'GRP-02' or has digits, extract digits
+        digits = re.findall(r'\d+', g_str)
+        if digits:
+            # Use the first number found, pad to 2 digits
+            g_prefix = str(digits[0]).zfill(2)
+        else:
+            # Otherwise use the first 3 letters of the group name
+            g_prefix = g_str[:3].upper()
+            
+    # 3. Get member number
+    try:
+        m_num = int(float(member_num_or_index))
+    except:
+        m_num = 1 # Fallback
+        
+    m_prefix = str(m_num).zfill(3)
+    
+    return f"{b_prefix}-{g_prefix}-{m_prefix}"
+
 import sys
 import os
 import holidays
@@ -979,7 +1009,22 @@ elif page == "📝 Loan Origination":
                                 
                                 group_row = group_match.iloc[0]
                                 
-                                client_id = str(uuid.uuid4())
+                                                                # Extract member number from the sheet if present
+                                m_num_raw = member_row.get('Member Number')
+                                try:
+                                    m_num_val = int(float(m_num_raw))
+                                except:
+                                    m_num_val = index + 1 # fallback to row index
+                                    
+                                branch_val = str(group_row.get('Branch Name', BRANCH))
+                                group_ref_val = str(member_row.get('Group Reference', ''))
+                                
+                                client_id = generate_client_id(branch_val, group_ref_val, m_num_val, is_bulk=True)
+                                
+                                # Safety check: If client_id already exists, append a random string to avoid duplicate errors
+                                existing_check = supabase.table("loans").select("client_id").eq("client_id", client_id).execute()
+                                if existing_check.data and len(existing_check.data) > 0:
+                                    client_id = f"{client_id}-{str(uuid.uuid4())[:4]}"
                                 
                                 # Default to 'Internal Account' for bulk imports
                                 status = 'Internal Account'
@@ -1174,7 +1219,22 @@ elif page == "📝 Loan Origination":
                 if not name or not phone:
                     st.error("❌ Please fill in all required fields (Name and Phone)")
                 else:
-                    new_client_id = str(uuid.uuid4())
+                    new_                                # Extract member number from the sheet if present
+                                m_num_raw = member_row.get('Member Number')
+                                try:
+                                    m_num_val = int(float(m_num_raw))
+                                except:
+                                    m_num_val = index + 1 # fallback to row index
+                                    
+                                branch_val = str(group_row.get('Branch Name', BRANCH))
+                                group_ref_val = str(member_row.get('Group Reference', ''))
+                                
+                                client_id = generate_client_id(branch_val, group_ref_val, m_num_val, is_bulk=True)
+                                
+                                # Safety check: If client_id already exists, append a random string to avoid duplicate errors
+                                existing_check = supabase.table("loans").select("client_id").eq("client_id", client_id).execute()
+                                if existing_check.data and len(existing_check.data) > 0:
+                                    client_id = f"{client_id}-{str(uuid.uuid4())[:4]}"
                     current_date_str = datetime.now().strftime("%Y-%m-%d")
                 
                     # Save the new loan to the database FIRST to avoid Foreign Key violations
