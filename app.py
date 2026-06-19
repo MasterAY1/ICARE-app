@@ -1029,11 +1029,18 @@ elif page == "📝 Loan Origination":
                                 # Default to 'Internal Account' for bulk imports
                                 status = 'Internal Account'
                                 
+                                # Robust extraction of officer
+                                officer_val = group_row.get('Credit Officer Name')
+                                if pd.isna(officer_val) or str(officer_val).strip() == "" or str(officer_val).strip().lower() == "nan":
+                                    officer_val = user_name
+                                else:
+                                    officer_val = str(officer_val).strip()
+                                
                                 client_data = {
                                     "client_id": client_id,
                                     "date": str(datetime.now().date()),
                                     "branch": str(group_row.get('Branch Name', BRANCH)),
-                                    "officer": str(group_row.get('Credit Officer Name', USER)),
+                                    "officer": officer_val,
                                     "client_name": str(member_row.get('Full Name', 'Unknown')),
                                     "phone": str(member_row.get('Phone Number', '')),
                                     "address": str(member_row.get('Home Address', '')),
