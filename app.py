@@ -74,6 +74,7 @@ def init_connection():
         return None
 
 supabase = init_connection()
+CO_NAME_MAP, CO_DISPLAY_MAP = load_co_mapping()
 
 # --- RBAC AUTHENTICATION ---
 def authenticate_user(username, password):
@@ -419,6 +420,9 @@ def update_database_safe(edited_subset, user_role, user_name, branch):
     
     for _, row in edited_subset.iterrows():
         db_data = {UI_TO_DB_LOANS[k]: row[k] for k in row.keys() if k in UI_TO_DB_LOANS}
+        # Translate display name back to DB username before saving
+        if "officer" in db_data:
+            db_data["officer"] = CO_NAME_MAP.get(db_data["officer"], db_data["officer"])
         supabase.table("loans").upsert(db_data).execute()
 
 def get_clients_for_user(df, user_role, user_name, branch):
@@ -758,7 +762,7 @@ with st.sidebar:
     
     st.markdown(f"""
         <div style='background: rgba(255,255,255,0.06); padding: 14px 16px; border-radius: 10px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.05);'>
-            <p style='color: white; margin: 0; font-size: 0.95rem; font-weight: 600;'>👤 {USER}</p>
+            <p style='color: white; margin: 0; font-size: 0.95rem; font-weight: 600;'>👤 {CO_DISPLAY_MAP.get(USER, USER)}</p>
             <p style='color: #94A3B8; margin: 6px 0 0 0; font-size: 0.8rem;'>
                 <span style='background: {role_color}; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600;'>{ROLE}</span>
                 &nbsp; 📍 {BRANCH}
@@ -1029,12 +1033,17 @@ elif page == "📝 Loan Origination":
                                 # Default to 'Internal Account' for bulk imports
                                 status = 'Internal Account'
                                 
-                                # Robust extraction of officer
+                                # Robust extraction of officer with translation
                                 officer_val = group_row.get('Credit Officer Name')
                                 if pd.isna(officer_val) or str(officer_val).strip() == "" or str(officer_val).strip().lower() == "nan":
-                                    officer_val = user_name
+                                    officer_val = USER
                                 else:
-                                    officer_val = str(officer_val).strip()
+                                    raw_name = str(officer_val).strip()
+                                    if raw_name in CO_NAME_MAP:
+                                        officer_val = CO_NAME_MAP[raw_name]
+                                    else:
+                                        st.warning(f"⚠️ Unrecognized officer name: '{raw_name}' in Excel. Defaulting to logged-in user.")
+                                        officer_val = USER
                                 
                                 client_data = {
                                     "client_id": client_id,
@@ -1125,9 +1134,14 @@ elif page == "📝 Loan Origination":
             group_date = gr5.date_input("Date of Formation", defaults["GroupDate"])
         
             if ROLE in ["Admin", "BM"]:
-                assigned_officer = st.selectbox("Assign to Officer:", ["CO1", "CO2"])
+                co_display_names = list(CO_NAME_MAP.keys())
+                if co_display_names:
+                    selected_display = st.selectbox("Assign to Officer:", co_display_names)
+                    assigned_officer = CO_NAME_MAP.get(selected_display, selected_display)
+                else:
+                    assigned_officer = st.selectbox("Assign to Officer:", ["CO1", "CO2"]) # fallback
             else:
-                st.write(f"**Assigned Officer:** {USER}")
+                st.write(f"**Assigned Officer:** {CO_DISPLAY_MAP.get(USER, USER)}")
                 assigned_officer = USER
             st.markdown("</div>", unsafe_allow_html=True)
         
@@ -1627,7 +1641,9 @@ elif page == "📅 Daily Report":
                 st.info("No officers have records for today.")
                 target_officer = "All Officers"
             else:
-                target_officer = st.selectbox("Select Credit Officer", ["All Officers"] + unique_officers, key="daily_rep_co")
+                display_options = ["All Officers"] + [CO_DISPLAY_MAP.get(o, o) for o in unique_officers]
+                selected_display = st.selectbox("Select Credit Officer", display_options, key="daily_rep_co")
+                target_officer = "All Officers" if selected_display == "All Officers" else CO_NAME_MAP.get(selected_display, selected_display)
                 
             if target_officer != "All Officers":
                 daily_reps = daily_reps[daily_reps['Officer'] == target_officer]
@@ -1743,7 +1759,9 @@ elif page == "📖 WhatsApp Cashbook":
             
             unique_officers = daily_reps['Officer'].dropna().unique().tolist()
             if unique_officers:
-                selected_co = st.selectbox("Select Credit Officer", unique_officers, key="wa_cashbook_co")
+                display_options = [CO_DISPLAY_MAP.get(o, o) for o in unique_officers]
+                selected_display = st.selectbox("Select Credit Officer", display_options, key="wa_cashbook_co")
+                selected_co = CO_NAME_MAP.get(selected_display, selected_display)
                 daily_reps = daily_reps[daily_reps['Officer'] == selected_co]
             else:
                 st.info("No officers have records for this date.")
@@ -1959,7 +1977,9 @@ elif page == "📒 Cash Book":
     branch_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
     
     officers = sorted(branch_loans['Officer'].dropna().unique()) if not branch_loans.empty else []
-    selected_officer = ctl3.selectbox("Officer Filter", ["All Officers"] + list(officers))
+    display_options = ["All Officers"] + [CO_DISPLAY_MAP.get(o, o) for o in officers]
+    selected_display = ctl3.selectbox("Officer Filter", display_options)
+    selected_officer = "All Officers" if selected_display == "All Officers" else CO_NAME_MAP.get(selected_display, selected_display)
     
     if selected_officer != "All Officers":
         branch_loans = branch_loans[branch_loans['Officer'] == selected_officer]
@@ -2190,6 +2210,8 @@ elif page == "🗂️ Portfolio":
             display_data.append(row_data)
         
         display_df = pd.DataFrame(display_data)
+        if "Officer" in display_df.columns:
+            display_df["Officer"] = display_df["Officer"].apply(lambda x: CO_DISPLAY_MAP.get(x, x))
         cols = ["Client ID", "Date", "Branch", "Officer", "Client Name", "Group Name", 
                 "Meeting Day", "Active Credit", "Loan Repay", "Acc. Savings", 
                 "Loan Balance", "Overdue", "Status", "Loan Product", "Phone"]
@@ -2204,7 +2226,7 @@ elif page == "🗂️ Portfolio":
                 "Status": st.column_config.SelectboxColumn("Status", options=["Pending", "Approved", "Active", "Completed"]),
                 "Meeting Day": st.column_config.SelectboxColumn("Meeting Day", options=["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]),
                 "Branch": st.column_config.TextColumn("Branch", disabled=(ROLE != "Admin")),
-                "Officer": st.column_config.SelectboxColumn("Officer", options=["CO1", "CO2", "System Admin"], disabled=(ROLE == "Officer")),
+                "Officer": st.column_config.SelectboxColumn("Officer", options=list(CO_NAME_MAP.keys()) if CO_NAME_MAP else ["CO1", "CO2"], disabled=(ROLE == "Officer")),
                 "Loan Balance": st.column_config.NumberColumn("Balance", disabled=True, format="₦%d"),
                 "Acc. Savings": st.column_config.NumberColumn("Savings", disabled=True, format="₦%d"),
                 "Overdue": st.column_config.NumberColumn("Overdue", disabled=True, format="₦%d"),
@@ -2343,7 +2365,9 @@ elif page in ["📑 Reports", "📑 Reports & Export"]:
         st.subheader("👥 Officer Performance Reports")
         
         officers = my_loans['Officer'].unique() if not my_loans.empty else []
-        selected_officer = st.selectbox("Select Officer:", ["All"] + list(officers))
+        display_options = ["All"] + [CO_DISPLAY_MAP.get(o, o) for o in officers]
+        selected_display = st.selectbox("Select Officer:", display_options)
+        selected_officer = "All" if selected_display == "All" else CO_NAME_MAP.get(selected_display, selected_display)
         
         if selected_officer != "All":
             officer_report = generate_officer_report(my_loans, all_repayments, selected_officer)
