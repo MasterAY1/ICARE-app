@@ -74,6 +74,21 @@ def init_connection():
         return None
 
 supabase = init_connection()
+
+@st.cache_data(ttl=600)
+def load_co_mapping():
+    if not supabase:
+        return {}, {}
+    try:
+        res = supabase.table("app_users").select("username, full_name").in_("role", ["CO", "Officer"]).execute()
+        if res.data:
+            name_map = {row["full_name"].strip(): row["username"] for row in res.data if row.get("full_name")}
+            display_map = {v: k for k, v in name_map.items()}
+            return name_map, display_map
+    except Exception as e:
+        print(f"Error loading CO mapping: {e}")
+    return {}, {}
+
 CO_NAME_MAP, CO_DISPLAY_MAP = load_co_mapping()
 
 # --- RBAC AUTHENTICATION ---
