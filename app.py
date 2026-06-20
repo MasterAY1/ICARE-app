@@ -785,17 +785,21 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
     
-    if ROLE == "Officer":
+    if ROLE in ["Officer", "CO"]:
         st.markdown("<p class='nav-section-label' style='color: #64748B;'>— Operations</p>", unsafe_allow_html=True)
-        nav_options = ["📊 Dashboard", "📝 Loan Origination", "💰 Collections & Arrears", "📅 Daily Report", "📖 WhatsApp Cashbook", "🗂️ Portfolio", "🧮 Calculator", "📑 Reports"]
-    elif ROLE == "BM":
-        st.markdown("<p class='nav-section-label' style='color: #64748B;'>— Branch Operations</p>", unsafe_allow_html=True)
-        nav_options = ["📊 Dashboard", "📝 Loan Origination", "💰 Branch Ledger", "📅 Daily Report", "📖 WhatsApp Cashbook", "📒 Cash Book", "🗂️ Portfolio", "📑 Reports & Export"]
+        nav_options = ["📊 Dashboard", "📝 Loan Origination", "💰 Collections & Arrears", "📅 Daily Report", "📖 WhatsApp Cashbook", "🔍 Audit Ledger"]
+    elif ROLE in ["BM", "AM"]:
+        st.markdown("<p class='nav-section-label' style='color: #64748B;'>— Executive Dashboard</p>", unsafe_allow_html=True)
+        nav_options = ["📊 Dashboard", "📖 WhatsApp Cashbook", "📈 Portfolio", "🏦 Cash Book", "🔍 Audit Ledger"]
     else:  # Admin
         st.markdown("<p class='nav-section-label' style='color: #64748B;'>— Administration</p>", unsafe_allow_html=True)
-        nav_options = ["📊 Dashboard", "📝 Loan Origination", "💰 Audit Ledger", "📅 Daily Report", "📖 WhatsApp Cashbook", "📒 Cash Book", "🗂️ Portfolio", "📑 Reports & Export"]
+        nav_options = ["📊 Dashboard", "📝 Loan Origination", "💰 Collections & Arrears", "📅 Daily Report", "📖 WhatsApp Cashbook", "📈 Portfolio", "🏦 Cash Book", "🔍 Audit Ledger", "📑 Reports & Export"]
     
     page = st.radio("Navigation", nav_options, label_visibility="collapsed")
+    
+    # Security check: if the requested page is not in permitted list, fallback to Dashboard
+    if page not in nav_options:
+        page = "📊 Dashboard"
     
     st.divider()
     
@@ -1389,7 +1393,7 @@ elif page == "📝 Loan Origination":
                     time.sleep(2)
                     st.rerun()
 
-elif page in ["💰 Collections & Arrears", "💰 Branch Ledger", "💰 Audit Ledger"]:
+elif page in ["💰 Collections & Arrears", "🔍 Audit Ledger"]:
     st.title(f"📂 {page}")
     
     all_loans = load_loans()
@@ -1976,7 +1980,7 @@ elif page == "📖 WhatsApp Cashbook":
         st.info("No records found.")
 
 
-elif page == "📒 Cash Book":
+elif page == "🏦 Cash Book":
     st.title("📒 Credit Cash Book")
     st.caption("INITIATIVE FOR COMMUNITY ADVANCEMENT, RELIEF AND EMPOWERMENT — Credit Cash Book")
     
@@ -2200,7 +2204,7 @@ elif page == "📒 Cash Book":
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-elif page == "🗂️ Portfolio":
+elif page == "📈 Portfolio":
     st.title(f"🗂️ {page}")
     
     all_loans = load_loans()
