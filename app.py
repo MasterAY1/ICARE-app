@@ -770,10 +770,13 @@ if not st.session_state['logged_in']:
     _, center_col, _ = st.columns([1, 2, 1])
     
     with center_col:
+        _, logo_col, _ = st.columns([1, 1, 1])
+        with logo_col:
+            st.image("assets/icare_logo.jpg", use_container_width=True)
+        
         st.markdown("""
             <div class='login-container'>
                 <div class='login-brand'>
-                    <h1>ICARE</h1>
                     <div class='brand-line'></div>
                     <p class='org-name'>Initiative for Community Advancement,<br>Relief and Empowerment</p>
                 </div>
@@ -822,9 +825,12 @@ role_labels = {"Admin": "Administrator", "BM": "Branch Manager", "CO": "Credit O
 role_label = role_labels.get(ROLE, ROLE)
 
 with st.sidebar:
+    _, logo_col, _ = st.columns([1, 2, 1])
+    with logo_col:
+        st.image("assets/icare_logo.jpg", use_container_width=True)
+    
     st.markdown(f"""
-        <div style='text-align: center; padding: 14px 0 6px 0;'>
-            <h2 style='color: #2E86C1 !important; font-size: 1.3rem; margin: 0; letter-spacing: 2px; font-weight: 800;'>ICARE</h2>
+        <div style='text-align: center; padding: 0 0 6px 0;'>
             <p style='color: #94A3B8; font-size: 0.65rem; margin: 4px 0 0 0; letter-spacing: 1px;'>CORE BANKING v{APP_VERSION}</p>
         </div>
     """, unsafe_allow_html=True)
