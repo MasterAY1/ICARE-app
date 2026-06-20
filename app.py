@@ -770,7 +770,7 @@ if not st.session_state['logged_in']:
     _, center_col, _ = st.columns([1, 2, 1])
     
     with center_col:
-        _, logo_col, _ = st.columns([1, 1, 1])
+        _, logo_col, _ = st.columns([1.5, 1, 1.5])
         with logo_col:
             st.image("assets/icare_logo.jpg", use_container_width=True)
         
@@ -825,7 +825,7 @@ role_labels = {"Admin": "Administrator", "BM": "Branch Manager", "CO": "Credit O
 role_label = role_labels.get(ROLE, ROLE)
 
 with st.sidebar:
-    _, logo_col, _ = st.columns([1, 2, 1])
+    _, logo_col, _ = st.columns([1, 1, 1])
     with logo_col:
         st.image("assets/icare_logo.jpg", use_container_width=True)
     
