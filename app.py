@@ -108,18 +108,21 @@ def authenticate_user(username, password):
         st.error(f"Auth error: {e}")
     return None
 
-# Custom CSS — ICARE Banking Design System v4.0 (Professional)
+# Custom CSS — ICARE Banking Design System v5.0 (Brand Colors)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     
+    /* === ICARE BRAND PALETTE === */
+    /* Primary Blue: #2E86C1  |  Accent Green: #8CC63F  |  Dark: #1B4F72 */
+    
     /* === BASE === */
     .stApp { 
-        background: #F0F2F5 !important;
+        background: #F0F4F8 !important;
         font-family: 'Inter', -apple-system, sans-serif !important;
     }
-    h1 { color: #0A1628 !important; font-weight: 800; font-size: 1.8rem; letter-spacing: -0.5px; }
-    h2 { color: #0A1628 !important; font-weight: 700; font-size: 1.4rem; }
+    h1 { color: #1B4F72 !important; font-weight: 800; font-size: 1.8rem; letter-spacing: -0.5px; }
+    h2 { color: #1B4F72 !important; font-weight: 700; font-size: 1.4rem; }
     h3 { color: #1A1D23 !important; font-weight: 700; font-size: 1.15rem; }
     h4 { color: #1A1D23 !important; font-weight: 600; font-size: 1rem; }
     
@@ -132,8 +135,8 @@ st.markdown("""
         border: 1px solid #E5E7EB;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
-    .stMetric:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-    div[data-testid="stMetricValue"] { color: #0A1628 !important; font-size: 1.7rem; font-weight: 800; }
+    .stMetric:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(46,134,193,0.12); }
+    div[data-testid="stMetricValue"] { color: #1B4F72 !important; font-size: 1.7rem; font-weight: 800; }
     div[data-testid="stMetricLabel"] { color: #6B7280 !important; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     
     /* === INPUTS === */
@@ -145,26 +148,26 @@ st.markdown("""
         border-radius: 8px;
     }
     .stTextInput input:focus, .stNumberInput input:focus {
-        border-color: #0F4C3A !important;
-        box-shadow: 0 0 0 3px rgba(15, 76, 58, 0.1) !important;
+        border-color: #2E86C1 !important;
+        box-shadow: 0 0 0 3px rgba(46, 134, 193, 0.12) !important;
     }
     
     /* === BUTTONS === */
     .stButton > button { 
-        background: linear-gradient(135deg, #0F4C3A 0%, #156B51 100%) !important;
+        background: linear-gradient(135deg, #2E86C1 0%, #3498DB 100%) !important;
         color: white !important;
         font-weight: 600 !important;
         border: none;
         height: 2.8em;
         border-radius: 8px;
         transition: all 0.25s ease;
-        box-shadow: 0 2px 4px rgba(15, 76, 58, 0.15);
+        box-shadow: 0 2px 4px rgba(46, 134, 193, 0.2);
         letter-spacing: 0.3px;
     }
     .stButton > button:hover { 
-        background: linear-gradient(135deg, #156B51 0%, #1A8A68 100%) !important;
+        background: linear-gradient(135deg, #2574A9 0%, #2E86C1 100%) !important;
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(15, 76, 58, 0.25);
+        box-shadow: 0 4px 12px rgba(46, 134, 193, 0.3);
     }
     .stButton > button:active { transform: translateY(0); }
     
@@ -190,12 +193,12 @@ st.markdown("""
         border-radius: 6px;
     }
     section[data-testid="stSidebar"] .stRadio label:hover { 
-        color: #0F4C3A !important;
-        background: #F1F5F9;
+        color: #2E86C1 !important;
+        background: #EBF5FB;
     }
     section[data-testid="stSidebar"] .stDivider { border-color: #E2E8F0 !important; }
     section[data-testid="stSidebar"] .stButton > button {
-        background: #F1F5F9 !important;
+        background: #F8F9FA !important;
         color: #334155 !important;
         border: 1px solid #E2E8F0 !important;
         box-shadow: none !important;
@@ -224,27 +227,27 @@ st.markdown("""
         padding: 22px;
         text-align: center;
         box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-        border-top: 3px solid #C8A951;
+        border-top: 3px solid #2E86C1;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
     .metric-card:hover {
         transform: translateY(-3px);
-        box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+        box-shadow: 0 6px 16px rgba(46,134,193,0.12);
     }
-    .metric-value { font-size: 2rem; font-weight: 800; color: #0A1628; letter-spacing: -0.5px; }
+    .metric-value { font-size: 2rem; font-weight: 800; color: #1B4F72; letter-spacing: -0.5px; }
     .metric-label { font-size: 0.8rem; color: #6B7280; margin-top: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     
     /* === STATUS BADGES === */
     .status-badge { display: inline-block; padding: 5px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.3px; }
     .status-pending { background: #FEF3C7; color: #92400E; }
-    .status-approved { background: #D1FAE5; color: #065F46; }
-    .status-active { background: #DBEAFE; color: #1E40AF; }
+    .status-approved { background: #D5F5E3; color: #1E8449; }
+    .status-active { background: #D6EAF8; color: #1B4F72; }
     .status-completed { background: #F3F4F6; color: #374151; }
     .status-closed { background: #FEE2E2; color: #991B1B; }
     
     /* === WELCOME BANNER === */
     .welcome-banner {
-        background: linear-gradient(135deg, #0F4C3A 0%, #156B51 50%, #1A8A68 100%);
+        background: linear-gradient(135deg, #1B4F72 0%, #2E86C1 50%, #3498DB 100%);
         border-radius: 14px;
         padding: 28px 32px;
         color: white;
@@ -252,8 +255,8 @@ st.markdown("""
         border: 1px solid rgba(255,255,255,0.08);
     }
     .welcome-banner h2 { color: white !important; margin: 0; font-size: 1.4rem; }
-    .welcome-banner p { color: rgba(255,255,255,0.75); margin: 6px 0 0 0; font-size: 0.9rem; }
-    .welcome-banner .wb-gold { color: #C8A951; font-weight: 600; }
+    .welcome-banner p { color: rgba(255,255,255,0.8); margin: 6px 0 0 0; font-size: 0.9rem; }
+    .welcome-banner .wb-gold { color: #8CC63F; font-weight: 600; }
     
     /* === LOGIN === */
     .login-container {
@@ -265,7 +268,7 @@ st.markdown("""
         margin-bottom: 32px;
     }
     .login-brand h1 {
-        color: #0F4C3A !important;
+        color: #2E86C1 !important;
         font-size: 2rem;
         font-weight: 800;
         letter-spacing: 4px;
@@ -280,7 +283,7 @@ st.markdown("""
     .login-brand .brand-line {
         width: 48px;
         height: 3px;
-        background: #C8A951;
+        background: #8CC63F;
         margin: 16px auto;
         border-radius: 2px;
     }
@@ -289,10 +292,10 @@ st.markdown("""
         border-radius: 16px;
         padding: 40px 36px 32px;
         border: 1px solid #E5E7EB;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+        box-shadow: 0 4px 24px rgba(46,134,193,0.08);
     }
     .login-card h2 {
-        color: #0A1628 !important;
+        color: #1B4F72 !important;
         font-size: 1.3rem;
         font-weight: 700;
         margin: 0 0 4px 0;
@@ -310,7 +313,7 @@ st.markdown("""
     
     /* === SECTION HEADERS === */
     .section-header {
-        border-left: 4px solid #C8A951;
+        border-left: 4px solid #2E86C1;
         padding-left: 14px;
         margin: 20px 0 14px 0;
     }
@@ -810,8 +813,8 @@ ROLE = st.session_state['role']
 USER = st.session_state['user']
 BRANCH = st.session_state['branch']
 
-# Role badge colors
-role_colors = {"Admin": "#C8A951", "BM": "#3B82F6", "CO": "#059669", "Officer": "#059669", "AM": "#7C3AED"}
+# Role badge colors (ICARE brand palette)
+role_colors = {"Admin": "#1B4F72", "BM": "#2E86C1", "CO": "#8CC63F", "Officer": "#8CC63F", "AM": "#2E86C1"}
 role_color = role_colors.get(ROLE, "#6B7280")
 
 # Role display labels
@@ -821,7 +824,7 @@ role_label = role_labels.get(ROLE, ROLE)
 with st.sidebar:
     st.markdown(f"""
         <div style='text-align: center; padding: 14px 0 6px 0;'>
-            <h2 style='color: #0F4C3A !important; font-size: 1.3rem; margin: 0; letter-spacing: 2px; font-weight: 800;'>ICARE</h2>
+            <h2 style='color: #2E86C1 !important; font-size: 1.3rem; margin: 0; letter-spacing: 2px; font-weight: 800;'>ICARE</h2>
             <p style='color: #94A3B8; font-size: 0.65rem; margin: 4px 0 0 0; letter-spacing: 1px;'>CORE BANKING v{APP_VERSION}</p>
         </div>
     """, unsafe_allow_html=True)
