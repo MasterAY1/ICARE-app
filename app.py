@@ -108,7 +108,7 @@ def authenticate_user(username, password):
         st.error(f"Auth error: {e}")
     return None
 
-# Custom CSS — ICARE Banking Design System v3.0
+# Custom CSS — ICARE Banking Design System v4.0 (Professional)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -176,16 +176,35 @@ st.markdown("""
         border: 1px solid #E5E7EB;
     }
     
-    /* === SIDEBAR === */
+    /* === SIDEBAR — Professional Light Theme === */
     section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0A1628 0%, #060E1A 100%) !important;
+        background: #FFFFFF !important;
+        border-right: 1px solid #E2E8F0 !important;
     }
     section[data-testid="stSidebar"] .stRadio label { 
-        color: #CBD5E1 !important; 
+        color: #334155 !important; 
         font-weight: 500;
-        transition: color 0.2s;
+        font-size: 0.9rem;
+        transition: color 0.2s, background 0.2s;
+        padding: 4px 8px;
+        border-radius: 6px;
     }
-    section[data-testid="stSidebar"] .stRadio label:hover { color: #FFFFFF !important; }
+    section[data-testid="stSidebar"] .stRadio label:hover { 
+        color: #0F4C3A !important;
+        background: #F1F5F9;
+    }
+    section[data-testid="stSidebar"] .stDivider { border-color: #E2E8F0 !important; }
+    section[data-testid="stSidebar"] .stButton > button {
+        background: #F1F5F9 !important;
+        color: #334155 !important;
+        border: 1px solid #E2E8F0 !important;
+        box-shadow: none !important;
+    }
+    section[data-testid="stSidebar"] .stButton > button:hover {
+        background: #FEE2E2 !important;
+        color: #991B1B !important;
+        border-color: #FECACA !important;
+    }
     
     /* === ALERTS === */
     .stAlert { border-radius: 10px; }
@@ -225,42 +244,69 @@ st.markdown("""
     
     /* === WELCOME BANNER === */
     .welcome-banner {
-        background: linear-gradient(135deg, #0A1628 0%, #0F4C3A 100%);
+        background: linear-gradient(135deg, #0F4C3A 0%, #156B51 50%, #1A8A68 100%);
         border-radius: 14px;
         padding: 28px 32px;
         color: white;
         margin-bottom: 24px;
+        border: 1px solid rgba(255,255,255,0.08);
     }
     .welcome-banner h2 { color: white !important; margin: 0; font-size: 1.4rem; }
-    .welcome-banner p { color: #94A3B8; margin: 6px 0 0 0; font-size: 0.9rem; }
+    .welcome-banner p { color: rgba(255,255,255,0.75); margin: 6px 0 0 0; font-size: 0.9rem; }
     .welcome-banner .wb-gold { color: #C8A951; font-weight: 600; }
     
     /* === LOGIN === */
-    .login-hero {
-        background: linear-gradient(160deg, #0A1628 0%, #0F4C3A 100%);
-        border-radius: 16px;
-        padding: 48px 36px;
-        min-height: 420px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        color: white;
+    .login-container {
+        max-width: 440px;
+        margin: 60px auto;
+        text-align: center;
     }
-    .login-hero h1 { color: white !important; font-size: 2.5rem; margin-bottom: 4px; letter-spacing: 3px; }
-    .login-hero .org-name { color: #94A3B8; font-size: 0.85rem; line-height: 1.5; margin-top: 8px; }
-    .login-hero .version-tag { color: #C8A951; font-size: 0.8rem; font-weight: 600; margin-top: 20px; letter-spacing: 1px; }
-    .login-hero .gold-line { width: 60px; height: 3px; background: #C8A951; margin: 20px 0; border-radius: 2px; }
-    .login-hero .footer-text { color: #475569; font-size: 0.75rem; margin-top: 32px; }
-    
-    .login-form-panel {
-        background: white;
+    .login-brand {
+        margin-bottom: 32px;
+    }
+    .login-brand h1 {
+        color: #0F4C3A !important;
+        font-size: 2rem;
+        font-weight: 800;
+        letter-spacing: 4px;
+        margin: 0 0 4px 0;
+    }
+    .login-brand .org-name {
+        color: #64748B;
+        font-size: 0.8rem;
+        line-height: 1.6;
+        margin: 0;
+    }
+    .login-brand .brand-line {
+        width: 48px;
+        height: 3px;
+        background: #C8A951;
+        margin: 16px auto;
+        border-radius: 2px;
+    }
+    .login-card {
+        background: #FFFFFF;
         border-radius: 16px;
-        padding: 40px 36px;
+        padding: 40px 36px 32px;
         border: 1px solid #E5E7EB;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+        box-shadow: 0 4px 24px rgba(0,0,0,0.06);
     }
-    .login-form-panel h2 { color: #0A1628 !important; font-size: 1.6rem; margin-bottom: 4px; }
-    .login-form-panel .subtitle { color: #6B7280; font-size: 0.9rem; margin-bottom: 24px; }
+    .login-card h2 {
+        color: #0A1628 !important;
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin: 0 0 4px 0;
+    }
+    .login-card .subtitle {
+        color: #94A3B8;
+        font-size: 0.85rem;
+        margin-bottom: 24px;
+    }
+    .login-footer {
+        margin-top: 24px;
+        color: #94A3B8;
+        font-size: 0.72rem;
+    }
     
     /* === SECTION HEADERS === */
     .section-header {
@@ -272,7 +318,7 @@ st.markdown("""
     
     /* === NAV GROUP LABELS === */
     .nav-section-label {
-        color: #475569 !important;
+        color: #94A3B8 !important;
         font-size: 0.65rem !important;
         font-weight: 700;
         text-transform: uppercase;
@@ -716,25 +762,25 @@ if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
         st.session_state['logged_in'] = False
 
 if not st.session_state['logged_in']:
-    st.markdown("<br>", unsafe_allow_html=True)
-    hero_col, form_col = st.columns([2, 3])
+    st.markdown("<br><br>", unsafe_allow_html=True)
     
-    with hero_col:
+    _, center_col, _ = st.columns([1, 2, 1])
+    
+    with center_col:
         st.markdown("""
-            <div class='login-hero'>
-                <h1>ICARE</h1>
-                <p class='org-name'>Initiative for Community Advancement,<br>Relief and Empowerment</p>
-                <div class='gold-line'></div>
-                <p class='version-tag'>CORE BANKING SYSTEM v3.0</p>
-                <p class='footer-text'>Empowering communities since 2015</p>
+            <div class='login-container'>
+                <div class='login-brand'>
+                    <h1>ICARE</h1>
+                    <div class='brand-line'></div>
+                    <p class='org-name'>Initiative for Community Advancement,<br>Relief and Empowerment</p>
+                </div>
             </div>
         """, unsafe_allow_html=True)
-    
-    with form_col:
+        
         st.markdown("""
-            <div class='login-form-panel'>
-                <h2>Welcome Back</h2>
-                <p class='subtitle'>Sign in to your account</p>
+            <div class='login-card'>
+                <h2>Sign In</h2>
+                <p class='subtitle'>Enter your credentials to continue</p>
             </div>
         """, unsafe_allow_html=True)
         
@@ -754,7 +800,9 @@ if not st.session_state['logged_in']:
                     st.session_state['branch'] = auth_result['branch_name']
                     st.rerun()
                 else:
-                    st.error("❌ Invalid credentials. Please try again.")
+                    st.error("Invalid credentials. Please try again.")
+        
+        st.markdown("<p class='login-footer'>Core Banking System v3.0 &middot; Secured Connection</p>", unsafe_allow_html=True)
     st.stop()
 
 # --- 5. SIDEBAR ---
@@ -763,47 +811,51 @@ USER = st.session_state['user']
 BRANCH = st.session_state['branch']
 
 # Role badge colors
-role_colors = {"Admin": "#C8A951", "BM": "#3B82F6", "Officer": "#059669"}
+role_colors = {"Admin": "#C8A951", "BM": "#3B82F6", "CO": "#059669", "Officer": "#059669", "AM": "#7C3AED"}
 role_color = role_colors.get(ROLE, "#6B7280")
+
+# Role display labels
+role_labels = {"Admin": "Administrator", "BM": "Branch Manager", "CO": "Credit Officer", "Officer": "Credit Officer", "AM": "Area Manager"}
+role_label = role_labels.get(ROLE, ROLE)
 
 with st.sidebar:
     st.markdown(f"""
-        <div style='text-align: center; padding: 12px 0 4px 0;'>
-            <h2 style='color: white !important; font-size: 1.2rem; margin: 0; letter-spacing: 1px;'>🏦 ICARE</h2>
-            <p style='color: #475569; font-size: 0.65rem; margin: 4px 0 0 0; letter-spacing: 1px;'>CORE BANKING v{APP_VERSION}</p>
+        <div style='text-align: center; padding: 14px 0 6px 0;'>
+            <h2 style='color: #0F4C3A !important; font-size: 1.3rem; margin: 0; letter-spacing: 2px; font-weight: 800;'>ICARE</h2>
+            <p style='color: #94A3B8; font-size: 0.65rem; margin: 4px 0 0 0; letter-spacing: 1px;'>CORE BANKING v{APP_VERSION}</p>
         </div>
     """, unsafe_allow_html=True)
     st.divider()
     
     st.markdown(f"""
-        <div style='background: rgba(255,255,255,0.06); padding: 14px 16px; border-radius: 10px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.05);'>
-            <p style='color: white; margin: 0; font-size: 0.95rem; font-weight: 600;'>👤 {CO_DISPLAY_MAP.get(USER, USER)}</p>
-            <p style='color: #94A3B8; margin: 6px 0 0 0; font-size: 0.8rem;'>
-                <span style='background: {role_color}; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600;'>{ROLE}</span>
-                &nbsp; 📍 {BRANCH}
+        <div style='background: #F8FAFC; padding: 14px 16px; border-radius: 10px; margin-bottom: 12px; border: 1px solid #E2E8F0;'>
+            <p style='color: #0F172A; margin: 0; font-size: 0.92rem; font-weight: 600;'>{CO_DISPLAY_MAP.get(USER, USER)}</p>
+            <p style='color: #64748B; margin: 6px 0 0 0; font-size: 0.78rem;'>
+                <span style='background: {role_color}; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.68rem; font-weight: 600;'>{role_label}</span>
+                &nbsp; {BRANCH} Branch
             </p>
         </div>
     """, unsafe_allow_html=True)
     
     if ROLE in ["Officer", "CO"]:
-        st.markdown("<p class='nav-section-label' style='color: #64748B;'>— Operations</p>", unsafe_allow_html=True)
-        nav_options = ["📊 Dashboard", "📝 Loan Origination", "💰 Collections & Arrears", "📅 Daily Report", "📖 WhatsApp Cashbook", "🔍 Audit Ledger"]
+        st.markdown("<p class='nav-section-label'>OPERATIONS</p>", unsafe_allow_html=True)
+        nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "WhatsApp Cashbook", "Audit Ledger"]
     elif ROLE in ["BM", "AM"]:
-        st.markdown("<p class='nav-section-label' style='color: #64748B;'>— Executive Dashboard</p>", unsafe_allow_html=True)
-        nav_options = ["📊 Dashboard", "📖 WhatsApp Cashbook", "📈 Portfolio", "🏦 Cash Book", "🔍 Audit Ledger"]
+        st.markdown("<p class='nav-section-label'>EXECUTIVE</p>", unsafe_allow_html=True)
+        nav_options = ["Dashboard", "WhatsApp Cashbook", "Portfolio", "Cash Book", "Audit Ledger"]
     else:  # Admin
-        st.markdown("<p class='nav-section-label' style='color: #64748B;'>— Administration</p>", unsafe_allow_html=True)
-        nav_options = ["📊 Dashboard", "📝 Loan Origination", "💰 Collections & Arrears", "📅 Daily Report", "📖 WhatsApp Cashbook", "📈 Portfolio", "🏦 Cash Book", "🔍 Audit Ledger", "📑 Reports & Export"]
+        st.markdown("<p class='nav-section-label'>ADMINISTRATION</p>", unsafe_allow_html=True)
+        nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "WhatsApp Cashbook", "Portfolio", "Cash Book", "Audit Ledger", "Reports & Export"]
     
     page = st.radio("Navigation", nav_options, label_visibility="collapsed")
     
     # Security check: if the requested page is not in permitted list, fallback to Dashboard
     if page not in nav_options:
-        page = "📊 Dashboard"
+        page = "Dashboard"
     
     st.divider()
     
-    if st.button("🚪 Sign Out", use_container_width=True):
+    if st.button("Sign Out", use_container_width=True):
         try:
             cookie_manager.delete("icare_auth")
         except KeyError:
@@ -814,17 +866,18 @@ with st.sidebar:
 # Welcome banner
 hour = datetime.now().hour
 greeting = "Good morning" if hour < 12 else ("Good afternoon" if hour < 17 else "Good evening")
+display_name = CO_DISPLAY_MAP.get(USER, USER)
 st.markdown(f"""
     <div class='welcome-banner'>
-        <h2>{greeting}, {USER}</h2>
-        <p>{ROLE} — <span class='wb-gold'>{BRANCH} Branch</span> · {datetime.now().strftime('%A, %B %d, %Y')}</p>
+        <h2>{greeting}, {display_name}</h2>
+        <p>{role_label} &mdash; <span class='wb-gold'>{BRANCH} Branch</span> &middot; {datetime.now().strftime('%A, %B %d, %Y')}</p>
     </div>
 """, unsafe_allow_html=True)
 
 # --- 6. PAGES ---
 
-if page == "📊 Dashboard":
-    st.title("📊 Performance & Risk Dashboard")
+if page == "Dashboard":
+    st.title("Performance & Risk Dashboard")
     
     all_loans = load_loans()
     all_repayments = load_repayments()
@@ -878,8 +931,8 @@ if page == "📊 Dashboard":
     c4.metric("🚨 Total Overdue Amount", f"₦{total_overdue:,.0f}", delta_color=od_color)
 
 
-elif page == "📝 Loan Origination":
-    st.title("📝 New Loan Application")
+elif page == "Loan Origination":
+    st.title("New Loan Application")
     
     client_type = st.radio("Client Type", ["New Client", "Existing Client", "📦 Bulk Onboarding"], horizontal=True)
     
@@ -1393,8 +1446,8 @@ elif page == "📝 Loan Origination":
                     time.sleep(2)
                     st.rerun()
 
-elif page in ["💰 Collections & Arrears", "🔍 Audit Ledger"]:
-    st.title(f"📂 {page}")
+elif page in ["Collections", "Audit Ledger"]:
+    st.title(f"{page}")
     
     all_loans = load_loans()
     my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
@@ -1620,8 +1673,8 @@ elif page in ["💰 Collections & Arrears", "🔍 Audit Ledger"]:
                 st.rerun()
 
 
-elif page == "📅 Daily Report":
-    st.title("📅 Daily Collections Report")
+elif page == "Daily Report":
+    st.title("Daily Collections Report")
     
     view_date = st.date_input("Select Date for Report", datetime.now().date())
     date_str = view_date.strftime("%Y-%m-%d")
@@ -1756,8 +1809,8 @@ elif page == "📅 Daily Report":
             st.dataframe(pd.DataFrame(detailed_data), use_container_width=True)
     else:
         st.info("No records found in database.")
-elif page == "📖 WhatsApp Cashbook":
-    st.title("📖 WhatsApp Cashbook")
+elif page == "WhatsApp Cashbook":
+    st.title("WhatsApp Cashbook")
     st.caption("Daily Reconciliation Dashboard — Left (Inflows) vs Right (Outflows)")
     
     view_date = st.date_input("Select Date", datetime.now().date(), key="wa_date")
@@ -1980,8 +2033,8 @@ elif page == "📖 WhatsApp Cashbook":
         st.info("No records found.")
 
 
-elif page == "🏦 Cash Book":
-    st.title("📒 Credit Cash Book")
+elif page == "Cash Book":
+    st.title("Credit Cash Book")
     st.caption("INITIATIVE FOR COMMUNITY ADVANCEMENT, RELIEF AND EMPOWERMENT — Credit Cash Book")
     
     # --- Controls ---
@@ -2204,8 +2257,8 @@ elif page == "🏦 Cash Book":
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-elif page == "📈 Portfolio":
-    st.title(f"🗂️ {page}")
+elif page == "Portfolio":
+    st.title("Portfolio Management")
     
     all_loans = load_loans()
     repayments = load_repayments()
@@ -2258,8 +2311,8 @@ elif page == "📈 Portfolio":
             st.success("✅ Cloud Database Updated Successfully!")
             st.rerun()
 
-elif page == "🧮 Calculator":
-    st.title("🧮 Loan Simulator")
+elif page == "Calculator":
+    st.title("Loan Simulator")
     
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
@@ -2301,8 +2354,8 @@ elif page == "🧮 Calculator":
     st.dataframe(schedule_df, use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif page in ["📑 Reports", "📑 Reports & Export"]:
-    st.title("📑 Reports & Data Export")
+elif page in ["Reports", "Reports & Export"]:
+    st.title("Reports & Data Export")
     
     all_loans = load_loans()
     all_repayments = load_repayments()
