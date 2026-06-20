@@ -4,7 +4,18 @@ from datetime import datetime, timedelta
 import math
 import uuid
 import hashlib
+import base64
+import os
 from supabase import create_client, Client
+
+@st.cache_data
+def get_base64_image(image_path):
+    if not os.path.exists(image_path):
+        return ""
+    with open(image_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
+
+LOGO_B64 = get_base64_image("assets/icare_logo.jpg")
 
 def generate_client_id(branch_name, group_string, member_num_or_index, is_bulk=False):
     import re
@@ -770,9 +781,11 @@ if not st.session_state['logged_in']:
     _, center_col, _ = st.columns([1, 2, 1])
     
     with center_col:
-        _, logo_col, _ = st.columns([1.5, 1, 1.5])
-        with logo_col:
-            st.image("assets/icare_logo.jpg", use_container_width=True)
+        st.markdown(f"""
+            <div style="text-align: center; margin-bottom: -15px;">
+                <img src="data:image/jpeg;base64,{LOGO_B64}" style="width: 85px; height: auto; border-radius: 50%; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
+            </div>
+        """, unsafe_allow_html=True)
         
         st.markdown("""
             <div class='login-container'>
@@ -825,9 +838,11 @@ role_labels = {"Admin": "Administrator", "BM": "Branch Manager", "CO": "Credit O
 role_label = role_labels.get(ROLE, ROLE)
 
 with st.sidebar:
-    _, logo_col, _ = st.columns([1, 1, 1])
-    with logo_col:
-        st.image("assets/icare_logo.jpg", use_container_width=True)
+    st.markdown(f"""
+        <div style="text-align: center; margin-top: 10px; margin-bottom: 5px;">
+            <img src="data:image/jpeg;base64,{LOGO_B64}" style="width: 65px; height: auto; border-radius: 50%; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+        </div>
+    """, unsafe_allow_html=True)
     
     st.markdown(f"""
         <div style='text-align: center; padding: 0 0 6px 0;'>
