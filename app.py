@@ -280,10 +280,11 @@ st.markdown("""
     }
     .login-brand h1 {
         color: #2E86C1 !important;
-        font-size: 2rem;
+        font-size: 2.2rem;
         font-weight: 800;
         letter-spacing: 4px;
         margin: 0 0 4px 0;
+        padding-left: 4px;
     }
     .login-brand .org-name {
         color: #64748B;
