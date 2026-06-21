@@ -269,59 +269,116 @@ st.markdown("""
     .welcome-banner p { color: rgba(255,255,255,0.8); margin: 6px 0 0 0; font-size: 0.9rem; }
     .welcome-banner .wb-gold { color: #8CC63F; font-weight: 600; }
     
-    /* === LOGIN === */
-    .login-container {
-        max-width: 440px;
-        margin: 60px auto;
+    /* === LOGIN PAGE — PREMIUM FINTECH === */
+    .login-page-bg {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: linear-gradient(135deg, #0C2D48 0%, #1B4F72 30%, #2E86C1 70%, #3498DB 100%);
+        z-index: -2;
+    }
+    .login-page-bg::before {
+        content: '';
+        position: fixed;
+        top: -50%; left: -50%; right: -50%; bottom: -50%;
+        background: radial-gradient(circle at 30% 20%, rgba(140,198,63,0.08) 0%, transparent 50%),
+                    radial-gradient(circle at 70% 80%, rgba(46,134,193,0.12) 0%, transparent 50%);
+        z-index: -1;
+        animation: loginGlow 8s ease-in-out infinite alternate;
+    }
+    @keyframes loginGlow {
+        0% { opacity: 0.6; transform: scale(1); }
+        100% { opacity: 1; transform: scale(1.1); }
+    }
+    
+    .login-glass-card {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-radius: 20px;
+        padding: 44px 38px 36px;
+        border: 1px solid rgba(255,255,255,0.3);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+        max-width: 420px;
+        margin: 0 auto;
+    }
+    .login-glass-card .login-logo-wrap {
+        text-align: center;
+        margin-bottom: 8px;
+    }
+    .login-glass-card .login-logo-wrap img {
+        width: 76px;
+        height: auto;
+        border-radius: 50%;
+        box-shadow: 0 4px 16px rgba(46,134,193,0.18);
+        border: 3px solid rgba(255,255,255,0.9);
+    }
+    .login-glass-card .login-brand-name {
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: #1B4F72;
+        letter-spacing: 5px;
+        padding-left: 5px;
+        margin: 10px 0 0 0;
         text-align: center;
     }
-    .login-brand {
-        margin-bottom: 32px;
-    }
-    .login-brand h1 {
-        color: #2E86C1 !important;
-        font-size: 2.2rem;
-        font-weight: 800;
-        letter-spacing: 4px;
-        margin: 0 0 4px 0;
-        padding-left: 4px;
-    }
-    .login-brand .org-name {
+    .login-glass-card .login-org-name {
+        font-size: 0.75rem;
         color: #64748B;
-        font-size: 0.8rem;
+        text-align: center;
         line-height: 1.6;
-        margin: 0;
+        margin: 4px 0 0 0;
     }
-    .login-brand .brand-line {
-        width: 48px;
+    .login-glass-card .login-accent-line {
+        width: 44px;
         height: 3px;
-        background: #8CC63F;
-        margin: 16px auto;
-        border-radius: 2px;
+        background: linear-gradient(90deg, #8CC63F, #2E86C1);
+        margin: 18px auto;
+        border-radius: 4px;
     }
-    .login-card {
-        background: #FFFFFF;
-        border-radius: 16px;
-        padding: 40px 36px 32px;
-        border: 1px solid #E5E7EB;
-        box-shadow: 0 4px 24px rgba(46,134,193,0.08);
-    }
-    .login-card h2 {
-        color: #1B4F72 !important;
-        font-size: 1.3rem;
+    .login-glass-card .login-title {
+        font-size: 1.05rem;
         font-weight: 700;
-        margin: 0 0 4px 0;
+        color: #1B4F72;
+        text-align: center;
+        margin: 0 0 2px 0;
     }
-    .login-card .subtitle {
+    .login-glass-card .login-subtitle {
+        font-size: 0.8rem;
         color: #94A3B8;
-        font-size: 0.85rem;
-        margin-bottom: 24px;
+        text-align: center;
+        margin: 0 0 20px 0;
     }
-    .login-footer {
-        margin-top: 24px;
+    .login-footer-bar {
+        text-align: center;
+        margin-top: 20px;
+        padding-top: 16px;
+        border-top: 1px solid #E2E8F0;
+    }
+    .login-footer-bar p {
         color: #94A3B8;
-        font-size: 0.72rem;
+        font-size: 0.68rem;
+        margin: 0;
+        letter-spacing: 0.3px;
     }
+    .login-footer-bar .secured-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: #F0FDF4;
+        color: #16A34A;
+        font-size: 0.65rem;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 20px;
+        margin-top: 8px;
+        border: 1px solid #BBF7D0;
+    }
+    .login-footer-bar .secured-badge svg {
+        width: 12px; height: 12px;
+    }
+    
+    /* Hide default Streamlit bg on login */
+    .login-hide-bg .stApp { background: transparent !important; }
     
     /* === SECTION HEADERS === */
     .section-header {
@@ -777,26 +834,24 @@ if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
         st.session_state['logged_in'] = False
 
 if not st.session_state['logged_in']:
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    # Inject gradient background over Streamlit's default
+    st.markdown('<div class="login-page-bg"></div>', unsafe_allow_html=True)
+    st.markdown('<style>.stApp { background: transparent !important; }</style>', unsafe_allow_html=True)
     
-    _, center_col, _ = st.columns([1, 2, 1])
+    st.markdown('<br>', unsafe_allow_html=True)
+    _, center_col, _ = st.columns([1, 1.4, 1])
     
     with center_col:
         st.markdown(f"""
-            <div class='login-container'>
-                <div class='login-brand'>
-                    <img src="data:image/jpeg;base64,{LOGO_B64}" style="width: 85px; height: auto; border-radius: 50%; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 12px;">
-                    <h1>ICARE</h1>
-                    <div class='brand-line'></div>
-                    <p class='org-name'>Initiative for Community Advancement,<br>Relief and Empowerment</p>
+            <div class='login-glass-card'>
+                <div class='login-logo-wrap'>
+                    <img src="data:image/jpeg;base64,{LOGO_B64}">
                 </div>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown("""
-            <div class='login-card'>
-                <h2>Sign In</h2>
-                <p class='subtitle'>Enter your credentials to continue</p>
+                <p class='login-brand-name'>ICARE</p>
+                <p class='login-org-name'>Initiative for Community Advancement,<br>Relief and Empowerment</p>
+                <div class='login-accent-line'></div>
+                <p class='login-title'>Welcome Back</p>
+                <p class='login-subtitle'>Sign in to your banking portal</p>
             </div>
         """, unsafe_allow_html=True)
         
@@ -818,7 +873,15 @@ if not st.session_state['logged_in']:
                 else:
                     st.error("Invalid credentials. Please try again.")
         
-        st.markdown("<p class='login-footer'>Core Banking System v3.0 &middot; Secured Connection</p>", unsafe_allow_html=True)
+        st.markdown(f"""
+            <div class='login-footer-bar'>
+                <p>Core Banking System v{APP_VERSION}</p>
+                <span class='secured-badge'>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 16l-4-4 1.41-1.41L11 14.17l6.59-6.59L19 9l-8 8z"/></svg>
+                    256-bit Secured Connection
+                </span>
+            </div>
+        """, unsafe_allow_html=True)
     st.stop()
 
 # --- 5. SIDEBAR ---
