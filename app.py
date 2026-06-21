@@ -1092,6 +1092,7 @@ elif page == "Loan Origination":
                     with st.spinner("Importing data into database..."):
                         success_count = 0
                         error_count = 0
+                        skip_count = 0
                         
                         # Process each member
                         for index, member_row in df_members.iterrows():
@@ -1121,10 +1122,12 @@ elif page == "Loan Origination":
                                 
                                 client_id = generate_client_id(branch_val, group_ref_val, m_num_val, is_bulk=True)
                                 
-                                # Safety check: If client_id already exists, append a random string to avoid duplicate errors
+                                # Safety check: If client_id already exists, skip to avoid duplicates
                                 existing_check = supabase.table("loans").select("client_id").eq("client_id", client_id).execute()
                                 if existing_check.data and len(existing_check.data) > 0:
-                                    client_id = f"{client_id}-{str(uuid.uuid4())[:4]}"
+                                    skip_count += 1
+                                    print(f"Skipping existing member: {client_id}")
+                                    continue
                                 
                                 # Default to 'Internal Account' for bulk imports
                                 status = 'Internal Account'
@@ -1168,7 +1171,9 @@ elif page == "Loan Origination":
                                 
                         if success_count > 0:
                             st.balloons()
-                            st.success(f"✅ Successfully imported {success_count} members!")
+                            st.success(f"✅ Successfully imported {success_count} new members!")
+                        if skip_count > 0:
+                            st.info(f"⏭️ Skipped {skip_count} members that already exist in the database.")
                         if error_count > 0:
                             st.error(f"❌ Failed to import {error_count} members.")
                         
