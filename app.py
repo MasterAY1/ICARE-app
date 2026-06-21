@@ -782,14 +782,10 @@ if not st.session_state['logged_in']:
     
     with center_col:
         st.markdown(f"""
-            <div style="text-align: center; margin-bottom: -15px;">
-                <img src="data:image/jpeg;base64,{LOGO_B64}" style="width: 85px; height: auto; border-radius: 50%; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
-            </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown("""
             <div class='login-container'>
                 <div class='login-brand'>
+                    <img src="data:image/jpeg;base64,{LOGO_B64}" style="width: 85px; height: auto; border-radius: 50%; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 12px;">
+                    <h1>ICARE</h1>
                     <div class='brand-line'></div>
                     <p class='org-name'>Initiative for Community Advancement,<br>Relief and Empowerment</p>
                 </div>
