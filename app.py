@@ -6,6 +6,7 @@ import uuid
 import hashlib
 import base64
 import os
+import bcrypt
 from supabase import create_client, Client
 
 @st.cache_data
@@ -107,14 +108,18 @@ def authenticate_user(username, password):
     if not supabase:
         return None
     try:
-        res = supabase.table("app_users").select("*").eq("username", username).eq("password", password).execute()
+        res = supabase.table("app_users").select("*").eq("username", username).execute()
         if res.data and len(res.data) > 0:
             user = res.data[0]
-            return {
-                'user_name': user['username'],
-                'user_role': user['role'],
-                'branch_name': user['branch_name']
-            }
+            stored_hash = user.get("password", "")
+            
+            # Check if the stored password matches the bcrypt hash
+            if str(stored_hash).startswith("$2") and bcrypt.checkpw(str(password).encode('utf-8'), str(stored_hash).encode('utf-8')):
+                return {
+                    'user_name': user['username'],
+                    'user_role': user['role'],
+                    'branch_name': user['branch_name']
+                }
     except Exception as e:
         st.error(f"Auth error: {e}")
     return None
@@ -927,9 +932,11 @@ with st.sidebar:
     elif ROLE in ["BM", "AM"]:
         st.markdown("<p class='nav-section-label'>EXECUTIVE</p>", unsafe_allow_html=True)
         nav_options = ["Dashboard", "WhatsApp Cashbook", "Portfolio", "Cash Book", "Audit Ledger"]
+        if ROLE == "AM":
+            nav_options.append("User Management")
     else:  # Admin
         st.markdown("<p class='nav-section-label'>ADMINISTRATION</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "WhatsApp Cashbook", "Portfolio", "Cash Book", "Audit Ledger", "Reports & Export"]
+        nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "WhatsApp Cashbook", "Portfolio", "Cash Book", "Audit Ledger", "Reports & Export", "User Management"]
     
     page = st.radio("Navigation", nav_options, label_visibility="collapsed")
     
@@ -2550,4 +2557,115 @@ elif page in ["Reports", "Reports & Export"]:
         else:
             st.info("No data available for officer report")
         
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ==========================================
+# 14. USER MANAGEMENT (AM / Admin)
+# ==========================================
+elif page == "User Management" and ROLE in ["AM", "Admin"]:
+    st.markdown("<div class='dashboard-header'>", unsafe_allow_html=True)
+    st.markdown("<h1>🔐 User Management</h1>", unsafe_allow_html=True)
+    st.markdown("<p>Manage application users, reset passwords, and handle officer turnover.</p>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Fetch all users
+    try:
+        res = supabase.table("app_users").select("*").execute()
+        all_users = res.data if res.data else []
+    except Exception as e:
+        st.error(f"Failed to fetch users: {e}")
+        all_users = []
+        
+    user_usernames = [u['username'] for u in all_users]
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.subheader("➕ Add New User")
+        with st.form("add_user_form"):
+            new_username = st.text_input("Username (e.g. CO5, BM_Ikeja)")
+            new_fullname = st.text_input("Full Name (e.g. Mr. Ayomide)")
+            new_role = st.selectbox("Role", ["CO", "BM", "AM", "Admin"])
+            new_branch = st.text_input("Branch Name (e.g. Ogijo)")
+            new_password = st.text_input("Password", type="password")
+            
+            submit_new = st.form_submit_button("Create User", use_container_width=True)
+            if submit_new:
+                if not new_username or not new_password or not new_fullname:
+                    st.error("Username, Full Name, and Password are required.")
+                elif new_username in user_usernames:
+                    st.error("Username already exists!")
+                else:
+                    hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    try:
+                        supabase.table("app_users").insert({
+                            "username": new_username,
+                            "full_name": new_fullname,
+                            "role": new_role,
+                            "branch_name": new_branch,
+                            "password": hashed_pw
+                        }).execute()
+                        st.success(f"User {new_username} created successfully!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to create user: {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.subheader("🔑 Reset Password")
+        with st.form("reset_pw_form"):
+            reset_username = st.selectbox("Select User", user_usernames)
+            reset_password = st.text_input("New Password", type="password")
+            submit_reset = st.form_submit_button("Reset Password", use_container_width=True)
+            if submit_reset:
+                if not reset_password:
+                    st.error("Please enter a new password.")
+                else:
+                    hashed_pw = bcrypt.hashpw(reset_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    try:
+                        supabase.table("app_users").update({"password": hashed_pw}).eq("username", reset_username).execute()
+                        st.success(f"Password reset for {reset_username}!")
+                    except Exception as e:
+                        st.error(f"Failed to reset password: {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+    with col2:
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.subheader("🔄 Update Officer Name (Turnover)")
+        st.info("When an officer leaves, update the Full Name tied to their generic username (e.g. CO2) so that historical data remains intact but the new officer's name is used going forward.")
+        
+        co_users = [u for u in all_users if u['role'] in ['CO', 'Officer']]
+        co_usernames = [u['username'] for u in co_users]
+        
+        with st.form("update_officer_form"):
+            update_username = st.selectbox("Select Officer ID", co_usernames)
+            # Find current name
+            current_name = ""
+            for u in co_users:
+                if u['username'] == update_username:
+                    current_name = u.get('full_name', '')
+                    break
+                    
+            st.write(f"**Current Name:** {current_name}")
+            new_officer_name = st.text_input("New Full Name")
+            
+            submit_update = st.form_submit_button("Update Officer Name", use_container_width=True)
+            if submit_update:
+                if not new_officer_name:
+                    st.error("Please enter a new name.")
+                else:
+                    try:
+                        supabase.table("app_users").update({"full_name": new_officer_name}).eq("username", update_username).execute()
+                        st.success(f"Updated {update_username} to {new_officer_name}!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to update name: {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.subheader("👥 Current Users")
+        df_users = pd.DataFrame(all_users)
+        if not df_users.empty:
+            st.dataframe(df_users[['username', 'full_name', 'role', 'branch_name', 'created_at']], use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)

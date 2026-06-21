@@ -14,3 +14,4 @@ python-dotenv==1.0.1
 uuid-utils==0.9.0
 holidays
 extra-streamlit-components==0.1.71
+bcrypt==4.1.2
