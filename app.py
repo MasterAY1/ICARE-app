@@ -644,31 +644,57 @@ def calculate_loan_setup(amount, product_type, product_category="Finance"):
             "freq": freq,
             "duration": duration,
             "interest": interest,
+            "contingency": 0,
             "initial_payment": gap,
             "loan_repayment": loan_repayment
         }
         
     # Finance Product Logic
-    if "Daily" in str(product_type):
-        rate = 0.12
+    if "120 Days" in str(product_type):
+        rate = 0.20
+        contingency_rate = 0.01
+        duration = 120
+        freq = "Daily"
+        round_step = 50
+        force_gap = False
+    elif "Daily" in str(product_type): # Daily Loan (60 Days)
+        rate = 0.11
+        contingency_rate = 0.01
         duration = 60
         freq = "Daily"
         round_step = 50
         force_gap = False
+    elif "3 Months" in str(product_type):
+        rate = 0.11
+        contingency_rate = 0.01
+        duration = 3
+        freq = "Monthly"
+        round_step = 100
+        force_gap = False
+    elif "6 Months" in str(product_type):
+        rate = 0.20
+        contingency_rate = 0.01
+        duration = 6
+        freq = "Monthly"
+        round_step = 100
+        force_gap = False
     elif "12 Weeks" in str(product_type):
-        rate = 0.12
+        rate = 0.11
+        contingency_rate = 0.01
         duration = 12
         freq = "Weekly"
         round_step = 50
         force_gap = True
-    else:
-        rate = 0.21
+    else: # 24 Weeks fallback
+        rate = 0.20
+        contingency_rate = 0.01
         duration = 24
         freq = "Weekly"
         round_step = 50
         force_gap = True
     
     interest = amount * rate
+    contingency = amount * contingency_rate
     raw_val = amount / duration
     
     if raw_val.is_integer():
@@ -693,6 +719,7 @@ def calculate_loan_setup(amount, product_type, product_category="Finance"):
         "freq": freq,
         "duration": duration,
         "interest": interest,
+        "contingency": contingency,
         "initial_payment": gap,
         "loan_repayment": loan_repayment
     }
@@ -1323,7 +1350,7 @@ elif page == "Loan Origination":
                 product = prod_col.selectbox("Proposed Scheme", ["Cash and Carry", "60-Day Installment", "120-Day Installment"])
                 amount_label = "Base Price (Asset Value ₦)"
             else:
-                product = prod_col.selectbox("Proposed Scheme", ["Daily Loan (60 Days)", "Weekly Loan (12 Weeks)", "Weekly Loan (24 Weeks)"])
+                product = prod_col.selectbox("Proposed Scheme", ["Daily Loan (60 Days)", "Daily Loan (120 Days)", "Weekly Loan (12 Weeks)", "Weekly Loan (24 Weeks)", "Monthly Loan (3 Months)", "Monthly Loan (6 Months)"])
                 amount_label = "Applied Credit Amount (Principal ₦)"
                 
             amount = amt_col.number_input(amount_label, value=100000, step=5000, min_value=10000)
@@ -1355,7 +1382,7 @@ elif page == "Loan Origination":
             # Base automated fees
             auto_proc = 500
             auto_group = 1000
-            auto_branch = 1000
+            auto_branch = int(setup.get('contingency', 1000))
             auto_passbook = 0
         
             f1, f2, f3 = st.columns(3)
@@ -2417,7 +2444,7 @@ elif page == "Calculator":
         amt = st.number_input("Loan Amount", value=150000, step=5000, min_value=10000)
         prod = st.selectbox(
             "Product",
-            ["Daily Loan (60 Days)", "Weekly Loan (12 Weeks)", "Weekly Loan (24 Weeks)"]
+            ["Daily Loan (60 Days)", "Daily Loan (120 Days)", "Weekly Loan (12 Weeks)", "Weekly Loan (24 Weeks)", "Monthly Loan (3 Months)", "Monthly Loan (6 Months)"]
         )
     
     setup = calculate_loan_setup(amt, prod)
