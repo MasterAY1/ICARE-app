@@ -644,57 +644,49 @@ def calculate_loan_setup(amount, product_type, product_category="Finance"):
             "freq": freq,
             "duration": duration,
             "interest": interest,
-            "contingency": 0,
             "initial_payment": gap,
             "loan_repayment": loan_repayment
         }
         
     # Finance Product Logic
     if "120 Days" in str(product_type):
-        rate = 0.20
-        contingency_rate = 0.01
+        rate = 0.21
         duration = 120
         freq = "Daily"
         round_step = 50
         force_gap = False
     elif "Daily" in str(product_type): # Daily Loan (60 Days)
-        rate = 0.11
-        contingency_rate = 0.01
+        rate = 0.12
         duration = 60
         freq = "Daily"
         round_step = 50
         force_gap = False
     elif "3 Months" in str(product_type):
-        rate = 0.11
-        contingency_rate = 0.01
+        rate = 0.12
         duration = 3
         freq = "Monthly"
         round_step = 100
         force_gap = False
     elif "6 Months" in str(product_type):
-        rate = 0.20
-        contingency_rate = 0.01
+        rate = 0.21
         duration = 6
         freq = "Monthly"
         round_step = 100
         force_gap = False
     elif "12 Weeks" in str(product_type):
-        rate = 0.11
-        contingency_rate = 0.01
+        rate = 0.12
         duration = 12
         freq = "Weekly"
         round_step = 50
         force_gap = True
     else: # 24 Weeks fallback
-        rate = 0.20
-        contingency_rate = 0.01
+        rate = 0.21
         duration = 24
         freq = "Weekly"
         round_step = 50
         force_gap = True
     
     interest = amount * rate
-    contingency = amount * contingency_rate
     raw_val = amount / duration
     
     if raw_val.is_integer():
@@ -719,7 +711,6 @@ def calculate_loan_setup(amount, product_type, product_category="Finance"):
         "freq": freq,
         "duration": duration,
         "interest": interest,
-        "contingency": contingency,
         "initial_payment": gap,
         "loan_repayment": loan_repayment
     }
@@ -1366,7 +1357,13 @@ elif page == "Loan Origination":
             else:
                 manual_gap = col_gap.number_input("Savings Balance (Gap/Deposit)", value=int(setup['initial_payment']), step=500)
                 
-            col_int.metric("Interest (Fixed)", f"₦{setup['interest']:,.0f}")
+            if product_category == "Finance":
+                col_int.metric("Total Interest (Fixed)", f"₦{setup['interest']:,.0f}")
+                cont_amount = amount * 0.01
+                markup_amount = setup['interest'] - cont_amount
+                st.caption(f"**Interest Breakdown:** ₦{markup_amount:,.0f} Markup + ₦{cont_amount:,.0f} Contingency")
+            else:
+                col_int.metric("Interest (Fixed)", f"₦{setup['interest']:,.0f}")
             
             if product_category == "Asset" and "Cash and Carry" not in product:
                 total_price = amount + setup['interest']
@@ -1382,13 +1379,13 @@ elif page == "Loan Origination":
             # Base automated fees
             auto_proc = 500
             auto_group = 1000
-            auto_branch = int(setup.get('contingency', 1000))
+            auto_branch = 1000
             auto_passbook = 0
         
             f1, f2, f3 = st.columns(3)
             processing_fee = f1.number_input("Processing Fee", value=auto_proc, step=50)
             group_savings = f2.number_input("Group Savings", value=auto_group, step=500)
-            branch_contingency = f3.number_input("Branch Contingency", value=auto_branch, step=500)
+            branch_contingency = f3.number_input("Miscellaneous (CO1 Savings)", value=auto_branch, step=500)
         
             s1, s2 = st.columns(2)
             pass_book_fee = s1.number_input("Pass Book Fee (If exhausted)", value=auto_passbook, step=500)
@@ -1420,7 +1417,7 @@ elif page == "Loan Origination":
             else:
                 active_credit = amount - manual_gap
                 raw_repay = active_credit / setup['duration']
-                final_repay = math.ceil(raw_repay / 10) * 10
+                final_repay = int(raw_repay) if raw_repay.is_integer() else round(raw_repay, 2)
         
             k1, k2 = st.columns(2)
             k1.metric("Outstanding Principal", f"₦{active_credit:,.0f}")
