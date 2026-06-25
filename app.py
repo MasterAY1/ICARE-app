@@ -13,26 +13,55 @@ import holidays
 # Initialize Nigerian holidays
 ng_holidays = holidays.Nigeria()
 
-def get_next_working_day(target_date):
+@st.cache_data(ttl=3600)
+def get_custom_closures():
+    try:
+        res = supabase.table("branch_closures").select("*").execute()
+        if res.data:
+            closures = []
+            for row in res.data:
+                s_date = datetime.strptime(row['start_date'], "%Y-%m-%d").date()
+                e_date = datetime.strptime(row['end_date'], "%Y-%m-%d").date()
+                closures.append((s_date, e_date, row['reason']))
+            return closures
+    except Exception:
+        pass
+    return []
+
+def get_next_working_day(target_date, custom_closures=None):
     """
-    Checks if a date is a weekend or Nigerian public holiday.
+    Checks if a date is a weekend, Nigerian public holiday, or falls within custom_closures.
     If so, pushes the date forward until it hits a valid working day.
     Returns the new date and the reason for the shift.
     """
+    if custom_closures is None:
+        custom_closures = []
+        
     original_date = target_date
     reasons = []
     
-    while target_date.weekday() >= 5 or target_date in ng_holidays:
-        if target_date.weekday() >= 5 and "a weekend" not in reasons:
-            reasons.append("a weekend")
-        if target_date in ng_holidays:
-            holiday_name = ng_holidays.get(target_date)
-            holiday_reason = f"a public holiday ({holiday_name})"
-            if holiday_reason not in reasons:
-                reasons.append(holiday_reason)
-        
-        # Push to the next day and check again
-        target_date += timedelta(days=1)
+    while True:
+        is_closure = False
+        for s_date, e_date, reason in custom_closures:
+            if s_date <= target_date <= e_date:
+                is_closure = True
+                closure_reason = f"a branch closure ({reason})"
+                if closure_reason not in reasons:
+                    reasons.append(closure_reason)
+                break
+                
+        if target_date.weekday() >= 5 or target_date in ng_holidays or is_closure:
+            if target_date.weekday() >= 5 and "a weekend" not in reasons:
+                reasons.append("a weekend")
+            if target_date in ng_holidays:
+                holiday_name = ng_holidays.get(target_date)
+                holiday_reason = f"a public holiday ({holiday_name})"
+                if holiday_reason not in reasons:
+                    reasons.append(holiday_reason)
+            
+            target_date += timedelta(days=1)
+        else:
+            break
         
     is_adjusted = target_date != original_date
     return target_date, is_adjusted, " and ".join(reasons)
@@ -44,10 +73,11 @@ def generate_repayment_schedule(start_date, total_installments, frequency):
     """
     schedule = []
     current_date = start_date
+    closures = get_custom_closures()
     
     for _ in range(total_installments):
         # Find the next valid working day
-        valid_date, _, _ = get_next_working_day(current_date)
+        valid_date, _, _ = get_next_working_day(current_date, closures)
         schedule.append(valid_date)
         
         # Step forward based on frequency to find the NEXT target date
@@ -1143,8 +1173,9 @@ elif page == "Loan Origination":
                             else:
                                 initial_start_date = today + timedelta(days=7)
                                 
-                        # Adjust for holidays/weekends
-                        final_start_date, is_adjusted, shift_reason = get_next_working_day(initial_start_date)
+                        # Adjust for holidays/weekends/closures
+                        closures = get_custom_closures()
+                        final_start_date, is_adjusted, shift_reason = get_next_working_day(initial_start_date, closures)
                         
                         # Generate the full schedule to find expected_end_date
                         setup = calculate_loan_setup(100000, product)
@@ -2825,3 +2856,45 @@ elif page == "User Management" and ROLE in ["AM", "Admin"]:
         if not df_users.empty:
             st.dataframe(df_users[['username', 'full_name', 'role', 'branch_name', 'created_at']], use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<hr/>", unsafe_allow_html=True)
+    st.subheader("🏢 Branch Settings & Closures")
+    st.write("Manage custom branch closures (e.g., operational shutdowns, end-of-year breaks). These dates will be strictly excluded when calculating loan repayment schedules.")
+    
+    c3, c4 = st.columns(2)
+    with c3:
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.markdown("#### ➕ Add New Closure")
+        with st.form("add_closure_form"):
+            closure_dates = st.date_input("Select Date Range", [], key="closure_range")
+            closure_reason = st.text_input("Reason (e.g. End of Year Break)")
+            submit_closure = st.form_submit_button("Save Closure", use_container_width=True)
+            if submit_closure:
+                if not closure_reason or len(closure_dates) != 2:
+                    st.error("Please provide a reason and select a full date range (start and end).")
+                else:
+                    try:
+                        supabase.table("branch_closures").insert({
+                            "start_date": closure_dates[0].strftime("%Y-%m-%d"),
+                            "end_date": closure_dates[1].strftime("%Y-%m-%d"),
+                            "reason": closure_reason,
+                            "created_by": USER
+                        }).execute()
+                        st.success("Branch closure added successfully!")
+                        get_custom_closures.clear() # clear cache
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to add closure: {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+    with c4:
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.markdown("#### 📅 Active Closures")
+        closures_list = get_custom_closures()
+        if closures_list:
+            closure_data = [{"Start Date": c[0].strftime('%Y-%m-%d'), "End Date": c[1].strftime('%Y-%m-%d'), "Reason": c[2]} for c in closures_list]
+            st.dataframe(pd.DataFrame(closure_data), use_container_width=True)
+        else:
+            st.info("No custom closures recorded.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
