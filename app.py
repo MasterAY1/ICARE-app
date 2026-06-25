@@ -8,6 +8,34 @@ import base64
 import os
 import bcrypt
 from supabase import create_client, Client
+import holidays
+
+# Initialize Nigerian holidays
+ng_holidays = holidays.Nigeria()
+
+def get_next_working_day(target_date):
+    """
+    Checks if a date is a weekend or Nigerian public holiday.
+    If so, pushes the date forward until it hits a valid working day.
+    Returns the new date and the reason for the shift.
+    """
+    original_date = target_date
+    reasons = []
+    
+    while target_date.weekday() >= 5 or target_date in ng_holidays:
+        if target_date.weekday() >= 5 and "a weekend" not in reasons:
+            reasons.append("a weekend")
+        if target_date in ng_holidays:
+            holiday_name = ng_holidays.get(target_date)
+            holiday_reason = f"a public holiday ({holiday_name})"
+            if holiday_reason not in reasons:
+                reasons.append(holiday_reason)
+        
+        # Push to the next day and check again
+        target_date += timedelta(days=1)
+        
+    is_adjusted = target_date != original_date
+    return target_date, is_adjusted, " and ".join(reasons)
 
 @st.cache_data
 def get_base64_image(image_path):
@@ -1063,10 +1091,45 @@ elif page == "Loan Origination":
                     selected_client_id = st.selectbox("Select Client to Activate", opts, format_func=format_func)
                     submitted_activate = st.form_submit_button("✅ Authorize & Activate Disbursement", use_container_width=True)
                     if submitted_activate:
-                        today_str = datetime.now().strftime("%Y-%m-%d")
+                        today = datetime.now().date()
+                        today_str = today.strftime("%Y-%m-%d")
+                        
+                        # Fetch loan details to calculate start_date
+                        loan_row = pending_clients[pending_clients['Client ID'] == selected_client_id].iloc[0]
+                        product = str(loan_row.get("Loan Product", ""))
+                        
+                        # Calculate initial start_date
+                        if "Daily" in product or "120 Days" in product:
+                            initial_start_date = today + timedelta(days=1)
+                        else:
+                            # Weekly or Monthly fallback
+                            # Check if group has a meeting day
+                            meeting_day = str(loan_row.get("Meeting Day", ""))
+                            days_of_week = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
+                            if meeting_day in days_of_week:
+                                target_weekday = days_of_week[meeting_day]
+                                current_weekday = today.weekday()
+                                days_ahead = target_weekday - current_weekday
+                                if days_ahead <= 0: # Target day already happened this week, so next week
+                                    days_ahead += 7
+                                initial_start_date = today + timedelta(days=days_ahead)
+                            else:
+                                initial_start_date = today + timedelta(days=7)
+                                
+                        # Adjust for holidays/weekends
+                        final_start_date, is_adjusted, shift_reason = get_next_working_day(initial_start_date)
+                        
                         try:
-                            supabase.table("loans").update({"Status": "Active", "Date": today_str}).eq("client_id", selected_client_id).execute()
+                            supabase.table("loans").update({
+                                "Status": "Active", 
+                                "disbursement_date": today_str,
+                                "start_date": final_start_date.strftime("%Y-%m-%d")
+                            }).eq("client_id", selected_client_id).execute()
+                            
                             st.success(f"Successfully activated loan! Disbursement Date set to {today_str}.")
+                            if is_adjusted:
+                                st.warning(f"📅 **Schedule Adjusted:** The first repayment was automatically moved to **{final_start_date.strftime('%A, %b %d')}** because the original date fell on {shift_reason}.")
+                                
                             import time
                             time.sleep(2)
                             st.rerun()
