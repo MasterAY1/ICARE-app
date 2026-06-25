@@ -703,7 +703,7 @@ def calculate_overdue(start_date_str, product, fixed_repay, total_loan_paid, sta
 
 def calculate_loan_setup(amount, product_type, product_category="Finance"):
     """Calculate loan setup parameters"""
-    if product_category == "Asset":
+    if "Asset" in str(product_category):
         if "Cash and Carry" in str(product_type):
             rate = 0.0
             duration = 1
@@ -1381,349 +1381,120 @@ elif page == "Loan Origination":
         if all_loans_df.empty:
             st.warning("No clients registered in the database.")
         else:
-            # We want clients who don't have an Active/Pending loan.
             latest_status = all_loans_df.sort_values('Date').groupby('Client ID').last().reset_index()
             eligible_clients = latest_status[~latest_status['Status'].isin(['Active', 'Pending'])]
             
             if eligible_clients.empty:
                 st.warning("No eligible registered or completed clients found. Everyone has an active or pending loan!")
             else:
-                eligible_clients['DisplayName'] = eligible_clients['Client Name'] + " (" + eligible_clients['Client ID'] + ")"
-                options = [""] + eligible_clients['DisplayName'].tolist()
-                selected_display = st.selectbox("Select Registered/Completed Client:", options)
+                # 1. Filter by Group
+                unique_groups = ["All Groups"] + sorted(eligible_clients['Group Name'].dropna().unique().tolist())
+                selected_group = st.selectbox("Filter by Group (Optional):", unique_groups)
                 
-                if selected_display:
-                    selected_row = eligible_clients[eligible_clients['DisplayName'] == selected_display].iloc[0]
-                    target_client_id = selected_row['Client ID']
+                if selected_group != "All Groups":
+                    eligible_clients = eligible_clients[eligible_clients['Group Name'] == selected_group]
+                
+                if eligible_clients.empty:
+                    st.info("No eligible clients in this group.")
+                else:
+                    eligible_clients['DisplayName'] = eligible_clients['Client Name'] + " (" + eligible_clients['Client ID'] + ")"
+                    options = [""] + eligible_clients['DisplayName'].tolist()
+                    selected_display = st.selectbox("Select Registered/Completed Client:", options)
                     
-                    # Calculate savings for this specific Client ID across all their history
-                    reps = load_repayments()
-                    client_reps = reps[reps['Client ID'] == target_client_id] if not reps.empty else pd.DataFrame()
-                    savings, _ = calculate_client_savings(client_reps, 0) # 0 expected repay for checking strict balance
-                    
-                    st.info(f"💰 **Current Pooled Savings Balance:** ₦{savings:,.0f}")
-                    
-                    with st.form("loan_application_form"):
-                        st.markdown("#### Financial Details")
-                        f1, f2 = st.columns(2)
-                        product_category = f1.selectbox("Product Category", ["Micro Credit", "Micro Business", "SME", "Asset Financing"])
+                    if selected_display:
+                        selected_row = eligible_clients[eligible_clients['DisplayName'] == selected_display].iloc[0]
+                        target_client_id = selected_row['Client ID']
                         
-                        if product_category == "Micro Credit":
-                            prods = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
-                        elif product_category == "Micro Business":
-                            prods = ["Daily 120 Days", "Weekly 24W", "Monthly 6M"]
-                        elif product_category == "SME":
-                            prods = ["Daily 120 Days", "Weekly 24W", "Monthly 6M"]
-                        else:
-                            prods = ["Asset Finance (Daily)", "Asset Finance (Weekly)", "Asset Finance (Monthly)"]
+                        reps = load_repayments()
+                        client_reps = reps[reps['Client ID'] == target_client_id] if not reps.empty else __import__('pandas').DataFrame()
+                        savings, _ = calculate_client_savings(client_reps, 0)
+                        
+                        st.info(f"💰 **Current Pooled Savings Balance:** ₦{savings:,.0f}")
+                        
+                        with st.form("loan_application_form"):
+                            st.markdown("#### Financial Details")
+                            f1, f2 = st.columns(2)
+                            product_category = f1.selectbox("Product Category", ["Micro Credit", "Micro Business", "SME", "Finance/Assets"])
                             
-                        product = f2.selectbox("Loan Product", prods)
-                        amount = st.number_input("Requested Loan Amount (₦)", min_value=10000, step=10000)
-                        
-                        # Calculate required deductions (Interest + Gap)
-                        setup = calculate_loan_setup(amount, product)
-                        active_credit = setup['active_credit']
-                        final_repay = setup['repay']
-                        
-                        interest = active_credit - amount
-                        # Calculate Base Savings (Gap Fee)
-                        if "60" in product or "12W" in product or "3M" in product:
-                            base_savings_req = amount * 0.10
-                        elif "120" in product or "24W" in product or "6M" in product:
-                            base_savings_req = amount * 0.20
-                        else:
-                            base_savings_req = amount * 0.10
-                            
-                        total_upfront_required = interest + base_savings_req
-                        
-                        st.markdown(f"**Calculated Upfront Requirement:**")
-                        st.markdown(f"- Interest: ₦{interest:,.0f}")
-                        st.markdown(f"- Gap Fee (Base Savings): ₦{base_savings_req:,.0f}")
-                        st.markdown(f"**Total Required:** ₦{total_upfront_required:,.0f}")
-                        
-                        if savings < total_upfront_required:
-                            st.error(f"❌ **INSUFFICIENT SAVINGS:** Client has ₦{savings:,.0f} but needs ₦{total_upfront_required:,.0f}. Please collect additional savings via the Cashbook first.")
-                        else:
-                            st.success(f"✅ **SUFFICIENT SAVINGS:** Client has enough to cover the upfront fees.")
-                            
-                        submitted_app = st.form_submit_button("Submit Application for BM Approval", use_container_width=True)
-                        if submitted_app:
-                            if savings < total_upfront_required:
-                                st.error("Cannot submit! Insufficient savings.")
+                            if product_category == "Micro Credit":
+                                prods = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
+                            elif product_category == "Micro Business":
+                                prods = ["Daily 120 Days", "Weekly 24W", "Monthly 6M"]
+                            elif product_category == "SME":
+                                prods = ["Daily 120 Days", "Weekly 24W", "Monthly 6M"]
                             else:
-                                # Process the application!
-                                # 1. Withdraw upfront fees from savings
-                                wd_data = {
-                                    "Date": datetime.now().strftime("%Y-%m-%d"),
-                                    "Client ID": target_client_id,
-                                    "Client Name": selected_row['Client Name'],
-                                    "Officer": USER,
-                                    "Branch": BRANCH,
-                                    "Withdrawal Amount": total_upfront_required,
-                                    "Note": f"Auto-deducted Upfront Fees (Interest: {interest}, Gap: {base_savings_req}) for Loan App"
-                                }
-                                save_repayment(wd_data)
+                                prods = ["Asset Finance (Daily)", "Asset Finance (Weekly)", "Asset Finance (Monthly)"]
                                 
-                                # 2. Since this could be their first loan or Nth loan, we create a NEW row with the SAME Client ID.
-                                # Let's fetch their KYC data to clone it
-                                kyc = selected_row.to_dict()
-                                # Clean up pandas artifacts
-                                kyc.pop('DisplayName', None)
-                                kyc.pop('DateStr', None)
-                                kyc.pop('id', None) # If id exists from supabase
+                            product = f2.selectbox("Loan Product", prods)
+                            amount = st.number_input("Requested Loan Amount (₦)", min_value=10000, step=10000)
+                            
+                            setup = calculate_loan_setup(amount, product, product_category)
+                            interest = setup.get('interest', 0)
+                            active_credit = amount + interest
+                            final_repay = setup.get('loan_repayment', 0)
+                            
+                            if "60" in product or "12W" in product or "3M" in product:
+                                base_savings_req = amount * 0.10
+                            elif "120" in product or "24W" in product or "6M" in product:
+                                base_savings_req = amount * 0.20
+                            else:
+                                base_savings_req = amount * 0.10
                                 
-                                # Overwrite financial fields
-                                kyc["Date"] = datetime.now().strftime("%Y-%m-%d")
-                                kyc["Officer"] = USER
-                                kyc["Branch"] = BRANCH
-                                kyc["Product Category"] = product_category
-                                kyc["Loan Product"] = product
-                                kyc["Loan Amount"] = amount
-                                kyc["Active Credit"] = active_credit
-                                kyc["Loan Repay"] = final_repay
-                                kyc["Total Due"] = active_credit
-                                kyc["Status"] = "Pending"
+                            total_upfront_required = interest + base_savings_req
+                            
+                            st.markdown(f"**Calculated Upfront Requirement:**")
+                            st.markdown(f"- Interest: ₦{interest:,.0f}")
+                            st.markdown(f"- Gap Fee (Base Savings): ₦{base_savings_req:,.0f}")
+                            st.markdown(f"**Total Required:** ₦{total_upfront_required:,.0f}")
+                            
+                            if savings < total_upfront_required:
+                                st.error(f"❌ **INSUFFICIENT SAVINGS:** Client has ₦{savings:,.0f} but needs ₦{total_upfront_required:,.0f}. Please collect additional savings via the Cashbook first.")
+                            else:
+                                st.success(f"✅ **SUFFICIENT SAVINGS:** Client has enough to cover the upfront fees.")
                                 
-                                # Remove fees from loan row so they aren't double counted
-                                kyc["Processing Fee"] = 0
-                                kyc["Pass Book Fee"] = 0
-                                kyc["Group Savings"] = 0
-                                kyc["Branch Contingency"] = 0
-                                
-                                save_new_loan(kyc)
-                                
-                                st.success("Application submitted successfully! It is now Pending BM Authorization.")
-                                import time
-                                time.sleep(2)
-                                st.rerun()
-
-
-
-elif page in ["Collections", "Audit Ledger"]:
-    st.title(f"{page}")
-    
-    all_loans = load_loans()
-    my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
-    active_clients = my_loans[my_loans['Status'].isin(['Approved', 'Active'])]
-    
-    if active_clients.empty:
-        st.warning("⚠️ No Active clients assigned to you.")
-    else:
-        c_grp, c1, c2 = st.columns([1.5, 2, 1])
-        
-        # Group Filter
-        active_clients['Group Name'] = active_clients['Group Name'].fillna('Ungrouped').replace('', 'Ungrouped')
-        unique_groups = ["All Groups"] + sorted([str(g) for g in active_clients['Group Name'].unique() if str(g).strip()])
-        selected_group = c_grp.selectbox("Filter by Group:", unique_groups)
-        
-        if selected_group != "All Groups":
-            filtered_clients = active_clients[active_clients['Group Name'] == selected_group]
-        else:
-            filtered_clients = active_clients
-            
-        client_ids = filtered_clients['Client ID'].tolist()
-        
-        def format_client_dropdown(cid):
-            row = filtered_clients[filtered_clients['Client ID'] == cid].iloc[0]
-            group_tag = f"[{row['Group Name']}] " if selected_group == "All Groups" else ""
-            return f"{group_tag}{row['Client Name']} ({row['Phone']})"
-        
-        if not client_ids:
-            st.warning("No clients found in this group.")
-            st.stop()
-            
-        selected_id = c1.selectbox("Select Client:", client_ids, format_func=format_client_dropdown)
-        view_date = c2.date_input("Report Date", datetime.now())
-        
-        client_loan = active_clients[active_clients['Client ID'] == selected_id].iloc[0]
-        repayments = load_repayments()
-        client_payments = repayments[repayments['Client ID'] == selected_id]
-        
-        fixed_repay = float(client_loan['Loan Repay'])
-        active_credit_total = float(client_loan['Active Credit'])
-        prod_type = client_loan['Loan Product']
-        meet_day = client_loan.get('Meeting Day', 'Daily')
-        start_date_str = client_loan['Date']
-        
-        acc_savings, total_loan_paid = calculate_client_savings(client_payments, fixed_repay)
-        loan_balance_left = active_credit_total - total_loan_paid
-        expected_paid, overdue_amt = calculate_overdue(start_date_str, prod_type, fixed_repay, total_loan_paid, client_record.get('Status', 'Active'))
-        
-        st.markdown(f"<h3>👤 {client_loan['Client Name']} | <span style='color: #666;'>{prod_type}</span></h3>", unsafe_allow_html=True)
-        if "Weekly" in str(prod_type):
-            st.caption(f"🗓️ Meets on: **{meet_day}**")
-            
-        if loan_balance_left <= 0:
-            st.success("🎉 **FULLY PAID!** This client has completely paid off their active loan balance!")
-        
-        # Client metrics
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Outstanding Principal", f"₦{active_credit_total:,.0f}")
-        col2.metric("Total Paid to Loan", f"₦{total_loan_paid:,.0f}")
-        balance_color = "normal" if loan_balance_left <= 0 else "inverse"
-        col3.metric("🔻 Loan Balance", f"₦{loan_balance_left:,.0f}", delta_color=balance_color)
-        col4.metric("🐷 Acc. Savings", f"₦{acc_savings:,.0f}")
-        
-        # Risk status
-        st.markdown("### ⚠️ Risk & Overdue Status")
-        r_col1, r_col2 = st.columns(2)
-        r_col1.metric("Expected By Now", f"₦{expected_paid:,.0f}")
-        overdue_color = "inverse" if overdue_amt > 0 else "normal"
-        r_col2.metric("🚨 Overdue Amount", f"₦{overdue_amt:,.0f}", delta_color=overdue_color)
-        
-        # Payment schedule
-        st.markdown("---")
-        st.subheader("📅 Payment Schedule (Aggregated)")
-        report_df = get_ledger_report(client_payments, fixed_repay, prod_type, meet_day, view_date)
-        st.dataframe(report_df, use_container_width=True)
-        
-        # Transaction history
-        st.markdown("### 📜 Raw Transaction History")
-        if not client_payments.empty:
-            if 'Transaction Type' not in client_payments.columns:
-                client_payments['Transaction Type'] = "Loan"
-            else:
-                client_payments['Transaction Type'] = client_payments['Transaction Type'].fillna("Loan")
-            
-            history_cols = ["Date", "Amount Paid", "Transaction Type", "Officer", "Note"]
-            display_history = client_payments[[c for c in history_cols if c in client_payments.columns]]
-            display_history = display_history.sort_values(by="Date", ascending=False)
-            st.dataframe(display_history, use_container_width=True)
-        else:
-            st.info("No transactions recorded yet.")
-        
-        # Smart Auto-Splitter
-        st.markdown("---")
-        st.subheader("🧮 Smart Auto-Splitter (For Overpayments)")
-        st.caption("Enter the total cash received and the client's total agreed daily payment (loan + savings) to auto-fill the form below.")
-        
-        c_split1, c_split2 = st.columns(2)
-        total_cash_received = c_split1.number_input("Total Cash Received (₦)", value=0, step=500)
-        agreed_daily_payment = c_split2.number_input("Client's Agreed Daily Total (₦)", value=int(fixed_repay) + 350, step=50)
-        
-        auto_loan_rep = 0
-        auto_savings_dep = 0
-        
-        if total_cash_received > 0 and agreed_daily_payment > 0:
-            multiplier = total_cash_received / agreed_daily_payment
-            auto_loan_rep = int(fixed_repay * multiplier)
-            auto_savings_dep = int(total_cash_received - auto_loan_rep)
-            st.info(f"💡 **Auto-Calculated Split:** ₦{auto_loan_rep:,.0f} for Loan & ₦{auto_savings_dep:,.0f} for Savings")
-            
-        # Record granular payment
-        st.markdown("---")
-        st.subheader("💸 Record Granular Collection")
-        
-        with st.form("pay_form"):
-            st.caption(f"Expected Fixed Repayment: **₦{fixed_repay:,.0f}**")
-            
-            st.markdown("**1. Core Collections**")
-            c1, c2 = st.columns(2)
-            loan_rep = c1.number_input("Installment Collection (₦)", value=int(auto_loan_rep), step=500)
-            savings_dep = c2.number_input("Savings Deposit (₦)", value=int(auto_savings_dep), step=500)
-            
-            st.markdown("**2. Exceptions**")
-            e1, e2, e3 = st.columns(3)
-            overdue_coll = e1.number_input("Overdue Collected (₦)", value=0, step=500)
-            recoveries = e2.number_input("Recoveries (₦)", value=0, step=500)
-            excess = e3.number_input("Excess (₦)", value=0, step=500)
-            
-            st.markdown("**3. Fees & Sales**")
-            f1, f2, f3 = st.columns(3)
-            pass_book = f1.number_input("Passbook Sales (₦)", value=0, step=100)
-            proc_fees = f2.number_input("Processing Fees (₦)", value=0, step=500)
-            mgt_fees = f3.number_input("Mgt Fees (₦)", value=0, step=500)
-            
-            fs1, fs2, fs3 = st.columns(3)
-            init_pay = fs1.number_input("Initial Payments (₦)", value=0, step=500)
-            asset_sales = fs2.number_input("Asset Sales (₦)", value=0, step=500)
-            contingency = fs3.number_input("Contingency (₦)", value=0, step=500)
-            
-            st.markdown("**4. Outflows (Deductions)**")
-            o1, o2, o3 = st.columns(3)
-            withdrawal = o1.number_input("Savings Withdrawal (₦)", value=0, step=500)
-            cash_return = o2.number_input("Cash Return (₦)", value=0, step=500)
-            adjustments = o3.number_input("Adjustments (₦)", value=0, step=500)
-            
-            note_col = st.text_input("Note", placeholder="e.g. Week 4 Group Collection")
-            
-            # Auto-calculate total cash layout for sanity check
-            total_cash_in = (loan_rep + savings_dep + overdue_coll + recoveries + excess + 
-                             pass_book + proc_fees + mgt_fees + init_pay + asset_sales + contingency)
-            total_cash_out = withdrawal + cash_return + adjustments
-            net_cash = total_cash_in - total_cash_out
-            
-            st.info(f"**Total Cash IN:** ₦{total_cash_in:,.0f} | **Total Cash OUT:** ₦{total_cash_out:,.0f} | **Net Cash Collected:** ₦{net_cash:,.0f}")
-            
-            if st.form_submit_button("🏦 AUTHORIZE CASH POSTING"):
-                pay_data = {
-                    "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "Branch": BRANCH,
-                    "Client ID": selected_id,
-                    "Client Name": client_loan['Client Name'],
-                    "Amount Paid": net_cash,
-                    "Officer": USER,
-                    "Note": note_col,
-                    "Transaction Type": "Loan",
-                    "Savings Amount": savings_dep,
-                    "Loan Repayment Amount": loan_rep,
-                    "Processing Fee Paid": proc_fees,
-                    "Markup Paid": cash_return,
-                    "Pass Book Paid": pass_book,
-                    "Recovery Amount": recoveries,
-                    "Withdrawal Amount": withdrawal,
-                    "Mgt Fee Paid": mgt_fees,
-                    "Others Amount": adjustments,
-                    "asset_sales_paid": asset_sales,
-                    "contingency_paid": contingency,
-                    "excess_amount": excess,
-                    "initial_payment": init_pay,
-                    "overdue_collected": overdue_coll # Need to save this to others_amount if missing, wait.
-                }
-                # Since we changed columns, map Overdue to Others if not in DB, but let's just save it. Wait, Supabase will ignore extra keys if we don't have them in the DB if we use the Python client? No, Supabase Python client might error. 
-                # Let's map Overdue strictly to others_amount if we didn't add it. But I added `excess_amount` etc.
-                # Actually, wait. I will map Adjustments to something else and Overdue to others_amount.
-                # Let me fix the dictionary:
-                pay_data["Others Amount"] = overdue_coll
-                pay_data["adjustments"] = adjustments # adding extra keys might fail if the column doesn't exist!
-                
-                # Let's just strictly map what we have in DB.
-                pay_data_safe = {
-                    "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "Branch": BRANCH,
-                    "Client ID": selected_id,
-                    "Client Name": client_loan['Client Name'],
-                    "Amount Paid": net_cash,
-                    "Officer": USER,
-                    "Note": f"{note_col} | Adj:{adjustments}", # Stashing adj in note
-                    "Transaction Type": "Loan",
-                    "Savings Amount": savings_dep,
-                    "Loan Repayment Amount": loan_rep,
-                    "Processing Fee Paid": proc_fees,
-                    "Markup Paid": cash_return,
-                    "Pass Book Paid": pass_book,
-                    "Recovery Amount": recoveries,
-                    "Withdrawal Amount": withdrawal,
-                    "Mgt Fee Paid": mgt_fees,
-                    "Others Amount": overdue_coll,
-                    "asset_sales_paid": asset_sales,
-                    "contingency_paid": contingency,
-                    "excess_amount": excess,
-                    "initial_payment": init_pay
-                }
-                
-                # Check if this exact payment pays them off!
-                total_loan_contribution = loan_rep + overdue_coll + recoveries + init_pay
-                if loan_balance_left - total_loan_contribution <= 0 and loan_balance_left > 0:
-                    st.balloons()
-                    
-                save_repayment(pay_data_safe)
-                
-                st.success("✅ Detailed Collection Recorded Globally!")
-                
-                import time
-                time.sleep(1.5)
-                st.rerun()
+                            submitted_app = st.form_submit_button("Submit Application for BM Approval", use_container_width=True)
+                            if submitted_app:
+                                if savings < total_upfront_required:
+                                    st.error("Cannot submit! Insufficient savings.")
+                                else:
+                                    wd_data = {
+                                        "Date": datetime.now().strftime("%Y-%m-%d"),
+                                        "Client ID": target_client_id,
+                                        "Client Name": selected_row['Client Name'],
+                                        "Officer": USER,
+                                        "Branch": BRANCH,
+                                        "Withdrawal Amount": total_upfront_required,
+                                        "Note": f"Auto-deducted Upfront Fees (Interest: {interest}, Gap: {base_savings_req}) for Loan App"
+                                    }
+                                    save_repayment(wd_data)
+                                    
+                                    kyc = selected_row.to_dict()
+                                    kyc.pop('DisplayName', None)
+                                    kyc.pop('DateStr', None)
+                                    kyc.pop('id', None)
+                                    
+                                    kyc["Date"] = datetime.now().strftime("%Y-%m-%d")
+                                    kyc["Officer"] = USER
+                                    kyc["Branch"] = BRANCH
+                                    kyc["Product Category"] = product_category
+                                    kyc["Loan Product"] = product
+                                    kyc["Loan Amount"] = amount
+                                    kyc["Active Credit"] = active_credit
+                                    kyc["Loan Repay"] = final_repay
+                                    kyc["Total Due"] = active_credit
+                                    kyc["Status"] = "Pending"
+                                    
+                                    kyc["Processing Fee"] = 0
+                                    kyc["Pass Book Fee"] = 0
+                                    kyc["Group Savings"] = 0
+                                    kyc["Branch Contingency"] = 0
+                                    
+                                    save_new_loan(kyc)
+                                    
+                                    st.success("Application submitted successfully! It is now Pending BM Authorization.")
+                                    import time
+                                    time.sleep(2)
+                                    st.rerun()
 
 
 elif page == "Daily Report":
