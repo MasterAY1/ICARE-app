@@ -1414,14 +1414,10 @@ elif page == "Loan Origination":
                         with st.form("loan_application_form"):
                             st.markdown("#### Financial Details")
                             f1, f2 = st.columns(2)
-                            product_category = f1.selectbox("Product Category", ["Micro Credit", "Micro Business", "SME", "Finance/Assets"])
+                            product_category = f1.selectbox("Product Category", ["Finance", "Asset"])
                             
-                            if product_category == "Micro Credit":
+                            if product_category == "Finance":
                                 prods = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
-                            elif product_category == "Micro Business":
-                                prods = ["Daily 120 Days", "Weekly 24W", "Monthly 6M"]
-                            elif product_category == "SME":
-                                prods = ["Daily 120 Days", "Weekly 24W", "Monthly 6M"]
                             else:
                                 prods = ["Asset Finance (Daily)", "Asset Finance (Weekly)", "Asset Finance (Monthly)"]
                                 
@@ -1433,12 +1429,7 @@ elif page == "Loan Origination":
                             active_credit = amount + interest
                             final_repay = setup.get('loan_repayment', 0)
                             
-                            if "60" in product or "12W" in product or "3M" in product:
-                                base_savings_req = amount * 0.10
-                            elif "120" in product or "24W" in product or "6M" in product:
-                                base_savings_req = amount * 0.20
-                            else:
-                                base_savings_req = amount * 0.10
+                            base_savings_req = st.number_input("Gap Fee / Base Savings (₦)", min_value=0, value=1000, step=1000)
                                 
                             total_upfront_required = interest + base_savings_req
                             
