@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 import math
 import uuid
 import hashlib
@@ -68,25 +69,25 @@ def get_next_working_day(target_date, custom_closures=None):
 
 def generate_repayment_schedule(start_date, total_installments, frequency):
     """
-    Generates a list of valid working dates for the loan duration.
-    Skips weekends and Nigerian public holidays.
+    Generates valid working dates.
+    Uses a theoretical target date to prevent schedule drift.
     """
     schedule = []
-    current_date = start_date
+    theoretical_date = start_date
     closures = get_custom_closures()
     
     for _ in range(total_installments):
-        # Find the next valid working day
-        valid_date, _, _ = get_next_working_day(current_date, closures)
+        # Find the actual valid working day for this installment
+        valid_date, _, _ = get_next_working_day(theoretical_date, closures)
         schedule.append(valid_date)
         
-        # Step forward based on frequency to find the NEXT target date
+        # Step the THEORETICAL date forward for the next loop
         if frequency.lower() == 'daily':
-            current_date = valid_date + timedelta(days=1)
+            theoretical_date += timedelta(days=1)
         elif frequency.lower() == 'weekly':
-            current_date = valid_date + timedelta(days=7)
+            theoretical_date += timedelta(days=7)
         elif frequency.lower() == 'monthly':
-            current_date = valid_date + timedelta(days=30)
+            theoretical_date += relativedelta(months=1)
             
     return schedule
 
