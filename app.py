@@ -37,6 +37,29 @@ def get_next_working_day(target_date):
     is_adjusted = target_date != original_date
     return target_date, is_adjusted, " and ".join(reasons)
 
+def generate_repayment_schedule(start_date, total_installments, frequency):
+    """
+    Generates a list of valid working dates for the loan duration.
+    Skips weekends and Nigerian public holidays.
+    """
+    schedule = []
+    current_date = start_date
+    
+    for _ in range(total_installments):
+        # Find the next valid working day
+        valid_date, _, _ = get_next_working_day(current_date)
+        schedule.append(valid_date)
+        
+        # Step forward based on frequency to find the NEXT target date
+        if frequency.lower() == 'daily':
+            current_date = valid_date + timedelta(days=1)
+        elif frequency.lower() == 'weekly':
+            current_date = valid_date + timedelta(days=7)
+        elif frequency.lower() == 'monthly':
+            current_date = valid_date + timedelta(days=30)
+            
+    return schedule
+
 @st.cache_data
 def get_base64_image(image_path):
     if not os.path.exists(image_path):
@@ -608,36 +631,40 @@ def get_clients_for_user(df, user_role, user_name, branch):
 def calculate_overdue(start_date_str, product, fixed_repay, total_loan_paid):
     """Calculate overdue amount for a client"""
     try:
-        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
     except:
         return 0, 0
     
-    today = datetime.now()
+    today = datetime.now().date()
     
-    if "Daily" in str(product):
-        try:
-            years = [today.year - 1, today.year, today.year + 1]
-            ng_holidays = holidays.country_holidays('NG', years=years)
-            bday_ng = CustomBusinessDay(holidays=list(ng_holidays.keys()))
-            date_range = pd.date_range(start_date.date(), today.date(), freq=bday_ng)
-            business_days = len(date_range)
-        except Exception:
-            business_days = len(pd.bdate_range(start_date.date(), today.date()))
-            
-        days_passed = max(0, business_days - 1)
-        capped_days = min(days_passed, 60)
-        expected_paid = capped_days * fixed_repay
+    if "120 Days" in str(product):
+        duration = 120
+        freq = "Daily"
+    elif "Daily" in str(product): 
+        duration = 60
+        freq = "Daily"
+    elif "3 Months" in str(product):
+        duration = 3
+        freq = "Monthly"
+    elif "6 Months" in str(product):
+        duration = 6
+        freq = "Monthly"
     elif "12 Weeks" in str(product):
-        weeks_passed = max(0, (today - start_date).days // 7)
-        capped_weeks = min(weeks_passed, 12)
-        expected_paid = capped_weeks * fixed_repay
+        duration = 12
+        freq = "Weekly"
     elif "24 Weeks" in str(product):
-        weeks_passed = max(0, (today - start_date).days // 7)
-        capped_weeks = min(weeks_passed, 24)
-        expected_paid = capped_weeks * fixed_repay
+        duration = 24
+        freq = "Weekly"
     else:
-        expected_paid = 0
+        duration = 60
+        freq = "Daily"
+        
+    schedule = generate_repayment_schedule(start_date, duration, freq)
     
+    # Count how many scheduled dates have passed up to today
+    passed_installments = sum(1 for d in schedule if d <= today)
+    
+    expected_paid = passed_installments * fixed_repay
     overdue = max(0, expected_paid - total_loan_paid)
     return expected_paid, overdue
 
@@ -1119,11 +1146,20 @@ elif page == "Loan Origination":
                         # Adjust for holidays/weekends
                         final_start_date, is_adjusted, shift_reason = get_next_working_day(initial_start_date)
                         
+                        # Generate the full schedule to find expected_end_date
+                        setup = calculate_loan_setup(100000, product)
+                        loan_freq = setup.get("freq", "Daily")
+                        duration_in_installments = setup.get("duration", 60)
+                        
+                        schedule = generate_repayment_schedule(final_start_date, duration_in_installments, loan_freq)
+                        expected_end_date = schedule[-1] if schedule else final_start_date
+                        
                         try:
                             supabase.table("loans").update({
                                 "Status": "Active", 
                                 "disbursement_date": today_str,
-                                "start_date": final_start_date.strftime("%Y-%m-%d")
+                                "start_date": final_start_date.strftime("%Y-%m-%d"),
+                                "expected_end_date": expected_end_date.strftime("%Y-%m-%d")
                             }).eq("client_id", selected_client_id).execute()
                             
                             st.success(f"Successfully activated loan! Disbursement Date set to {today_str}.")
