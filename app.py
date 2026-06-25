@@ -659,7 +659,9 @@ def get_clients_for_user(df, user_role, user_name, branch):
 
 # --- 3. MATH HELPERS & RISK LOGIC ---
 
-def calculate_overdue(start_date_str, product, fixed_repay, total_loan_paid):
+def calculate_overdue(start_date_str, product, fixed_repay, total_loan_paid, status='Active'):
+    if status in ['Registered', 'Pending']:
+        return 0, 0
     """Calculate overdue amount for a client"""
     try:
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
@@ -1105,7 +1107,7 @@ if page == "Dashboard":
             product = loan.get('Loan Product', '')
             fixed_repay = loan.get('Loan Repay', 0)
             if start_date_str and product:
-                exp_paid, overdue_amt = calculate_overdue(start_date_str, product, fixed_repay, l_amt)
+                exp_paid, overdue_amt = calculate_overdue(start_date_str, product, fixed_repay, l_amt, loan.get('Status', 'Active'))
                 total_overdue += overdue_amt
         else:
             fully_paid_count += 1
@@ -1127,9 +1129,9 @@ if page == "Dashboard":
 
 
 elif page == "Loan Origination":
-    st.title("New Loan Application")
+    st.title("Origination & Registration")
     
-    tab_orig, tab_pend = st.tabs(["📝 Originate New Loan", "⏳ Pending Disbursements"])
+    tab_reg, tab_app, tab_pend = st.tabs(["👤 Client Registration", "📝 Loan Application", "⏳ Pending Disbursements"])
 
     with tab_pend:
         st.subheader("Pending Disbursements")
@@ -1152,33 +1154,27 @@ elif page == "Loan Origination":
                         today = datetime.now().date()
                         today_str = today.strftime("%Y-%m-%d")
                         
-                        # Fetch loan details to calculate start_date
                         loan_row = pending_clients[pending_clients['Client ID'] == selected_client_id].iloc[0]
                         product = str(loan_row.get("Loan Product", ""))
                         
-                        # Calculate initial start_date
                         if "Daily" in product or "120 Days" in product:
                             initial_start_date = today + timedelta(days=1)
                         else:
-                            # Weekly or Monthly fallback
-                            # Check if group has a meeting day
                             meeting_day = str(loan_row.get("Meeting Day", ""))
                             days_of_week = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
                             if meeting_day in days_of_week:
                                 target_weekday = days_of_week[meeting_day]
                                 current_weekday = today.weekday()
                                 days_ahead = target_weekday - current_weekday
-                                if days_ahead <= 0: # Target day already happened this week, so next week
+                                if days_ahead <= 0:
                                     days_ahead += 7
                                 initial_start_date = today + timedelta(days=days_ahead)
                             else:
                                 initial_start_date = today + timedelta(days=7)
                                 
-                        # Adjust for holidays/weekends/closures
                         closures = get_custom_closures()
                         final_start_date, is_adjusted, shift_reason = get_next_working_day(initial_start_date, closures)
                         
-                        # Generate the full schedule to find expected_end_date
                         setup = calculate_loan_setup(100000, product)
                         loan_freq = setup.get("freq", "Daily")
                         duration_in_installments = setup.get("duration", 60)
@@ -1192,7 +1188,7 @@ elif page == "Loan Origination":
                                 "disbursement_date": today_str,
                                 "start_date": final_start_date.strftime("%Y-%m-%d"),
                                 "expected_end_date": expected_end_date.strftime("%Y-%m-%d")
-                            }).eq("client_id", selected_client_id).execute()
+                            }).eq("Client ID", selected_client_id).eq("Status", "Pending").execute()
                             
                             st.success(f"Successfully activated loan! Disbursement Date set to {today_str}.")
                             if is_adjusted:
@@ -1206,529 +1202,302 @@ elif page == "Loan Origination":
             else:
                 st.info("🔒 Note: You are a Credit Officer. Only Branch Managers or Area Managers can authorize and activate disbursements.")
 
-    with tab_orig:
-        client_type = st.radio("Client Type", ["New Client", "Existing Client", "📦 Bulk Onboarding"], horizontal=True)
-    
-    defaults = {
-        "Name": "", "Nickname": "", "Phone": "", "Address": "", "BizAddress": "",
-        "Marital": "Single", "BizType": "Trader", "Income": 0.0, "Obs": "",
-        "GName": "", "GNick": "", "GPhone": "", "GHome": "", "GOffice": "",
-        "GMarital": "Single", "GOcc": "", "GRel": "",
-        "Group": "", "GroupLoc": "", "Meeting": "Daily",
-        "Leader": "", "GroupDate": datetime.now()
-    }
-    
-    prev_client_id = None
-    prev_savings = 0.0
-    
-    if client_type == "Existing Client":
-        all_loans_df = load_loans()
-        if not all_loans_df.empty:
-            # Sort by Date descending to get the most recent loan per phone
-            all_loans_df = all_loans_df.sort_values(by="Date", ascending=False)
-            all_loans_df['Group Name'] = all_loans_df['Group Name'].fillna('Ungrouped').replace('', 'Ungrouped')
-            all_loans_df["DisplayName"] = all_loans_df["Client Name"] + " (" + all_loans_df["Phone"] + ")"
-            unique_clients = all_loans_df.drop_duplicates(subset=["Phone"])
-            
-            c_grp, c_cli = st.columns([1.5, 2.5])
-            unique_groups = ["All Groups"] + sorted([str(g) for g in unique_clients['Group Name'].unique() if str(g).strip()])
-            selected_group = c_grp.selectbox("Filter by Group:", unique_groups)
-            
-            if selected_group != "All Groups":
-                unique_clients = unique_clients[unique_clients['Group Name'] == selected_group]
+    with tab_reg:
+        st.subheader("👤 Client Registration")
+        reg_type = st.radio("Registration Method", ["Single Client", "📦 Bulk Onboarding"], horizontal=True)
+        
+        if reg_type == "Single Client":
+            with st.form("registration_form"):
+                st.markdown("#### 1. Personal Info")
+                c1, c2, c3 = st.columns(3)
+                name = c1.text_input("Full Name")
+                nickname = c2.text_input("Nickname")
+                phone = c3.text_input("Phone Number")
+                address = st.text_input("Home Address")
                 
-            options = [""] + unique_clients["DisplayName"].tolist()
-            selected_display = c_cli.selectbox("Search & Select Existing Client:", options)
-            if selected_display:
-                selected_row = unique_clients[unique_clients["DisplayName"] == selected_display].iloc[0]
-                prev_client_id = selected_row["Client ID"]
+                c4, c5, c6 = st.columns(3)
+                marital = c4.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"])
+                biz_type = c5.text_input("Business Type", value="Trader")
+                income = c6.number_input("Average Monthly Income (₦)", value=0, step=5000)
+                biz_address = st.text_input("Business Address")
+                other_obs = st.text_input("Other Financial Obligations (if any)")
                 
-                full_record = all_loans_df[all_loans_df["Client ID"] == prev_client_id].iloc[0]
+                st.markdown("#### 2. Guarantor Info")
+                g1, g2, g3 = st.columns(3)
+                g_name = g1.text_input("Guarantor Full Name")
+                g_nick = g2.text_input("Guarantor Nickname")
+                g_phone = g3.text_input("Guarantor Phone")
+                g_address = st.text_input("Guarantor Home Address")
                 
-                defaults["Name"] = str(full_record.get("Client Name", ""))
-                defaults["Nickname"] = str(full_record.get("Nickname", ""))
-                defaults["Phone"] = str(full_record.get("Phone", ""))
-                defaults["Address"] = str(full_record.get("Address", ""))
-                defaults["Marital"] = str(full_record.get("Marital Status", "Single"))
-                defaults["BizType"] = str(full_record.get("Business Type", "Trader"))
-                try:
-                    defaults["Income"] = float(full_record.get("Average Monthly Income", 0.0))
-                except:
-                    pass
-                defaults["Obs"] = str(full_record.get("Other Obligations", ""))
+                g4, g5, g6 = st.columns(3)
+                g_marital = g4.selectbox("Guarantor Marital Status", ["Single", "Married", "Divorced", "Widowed"])
+                g_occ = g5.text_input("Guarantor Occupation")
+                g_rel = g6.text_input("Relationship with Client")
+                g_office = st.text_input("Guarantor Office Address")
                 
-                defaults["GName"] = str(full_record.get("Guarantor Name", ""))
-                defaults["GNick"] = str(full_record.get("Guarantor Nickname", ""))
-                defaults["GPhone"] = str(full_record.get("Guarantor Phone", ""))
-                defaults["GHome"] = str(full_record.get("Guarantor Home Address", ""))
-                defaults["GOffice"] = str(full_record.get("Guarantor Office Address", ""))
-                defaults["GMarital"] = str(full_record.get("Guarantor Marital Status", "Single"))
-                defaults["GOcc"] = str(full_record.get("Guarantor Occupation", ""))
-                defaults["GRel"] = str(full_record.get("Guarantor Relationship", ""))
+                st.markdown("#### 3. Group Info")
+                gr1, gr2 = st.columns(2)
+                group_name = gr1.text_input("Group Name (Leave blank if Individual)")
+                group_loc = gr2.text_input("Group Location")
+                gr3, gr4 = st.columns(2)
+                meeting_day = gr3.selectbox("Meeting Day", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Daily"])
+                group_leader = gr4.text_input("Group Leader Name")
+                group_date = st.date_input("Group Formation Date", datetime.now())
                 
-                defaults["Group"] = str(full_record.get("Group Name", ""))
-                defaults["GroupLoc"] = str(full_record.get("Group Location", ""))
-                defaults["Meeting"] = str(full_record.get("Meeting Day", "Daily"))
-                defaults["Leader"] = str(full_record.get("Group Leader Name", ""))
-                
-                try:
-                    defaults["GroupDate"] = datetime.strptime(str(full_record.get("Group Formation Date", "")), "%Y-%m-%d").date()
-                except:
-                    pass
-                
-                reps = load_repayments()
-                client_reps = reps[reps['Client ID'] == prev_client_id]
-                fixed_repay = pd.to_numeric(full_record['Loan Repay'], errors='coerce')
-                fixed_repay = 0 if pd.isna(fixed_repay) else fixed_repay
-                savings, _ = calculate_client_savings(client_reps, fixed_repay)
-                prev_savings = float(savings)
-                
-                st.info(f"💰 **Current Accumulated Savings Balance:** ₦{prev_savings:,.0f}")
-                st.write(f"**Previous Loan Status:** {full_record['Status']}")
+                submitted_reg = st.form_submit_button("💾 Register Client", use_container_width=True)
+                if submitted_reg:
+                    if not name or not phone:
+                        st.error("Name and Phone are required!")
+                    else:
+                        g_val = group_name if group_name.strip() else "IND"
+                        all_loans_for_id = load_loans()
+                        next_num = get_next_client_number(all_loans_for_id, BRANCH, g_val)
+                        new_client_id = generate_client_id(BRANCH, g_val, next_num)
+                        
+                        data = {
+                            "Client ID": new_client_id,
+                            "Client Name": name,
+                            "Nickname": nickname,
+                            "Phone": phone,
+                            "Address": address,
+                            "Business Address": biz_address,
+                            "Marital Status": marital,
+                            "Business Type": biz_type,
+                            "Average Monthly Income": income,
+                            "Other Obligations": other_obs,
+                            "Guarantor Name": g_name,
+                            "Guarantor Nickname": g_nick,
+                            "Guarantor Marital Status": g_marital,
+                            "Guarantor Home Address": g_address,
+                            "Guarantor Occupation": g_occ,
+                            "Guarantor Office Address": g_office,
+                            "Guarantor Phone": g_phone,
+                            "Guarantor Relationship": g_rel,
+                            "Group Name": group_name,
+                            "Group Location": group_loc,
+                            "Group Leader Name": group_leader,
+                            "Group Formation Date": group_date.strftime("%Y-%m-%d"),
+                            "Meeting Day": meeting_day,
+                            "Date": datetime.now().strftime("%Y-%m-%d"),
+                            "Officer": USER,
+                            "Branch": BRANCH,
+                            "Loan Amount": 0,
+                            "Active Credit": 0,
+                            "Loan Repay": 0,
+                            "Total Due": 0,
+                            "Status": "Registered"
+                        }
+                        save_new_loan(data)
+                        st.success(f"Successfully registered client! Client ID: {new_client_id}")
+                        import time
+                        time.sleep(2)
+                        st.rerun()
+                        
         else:
-            st.warning("No existing clients found in the database.")
-            
-    if client_type == "📦 Bulk Onboarding":
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("📦 Bulk Import from Excel")
-        st.info("Upload the standard ICARE Group and Member Onboarding Template to import multiple groups and members at once.")
-        
-        uploaded_file = st.file_uploader("Upload Excel Template", type=["xlsx"])
-        
-        if uploaded_file is not None:
-            try:
-                import pandas as pd
-                import uuid
-                
-                # Read without headers to manually find them
-                raw_groups = pd.read_excel(uploaded_file, sheet_name='Groups', header=None)
-                raw_members = pd.read_excel(uploaded_file, sheet_name='Members', header=None)
-                
-                def extract_table(df, key_col1, key_col2):
-                    # Search for the header row
-                    header_idx = -1
-                    for i, row in df.iterrows():
-                        row_str = row.astype(str).str.replace('*', '', regex=False).str.strip().str.lower()
-                        if key_col1.lower() in row_str.values and key_col2.lower() in row_str.values:
-                            header_idx = i
-                            break
-                            
-                    if header_idx != -1:
-                        # Set headers and slice
-                        df.columns = df.iloc[header_idx].astype(str).str.replace('*', '', regex=False).str.strip()
-                        df = df.iloc[header_idx + 1:].reset_index(drop=True)
-                        return df
-                    return pd.DataFrame() # Return empty if headers not found
-
-                df_groups = extract_table(raw_groups, 'Group Reference', 'Group Name')
-                df_members = extract_table(raw_members, 'Member Reference', 'Full Name')
-                
-                # Filter empty rows and example/dummy rows
-                if not df_groups.empty and 'Group Name' in df_groups.columns:
-                    df_groups = df_groups.dropna(subset=['Group Reference', 'Group Name'])
-                    df_groups = df_groups[~df_groups['Group Name'].astype(str).str.contains('Example', case=False, na=False)]
-                    
-                if not df_members.empty and 'Full Name' in df_members.columns:
-                    df_members = df_members.dropna(subset=['Member Reference', 'Full Name'])
-                    df_members = df_members[~df_members['Full Name'].astype(str).str.contains('Example', case=False, na=False)]
-                
-                num_groups = len(df_groups)
-                num_members = len(df_members)
-                
-                st.success(f"File parsed successfully! Found **{num_groups} Groups** and **{num_members} Members**.")
-                
-                if st.button("🚀 Confirm and Import", use_container_width=True):
-                    with st.spinner("Importing data into database..."):
-                        success_count = 0
-                        error_count = 0
-                        skip_count = 0
-                        
-                        # Process each member
-                        for index, member_row in df_members.iterrows():
-                            try:
-                                group_ref = member_row.get('Group Reference')
-                                # Find corresponding group
-                                if 'Group Reference' in df_groups.columns:
-                                    group_match = df_groups[df_groups['Group Reference'] == group_ref]
-                                else:
-                                    group_match = pd.DataFrame()
-                                
-                                if group_match.empty:
-                                    print(f"Group ref {group_ref} not found for member.")
-                                    continue
-                                
-                                group_row = group_match.iloc[0]
-                                
-                                                                # Extract member number from the sheet if present
-                                m_num_raw = member_row.get('Member Number')
+            st.markdown("<div class='card'>", unsafe_allow_html=True)
+            st.info("Upload the standard ICARE Group and Member Onboarding Template.")
+            uploaded_file = st.file_uploader("Upload Excel Template", type=["xlsx"])
+            if uploaded_file is not None:
+                try:
+                    import pandas as pd
+                    import uuid
+                    raw_groups = pd.read_excel(uploaded_file, sheet_name='Groups', header=None)
+                    raw_members = pd.read_excel(uploaded_file, sheet_name='Members', header=None)
+                    def extract_table(df, key_col1, key_col2):
+                        header_idx = -1
+                        for i, row in df.iterrows():
+                            row_str = row.astype(str).str.replace('*', '', regex=False).str.strip().str.lower()
+                            if key_col1.lower() in row_str.values and key_col2.lower() in row_str.values:
+                                header_idx = i
+                                break
+                        if header_idx != -1:
+                            df.columns = df.iloc[header_idx].astype(str).str.replace('*', '', regex=False).str.strip()
+                            df = df.iloc[header_idx + 1:].reset_index(drop=True)
+                            return df
+                        return pd.DataFrame()
+                    df_groups = extract_table(raw_groups, 'Group Reference', 'Group Name')
+                    df_members = extract_table(raw_members, 'Member Reference', 'Full Name')
+                    if not df_groups.empty and 'Group Name' in df_groups.columns:
+                        df_groups = df_groups.dropna(subset=['Group Reference', 'Group Name'])
+                        df_groups = df_groups[~df_groups['Group Name'].astype(str).str.contains('Example', case=False, na=False)]
+                    if not df_members.empty and 'Full Name' in df_members.columns:
+                        df_members = df_members.dropna(subset=['Member Reference', 'Full Name'])
+                        df_members = df_members[~df_members['Full Name'].astype(str).str.contains('Example', case=False, na=False)]
+                    num_groups = len(df_groups)
+                    num_members = len(df_members)
+                    st.success(f"File parsed! Found **{num_groups} Groups** and **{num_members} Members**.")
+                    if st.button("🚀 Confirm and Import", use_container_width=True):
+                        with st.spinner("Importing data..."):
+                            success_count = 0
+                            skip_count = 0
+                            for index, member_row in df_members.iterrows():
                                 try:
-                                    m_num_val = int(float(m_num_raw))
-                                except:
-                                    m_num_val = index + 1 # fallback to row index
-                                    
-                                branch_val = str(group_row.get('Branch Name', BRANCH))
-                                group_ref_val = str(member_row.get('Group Reference', ''))
-                                
-                                client_id = generate_client_id(branch_val, group_ref_val, m_num_val, is_bulk=True)
-                                
-                                # Safety check: If client_id already exists, skip to avoid duplicates
-                                existing_check = supabase.table("loans").select("client_id").eq("client_id", client_id).execute()
-                                if existing_check.data and len(existing_check.data) > 0:
-                                    skip_count += 1
-                                    print(f"Skipping existing member: {client_id}")
-                                    continue
-                                
-                                # Default to 'Internal Account' for bulk imports
-                                status = 'Internal Account'
-                                
-                                # Robust extraction of officer with translation
-                                officer_val = group_row.get('Credit Officer Name')
-                                if pd.isna(officer_val) or str(officer_val).strip() == "" or str(officer_val).strip().lower() == "nan":
-                                    officer_val = USER
-                                else:
-                                    raw_name = str(officer_val).strip()
-                                    if raw_name in CO_NAME_MAP:
-                                        officer_val = CO_NAME_MAP[raw_name]
-                                    else:
-                                        st.warning(f"⚠️ Unrecognized officer name: '{raw_name}' in Excel. Defaulting to logged-in user.")
-                                        officer_val = USER
-                                
-                                client_data = {
-                                    "client_id": client_id,
-                                    "date": str(datetime.now().date()),
-                                    "branch": str(group_row.get('Branch Name', BRANCH)),
-                                    "officer": officer_val,
-                                    "client_name": str(member_row.get('Full Name', 'Unknown')),
-                                    "phone": str(member_row.get('Phone Number', '')),
-                                    "address": str(member_row.get('Home Address', '')),
-                                    "business_type": "Other",
-                                    "group_name": str(group_row.get('Group Name', '')),
-                                    "meeting_day": str(group_row.get('Meeting Day', 'Daily')),
-                                    "loan_product": "Pending Onboarding",
-                                    "product_category": "Finance",
-                                    "loan_amount": 0,
-                                    "active_credit": 0,
-                                    "total_due": 0,
-                                    "status": status
+                                    group_ref = member_row.get('Group Reference')
+                                    group_match = df_groups[df_groups['Group Reference'] == group_ref] if 'Group Reference' in df_groups.columns else pd.DataFrame()
+                                    if group_match.empty: continue
+                                    group_row = group_match.iloc[0]
+                                    m_num_raw = member_row.get('Member Number')
+                                    try: m_num_val = int(float(m_num_raw))
+                                    except: m_num_val = index + 1
+                                    branch_val = str(group_row.get('Branch Name', BRANCH))
+                                    group_ref_val = str(member_row.get('Group Reference', ''))
+                                    client_id = generate_client_id(branch_val, group_ref_val, m_num_val, is_bulk=True)
+                                    existing_check = supabase.table("loans").select("Client ID").eq("Client ID", client_id).execute()
+                                    if existing_check.data and len(existing_check.data) > 0:
+                                        skip_count += 1
+                                        continue
+                                    phone_val = str(member_row.get('Phone Number', ''))
+                                    if phone_val.lower() == 'nan' or not phone_val.strip(): phone_val = "00000000000"
+                                    data = {
+                                        "Client ID": client_id,
+                                        "Client Name": str(member_row.get('Full Name', '')),
+                                        "Phone": phone_val,
+                                        "Address": str(member_row.get('Home Address', '')),
+                                        "Business Type": str(member_row.get('Business Type', 'Trader')),
+                                        "Group Name": str(group_row.get('Group Name', '')),
+                                        "Group Location": str(group_row.get('Meeting Location', '')),
+                                        "Meeting Day": str(group_row.get('Meeting Day/Time', 'Daily')),
+                                        "Date": datetime.now().strftime("%Y-%m-%d"),
+                                        "Officer": USER,
+                                        "Branch": branch_val,
+                                        "Loan Amount": 0,
+                                        "Active Credit": 0,
+                                        "Loan Repay": 0,
+                                        "Total Due": 0,
+                                        "Status": "Registered"
+                                    }
+                                    save_new_loan(data)
+                                    success_count += 1
+                                except Exception as e:
+                                    print(f"Error row {index}: {e}")
+                            st.success(f"Import Complete! Registered {success_count} members. Skipped {skip_count} existing.")
+                except Exception as e:
+                    st.error(f"Error reading file: {e}")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    with tab_app:
+        st.subheader("📝 Loan Application")
+        all_loans_df = load_loans()
+        if all_loans_df.empty:
+            st.warning("No clients registered in the database.")
+        else:
+            # We want clients who don't have an Active/Pending loan.
+            latest_status = all_loans_df.sort_values('Date').groupby('Client ID').last().reset_index()
+            eligible_clients = latest_status[~latest_status['Status'].isin(['Active', 'Pending'])]
+            
+            if eligible_clients.empty:
+                st.warning("No eligible registered or completed clients found. Everyone has an active or pending loan!")
+            else:
+                eligible_clients['DisplayName'] = eligible_clients['Client Name'] + " (" + eligible_clients['Client ID'] + ")"
+                options = [""] + eligible_clients['DisplayName'].tolist()
+                selected_display = st.selectbox("Select Registered/Completed Client:", options)
+                
+                if selected_display:
+                    selected_row = eligible_clients[eligible_clients['DisplayName'] == selected_display].iloc[0]
+                    target_client_id = selected_row['Client ID']
+                    
+                    # Calculate savings for this specific Client ID across all their history
+                    reps = load_repayments()
+                    client_reps = reps[reps['Client ID'] == target_client_id] if not reps.empty else pd.DataFrame()
+                    savings, _ = calculate_client_savings(client_reps, 0) # 0 expected repay for checking strict balance
+                    
+                    st.info(f"💰 **Current Pooled Savings Balance:** ₦{savings:,.0f}")
+                    
+                    with st.form("loan_application_form"):
+                        st.markdown("#### Financial Details")
+                        f1, f2 = st.columns(2)
+                        product_category = f1.selectbox("Product Category", ["Micro Credit", "Micro Business", "SME", "Asset Financing"])
+                        
+                        if product_category == "Micro Credit":
+                            prods = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
+                        elif product_category == "Micro Business":
+                            prods = ["Daily 120 Days", "Weekly 24W", "Monthly 6M"]
+                        elif product_category == "SME":
+                            prods = ["Daily 120 Days", "Weekly 24W", "Monthly 6M"]
+                        else:
+                            prods = ["Asset Finance (Daily)", "Asset Finance (Weekly)", "Asset Finance (Monthly)"]
+                            
+                        product = f2.selectbox("Loan Product", prods)
+                        amount = st.number_input("Requested Loan Amount (₦)", min_value=10000, step=10000)
+                        
+                        # Calculate required deductions (Interest + Gap)
+                        setup = calculate_loan_setup(amount, product)
+                        active_credit = setup['active_credit']
+                        final_repay = setup['repay']
+                        
+                        interest = active_credit - amount
+                        # Calculate Base Savings (Gap Fee)
+                        if "60" in product or "12W" in product or "3M" in product:
+                            base_savings_req = amount * 0.10
+                        elif "120" in product or "24W" in product or "6M" in product:
+                            base_savings_req = amount * 0.20
+                        else:
+                            base_savings_req = amount * 0.10
+                            
+                        total_upfront_required = interest + base_savings_req
+                        
+                        st.markdown(f"**Calculated Upfront Requirement:**")
+                        st.markdown(f"- Interest: ₦{interest:,.0f}")
+                        st.markdown(f"- Gap Fee (Base Savings): ₦{base_savings_req:,.0f}")
+                        st.markdown(f"**Total Required:** ₦{total_upfront_required:,.0f}")
+                        
+                        if savings < total_upfront_required:
+                            st.error(f"❌ **INSUFFICIENT SAVINGS:** Client has ₦{savings:,.0f} but needs ₦{total_upfront_required:,.0f}. Please collect additional savings via the Cashbook first.")
+                        else:
+                            st.success(f"✅ **SUFFICIENT SAVINGS:** Client has enough to cover the upfront fees.")
+                            
+                        submitted_app = st.form_submit_button("Submit Application for BM Approval", use_container_width=True)
+                        if submitted_app:
+                            if savings < total_upfront_required:
+                                st.error("Cannot submit! Insufficient savings.")
+                            else:
+                                # Process the application!
+                                # 1. Withdraw upfront fees from savings
+                                wd_data = {
+                                    "Date": datetime.now().strftime("%Y-%m-%d"),
+                                    "Client ID": target_client_id,
+                                    "Client Name": selected_row['Client Name'],
+                                    "Officer": USER,
+                                    "Branch": BRANCH,
+                                    "Withdrawal Amount": total_upfront_required,
+                                    "Note": f"Auto-deducted Upfront Fees (Interest: {interest}, Gap: {base_savings_req}) for Loan App"
                                 }
+                                save_repayment(wd_data)
                                 
-                                supabase.table("loans").insert(client_data).execute()
-                                success_count += 1
-                            except Exception as e:
-                                error_count += 1
-                                print(f"Error importing member: {e}")
+                                # 2. Since this could be their first loan or Nth loan, we create a NEW row with the SAME Client ID.
+                                # Let's fetch their KYC data to clone it
+                                kyc = selected_row.to_dict()
+                                # Clean up pandas artifacts
+                                kyc.pop('DisplayName', None)
+                                kyc.pop('DateStr', None)
+                                kyc.pop('id', None) # If id exists from supabase
                                 
-                        if success_count > 0:
-                            st.balloons()
-                            st.success(f"✅ Successfully imported {success_count} new members!")
-                        if skip_count > 0:
-                            st.info(f"⏭️ Skipped {skip_count} members that already exist in the database.")
-                        if error_count > 0:
-                            st.error(f"❌ Failed to import {error_count} members.")
-                        
-            except Exception as e:
-                st.error(f"Error reading the Excel file: {e}. Please ensure it matches the template.")
-                
-        st.markdown("</div>", unsafe_allow_html=True)
-    else:
-        with st.container():
-            st.markdown("<div class='card'>", unsafe_allow_html=True)
-            st.subheader("1. Member's Data")
-            c1, c2, c3 = st.columns(3)
-            name = c1.text_input("Full Name (Surname First)", value=defaults["Name"], placeholder="Enter full name")
-            nickname = c2.text_input("Nickname", value=defaults["Nickname"] if defaults["Nickname"] != "nan" else "", placeholder="e.g. Iya Oloja")
-            phone = c3.text_input("Phone Number", value=defaults["Phone"], placeholder="e.g. 08012345678")
-        
-            c4, c5 = st.columns(2)
-            address = c4.text_area("Home Address", value=defaults["Address"], height=70)
-            biz_address = c5.text_area("Business / Address", value=defaults["BizAddress"] if defaults["BizAddress"] != "nan" else "", height=70)
-        
-            c6, c7, c8 = st.columns(3)
-            ms_index = ["Single", "Married", "Divorced", "Widowed"].index(defaults["Marital"]) if defaults["Marital"] in ["Single", "Married", "Divorced", "Widowed"] else 0
-            marital_status = c6.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"], index=ms_index)
-            bz_index = ["Trader", "Artisan", "Driver", "SME", "Other"].index(defaults["BizType"]) if defaults["BizType"] in ["Trader", "Artisan", "Driver", "SME", "Other"] else 0
-            biz_type = c7.selectbox("Occupation", ["Trader", "Artisan", "Driver", "SME", "Other"], index=bz_index)
-            monthly_income = c8.number_input("Average Monthly Income (₦)", value=float(defaults["Income"]), step=5000.0)
-        
-            other_obs = st.text_input("Obligation with other institution", value=defaults["Obs"] if defaults["Obs"] != "nan" else "")
-            st.markdown("</div>", unsafe_allow_html=True)
-        
-            st.markdown("<div class='card'>", unsafe_allow_html=True)
-            st.subheader("2. Guarantor's Undertaking")
-            g1, g2, g3 = st.columns(3)
-            g_name = g1.text_input("Guarantor Full Name", value=defaults["GName"] if defaults["GName"] != "nan" else "")
-            g_nick = g2.text_input("Guarantor Nickname", value=defaults["GNick"] if defaults["GNick"] != "nan" else "")
-            g_phone = g3.text_input("Guarantor Phone", value=defaults["GPhone"] if defaults["GPhone"] != "nan" else "")
-        
-            g4, g5 = st.columns(2)
-            g_address = g4.text_area("Guarantor Home Address", value=defaults["GHome"] if defaults["GHome"] != "nan" else "", height=70)
-            g_office = g5.text_area("Guarantor Office Address", value=defaults["GOffice"] if defaults["GOffice"] != "nan" else "", height=70)
-        
-            g6, g7, g8 = st.columns(3)
-            gm_index = ["Single", "Married", "Divorced", "Widowed"].index(defaults["GMarital"]) if defaults["GMarital"] in ["Single", "Married", "Divorced", "Widowed"] else 0
-            g_marital = g6.selectbox("Guarantor Marital Status", ["Single", "Married", "Divorced", "Widowed"], index=gm_index)
-            g_occ = g7.text_input("Guarantor Occupation", value=defaults["GOcc"] if defaults["GOcc"] != "nan" else "")
-            g_rel = g8.text_input("Relationship with Borrower", value=defaults["GRel"] if defaults["GRel"] != "nan" else "")
-            st.markdown("</div>", unsafe_allow_html=True)
-        
-            st.markdown("<div class='card'>", unsafe_allow_html=True)
-            st.subheader("3. Group Undertaking")
-            gr1, gr2, gr3 = st.columns(3)
-            group_name = gr1.text_input("Group Name", value=defaults["Group"] if defaults["Group"] != "nan" else "")
-            group_loc = gr2.text_input("Group Location / Address", value=defaults["GroupLoc"] if defaults["GroupLoc"] != "nan" else "")
-            md_index = ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].index(defaults["Meeting"]) if defaults["Meeting"] in ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"] else 0
-            meeting_day = gr3.selectbox("Meeting Day", ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], index=md_index)
-        
-            gr4, gr5 = st.columns(2)
-            group_leader = gr4.text_input("Group Leader's Name", value=defaults["Leader"] if defaults["Leader"] != "nan" else "")
-            group_date = gr5.date_input("Date of Formation", defaults["GroupDate"])
-        
-            if ROLE in ["Admin", "BM"]:
-                co_display_names = list(CO_NAME_MAP.keys())
-                if co_display_names:
-                    selected_display = st.selectbox("Assign to Officer:", co_display_names)
-                    assigned_officer = CO_NAME_MAP.get(selected_display, selected_display)
-                else:
-                    assigned_officer = st.selectbox("Assign to Officer:", ["CO1", "CO2"]) # fallback
-            else:
-                st.write(f"**Assigned Officer:** {CO_DISPLAY_MAP.get(USER, USER)}")
-                assigned_officer = USER
-            st.markdown("</div>", unsafe_allow_html=True)
-        
-            st.markdown("<div class='card'>", unsafe_allow_html=True)
-            st.subheader("4. Financial Request (Applied Credit / Asset)")
-        
-            cat_col, prod_col, amt_col = st.columns(3)
-            product_category = cat_col.selectbox("Product Category", ["Finance", "Asset"])
-            
-            if product_category == "Asset":
-                product = prod_col.selectbox("Proposed Scheme", ["Cash and Carry", "60-Day Installment", "120-Day Installment"])
-                amount_label = "Base Price (Asset Value ₦)"
-            else:
-                product = prod_col.selectbox("Proposed Scheme", ["Daily Loan (60 Days)", "Daily Loan (120 Days)", "Weekly Loan (12 Weeks)", "Weekly Loan (24 Weeks)", "Monthly Loan (3 Months)", "Monthly Loan (6 Months)"])
-                amount_label = "Applied Credit Amount (Principal ₦)"
-                
-            amount = amt_col.number_input(amount_label, value=100000, step=5000, min_value=10000)
-        
-            setup = calculate_loan_setup(amount, product, product_category)
-        
-            st.markdown("---")
-            col_gap, col_int = st.columns(2)
-            
-            if product_category == "Asset":
-                # For Assets, the manual_gap acts as the 'Upfront Payment' which determines remaining balance
-                manual_gap = col_gap.number_input("Upfront Payment (Deducted from Total Price ₦)", value=int(amount * 0.2), step=500)
-            else:
-                manual_gap = col_gap.number_input("Savings Balance (Gap/Deposit)", value=int(setup['initial_payment']), step=500)
-                
-            if product_category == "Finance":
-                col_int.metric("Total Interest (Fixed)", f"₦{setup['interest']:,.0f}")
-                cont_amount = amount * 0.01
-                markup_amount = setup['interest'] - cont_amount
-                st.caption(f"**Interest Breakdown:** ₦{markup_amount:,.0f} Markup + ₦{cont_amount:,.0f} Contingency")
-            else:
-                col_int.metric("Interest (Fixed)", f"₦{setup['interest']:,.0f}")
-            
-            if product_category == "Asset" and "Cash and Carry" not in product:
-                total_price = amount + setup['interest']
-                remaining_balance = total_price - manual_gap
-                actual_repayment = remaining_balance / setup['duration']
-                st.info(f"💡 **Asset Math:** Total Price (₦{total_price:,.0f}) - Upfront (₦{manual_gap:,.0f}) = Remaining ₦{remaining_balance:,.0f}. Expected {setup['freq']} Payment: **₦{actual_repayment:,.0f}**")
-            elif product_category == "Asset" and "Cash and Carry" in product:
-                actual_repayment = 0
-                st.info(f"💡 **Asset Math:** Cash and Carry requires full upfront payment. Expected Payment: **₦0**")
-        
-            st.markdown("#### Origination Fees & Upfront Savings")
-        
-            # Base automated fees
-            auto_proc = 500
-            auto_group = 1000
-            auto_branch = 1000
-            auto_passbook = 0
-        
-            f1, f2, f3 = st.columns(3)
-            processing_fee = f1.number_input("Processing Fee", value=auto_proc, step=50)
-            group_savings = f2.number_input("Group Savings", value=auto_group, step=500)
-            branch_contingency = f3.number_input("Miscellaneous (CO1 Savings)", value=auto_branch, step=500)
-        
-            s1, s2 = st.columns(2)
-            pass_book_fee = s1.number_input("Pass Book Fee (If exhausted)", value=auto_passbook, step=500)
-            extra_savings = s2.number_input("Extra Personal Savings Deposit", value=2500 if not prev_client_id else 0, step=500)
-        
-            if product_category == "Asset":
-                required_deduction = manual_gap
-            else:
-                required_deduction = setup['interest'] + manual_gap
-                
-            other_fees = processing_fee + group_savings + branch_contingency + pass_book_fee
-        
-            savings_available = prev_savings if prev_client_id else 0
-            savings_shortfall = max(0, required_deduction - savings_available)
-        
-            total_cash_to_collect = savings_shortfall + other_fees + extra_savings
-        
-            st.info(f"**Total Upfront Cash to Collect from Client:** ₦{total_cash_to_collect:,.0f}")
-            if savings_available > 0:
-                st.success(f"Client has ₦{savings_available:,.0f} in previous savings. We will automatically deduct ₦{min(required_deduction, savings_available):,.0f} from it to cover upfront Interest and Gap.")
-        
-            if product_category == "Asset":
-                if "Cash and Carry" in product:
-                    active_credit = 0
-                    final_repay = 0
-                else:
-                    active_credit = remaining_balance
-                    final_repay = math.ceil(actual_repayment / 10) * 10
-            else:
-                active_credit = amount - manual_gap
-                raw_repay = active_credit / setup['duration']
-                final_repay = int(raw_repay) if raw_repay.is_integer() else round(raw_repay, 2)
-        
-            k1, k2 = st.columns(2)
-            k1.metric("Outstanding Principal", f"₦{active_credit:,.0f}")
-            k2.metric(f"Fixed {setup['freq']} Repayment", f"₦{final_repay:,.0f}")
-            st.markdown("</div>", unsafe_allow_html=True)
-        
-            col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
-            with col_btn2:
-                submitted = st.button("📝 ORIGINATE LOAN", use_container_width=True)
-        
-            if submitted:
-                if not name or not phone:
-                    st.error("❌ Please fill in all required fields (Name and Phone)")
-                else:
-                    # Generate structured ID for single client
-                    g_val = group_name if group_name else "IND"
-                    
-                    # Count how many existing clients are in this group to assign the next member number
-                    try:
-                        group_count_res = supabase.table("loans").select("client_id", count="exact").eq("Branch", BRANCH).eq("Group Name", group_name).execute()
-                        next_num = group_count_res.count + 1 if group_count_res.count else 1
-                    except:
-                        next_num = 1
-                        
-                    new_client_id = generate_client_id(BRANCH, g_val, next_num)
-                    
-                    # Safety check
-                    existing_check = supabase.table("loans").select("client_id").eq("client_id", new_client_id).execute()
-                    if existing_check.data and len(existing_check.data) > 0:
-                        new_client_id = f"{new_client_id}-{str(uuid.uuid4())[:4]}"
-                    current_date_str = datetime.now().strftime("%Y-%m-%d")
-                
-                    # Save the new loan to the database FIRST to avoid Foreign Key violations
-                    data = {
-                        "Client ID": new_client_id,
-                        "Date": current_date_str,
-                        "Branch": BRANCH,
-                        "Officer": assigned_officer,
-                        "Client Name": name,
-                        "Nickname": nickname,
-                        "Phone": phone,
-                        "Address": address,
-                        "Business Type": biz_type,
-                        "Marital Status": marital_status,
-                        "Average Monthly Income": monthly_income,
-                        "Other Obligations": other_obs,
-                        "Guarantor Name": g_name,
-                        "Guarantor Nickname": g_nick,
-                        "Guarantor Marital Status": g_marital,
-                        "Guarantor Home Address": g_address,
-                        "Guarantor Occupation": g_occ,
-                        "Guarantor Office Address": g_office,
-                        "Guarantor Phone": g_phone,
-                        "Guarantor Relationship": g_rel,
-                        "Group Name": group_name,
-                        "Group Location": group_loc,
-                        "Group Leader Name": group_leader,
-                        "Group Formation Date": group_date.strftime("%Y-%m-%d"),
-                        "Meeting Day": meeting_day,
-                        "Product Category": product_category,
-                        "Loan Product": product,
-                        "Loan Amount": amount,
-                        "Active Credit": active_credit,
-                        "Loan Repay": final_repay,
-                        "Total Due": active_credit,
-                        "Status": "Pending",
-                        "Processing Fee": processing_fee,
-                        "Pass Book Fee": pass_book_fee,
-                        "Group Savings": group_savings,
-                        "Branch Contingency": branch_contingency
-                    }
-                    save_new_loan(data)
-                
-                    # Perform Rollover Transactions
-                    if prev_client_id and savings_available > 0:
-                        # Withdraw all savings from old loan
-                        withdraw_data = {
-                            "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "Branch": BRANCH,
-                            "Client ID": prev_client_id,
-                            "Client Name": name,
-                            "Amount Paid": 0,
-                            "Officer": assigned_officer,
-                            "Note": f"Rollover Withdrawal for new loan {new_client_id[:8]}",
-                            "Transaction Type": "Savings",
-                            "Withdrawal Amount": savings_available
-                        }
-                        save_repayment(withdraw_data)
-                    
-                        # Deposit all savings into new loan
-                        fee_deposit = {
-                            "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "Branch": BRANCH,
-                            "Client ID": new_client_id,
-                            "Client Name": name,
-                            "Amount Paid": 0,
-                            "Officer": assigned_officer,
-                            "Note": f"Rollover Transfer from old loan {prev_client_id[:8]}",
-                            "Transaction Type": "Savings",
-                            "Savings Amount": savings_available
-                        }
-                        save_repayment(fee_deposit)
-                    
-                        if supabase:
-                            supabase.table("loans").update({"status": "Completed"}).eq("client_id", prev_client_id).execute()
-                    
-                        st.toast("Rollover transactions logged & old loan Completed!")
-                
-                    # Collect Cash from Client
-                    if total_cash_to_collect > 0:
-                        cash_collection = {
-                            "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "Branch": BRANCH,
-                            "Client ID": new_client_id,
-                            "Client Name": name,
-                            "Amount Paid": total_cash_to_collect,
-                            "Officer": assigned_officer,
-                            "Note": "Upfront Cash Collection & Savings Deposit",
-                            "Transaction Type": "Loan",
-                            "Savings Amount": savings_shortfall + extra_savings,
-                            "Processing Fee Paid": processing_fee,
-                            "Pass Book Paid": pass_book_fee,
-                            "Others Amount": group_savings + branch_contingency
-                        }
-                        save_repayment(cash_collection)
-                
-                    # Auto-Deduct Interest & Gap from Savings
-                    if required_deduction > 0:
-                        deduct_tx = {
-                            "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "Branch": BRANCH,
-                            "Client ID": new_client_id,
-                            "Client Name": name,
-                            "Amount Paid": 0,
-                            "Officer": assigned_officer,
-                            "Note": "Auto-Deduction of Management Fee (Interest + Gap)",
-                            "Transaction Type": "Loan",
-                            "Withdrawal Amount": required_deduction,
-                            "Mgt Fee Paid": required_deduction
-                        }
-                        save_repayment(deduct_tx)
-                
-                    st.success(f"🎉 Loan Originated Successfully for {name}!")
-                    st.balloons()
-                    import time
-                    time.sleep(2)
-                    st.rerun()
+                                # Overwrite financial fields
+                                kyc["Date"] = datetime.now().strftime("%Y-%m-%d")
+                                kyc["Officer"] = USER
+                                kyc["Branch"] = BRANCH
+                                kyc["Product Category"] = product_category
+                                kyc["Loan Product"] = product
+                                kyc["Loan Amount"] = amount
+                                kyc["Active Credit"] = active_credit
+                                kyc["Loan Repay"] = final_repay
+                                kyc["Total Due"] = active_credit
+                                kyc["Status"] = "Pending"
+                                
+                                # Remove fees from loan row so they aren't double counted
+                                kyc["Processing Fee"] = 0
+                                kyc["Pass Book Fee"] = 0
+                                kyc["Group Savings"] = 0
+                                kyc["Branch Contingency"] = 0
+                                
+                                save_new_loan(kyc)
+                                
+                                st.success("Application submitted successfully! It is now Pending BM Authorization.")
+                                import time
+                                time.sleep(2)
+                                st.rerun()
+
+
 
 elif page in ["Collections", "Audit Ledger"]:
     st.title(f"{page}")
@@ -1778,7 +1547,7 @@ elif page in ["Collections", "Audit Ledger"]:
         
         acc_savings, total_loan_paid = calculate_client_savings(client_payments, fixed_repay)
         loan_balance_left = active_credit_total - total_loan_paid
-        expected_paid, overdue_amt = calculate_overdue(start_date_str, prod_type, fixed_repay, total_loan_paid)
+        expected_paid, overdue_amt = calculate_overdue(start_date_str, prod_type, fixed_repay, total_loan_paid, client_record.get('Status', 'Active'))
         
         st.markdown(f"<h3>👤 {client_loan['Client Name']} | <span style='color: #666;'>{prod_type}</span></h3>", unsafe_allow_html=True)
         if "Weekly" in str(prod_type):
@@ -1969,7 +1738,7 @@ elif page == "Daily Report":
     # Filter for the selected date for new active loans
     if not all_loans.empty:
         all_loans['DateStr'] = pd.to_datetime(all_loans['Date'], errors='coerce').dt.date.astype(str)
-        daily_loans = all_loans[all_loans['DateStr'] == date_str]
+        daily_loans = all_loans[(all_loans['DateStr'] == date_str) & (all_loans['Status'].isin(['Active', 'Completed', 'Approved']))]
         if ROLE == "BM":
             daily_loans = daily_loans[daily_loans['Branch'] == BRANCH]
         elif ROLE == "Officer":
@@ -2557,7 +2326,7 @@ elif page == "Portfolio":
         for _, row in my_loans.iterrows():
             c_payments = repayments[repayments['Client ID'] == row['Client ID']] if not repayments.empty else pd.DataFrame()
             s_amt, l_amt = calculate_client_savings(c_payments, row['Loan Repay'])
-            expected, overdue = calculate_overdue(row['Date'], row['Loan Product'], row['Loan Repay'], l_amt)
+            expected, overdue = calculate_overdue(row['Date'], row['Loan Product'], row['Loan Repay'], l_amt, row.get('Status', 'Active'))
             row_data = row.to_dict()
             row_data['Acc. Savings'] = s_amt
             row_data['Paid to Loan'] = l_amt
