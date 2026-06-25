@@ -949,7 +949,7 @@ with st.sidebar:
         nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "WhatsApp Cashbook", "Audit Ledger"]
     elif ROLE in ["BM", "AM"]:
         st.markdown("<p class='nav-section-label'>EXECUTIVE</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "WhatsApp Cashbook", "Portfolio", "Cash Book", "Audit Ledger"]
+        nav_options = ["Dashboard", "Loan Origination", "WhatsApp Cashbook", "Portfolio", "Cash Book", "Audit Ledger"]
         if ROLE == "AM":
             nav_options.append("User Management")
     else:  # Admin
@@ -1043,7 +1043,40 @@ if page == "Dashboard":
 elif page == "Loan Origination":
     st.title("New Loan Application")
     
-    client_type = st.radio("Client Type", ["New Client", "Existing Client", "📦 Bulk Onboarding"], horizontal=True)
+    tab_orig, tab_pend = st.tabs(["📝 Originate New Loan", "⏳ Pending Disbursements"])
+
+    with tab_pend:
+        st.subheader("Pending Disbursements")
+        all_loans = load_loans()
+        my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
+        pending_clients = my_loans[my_loans['Status'] == 'Pending']
+        if pending_clients.empty:
+            st.info("✅ No pending loans found.")
+        else:
+            st.dataframe(pending_clients[['Client ID', 'Client Name', 'Date', 'Officer', 'Loan Amount', 'Loan Product']], use_container_width=True)
+            if ROLE in ["AM", "BM", "Admin"]:
+                st.markdown("### 🔑 Checker Action: Activate Loan")
+                with st.form("activate_loan_form"):
+                    opts = pending_clients['Client ID'].tolist()
+                    def format_func(x):
+                        return f"{x} - {pending_clients[pending_clients['Client ID'] == x].iloc[0]['Client Name']}"
+                    selected_client_id = st.selectbox("Select Client to Activate", opts, format_func=format_func)
+                    submitted_activate = st.form_submit_button("✅ Authorize & Activate Disbursement", use_container_width=True)
+                    if submitted_activate:
+                        today_str = datetime.now().strftime("%Y-%m-%d")
+                        try:
+                            supabase.table("loans").update({"Status": "Active", "Date": today_str}).eq("client_id", selected_client_id).execute()
+                            st.success(f"Successfully activated loan! Disbursement Date set to {today_str}.")
+                            import time
+                            time.sleep(2)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed to activate loan: {e}")
+            else:
+                st.info("🔒 Note: You are a Credit Officer. Only Branch Managers or Area Managers can authorize and activate disbursements.")
+
+    with tab_orig:
+        client_type = st.radio("Client Type", ["New Client", "Existing Client", "📦 Bulk Onboarding"], horizontal=True)
     
     defaults = {
         "Name": "", "Nickname": "", "Phone": "", "Address": "", "BizAddress": "",
