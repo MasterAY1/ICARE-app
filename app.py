@@ -1712,11 +1712,14 @@ elif page == "WhatsApp Cashbook":
                 laps_trans = o2.number_input("Laps Transferred", min_value=0, step=500, value=0)
                 
                 note = st.text_input("Optional Note / Description")
+                confirm = st.checkbox("Confirm Transaction Details (Prevents accidental Enter)")
                 
                 submit_txn = st.form_submit_button("Save Transaction", use_container_width=True)
                 
                 if submit_txn:
-                    if not selected_client_disp:
+                    if not confirm:
+                        st.error("Please check the 'Confirm Transaction Details' box to prevent accidental Enter submissions.")
+                    elif not selected_client_disp:
                         st.error("Please select a client.")
                     else:
                         client_row = co_clients[co_clients['DisplayName'] == selected_client_disp].iloc[0]
@@ -1794,7 +1797,7 @@ elif page == "WhatsApp Cashbook":
                             "Officer": target_co,
                             "Branch": client_row['Branch'],
                             "Amount Paid": savings_in + repay_total + asset_sales + app_fee + passbook,
-                            "Transaction Type": "Cashbook Entry",
+                            "Transaction Type": "Loan",
                             "Note": note,
                             "Savings Amount": savings_in,
                             "Loan Repayment Amount": repay_total,
