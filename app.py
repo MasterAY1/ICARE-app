@@ -540,7 +540,7 @@ DB_TO_UI_REP = {
     "monthly_active": "Monthly Active", "expenses": "Expenses",
     "bank_deposited": "Bank Deposited", "closing_balance": "Closing Balance",
     "laps_reserved": "Laps Reserved", "laps_transferred": "Laps Transferred",
-    "initial_payment": "initial_payment"
+    "initial_payment": "initial_payment", "group_savings_dep": "Group Savings Deposit", "group_savings_wd": "Group Savings Withdrawal", "misc_fees": "Misc Fees"
 }
 UI_TO_DB_REP = {v: k for k, v in DB_TO_UI_REP.items()}
 
@@ -1205,6 +1205,48 @@ elif page == "Loan Origination":
                             }).eq("Client ID", selected_client_id).eq("Status", "Pending").execute()
                             
                             st.success(f"Successfully activated loan! Disbursement Date set to {today_str}.")
+                            
+                            # Inject Upfront Revenue (Contingency & Markup)
+                            amt_val = pd.to_numeric(loan_row.get("Loan Amount", 0), errors='coerce')
+                            prod_str = str(loan_row.get("Loan Product", ""))
+                            rate = 0.12 if "60" in prod_str or "12 Week" in prod_str or "3 Month" in prod_str else 0.21
+                            interest_val = amt_val * rate
+                            
+                            cont_val = interest_val * (1/12) if rate == 0.12 else interest_val * (1/21)
+                            markup_val = interest_val - cont_val
+                            
+                            dur_val = 60
+                            if "120" in prod_str: dur_val = 120
+                            elif "12 Week" in prod_str: dur_val = 12
+                            elif "24 Week" in prod_str: dur_val = 24
+                            elif "3 Month" in prod_str: dur_val = 3
+                            elif "6 Month" in prod_str: dur_val = 6
+                            
+                            d11 = markup_val if rate == 0.12 and dur_val == 60 else 0
+                            w11 = markup_val if rate == 0.12 and dur_val == 12 else 0
+                            d20 = markup_val if rate == 0.21 and dur_val == 120 else 0
+                            w20 = markup_val if rate == 0.21 and dur_val == 24 else 0
+                            m_mark = markup_val if dur_val in [3, 6] else 0
+                            
+                            rev_data = {
+                                "Date": today_str,
+                                "Client ID": selected_client_id,
+                                "Client Name": loan_row.get("Client Name", ""),
+                                "Officer": loan_row.get("Officer", USER),
+                                "Branch": loan_row.get("Branch", BRANCH),
+                                "Amount Paid": 0,
+                                "Transaction Type": "Loan",
+                                "Note": f"Upfront Revenue injected on Disbursement ({prod_str})",
+                                "Contingency": cont_val,
+                                "Daily 11%": d11,
+                                "Daily 20%": d20,
+                                "Weekly 11%": w11,
+                                "Weekly 20%": w20,
+                                "Monthly 11%/20%": m_mark
+                            }
+                            save_repayment(rev_data)
+                            st.info("✅ Upfront Revenue (Markup & Contingency) successfully logged to the Daily Cashbook.")
+                            
                             if is_adjusted:
                                 st.warning(f"📅 **Schedule Adjusted:** The first repayment was automatically moved to **{final_start_date.strftime('%A, %b %d')}** because the original date fell on {shift_reason}.")
                                 
@@ -1440,10 +1482,11 @@ elif page == "Loan Origination":
                             
                             setup = calculate_loan_setup(amount, product, product_category)
                             interest = setup.get('interest', 0)
-                            active_credit = amount + interest
-                            final_repay = setup.get('loan_repayment', 0)
-                            
                             base_savings_req = st.number_input("Gap Fee / Base Savings (₦)", min_value=0, value=1000, step=1000)
+                            
+                            active_credit = amount - base_savings_req
+                            dur = setup.get('duration', 60)
+                            final_repay = active_credit / dur if dur > 0 else 0
                                 
                             total_upfront_required = interest + base_savings_req
                             
@@ -1702,6 +1745,9 @@ elif page == "WhatsApp Cashbook":
                 passbook = c2.number_input("Pass Book / Bonus", min_value=0, step=500, value=0)
                 bank_wd = c3.number_input("Bank Withdrawn (To CO)", min_value=0, step=500, value=0)
                 
+                g_sav_in = c1.number_input("Group Savings Deposit", min_value=0, step=500, value=0)
+                misc_fees = c2.number_input("Misc Fees", min_value=0, step=500, value=0)
+                
                 st.markdown("#### Right (Outflows)")
                 o1, o2, o3 = st.columns(3)
                 product_wd = o1.number_input("Product Withdrawal (Savings WD)", min_value=0, step=500, value=0)
@@ -1710,6 +1756,7 @@ elif page == "WhatsApp Cashbook":
                 
                 laps_res = o1.number_input("Laps Reserved", min_value=0, step=500, value=0)
                 laps_trans = o2.number_input("Laps Transferred", min_value=0, step=500, value=0)
+                g_sav_wd = o3.number_input("Group Savings Withdrawal", min_value=0, step=500, value=0)
                 
                 note = st.text_input("Optional Note / Description")
                 confirm = st.checkbox("Confirm Transaction Details (Prevents accidental Enter)")
@@ -1759,35 +1806,7 @@ elif page == "WhatsApp Cashbook":
                             else:
                                 rep_60d = repay_total # fallback
                                 
-                            # 2. Split logic (12% vs 21%)
-                            rate = 0.12 if "60" in prod or "12 Week" in prod or "3 Month" in prod else 0.21
-                            dur = 60
-                            if "120" in prod: dur = 120
-                            elif "12 Week" in prod: dur = 12
-                            elif "24 Week" in prod: dur = 24
-                            elif "3 Month" in prod: dur = 3
-                            elif "6 Month" in prod: dur = 6
-                            
-                            loan_amt = pd.to_numeric(client_row['Loan Amount'], errors='coerce')
-                            if pd.isna(loan_amt) or loan_amt <= 0: loan_amt = 0
-                            
-                            interest_portion = (loan_amt * rate) / dur if dur > 0 else 0
-                            
-                            # Capping interest portion to not exceed the payment itself
-                            actual_interest = min(interest_portion, repay_total)
-                            
-                            if rate == 0.12:
-                                contingency = actual_interest * (1/12)
-                                markup = actual_interest * (11/12)
-                                if dur == 60: d_11 = markup
-                                elif dur == 12: w_11 = markup
-                                else: m_markup = markup
-                            elif rate == 0.21:
-                                contingency = actual_interest * (1/21)
-                                markup = actual_interest * (20/21)
-                                if dur == 120: d_20 = markup
-                                elif dur == 24: w_20 = markup
-                                else: m_markup = markup
+
                         
                         # Build Data Dictionary
                         tx_data = {
@@ -1796,7 +1815,7 @@ elif page == "WhatsApp Cashbook":
                             "Client Name": c_name,
                             "Officer": target_co,
                             "Branch": client_row['Branch'],
-                            "Amount Paid": savings_in + repay_total + asset_sales + app_fee + passbook,
+                            "Amount Paid": savings_in + repay_total + asset_sales + app_fee + passbook + g_sav_in + misc_fees,
                             "Transaction Type": "Loan",
                             "Note": note,
                             "Savings Amount": savings_in,
@@ -1823,7 +1842,10 @@ elif page == "WhatsApp Cashbook":
                             "Expenses": expenses,
                             "Bank Deposited": bank_dep,
                             "Laps Reserved": laps_res,
-                            "Laps Transferred": laps_trans
+                            "Laps Transferred": laps_trans,
+                            "Group Savings Deposit": g_sav_in,
+                            "Group Savings Withdrawal": g_sav_wd,
+                            "Misc Fees": misc_fees
                         }
                         
                         save_repayment(tx_data)
@@ -1890,9 +1912,12 @@ elif page == "WhatsApp Cashbook":
     t_bdep = sum_col(daily_reps, 'Bank Deposited')
     t_lres = sum_col(daily_reps, 'Laps Reserved')
     t_ltrans = sum_col(daily_reps, 'Laps Transferred')
+    t_g_in = sum_col(daily_reps, 'Group Savings Deposit')
+    t_g_wd = sum_col(daily_reps, 'Group Savings Withdrawal')
+    t_misc = sum_col(daily_reps, 'Misc Fees')
 
-    left_total = bf_cash + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb
-    right_total = t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_cc + t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_lres + t_ltrans
+    left_total = bf_cash + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_g_in + t_misc
+    right_total = t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_cc + t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_lres + t_ltrans + t_g_wd
     closing_bal = left_total - right_total
 
     # Build the single-row dataframe for the ledger
@@ -1926,7 +1951,7 @@ elif page == "WhatsApp Cashbook":
         "Laps Reserved": [t_lres],
         "Laps Transferred": [t_ltrans],
         "Total.1": [right_total],
-        "Closing balance": [closing_bal]
+        "Group Savings Deposit": [t_g_in], "Misc Fees": [t_misc], "Group Savings Withdrawal": [t_g_wd], "Closing balance": [closing_bal]
     }
     
     ledger_df = pd.DataFrame(ledger_data)
