@@ -540,7 +540,8 @@ DB_TO_UI_REP = {
     "monthly_active": "Monthly Active", "expenses": "Expenses",
     "bank_deposited": "Bank Deposited", "closing_balance": "Closing Balance",
     "laps_reserved": "Laps Reserved", "laps_transferred": "Laps Transferred",
-    "initial_payment": "initial_payment", "group_savings_dep": "Group Savings Deposit", "group_savings_wd": "Group Savings Withdrawal", "misc_fees": "Misc Fees"
+    "initial_payment": "initial_payment", "group_savings_dep": "Group Savings Deposit", "group_savings_wd": "Group Savings Withdrawal", "misc_fees": "Misc Fees",
+    "asset_credit_sales": "Asset Credit Sales", "cash_and_carry": "Cash and Carry", "credit_form": "Credit Form", "credit_form_damage": "Credit Form Damage", "bonus": "Bonus"
 }
 UI_TO_DB_REP = {v: k for k, v in DB_TO_UI_REP.items()}
 
@@ -1051,12 +1052,12 @@ with st.sidebar:
         nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "WhatsApp Cashbook", "Audit Ledger"]
     elif ROLE in ["BM", "AM"]:
         st.markdown("<p class='nav-section-label'>EXECUTIVE</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "Loan Origination", "WhatsApp Cashbook", "Portfolio", "Cash Book", "Audit Ledger"]
+        nav_options = ["Dashboard", "Loan Origination", "WhatsApp Cashbook", "Portfolio", "Master Cashbook", "Audit Ledger"]
         if ROLE == "AM":
             nav_options.append("User Management")
     else:  # Admin
         st.markdown("<p class='nav-section-label'>ADMINISTRATION</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "WhatsApp Cashbook", "Portfolio", "Cash Book", "Audit Ledger", "Reports & Export", "User Management"]
+        nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "WhatsApp Cashbook", "Portfolio", "Master Cashbook", "Audit Ledger", "Reports & Export", "User Management"]
     
     page = st.radio("Navigation", nav_options, label_visibility="collapsed")
     
@@ -1633,7 +1634,7 @@ elif page == "Collections":
                         st.markdown(f"**{cname} ({cid})** - *{prod}*")
                         st.caption(f"Active Credit: ₦{act_cred:,.0f} | Rem Bal: ₦{rem_bal:,.0f} | Acc Savings: ₦{acc_sav:,.0f} | **Next Due: {next_due}**")
                         
-                        c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
+                        c1, c2, c3, c4, c5, c6 = st.columns(6)
                         
                         rep_col = c1.number_input("Repayment", min_value=0.0, step=500.0, value=float(default_rep), key=f"rep_{cid}")
                         sav_col = c2.number_input("Savings", min_value=0.0, step=500.0, value=0.0, key=f"sav_{cid}")
@@ -1641,7 +1642,14 @@ elif page == "Collections":
                         pb_col = c4.number_input("Pass Book", min_value=0.0, step=500.0, value=0.0, key=f"pb_{cid}")
                         bwd_col = c5.number_input("Bank WD", min_value=0.0, step=500.0, value=0.0, key=f"bwd_{cid}")
                         misc_col = c6.number_input("Misc Fee", min_value=0.0, step=500.0, value=0.0, key=f"misc_{cid}")
-                        asset_col = c7.number_input("Asset Sale", min_value=0.0, step=500.0, value=0.0, key=f"asset_{cid}")
+                        
+                        d1, d2, d3, d4, d5 = st.columns(5)
+                        asset_col = d1.number_input("Asset Sale", min_value=0.0, step=500.0, value=0.0, key=f"asset_{cid}")
+                        asset_cr_col = d2.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=0.0, key=f"acr_{cid}")
+                        cc_col = d3.number_input("Cash & Carry", min_value=0.0, step=500.0, value=0.0, key=f"cc_{cid}")
+                        cf_col = d4.number_input("Credit Form", min_value=0.0, step=500.0, value=0.0, key=f"cf_{cid}")
+                        cfd_col = d5.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=0.0, key=f"cfd_{cid}")
+                        bonus_col = d1.number_input("Bonus", min_value=0.0, step=500.0, value=0.0, key=f"bon_{cid}")
                         
                         input_data[cid] = {
                             "member": member,
@@ -1651,7 +1659,12 @@ elif page == "Collections":
                             "pb": pb_col,
                             "bwd": bwd_col,
                             "misc": misc_col,
-                            "asset": asset_col
+                            "asset": asset_col,
+                            "asset_cr": asset_cr_col,
+                            "cc": cc_col,
+                            "cf": cf_col,
+                            "cfd": cfd_col,
+                            "bonus": bonus_col
                         }
                         st.markdown("---")
                     
@@ -1668,7 +1681,13 @@ elif page == "Collections":
                             misc = data['misc']
                             asset = data['asset']
                             
-                            if rep == 0 and sav == 0 and app == 0 and pb == 0 and bwd == 0 and misc == 0 and asset == 0:
+                            asset_cr = data['asset_cr']
+                            cc = data['cc']
+                            cf = data['cf']
+                            cfd = data['cfd']
+                            bon = data['bonus']
+                            
+                            if rep == 0 and sav == 0 and app == 0 and pb == 0 and bwd == 0 and misc == 0 and asset == 0 and asset_cr == 0 and cc == 0 and cf == 0 and cfd == 0 and bon == 0:
                                 continue # Skip empty rows
                                 
                             prod_low = str(data['member']['Loan Product']).lower()
@@ -1687,7 +1706,7 @@ elif page == "Collections":
                                 "Client Name": data['member']['Client Name'],
                                 "Officer": target_co,
                                 "Branch": data['member']['Branch'],
-                                "Amount Paid": sav + rep + asset + app + pb + misc,
+                                "Amount Paid": sav + rep + asset + app + pb + misc + asset_cr + cc + cf + cfd + bon,
                                 "Transaction Type": "Loan",
                                 "Note": "Daily Collection",
                                 "Savings Amount": sav,
@@ -1702,6 +1721,11 @@ elif page == "Collections":
                                 "App Fee": app,
                                 "Pass Book Bonus": pb,
                                 "Misc Fees": misc,
+                                "Asset Credit Sales": asset_cr,
+                                "Cash and Carry": cc,
+                                "Credit Form": cf,
+                                "Credit Form Damage": cfd,
+                                "Bonus": bon,
                                 "Withdrawal Amount": 0, "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
                                 "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
                                 "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
@@ -2034,229 +2058,342 @@ elif page == "WhatsApp Cashbook":
         st.warning(f"### Closing Balance: ₦{closing_bal:,.0f}")
 
 
-elif page == "Cash Book":
-    st.title("Credit Cash Book")
-    st.caption("INITIATIVE FOR COMMUNITY ADVANCEMENT, RELIEF AND EMPOWERMENT — Credit Cash Book")
+elif page == "Master Cashbook":
+    st.title("🏦 Branch Manager Master Cashbook")
+    st.caption("INITIATIVE FOR COMMUNITY ADVANCEMENT, RELIEF AND EMPOWERMENT — Credit Cash Book Ledger")
     
-    # --- Controls ---
-    ctl1, ctl2, ctl3 = st.columns([1, 1, 1])
-    cb_month = ctl1.selectbox("Month", list(range(1, 13)), index=datetime.now().month - 1,
-                               format_func=lambda m: datetime(2026, m, 1).strftime("%B"))
-    cb_year = ctl2.number_input("Year", value=datetime.now().year, step=1, min_value=2024, max_value=2030)
+    tab_entry, tab_ledger = st.tabs(["📝 Daily Entry", "📊 Monthly Ledger"])
     
     all_loans = load_loans()
     all_repayments = load_repayments()
     
-    branch_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
-    
-    officers = sorted(branch_loans['Officer'].dropna().unique()) if not branch_loans.empty else []
-    display_options = ["All Officers"] + [CO_DISPLAY_MAP.get(o, o) for o in officers]
-    selected_display = ctl3.selectbox("Officer Filter", display_options)
-    selected_officer = "All Officers" if selected_display == "All Officers" else CO_NAME_MAP.get(selected_display, selected_display)
-    
-    if selected_officer != "All Officers":
-        branch_loans = branch_loans[branch_loans['Officer'] == selected_officer]
-    
-    # Filter repayments by month/year
-    if not all_repayments.empty:
-        all_repayments['_dt'] = pd.to_datetime(all_repayments['Date'], errors='coerce')
-        month_reps = all_repayments[
-            (all_repayments['_dt'].dt.month == cb_month) &
-            (all_repayments['_dt'].dt.year == cb_year)
-        ].copy()
+    with tab_entry:
+        view_date = st.date_input("Select Date", datetime.now().date(), key="mc_date")
+        date_str = view_date.strftime("%Y-%m-%d")
         
-        # Filter by branch/officer
-        if ROLE == "BM":
-            month_reps = month_reps[month_reps['Branch'] == BRANCH]
-        elif ROLE == "Officer":
-            month_reps = month_reps[month_reps['Officer'] == USER]
-        if selected_officer != "All Officers":
-            month_reps = month_reps[month_reps['Officer'] == selected_officer]
-    else:
-        month_reps = pd.DataFrame()
-    
-    if month_reps.empty:
-        st.info(f"No transactions found for {datetime(cb_year, cb_month, 1).strftime('%B %Y')}.")
-    else:
-        month_reps['_day'] = month_reps['_dt'].dt.date
-        
-        # Helper to safely sum numeric
-        def safe_sum(series):
-            return pd.to_numeric(series, errors='coerce').fillna(0).sum()
-        
-        # Build daily cashbook rows
-        cashbook_rows = []
-        unique_days = sorted(month_reps['_day'].dropna().unique())
-        
-        # Running totals for closing balance
-        cumulative_payment = 0
-        cumulative_credit_disbursed = 0
-        
-        for day in unique_days:
-            day_data = month_reps[month_reps['_day'] == day]
-            
-            # --- PAYMENT SIDE (Cash In) ---
-            loan_rep_no = len(day_data[pd.to_numeric(day_data['Loan Repayment Amount'], errors='coerce').fillna(0) > 0])
-            loan_rep_amt = safe_sum(day_data['Loan Repayment Amount'])
-            
-            savings_withdrawal_no = len(day_data[pd.to_numeric(day_data['Withdrawal Amount'], errors='coerce').fillna(0) > 0])
-            savings_withdrawal_amt = safe_sum(day_data['Withdrawal Amount'])
-            
-            savings_return_amt = safe_sum(day_data['Savings Amount'])
-            
-            risk_premium = safe_sum(day_data['Markup Paid'])
-            mgt_fee = safe_sum(day_data['Mgt Fee Paid'])
-            proc_fee = safe_sum(day_data['Processing Fee Paid'])
-            pass_book = safe_sum(day_data['Pass Book Paid'])
-            recovery = safe_sum(day_data['Recovery Amount'])
-            others = safe_sum(day_data['Others Amount'])
-            
-            # --- RECEIPT SIDE (Cash Out / Disbursements) ---
-            # Check for new loans originated on this day
-            day_str = day.strftime("%Y-%m-%d")
-            day_loans = branch_loans[branch_loans['Date'] == day_str]
-            if selected_officer != "All Officers":
-                day_loans = day_loans[day_loans['Officer'] == selected_officer]
-            
-            credit_disbursed_no = len(day_loans)
-            credit_disbursed_amt = day_loans['Active Credit'].sum() if not day_loans.empty else 0
-            
-            # Fund transfers (identifiable via transaction notes)
-            fund_to_ho = 0
-            fund_to_other_area = 0
-            staff_salaries = 0
-            office_returns = 0
-            
-            # Total Payment (cash in)
-            total_payment = (loan_rep_amt + savings_return_amt + risk_premium + 
-                           mgt_fee + proc_fee + pass_book + recovery + others)
-            
-            # Total Receipt / Cash Out
-            total_receipt = credit_disbursed_amt + savings_withdrawal_amt
-            
-            cumulative_payment += total_payment
-            cumulative_credit_disbursed += total_receipt
-            closing_balance = cumulative_payment - cumulative_credit_disbursed
-            
-            cashbook_rows.append({
-                "Date": day.strftime("%d/%m"),
-                "Credit Disbursed (No)": credit_disbursed_no,
-                "Credit Disbursed (₦)": credit_disbursed_amt,
-                "Savings Withdrawal (No)": savings_withdrawal_no,
-                "Savings Withdrawal (₦)": savings_withdrawal_amt,
-                "Savings Deposit (₦)": savings_return_amt,
-                "Risk Premium (₦)": risk_premium,
-                "Mgt Fee (₦)": mgt_fee,
-                "Processing Fee (₦)": proc_fee,
-                "Pass Book (₦)": pass_book,
-                "Recovery (₦)": recovery,
-                "Others (₦)": others,
-                "Loan Repayment (No)": loan_rep_no,
-                "Loan Repayment (₦)": loan_rep_amt,
-                "Staff Salaries (₦)": staff_salaries,
-                "Office Returns (₦)": office_returns,
-                "Total Payment (₦)": total_payment,
-                "Total Receipt (₦)": total_receipt,
-                "Closing Balance (₦)": closing_balance
-            })
-        
-        cashbook_df = pd.DataFrame(cashbook_rows)
-        
-        # --- DISPLAY ---
-        st.markdown(f"### 📅 Cash Book — {datetime(cb_year, cb_month, 1).strftime('%B %Y')}")
-        if selected_officer != "All Officers":
-            st.markdown(f"**Officer:** {selected_officer} | **Branch:** {BRANCH}")
+        # ---- AUTO-SUM: Query CO daily entries for this branch ----
+        if not all_repayments.empty:
+            all_repayments['_dt'] = pd.to_datetime(all_repayments['Date'], errors='coerce')
+            day_reps = all_repayments[
+                (all_repayments['_dt'].dt.date.astype(str) == date_str) &
+                (all_repayments['Branch'] == BRANCH)
+            ]
         else:
-            st.markdown(f"**Branch:** {BRANCH} (All Officers)")
+            day_reps = pd.DataFrame()
         
-        # Summary metrics
-        st.markdown("#### 💰 Monthly Overview")
-        m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("Total Cash In", f"₦{cashbook_df['Total Payment (₦)'].sum():,.0f}")
-        m2.metric("Total Disbursed", f"₦{cashbook_df['Credit Disbursed (₦)'].sum():,.0f}")
-        m3.metric("Total Loan Repaid", f"₦{cashbook_df['Loan Repayment (₦)'].sum():,.0f}")
-        m4.metric("Total Savings In", f"₦{cashbook_df['Savings Deposit (₦)'].sum():,.0f}")
-        m5.metric("Closing Balance", f"₦{cashbook_df['Closing Balance (₦)'].iloc[-1]:,.0f}" if not cashbook_df.empty else "₦0")
+        def ssum(df, col):
+            if df.empty or col not in df.columns:
+                return 0.0
+            return pd.to_numeric(df[col], errors='coerce').fillna(0).sum()
         
-        # Weekly breakdown
+        # Auto-sum LEFT (Inflows) from CO collections
+        auto_rep_daily = ssum(day_reps, 'Repayment 60 Days') + ssum(day_reps, 'Repayment 120 Days')
+        auto_rep_12w = ssum(day_reps, 'Repayment 12 Weeks')
+        auto_rep_24w = ssum(day_reps, 'Repayment 24 Weeks')
+        auto_rep_mth = ssum(day_reps, 'Monthly')
+        auto_savings = ssum(day_reps, 'Savings Amount')
+        auto_laps_res = ssum(day_reps, 'Laps Reserved')
+        auto_daily_11 = ssum(day_reps, 'Daily 11%')
+        auto_weekly_11 = ssum(day_reps, 'Weekly 11%')
+        auto_risk_premium = ssum(day_reps, 'Markup Paid')
+        auto_passbook = ssum(day_reps, 'Pass Book Bonus')
+        auto_app_fee = ssum(day_reps, 'App Fee')
+        auto_asset_cr_sales = ssum(day_reps, 'Asset Credit Sales')
+        auto_cash_carry = ssum(day_reps, 'Cash and Carry')
+        auto_contingency = ssum(day_reps, 'Contingency')
+        auto_credit_form = ssum(day_reps, 'Credit Form')
+        auto_credit_form_dmg = ssum(day_reps, 'Credit Form Damage')
+        auto_bonus = ssum(day_reps, 'Bonus')
+        auto_misc = ssum(day_reps, 'Misc Fees')
+        
+        # Auto-sum RIGHT (Outflows) from CO entries
+        auto_expenses = ssum(day_reps, 'Expenses')
+        auto_laps_ret = ssum(day_reps, 'Laps Transferred')
+        auto_bank_dep = ssum(day_reps, 'Bank Deposited')
+        auto_bank_wd = ssum(day_reps, 'Bank Withdrawal')
+        auto_prod_wd = ssum(day_reps, 'Product Withdrawal')
+        
+        # Auto-sum VAULT FUNDING from loans disbursed today
+        if not all_loans.empty:
+            all_loans['_dt'] = pd.to_datetime(all_loans['Date'], errors='coerce')
+            today_loans = all_loans[
+                (all_loans['_dt'].dt.date.astype(str) == date_str) &
+                (all_loans['Branch'] == BRANCH) &
+                (all_loans['Status'].isin(['Active', 'Approved', 'Completed']))
+            ]
+        else:
+            today_loans = pd.DataFrame()
+        
+        auto_fund_asset = 0.0
+        auto_fund_finance = 0.0
+        if not today_loans.empty:
+            for _, loan in today_loans.iterrows():
+                principal = pd.to_numeric(loan.get('Loan Amount', 0), errors='coerce')
+                if pd.isna(principal): principal = 0
+                cat = str(loan.get('Product Category', 'Finance'))
+                if 'Asset' in cat:
+                    auto_fund_asset += principal
+                else:
+                    auto_fund_finance += principal
+        
+        # ---- OPENING BALANCE: Fetch previous day's closing ----
+        prev_date = (view_date - timedelta(days=1)).strftime("%Y-%m-%d")
+        try:
+            prev_row = supabase.table("master_cashbook").select("closing_balance").eq("date", prev_date).eq("branch", BRANCH).execute()
+            auto_opening = float(prev_row.data[0]['closing_balance']) if prev_row.data else 0.0
+        except Exception:
+            auto_opening = 0.0
+        
+        # ---- DISPLAY AUTO-SUMMED VALUES ----
+        st.markdown("### 📥 Left (Inflows) — Auto-Summed from CO Data")
+        
+        a1, a2, a3, a4 = st.columns(4)
+        a1.metric("Credit Rep (Daily)", f"₦{auto_rep_daily:,.0f}")
+        a2.metric("Credit Rep (12 Wks)", f"₦{auto_rep_12w:,.0f}")
+        a3.metric("Credit Rep (24 Wks)", f"₦{auto_rep_24w:,.0f}")
+        a4.metric("Credit Rep (Monthly)", f"₦{auto_rep_mth:,.0f}")
+        
+        b1, b2, b3, b4 = st.columns(4)
+        b1.metric("Savings Deposit", f"₦{auto_savings:,.0f}")
+        b2.metric("Laps Reserve", f"₦{auto_laps_res:,.0f}")
+        b3.metric("Daily 11%", f"₦{auto_daily_11:,.0f}")
+        b4.metric("Weekly 11%", f"₦{auto_weekly_11:,.0f}")
+        
+        e1, e2, e3, e4 = st.columns(4)
+        e1.metric("Risk Premium", f"₦{auto_risk_premium:,.0f}")
+        e2.metric("Passbook", f"₦{auto_passbook:,.0f}")
+        e3.metric("App Fee", f"₦{auto_app_fee:,.0f}")
+        e4.metric("Contingency (1%)", f"₦{auto_contingency:,.0f}")
+        
+        f1, f2, f3, f4 = st.columns(4)
+        f1.metric("Asset Credit Sales", f"₦{auto_asset_cr_sales:,.0f}")
+        f2.metric("Cash and Carry", f"₦{auto_cash_carry:,.0f}")
+        f3.metric("Credit Form", f"₦{auto_credit_form:,.0f}")
+        f4.metric("Cr Form Damage", f"₦{auto_credit_form_dmg:,.0f}")
+        
+        g1, g2 = st.columns(2)
+        g1.metric("Bonus", f"₦{auto_bonus:,.0f}")
+        g2.metric("Misc Fees", f"₦{auto_misc:,.0f}")
+        
         st.markdown("---")
-        st.markdown("#### 📊 Weekly Cash Book Ledger")
+        st.markdown("### 📤 Right (Outflows) — Auto-Summed from CO Data")
         
-        # Group by week
-        for day in unique_days:
-            cashbook_df.loc[cashbook_df['Date'] == day.strftime("%d/%m"), '_week'] = (day.day - 1) // 7 + 1
+        h1, h2, h3, h4 = st.columns(4)
+        h1.metric("Fund to Asset Program", f"₦{auto_fund_asset:,.0f}")
+        h2.metric("Fund to Product Finance", f"₦{auto_fund_finance:,.0f}")
+        h3.metric("Office Expenses", f"₦{auto_expenses:,.0f}")
+        h4.metric("Laps Returns", f"₦{auto_laps_ret:,.0f}")
         
-        weeks = sorted(cashbook_df['_week'].dropna().unique())
+        i1, i2, i3 = st.columns(3)
+        i1.metric("Bank Deposit", f"₦{auto_bank_dep:,.0f}")
+        i2.metric("Bank Withdrawal", f"₦{auto_bank_wd:,.0f}")
+        i3.metric("Product Withdrawal", f"₦{auto_prod_wd:,.0f}")
         
-        for week_num in weeks:
-            week_data = cashbook_df[cashbook_df['_week'] == week_num].drop(columns=['_week'], errors='ignore')
+        # ---- MANUAL BM INPUTS ----
+        st.markdown("---")
+        st.markdown("### ✏️ BM Manual Inputs")
+        
+        with st.form("master_cashbook_form"):
+            st.markdown("#### 📥 Inflows (Vault Funding Received)")
+            m1, m2 = st.columns(2)
+            funds_ho = m1.number_input("Funds Received from Head Office", min_value=0.0, step=1000.0, value=0.0)
+            funds_branch = m2.number_input("Funds Received from Other Branch", min_value=0.0, step=1000.0, value=0.0)
             
-            st.markdown(f"##### 📋 Week {int(week_num)}")
+            st.markdown("#### 📤 Outflows (Corporate Transfers)")
+            n1, n2 = st.columns(2)
+            xfer_ho = n1.number_input("Fund Transferred to H.O.", min_value=0.0, step=1000.0, value=0.0)
+            xfer_branch = n2.number_input("Fund Transferred to Other Branch", min_value=0.0, step=1000.0, value=0.0)
             
-            # Format the display
-            display_cols = [c for c in week_data.columns if c != '_week']
+            o1, o2 = st.columns(2)
+            xfer_area = o1.number_input("Fund Transferred to Other Area", min_value=0.0, step=1000.0, value=0.0)
+            salaries = o2.number_input("Staff Salaries", min_value=0.0, step=1000.0, value=0.0)
             
-            # Style the dataframe with currency formatting
-            format_dict = {}
-            for col in display_cols:
-                if "(₦)" in col:
-                    format_dict[col] = "₦{:,.0f}"
-                elif "(No)" in col:
-                    format_dict[col] = "{:.0f}"
-            
-            st.dataframe(
-                week_data[display_cols].style.format(format_dict, na_rep="—"),
-                use_container_width=True,
-                hide_index=True
+            # ---- CALCULATE TOTALS ----
+            total_inflows = (
+                auto_opening + auto_rep_daily + auto_rep_12w + auto_rep_24w + auto_rep_mth +
+                auto_savings + auto_laps_res + auto_daily_11 + auto_weekly_11 +
+                auto_risk_premium + auto_passbook + auto_app_fee +
+                auto_asset_cr_sales + auto_cash_carry + auto_contingency +
+                auto_credit_form + auto_credit_form_dmg + auto_bonus + auto_misc +
+                funds_ho + funds_branch
             )
             
-            # Weekly totals
-            wt_cols = [c for c in display_cols if "(₦)" in c or "(No)" in c]
-            weekly_totals = {c: week_data[c].sum() for c in wt_cols}
+            total_outflows = (
+                auto_fund_asset + auto_fund_finance +
+                auto_expenses + auto_laps_ret + auto_bank_dep + auto_prod_wd +
+                xfer_ho + xfer_branch + xfer_area + salaries
+            )
             
-            wt1, wt2, wt3, wt4 = st.columns(4)
-            wt1.metric(f"W{int(week_num)} Cash In", f"₦{weekly_totals.get('Total Payment (₦)', 0):,.0f}")
-            wt2.metric(f"W{int(week_num)} Disbursed", f"₦{weekly_totals.get('Credit Disbursed (₦)', 0):,.0f}")
-            wt3.metric(f"W{int(week_num)} Loan Repaid", f"₦{weekly_totals.get('Loan Repayment (₦)', 0):,.0f}")
-            wt4.metric(f"W{int(week_num)} Savings", f"₦{weekly_totals.get('Savings Deposit (₦)', 0):,.0f}")
+            closing_balance = total_inflows - total_outflows
+            
             st.markdown("---")
-        
-        # Monthly Total row
-        st.markdown("#### 📈 Monthly Totals")
-        num_cols = [c for c in cashbook_df.columns if "(₦)" in c or "(No)" in c]
-        monthly_totals = cashbook_df[num_cols].sum()
-        
-        mt_df = pd.DataFrame([monthly_totals], index=["Monthly Total"])
-        format_dict_mt = {}
-        for col in mt_df.columns:
-            if "(₦)" in col:
-                format_dict_mt[col] = "₦{:,.0f}"
-            elif "(No)" in col:
-                format_dict_mt[col] = "{:.0f}"
-        
-        st.dataframe(mt_df.style.format(format_dict_mt), use_container_width=True)
-        
-        # Download cashbook as Excel
-        st.markdown("---")
-        if st.button("⬇️ Download Cash Book as Excel", use_container_width=True):
-            import io
-            output = io.BytesIO()
-            display_df = cashbook_df.drop(columns=['_week'], errors='ignore')
+            st.markdown("### 📊 Daily Summary")
+            s1, s2, s3 = st.columns(3)
+            s1.metric("Opening Balance", f"₦{auto_opening:,.0f}")
+            s2.metric("Total Inflows (Left)", f"₦{total_inflows:,.0f}")
+            s3.metric("Total Outflows (Right)", f"₦{total_outflows:,.0f}")
             
-            # Add totals row
-            total_row = display_df.select_dtypes(include='number').sum()
-            total_row['Date'] = 'MONTHLY TOTAL'
-            display_df = pd.concat([display_df, pd.DataFrame([total_row])], ignore_index=True)
+            if closing_balance >= 0:
+                st.success(f"### Closing Balance: ₦{closing_balance:,.0f}")
+            else:
+                st.error(f"### Closing Balance: ₦{closing_balance:,.0f}")
             
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                display_df.to_excel(writer, sheet_name='Credit Cash Book', index=False)
+            save_mc = st.form_submit_button("💾 Save Master Cashbook Entry", type="primary", use_container_width=True)
             
-            st.download_button(
-                label="📄 Click to Download",
-                data=output.getvalue(),
-                file_name=f"ICARE_CashBook_{datetime(cb_year, cb_month, 1).strftime('%B_%Y')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            if save_mc:
+                mc_data = {
+                    "date": date_str,
+                    "branch": BRANCH,
+                    "opening_balance": auto_opening,
+                    "rep_daily": auto_rep_daily,
+                    "rep_12_weeks": auto_rep_12w,
+                    "rep_24_weeks": auto_rep_24w,
+                    "rep_monthly": auto_rep_mth,
+                    "savings_deposit": auto_savings,
+                    "laps_reserve": auto_laps_res,
+                    "funds_received_ho": funds_ho,
+                    "funds_received_other_branch": funds_branch,
+                    "loan_received_asset": 0,
+                    "loan_received_finance": 0,
+                    "daily_11_pct": auto_daily_11,
+                    "weekly_11_pct": auto_weekly_11,
+                    "savings_adj_no": 0,
+                    "savings_adj_amount": 0,
+                    "risk_premium_returns": auto_risk_premium,
+                    "passbook": auto_passbook,
+                    "app_fee": auto_app_fee,
+                    "asset_credit_sales": auto_asset_cr_sales,
+                    "cash_and_carry": auto_cash_carry,
+                    "contingency": auto_contingency,
+                    "credit_form": auto_credit_form,
+                    "credit_form_damage": auto_credit_form_dmg,
+                    "bonus": auto_bonus,
+                    "misc_fees": auto_misc,
+                    "fund_transferred_other_branch": xfer_branch,
+                    "fund_transferred_ho": xfer_ho,
+                    "fund_to_other_area": xfer_area,
+                    "fund_to_asset_program": auto_fund_asset,
+                    "fund_to_product_finance": auto_fund_finance,
+                    "staff_salaries": salaries,
+                    "office_expenses": auto_expenses,
+                    "laps_returns": auto_laps_ret,
+                    "bank_deposit": auto_bank_dep,
+                    "bank_withdrawal": auto_bank_wd,
+                    "product_withdrawal": auto_prod_wd,
+                    "total_inflows": total_inflows,
+                    "total_outflows": total_outflows,
+                    "closing_balance": closing_balance
+                }
+                
+                try:
+                    # Upsert: check if row exists for this date+branch
+                    existing = supabase.table("master_cashbook").select("id").eq("date", date_str).eq("branch", BRANCH).execute()
+                    if existing.data:
+                        supabase.table("master_cashbook").update(mc_data).eq("date", date_str).eq("branch", BRANCH).execute()
+                        st.success("Master Cashbook entry UPDATED successfully!")
+                    else:
+                        supabase.table("master_cashbook").insert(mc_data).execute()
+                        st.success("Master Cashbook entry SAVED successfully!")
+                except Exception as e:
+                    st.error(f"Failed to save: {e}")
+    
+    with tab_ledger:
+        st.markdown("### 📅 Monthly Ledger View")
+        
+        ctl1, ctl2 = st.columns(2)
+        cb_month = ctl1.selectbox("Month", list(range(1, 13)), index=datetime.now().month - 1,
+                                   format_func=lambda m: datetime(2026, m, 1).strftime("%B"), key="mc_month")
+        cb_year = ctl2.number_input("Year", value=datetime.now().year, step=1, min_value=2024, max_value=2030, key="mc_year")
+        
+        try:
+            # Build date range for the month
+            from calendar import monthrange
+            _, last_day = monthrange(cb_year, cb_month)
+            start_date = f"{cb_year}-{cb_month:02d}-01"
+            end_date = f"{cb_year}-{cb_month:02d}-{last_day:02d}"
+            
+            result = supabase.table("master_cashbook").select("*").eq("branch", BRANCH).gte("date", start_date).lte("date", end_date).order("date").execute()
+            
+            if result.data:
+                ledger_df = pd.DataFrame(result.data)
+                
+                # Reorder columns to match the Excel layout
+                display_cols = [
+                    "date", "opening_balance",
+                    "rep_daily", "rep_12_weeks", "rep_24_weeks", "rep_monthly",
+                    "savings_deposit", "laps_reserve",
+                    "funds_received_ho", "funds_received_other_branch",
+                    "loan_received_asset", "loan_received_finance",
+                    "daily_11_pct", "weekly_11_pct",
+                    "savings_adj_no", "savings_adj_amount",
+                    "risk_premium_returns",
+                    "fund_transferred_other_branch", "fund_transferred_ho",
+                    "fund_to_other_area", "fund_to_asset_program", "fund_to_product_finance",
+                    "staff_salaries", "office_expenses",
+                    "laps_returns", "bank_deposit",
+                    "total_inflows", "total_outflows", "closing_balance"
+                ]
+                
+                # Filter to available columns only
+                available_cols = [c for c in display_cols if c in ledger_df.columns]
+                display_df = ledger_df[available_cols].copy()
+                
+                # Rename for display
+                col_rename = {
+                    "date": "Date", "opening_balance": "Opening Balance",
+                    "rep_daily": "Credit Rep (Daily)", "rep_12_weeks": "Credit Rep (12 Wks)",
+                    "rep_24_weeks": "Credit Rep (24 Wks)", "rep_monthly": "Credit Rep (Monthly)",
+                    "savings_deposit": "Savings Deposit", "laps_reserve": "Laps Reserve",
+                    "funds_received_ho": "Funds Recv (H.O.)", "funds_received_other_branch": "Funds Recv (Branch)",
+                    "loan_received_asset": "Loan Recv (Asset)", "loan_received_finance": "Loan Recv (Finance)",
+                    "daily_11_pct": "Daily 11%", "weekly_11_pct": "Weekly 11%",
+                    "savings_adj_no": "Sav Adj (No)", "savings_adj_amount": "Sav Adj (₦)",
+                    "risk_premium_returns": "Risk Premium",
+                    "fund_transferred_other_branch": "Fund Xfer (Branch)", "fund_transferred_ho": "Fund Xfer (H.O.)",
+                    "fund_to_other_area": "Fund to Area", "fund_to_asset_program": "Fund to Asset",
+                    "fund_to_product_finance": "Fund to Finance",
+                    "staff_salaries": "Staff Salaries", "office_expenses": "Office Expenses",
+                    "laps_returns": "Laps Returns", "bank_deposit": "Bank Deposit",
+                    "total_inflows": "Total Inflows", "total_outflows": "Total Outflows",
+                    "closing_balance": "Closing Balance"
+                }
+                display_df.rename(columns=col_rename, inplace=True)
+                
+                st.dataframe(
+                    display_df.style.format(precision=0, thousands=",", na_rep="—"),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=600
+                )
+                
+                # Monthly totals
+                st.markdown("#### 📈 Monthly Totals")
+                num_cols = display_df.select_dtypes(include='number').columns
+                totals = display_df[num_cols].sum()
+                mt1, mt2, mt3 = st.columns(3)
+                mt1.metric("Total Inflows", f"₦{totals.get('Total Inflows', 0):,.0f}")
+                mt2.metric("Total Outflows", f"₦{totals.get('Total Outflows', 0):,.0f}")
+                mt3.metric("Net Position", f"₦{totals.get('Closing Balance', 0):,.0f}")
+                
+                # Download
+                st.markdown("---")
+                if st.button("⬇️ Download Ledger as Excel", use_container_width=True, key="dl_mc"):
+                    import io
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        display_df.to_excel(writer, sheet_name='Master Cashbook', index=False)
+                    st.download_button(
+                        label="📄 Click to Download",
+                        data=output.getvalue(),
+                        file_name=f"ICARE_Master_Cashbook_{datetime(cb_year, cb_month, 1).strftime('%B_%Y')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="dl_mc_btn"
+                    )
+            else:
+                st.info(f"No ledger entries found for {datetime(cb_year, cb_month, 1).strftime('%B %Y')}.")
+        except Exception as e:
+            st.error(f"Error loading ledger: {e}")
+
 
 elif page == "Portfolio":
     st.title("Portfolio Management")
