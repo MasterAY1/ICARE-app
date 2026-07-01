@@ -684,22 +684,22 @@ def calculate_overdue(start_date_str, product, fixed_repay, total_loan_paid, sta
     
     today = datetime.now().date()
     
-    if "120 Days" in str(product):
+    if "120" in str(product):
         duration = 120
         freq = "Daily"
-    elif "Daily" in str(product): 
+    elif "Daily" in str(product) or "60" in str(product): 
         duration = 60
         freq = "Daily"
-    elif "3 Months" in str(product):
+    elif "3 Month" in str(product) or "3M" in str(product):
         duration = 3
         freq = "Monthly"
-    elif "6 Months" in str(product):
+    elif "6 Month" in str(product) or "6M" in str(product):
         duration = 6
         freq = "Monthly"
-    elif "12 Weeks" in str(product):
+    elif "12 Week" in str(product) or "12W" in str(product):
         duration = 12
         freq = "Weekly"
-    elif "24 Weeks" in str(product):
+    elif "24 Week" in str(product) or "24W" in str(product):
         duration = 24
         freq = "Weekly"
     else:
@@ -751,31 +751,31 @@ def calculate_loan_setup(amount, product_type, product_category="Finance"):
         }
         
     # Finance Product Logic
-    if "120 Days" in str(product_type):
+    if "120" in str(product_type):
         rate = 0.21
         duration = 120
         freq = "Daily"
         round_step = 50
         force_gap = False
-    elif "Daily" in str(product_type): # Daily Loan (60 Days)
+    elif "Daily" in str(product_type) or "60" in str(product_type): # Daily Loan (60 Days)
         rate = 0.12
         duration = 60
         freq = "Daily"
         round_step = 50
         force_gap = False
-    elif "3 Months" in str(product_type):
+    elif "3 Month" in str(product_type) or "3M" in str(product_type):
         rate = 0.12
         duration = 3
         freq = "Monthly"
         round_step = 100
         force_gap = False
-    elif "6 Months" in str(product_type):
+    elif "6 Month" in str(product_type) or "6M" in str(product_type):
         rate = 0.21
         duration = 6
         freq = "Monthly"
         round_step = 100
         force_gap = False
-    elif "12 Weeks" in str(product_type):
+    elif "12 Week" in str(product_type) or "12W" in str(product_type):
         rate = 0.12
         duration = 12
         freq = "Weekly"
