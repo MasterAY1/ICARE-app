@@ -32,7 +32,7 @@ def run_migration():
 
     # Check required columns (making some optional or falling back)
     required_cols = [
-        'Member Reference', 'Total Accumulated Savings', 'Current Outstanding Balance',
+        'Member Reference', 'Total Accumulated Savings', 'Active Loan',
         'Active Loan Product', 'Expected Repayment', 'Loan Category'
     ]
     
@@ -59,7 +59,7 @@ def run_migration():
         savings = pd.to_numeric(row.get('Total Accumulated Savings', 0), errors='coerce')
         if pd.isna(savings): savings = 0
         
-        outstanding_bal = pd.to_numeric(row.get('Current Outstanding Balance', 0), errors='coerce')
+        outstanding_bal = pd.to_numeric(row.get('Active Loan', 0), errors='coerce')
         if pd.isna(outstanding_bal): outstanding_bal = 0
         
         loan_product = str(row.get('Active Loan Product', '')).strip()

@@ -1545,6 +1545,181 @@ elif page == "Loan Origination":
                                     st.rerun()
 
 
+elif page == "Collections":
+    st.title("👥 Member Collections")
+    st.caption("Record daily repayments, savings, and fees for a specific group.")
+    
+    view_date = st.date_input("Select Date", datetime.now().date(), key="col_date")
+    date_str = view_date.strftime("%Y-%m-%d")
+    
+    all_loans = load_loans()
+    repayments = load_repayments()
+    
+    if all_loans.empty:
+        st.warning("No active loans found.")
+    else:
+        # Filter active loans for this officer (unless BM/AM looking at all)
+        if ROLE in ["BM", "AM"]:
+            branch_loans = all_loans[all_loans['Branch'] == BRANCH] if ROLE == "BM" else all_loans
+            unique_officers = branch_loans['Officer'].dropna().unique().tolist()
+            if unique_officers:
+                display_options = [CO_DISPLAY_MAP.get(o, o) for o in unique_officers]
+                selected_display = st.selectbox("Select Credit Officer", display_options, key="col_co")
+                target_co = CO_NAME_MAP.get(selected_display, selected_display)
+            else:
+                target_co = USER
+        else:
+            target_co = USER
+            
+        co_loans = all_loans[(all_loans['Officer'] == target_co) & (all_loans['Status'] == 'Active')]
+        
+        if co_loans.empty:
+            st.info("No active loans for this officer.")
+        else:
+            groups = ["Ungrouped"] + sorted(co_loans[co_loans['Group Name'].notna()]['Group Name'].unique().tolist())
+            selected_group = st.selectbox("Select Group", groups)
+            
+            if selected_group == "Ungrouped":
+                group_loans = co_loans[co_loans['Group Name'].isna() | (co_loans['Group Name'] == "")]
+            else:
+                group_loans = co_loans[co_loans['Group Name'] == selected_group]
+                
+            if group_loans.empty:
+                st.info("No active members in this group.")
+            else:
+                st.markdown(f"### Members in {selected_group}")
+                
+                # Fetch history for today to prefill/check
+                today_reps = repayments[(repayments['Date'] == date_str) & (repayments['Officer'] == target_co)] if not repayments.empty else pd.DataFrame()
+                
+                with st.form("collections_form"):
+                    input_data = {}
+                    for _, member in group_loans.iterrows():
+                        cid = member['Client ID']
+                        cname = member['Client Name']
+                        prod = str(member['Loan Product'])
+                        act_cred = float(member.get('Active Credit', 0))
+                        exp_rep = float(member.get('Loan Repayment', 0))
+                        
+                        # Find past collections to show Savings/Remaining Balance
+                        mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
+                        acc_sav = mem_reps['Savings Amount'].astype(float).sum() if not mem_reps.empty else 0
+                        total_paid = mem_reps['Loan Repayment Amount'].astype(float).sum() if not mem_reps.empty else 0
+                        rem_bal = act_cred - total_paid
+                        
+                        # Check if already paid today
+                        today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
+                        default_rep = exp_rep if today_paid.empty else 0.0
+                        
+                        # Repayment Schedule
+                        next_due = "N/A"
+                        if pd.notna(member.get('start_date')) and pd.notna(member.get('Loan Product')):
+                            try:
+                                p_cat = member.get('Product Category', 'Finance')
+                                l_setup = calculate_loan_setup(act_cred, prod, p_cat)
+                                # Default start date logic
+                                start_d = pd.to_datetime(member['start_date']).date()
+                                sched = generate_repayment_schedule(start_d, l_setup['duration'], l_setup['freq'])
+                                # Find next due date strictly >= today
+                                today_d = datetime.now().date()
+                                future_dates = [d for d in sched if d >= today_d]
+                                if future_dates:
+                                    next_due = future_dates[0].strftime("%Y-%m-%d")
+                                else:
+                                    next_due = "Completed"
+                            except Exception as e:
+                                pass
+
+                        st.markdown(f"**{cname} ({cid})** - *{prod}*")
+                        st.caption(f"Active Credit: ₦{act_cred:,.0f} | Rem Bal: ₦{rem_bal:,.0f} | Acc Savings: ₦{acc_sav:,.0f} | **Next Due: {next_due}**")
+                        
+                        c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
+                        
+                        rep_col = c1.number_input("Repayment", min_value=0.0, step=500.0, value=float(default_rep), key=f"rep_{cid}")
+                        sav_col = c2.number_input("Savings", min_value=0.0, step=500.0, value=0.0, key=f"sav_{cid}")
+                        app_col = c3.number_input("App Fee", min_value=0.0, step=500.0, value=0.0, key=f"app_{cid}")
+                        pb_col = c4.number_input("Pass Book", min_value=0.0, step=500.0, value=0.0, key=f"pb_{cid}")
+                        bwd_col = c5.number_input("Bank WD", min_value=0.0, step=500.0, value=0.0, key=f"bwd_{cid}")
+                        misc_col = c6.number_input("Misc Fee", min_value=0.0, step=500.0, value=0.0, key=f"misc_{cid}")
+                        asset_col = c7.number_input("Asset Sale", min_value=0.0, step=500.0, value=0.0, key=f"asset_{cid}")
+                        
+                        input_data[cid] = {
+                            "member": member,
+                            "rep": rep_col,
+                            "sav": sav_col,
+                            "app": app_col,
+                            "pb": pb_col,
+                            "bwd": bwd_col,
+                            "misc": misc_col,
+                            "asset": asset_col
+                        }
+                        st.markdown("---")
+                    
+                    submit_btn = st.form_submit_button("Save All Collections", type="primary")
+                    
+                    if submit_btn:
+                        to_insert = []
+                        for cid, data in input_data.items():
+                            rep = data['rep']
+                            sav = data['sav']
+                            app = data['app']
+                            pb = data['pb']
+                            bwd = data['bwd']
+                            misc = data['misc']
+                            asset = data['asset']
+                            
+                            if rep == 0 and sav == 0 and app == 0 and pb == 0 and bwd == 0 and misc == 0 and asset == 0:
+                                continue # Skip empty rows
+                                
+                            prod_low = str(data['member']['Loan Product']).lower()
+                            rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
+                            
+                            if "12 week" in prod_low or "12wk" in prod_low: rep_12w = rep
+                            elif "24 week" in prod_low or "24wk" in prod_low: rep_24w = rep
+                            elif "60 day" in prod_low or "daily" in prod_low and "120" not in prod_low: rep_60d = rep
+                            elif "120 day" in prod_low: rep_120d = rep
+                            elif "month" in prod_low: rep_mth = rep
+                            else: rep_60d = rep
+                            
+                            tx_data = {
+                                "Date": date_str,
+                                "Client ID": cid,
+                                "Client Name": data['member']['Client Name'],
+                                "Officer": target_co,
+                                "Branch": data['member']['Branch'],
+                                "Amount Paid": sav + rep + asset + app + pb + misc,
+                                "Transaction Type": "Loan",
+                                "Note": "Daily Collection",
+                                "Savings Amount": sav,
+                                "Loan Repayment Amount": rep,
+                                "Repayment 12 Weeks": rep_12w,
+                                "Repayment 24 Weeks": rep_24w,
+                                "Repayment 60 Days": rep_60d,
+                                "Repayment 120 Days": rep_120d,
+                                "Monthly": rep_mth,
+                                "Bank Withdrawal": bwd,
+                                "Asset Sales": asset,
+                                "App Fee": app,
+                                "Pass Book Bonus": pb,
+                                "Misc Fees": misc,
+                                "Withdrawal Amount": 0, "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
+                                "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
+                                "Laps Reserved": 0, "Laps Transferred": 0,
+                                "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
+                            }
+                            to_insert.append({UI_TO_DB_REP[k]: v for k, v in tx_data.items()})
+                        
+                        if to_insert:
+                            try:
+                                supabase.table("repayments").insert(to_insert).execute()
+                                st.success(f"Successfully saved {len(to_insert)} collection records!")
+                            except Exception as e:
+                                st.error(f"Failed to save collections: {e}")
+                        else:
+                            st.info("No collections entered to save.")
+
+
 elif page == "Daily Report":
     st.title("Daily Collections Report")
     
@@ -1683,7 +1858,7 @@ elif page == "Daily Report":
         st.info("No records found in database.")
 elif page == "WhatsApp Cashbook":
     st.title("📖 CO Daily Cashbook")
-    st.caption("Daily Ledger — Record Transactions & View Balances")
+    st.caption("Daily Ledger — Auto-Calculated from Collections")
     
     view_date = st.date_input("Select Date", datetime.now().date(), key="wa_date")
     date_str = view_date.strftime("%Y-%m-%d")
@@ -1717,145 +1892,7 @@ elif page == "WhatsApp Cashbook":
     daily_reps = repayments[(repayments['DateStr'] == date_str) & (repayments['Officer'] == target_co)]
     
     # ========================================================
-    # DATA ENTRY FORM (For COs)
-    # ========================================================
-    if ROLE in ["CO", "BM", "AM"]: # Let BMs edit too if needed, or restrict to CO
-        with st.expander("➕ Enter New Transaction", expanded=False):
-            st.markdown("### Transaction Details")
-            
-            # Client selection for the targeted CO
-            co_clients = all_loans[all_loans['Officer'] == target_co] if not all_loans.empty else pd.DataFrame()
-            if not co_clients.empty:
-                co_clients = co_clients.sort_values('Date').groupby('Client ID').last().reset_index()
-                co_clients['DisplayName'] = co_clients['Client Name'] + " (" + co_clients['Client ID'] + ")"
-                options = [""] + co_clients['DisplayName'].tolist()
-                selected_client_disp = st.selectbox("Select Client", options, key="wa_client_select")
-            else:
-                st.warning("No clients found for this officer.")
-                selected_client_disp = ""
-                
-            with st.form("cashbook_entry_form", clear_on_submit=True):
-                st.markdown("#### Left (Inflows)")
-                c1, c2, c3 = st.columns(3)
-                savings_in = c1.number_input("Savings Deposit", min_value=0, step=500, value=0)
-                repay_total = c2.number_input("Total Repayment Collected", min_value=0, step=500, value=0)
-                asset_sales = c3.number_input("Asset Sales / Cash Carry", min_value=0, step=500, value=0)
-                
-                app_fee = c1.number_input("App Fee", min_value=0, step=500, value=0)
-                passbook = c2.number_input("Pass Book / Bonus", min_value=0, step=500, value=0)
-                bank_wd = c3.number_input("Bank Withdrawn (To CO)", min_value=0, step=500, value=0)
-                
-                g_sav_in = c1.number_input("Group Savings Deposit", min_value=0, step=500, value=0)
-                misc_fees = c2.number_input("Misc Fees", min_value=0, step=500, value=0)
-                
-                st.markdown("#### Right (Outflows)")
-                o1, o2, o3 = st.columns(3)
-                product_wd = o1.number_input("Product Withdrawal (Savings WD)", min_value=0, step=500, value=0)
-                bank_dep = o2.number_input("Bank Deposited", min_value=0, step=500, value=0)
-                expenses = o3.number_input("Expenses", min_value=0, step=500, value=0)
-                
-                laps_res = o1.number_input("Laps Reserved", min_value=0, step=500, value=0)
-                laps_trans = o2.number_input("Laps Transferred", min_value=0, step=500, value=0)
-                g_sav_wd = o3.number_input("Group Savings Withdrawal", min_value=0, step=500, value=0)
-                
-                note = st.text_input("Optional Note / Description")
-                confirm = st.checkbox("Confirm Transaction Details (Prevents accidental Enter)")
-                
-                submit_txn = st.form_submit_button("Save Transaction", use_container_width=True)
-                
-                if submit_txn:
-                    if not confirm:
-                        st.error("Please check the 'Confirm Transaction Details' box to prevent accidental Enter submissions.")
-                    elif not selected_client_disp:
-                        st.error("Please select a client.")
-                    else:
-                        client_row = co_clients[co_clients['DisplayName'] == selected_client_disp].iloc[0]
-                        cid = client_row['Client ID']
-                        c_name = client_row['Client Name']
-                        prod = str(client_row['Loan Product'])
-                        
-                        # Auto-split Math and Auto-routing
-                        # Repayment routing buckets
-                        rep_12w = 0
-                        rep_24w = 0
-                        rep_60d = 0
-                        rep_120d = 0
-                        rep_mth = 0
-                        
-                        # Markup buckets
-                        contingency = 0
-                        d_11 = 0
-                        d_20 = 0
-                        w_11 = 0
-                        w_20 = 0
-                        m_markup = 0
-                        
-                        if repay_total > 0:
-                            # 1. Routing
-                            prod_low = prod.lower()
-                            if "12 week" in prod_low or "12wk" in prod_low:
-                                rep_12w = repay_total
-                            elif "24 week" in prod_low or "24wk" in prod_low:
-                                rep_24w = repay_total
-                            elif "60 day" in prod_low or "daily" in prod_low and "120" not in prod_low:
-                                rep_60d = repay_total
-                            elif "120 day" in prod_low:
-                                rep_120d = repay_total
-                            elif "month" in prod_low:
-                                rep_mth = repay_total
-                            else:
-                                rep_60d = repay_total # fallback
-                                
-
-                        
-                        # Build Data Dictionary
-                        tx_data = {
-                            "Date": date_str,
-                            "Client ID": cid,
-                            "Client Name": c_name,
-                            "Officer": target_co,
-                            "Branch": client_row['Branch'],
-                            "Amount Paid": savings_in + repay_total + asset_sales + app_fee + passbook + g_sav_in + misc_fees,
-                            "Transaction Type": "Loan",
-                            "Note": note,
-                            "Savings Amount": savings_in,
-                            "Loan Repayment Amount": repay_total,
-                            "Withdrawal Amount": product_wd,
-                            
-                            # Excel Ledger specific columns mapped:
-                            "Repayment 12 Weeks": rep_12w,
-                            "Repayment 24 Weeks": rep_24w,
-                            "Repayment 60 Days": rep_60d,
-                            "Repayment 120 Days": rep_120d,
-                            "Monthly": rep_mth,
-                            "Contingency": contingency,
-                            "Bank Withdrawal": bank_wd,
-                            "Asset Sales": asset_sales,
-                            "App Fee": app_fee,
-                            "Pass Book Bonus": passbook,
-                            "Daily 11%": d_11,
-                            "Daily 20%": d_20,
-                            "Weekly 11%": w_11,
-                            "Weekly 20%": w_20,
-                            "Monthly 11%/20%": m_markup,
-                            "Product Withdrawal": product_wd,
-                            "Expenses": expenses,
-                            "Bank Deposited": bank_dep,
-                            "Laps Reserved": laps_res,
-                            "Laps Transferred": laps_trans,
-                            "Group Savings Deposit": g_sav_in,
-                            "Group Savings Withdrawal": g_sav_wd,
-                            "Misc Fees": misc_fees
-                        }
-                        
-                        save_repayment(tx_data)
-                        st.success("Transaction saved successfully!")
-                        import time
-                        time.sleep(1)
-                        st.rerun()
-
-    # ========================================================
-    # LEDGER DISPLAY (The Blueprint View)
+    # LEDGER DISPLAY & MANUAL OUTFLOWS
     # ========================================================
     st.markdown("---")
     st.markdown(f"### 📋 Daily Ledger for {CO_DISPLAY_MAP.get(target_co, target_co)} - {date_str}")
@@ -1865,12 +1902,43 @@ elif page == "WhatsApp Cashbook":
             return pd.to_numeric(df[col], errors='coerce').fillna(0).sum()
         return 0.0
 
-    # We need brought forward logic for opening balance. Let's just use manual for now as per old Cashbook,
-    # or calculate previous day's closing.
-    # To be safe and fast, let's provide a manual opening balance at the top of the ledger view
-    st.markdown("#### Setup")
-    bf_cash = st.number_input("Opening Balance (Brought Forward Cash)", value=0.0, step=500.0, key="ledger_opening")
-    
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("#### Setup & Manual Outflows")
+        bf_cash = st.number_input("Opening Balance (B/F Cash)", value=0.0, step=500.0, key="ledger_opening")
+        laps_res = st.number_input("Laps Reserved (Left Inflow)", value=0.0, step=500.0)
+        
+        st.markdown("##### Outflows (Right)")
+        product_wd = st.number_input("Product Withdrawal (Savings WD)", value=0.0, step=500.0)
+        bank_dep = st.number_input("Bank Deposited", value=0.0, step=500.0)
+        expenses = st.number_input("Expenses", value=0.0, step=500.0)
+        laps_trans = st.number_input("Laps Transferred", value=0.0, step=500.0)
+        
+        submit_manual = st.button("Save Manual Entries", type="primary")
+        if submit_manual:
+            tx_data = {
+                "Date": date_str, "Client ID": "CASHBOOK", "Client Name": "Cashbook Entry",
+                "Officer": target_co, "Branch": BRANCH,
+                "Transaction Type": "Cashbook Entry", "Amount Paid": 0, "Note": "Cashbook Manual Outflows",
+                "Laps Reserved": laps_res, "Product Withdrawal": product_wd,
+                "Bank Deposited": bank_dep, "Expenses": expenses, "Laps Transferred": laps_trans,
+                "Savings Amount": 0, "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0,
+                "Repayment 24 Weeks": 0, "Repayment 60 Days": 0, "Repayment 120 Days": 0,
+                "Monthly": 0, "Contingency": 0, "Bank Withdrawal": 0, "Asset Sales": 0,
+                "App Fee": 0, "Pass Book Bonus": 0, "Daily 11%": 0, "Daily 20%": 0,
+                "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0, "Group Savings Deposit": 0,
+                "Group Savings Withdrawal": 0, "Misc Fees": 0, "Withdrawal Amount": 0
+            }
+            try:
+                db_data = {UI_TO_DB_REP[k]: v for k, v in tx_data.items()}
+                supabase.table("repayments").insert([db_data]).execute()
+                st.success("Manual entries saved!")
+                import time
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error saving: {e}")
+
     # Calculate New Active Disbursements (from loans table originated today by this CO)
     co_loans = all_loans[all_loans['Officer'] == target_co] if not all_loans.empty else pd.DataFrame()
     d_act = w_act = m_act = 0
@@ -1881,12 +1949,9 @@ elif page == "WhatsApp Cashbook":
             prod = str(loan.get('Loan Product', '')).lower()
             amt = pd.to_numeric(loan.get('Active Credit', 0), errors='coerce')
             if pd.isna(amt): amt = 0
-            if "daily" in prod or "60" in prod or "120" in prod:
-                d_act += amt
-            elif "weekly" in prod or "12w" in prod or "24w" in prod:
-                w_act += amt
-            elif "month" in prod or "3m" in prod or "6m" in prod:
-                m_act += amt
+            if "daily" in prod or "60" in prod or "120" in prod: d_act += amt
+            elif "weekly" in prod or "12w" in prod or "24w" in prod: w_act += amt
+            elif "month" in prod or "3m" in prod or "6m" in prod: m_act += amt
 
     # Sum all the columns from daily_reps
     t_sav = sum_col(daily_reps, 'Savings Amount')
@@ -1900,24 +1965,22 @@ elif page == "WhatsApp Cashbook":
     t_asale = sum_col(daily_reps, 'Asset Sales')
     t_app = sum_col(daily_reps, 'App Fee')
     t_pb = sum_col(daily_reps, 'Pass Book Bonus')
+    t_misc = sum_col(daily_reps, 'Misc Fees')
     
     t_d11 = sum_col(daily_reps, 'Daily 11%')
     t_d20 = sum_col(daily_reps, 'Daily 20%')
     t_w11 = sum_col(daily_reps, 'Weekly 11%')
     t_w20 = sum_col(daily_reps, 'Weekly 20%')
     t_mm = sum_col(daily_reps, 'Monthly 11%/20%')
-    t_cc = sum_col(daily_reps, 'Cash Carry')  # Assuming mapped if manual entry, but not in form. Assuming 0 for now unless we add Asset sales = Cash carry. Wait, asset_sales input.
     t_pwd = sum_col(daily_reps, 'Product Withdrawal')
     t_exp = sum_col(daily_reps, 'Expenses')
     t_bdep = sum_col(daily_reps, 'Bank Deposited')
     t_lres = sum_col(daily_reps, 'Laps Reserved')
     t_ltrans = sum_col(daily_reps, 'Laps Transferred')
-    t_g_in = sum_col(daily_reps, 'Group Savings Deposit')
-    t_g_wd = sum_col(daily_reps, 'Group Savings Withdrawal')
-    t_misc = sum_col(daily_reps, 'Misc Fees')
+    t_cc = sum_col(daily_reps, 'Cash Carry')
 
-    left_total = bf_cash + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_g_in + t_misc
-    right_total = t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_cc + t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_lres + t_ltrans + t_g_wd
+    left_total = bf_cash + t_lres + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_misc
+    right_total = t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_ltrans + t_cc
     closing_bal = left_total - right_total
 
     # Build the single-row dataframe for the ledger
@@ -1935,6 +1998,8 @@ elif page == "WhatsApp Cashbook":
         "Asset sales": [t_asale],
         "App fee": [t_app],
         "Pass book bonus": [t_pb],
+        "Misc Fees": [t_misc],
+        "Laps Reserved": [t_lres],
         "Daily 11%": [t_d11],
         "Daily 20%": [t_d20],
         "Weekly 11%": [t_w11],
@@ -1948,16 +2013,13 @@ elif page == "WhatsApp Cashbook":
         "Monthly Active": [m_act],
         "Expenses": [t_exp],
         "Bank": [t_bdep],
-        "Laps Reserved": [t_lres],
         "Laps Transferred": [t_ltrans],
         "Total.1": [right_total],
-        "Group Savings Deposit": [t_g_in], "Misc Fees": [t_misc], "Group Savings Withdrawal": [t_g_wd], "Closing balance": [closing_bal]
+        "Closing balance": [closing_bal]
     }
     
-    ledger_df = pd.DataFrame(ledger_data)
-    
-    # Render with nice formatting
-    st.dataframe(ledger_df.style.format(precision=0, thousands=","), use_container_width=True, hide_index=True)
+    with c2:
+        st.dataframe(pd.DataFrame(ledger_data).T.rename(columns={0: "Amount"}).style.format(precision=0, thousands=","), height=500)
     
     st.markdown("---")
     c_l, c_r = st.columns(2)
