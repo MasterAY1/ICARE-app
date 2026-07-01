@@ -94,7 +94,7 @@ def run_migration():
         # Upsert the client profile
         try:
             # First check if exists
-            existing = supabase.table("loans").select("id").eq("Client ID", client_id).execute()
+            existing = supabase.table("loans").select("client_id").eq("Client ID", client_id).execute()
             if existing.data:
                 supabase.table("loans").update(loan_data).eq("Client ID", client_id).execute()
             else:
