@@ -2421,8 +2421,8 @@ elif page == "Portfolio":
             display_data.append(row_data)
         
         display_df = pd.DataFrame(display_data)
-        if "Date" in display_df.columns and "Client Name" in display_df.columns:
-            display_df.sort_values(by=["Date", "Client Name"], ascending=[False, True], inplace=True)
+        if "Client ID" in display_df.columns:
+            display_df.sort_values(by="Client ID", inplace=True)
             
         if "Officer" in display_df.columns:
             display_df["Officer"] = display_df["Officer"].apply(lambda x: CO_DISPLAY_MAP.get(x, x))
