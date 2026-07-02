@@ -675,9 +675,10 @@ def get_clients_for_user(df, user_role, user_name, branch):
 # --- 3. MATH HELPERS & RISK LOGIC ---
 
 def calculate_overdue(start_date_str, product, fixed_repay, total_loan_paid, status='Active'):
+    """Calculate overdue amount for a client"""
     if status in ['Registered', 'Pending']:
         return 0, 0
-    """Calculate overdue amount for a client"""
+    
     try:
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
     except:
