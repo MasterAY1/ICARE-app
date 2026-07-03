@@ -1034,13 +1034,11 @@ if not st.session_state['logged_in']:
                 auth_result = authenticate_user(username, pw)
                 if auth_result:
                     cookie_manager.set("icare_auth", auth_result['user_name'], expires_at=datetime.now() + timedelta(days=7))
-                    import time
-                    time.sleep(0.5) # Give the frontend time to save the cookie
                     st.session_state['logged_in'] = True
                     st.session_state['user'] = auth_result['user_name']
                     st.session_state['role'] = auth_result['user_role']
                     st.session_state['branch'] = auth_result['branch_name']
-                    st.rerun()
+                    st.components.v1.html("<script>setTimeout(function(){window.parent.location.reload();}, 100);</script>", height=0)
                 else:
                     st.error("Invalid credentials. Please try again.")
         
@@ -1117,10 +1115,8 @@ with st.sidebar:
             cookie_manager.delete("icare_auth")
         except KeyError:
             pass
-        import time
-        time.sleep(0.5) # Give the frontend time to delete the cookie
         st.session_state.clear()
-        st.rerun()
+        st.components.v1.html("<script>setTimeout(function(){window.parent.location.reload();}, 100);</script>", height=0)
 
 # Welcome banner
 hour = datetime.now().hour
