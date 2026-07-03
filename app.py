@@ -1265,91 +1265,129 @@ elif page == "Loan Origination":
         reg_type = st.radio("Registration Method", ["Single Client", "📦 Bulk Onboarding"], horizontal=True)
         
         if reg_type == "Single Client":
-            with st.form("registration_form"):
-                st.markdown("#### 1. Personal Info")
-                c1, c2, c3 = st.columns(3)
-                name = c1.text_input("Full Name")
-                nickname = c2.text_input("Nickname")
-                phone = c3.text_input("Phone Number")
-                address = st.text_input("Home Address")
+            # Dynamic form layout (no st.form wrapper)
+            st.markdown("#### 1. Personal Info")
+            c1, c2, c3 = st.columns(3)
+            name = c1.text_input("Full Name")
+            nickname = c2.text_input("Nickname")
+            phone = c3.text_input("Phone Number")
+            address = st.text_input("Home Address")
+            
+            c4, c5, c6 = st.columns(3)
+            marital = c4.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"])
+            biz_type = c5.text_input("Business Type", value="Trader")
+            income = c6.number_input("Average Monthly Income (₦)", value=0, step=5000)
+            biz_address = st.text_input("Business Address")
+            other_obs = st.text_input("Other Financial Obligations (if any)")
+            
+            st.markdown("#### 2. Guarantor Info")
+            g1, g2, g3 = st.columns(3)
+            g_name = g1.text_input("Guarantor Full Name")
+            g_nick = g2.text_input("Guarantor Nickname")
+            g_phone = g3.text_input("Guarantor Phone")
+            g_address = st.text_input("Guarantor Home Address")
+            
+            g4, g5, g6 = st.columns(3)
+            g_marital = g4.selectbox("Guarantor Marital Status", ["Single", "Married", "Divorced", "Widowed"])
+            g_occ = g5.text_input("Guarantor Occupation")
+            g_rel = g6.text_input("Relationship with Client")
+            g_office = st.text_input("Guarantor Office Address")
+            
+            st.markdown("#### 3. Group Info")
+            
+            # Load all loans to find existing groups for this branch
+            all_loans_for_groups = load_loans()
+            branch_loans = all_loans_for_groups[all_loans_for_groups['Branch'] == BRANCH] if not all_loans_for_groups.empty else pd.DataFrame()
+            
+            if not branch_loans.empty and 'Group Name' in branch_loans.columns:
+                existing_groups = sorted([g for g in branch_loans['Group Name'].dropna().unique().tolist() if str(g).strip()])
+            else:
+                existing_groups = []
                 
-                c4, c5, c6 = st.columns(3)
-                marital = c4.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"])
-                biz_type = c5.text_input("Business Type", value="Trader")
-                income = c6.number_input("Average Monthly Income (₦)", value=0, step=5000)
-                biz_address = st.text_input("Business Address")
-                other_obs = st.text_input("Other Financial Obligations (if any)")
-                
-                st.markdown("#### 2. Guarantor Info")
-                g1, g2, g3 = st.columns(3)
-                g_name = g1.text_input("Guarantor Full Name")
-                g_nick = g2.text_input("Guarantor Nickname")
-                g_phone = g3.text_input("Guarantor Phone")
-                g_address = st.text_input("Guarantor Home Address")
-                
-                g4, g5, g6 = st.columns(3)
-                g_marital = g4.selectbox("Guarantor Marital Status", ["Single", "Married", "Divorced", "Widowed"])
-                g_occ = g5.text_input("Guarantor Occupation")
-                g_rel = g6.text_input("Relationship with Client")
-                g_office = st.text_input("Guarantor Office Address")
-                
-                st.markdown("#### 3. Group Info")
+            group_options = ["Individual (No Group)", "+ Create New Group"] + existing_groups
+            selected_group_mode = st.selectbox("Assign to Group", group_options)
+            
+            # Variables for saving
+            final_group_name = ""
+            final_group_loc = ""
+            final_meeting_day = "Daily"
+            final_group_leader = ""
+            final_group_date = datetime.now().strftime("%Y-%m-%d")
+            
+            if selected_group_mode == "+ Create New Group":
                 gr1, gr2 = st.columns(2)
-                group_name = gr1.text_input("Group Name (Leave blank if Individual)")
-                group_loc = gr2.text_input("Group Location")
+                final_group_name = gr1.text_input("New Group Name", placeholder="e.g. Alaba Market Traders")
+                final_group_loc = gr2.text_input("Group Location")
                 gr3, gr4 = st.columns(2)
-                meeting_day = gr3.selectbox("Meeting Day", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Daily"])
-                group_leader = gr4.text_input("Group Leader Name")
-                group_date = st.date_input("Group Formation Date", datetime.now())
-                
-                submitted_reg = st.form_submit_button("💾 Register Client", use_container_width=True)
-                if submitted_reg:
-                    if not name or not phone:
-                        st.error("Name and Phone are required!")
-                    else:
-                        g_val = group_name if group_name.strip() else "IND"
-                        all_loans_for_id = load_loans()
-                        next_num = get_next_client_number(all_loans_for_id, BRANCH, g_val)
-                        new_client_id = generate_client_id(BRANCH, g_val, next_num)
-                        
-                        data = {
-                            "Client ID": new_client_id,
-                            "Client Name": name,
-                            "Nickname": nickname,
-                            "Phone": phone,
-                            "Address": address,
-                            "Business Address": biz_address,
-                            "Marital Status": marital,
-                            "Business Type": biz_type,
-                            "Average Monthly Income": income,
-                            "Other Obligations": other_obs,
-                            "Guarantor Name": g_name,
-                            "Guarantor Nickname": g_nick,
-                            "Guarantor Marital Status": g_marital,
-                            "Guarantor Home Address": g_address,
-                            "Guarantor Occupation": g_occ,
-                            "Guarantor Office Address": g_office,
-                            "Guarantor Phone": g_phone,
-                            "Guarantor Relationship": g_rel,
-                            "Group Name": group_name,
-                            "Group Location": group_loc,
-                            "Group Leader Name": group_leader,
-                            "Group Formation Date": group_date.strftime("%Y-%m-%d"),
-                            "Meeting Day": meeting_day,
-                            "Date": datetime.now().strftime("%Y-%m-%d"),
-                            "Officer": USER,
-                            "Branch": BRANCH,
-                            "Loan Amount": 0,
-                            "Active Credit": 0,
-                            "Loan Repay": 0,
-                            "Total Due": 0,
-                            "Status": "Registered"
-                        }
-                        save_new_loan(data)
-                        st.success(f"Successfully registered client! Client ID: {new_client_id}")
-                        import time
-                        time.sleep(2)
-                        st.rerun()
+                final_meeting_day = gr3.selectbox("Meeting Day", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Daily"])
+                final_group_leader = gr4.text_input("Group Leader Name")
+                new_group_date = st.date_input("Group Formation Date", datetime.now())
+                final_group_date = new_group_date.strftime("%Y-%m-%d")
+            elif selected_group_mode != "Individual (No Group)":
+                # User selected an existing group
+                final_group_name = selected_group_mode
+                # Pull data from the first member found in this group
+                group_members = branch_loans[branch_loans['Group Name'] == final_group_name]
+                if not group_members.empty:
+                    first_member = group_members.iloc[0]
+                    final_group_loc = str(first_member.get('Group Location', ''))
+                    final_meeting_day = str(first_member.get('Meeting Day', 'Daily'))
+                    final_group_leader = str(first_member.get('Group Leader Name', ''))
+                    final_group_date = str(first_member.get('Group Formation Date', datetime.now().strftime("%Y-%m-%d")))
+                st.info(f"✅ Found group info: Meets on {final_meeting_day} at {final_group_loc}")
+            
+            st.markdown("---")
+            submitted_reg = st.button("💾 Register Client", type="primary", use_container_width=True)
+            
+            if submitted_reg:
+                if not name or not phone:
+                    st.error("Name and Phone are required!")
+                elif selected_group_mode == "+ Create New Group" and not final_group_name.strip():
+                    st.error("Please enter the New Group Name.")
+                else:
+                    g_val = final_group_name if final_group_name.strip() else "IND"
+                    all_loans_for_id = load_loans()
+                    next_num = get_next_client_number(all_loans_for_id, BRANCH, g_val)
+                    new_client_id = generate_client_id(BRANCH, g_val, next_num)
+                    
+                    data = {
+                        "Client ID": new_client_id,
+                        "Client Name": name,
+                        "Nickname": nickname,
+                        "Phone": phone,
+                        "Address": address,
+                        "Business Address": biz_address,
+                        "Marital Status": marital,
+                        "Business Type": biz_type,
+                        "Average Monthly Income": income,
+                        "Other Obligations": other_obs,
+                        "Guarantor Name": g_name,
+                        "Guarantor Nickname": g_nick,
+                        "Guarantor Marital Status": g_marital,
+                        "Guarantor Home Address": g_address,
+                        "Guarantor Occupation": g_occ,
+                        "Guarantor Office Address": g_office,
+                        "Guarantor Phone": g_phone,
+                        "Guarantor Relationship": g_rel,
+                        "Group Name": final_group_name,
+                        "Group Location": final_group_loc,
+                        "Group Leader Name": final_group_leader,
+                        "Group Formation Date": final_group_date,
+                        "Meeting Day": final_meeting_day,
+                        "Date": datetime.now().strftime("%Y-%m-%d"),
+                        "Officer": USER,
+                        "Branch": BRANCH,
+                        "Loan Amount": 0,
+                        "Active Credit": 0,
+                        "Loan Repay": 0,
+                        "Total Due": 0,
+                        "Status": "Registered"
+                    }
+                    save_new_loan(data)
+                    st.success(f"Successfully registered client! Client ID: {new_client_id}")
+                    import time
+                    time.sleep(2)
+                    st.rerun()
                         
         else:
             st.markdown("<div class='card'>", unsafe_allow_html=True)
