@@ -1404,7 +1404,7 @@ elif page == "Loan Origination":
                         "Active Credit": 0,
                         "Loan Repay": 0,
                         "Total Due": 0,
-                        "Status": "Registered"
+                        "Status": "Pending"
                     }
                     save_new_loan(data)
                     st.success(f"Successfully registered client! Client ID: {new_client_id}")
@@ -1483,7 +1483,7 @@ elif page == "Loan Origination":
                                         "Active Credit": 0,
                                         "Loan Repay": 0,
                                         "Total Due": 0,
-                                        "Status": "Registered"
+                                        "Status": "Pending"
                                     }
                                     save_new_loan(data)
                                     success_count += 1
