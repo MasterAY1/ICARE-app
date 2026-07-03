@@ -1760,9 +1760,9 @@ elif page == "Collections":
                         st.markdown("### 🏛️ Group-Level Savings")
                         st.caption("Input communal group savings and withdrawal amounts.")
                         gsc1, gsc2, gsc3 = st.columns(3)
-                        global_group_savings = gsc1.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=0.0)
-                        global_group_wd = gsc2.number_input("Group Savings Withdrawal", min_value=0.0, step=500.0, value=0.0)
-                        global_laps_reserved = gsc3.number_input("Laps Reserved", min_value=0.0, step=500.0, value=0.0)
+                        global_group_savings = gsc1.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=None, placeholder="0")
+                        global_group_wd = gsc2.number_input("Group Savings Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
+                        global_laps_reserved = gsc3.number_input("Laps Reserved", min_value=0.0, step=500.0, value=None, placeholder="0")
                         st.markdown("---")
                         
                         st.markdown("### 👤 Per-Client Savings")
@@ -1770,8 +1770,8 @@ elif page == "Collections":
                             m = info['member']
                             with st.expander(f"👤 {m['Client Name']} ({cid}) - Bal: ₦{info['sav_bal']:,.0f}"):
                                 sc1, sc2 = st.columns(2)
-                                s_dep = sc1.number_input("Savings Deposit", min_value=0.0, step=500.0, value=0.0, key=f"sdep_{cid}")
-                                s_wd = sc2.number_input("Savings Withdrawal", min_value=0.0, step=500.0, value=0.0, key=f"swd_{cid}")
+                                s_dep = sc1.number_input("Savings Deposit", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"sdep_{cid}")
+                                s_wd = sc2.number_input("Savings Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"swd_{cid}")
                                 sav_data[cid] = {"dep": s_dep, "wd": s_wd}
                     
                     # ---- TAB 2: LOAN REPAYMENTS & FEES ----
@@ -1783,16 +1783,17 @@ elif page == "Collections":
                             with st.expander(f"📋 {m['Client Name']} ({cid}) - Rem: ₦{info['rem_bal']:,.0f}"):
                                 st.caption(f"Active Credit: ₦{info['act_cred']:,.0f} | Product: {prod}")
                                 r1, r2, r3, r4 = st.columns(4)
-                                rep_col = r1.number_input("Credit Repayment", min_value=0.0, step=500.0, value=float(info['default_rep']), key=f"rep_{cid}")
-                                app_col = r2.number_input("Processing Fee", min_value=0.0, step=500.0, value=0.0, key=f"app_{cid}")
-                                pb_col = r3.number_input("Pass Book", min_value=0.0, step=500.0, value=0.0, key=f"pb_{cid}")
-                                misc_col = r4.number_input("Misc Fee", min_value=0.0, step=500.0, value=0.0, key=f"misc_{cid}")
+                                d_rep = float(info['default_rep'])
+                                rep_col = r1.number_input("Credit Repayment", min_value=0.0, step=500.0, value=d_rep if d_rep > 0 else None, placeholder="0", key=f"rep_{cid}")
+                                app_col = r2.number_input("Processing Fee", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"app_{cid}")
+                                pb_col = r3.number_input("Pass Book", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"pb_{cid}")
+                                misc_col = r4.number_input("Misc Fee", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"misc_{cid}")
                                 
                                 a1, a2, a3, a4 = st.columns(4)
-                                asset_cr_col = a1.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=0.0, key=f"acr_{cid}")
-                                cc_col = a2.number_input("Cash & Carry", min_value=0.0, step=500.0, value=0.0, key=f"cc_{cid}")
-                                cfd_col = a3.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=0.0, key=f"cfd_{cid}")
-                                bonus_col = a4.number_input("Bonus", min_value=0.0, step=500.0, value=0.0, key=f"bon_{cid}")
+                                asset_cr_col = a1.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"acr_{cid}")
+                                cc_col = a2.number_input("Cash & Carry", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"cc_{cid}")
+                                cfd_col = a3.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"cfd_{cid}")
+                                bonus_col = a4.number_input("Bonus", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"bon_{cid}")
                                 
                                 rep_data[cid] = {
                                     "rep": rep_col, "app": app_col, "pb": pb_col, "misc": misc_col,
@@ -1803,13 +1804,13 @@ elif page == "Collections":
                     st.markdown("### 📤 End of Day / Global Outflows")
                     st.caption("Log your daily branch expenses, bank deposits, and withdrawals here.")
                     out_1, out_2, out_3 = st.columns(3)
-                    global_expenses = out_1.number_input("Office Expenses", min_value=0.0, step=500.0, value=0.0)
-                    global_bank_dep = out_2.number_input("Bank Deposited", min_value=0.0, step=500.0, value=0.0)
-                    global_bank_wd = out_3.number_input("Bank Withdrawal", min_value=0.0, step=500.0, value=0.0)
+                    global_expenses = out_1.number_input("Office Expenses", min_value=0.0, step=500.0, value=None, placeholder="0")
+                    global_bank_dep = out_2.number_input("Bank Deposited", min_value=0.0, step=500.0, value=None, placeholder="0")
+                    global_bank_wd = out_3.number_input("Bank Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
                     
                     out_4, out_5 = st.columns(2)
-                    global_prod_wd = out_4.number_input("Product Withdrawal", min_value=0.0, step=500.0, value=0.0)
-                    global_laps_trans = out_5.number_input("Laps Transferred", min_value=0.0, step=500.0, value=0.0)
+                    global_prod_wd = out_4.number_input("Product Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
+                    global_laps_trans = out_5.number_input("Laps Transferred", min_value=0.0, step=500.0, value=None, placeholder="0")
                     
                     st.markdown("---")
                     submit_btn = st.form_submit_button("💾 Save All Collections", type="primary", use_container_width=True)
@@ -1823,16 +1824,16 @@ elif page == "Collections":
                             s = sav_data.get(cid, {"dep": 0, "wd": 0})
                             r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0})
                             
-                            sav = s['dep']
-                            sav_wd = s['wd']
-                            rep = r['rep']
-                            app = r['app']
-                            pb = r['pb']
-                            misc = r['misc']
-                            asset_cr = r['asset_cr']
-                            cc = r['cc']
-                            cfd = r['cfd']
-                            bon = r['bonus']
+                            sav = float(s['dep'] or 0)
+                            sav_wd = float(s['wd'] or 0)
+                            rep = float(r['rep'] or 0)
+                            app = float(r['app'] or 0)
+                            pb = float(r['pb'] or 0)
+                            misc = float(r['misc'] or 0)
+                            asset_cr = float(r['asset_cr'] or 0)
+                            cc = float(r['cc'] or 0)
+                            cfd = float(r['cfd'] or 0)
+                            bon = float(r['bonus'] or 0)
                             
                             # Skip if nothing entered at all
                             if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
@@ -1884,6 +1885,16 @@ elif page == "Collections":
                             to_insert.append({UI_TO_DB_REP[k]: v for k, v in tx_data.items()})
                         
                         # ---- Process Group-Level Inflows ----
+                        
+                        global_group_savings = float(global_group_savings or 0)
+                        global_group_wd = float(global_group_wd or 0)
+                        global_laps_reserved = float(global_laps_reserved or 0)
+                        global_expenses = float(global_expenses or 0)
+                        global_bank_dep = float(global_bank_dep or 0)
+                        global_bank_wd = float(global_bank_wd or 0)
+                        global_prod_wd = float(global_prod_wd or 0)
+                        global_laps_trans = float(global_laps_trans or 0)
+                        
                         if global_group_savings > 0 or global_group_wd > 0 or global_laps_reserved > 0:
                             g_data = {
                                 "Date": date_str, "Client ID": f"GROUP-{selected_group}", "Client Name": f"{selected_group} Meeting",
