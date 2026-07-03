@@ -1353,10 +1353,16 @@ elif page == "Loan Origination":
                 group_members = branch_loans[branch_loans['Group Name'] == final_group_name]
                 if not group_members.empty:
                     first_member = group_members.iloc[0]
-                    final_group_loc = str(first_member.get('Group Location', ''))
-                    final_meeting_day = str(first_member.get('Meeting Day', 'Daily'))
-                    final_group_leader = str(first_member.get('Group Leader Name', ''))
-                    final_group_date = str(first_member.get('Group Formation Date', datetime.now().strftime("%Y-%m-%d")))
+                    def get_val(key, default):
+                        val = first_member.get(key)
+                        if pd.isna(val) or str(val).strip().lower() in ['nan', 'none', 'nat', '']:
+                            return default
+                        return str(val).strip()
+                        
+                    final_group_loc = get_val('Group Location', '')
+                    final_meeting_day = get_val('Meeting Day', 'Daily')
+                    final_group_leader = get_val('Group Leader Name', '')
+                    final_group_date = get_val('Group Formation Date', datetime.now().strftime("%Y-%m-%d"))
                 st.info(f"✅ Found group info: Meets on {final_meeting_day} at {final_group_loc}")
             
             st.markdown("---")
