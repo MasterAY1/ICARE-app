@@ -985,7 +985,11 @@ cookie_manager = stx.CookieManager(key="icare_cookies")
 
 # Try to restore session from cookie
 if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
-    auth_token = cookie_manager.get(cookie="icare_auth")
+    if st.session_state.get('logout_in_progress'):
+        auth_token = None
+    else:
+        auth_token = cookie_manager.get(cookie="icare_auth")
+        
     if auth_token:
         try:
             res = supabase.table("app_users").select("*").ilike("username", auth_token).execute()
@@ -1031,6 +1035,7 @@ if not st.session_state['logged_in']:
             submitted = st.form_submit_button("SIGN IN", use_container_width=True)
             
             if submitted:
+                st.session_state['logout_in_progress'] = False
                 auth_result = authenticate_user(username, pw)
                 if auth_result:
                     cookie_manager.set("icare_auth", auth_result['user_name'], expires_at=datetime.now() + timedelta(days=7))
@@ -1115,9 +1120,8 @@ with st.sidebar:
             cookie_manager.delete("icare_auth")
         except KeyError:
             pass
-        for key in ['logged_in', 'user', 'role', 'branch']:
-            if key in st.session_state:
-                del st.session_state[key]
+        st.session_state['logout_in_progress'] = True
+        st.session_state['logged_in'] = False
         st.rerun()
 
 # Welcome banner
