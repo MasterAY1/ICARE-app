@@ -1598,7 +1598,7 @@ elif page == "Loan Origination":
                             st.markdown(f"**Expected Installment:** ₦{final_repay:,.0f} x {dur} {setup.get('freq', 'Daily')}")
                             
                             if initial_downpayment > 0:
-                                st.info(f"💵 The ₦{initial_downpayment:,.0f} downpayment will be logged as a cashbook inflow when activated.")
+                                st.info(f"💵 Ensure the ₦{initial_downpayment:,.0f} downpayment is collected physically. It will be banked as part of total cash.")
                             
                             total_upfront_required = 0  # No savings deduction for asset loans
                         else:
@@ -1653,20 +1653,7 @@ elif page == "Loan Origination":
                                     }
                                     save_repayment(wd_data)
                                 
-                                # For Asset: log initial downpayment as cashbook inflow
-                                if product_category == "Asset" and initial_downpayment > 0:
-                                    dp_data = {
-                                        "Date": datetime.now().strftime("%Y-%m-%d"),
-                                        "Client ID": check_id, # Link downpayment to the Asset ID
-                                        "Client Name": selected_row['Client Name'],
-                                        "Officer": USER,
-                                        "Branch": BRANCH,
-                                        "Amount Paid": initial_downpayment,
-                                        "Transaction Type": "Asset Downpayment",
-                                        "Note": f"Initial Cash Downpayment for {product}",
-                                        "Asset Credit Sales": initial_downpayment
-                                    }
-                                    save_repayment(dp_data)
+
                                 
                                 kyc = selected_row.to_dict()
                                 kyc.pop('DisplayName', None)
