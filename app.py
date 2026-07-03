@@ -2212,6 +2212,7 @@ elif page == "Master Cashbook":
         auto_misc = ssum(day_reps, 'Misc Fees')
         
         # Auto-sum RIGHT (Outflows) from CO entries
+        auto_savings_wd = ssum(day_reps, 'Withdrawal Amount')
         auto_expenses = ssum(day_reps, 'Expenses')
         auto_laps_ret = ssum(day_reps, 'Laps Transferred')
         auto_bank_dep = ssum(day_reps, 'Bank Deposited')
@@ -2285,13 +2286,14 @@ elif page == "Master Cashbook":
         h1, h2, h3, h4 = st.columns(4)
         h1.metric("Fund to Asset Program", f"₦{auto_fund_asset:,.0f}")
         h2.metric("Fund to Product Finance", f"₦{auto_fund_finance:,.0f}")
-        h3.metric("Office Expenses", f"₦{auto_expenses:,.0f}")
+        h3.metric("Savings Withdrawal", f"₦{auto_savings_wd:,.0f}")
         h4.metric("Laps Returns", f"₦{auto_laps_ret:,.0f}")
         
-        i1, i2, i3 = st.columns(3)
-        i1.metric("Bank Deposit", f"₦{auto_bank_dep:,.0f}")
-        i2.metric("Bank Withdrawal", f"₦{auto_bank_wd:,.0f}")
-        i3.metric("Product Withdrawal", f"₦{auto_prod_wd:,.0f}")
+        i1, i2, i3, i4 = st.columns(4)
+        i1.metric("Office Expenses", f"₦{auto_expenses:,.0f}")
+        i2.metric("Bank Deposit", f"₦{auto_bank_dep:,.0f}")
+        i3.metric("Bank Withdrawal", f"₦{auto_bank_wd:,.0f}")
+        i4.metric("Product Withdrawal", f"₦{auto_prod_wd:,.0f}")
         
         # ---- MANUAL BM INPUTS ----
         st.markdown("---")
@@ -2323,7 +2325,7 @@ elif page == "Master Cashbook":
             )
             
             total_outflows = (
-                auto_fund_asset + auto_fund_finance +
+                auto_fund_asset + auto_fund_finance + auto_savings_wd +
                 auto_expenses + auto_laps_ret + auto_bank_dep + auto_prod_wd +
                 xfer_ho + xfer_branch + xfer_area + salaries
             )
@@ -2378,6 +2380,7 @@ elif page == "Master Cashbook":
                     "fund_to_other_area": xfer_area,
                     "fund_to_asset_program": auto_fund_asset,
                     "fund_to_product_finance": auto_fund_finance,
+                    "savings_withdrawal": auto_savings_wd,
                     "staff_salaries": salaries,
                     "office_expenses": auto_expenses,
                     "laps_returns": auto_laps_ret,
