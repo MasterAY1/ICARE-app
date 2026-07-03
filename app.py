@@ -1117,6 +1117,8 @@ with st.sidebar:
             cookie_manager.delete("icare_auth")
         except KeyError:
             pass
+        import time
+        time.sleep(0.5) # Give the frontend time to delete the cookie
         st.session_state.clear()
         st.rerun()
 
