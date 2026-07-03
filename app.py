@@ -1038,7 +1038,7 @@ if not st.session_state['logged_in']:
                     st.session_state['user'] = auth_result['user_name']
                     st.session_state['role'] = auth_result['user_role']
                     st.session_state['branch'] = auth_result['branch_name']
-                    st.components.v1.html("<script>setTimeout(function(){window.parent.location.reload();}, 100);</script>", height=0)
+                    st.rerun()
                 else:
                     st.error("Invalid credentials. Please try again.")
         
@@ -1115,8 +1115,10 @@ with st.sidebar:
             cookie_manager.delete("icare_auth")
         except KeyError:
             pass
-        st.session_state.clear()
-        st.components.v1.html("<script>setTimeout(function(){window.parent.location.reload();}, 100);</script>", height=0)
+        for key in ['logged_in', 'user', 'role', 'branch']:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
 
 # Welcome banner
 hour = datetime.now().hour
