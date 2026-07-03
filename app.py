@@ -1050,15 +1050,15 @@ with st.sidebar:
     
     if ROLE in ["Officer", "CO"]:
         st.markdown("<p class='nav-section-label'>OPERATIONS</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "WhatsApp Cashbook", "Audit Ledger"]
+        nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "Audit Ledger"]
     elif ROLE in ["BM", "AM"]:
         st.markdown("<p class='nav-section-label'>EXECUTIVE</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "Loan Origination", "WhatsApp Cashbook", "Portfolio", "Master Cashbook", "Audit Ledger"]
+        nav_options = ["Dashboard", "Loan Origination", "Portfolio", "Master Cashbook", "Audit Ledger"]
         if ROLE == "AM":
             nav_options.append("User Management")
     else:  # Admin
         st.markdown("<p class='nav-section-label'>ADMINISTRATION</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "WhatsApp Cashbook", "Portfolio", "Master Cashbook", "Audit Ledger", "Reports & Export", "User Management"]
+        nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "Portfolio", "Master Cashbook", "Audit Ledger", "Reports & Export", "User Management"]
     
     page = st.radio("Navigation", nav_options, label_visibility="collapsed")
     
@@ -1595,6 +1595,13 @@ elif page == "Collections":
                 today_reps = repayments[(repayments['Date'] == date_str) & (repayments['Officer'] == target_co)] if not repayments.empty else pd.DataFrame()
                 
                 with st.form("collections_form"):
+                    st.markdown("### 🏛️ Group-Level Inflows")
+                    st.caption("Input communal funds received from the group.")
+                    col_g1, col_g2 = st.columns(2)
+                    global_group_savings = col_g1.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=0.0)
+                    global_laps_reserved = col_g2.number_input("Laps Reserved", min_value=0.0, step=500.0, value=0.0)
+                    st.markdown("---")
+
                     input_data = {}
                     for _, member in group_loans.iterrows():
                         cid = member['Client ID']
@@ -1645,12 +1652,11 @@ elif page == "Collections":
                         misc_col = c6.number_input("Misc Fee", min_value=0.0, step=500.0, value=0.0, key=f"misc_{cid}")
                         
                         d1, d2, d3, d4, d5 = st.columns(5)
-                        asset_col = d1.number_input("Asset Sale", min_value=0.0, step=500.0, value=0.0, key=f"asset_{cid}")
-                        asset_cr_col = d2.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=0.0, key=f"acr_{cid}")
-                        cc_col = d3.number_input("Cash & Carry", min_value=0.0, step=500.0, value=0.0, key=f"cc_{cid}")
-                        cf_col = d4.number_input("Credit Form", min_value=0.0, step=500.0, value=0.0, key=f"cf_{cid}")
-                        cfd_col = d5.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=0.0, key=f"cfd_{cid}")
-                        bonus_col = d1.number_input("Bonus", min_value=0.0, step=500.0, value=0.0, key=f"bon_{cid}")
+                        asset_cr_col = d1.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=0.0, key=f"acr_{cid}")
+                        cc_col = d2.number_input("Cash & Carry", min_value=0.0, step=500.0, value=0.0, key=f"cc_{cid}")
+                        cf_col = d3.number_input("Credit Form", min_value=0.0, step=500.0, value=0.0, key=f"cf_{cid}")
+                        cfd_col = d4.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=0.0, key=f"cfd_{cid}")
+                        bonus_col = d5.number_input("Bonus", min_value=0.0, step=500.0, value=0.0, key=f"bon_{cid}")
                         
                         input_data[cid] = {
                             "member": member,
@@ -1660,7 +1666,6 @@ elif page == "Collections":
                             "pb": pb_col,
                             "bwd": bwd_col,
                             "misc": misc_col,
-                            "asset": asset_col,
                             "asset_cr": asset_cr_col,
                             "cc": cc_col,
                             "cf": cf_col,
@@ -1669,6 +1674,18 @@ elif page == "Collections":
                         }
                         st.markdown("---")
                     
+                    st.markdown("### 📤 End of Day / Global Outflows")
+                    st.caption("Log your daily branch expenses, bank deposits, and withdrawals here.")
+                    out_1, out_2, out_3 = st.columns(3)
+                    global_expenses = out_1.number_input("Office Expenses", min_value=0.0, step=500.0, value=0.0)
+                    global_bank_dep = out_2.number_input("Bank Deposited", min_value=0.0, step=500.0, value=0.0)
+                    global_bank_wd = out_3.number_input("Bank Withdrawal", min_value=0.0, step=500.0, value=0.0)
+                    
+                    out_4, out_5 = st.columns(2)
+                    global_prod_wd = out_4.number_input("Product Withdrawal", min_value=0.0, step=500.0, value=0.0)
+                    global_laps_trans = out_5.number_input("Laps Transferred", min_value=0.0, step=500.0, value=0.0)
+                    
+                    st.markdown("---")
                     submit_btn = st.form_submit_button("Save All Collections", type="primary")
                     
                     if submit_btn:
