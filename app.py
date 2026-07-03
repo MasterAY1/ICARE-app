@@ -1248,11 +1248,11 @@ elif page == "Loan Origination":
                         
                         try:
                             supabase.table("loans").update({
-                                "Status": "Active", 
+                                "status": "Active", 
                                 "disbursement_date": today_str,
                                 "start_date": final_start_date.strftime("%Y-%m-%d"),
                                 "expected_end_date": expected_end_date.strftime("%Y-%m-%d")
-                            }).eq("Client ID", selected_client_id).eq("Status", "Pending").execute()
+                            }).eq("client_id", selected_client_id).eq("status", "Pending").execute()
                             
                             st.success(f"Successfully activated loan! Disbursement Date set to {today_str}.")
                             
@@ -1324,7 +1324,8 @@ elif page == "Loan Origination":
             c4, c5, c6 = st.columns(3)
             marital = c4.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"])
             biz_type = c5.text_input("Business Type", value="Trader")
-            income = c6.number_input("Average Monthly Income (₦)", value=0, step=5000)
+            raw_inc = c6.number_input("Average Monthly Income (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0")
+            income = float(raw_inc) if raw_inc else 0.0
             biz_address = st.text_input("Business Address")
             other_obs = st.text_input("Other Financial Obligations (if any)")
             
@@ -1492,7 +1493,7 @@ elif page == "Loan Origination":
                                     branch_val = str(group_row.get('Branch Name', BRANCH))
                                     group_ref_val = str(member_row.get('Group Reference', ''))
                                     client_id = generate_client_id(all_loans, branch_val, group_ref_val, m_num_val, is_bulk=True)
-                                    existing_check = supabase.table("loans").select("Client ID").eq("Client ID", client_id).execute()
+                                    existing_check = supabase.table("loans").select("client_id").eq("client_id", client_id).execute()
                                     if existing_check.data and len(existing_check.data) > 0:
                                         skip_count += 1
                                         continue
@@ -1562,137 +1563,139 @@ elif page == "Loan Origination":
                         
                         st.info(f"💰 **Current Pooled Savings Balance:** ₦{savings:,.0f}")
                         
-                        with st.form("loan_application_form"):
-                            st.markdown("#### Financial Details")
-                            f1, f2 = st.columns(2)
-                            product_category = f1.selectbox("Product Category", ["Finance", "Asset"])
+                        st.markdown("#### Financial Details")
+                        f1, f2 = st.columns(2)
+                        product_category = f1.selectbox("Product Category", ["Finance", "Asset"])
+                        
+                        if product_category == "Finance":
+                            prods = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
+                        else:
+                            prods = ["60-Day Asset", "120-Day Asset", "Cash and Carry"]
                             
-                            if product_category == "Finance":
-                                prods = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
+                        product = f2.selectbox("Loan Product", prods)
+                        raw_amount = st.number_input("Requested Loan Amount / Asset Cost (₦)", min_value=0.0, step=10000.0, value=None, placeholder="0")
+                        amount = float(raw_amount) if raw_amount else 0.0
+                        
+                        setup = calculate_loan_setup(amount, product, product_category)
+                        interest = setup.get('interest', 0)
+                        dur = setup.get('duration', 60)
+                        
+                        if product_category == "Asset":
+                            # ---- ASSET ORIGINATION ENGINE ----
+                            total_cost = amount + interest
+                            st.markdown(f"**Asset Cost:** ₦{amount:,.0f}")
+                            st.markdown(f"**Interest ({int(setup.get('interest',0)/amount*100) if amount > 0 else 0}%):** ₦{interest:,.0f}")
+                            st.markdown(f"**Total Cost (Principal + Interest):** ₦{total_cost:,.0f}")
+                            
+                            raw_dp = st.number_input("Initial Cash Downpayment (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0")
+                            initial_downpayment = float(raw_dp) if raw_dp else 0.0
+                            
+                            active_credit = total_cost - initial_downpayment
+                            final_repay = active_credit / dur if dur > 0 else 0
+                            
+                            st.markdown("---")
+                            st.markdown(f"**Active Loan (Total Cost - Downpayment):** ₦{active_credit:,.0f}")
+                            st.markdown(f"**Expected Installment:** ₦{final_repay:,.0f} x {dur} {setup.get('freq', 'Daily')}")
+                            
+                            if initial_downpayment > 0:
+                                st.info(f"💵 The ₦{initial_downpayment:,.0f} downpayment will be logged as a cashbook inflow when activated.")
+                            
+                            total_upfront_required = 0  # No savings deduction for asset loans
+                        else:
+                            # ---- FINANCE ORIGINATION ENGINE (existing logic) ----
+                            raw_gap = st.number_input("Gap Fee / Base Savings (₦)", min_value=0.0, step=1000.0, value=None, placeholder="0")
+                            base_savings_req = float(raw_gap) if raw_gap else 0.0
+                            initial_downpayment = 0
+                            
+                            active_credit = amount - base_savings_req
+                            final_repay = active_credit / dur if dur > 0 else 0
+                                
+                            total_upfront_required = interest + base_savings_req
+                            
+                            st.markdown(f"**Calculated Upfront Requirement:**")
+                            st.markdown(f"- Interest: ₦{interest:,.0f}")
+                            st.markdown(f"- Gap Fee (Base Savings): ₦{base_savings_req:,.0f}")
+                            st.markdown(f"**Total Required:** ₦{total_upfront_required:,.0f}")
+                            
+                            if savings < total_upfront_required:
+                                st.error(f"❌ **INSUFFICIENT SAVINGS:** Client has ₦{savings:,.0f} but needs ₦{total_upfront_required:,.0f}. Please collect additional savings via the Cashbook first.")
                             else:
-                                prods = ["60-Day Asset", "120-Day Asset", "Cash and Carry"]
-                                
-                            product = f2.selectbox("Loan Product", prods)
-                            amount = st.number_input("Requested Loan Amount / Asset Cost (₦)", min_value=10000, step=10000)
+                                st.success(f"✅ **SUFFICIENT SAVINGS:** Client has enough to cover the upfront fees.")
                             
-                            setup = calculate_loan_setup(amount, product, product_category)
-                            interest = setup.get('interest', 0)
-                            dur = setup.get('duration', 60)
+                        submitted_app = st.button("Submit Application for BM Approval", use_container_width=True)
+                        if submitted_app:
+                            # Validation: Check for existing loan of the SAME category
+                            check_id = target_client_id if product_category == "Finance" else f"{target_client_id}-ASSET"
+                            existing_loan = all_loans_df[all_loans_df['Client ID'] == check_id]
                             
-                            if product_category == "Asset":
-                                # ---- ASSET ORIGINATION ENGINE ----
-                                total_cost = amount + interest
-                                st.markdown(f"**Asset Cost:** ₦{amount:,.0f}")
-                                st.markdown(f"**Interest ({int(setup.get('interest',0)/amount*100) if amount > 0 else 0}%):** ₦{interest:,.0f}")
-                                st.markdown(f"**Total Cost (Principal + Interest):** ₦{total_cost:,.0f}")
-                                
-                                initial_downpayment = st.number_input("Initial Cash Downpayment (₦)", min_value=0, value=0, step=5000)
-                                
-                                active_credit = total_cost - initial_downpayment
-                                final_repay = active_credit / dur if dur > 0 else 0
-                                
-                                st.markdown("---")
-                                st.markdown(f"**Active Loan (Total Cost - Downpayment):** ₦{active_credit:,.0f}")
-                                st.markdown(f"**Expected Installment:** ₦{final_repay:,.0f} x {dur} {setup.get('freq', 'Daily')}")
-                                
-                                if initial_downpayment > 0:
-                                    st.info(f"💵 The ₦{initial_downpayment:,.0f} downpayment will be logged as a cashbook inflow when activated.")
-                                
-                                total_upfront_required = 0  # No savings deduction for asset loans
+                            is_blocked = False
+                            if not existing_loan.empty:
+                                last_stat = existing_loan.sort_values('Date').iloc[-1]
+                                # If it is Active or Pending AND has an actual loan amount (not just a registration placeholder)
+                                if last_stat['Status'] in ['Active', 'Pending'] and float(last_stat.get('Loan Amount', 0)) > 0:
+                                    is_blocked = True
+                                    
+                            if is_blocked:
+                                st.error(f"❌ Cannot submit: This client already has an Active or Pending {product_category} loan!")
+                            elif product_category == "Finance" and savings < total_upfront_required:
+                                st.error("Cannot submit! Insufficient savings.")
                             else:
-                                # ---- FINANCE ORIGINATION ENGINE (existing logic) ----
-                                base_savings_req = st.number_input("Gap Fee / Base Savings (₦)", min_value=0, value=1000, step=1000)
-                                initial_downpayment = 0
+                                # For Finance: auto-deduct upfront fees from savings
+                                if product_category == "Finance" and total_upfront_required > 0:
+                                    wd_data = {
+                                        "Date": datetime.now().strftime("%Y-%m-%d"),
+                                        "Client ID": target_client_id,
+                                        "Client Name": selected_row['Client Name'],
+                                        "Officer": USER,
+                                        "Branch": BRANCH,
+                                        "Withdrawal Amount": total_upfront_required,
+                                        "Note": f"Auto-deducted Upfront Fees (Interest: {interest}, Gap: {base_savings_req}) for Loan App"
+                                    }
+                                    save_repayment(wd_data)
                                 
-                                active_credit = amount - base_savings_req
-                                final_repay = active_credit / dur if dur > 0 else 0
-                                    
-                                total_upfront_required = interest + base_savings_req
+                                # For Asset: log initial downpayment as cashbook inflow
+                                if product_category == "Asset" and initial_downpayment > 0:
+                                    dp_data = {
+                                        "Date": datetime.now().strftime("%Y-%m-%d"),
+                                        "Client ID": check_id, # Link downpayment to the Asset ID
+                                        "Client Name": selected_row['Client Name'],
+                                        "Officer": USER,
+                                        "Branch": BRANCH,
+                                        "Amount Paid": initial_downpayment,
+                                        "Transaction Type": "Asset Downpayment",
+                                        "Note": f"Initial Cash Downpayment for {product}",
+                                        "Asset Credit Sales": initial_downpayment
+                                    }
+                                    save_repayment(dp_data)
                                 
-                                st.markdown(f"**Calculated Upfront Requirement:**")
-                                st.markdown(f"- Interest: ₦{interest:,.0f}")
-                                st.markdown(f"- Gap Fee (Base Savings): ₦{base_savings_req:,.0f}")
-                                st.markdown(f"**Total Required:** ₦{total_upfront_required:,.0f}")
+                                kyc = selected_row.to_dict()
+                                kyc.pop('DisplayName', None)
+                                kyc.pop('DateStr', None)
+                                kyc.pop('id', None)
                                 
-                                if savings < total_upfront_required:
-                                    st.error(f"❌ **INSUFFICIENT SAVINGS:** Client has ₦{savings:,.0f} but needs ₦{total_upfront_required:,.0f}. Please collect additional savings via the Cashbook first.")
-                                else:
-                                    st.success(f"✅ **SUFFICIENT SAVINGS:** Client has enough to cover the upfront fees.")
+                                kyc["Client ID"] = check_id  # Use base ID for Finance, suffixed ID for Asset
+                                kyc["Date"] = datetime.now().strftime("%Y-%m-%d")
+                                kyc["Officer"] = USER
+                                kyc["Branch"] = BRANCH
+                                kyc["Product Category"] = product_category
+                                kyc["Loan Product"] = product
+                                kyc["Loan Amount"] = amount
+                                kyc["Active Credit"] = active_credit
+                                kyc["Loan Repay"] = final_repay
+                                kyc["Total Due"] = active_credit
+                                kyc["Status"] = "Pending"
                                 
-                            submitted_app = st.form_submit_button("Submit Application for BM Approval", use_container_width=True)
-                            if submitted_app:
-                                # Validation: Check for existing loan of the SAME category
-                                check_id = target_client_id if product_category == "Finance" else f"{target_client_id}-ASSET"
-                                existing_loan = all_loans_df[all_loans_df['Client ID'] == check_id]
+                                kyc["Processing Fee"] = 0
+                                kyc["Pass Book Fee"] = 0
+                                kyc["Group Savings"] = 0
+                                kyc["Branch Contingency"] = 0
                                 
-                                is_blocked = False
-                                if not existing_loan.empty:
-                                    last_stat = existing_loan.sort_values('Date').iloc[-1]
-                                    # If it is Active or Pending AND has an actual loan amount (not just a registration placeholder)
-                                    if last_stat['Status'] in ['Active', 'Pending'] and float(last_stat.get('Loan Amount', 0)) > 0:
-                                        is_blocked = True
-                                        
-                                if is_blocked:
-                                    st.error(f"❌ Cannot submit: This client already has an Active or Pending {product_category} loan!")
-                                elif product_category == "Finance" and savings < total_upfront_required:
-                                    st.error("Cannot submit! Insufficient savings.")
-                                else:
-                                    # For Finance: auto-deduct upfront fees from savings
-                                    if product_category == "Finance" and total_upfront_required > 0:
-                                        wd_data = {
-                                            "Date": datetime.now().strftime("%Y-%m-%d"),
-                                            "Client ID": target_client_id,
-                                            "Client Name": selected_row['Client Name'],
-                                            "Officer": USER,
-                                            "Branch": BRANCH,
-                                            "Withdrawal Amount": total_upfront_required,
-                                            "Note": f"Auto-deducted Upfront Fees (Interest: {interest}, Gap: {base_savings_req}) for Loan App"
-                                        }
-                                        save_repayment(wd_data)
-                                    
-                                    # For Asset: log initial downpayment as cashbook inflow
-                                    if product_category == "Asset" and initial_downpayment > 0:
-                                        dp_data = {
-                                            "Date": datetime.now().strftime("%Y-%m-%d"),
-                                            "Client ID": check_id, # Link downpayment to the Asset ID
-                                            "Client Name": selected_row['Client Name'],
-                                            "Officer": USER,
-                                            "Branch": BRANCH,
-                                            "Amount Paid": initial_downpayment,
-                                            "Transaction Type": "Asset Downpayment",
-                                            "Note": f"Initial Cash Downpayment for {product}",
-                                            "Asset Credit Sales": initial_downpayment
-                                        }
-                                        save_repayment(dp_data)
-                                    
-                                    kyc = selected_row.to_dict()
-                                    kyc.pop('DisplayName', None)
-                                    kyc.pop('DateStr', None)
-                                    kyc.pop('id', None)
-                                    
-                                    kyc["Client ID"] = check_id  # Use base ID for Finance, suffixed ID for Asset
-                                    kyc["Date"] = datetime.now().strftime("%Y-%m-%d")
-                                    kyc["Officer"] = USER
-                                    kyc["Branch"] = BRANCH
-                                    kyc["Product Category"] = product_category
-                                    kyc["Loan Product"] = product
-                                    kyc["Loan Amount"] = amount
-                                    kyc["Active Credit"] = active_credit
-                                    kyc["Loan Repay"] = final_repay
-                                    kyc["Total Due"] = active_credit
-                                    kyc["Status"] = "Pending"
-                                    
-                                    kyc["Processing Fee"] = 0
-                                    kyc["Pass Book Fee"] = 0
-                                    kyc["Group Savings"] = 0
-                                    kyc["Branch Contingency"] = 0
-                                    
-                                    save_new_loan(kyc)
-                                    
-                                    st.success("Application submitted successfully! It is now Pending BM Authorization.")
-                                    import time
-                                    time.sleep(2)
-                                    st.rerun()
+                                save_new_loan(kyc)
+                                
+                                st.success("Application submitted successfully! It is now Pending BM Authorization.")
+                                import time
+                                time.sleep(2)
+                                st.rerun()
 
 
 elif page == "Collections":
