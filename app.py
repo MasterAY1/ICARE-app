@@ -525,7 +525,6 @@ st.markdown("""
 DB_TO_UI_LOANS = {
     "client_id": "Client ID", "date": "Date", "branch": "Branch", "officer": "Officer",
     "client_name": "Client Name", "phone": "Phone", "address": "Address", "business_type": "Business Type",
-    "business_address": "Business Address",
     "group_name": "Group Name", "meeting_day": "Meeting Day", "loan_product": "Loan Product",
     "loan_amount": "Loan Amount", "active_credit": "Active Credit", "loan_repay": "Loan Repay",
     "total_due": "Total Due", "status": "Status",
@@ -647,7 +646,7 @@ def save_new_loan(data):
     if not supabase:
         st.error("Database not connected")
         return
-    db_data = {UI_TO_DB_LOANS[k]: v for k, v in data.items()}
+    db_data = {UI_TO_DB_LOANS[k]: v for k, v in data.items() if k in UI_TO_DB_LOANS}
     supabase.table("loans").insert(db_data).execute()
 
 def save_repayment(data):
@@ -655,7 +654,7 @@ def save_repayment(data):
     if not supabase:
         st.error("Database not connected")
         return
-    db_data = {UI_TO_DB_REP[k]: v for k, v in data.items()}
+    db_data = {UI_TO_DB_REP[k]: v for k, v in data.items() if k in UI_TO_DB_REP}
     supabase.table("repayments").insert(db_data).execute()
 
 def update_database_safe(edited_subset, user_role, user_name, branch):
