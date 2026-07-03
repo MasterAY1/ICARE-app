@@ -1768,13 +1768,11 @@ elif page == "Collections":
                         st.markdown("### 👤 Per-Client Savings")
                         for cid, info in member_info.items():
                             m = info['member']
-                            st.markdown(f"**{m['Client Name']} ({cid})**")
-                            st.caption(f"Savings Balance: ₦{info['sav_bal']:,.0f}")
-                            sc1, sc2 = st.columns(2)
-                            s_dep = sc1.number_input("Savings Deposit", min_value=0.0, step=500.0, value=0.0, key=f"sdep_{cid}")
-                            s_wd = sc2.number_input("Savings Withdrawal", min_value=0.0, step=500.0, value=0.0, key=f"swd_{cid}")
-                            sav_data[cid] = {"dep": s_dep, "wd": s_wd}
-                            st.markdown("---")
+                            with st.expander(f"👤 {m['Client Name']} ({cid}) - Bal: ₦{info['sav_bal']:,.0f}"):
+                                sc1, sc2 = st.columns(2)
+                                s_dep = sc1.number_input("Savings Deposit", min_value=0.0, step=500.0, value=0.0, key=f"sdep_{cid}")
+                                s_wd = sc2.number_input("Savings Withdrawal", min_value=0.0, step=500.0, value=0.0, key=f"swd_{cid}")
+                                sav_data[cid] = {"dep": s_dep, "wd": s_wd}
                     
                     # ---- TAB 2: LOAN REPAYMENTS & FEES ----
                     with tab_rep:
@@ -1782,26 +1780,24 @@ elif page == "Collections":
                         for cid, info in member_info.items():
                             m = info['member']
                             prod = str(m['Loan Product'])
-                            st.markdown(f"**{m['Client Name']} ({cid})** - *{prod}*")
-                            st.caption(f"Active Credit: ₦{info['act_cred']:,.0f} | Rem Bal: ₦{info['rem_bal']:,.0f}")
-                            
-                            r1, r2, r3, r4 = st.columns(4)
-                            rep_col = r1.number_input("Credit Repayment", min_value=0.0, step=500.0, value=float(info['default_rep']), key=f"rep_{cid}")
-                            app_col = r2.number_input("Processing Fee", min_value=0.0, step=500.0, value=0.0, key=f"app_{cid}")
-                            pb_col = r3.number_input("Pass Book", min_value=0.0, step=500.0, value=0.0, key=f"pb_{cid}")
-                            misc_col = r4.number_input("Misc Fee", min_value=0.0, step=500.0, value=0.0, key=f"misc_{cid}")
-                            
-                            a1, a2, a3, a4 = st.columns(4)
-                            asset_cr_col = a1.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=0.0, key=f"acr_{cid}")
-                            cc_col = a2.number_input("Cash & Carry", min_value=0.0, step=500.0, value=0.0, key=f"cc_{cid}")
-                            cfd_col = a3.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=0.0, key=f"cfd_{cid}")
-                            bonus_col = a4.number_input("Bonus", min_value=0.0, step=500.0, value=0.0, key=f"bon_{cid}")
-                            
-                            rep_data[cid] = {
-                                "rep": rep_col, "app": app_col, "pb": pb_col, "misc": misc_col,
-                                "asset_cr": asset_cr_col, "cc": cc_col, "cfd": cfd_col, "bonus": bonus_col
-                            }
-                            st.markdown("---")
+                            with st.expander(f"📋 {m['Client Name']} ({cid}) - Rem: ₦{info['rem_bal']:,.0f}"):
+                                st.caption(f"Active Credit: ₦{info['act_cred']:,.0f} | Product: {prod}")
+                                r1, r2, r3, r4 = st.columns(4)
+                                rep_col = r1.number_input("Credit Repayment", min_value=0.0, step=500.0, value=float(info['default_rep']), key=f"rep_{cid}")
+                                app_col = r2.number_input("Processing Fee", min_value=0.0, step=500.0, value=0.0, key=f"app_{cid}")
+                                pb_col = r3.number_input("Pass Book", min_value=0.0, step=500.0, value=0.0, key=f"pb_{cid}")
+                                misc_col = r4.number_input("Misc Fee", min_value=0.0, step=500.0, value=0.0, key=f"misc_{cid}")
+                                
+                                a1, a2, a3, a4 = st.columns(4)
+                                asset_cr_col = a1.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=0.0, key=f"acr_{cid}")
+                                cc_col = a2.number_input("Cash & Carry", min_value=0.0, step=500.0, value=0.0, key=f"cc_{cid}")
+                                cfd_col = a3.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=0.0, key=f"cfd_{cid}")
+                                bonus_col = a4.number_input("Bonus", min_value=0.0, step=500.0, value=0.0, key=f"bon_{cid}")
+                                
+                                rep_data[cid] = {
+                                    "rep": rep_col, "app": app_col, "pb": pb_col, "misc": misc_col,
+                                    "asset_cr": asset_cr_col, "cc": cc_col, "cfd": cfd_col, "bonus": bonus_col
+                                }
                     
                     # ---- END OF DAY / GLOBAL OUTFLOWS (Below Tabs) ----
                     st.markdown("### 📤 End of Day / Global Outflows")
