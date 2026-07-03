@@ -1646,17 +1646,16 @@ elif page == "Collections":
                         
                         rep_col = c1.number_input("Repayment", min_value=0.0, step=500.0, value=float(default_rep), key=f"rep_{cid}")
                         sav_col = c2.number_input("Savings", min_value=0.0, step=500.0, value=0.0, key=f"sav_{cid}")
-                        app_col = c3.number_input("App Fee", min_value=0.0, step=500.0, value=0.0, key=f"app_{cid}")
+                        app_col = c3.number_input("Processing Fee", min_value=0.0, step=500.0, value=0.0, key=f"app_{cid}")
                         pb_col = c4.number_input("Pass Book", min_value=0.0, step=500.0, value=0.0, key=f"pb_{cid}")
                         bwd_col = c5.number_input("Bank WD", min_value=0.0, step=500.0, value=0.0, key=f"bwd_{cid}")
                         misc_col = c6.number_input("Misc Fee", min_value=0.0, step=500.0, value=0.0, key=f"misc_{cid}")
                         
-                        d1, d2, d3, d4, d5 = st.columns(5)
+                        d1, d2, d3, d4 = st.columns(4)
                         asset_cr_col = d1.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=0.0, key=f"acr_{cid}")
                         cc_col = d2.number_input("Cash & Carry", min_value=0.0, step=500.0, value=0.0, key=f"cc_{cid}")
-                        cf_col = d3.number_input("Credit Form", min_value=0.0, step=500.0, value=0.0, key=f"cf_{cid}")
-                        cfd_col = d4.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=0.0, key=f"cfd_{cid}")
-                        bonus_col = d5.number_input("Bonus", min_value=0.0, step=500.0, value=0.0, key=f"bon_{cid}")
+                        cfd_col = d3.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=0.0, key=f"cfd_{cid}")
+                        bonus_col = d4.number_input("Bonus", min_value=0.0, step=500.0, value=0.0, key=f"bon_{cid}")
                         
                         input_data[cid] = {
                             "member": member,
@@ -1668,7 +1667,6 @@ elif page == "Collections":
                             "misc": misc_col,
                             "asset_cr": asset_cr_col,
                             "cc": cc_col,
-                            "cf": cf_col,
                             "cfd": cfd_col,
                             "bonus": bonus_col
                         }
@@ -1690,6 +1688,7 @@ elif page == "Collections":
                     
                     if submit_btn:
                         to_insert = []
+                        # Process individual member inputs
                         for cid, data in input_data.items():
                             rep = data['rep']
                             sav = data['sav']
@@ -1697,15 +1696,13 @@ elif page == "Collections":
                             pb = data['pb']
                             bwd = data['bwd']
                             misc = data['misc']
-                            asset = data['asset']
                             
                             asset_cr = data['asset_cr']
                             cc = data['cc']
-                            cf = data['cf']
                             cfd = data['cfd']
                             bon = data['bonus']
                             
-                            if rep == 0 and sav == 0 and app == 0 and pb == 0 and bwd == 0 and misc == 0 and asset == 0 and asset_cr == 0 and cc == 0 and cf == 0 and cfd == 0 and bon == 0:
+                            if rep == 0 and sav == 0 and app == 0 and pb == 0 and bwd == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
                                 continue # Skip empty rows
                                 
                             prod_low = str(data['member']['Loan Product']).lower()
@@ -1724,7 +1721,7 @@ elif page == "Collections":
                                 "Client Name": data['member']['Client Name'],
                                 "Officer": target_co,
                                 "Branch": data['member']['Branch'],
-                                "Amount Paid": sav + rep + asset + app + pb + misc + asset_cr + cc + cf + cfd + bon,
+                                "Amount Paid": sav + rep + app + pb + misc + asset_cr + cc + cfd + bon,
                                 "Transaction Type": "Loan",
                                 "Note": "Daily Collection",
                                 "Savings Amount": sav,
@@ -1735,13 +1732,13 @@ elif page == "Collections":
                                 "Repayment 120 Days": rep_120d,
                                 "Monthly": rep_mth,
                                 "Bank Withdrawal": bwd,
-                                "Asset Sales": asset,
+                                "Asset Sales": 0,
                                 "App Fee": app,
                                 "Pass Book Bonus": pb,
                                 "Misc Fees": misc,
                                 "Asset Credit Sales": asset_cr,
                                 "Cash and Carry": cc,
-                                "Credit Form": cf,
+                                "Credit Form": 0,
                                 "Credit Form Damage": cfd,
                                 "Bonus": bon,
                                 "Withdrawal Amount": 0, "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
@@ -2115,11 +2112,10 @@ elif page == "Master Cashbook":
         auto_weekly_11 = ssum(day_reps, 'Weekly 11%')
         auto_risk_premium = ssum(day_reps, 'Markup Paid')
         auto_passbook = ssum(day_reps, 'Pass Book Bonus')
-        auto_app_fee = ssum(day_reps, 'App Fee')
+        auto_app_fee = ssum(day_reps, 'App Fee')  # Processing Fee / Credit Form — single canonical field
         auto_asset_cr_sales = ssum(day_reps, 'Asset Credit Sales')
         auto_cash_carry = ssum(day_reps, 'Cash and Carry')
         auto_contingency = ssum(day_reps, 'Contingency')
-        auto_credit_form = ssum(day_reps, 'Credit Form')
         auto_credit_form_dmg = ssum(day_reps, 'Credit Form Damage')
         auto_bonus = ssum(day_reps, 'Bonus')
         auto_misc = ssum(day_reps, 'Misc Fees')
@@ -2180,18 +2176,17 @@ elif page == "Master Cashbook":
         e1, e2, e3, e4 = st.columns(4)
         e1.metric("Risk Premium", f"₦{auto_risk_premium:,.0f}")
         e2.metric("Passbook", f"₦{auto_passbook:,.0f}")
-        e3.metric("App Fee", f"₦{auto_app_fee:,.0f}")
+        e3.metric("Credit Form (Proc. Fee)", f"₦{auto_app_fee:,.0f}")
         e4.metric("Contingency (1%)", f"₦{auto_contingency:,.0f}")
         
         f1, f2, f3, f4 = st.columns(4)
         f1.metric("Asset Credit Sales", f"₦{auto_asset_cr_sales:,.0f}")
         f2.metric("Cash and Carry", f"₦{auto_cash_carry:,.0f}")
-        f3.metric("Credit Form", f"₦{auto_credit_form:,.0f}")
-        f4.metric("Cr Form Damage", f"₦{auto_credit_form_dmg:,.0f}")
+        f3.metric("Cr Form Damage", f"₦{auto_credit_form_dmg:,.0f}")
+        f4.metric("Misc Fees", f"₦{auto_misc:,.0f}")
         
-        g1, g2 = st.columns(2)
+        g1, _ = st.columns(2)
         g1.metric("Bonus", f"₦{auto_bonus:,.0f}")
-        g2.metric("Misc Fees", f"₦{auto_misc:,.0f}")
         
         st.markdown("---")
         st.markdown("### 📤 Right (Outflows) — Auto-Summed from CO Data")
@@ -2232,7 +2227,7 @@ elif page == "Master Cashbook":
                 auto_savings + auto_laps_res + auto_daily_11 + auto_weekly_11 +
                 auto_risk_premium + auto_passbook + auto_app_fee +
                 auto_asset_cr_sales + auto_cash_carry + auto_contingency +
-                auto_credit_form + auto_credit_form_dmg + auto_bonus + auto_misc +
+                auto_credit_form_dmg + auto_bonus + auto_misc +
                 funds_ho + funds_branch
             )
             
@@ -2283,7 +2278,7 @@ elif page == "Master Cashbook":
                     "asset_credit_sales": auto_asset_cr_sales,
                     "cash_and_carry": auto_cash_carry,
                     "contingency": auto_contingency,
-                    "credit_form": auto_credit_form,
+                    "credit_form": 0,
                     "credit_form_damage": auto_credit_form_dmg,
                     "bonus": auto_bonus,
                     "misc_fees": auto_misc,
