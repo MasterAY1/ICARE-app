@@ -1532,30 +1532,28 @@ elif page == "Loan Origination":
             st.warning("No clients registered in the database.")
         else:
             latest_status = all_loans_df.sort_values('Date').groupby('Client ID').last().reset_index()
-            eligible_clients = latest_status[
-                (~latest_status['Status'].isin(['Active', 'Pending'])) | 
-                ((latest_status['Status'] == 'Pending') & (pd.to_numeric(latest_status['Loan Amount'], errors='coerce').fillna(0) == 0))
-            ]
+            # Filter out auxiliary -ASSET profiles from the origination dropdown list
+            base_clients = latest_status[~latest_status['Client ID'].str.endswith("-ASSET", na=False)].copy()
             
-            if eligible_clients.empty:
-                st.warning("No eligible registered or completed clients found. Everyone has an active or pending loan!")
+            if base_clients.empty:
+                st.warning("No clients registered in the database.")
             else:
                 # 1. Filter by Group
-                unique_groups = ["All Groups"] + sorted(eligible_clients['Group Name'].dropna().unique().tolist())
+                unique_groups = ["All Groups"] + sorted(base_clients['Group Name'].dropna().unique().tolist())
                 selected_group = st.selectbox("Filter by Group (Optional):", unique_groups)
                 
                 if selected_group != "All Groups":
-                    eligible_clients = eligible_clients[eligible_clients['Group Name'] == selected_group]
+                    base_clients = base_clients[base_clients['Group Name'] == selected_group]
                 
-                if eligible_clients.empty:
-                    st.info("No eligible clients in this group.")
+                if base_clients.empty:
+                    st.info("No clients in this group.")
                 else:
-                    eligible_clients['DisplayName'] = eligible_clients['Client Name'] + " (" + eligible_clients['Client ID'] + ")"
-                    options = [""] + eligible_clients['DisplayName'].tolist()
+                    base_clients['DisplayName'] = base_clients['Client Name'] + " (" + base_clients['Client ID'] + ")"
+                    options = [""] + base_clients['DisplayName'].tolist()
                     selected_display = st.selectbox("Select Registered/Completed Client:", options)
                     
                     if selected_display:
-                        selected_row = eligible_clients[eligible_clients['DisplayName'] == selected_display].iloc[0]
+                        selected_row = base_clients[base_clients['DisplayName'] == selected_display].iloc[0]
                         target_client_id = selected_row['Client ID']
                         
                         reps = load_repayments()
@@ -1623,7 +1621,20 @@ elif page == "Loan Origination":
                                 
                             submitted_app = st.form_submit_button("Submit Application for BM Approval", use_container_width=True)
                             if submitted_app:
-                                if product_category == "Finance" and savings < total_upfront_required:
+                                # Validation: Check for existing loan of the SAME category
+                                check_id = target_client_id if product_category == "Finance" else f"{target_client_id}-ASSET"
+                                existing_loan = all_loans_df[all_loans_df['Client ID'] == check_id]
+                                
+                                is_blocked = False
+                                if not existing_loan.empty:
+                                    last_stat = existing_loan.sort_values('Date').iloc[-1]
+                                    # If it is Active or Pending AND has an actual loan amount (not just a registration placeholder)
+                                    if last_stat['Status'] in ['Active', 'Pending'] and float(last_stat.get('Loan Amount', 0)) > 0:
+                                        is_blocked = True
+                                        
+                                if is_blocked:
+                                    st.error(f"❌ Cannot submit: This client already has an Active or Pending {product_category} loan!")
+                                elif product_category == "Finance" and savings < total_upfront_required:
                                     st.error("Cannot submit! Insufficient savings.")
                                 else:
                                     # For Finance: auto-deduct upfront fees from savings
@@ -1643,7 +1654,7 @@ elif page == "Loan Origination":
                                     if product_category == "Asset" and initial_downpayment > 0:
                                         dp_data = {
                                             "Date": datetime.now().strftime("%Y-%m-%d"),
-                                            "Client ID": target_client_id,
+                                            "Client ID": check_id, # Link downpayment to the Asset ID
                                             "Client Name": selected_row['Client Name'],
                                             "Officer": USER,
                                             "Branch": BRANCH,
@@ -1659,6 +1670,7 @@ elif page == "Loan Origination":
                                     kyc.pop('DateStr', None)
                                     kyc.pop('id', None)
                                     
+                                    kyc["Client ID"] = check_id  # Use base ID for Finance, suffixed ID for Asset
                                     kyc["Date"] = datetime.now().strftime("%Y-%m-%d")
                                     kyc["Officer"] = USER
                                     kyc["Branch"] = BRANCH
@@ -1773,6 +1785,8 @@ elif page == "Collections":
                         
                         st.markdown("### 👤 Per-Client Savings")
                         for cid, info in member_info.items():
+                            if str(cid).endswith("-ASSET"):
+                                continue
                             m = info['member']
                             with st.expander(f"👤 {m['Client Name']} ({cid}) - Bal: ₦{info['sav_bal']:,.0f}"):
                                 sc1, sc2 = st.columns(2)
