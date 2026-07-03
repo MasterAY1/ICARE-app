@@ -1477,46 +1477,87 @@ elif page == "Loan Origination":
                             if product_category == "Finance":
                                 prods = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
                             else:
-                                prods = ["Asset Finance (Daily)", "Asset Finance (Weekly)", "Asset Finance (Monthly)"]
+                                prods = ["60-Day Asset", "120-Day Asset", "Cash and Carry"]
                                 
                             product = f2.selectbox("Loan Product", prods)
-                            amount = st.number_input("Requested Loan Amount (₦)", min_value=10000, step=10000)
+                            amount = st.number_input("Requested Loan Amount / Asset Cost (₦)", min_value=10000, step=10000)
                             
                             setup = calculate_loan_setup(amount, product, product_category)
                             interest = setup.get('interest', 0)
-                            base_savings_req = st.number_input("Gap Fee / Base Savings (₦)", min_value=0, value=1000, step=1000)
-                            
-                            active_credit = amount - base_savings_req
                             dur = setup.get('duration', 60)
-                            final_repay = active_credit / dur if dur > 0 else 0
+                            
+                            if product_category == "Asset":
+                                # ---- ASSET ORIGINATION ENGINE ----
+                                total_cost = amount + interest
+                                st.markdown(f"**Asset Cost:** ₦{amount:,.0f}")
+                                st.markdown(f"**Interest ({int(setup.get('interest',0)/amount*100) if amount > 0 else 0}%):** ₦{interest:,.0f}")
+                                st.markdown(f"**Total Cost (Principal + Interest):** ₦{total_cost:,.0f}")
                                 
-                            total_upfront_required = interest + base_savings_req
-                            
-                            st.markdown(f"**Calculated Upfront Requirement:**")
-                            st.markdown(f"- Interest: ₦{interest:,.0f}")
-                            st.markdown(f"- Gap Fee (Base Savings): ₦{base_savings_req:,.0f}")
-                            st.markdown(f"**Total Required:** ₦{total_upfront_required:,.0f}")
-                            
-                            if savings < total_upfront_required:
-                                st.error(f"❌ **INSUFFICIENT SAVINGS:** Client has ₦{savings:,.0f} but needs ₦{total_upfront_required:,.0f}. Please collect additional savings via the Cashbook first.")
+                                initial_downpayment = st.number_input("Initial Cash Downpayment (₦)", min_value=0, value=0, step=5000)
+                                
+                                active_credit = total_cost - initial_downpayment
+                                final_repay = active_credit / dur if dur > 0 else 0
+                                
+                                st.markdown("---")
+                                st.markdown(f"**Active Loan (Total Cost - Downpayment):** ₦{active_credit:,.0f}")
+                                st.markdown(f"**Expected Installment:** ₦{final_repay:,.0f} x {dur} {setup.get('freq', 'Daily')}")
+                                
+                                if initial_downpayment > 0:
+                                    st.info(f"💵 The ₦{initial_downpayment:,.0f} downpayment will be logged as a cashbook inflow when activated.")
+                                
+                                total_upfront_required = 0  # No savings deduction for asset loans
                             else:
-                                st.success(f"✅ **SUFFICIENT SAVINGS:** Client has enough to cover the upfront fees.")
+                                # ---- FINANCE ORIGINATION ENGINE (existing logic) ----
+                                base_savings_req = st.number_input("Gap Fee / Base Savings (₦)", min_value=0, value=1000, step=1000)
+                                initial_downpayment = 0
+                                
+                                active_credit = amount - base_savings_req
+                                final_repay = active_credit / dur if dur > 0 else 0
+                                    
+                                total_upfront_required = interest + base_savings_req
+                                
+                                st.markdown(f"**Calculated Upfront Requirement:**")
+                                st.markdown(f"- Interest: ₦{interest:,.0f}")
+                                st.markdown(f"- Gap Fee (Base Savings): ₦{base_savings_req:,.0f}")
+                                st.markdown(f"**Total Required:** ₦{total_upfront_required:,.0f}")
+                                
+                                if savings < total_upfront_required:
+                                    st.error(f"❌ **INSUFFICIENT SAVINGS:** Client has ₦{savings:,.0f} but needs ₦{total_upfront_required:,.0f}. Please collect additional savings via the Cashbook first.")
+                                else:
+                                    st.success(f"✅ **SUFFICIENT SAVINGS:** Client has enough to cover the upfront fees.")
                                 
                             submitted_app = st.form_submit_button("Submit Application for BM Approval", use_container_width=True)
                             if submitted_app:
-                                if savings < total_upfront_required:
+                                if product_category == "Finance" and savings < total_upfront_required:
                                     st.error("Cannot submit! Insufficient savings.")
                                 else:
-                                    wd_data = {
-                                        "Date": datetime.now().strftime("%Y-%m-%d"),
-                                        "Client ID": target_client_id,
-                                        "Client Name": selected_row['Client Name'],
-                                        "Officer": USER,
-                                        "Branch": BRANCH,
-                                        "Withdrawal Amount": total_upfront_required,
-                                        "Note": f"Auto-deducted Upfront Fees (Interest: {interest}, Gap: {base_savings_req}) for Loan App"
-                                    }
-                                    save_repayment(wd_data)
+                                    # For Finance: auto-deduct upfront fees from savings
+                                    if product_category == "Finance" and total_upfront_required > 0:
+                                        wd_data = {
+                                            "Date": datetime.now().strftime("%Y-%m-%d"),
+                                            "Client ID": target_client_id,
+                                            "Client Name": selected_row['Client Name'],
+                                            "Officer": USER,
+                                            "Branch": BRANCH,
+                                            "Withdrawal Amount": total_upfront_required,
+                                            "Note": f"Auto-deducted Upfront Fees (Interest: {interest}, Gap: {base_savings_req}) for Loan App"
+                                        }
+                                        save_repayment(wd_data)
+                                    
+                                    # For Asset: log initial downpayment as cashbook inflow
+                                    if product_category == "Asset" and initial_downpayment > 0:
+                                        dp_data = {
+                                            "Date": datetime.now().strftime("%Y-%m-%d"),
+                                            "Client ID": target_client_id,
+                                            "Client Name": selected_row['Client Name'],
+                                            "Officer": USER,
+                                            "Branch": BRANCH,
+                                            "Amount Paid": initial_downpayment,
+                                            "Transaction Type": "Asset Downpayment",
+                                            "Note": f"Initial Cash Downpayment for {product}",
+                                            "Asset Credit Sales": initial_downpayment
+                                        }
+                                        save_repayment(dp_data)
                                     
                                     kyc = selected_row.to_dict()
                                     kyc.pop('DisplayName', None)
@@ -1594,84 +1635,86 @@ elif page == "Collections":
                 # Fetch history for today to prefill/check
                 today_reps = repayments[(repayments['Date'] == date_str) & (repayments['Officer'] == target_co)] if not repayments.empty else pd.DataFrame()
                 
+                # Pre-compute member data for both tabs
+                member_info = {}
+                for _, member in group_loans.iterrows():
+                    cid = member['Client ID']
+                    mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
+                    acc_sav = mem_reps['Savings Amount'].astype(float).sum() if not mem_reps.empty else 0
+                    acc_wd = mem_reps['Withdrawal Amount'].astype(float).sum() if 'Withdrawal Amount' in mem_reps.columns and not mem_reps.empty else 0
+                    sav_bal = acc_sav - acc_wd
+                    total_paid = mem_reps['Loan Repayment Amount'].astype(float).sum() if not mem_reps.empty else 0
+                    act_cred = float(member.get('Active Credit', 0))
+                    rem_bal = act_cred - total_paid
+                    exp_rep = float(member.get('Loan Repayment', 0))
+                    today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
+                    default_rep = exp_rep if today_paid.empty else 0.0
+                    member_info[cid] = {
+                        "member": member,
+                        "sav_bal": sav_bal,
+                        "rem_bal": rem_bal,
+                        "act_cred": act_cred,
+                        "default_rep": default_rep
+                    }
+                
                 with st.form("collections_form"):
-                    st.markdown("### 🏛️ Group-Level Inflows")
-                    st.caption("Input communal funds received from the group.")
-                    col_g1, col_g2 = st.columns(2)
-                    global_group_savings = col_g1.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=0.0)
-                    global_laps_reserved = col_g2.number_input("Laps Reserved", min_value=0.0, step=500.0, value=0.0)
-                    st.markdown("---")
-
-                    input_data = {}
-                    for _, member in group_loans.iterrows():
-                        cid = member['Client ID']
-                        cname = member['Client Name']
-                        prod = str(member['Loan Product'])
-                        act_cred = float(member.get('Active Credit', 0))
-                        exp_rep = float(member.get('Loan Repayment', 0))
-                        
-                        # Find past collections to show Savings/Remaining Balance
-                        mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
-                        acc_sav = mem_reps['Savings Amount'].astype(float).sum() if not mem_reps.empty else 0
-                        total_paid = mem_reps['Loan Repayment Amount'].astype(float).sum() if not mem_reps.empty else 0
-                        rem_bal = act_cred - total_paid
-                        
-                        # Check if already paid today
-                        today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
-                        default_rep = exp_rep if today_paid.empty else 0.0
-                        
-                        # Repayment Schedule
-                        next_due = "N/A"
-                        if pd.notna(member.get('start_date')) and pd.notna(member.get('Loan Product')):
-                            try:
-                                p_cat = member.get('Product Category', 'Finance')
-                                l_setup = calculate_loan_setup(act_cred, prod, p_cat)
-                                # Default start date logic
-                                start_d = pd.to_datetime(member['start_date']).date()
-                                sched = generate_repayment_schedule(start_d, l_setup['duration'], l_setup['freq'])
-                                # Find next due date strictly >= today
-                                today_d = datetime.now().date()
-                                future_dates = [d for d in sched if d >= today_d]
-                                if future_dates:
-                                    next_due = future_dates[0].strftime("%Y-%m-%d")
-                                else:
-                                    next_due = "Completed"
-                            except Exception as e:
-                                pass
-
-                        st.markdown(f"**{cname} ({cid})** - *{prod}*")
-                        st.caption(f"Active Credit: ₦{act_cred:,.0f} | Rem Bal: ₦{rem_bal:,.0f} | Acc Savings: ₦{acc_sav:,.0f} | **Next Due: {next_due}**")
-                        
-                        c1, c2, c3, c4, c5, c6 = st.columns(6)
-                        
-                        rep_col = c1.number_input("Repayment", min_value=0.0, step=500.0, value=float(default_rep), key=f"rep_{cid}")
-                        sav_col = c2.number_input("Savings", min_value=0.0, step=500.0, value=0.0, key=f"sav_{cid}")
-                        app_col = c3.number_input("Processing Fee", min_value=0.0, step=500.0, value=0.0, key=f"app_{cid}")
-                        pb_col = c4.number_input("Pass Book", min_value=0.0, step=500.0, value=0.0, key=f"pb_{cid}")
-                        bwd_col = c5.number_input("Bank WD", min_value=0.0, step=500.0, value=0.0, key=f"bwd_{cid}")
-                        misc_col = c6.number_input("Misc Fee", min_value=0.0, step=500.0, value=0.0, key=f"misc_{cid}")
-                        
-                        d1, d2, d3, d4 = st.columns(4)
-                        asset_cr_col = d1.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=0.0, key=f"acr_{cid}")
-                        cc_col = d2.number_input("Cash & Carry", min_value=0.0, step=500.0, value=0.0, key=f"cc_{cid}")
-                        cfd_col = d3.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=0.0, key=f"cfd_{cid}")
-                        bonus_col = d4.number_input("Bonus", min_value=0.0, step=500.0, value=0.0, key=f"bon_{cid}")
-                        
-                        input_data[cid] = {
-                            "member": member,
-                            "rep": rep_col,
-                            "sav": sav_col,
-                            "app": app_col,
-                            "pb": pb_col,
-                            "bwd": bwd_col,
-                            "misc": misc_col,
-                            "asset_cr": asset_cr_col,
-                            "cc": cc_col,
-                            "cfd": cfd_col,
-                            "bonus": bonus_col
-                        }
-                        st.markdown("---")
+                    # ============================================================
+                    # TWO-TAB LAYOUT
+                    # ============================================================
+                    tab_sav, tab_rep = st.tabs(["💰 Savings & Withdrawals", "📝 Loan Repayments & Fees"])
                     
+                    sav_data = {}
+                    rep_data = {}
+                    
+                    # ---- TAB 1: SAVINGS & WITHDRAWALS ----
+                    with tab_sav:
+                        st.markdown("### 🏛️ Group-Level Savings")
+                        st.caption("Input communal group savings and withdrawal amounts.")
+                        gsc1, gsc2, gsc3 = st.columns(3)
+                        global_group_savings = gsc1.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=0.0)
+                        global_group_wd = gsc2.number_input("Group Savings Withdrawal", min_value=0.0, step=500.0, value=0.0)
+                        global_laps_reserved = gsc3.number_input("Laps Reserved", min_value=0.0, step=500.0, value=0.0)
+                        st.markdown("---")
+                        
+                        st.markdown("### 👤 Per-Client Savings")
+                        for cid, info in member_info.items():
+                            m = info['member']
+                            st.markdown(f"**{m['Client Name']} ({cid})**")
+                            st.caption(f"Savings Balance: ₦{info['sav_bal']:,.0f}")
+                            sc1, sc2 = st.columns(2)
+                            s_dep = sc1.number_input("Savings Deposit", min_value=0.0, step=500.0, value=0.0, key=f"sdep_{cid}")
+                            s_wd = sc2.number_input("Savings Withdrawal", min_value=0.0, step=500.0, value=0.0, key=f"swd_{cid}")
+                            sav_data[cid] = {"dep": s_dep, "wd": s_wd}
+                            st.markdown("---")
+                    
+                    # ---- TAB 2: LOAN REPAYMENTS & FEES ----
+                    with tab_rep:
+                        st.markdown("### 📋 Per-Client Repayments & Fees")
+                        for cid, info in member_info.items():
+                            m = info['member']
+                            prod = str(m['Loan Product'])
+                            st.markdown(f"**{m['Client Name']} ({cid})** - *{prod}*")
+                            st.caption(f"Active Credit: ₦{info['act_cred']:,.0f} | Rem Bal: ₦{info['rem_bal']:,.0f}")
+                            
+                            r1, r2, r3, r4 = st.columns(4)
+                            rep_col = r1.number_input("Credit Repayment", min_value=0.0, step=500.0, value=float(info['default_rep']), key=f"rep_{cid}")
+                            app_col = r2.number_input("Processing Fee", min_value=0.0, step=500.0, value=0.0, key=f"app_{cid}")
+                            pb_col = r3.number_input("Pass Book", min_value=0.0, step=500.0, value=0.0, key=f"pb_{cid}")
+                            misc_col = r4.number_input("Misc Fee", min_value=0.0, step=500.0, value=0.0, key=f"misc_{cid}")
+                            
+                            a1, a2, a3, a4 = st.columns(4)
+                            asset_cr_col = a1.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=0.0, key=f"acr_{cid}")
+                            cc_col = a2.number_input("Cash & Carry", min_value=0.0, step=500.0, value=0.0, key=f"cc_{cid}")
+                            cfd_col = a3.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=0.0, key=f"cfd_{cid}")
+                            bonus_col = a4.number_input("Bonus", min_value=0.0, step=500.0, value=0.0, key=f"bon_{cid}")
+                            
+                            rep_data[cid] = {
+                                "rep": rep_col, "app": app_col, "pb": pb_col, "misc": misc_col,
+                                "asset_cr": asset_cr_col, "cc": cc_col, "cfd": cfd_col, "bonus": bonus_col
+                            }
+                            st.markdown("---")
+                    
+                    # ---- END OF DAY / GLOBAL OUTFLOWS (Below Tabs) ----
                     st.markdown("### 📤 End of Day / Global Outflows")
                     st.caption("Log your daily branch expenses, bank deposits, and withdrawals here.")
                     out_1, out_2, out_3 = st.columns(3)
@@ -1684,54 +1727,60 @@ elif page == "Collections":
                     global_laps_trans = out_5.number_input("Laps Transferred", min_value=0.0, step=500.0, value=0.0)
                     
                     st.markdown("---")
-                    submit_btn = st.form_submit_button("Save All Collections", type="primary")
+                    submit_btn = st.form_submit_button("💾 Save All Collections", type="primary", use_container_width=True)
                     
                     if submit_btn:
                         to_insert = []
-                        # Process individual member inputs
-                        for cid, data in input_data.items():
-                            rep = data['rep']
-                            sav = data['sav']
-                            app = data['app']
-                            pb = data['pb']
-                            bwd = data['bwd']
-                            misc = data['misc']
+                        
+                        # ---- Process per-client data (merge both tabs) ----
+                        for cid, info in member_info.items():
+                            m = info['member']
+                            s = sav_data.get(cid, {"dep": 0, "wd": 0})
+                            r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0})
                             
-                            asset_cr = data['asset_cr']
-                            cc = data['cc']
-                            cfd = data['cfd']
-                            bon = data['bonus']
+                            sav = s['dep']
+                            sav_wd = s['wd']
+                            rep = r['rep']
+                            app = r['app']
+                            pb = r['pb']
+                            misc = r['misc']
+                            asset_cr = r['asset_cr']
+                            cc = r['cc']
+                            cfd = r['cfd']
+                            bon = r['bonus']
                             
-                            if rep == 0 and sav == 0 and app == 0 and pb == 0 and bwd == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
-                                continue # Skip empty rows
-                                
-                            prod_low = str(data['member']['Loan Product']).lower()
+                            # Skip if nothing entered at all
+                            if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
+                                continue
+                            
+                            prod_low = str(m['Loan Product']).lower()
                             rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
                             
-                            if "12 week" in prod_low or "12wk" in prod_low: rep_12w = rep
-                            elif "24 week" in prod_low or "24wk" in prod_low: rep_24w = rep
-                            elif "60 day" in prod_low or "daily" in prod_low and "120" not in prod_low: rep_60d = rep
-                            elif "120 day" in prod_low: rep_120d = rep
+                            if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep
+                            elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep
+                            elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep
+                            elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep
                             elif "month" in prod_low: rep_mth = rep
                             else: rep_60d = rep
                             
                             tx_data = {
                                 "Date": date_str,
                                 "Client ID": cid,
-                                "Client Name": data['member']['Client Name'],
+                                "Client Name": m['Client Name'],
                                 "Officer": target_co,
-                                "Branch": data['member']['Branch'],
+                                "Branch": m['Branch'],
                                 "Amount Paid": sav + rep + app + pb + misc + asset_cr + cc + cfd + bon,
                                 "Transaction Type": "Loan",
                                 "Note": "Daily Collection",
                                 "Savings Amount": sav,
+                                "Withdrawal Amount": sav_wd,
                                 "Loan Repayment Amount": rep,
                                 "Repayment 12 Weeks": rep_12w,
                                 "Repayment 24 Weeks": rep_24w,
                                 "Repayment 60 Days": rep_60d,
                                 "Repayment 120 Days": rep_120d,
                                 "Monthly": rep_mth,
-                                "Bank Withdrawal": bwd,
+                                "Bank Withdrawal": 0,
                                 "Asset Sales": 0,
                                 "App Fee": app,
                                 "Pass Book Bonus": pb,
@@ -1741,7 +1790,7 @@ elif page == "Collections":
                                 "Credit Form": 0,
                                 "Credit Form Damage": cfd,
                                 "Bonus": bon,
-                                "Withdrawal Amount": 0, "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
+                                "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
                                 "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
                                 "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
                                 "Laps Reserved": 0, "Laps Transferred": 0,
@@ -1749,10 +1798,52 @@ elif page == "Collections":
                             }
                             to_insert.append({UI_TO_DB_REP[k]: v for k, v in tx_data.items()})
                         
+                        # ---- Process Group-Level Inflows ----
+                        if global_group_savings > 0 or global_group_wd > 0 or global_laps_reserved > 0:
+                            g_data = {
+                                "Date": date_str, "Client ID": f"GROUP-{selected_group}", "Client Name": f"{selected_group} Meeting",
+                                "Officer": target_co, "Branch": BRANCH,
+                                "Amount Paid": global_group_savings + global_laps_reserved,
+                                "Transaction Type": "Group Meeting", "Note": "Group Level Inputs",
+                                "Savings Amount": global_group_savings, "Withdrawal Amount": global_group_wd,
+                                "Laps Reserved": global_laps_reserved,
+                                "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
+                                "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0, "Bank Withdrawal": 0,
+                                "Asset Sales": 0, "App Fee": 0, "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
+                                "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
+                                "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0,
+                                "Weekly 20%": 0, "Monthly 11%/20%": 0, "Group Savings Deposit": 0, "Group Savings Withdrawal": 0,
+                                "Laps Transferred": 0, "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0
+                            }
+                            to_insert.append({UI_TO_DB_REP[k]: v for k, v in g_data.items()})
+                        
+                        # ---- Process EOD Outflows ----
+                        if global_expenses > 0 or global_bank_dep > 0 or global_bank_wd > 0 or global_prod_wd > 0 or global_laps_trans > 0:
+                            eod_data = {
+                                "Date": date_str, "Client ID": "CASHBOOK", "Client Name": "EOD Outflows",
+                                "Officer": target_co, "Branch": BRANCH, "Amount Paid": 0,
+                                "Transaction Type": "EOD Outflows", "Note": "Daily Branch End of Day",
+                                "Expenses": global_expenses, "Bank Deposited": global_bank_dep,
+                                "Bank Withdrawal": global_bank_wd, "Product Withdrawal": global_prod_wd,
+                                "Laps Transferred": global_laps_trans,
+                                "Savings Amount": 0, "Withdrawal Amount": 0, "Laps Reserved": 0,
+                                "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
+                                "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0,
+                                "Asset Sales": 0, "App Fee": 0, "Pass Book Bonus": 0, "Misc Fees": 0,
+                                "Asset Credit Sales": 0, "Cash and Carry": 0, "Credit Form": 0,
+                                "Credit Form Damage": 0, "Bonus": 0, "Contingency": 0, "Daily 11%": 0,
+                                "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
+                            }
+                            to_insert.append({UI_TO_DB_REP[k]: v for k, v in eod_data.items()})
+                        
                         if to_insert:
                             try:
                                 supabase.table("repayments").insert(to_insert).execute()
                                 st.success(f"Successfully saved {len(to_insert)} collection records!")
+                                import time
+                                time.sleep(1)
+                                st.rerun()
                             except Exception as e:
                                 st.error(f"Failed to save collections: {e}")
                         else:
