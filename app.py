@@ -1765,60 +1765,62 @@ elif page == "Collections":
                     }
                 
                 with st.form("collections_form"):
-                    # ============================================================
-                    # TWO-TAB LAYOUT
-                    # ============================================================
-                    tab_sav, tab_rep = st.tabs(["💰 Savings & Withdrawals", "📝 Loan Repayments & Fees"])
-                    
                     sav_data = {}
                     rep_data = {}
                     
-                    # ---- TAB 1: SAVINGS & WITHDRAWALS ----
-                    with tab_sav:
-                        st.markdown("### 🏛️ Group-Level Savings")
-                        st.caption("Input communal group savings and withdrawal amounts.")
-                        gsc1, gsc2, gsc3 = st.columns(3)
-                        global_group_savings = gsc1.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=None, placeholder="0")
-                        global_group_wd = gsc2.number_input("Group Savings Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
-                        global_laps_reserved = gsc3.number_input("Laps Reserved", min_value=0.0, step=500.0, value=None, placeholder="0")
-                        st.markdown("---")
+                    # ---- GROUP-LEVEL SAVINGS ----
+                    st.markdown("### 🏛️ Group-Level Savings")
+                    st.caption("Input communal group savings and withdrawal amounts.")
+                    gsc1, gsc2, gsc3 = st.columns(3)
+                    global_group_savings = gsc1.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=None, placeholder="0")
+                    global_group_wd = gsc2.number_input("Group Savings Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
+                    global_laps_reserved = gsc3.number_input("Laps Reserved", min_value=0.0, step=500.0, value=None, placeholder="0")
+                    st.markdown("---")
+                    
+                    # ---- PER-CLIENT COLLECTIONS (UNIFIED) ----
+                    st.markdown("### 📋 Client Collections (Savings & Repayments)")
+                    for cid, info in member_info.items():
+                        m = info['member']
+                        prod = str(m['Loan Product'])
+                        is_asset = str(cid).endswith("-ASSET")
                         
-                        st.markdown("### 👤 Per-Client Savings")
-                        for cid, info in member_info.items():
-                            if str(cid).endswith("-ASSET"):
-                                continue
-                            m = info['member']
-                            with st.expander(f"👤 {m['Client Name']} ({cid}) - Bal: ₦{info['sav_bal']:,.0f}"):
+                        if is_asset:
+                            title = f"📋 {m['Client Name']} (ASSET) - Rem: ₦{info['rem_bal']:,.0f}"
+                        else:
+                            title = f"👤 {m['Client Name']} ({cid}) - Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
+                            
+                        with st.expander(title):
+                            if not is_asset:
+                                st.markdown("**🏦 Savings**")
                                 sc1, sc2 = st.columns(2)
                                 s_dep = sc1.number_input("Savings Deposit", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"sdep_{cid}")
                                 s_wd = sc2.number_input("Savings Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"swd_{cid}")
                                 sav_data[cid] = {"dep": s_dep, "wd": s_wd}
-                    
-                    # ---- TAB 2: LOAN REPAYMENTS & FEES ----
-                    with tab_rep:
-                        st.markdown("### 📋 Per-Client Repayments & Fees")
-                        for cid, info in member_info.items():
-                            m = info['member']
-                            prod = str(m['Loan Product'])
-                            with st.expander(f"📋 {m['Client Name']} ({cid}) - Rem: ₦{info['rem_bal']:,.0f}"):
-                                st.caption(f"Active Credit: ₦{info['act_cred']:,.0f} | Product: {prod}")
-                                r1, r2, r3, r4 = st.columns(4)
-                                d_rep = float(info['default_rep'])
-                                rep_col = r1.number_input("Credit Repayment", min_value=0.0, step=500.0, value=d_rep if d_rep > 0 else None, placeholder="0", key=f"rep_{cid}")
-                                app_col = r2.number_input("Processing Fee", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"app_{cid}")
-                                pb_col = r3.number_input("Pass Book", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"pb_{cid}")
-                                misc_col = r4.number_input("Misc Fee", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"misc_{cid}")
-                                
-                                a1, a2, a3, a4 = st.columns(4)
-                                asset_cr_col = a1.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"acr_{cid}")
-                                cc_col = a2.number_input("Cash & Carry", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"cc_{cid}")
-                                cfd_col = a3.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"cfd_{cid}")
-                                bonus_col = a4.number_input("Bonus", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"bon_{cid}")
-                                
-                                rep_data[cid] = {
-                                    "rep": rep_col, "app": app_col, "pb": pb_col, "misc": misc_col,
-                                    "asset_cr": asset_cr_col, "cc": cc_col, "cfd": cfd_col, "bonus": bonus_col
-                                }
+                                st.markdown("---")
+                            
+                            st.markdown(f"**💵 Loan ({prod})** - Active Cr: ₦{info['act_cred']:,.0f}")
+                            d_rep = float(info['default_rep'])
+                            
+                            r1, r2 = st.columns(2)
+                            rep_col = r1.number_input("Credit Repayment", min_value=0.0, step=500.0, value=d_rep if d_rep > 0 else None, placeholder="0", key=f"rep_{cid}")
+                            app_col = r2.number_input("Processing Fee", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"app_{cid}")
+                            
+                            r3, r4 = st.columns(2)
+                            pb_col = r3.number_input("Pass Book", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"pb_{cid}")
+                            misc_col = r4.number_input("Misc Fee", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"misc_{cid}")
+                            
+                            a1, a2 = st.columns(2)
+                            asset_cr_col = a1.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"acr_{cid}")
+                            cc_col = a2.number_input("Cash & Carry", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"cc_{cid}")
+                            
+                            a3, a4 = st.columns(2)
+                            cfd_col = a3.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"cfd_{cid}")
+                            bonus_col = a4.number_input("Bonus", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"bon_{cid}")
+                            
+                            rep_data[cid] = {
+                                "rep": rep_col, "app": app_col, "pb": pb_col, "misc": misc_col,
+                                "asset_cr": asset_cr_col, "cc": cc_col, "cfd": cfd_col, "bonus": bonus_col
+                            }
                     
                     # ---- END OF DAY / GLOBAL OUTFLOWS (Below Tabs) ----
                     st.markdown("### 📤 End of Day / Global Outflows")
