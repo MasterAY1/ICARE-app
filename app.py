@@ -666,7 +666,7 @@ def save_new_loan(data):
         st.error("Database not connected")
         return
     db_data = {UI_TO_DB_LOANS[k]: v for k, v in data.items() if k in UI_TO_DB_LOANS}
-    supabase.table("loans").insert(db_data).execute()
+    supabase.table("loans").upsert(db_data).execute()
 
 def save_repayment(data):
     """Save repayment to database"""
