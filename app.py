@@ -100,6 +100,29 @@ def get_base64_image(image_path):
 
 LOGO_B64 = get_base64_image("assets/icare_logo.jpg")
 
+def get_next_client_number(all_loans, branch, group_string):
+    if all_loans.empty:
+        return 1
+    branch_loans = all_loans[all_loans['Branch'] == branch]
+    if branch_loans.empty:
+        return 1
+    g_str = str(group_string).strip()
+    if not g_str or g_str.lower() in ["none", "nan", "ungrouped", "ind"]:
+        group_loans = branch_loans[branch_loans['Group Name'].isna() | (branch_loans['Group Name'] == '') | (branch_loans['Group Name'].str.lower() == 'ind')]
+    else:
+        group_loans = branch_loans[branch_loans['Group Name'] == g_str]
+    if group_loans.empty:
+        return 1
+    max_num = 0
+    for cid in group_loans['Client ID'].dropna():
+        parts = str(cid).split('-')
+        if len(parts) >= 3:
+            try:
+                num = int(parts[-1])
+                if num > max_num: max_num = num
+            except: pass
+    return max_num + 1
+
 def generate_client_id(branch_name, group_string, member_num_or_index, is_bulk=False):
     import re
     # 1. Get branch prefix (first 3 letters, uppercase)
