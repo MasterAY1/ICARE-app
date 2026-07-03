@@ -525,6 +525,7 @@ st.markdown("""
 DB_TO_UI_LOANS = {
     "client_id": "Client ID", "date": "Date", "branch": "Branch", "officer": "Officer",
     "client_name": "Client Name", "phone": "Phone", "address": "Address", "business_type": "Business Type",
+    "business_address": "Business Address",
     "group_name": "Group Name", "meeting_day": "Meeting Day", "loan_product": "Loan Product",
     "loan_amount": "Loan Amount", "active_credit": "Active Credit", "loan_repay": "Loan Repay",
     "total_due": "Total Due", "status": "Status",
