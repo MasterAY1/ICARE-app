@@ -123,24 +123,43 @@ def get_next_client_number(all_loans, branch, group_string):
             except: pass
     return max_num + 1
 
-def generate_client_id(branch_name, group_string, member_num_or_index, is_bulk=False):
+def generate_client_id(all_loans, branch_name, group_string, member_num_or_index, is_bulk=False):
     import re
     # 1. Get branch prefix (first 3 letters, uppercase)
     b_prefix = str(branch_name)[:3].upper() if branch_name else "UNK"
     
     # 2. Get group prefix
     g_str = str(group_string).strip()
-    if not g_str or g_str.lower() in ["none", "nan", "ungrouped"]:
+    if not g_str or g_str.lower() in ["none", "nan", "ungrouped", "ind"]:
         g_prefix = "IND" # Individual / Ungrouped
     else:
-        # If it looks like 'GRP-02' or has digits, extract digits
-        digits = re.findall(r'\d+', g_str)
-        if digits:
-            # Use the first number found, pad to 2 digits
-            g_prefix = str(digits[0]).zfill(2)
-        else:
-            # Otherwise use the first 3 letters of the group name
-            g_prefix = g_str[:3].upper()
+        # Check if this group already exists in the branch and has a prefix
+        import pandas as pd
+        branch_loans = all_loans[all_loans['Branch'] == branch_name] if not all_loans.empty else pd.DataFrame()
+        group_loans = branch_loans[branch_loans['Group Name'] == g_str] if not branch_loans.empty else pd.DataFrame()
+        
+        found_existing = False
+        if not group_loans.empty:
+            for cid in group_loans['Client ID'].dropna():
+                parts = str(cid).split('-')
+                if len(parts) >= 3 and parts[1].isdigit():
+                    g_prefix = parts[1]
+                    found_existing = True
+                    break
+        
+        if not found_existing:
+            # New group, assign next sequential number based on all groups in branch
+            max_g_num = 0
+            if not branch_loans.empty:
+                for cid in branch_loans['Client ID'].dropna():
+                    parts = str(cid).split('-')
+                    if len(parts) >= 3 and parts[1].isdigit():
+                        try:
+                            num = int(parts[1])
+                            if num > max_g_num:
+                                max_g_num = num
+                        except: pass
+            g_prefix = str(max_g_num + 1).zfill(2)
             
     # 3. Get member number
     try:
@@ -1377,7 +1396,7 @@ elif page == "Loan Origination":
                     g_val = final_group_name if final_group_name.strip() else "IND"
                     all_loans_for_id = load_loans()
                     next_num = get_next_client_number(all_loans_for_id, BRANCH, g_val)
-                    new_client_id = generate_client_id(BRANCH, g_val, next_num)
+                    new_client_id = generate_client_id(all_loans_for_id, BRANCH, g_val, next_num)
                     
                     data = {
                         "Client ID": new_client_id,
@@ -1466,7 +1485,7 @@ elif page == "Loan Origination":
                                     except: m_num_val = index + 1
                                     branch_val = str(group_row.get('Branch Name', BRANCH))
                                     group_ref_val = str(member_row.get('Group Reference', ''))
-                                    client_id = generate_client_id(branch_val, group_ref_val, m_num_val, is_bulk=True)
+                                    client_id = generate_client_id(all_loans, branch_val, group_ref_val, m_num_val, is_bulk=True)
                                     existing_check = supabase.table("loans").select("Client ID").eq("Client ID", client_id).execute()
                                     if existing_check.data and len(existing_check.data) > 0:
                                         skip_count += 1
