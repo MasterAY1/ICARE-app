@@ -1176,7 +1176,7 @@ elif page == "Loan Origination":
         st.subheader("Pending Disbursements")
         all_loans = load_loans()
         my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
-        pending_clients = my_loans[my_loans['Status'] == 'Pending']
+        pending_clients = my_loans[(my_loans['Status'] == 'Pending') & (pd.to_numeric(my_loans['Loan Amount'], errors='coerce').fillna(0) > 0)]
         if pending_clients.empty:
             st.info("✅ No pending loans found.")
         else:
@@ -1507,7 +1507,10 @@ elif page == "Loan Origination":
             st.warning("No clients registered in the database.")
         else:
             latest_status = all_loans_df.sort_values('Date').groupby('Client ID').last().reset_index()
-            eligible_clients = latest_status[~latest_status['Status'].isin(['Active', 'Pending'])]
+            eligible_clients = latest_status[
+                (~latest_status['Status'].isin(['Active', 'Pending'])) | 
+                ((latest_status['Status'] == 'Pending') & (pd.to_numeric(latest_status['Loan Amount'], errors='coerce').fillna(0) == 0))
+            ]
             
             if eligible_clients.empty:
                 st.warning("No eligible registered or completed clients found. Everyone has an active or pending loan!")
