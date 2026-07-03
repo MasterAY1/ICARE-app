@@ -1703,10 +1703,10 @@ elif page == "Collections":
         else:
             target_co = USER
             
-        co_loans = all_loans[(all_loans['Officer'] == target_co) & (all_loans['Status'] == 'Active')]
+        co_loans = all_loans[(all_loans['Officer'] == target_co) & (all_loans['Status'].isin(['Active', 'Pending']))]
         
         if co_loans.empty:
-            st.info("No active loans for this officer.")
+            st.info("No active or pending members for this officer.")
         else:
             groups = ["Ungrouped"] + sorted(co_loans[co_loans['Group Name'].notna()]['Group Name'].unique().tolist())
             selected_group = st.selectbox("Select Group", groups)
@@ -1717,7 +1717,7 @@ elif page == "Collections":
                 group_loans = co_loans[co_loans['Group Name'] == selected_group]
                 
             if group_loans.empty:
-                st.info("No active members in this group.")
+                st.info("No active or pending members in this group.")
             else:
                 st.markdown(f"### Members in {selected_group}")
                 
