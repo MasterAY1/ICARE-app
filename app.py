@@ -232,7 +232,7 @@ def authenticate_user(username, password):
     if not supabase:
         return None
     try:
-        res = supabase.table("app_users").select("*").eq("username", username).execute()
+        res = supabase.table("app_users").select("*").ilike("username", username).execute()
         if res.data and len(res.data) > 0:
             user = res.data[0]
             stored_hash = user.get("password", "")
@@ -988,7 +988,7 @@ if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
     auth_token = cookie_manager.get(cookie="icare_auth")
     if auth_token:
         try:
-            res = supabase.table("app_users").select("*").eq("username", auth_token).execute()
+            res = supabase.table("app_users").select("*").ilike("username", auth_token).execute()
             if res.data and len(res.data) > 0:
                 user = res.data[0]
                 st.session_state['logged_in'] = True
@@ -1033,7 +1033,9 @@ if not st.session_state['logged_in']:
             if submitted:
                 auth_result = authenticate_user(username, pw)
                 if auth_result:
-                    cookie_manager.set("icare_auth", username.lower(), expires_at=datetime.now() + timedelta(days=7))
+                    cookie_manager.set("icare_auth", auth_result['user_name'], expires_at=datetime.now() + timedelta(days=7))
+                    import time
+                    time.sleep(0.5) # Give the frontend time to save the cookie
                     st.session_state['logged_in'] = True
                     st.session_state['user'] = auth_result['user_name']
                     st.session_state['role'] = auth_result['user_role']
