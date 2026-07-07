@@ -2809,7 +2809,7 @@ elif page == "Portfolio":
             key="db_edit",
             column_config={
                 "Client ID": st.column_config.TextColumn("Client ID", disabled=True),
-                "Status": st.column_config.SelectboxColumn("Status", options=["Pending", "Approved", "Active", "Completed"]),
+                "Status": st.column_config.SelectboxColumn("Status", options=["Pending", "Approved", "Active", "Completed", "Closed"]),
                 "Meeting Day": st.column_config.SelectboxColumn("Meeting Day", options=["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]),
                 "Branch": st.column_config.TextColumn("Branch", disabled=(ROLE != "Admin")),
                 "Officer": st.column_config.SelectboxColumn("Officer", options=list(CO_NAME_MAP.keys()) if CO_NAME_MAP else ["CO1", "CO2"], disabled=(ROLE == "Officer")),
