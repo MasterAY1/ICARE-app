@@ -634,22 +634,16 @@ def load_loans():
         num_cols = ['Loan Amount', 'Active Credit', 'Loan Repay', 'Total Due']
         for c in num_cols:
             df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+            
+        # Deduplicate to always return the latest state of each client
+        if not df.empty and 'Date' in df.columns and 'Client ID' in df.columns:
+            df = df.sort_values('Date').groupby('Client ID').last().reset_index()
+            
         return df
     except Exception as e:
         st.error(f"Database Error: {e}")
         return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
-    try:
-        response = supabase.table("loans").select("*").execute()
-        if not response.data:
-            return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
-        df = pd.DataFrame(response.data).rename(columns=DB_TO_UI_LOANS)
-        num_cols = ['Loan Amount', 'Active Credit', 'Loan Repay', 'Total Due']
-        for c in num_cols:
-            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-        return df
-    except Exception as e:
-        st.error(f"Database Error: {e}")
-        return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
+
 
 def load_repayments():
     """Load repayments filtered by RBAC"""
@@ -1771,7 +1765,8 @@ elif page == "Collections":
         else:
             target_co = USER
             
-        co_loans = all_loans[(all_loans['Officer'] == target_co) & (all_loans['Status'].isin(['Active', 'Pending']))]
+        # Show all clients that are not strictly closed or completed, so newly assigned clients appear
+        co_loans = all_loans[(all_loans['Officer'] == target_co) & (~all_loans['Status'].isin(['Completed', 'Closed']))]
         
         if co_loans.empty:
             st.info("No active or pending members for this officer.")
