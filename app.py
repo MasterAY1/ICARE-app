@@ -175,7 +175,7 @@ import sys
 import os
 import holidays
 from pandas.tseries.offsets import CustomBusinessDay
-import extra_streamlit_components as stx
+# import extra_streamlit_components as stx  # Replaced with native JS cookies
 
 # 🚨 THE ABSOLUTE FIRST COMMAND 🚨
 st.set_page_config(
@@ -981,14 +981,46 @@ def get_ledger_report(client_payments, fixed_repay, loan_product, meeting_day, v
     return pd.DataFrame(report_data)
 
 # --- 4. AUTHENTICATION ---
-cookie_manager = stx.CookieManager(key="icare_cookies")
+# JS-based cookie helpers (replace flaky extra-streamlit-components)
+import streamlit.components.v1 as components
+
+def _set_auth_cookie(username):
+    """Set auth cookie via JS injection (expires in 7 days)."""
+    components.html(f"""
+    <script>
+    document.cookie = "icare_auth={username}; path=/; max-age={7*24*60*60}; SameSite=Lax";
+    </script>
+    """, height=0)
+
+def _delete_auth_cookie():
+    """Delete auth cookie via JS injection."""
+    components.html("""
+    <script>
+    document.cookie = "icare_auth=; path=/; max-age=0; SameSite=Lax";
+    </script>
+    """, height=0)
+
+def _read_auth_cookie():
+    """Read auth cookie from Streamlit's request headers."""
+    try:
+        headers = st.context.headers
+        cookie_header = headers.get("Cookie", "")
+        for part in cookie_header.split(";"):
+            part = part.strip()
+            if part.startswith("icare_auth="):
+                val = part[len("icare_auth="):]
+                if val and val.strip():
+                    return val.strip()
+    except Exception:
+        pass
+    return None
 
 # Try to restore session from cookie
 if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
     if st.session_state.get('logout_in_progress'):
         auth_token = None
     else:
-        auth_token = cookie_manager.get(cookie="icare_auth")
+        auth_token = _read_auth_cookie()
         
     if auth_token:
         try:
@@ -1038,7 +1070,7 @@ if not st.session_state['logged_in']:
                 st.session_state['logout_in_progress'] = False
                 auth_result = authenticate_user(username, pw)
                 if auth_result:
-                    cookie_manager.set("icare_auth", auth_result['user_name'], expires_at=datetime.now() + timedelta(days=7))
+                    _set_auth_cookie(auth_result['user_name'])
                     st.session_state['logged_in'] = True
                     st.session_state['user'] = auth_result['user_name']
                     st.session_state['role'] = auth_result['user_role']
@@ -1116,12 +1148,12 @@ with st.sidebar:
     st.divider()
     
     if st.button("Sign Out", use_container_width=True):
-        try:
-            cookie_manager.delete("icare_auth")
-        except KeyError:
-            pass
+        _delete_auth_cookie()
         st.session_state['logout_in_progress'] = True
         st.session_state['logged_in'] = False
+        for key in list(st.session_state.keys()):
+            if key not in ['logout_in_progress', 'logged_in']:
+                del st.session_state[key]
         st.rerun()
 
 # Welcome banner
