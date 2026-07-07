@@ -385,6 +385,33 @@ st.markdown("""
     .status-completed { background: #F3F4F6; color: #374151; }
     .status-closed { background: #FEE2E2; color: #991B1B; }
     
+    /* === PAGE-LEVEL RADIO NAV (Pill Tabs) === */
+    div[data-testid="stMainBlockContainer"] > div > div > div > div[data-testid="stHorizontalBlock"] .stRadio > div {
+        gap: 0.3rem !important;
+        flex-wrap: wrap;
+    }
+    div[data-testid="stMainBlockContainer"] .stRadio > div > label {
+        background: #F1F5F9 !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 8px !important;
+        padding: 8px 16px !important;
+        font-size: 0.82rem !important;
+        font-weight: 500 !important;
+        color: #475569 !important;
+        transition: all 0.2s ease !important;
+    }
+    div[data-testid="stMainBlockContainer"] .stRadio > div > label:hover {
+        background: #E0F2FE !important;
+        border-color: #2E86C1 !important;
+        color: #1B4F72 !important;
+    }
+    div[data-testid="stMainBlockContainer"] .stRadio > div > label[data-checked="true"],
+    div[data-testid="stMainBlockContainer"] .stRadio > div > label[aria-checked="true"] {
+        background: #2E86C1 !important;
+        color: white !important;
+        border-color: #2E86C1 !important;
+    }
+    
     /* === WELCOME BANNER === */
     .welcome-banner {
         background: linear-gradient(135deg, #1B4F72 0%, #2E86C1 50%, #3498DB 100%);
@@ -1227,9 +1254,9 @@ if page == "Dashboard":
 elif page == "Loan Origination":
     st.title("Origination & Registration")
     
-    tab_reg, tab_app, tab_pend = st.tabs(["👤 Client Registration", "📝 Loan Application", "⏳ Pending Disbursements"])
+    orig_section = st.radio("Navigate", ["👤 Client Registration", "📝 Loan Application", "⏳ Pending Disbursements"], horizontal=True, label_visibility="collapsed")
 
-    with tab_pend:
+    if orig_section == "⏳ Pending Disbursements":
         st.subheader("Pending Disbursements")
         all_loans = load_loans()
         my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
@@ -1340,7 +1367,7 @@ elif page == "Loan Origination":
             else:
                 st.info("🔒 Note: You are a Credit Officer. Only Branch Managers or Area Managers can authorize and activate disbursements.")
 
-    with tab_reg:
+    elif orig_section == "👤 Client Registration":
         st.subheader("👤 Client Registration")
         reg_type = st.radio("Registration Method", ["Single Client", "📦 Bulk Onboarding"], horizontal=True)
         
@@ -1558,7 +1585,7 @@ elif page == "Loan Origination":
                     st.error(f"Error reading file: {e}")
             st.markdown("</div>", unsafe_allow_html=True)
 
-    with tab_app:
+    elif orig_section == "📝 Loan Application":
         st.subheader("📝 Loan Application")
         all_loans_df = load_loans()
         if all_loans_df.empty:
@@ -2337,12 +2364,12 @@ elif page == "Master Cashbook":
     st.title("🏦 Branch Manager Master Cashbook")
     st.caption("INITIATIVE FOR COMMUNITY ADVANCEMENT, RELIEF AND EMPOWERMENT — Credit Cash Book Ledger")
     
-    tab_entry, tab_ledger = st.tabs(["📝 Daily Entry", "📊 Monthly Ledger"])
+    cashbook_section = st.radio("Navigate", ["📝 Daily Entry", "📊 Monthly Ledger"], horizontal=True, label_visibility="collapsed")
     
     all_loans = load_loans()
     all_repayments = load_repayments()
     
-    with tab_entry:
+    if cashbook_section == "📝 Daily Entry":
         view_date = st.date_input("Select Date", datetime.now().date(), key="mc_date")
         date_str = view_date.strftime("%Y-%m-%d")
         
@@ -2573,7 +2600,7 @@ elif page == "Master Cashbook":
                 except Exception as e:
                     st.error(f"Failed to save: {e}")
     
-    with tab_ledger:
+    elif cashbook_section == "📊 Monthly Ledger":
         st.markdown("### 📅 Monthly Ledger View")
         
         ctl1, ctl2 = st.columns(2)
