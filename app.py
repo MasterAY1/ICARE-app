@@ -1765,8 +1765,8 @@ elif page == "Collections":
         else:
             target_co = USER
             
-        # Show all clients that are not strictly closed or completed, so newly assigned clients appear
-        co_loans = all_loans[(all_loans['Officer'] == target_co) & (~all_loans['Status'].isin(['Completed', 'Closed']))]
+        # Show all clients that are not strictly closed, so completed clients can still deposit savings
+        co_loans = all_loans[(all_loans['Officer'] == target_co) & (all_loans['Status'] != 'Closed')]
         
         if co_loans.empty:
             st.info("No active or pending members for this officer.")
