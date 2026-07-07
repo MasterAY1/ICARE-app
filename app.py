@@ -1676,10 +1676,11 @@ elif page == "Loan Origination":
                             st.markdown(f"- Gap Fee (Base Savings): ₦{base_savings_req:,.0f}")
                             st.markdown(f"**Total Required:** ₦{total_upfront_required:,.0f}")
                             
-                            if savings < total_upfront_required:
-                                st.error(f"❌ **INSUFFICIENT SAVINGS:** Client has ₦{savings:,.0f} but needs ₦{total_upfront_required:,.0f}. Please collect additional savings via the Cashbook first.")
-                            else:
-                                st.success(f"✅ **SUFFICIENT SAVINGS:** Client has enough to cover the upfront fees.")
+                            if total_upfront_required > 0:
+                                if savings < total_upfront_required:
+                                    st.error(f"❌ **INSUFFICIENT SAVINGS:** Client has ₦{savings:,.0f} but needs ₦{total_upfront_required:,.0f}. Please collect additional savings via the Cashbook first.")
+                                else:
+                                    st.success(f"✅ **SUFFICIENT SAVINGS:** Client has enough to cover the upfront fees.")
                             
                         submitted_app = st.button("Submit Application for BM Approval", use_container_width=True)
                         if submitted_app:
