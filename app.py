@@ -2201,9 +2201,11 @@ elif page == "Audit Ledger":
             # Role-based filter
             filtered = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
             
-            # Date filter
-            filtered['_date'] = pd.to_datetime(filtered['Date'], errors='coerce')
-            filtered = filtered[(filtered['_date'] >= pd.Timestamp(audit_date_from)) & (filtered['_date'] <= pd.Timestamp(audit_date_to))]
+            # Date filter (string-based to avoid tz mismatch)
+            filtered['_dstr'] = pd.to_datetime(filtered['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
+            _from = audit_date_from.strftime('%Y-%m-%d')
+            _to = audit_date_to.strftime('%Y-%m-%d')
+            filtered = filtered[filtered['_dstr'].notna() & (filtered['_dstr'] >= _from) & (filtered['_dstr'] <= _to)]
             
             # Search filter
             if search_term:
@@ -2213,7 +2215,7 @@ elif page == "Audit Ledger":
                 )
                 filtered = filtered[mask]
             
-            filtered = filtered.drop(columns=['_date'], errors='ignore')
+            filtered = filtered.drop(columns=['_dstr'], errors='ignore')
             
             display_cols = [c for c in ['Date', 'Client ID', 'Client Name', 'Officer', 'Branch', 'Loan Product', 'Loan Amount', 'Active Credit', 'Loan Repay', 'Status'] if c in filtered.columns]
             
@@ -2233,9 +2235,11 @@ elif page == "Audit Ledger":
             else:
                 filtered = all_reps
             
-            # Date filter
-            filtered['_date'] = pd.to_datetime(filtered['Date'], errors='coerce')
-            filtered = filtered[(filtered['_date'] >= pd.Timestamp(audit_date_from)) & (filtered['_date'] <= pd.Timestamp(audit_date_to))]
+            # Date filter (string-based to avoid tz mismatch)
+            filtered['_dstr'] = pd.to_datetime(filtered['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
+            _from = audit_date_from.strftime('%Y-%m-%d')
+            _to = audit_date_to.strftime('%Y-%m-%d')
+            filtered = filtered[filtered['_dstr'].notna() & (filtered['_dstr'] >= _from) & (filtered['_dstr'] <= _to)]
             
             # Search filter
             if search_term:
@@ -2245,7 +2249,7 @@ elif page == "Audit Ledger":
                 )
                 filtered = filtered[mask]
             
-            filtered = filtered.drop(columns=['_date'], errors='ignore')
+            filtered = filtered.drop(columns=['_dstr'], errors='ignore')
             
             display_cols = [c for c in ['Date', 'Client ID', 'Client Name', 'Officer', 'Amount Paid', 'Savings Amount', 'Loan Repayment Amount', 'Withdrawal Amount', 'Transaction Type', 'Note'] if c in filtered.columns]
             
