@@ -2036,14 +2036,13 @@ elif page == "Collections":
                                 }
                                 to_insert.append(eod_data)
                             
-                    if to_insert:
-                        st.session_state['pending_collections'] = to_insert
-                        st.session_state['collections_group'] = selected_group
-                        st.session_state['collections_date'] = date_str
-                        st.rerun()
-                    else:
-                            st.info("No collections entered to save.")
-                            st.info("No collections entered to save.")
+                            if to_insert:
+                                st.session_state['pending_collections'] = to_insert
+                                st.session_state['collections_group'] = selected_group
+                                st.session_state['collections_date'] = date_str
+                                st.rerun()
+                            else:
+                                st.info("No collections entered to save.")
 
 
 elif page == "Daily Report":
@@ -2182,6 +2181,77 @@ elif page == "Daily Report":
             st.dataframe(pd.DataFrame(detailed_data), use_container_width=True)
     else:
         st.info("No records found in database.")
+
+elif page == "Audit Ledger":
+    st.title("📒 Audit Ledger")
+    st.caption("Complete transaction history — Loans & Repayments")
+    
+    audit_section = st.radio("View", ["📋 Loans Ledger", "💰 Repayments Ledger"], horizontal=True, label_visibility="collapsed")
+    
+    al1, al2 = st.columns(2)
+    audit_date_from = al1.date_input("From Date", datetime.now().date() - timedelta(days=30), key="audit_from")
+    audit_date_to = al2.date_input("To Date", datetime.now().date(), key="audit_to")
+    search_term = st.text_input("🔍 Search by Client Name or ID", placeholder="Type to filter...", key="audit_search")
+    
+    if audit_section == "📋 Loans Ledger":
+        all_loans = load_loans()
+        if all_loans.empty:
+            st.info("No loan records found.")
+        else:
+            # Role-based filter
+            filtered = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
+            
+            # Date filter
+            filtered['_date'] = pd.to_datetime(filtered['Date'], errors='coerce')
+            filtered = filtered[(filtered['_date'] >= pd.Timestamp(audit_date_from)) & (filtered['_date'] <= pd.Timestamp(audit_date_to))]
+            
+            # Search filter
+            if search_term:
+                mask = (
+                    filtered['Client Name'].str.contains(search_term, case=False, na=False) |
+                    filtered['Client ID'].str.contains(search_term, case=False, na=False)
+                )
+                filtered = filtered[mask]
+            
+            filtered = filtered.drop(columns=['_date'], errors='ignore')
+            
+            display_cols = [c for c in ['Date', 'Client ID', 'Client Name', 'Officer', 'Branch', 'Loan Product', 'Loan Amount', 'Active Credit', 'Loan Repay', 'Status'] if c in filtered.columns]
+            
+            st.markdown(f"**{len(filtered)} records found**")
+            st.dataframe(filtered[display_cols].sort_values('Date', ascending=False), use_container_width=True, hide_index=True)
+    
+    elif audit_section == "💰 Repayments Ledger":
+        all_reps = load_repayments()
+        if all_reps.empty:
+            st.info("No repayment records found.")
+        else:
+            # Role-based filter
+            if ROLE in ['CO', 'Officer']:
+                filtered = all_reps[all_reps['Officer'] == USER]
+            elif ROLE == 'BM':
+                filtered = all_reps[all_reps['Branch'] == BRANCH]
+            else:
+                filtered = all_reps
+            
+            # Date filter
+            filtered['_date'] = pd.to_datetime(filtered['Date'], errors='coerce')
+            filtered = filtered[(filtered['_date'] >= pd.Timestamp(audit_date_from)) & (filtered['_date'] <= pd.Timestamp(audit_date_to))]
+            
+            # Search filter
+            if search_term:
+                mask = (
+                    filtered['Client Name'].str.contains(search_term, case=False, na=False) |
+                    filtered['Client ID'].str.contains(search_term, case=False, na=False)
+                )
+                filtered = filtered[mask]
+            
+            filtered = filtered.drop(columns=['_date'], errors='ignore')
+            
+            display_cols = [c for c in ['Date', 'Client ID', 'Client Name', 'Officer', 'Amount Paid', 'Savings Amount', 'Loan Repayment Amount', 'Withdrawal Amount', 'Transaction Type', 'Note'] if c in filtered.columns]
+            
+            st.markdown(f"**{len(filtered)} records found**")
+            st.dataframe(filtered[display_cols].sort_values('Date', ascending=False), use_container_width=True, hide_index=True)
+
 elif page == "WhatsApp Cashbook":
     st.title("📖 CO Daily Cashbook")
     st.caption("Daily Ledger — Auto-Calculated from Collections")
