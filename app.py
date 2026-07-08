@@ -2123,10 +2123,11 @@ elif page == "Collections":
         else:
             target_co = USER
             
-        # Top-level tabs for Collections page
-        col_tab, eod_tab = st.tabs(["👥 Member Collections", "📤 End of Day / Global Outflows"])
+        # Top-level sub-navigation for Collections page
+        collection_view = st.radio("Select View", ["👥 Member Collections", "📤 End of Day / Global Outflows"], horizontal=True, label_visibility="collapsed")
+        st.markdown("---")
         
-        with col_tab:
+        if collection_view == "👥 Member Collections":
             # Show all clients that are not strictly closed, so completed clients can still deposit savings
             co_loans = all_loans[(all_loans['Officer'] == target_co) & (all_loans['Status'] != 'Closed')]
             
@@ -2358,7 +2359,7 @@ elif page == "Collections":
                                 else:
                                     st.warning("No data entered to save.")
                                     
-        with eod_tab:
+        elif collection_view == "📤 End of Day / Global Outflows":
             st.markdown("### 📤 End of Day / Global Outflows")
             st.caption("Log your daily branch expenses, bank deposits, and withdrawals here.")
             
