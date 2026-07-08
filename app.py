@@ -690,28 +690,33 @@ st.markdown("""
         border: none !important;
         padding: 0 !important;
     }
-    [data-testid="stForm"] label {
+    [data-testid="stForm"] label, [data-testid="stForm"] p {
         color: rgba(255,255,255,0.7) !important;
         font-weight: 500 !important;
         font-size: 0.8rem !important;
         letter-spacing: 0.3px;
     }
-    [data-testid="stForm"] input {
+    [data-testid="stForm"] div[data-baseweb="input"] {
         background: rgba(255,255,255,0.08) !important;
         border: 1px solid rgba(255,255,255,0.12) !important;
         border-radius: 12px !important;
-        color: #FFFFFF !important;
-        padding: 12px 16px !important;
-        font-size: 0.9rem !important;
         transition: all 0.3s ease !important;
     }
-    [data-testid="stForm"] input:focus {
+    [data-testid="stForm"] div[data-baseweb="input"]:focus-within {
         border-color: rgba(140,198,63,0.5) !important;
         box-shadow: 0 0 0 3px rgba(140,198,63,0.1) !important;
         background: rgba(255,255,255,0.12) !important;
     }
+    [data-testid="stForm"] input {
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
+        background: transparent !important;
+        padding: 12px 16px !important;
+        font-size: 0.9rem !important;
+    }
     [data-testid="stForm"] input::placeholder {
         color: rgba(255,255,255,0.3) !important;
+        -webkit-text-fill-color: rgba(255,255,255,0.3) !important;
     }
     [data-testid="stForm"] button[kind="formSubmit"] {
         background: linear-gradient(135deg, #8CC63F 0%, #6BA825 100%) !important;
