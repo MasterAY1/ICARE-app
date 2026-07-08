@@ -2510,9 +2510,20 @@ elif page == "Daily Report":
             actual_collections = total_loan_rep + total_overdue + total_recoveries + total_init_pay
             
             total_cash_in = pd.to_numeric(daily_reps['Amount Paid'], errors='coerce').fillna(0).sum()
+            total_bank_wd = pd.to_numeric(daily_reps['Bank Withdrawal'], errors='coerce').fillna(0).sum()
+            
+            total_cash_out_wd = pd.to_numeric(daily_reps['Withdrawal Amount'], errors='coerce').fillna(0).sum()
+            total_expenses = pd.to_numeric(daily_reps['Expenses'], errors='coerce').fillna(0).sum()
+            total_bank_dep = pd.to_numeric(daily_reps['Bank Deposited'], errors='coerce').fillna(0).sum()
+            total_prod_wd = pd.to_numeric(daily_reps['Product Withdrawal'], errors='coerce').fillna(0).sum()
+            total_laps_tx = pd.to_numeric(daily_reps['Laps Transferred'], errors='coerce').fillna(0).sum()
+            
+            cashbook_inflow = total_cash_in + total_bank_wd
+            cashbook_outflow = total_cash_out_wd + total_expenses + total_bank_dep + total_prod_wd + total_laps_tx
+            net_closing_balance = cashbook_inflow - cashbook_outflow
             
             st.markdown("---")
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns(3)
             with c1:
                 st.markdown("<div class='card'>", unsafe_allow_html=True)
                 st.subheader("🐷 Savings Summary")
@@ -2525,13 +2536,19 @@ elif page == "Daily Report":
             with c2:
                 st.markdown("<div class='card'>", unsafe_allow_html=True)
                 st.subheader("🏦 Credit Summary")
-                # To calculate prev balance, we need all past active credit - all past actual collections. 
-                # This is complex, so let's just show the math for today.
                 st.write(f"**New Active Loans Today:** ₦{new_active_loans:,.0f}")
                 st.write(f"**Actual Loan Collections:** ₦{actual_collections:,.0f} (Instalments, Overdue, Init, Rec)")
-                # Assume full repayments are 0 for now unless we calculate it globally
                 st.markdown("---")
                 st.markdown(f"#### Net Credit Flow Today: ₦{(new_active_loans - actual_collections):,.0f}")
+                st.markdown("</div>", unsafe_allow_html=True)
+                
+            with c3:
+                st.markdown("<div class='card' style='background-color: #f0fdf4; border: 1px solid #bbf7d0;'>", unsafe_allow_html=True)
+                st.subheader("💵 Cashbook (Teller)")
+                st.write(f"**Total Inflow (Cash In):** ₦{cashbook_inflow:,.0f}")
+                st.write(f"**Total Outflow (Cash Out):** ₦{cashbook_outflow:,.0f}")
+                st.markdown("---")
+                st.markdown(f"<h4 style='color: #166534;'>Closing Cash Balance: ₦{net_closing_balance:,.0f}</h4>", unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
             
             st.markdown("### 📝 Detailed Client Breakdown")
