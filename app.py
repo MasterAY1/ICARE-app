@@ -425,109 +425,223 @@ st.markdown("""
     .welcome-banner p { color: rgba(255,255,255,0.8); margin: 6px 0 0 0; font-size: 0.9rem; }
     .welcome-banner .wb-gold { color: #8CC63F; font-weight: 600; }
     
-    /* === LOGIN PAGE — PREMIUM FINTECH === */
+    /* === LOGIN PAGE — PREMIUM FINTECH v2.0 === */
     .login-page-bg {
         position: fixed;
         top: 0; left: 0; right: 0; bottom: 0;
-        background: linear-gradient(135deg, #0C2D48 0%, #1B4F72 30%, #2E86C1 70%, #3498DB 100%);
+        background: linear-gradient(140deg, #0A1628 0%, #0F2744 25%, #163B5C 50%, #1B4F72 75%, #0F2744 100%);
         z-index: -2;
+        overflow: hidden;
     }
     .login-page-bg::before {
         content: '';
         position: fixed;
-        top: -50%; left: -50%; right: -50%; bottom: -50%;
-        background: radial-gradient(circle at 30% 20%, rgba(140,198,63,0.08) 0%, transparent 50%),
-                    radial-gradient(circle at 70% 80%, rgba(46,134,193,0.12) 0%, transparent 50%);
+        width: 600px; height: 600px;
+        top: -15%; left: -10%;
+        background: radial-gradient(circle, rgba(140,198,63,0.12) 0%, transparent 70%);
+        border-radius: 50%;
         z-index: -1;
-        animation: loginGlow 8s ease-in-out infinite alternate;
+        animation: loginOrb1 12s ease-in-out infinite alternate;
     }
-    @keyframes loginGlow {
-        0% { opacity: 0.6; transform: scale(1); }
-        100% { opacity: 1; transform: scale(1.1); }
+    .login-page-bg::after {
+        content: '';
+        position: fixed;
+        width: 500px; height: 500px;
+        bottom: -10%; right: -5%;
+        background: radial-gradient(circle, rgba(46,134,193,0.15) 0%, transparent 70%);
+        border-radius: 50%;
+        z-index: -1;
+        animation: loginOrb2 10s ease-in-out infinite alternate;
+    }
+    @keyframes loginOrb1 {
+        0% { transform: translate(0, 0) scale(1); opacity: 0.5; }
+        50% { transform: translate(60px, 40px) scale(1.15); opacity: 0.8; }
+        100% { transform: translate(-30px, 60px) scale(1.05); opacity: 0.6; }
+    }
+    @keyframes loginOrb2 {
+        0% { transform: translate(0, 0) scale(1); opacity: 0.4; }
+        50% { transform: translate(-50px, -30px) scale(1.2); opacity: 0.7; }
+        100% { transform: translate(40px, -50px) scale(1.1); opacity: 0.5; }
+    }
+    
+    /* Floating particle dots */
+    .login-particles {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        z-index: -1;
+        overflow: hidden;
+        pointer-events: none;
+    }
+    .login-particles span {
+        position: absolute;
+        width: 3px; height: 3px;
+        background: rgba(140,198,63,0.3);
+        border-radius: 50%;
+        animation: loginFloat 20s linear infinite;
+    }
+    .login-particles span:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 18s; }
+    .login-particles span:nth-child(2) { left: 25%; animation-delay: 2s; animation-duration: 22s; width: 2px; height: 2px; }
+    .login-particles span:nth-child(3) { left: 45%; animation-delay: 4s; animation-duration: 16s; background: rgba(46,134,193,0.25); }
+    .login-particles span:nth-child(4) { left: 65%; animation-delay: 1s; animation-duration: 24s; width: 4px; height: 4px; background: rgba(140,198,63,0.2); }
+    .login-particles span:nth-child(5) { left: 80%; animation-delay: 3s; animation-duration: 20s; background: rgba(46,134,193,0.2); }
+    .login-particles span:nth-child(6) { left: 55%; animation-delay: 5s; animation-duration: 26s; width: 2px; height: 2px; }
+    @keyframes loginFloat {
+        0% { bottom: -10px; opacity: 0; }
+        10% { opacity: 1; }
+        90% { opacity: 1; }
+        100% { bottom: 110%; opacity: 0; }
     }
     
     .login-glass-card {
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border-radius: 20px;
-        padding: 44px 38px 36px;
-        border: 1px solid rgba(255,255,255,0.3);
-        box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
-        max-width: 420px;
+        background: rgba(255, 255, 255, 0.06);
+        backdrop-filter: blur(24px) saturate(140%);
+        -webkit-backdrop-filter: blur(24px) saturate(140%);
+        border-radius: 24px;
+        padding: 48px 40px 40px;
+        border: 1px solid rgba(255,255,255,0.1);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3), 
+                    0 0 0 1px rgba(255,255,255,0.05),
+                    inset 0 1px 0 rgba(255,255,255,0.1);
+        max-width: 440px;
         margin: 0 auto;
+        animation: loginCardIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    @keyframes loginCardIn {
+        0% { opacity: 0; transform: translateY(30px) scale(0.97); }
+        100% { opacity: 1; transform: translateY(0) scale(1); }
     }
     .login-glass-card .login-logo-wrap {
         text-align: center;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
     }
     .login-glass-card .login-logo-wrap img {
-        width: 76px;
-        height: auto;
+        width: 80px;
+        height: 80px;
+        object-fit: cover;
         border-radius: 50%;
-        box-shadow: 0 4px 16px rgba(46,134,193,0.18);
-        border: 3px solid rgba(255,255,255,0.9);
+        box-shadow: 0 0 0 3px rgba(140,198,63,0.3), 0 4px 20px rgba(0,0,0,0.3);
+        border: 3px solid rgba(255,255,255,0.15);
+        animation: loginLogoPulse 3s ease-in-out infinite;
+    }
+    @keyframes loginLogoPulse {
+        0%, 100% { box-shadow: 0 0 0 3px rgba(140,198,63,0.3), 0 4px 20px rgba(0,0,0,0.3); }
+        50% { box-shadow: 0 0 0 6px rgba(140,198,63,0.15), 0 4px 30px rgba(140,198,63,0.15); }
     }
     .login-glass-card .login-brand-name {
-        font-size: 1.8rem;
+        font-size: 2rem;
         font-weight: 800;
-        color: #1B4F72;
-        letter-spacing: 5px;
-        padding-left: 5px;
-        margin: 10px 0 0 0;
+        color: #FFFFFF;
+        letter-spacing: 8px;
+        padding-left: 8px;
+        margin: 12px 0 0 0;
         text-align: center;
+        text-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
     .login-glass-card .login-org-name {
-        font-size: 0.75rem;
-        color: #64748B;
+        font-size: 0.72rem;
+        color: rgba(255,255,255,0.5);
         text-align: center;
-        line-height: 1.6;
+        line-height: 1.7;
         margin: 4px 0 0 0;
+        letter-spacing: 0.5px;
     }
     .login-glass-card .login-accent-line {
-        width: 44px;
+        width: 50px;
         height: 3px;
         background: linear-gradient(90deg, #8CC63F, #2E86C1);
-        margin: 18px auto;
+        margin: 22px auto;
         border-radius: 4px;
+        box-shadow: 0 0 12px rgba(140,198,63,0.3);
     }
     .login-glass-card .login-title {
-        font-size: 1.05rem;
+        font-size: 1.15rem;
         font-weight: 700;
-        color: #1B4F72;
+        color: #FFFFFF;
         text-align: center;
         margin: 0 0 2px 0;
     }
     .login-glass-card .login-subtitle {
-        font-size: 0.8rem;
-        color: #94A3B8;
+        font-size: 0.78rem;
+        color: rgba(255,255,255,0.45);
         text-align: center;
-        margin: 0 0 20px 0;
+        margin: 0 0 24px 0;
     }
+    
+    /* Style Streamlit form inputs on login page */
+    [data-testid="stForm"] {
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+    }
+    [data-testid="stForm"] label {
+        color: rgba(255,255,255,0.7) !important;
+        font-weight: 500 !important;
+        font-size: 0.8rem !important;
+        letter-spacing: 0.3px;
+    }
+    [data-testid="stForm"] input {
+        background: rgba(255,255,255,0.08) !important;
+        border: 1px solid rgba(255,255,255,0.12) !important;
+        border-radius: 12px !important;
+        color: #FFFFFF !important;
+        padding: 12px 16px !important;
+        font-size: 0.9rem !important;
+        transition: all 0.3s ease !important;
+    }
+    [data-testid="stForm"] input:focus {
+        border-color: rgba(140,198,63,0.5) !important;
+        box-shadow: 0 0 0 3px rgba(140,198,63,0.1) !important;
+        background: rgba(255,255,255,0.12) !important;
+    }
+    [data-testid="stForm"] input::placeholder {
+        color: rgba(255,255,255,0.3) !important;
+    }
+    [data-testid="stForm"] button[kind="formSubmit"] {
+        background: linear-gradient(135deg, #8CC63F 0%, #6BA825 100%) !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        border-radius: 12px !important;
+        padding: 14px !important;
+        font-weight: 700 !important;
+        font-size: 0.9rem !important;
+        letter-spacing: 1.5px !important;
+        margin-top: 8px !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 4px 16px rgba(140,198,63,0.3) !important;
+    }
+    [data-testid="stForm"] button[kind="formSubmit"]:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 24px rgba(140,198,63,0.4) !important;
+        background: linear-gradient(135deg, #9AD44D 0%, #7CBB30 100%) !important;
+    }
+    [data-testid="stForm"] button[kind="formSubmit"]:active {
+        transform: translateY(0) !important;
+    }
+    
     .login-footer-bar {
         text-align: center;
-        margin-top: 20px;
-        padding-top: 16px;
-        border-top: 1px solid #E2E8F0;
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid rgba(255,255,255,0.08);
     }
     .login-footer-bar p {
-        color: #94A3B8;
+        color: rgba(255,255,255,0.3);
         font-size: 0.68rem;
         margin: 0;
-        letter-spacing: 0.3px;
+        letter-spacing: 0.5px;
     }
     .login-footer-bar .secured-badge {
         display: inline-flex;
         align-items: center;
         gap: 5px;
-        background: #F0FDF4;
-        color: #16A34A;
+        background: rgba(140,198,63,0.1);
+        color: #8CC63F;
         font-size: 0.65rem;
         font-weight: 600;
-        padding: 4px 10px;
+        padding: 5px 12px;
         border-radius: 20px;
-        margin-top: 8px;
-        border: 1px solid #BBF7D0;
+        margin-top: 10px;
+        border: 1px solid rgba(140,198,63,0.2);
     }
     .login-footer-bar .secured-badge svg {
         width: 12px; height: 12px;
@@ -1002,46 +1116,28 @@ def get_ledger_report(client_payments, fixed_repay, loan_product, meeting_day, v
     return pd.DataFrame(report_data)
 
 # --- 4. AUTHENTICATION ---
-# JS-based cookie helpers (replace flaky extra-streamlit-components)
-import streamlit.components.v1 as components
+# Session persistence via query_params (replaces flaky JS iframe cookies)
+# st.query_params survives page refreshes on Streamlit Cloud natively.
 
-def _set_auth_cookie(username):
-    """Set auth cookie via JS injection (expires in 7 days)."""
-    components.html(f"""
-    <script>
-    document.cookie = "icare_auth={username}; path=/; max-age={7*24*60*60}; SameSite=Lax";
-    </script>
-    """, height=0)
+def _set_auth_token(username):
+    """Persist auth token in URL query params (survives refresh)."""
+    st.query_params["auth"] = username
 
-def _delete_auth_cookie():
-    """Delete auth cookie via JS injection."""
-    components.html("""
-    <script>
-    document.cookie = "icare_auth=; path=/; max-age=0; SameSite=Lax";
-    </script>
-    """, height=0)
+def _delete_auth_token():
+    """Clear auth token from query params."""
+    if "auth" in st.query_params:
+        del st.query_params["auth"]
 
-def _read_auth_cookie():
-    """Read auth cookie from Streamlit's request headers."""
-    try:
-        headers = st.context.headers
-        cookie_header = headers.get("Cookie", "")
-        for part in cookie_header.split(";"):
-            part = part.strip()
-            if part.startswith("icare_auth="):
-                val = part[len("icare_auth="):]
-                if val and val.strip():
-                    return val.strip()
-    except Exception:
-        pass
-    return None
+def _read_auth_token():
+    """Read auth token from query params."""
+    return st.query_params.get("auth", None)
 
-# Try to restore session from cookie
+# Try to restore session from persisted token
 if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
     if st.session_state.get('logout_in_progress'):
         auth_token = None
     else:
-        auth_token = _read_auth_cookie()
+        auth_token = _read_auth_token()
         
     if auth_token:
         try:
@@ -1054,61 +1150,69 @@ if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
                 st.session_state['branch'] = user['branch_name']
             else:
                 st.session_state['logged_in'] = False
+                _delete_auth_token()
         except:
             st.session_state['logged_in'] = False
     else:
         st.session_state['logged_in'] = False
 
 if not st.session_state['logged_in']:
-    # Inject gradient background over Streamlit's default
-    st.markdown('<div class="login-page-bg"></div>', unsafe_allow_html=True)
-    st.markdown('<style>.stApp { background: transparent !important; }</style>', unsafe_allow_html=True)
+    # Inject gradient background + particles over Streamlit's default
+    st.markdown("""
+        <div class="login-page-bg"></div>
+        <div class="login-particles">
+            <span></span><span></span><span></span>
+            <span></span><span></span><span></span>
+        </div>
+    """, unsafe_allow_html=True)
+    st.markdown("""<style>
+        .stApp { background: transparent !important; }
+        [data-testid="stSidebar"] { display: none !important; }
+        header[data-testid="stHeader"] { display: none !important; }
+        .stMainBlockContainer { max-width: 520px !important; margin: 0 auto !important; padding-top: 4vh !important; }
+    </style>""", unsafe_allow_html=True)
     
-    st.markdown('<br>', unsafe_allow_html=True)
-    _, center_col, _ = st.columns([1, 1.4, 1])
+    st.markdown(f"""
+        <div class='login-glass-card'>
+            <div class='login-logo-wrap'>
+                <img src="data:image/jpeg;base64,{LOGO_B64}">
+            </div>
+            <p class='login-brand-name'>ICARE</p>
+            <p class='login-org-name'>Initiative for Community Advancement,<br>Relief and Empowerment</p>
+            <div class='login-accent-line'></div>
+            <p class='login-title'>Welcome Back</p>
+            <p class='login-subtitle'>Sign in to your banking portal</p>
+        </div>
+    """, unsafe_allow_html=True)
     
-    with center_col:
-        st.markdown(f"""
-            <div class='login-glass-card'>
-                <div class='login-logo-wrap'>
-                    <img src="data:image/jpeg;base64,{LOGO_B64}">
-                </div>
-                <p class='login-brand-name'>ICARE</p>
-                <p class='login-org-name'>Initiative for Community Advancement,<br>Relief and Empowerment</p>
-                <div class='login-accent-line'></div>
-                <p class='login-title'>Welcome Back</p>
-                <p class='login-subtitle'>Sign in to your banking portal</p>
-            </div>
-        """, unsafe_allow_html=True)
+    with st.form("login"):
+        username = st.text_input("Username", placeholder="Enter your username")
+        pw = st.text_input("Password", type="password", placeholder="Enter your password")
         
-        with st.form("login"):
-            username = st.text_input("Username", placeholder="Enter your username")
-            pw = st.text_input("Password", type="password", placeholder="Enter your password")
-            
-            submitted = st.form_submit_button("SIGN IN", use_container_width=True)
-            
-            if submitted:
-                st.session_state['logout_in_progress'] = False
-                auth_result = authenticate_user(username, pw)
-                if auth_result:
-                    _set_auth_cookie(auth_result['user_name'])
-                    st.session_state['logged_in'] = True
-                    st.session_state['user'] = auth_result['user_name']
-                    st.session_state['role'] = auth_result['user_role']
-                    st.session_state['branch'] = auth_result['branch_name']
-                    st.rerun()
-                else:
-                    st.error("Invalid credentials. Please try again.")
+        submitted = st.form_submit_button("SIGN IN", use_container_width=True)
         
-        st.markdown(f"""
-            <div class='login-footer-bar'>
-                <p>Core Banking System v{APP_VERSION}</p>
-                <span class='secured-badge'>
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 16l-4-4 1.41-1.41L11 14.17l6.59-6.59L19 9l-8 8z"/></svg>
-                    256-bit Secured Connection
-                </span>
-            </div>
-        """, unsafe_allow_html=True)
+        if submitted:
+            st.session_state['logout_in_progress'] = False
+            auth_result = authenticate_user(username, pw)
+            if auth_result:
+                _set_auth_token(auth_result['user_name'])
+                st.session_state['logged_in'] = True
+                st.session_state['user'] = auth_result['user_name']
+                st.session_state['role'] = auth_result['user_role']
+                st.session_state['branch'] = auth_result['branch_name']
+                st.rerun()
+            else:
+                st.error("Invalid credentials. Please try again.")
+    
+    st.markdown(f"""
+        <div class='login-footer-bar'>
+            <p>Core Banking System v{APP_VERSION}</p>
+            <span class='secured-badge'>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 16l-4-4 1.41-1.41L11 14.17l6.59-6.59L19 9l-8 8z"/></svg>
+                256-bit Secured Connection
+            </span>
+        </div>
+    """, unsafe_allow_html=True)
     st.stop()
 
 # --- 5. SIDEBAR ---
@@ -1169,7 +1273,7 @@ with st.sidebar:
     st.divider()
     
     if st.button("Sign Out", use_container_width=True):
-        _delete_auth_cookie()
+        _delete_auth_token()
         st.session_state['logout_in_progress'] = True
         st.session_state['logged_in'] = False
         for key in list(st.session_state.keys()):
