@@ -684,42 +684,64 @@ st.markdown("""
     }
     
     /* Style Streamlit form inputs on login page */
-    [data-testid="stForm"] label {
+    /* 1. Force all text inside text inputs to be transparent by default to hide "Press Enter..." */
+    [data-testid="stForm"] [data-testid="stTextInput"] * {
+        color: transparent !important;
+        -webkit-text-fill-color: transparent !important;
+    }
+    
+    /* 2. Restore label text color */
+    [data-testid="stForm"] [data-testid="stTextInput"] label,
+    [data-testid="stForm"] [data-testid="stTextInput"] label p {
         color: rgba(255,255,255,0.7) !important;
+        -webkit-text-fill-color: rgba(255,255,255,0.7) !important;
         font-weight: 500 !important;
         font-size: 0.8rem !important;
         letter-spacing: 0.3px;
     }
-    /* Make backgrounds transparent all the way down */
-    [data-testid="stForm"] div[data-baseweb="input"],
-    [data-testid="stForm"] div[data-baseweb="base-input"] {
+    
+    /* 3. Strip all nested backgrounds from Streamlit's input DOM */
+    [data-testid="stForm"] [data-testid="stTextInput"] div,
+    [data-testid="stForm"] [data-testid="stTextInput"] div[data-baseweb="input"],
+    [data-testid="stForm"] [data-testid="stTextInput"] div[data-baseweb="base-input"] {
         background-color: transparent !important;
         background: transparent !important;
         border: none !important;
     }
-    /* Add our custom border & background ONLY to the outermost input container */
-    [data-testid="stForm"] div[data-baseweb="input"] {
+    
+    /* 4. Apply our glassmorphism style ONLY to the specific baseweb input wrapper */
+    [data-testid="stForm"] [data-testid="stTextInput"] div[data-baseweb="input"] {
         background-color: rgba(255,255,255,0.08) !important;
         border: 1px solid rgba(255,255,255,0.12) !important;
         border-radius: 12px !important;
         transition: all 0.3s ease !important;
     }
-    [data-testid="stForm"] div[data-baseweb="input"]:focus-within {
+    [data-testid="stForm"] [data-testid="stTextInput"] div[data-baseweb="input"]:focus-within {
         border-color: rgba(140,198,63,0.5) !important;
         box-shadow: 0 0 0 3px rgba(140,198,63,0.1) !important;
         background-color: rgba(255,255,255,0.12) !important;
     }
-    [data-testid="stForm"] input {
+    
+    /* 5. Restore actual input text color and styling */
+    [data-testid="stForm"] [data-testid="stTextInput"] input {
         color: #FFFFFF !important;
         -webkit-text-fill-color: #FFFFFF !important;
         background-color: transparent !important;
         padding: 12px 16px !important;
         font-size: 0.9rem !important;
     }
-    [data-testid="stForm"] input::placeholder {
+    [data-testid="stForm"] [data-testid="stTextInput"] input::placeholder {
         color: rgba(255,255,255,0.3) !important;
         -webkit-text-fill-color: rgba(255,255,255,0.3) !important;
     }
+    
+    /* 6. Restore password eye icon */
+    [data-testid="stForm"] [data-testid="stTextInput"] svg,
+    [data-testid="stForm"] [data-testid="stTextInput"] path {
+        fill: rgba(255,255,255,0.6) !important;
+        color: rgba(255,255,255,0.6) !important;
+    }
+
     /* Fix button */
     [data-testid="stForm"] [data-testid="stFormSubmitButton"] button {
         background: linear-gradient(135deg, #8CC63F 0%, #6BA825 100%) !important;
@@ -737,6 +759,7 @@ st.markdown("""
     }
     [data-testid="stForm"] [data-testid="stFormSubmitButton"] button p {
         color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
         font-weight: 700 !important;
         font-size: 0.9rem !important;
     }
@@ -747,10 +770,6 @@ st.markdown("""
     }
     [data-testid="stForm"] [data-testid="stFormSubmitButton"] button:active {
         transform: translateY(0) !important;
-    }
-    /* Hide the "Press Enter to submit" text */
-    [data-testid="stForm"] [data-testid="stFormSubmitButton"] > div:last-child {
-        display: none !important;
     }
     
     .login-footer-bar {
