@@ -614,24 +614,23 @@ st.markdown("""
     }
     
     /* Right panel — Login form */
-    .login-glass-card {
-        flex: 0.9;
-        background: rgba(255, 255, 255, 0.06);
-        backdrop-filter: blur(24px) saturate(140%);
-        -webkit-backdrop-filter: blur(24px) saturate(140%);
-        border-radius: 24px;
-        padding: 44px 36px 36px;
-        border: 1px solid rgba(255,255,255,0.1);
+    [data-testid="stForm"] {
+        background: rgba(255, 255, 255, 0.06) !important;
+        backdrop-filter: blur(24px) saturate(140%) !important;
+        -webkit-backdrop-filter: blur(24px) saturate(140%) !important;
+        border-radius: 24px !important;
+        padding: 44px 36px 36px !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
         box-shadow: 0 8px 32px rgba(0,0,0,0.3), 
                     0 0 0 1px rgba(255,255,255,0.05),
-                    inset 0 1px 0 rgba(255,255,255,0.1);
-        max-width: 420px;
+                    inset 0 1px 0 rgba(255,255,255,0.1) !important;
+        max-width: 420px !important;
     }
-    .login-glass-card .login-logo-wrap {
+    [data-testid="stForm"] .login-logo-wrap {
         text-align: center;
         margin-bottom: 6px;
     }
-    .login-glass-card .login-logo-wrap img {
+    [data-testid="stForm"] .login-logo-wrap img {
         width: 72px;
         height: 72px;
         object-fit: cover;
@@ -644,7 +643,7 @@ st.markdown("""
         0%, 100% { box-shadow: 0 0 0 3px rgba(140,198,63,0.3), 0 4px 20px rgba(0,0,0,0.3); }
         50% { box-shadow: 0 0 0 6px rgba(140,198,63,0.15), 0 4px 30px rgba(140,198,63,0.15); }
     }
-    .login-glass-card .login-brand-name {
+    [data-testid="stForm"] .login-brand-name {
         font-size: 1.6rem;
         font-weight: 800;
         color: #FFFFFF;
@@ -654,7 +653,7 @@ st.markdown("""
         text-align: center;
         text-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
-    .login-glass-card .login-org-name {
+    [data-testid="stForm"] .login-org-name {
         font-size: 0.68rem;
         color: rgba(255,255,255,0.45);
         text-align: center;
@@ -662,7 +661,7 @@ st.markdown("""
         margin: 4px 0 0 0;
         letter-spacing: 0.3px;
     }
-    .login-glass-card .login-accent-line {
+    [data-testid="stForm"] .login-accent-line {
         width: 44px;
         height: 3px;
         background: linear-gradient(90deg, #8CC63F, #2E86C1);
@@ -670,26 +669,21 @@ st.markdown("""
         border-radius: 4px;
         box-shadow: 0 0 12px rgba(140,198,63,0.3);
     }
-    .login-glass-card .login-title {
+    [data-testid="stForm"] .login-title {
         font-size: 1.05rem;
         font-weight: 700;
-        color: #FFFFFF;
+        color: #FFFFFF !important;
         text-align: center;
         margin: 0 0 2px 0;
     }
-    .login-glass-card .login-subtitle {
+    [data-testid="stForm"] .login-subtitle {
         font-size: 0.75rem;
-        color: rgba(255,255,255,0.4);
+        color: rgba(255,255,255,0.4) !important;
         text-align: center;
         margin: 0 0 20px 0;
     }
     
     /* Style Streamlit form inputs on login page */
-    [data-testid="stForm"] {
-        background: transparent !important;
-        border: none !important;
-        padding: 0 !important;
-    }
     [data-testid="stForm"] label, [data-testid="stForm"] p {
         color: rgba(255,255,255,0.7) !important;
         font-weight: 500 !important;
@@ -1353,8 +1347,8 @@ if not st.session_state['logged_in']:
         """, unsafe_allow_html=True)
     
     with form_col:
-        st.markdown(f"""
-            <div class='login-glass-card'>
+        with st.form("login"):
+            st.markdown(f"""
                 <div class='login-logo-wrap'>
                     <img src="data:image/jpeg;base64,{LOGO_B64}">
                 </div>
@@ -1363,10 +1357,8 @@ if not st.session_state['logged_in']:
                 <div class='login-accent-line'></div>
                 <p class='login-title'>Welcome Back</p>
                 <p class='login-subtitle'>ICARE — Growing Together</p>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        with st.form("login"):
+            """, unsafe_allow_html=True)
+            
             username = st.text_input("Username", placeholder="Enter your username")
             pw = st.text_input("Password", type="password", placeholder="Enter your password")
             
