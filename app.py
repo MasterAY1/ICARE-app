@@ -710,26 +710,27 @@ st.markdown("""
         background-color: transparent !important;
         background: transparent !important;
     }
-    /* White typed text */
+    /* White typed text changed to black for visibility */
     [data-testid="stForm"] [data-testid="stTextInput"] input {
-        color: #FFFFFF !important;
-        -webkit-text-fill-color: #FFFFFF !important;
+        color: #000000 !important;
+        -webkit-text-fill-color: #000000 !important;
         background-color: transparent !important;
         background: transparent !important;
         padding: 12px 16px !important;
         font-size: 0.9rem !important;
-        caret-color: #FFFFFF !important;
+        caret-color: #000000 !important;
+        font-weight: 500 !important;
     }
     [data-testid="stForm"] [data-testid="stTextInput"] input::placeholder {
-        color: rgba(255,255,255,0.35) !important;
-        -webkit-text-fill-color: rgba(255,255,255,0.35) !important;
+        color: rgba(0,0,0,0.4) !important;
+        -webkit-text-fill-color: rgba(0,0,0,0.4) !important;
     }
     /* Password eye icon */
     [data-testid="stForm"] [data-testid="stTextInput"] button {
-        color: rgba(255,255,255,0.5) !important;
+        color: rgba(0,0,0,0.6) !important;
     }
     [data-testid="stForm"] [data-testid="stTextInput"] button svg {
-        fill: rgba(255,255,255,0.5) !important;
+        fill: rgba(0,0,0,0.6) !important;
     }
     /* Hide the "Press Enter to submit form" helper text */
     [data-testid="stForm"] [data-testid="InputInstructions"] {
