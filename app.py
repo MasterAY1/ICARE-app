@@ -1525,7 +1525,7 @@ if page == "Dashboard":
             total_people_with_savings += 1
             total_savings += s_amt
             
-        if loan_bal > 0:
+        if loan_bal > 0 and loan.get('Status') in ['Active', 'Completed', 'Approved']:
             active_loans_count += 1
             total_active_credit += loan_bal
             
@@ -1536,7 +1536,7 @@ if page == "Dashboard":
             if start_date_str and product:
                 exp_paid, overdue_amt = calculate_overdue(start_date_str, product, fixed_repay, l_amt, loan.get('Status', 'Active'))
                 total_overdue += overdue_amt
-        else:
+        elif loan_bal <= 0 and loan.get('Status') in ['Active', 'Completed', 'Approved']:
             fully_paid_count += 1
             
     st.markdown("### 💰 Savings Summary")
