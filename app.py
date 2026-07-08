@@ -866,7 +866,8 @@ DB_TO_UI_LOANS = {
     "guarantor_relationship": "Guarantor Relationship",
     "group_location": "Group Location", "group_leader_name": "Group Leader Name", "group_formation_date": "Group Formation Date",
     "product_category": "Product Category", "group_savings": "Group Savings", 
-    "branch_contingency": "Branch Contingency", "branch_contingency_2": "Branch Contingency 2"
+    "branch_contingency": "Branch Contingency", "branch_contingency_2": "Branch Contingency 2",
+    "disbursement_date": "Disbursement Date", "start_date": "Start Date", "expected_end_date": "Expected End Date"
 }
 UI_TO_DB_LOANS = {v: k for k, v in DB_TO_UI_LOANS.items()}
 
@@ -1514,12 +1515,31 @@ if page == "Dashboard":
     fully_paid_count = 0
     total_overdue = 0
     
+    # Target calculations
+    target_daily = 0
+    target_weekly = 0
+    target_monthly = 0
+    collected_today = 0
+    
+    today = datetime.now()
+    today_str = today.strftime("%Y-%m-%d")
+    today_weekday = today.strftime("%A")
+    closures = get_custom_closures()
+    is_holiday = today_str in closures
+    is_weekend = today_weekday in ["Saturday", "Sunday"]
+    is_working_day = not (is_holiday or is_weekend)
+    
     for _, loan in my_loans.iterrows():
         cid = loan.get('Client ID')
         c_payments = all_repayments[all_repayments['Client ID'] == cid]
         s_amt, l_amt = calculate_client_savings(c_payments, loan.get('Loan Repay', 0))
         
         loan_bal = loan.get('Active Credit', 0) - l_amt
+        
+        # Calculate actual collected today for this client
+        today_payments = c_payments[c_payments['Date'] == today_str]
+        today_loan_paid = pd.to_numeric(today_payments['Loan Repayment Amount'], errors='coerce').fillna(0).sum()
+        collected_today += today_loan_paid
         
         if s_amt > 0:
             total_people_with_savings += 1
@@ -1529,10 +1549,23 @@ if page == "Dashboard":
             active_loans_count += 1
             total_active_credit += loan_bal
             
+            product = str(loan.get('Loan Product', ''))
+            fixed_repay = pd.to_numeric(loan.get('Loan Repay', 0), errors='coerce')
+            if pd.isna(fixed_repay): fixed_repay = 0
+            
+            if is_working_day:
+                if "Daily" in product or "120 Days" in product or "Cash and Carry" in product:
+                    target_daily += fixed_repay
+                else:
+                    meeting_day = str(loan.get('Meeting Day', ''))
+                    if meeting_day == today_weekday:
+                        if "Week" in product or "60-Day Asset" in product:
+                            target_weekly += fixed_repay
+                        elif "Month" in product or "120-Day Asset" in product:
+                            target_monthly += fixed_repay
+            
             # calculate overdue
             start_date_str = loan.get('Date', '')
-            product = loan.get('Loan Product', '')
-            fixed_repay = loan.get('Loan Repay', 0)
             if start_date_str and product:
                 exp_paid, overdue_amt = calculate_overdue(start_date_str, product, fixed_repay, l_amt, loan.get('Status', 'Active'))
                 total_overdue += overdue_amt
@@ -1553,6 +1586,20 @@ if page == "Dashboard":
     c3.metric("🎉 Fully Paid Loans", f"{fully_paid_count}")
     od_color = "inverse" if total_overdue > 0 else "normal"
     c4.metric("🚨 Total Overdue Amount", f"₦{total_overdue:,.0f}", delta_color=od_color)
+
+    st.divider()
+    st.markdown("### 🎯 Daily Target & Performance")
+    t1, t2, t3 = st.columns(3)
+    
+    total_target = target_daily + target_weekly + target_monthly
+    excess = collected_today - total_target
+    excess_color = "normal" if excess >= 0 else "inverse"
+    
+    target_breakdown = f"Daily: ₦{target_daily:,.0f} | Weekly: ₦{target_weekly:,.0f} | Monthly: ₦{target_monthly:,.0f}"
+    
+    t1.metric("📊 Expected Repayment Target", f"₦{total_target:,.0f}", target_breakdown, delta_color="off")
+    t2.metric("💵 Total Collected Today", f"₦{collected_today:,.0f}")
+    t3.metric("🚀 Excess / Shortfall", f"₦{excess:,.0f}", delta_color=excess_color)
 
 
 elif page == "Loan Origination":
@@ -2116,7 +2163,8 @@ elif page == "Collections":
                         "sav_bal": sav_bal,
                         "rem_bal": rem_bal,
                         "act_cred": act_cred,
-                        "default_rep": default_rep
+                        "default_rep": default_rep,
+                        "start_date": str(member.get('Start Date', ''))
                     }
                 
                 if st.session_state.get('pending_collections') and st.session_state.get('collections_group') == selected_group and st.session_state.get('collections_date') == date_str:
@@ -2176,6 +2224,15 @@ elif page == "Collections":
                                 title = f"👤 {m['Client Name']} ({cid}) - Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
                                 
                             with st.expander(title):
+                                s_date_str = info.get("start_date", "")
+                                s_date = pd.to_datetime(s_date_str, errors='coerce') if s_date_str and str(s_date_str).strip() not in ['None', 'nan', ''] else pd.NaT
+                                view_dt = pd.to_datetime(date_str)
+                                
+                                if pd.notna(s_date) and s_date > view_dt:
+                                    st.warning(f"⚠️ **Next Repayment Due On:** {s_date.strftime('%Y-%m-%d')}")
+                                    st.caption("*Collection is locked until the start date.*")
+                                    continue
+                                
                                 if not is_asset:
                                     st.markdown("**🏦 Savings**")
                                     sc1, sc2 = st.columns(2)
