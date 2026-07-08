@@ -684,14 +684,22 @@ st.markdown("""
     }
     
     /* Style Streamlit form inputs on login page */
-    [data-testid="stForm"] label, [data-testid="stForm"] p {
+    [data-testid="stForm"] label {
         color: rgba(255,255,255,0.7) !important;
         font-weight: 500 !important;
         font-size: 0.8rem !important;
         letter-spacing: 0.3px;
     }
+    /* Make backgrounds transparent all the way down */
+    [data-testid="stForm"] div[data-baseweb="input"],
+    [data-testid="stForm"] div[data-baseweb="base-input"] {
+        background-color: transparent !important;
+        background: transparent !important;
+        border: none !important;
+    }
+    /* Add our custom border & background ONLY to the outermost input container */
     [data-testid="stForm"] div[data-baseweb="input"] {
-        background: rgba(255,255,255,0.08) !important;
+        background-color: rgba(255,255,255,0.08) !important;
         border: 1px solid rgba(255,255,255,0.12) !important;
         border-radius: 12px !important;
         transition: all 0.3s ease !important;
@@ -699,12 +707,12 @@ st.markdown("""
     [data-testid="stForm"] div[data-baseweb="input"]:focus-within {
         border-color: rgba(140,198,63,0.5) !important;
         box-shadow: 0 0 0 3px rgba(140,198,63,0.1) !important;
-        background: rgba(255,255,255,0.12) !important;
+        background-color: rgba(255,255,255,0.12) !important;
     }
     [data-testid="stForm"] input {
         color: #FFFFFF !important;
         -webkit-text-fill-color: #FFFFFF !important;
-        background: transparent !important;
+        background-color: transparent !important;
         padding: 12px 16px !important;
         font-size: 0.9rem !important;
     }
@@ -712,7 +720,8 @@ st.markdown("""
         color: rgba(255,255,255,0.3) !important;
         -webkit-text-fill-color: rgba(255,255,255,0.3) !important;
     }
-    [data-testid="stForm"] button[kind="formSubmit"] {
+    /* Fix button */
+    [data-testid="stForm"] [data-testid="stFormSubmitButton"] button {
         background: linear-gradient(135deg, #8CC63F 0%, #6BA825 100%) !important;
         color: #FFFFFF !important;
         border: none !important;
@@ -724,14 +733,24 @@ st.markdown("""
         margin-top: 8px !important;
         transition: all 0.3s ease !important;
         box-shadow: 0 4px 16px rgba(140,198,63,0.3) !important;
+        width: 100% !important;
     }
-    [data-testid="stForm"] button[kind="formSubmit"]:hover {
+    [data-testid="stForm"] [data-testid="stFormSubmitButton"] button p {
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+        font-size: 0.9rem !important;
+    }
+    [data-testid="stForm"] [data-testid="stFormSubmitButton"] button:hover {
         transform: translateY(-2px) !important;
         box-shadow: 0 6px 24px rgba(140,198,63,0.4) !important;
         background: linear-gradient(135deg, #9AD44D 0%, #7CBB30 100%) !important;
     }
-    [data-testid="stForm"] button[kind="formSubmit"]:active {
+    [data-testid="stForm"] [data-testid="stFormSubmitButton"] button:active {
         transform: translateY(0) !important;
+    }
+    /* Hide the "Press Enter to submit" text */
+    [data-testid="stForm"] [data-testid="stFormSubmitButton"] > div:last-child {
+        display: none !important;
     }
     
     .login-footer-bar {
