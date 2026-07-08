@@ -2138,7 +2138,6 @@ elif page == "Collections":
                     
                     if c2.button("✅ Confirm & Save to Database", type="primary", use_container_width=True):
                         db_payload = []
-                        from app import UI_TO_DB_REP, supabase
                         for tx in to_insert:
                             db_payload.append({UI_TO_DB_REP[k]: v for k, v in tx.items() if k in UI_TO_DB_REP})
                         try:
