@@ -906,7 +906,7 @@ def load_loans():
         query = supabase.table("loans").select("*")
         
         # RBAC Filters
-        if st.session_state.get('role') == 'CO':
+        if st.session_state.get('role') in ['CO', 'Officer']:
             query = query.eq('officer', st.session_state.get('user'))
         elif st.session_state.get('role') == 'BM':
             query = query.eq('branch', st.session_state.get('branch'))
@@ -937,7 +937,7 @@ def load_repayments():
         query = supabase.table("repayments").select("*")
         
         # RBAC Filters
-        if st.session_state.get('role') == 'CO':
+        if st.session_state.get('role') in ['CO', 'Officer']:
             query = query.eq('officer', st.session_state.get('user'))
         elif st.session_state.get('role') == 'BM':
             query = query.eq('branch', st.session_state.get('branch'))
@@ -945,21 +945,13 @@ def load_repayments():
         response = query.execute()
         if not response.data:
             return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
-        df = pd.DataFrame(response.data).rename(columns=DB_TO_UI_REP)
         
-        return df
-    except Exception as e:
-        st.error(f"Database Error: {e}")
-        return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
-    try:
-        response = supabase.table("repayments").select("*").execute()
-        if not response.data:
-            return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
         df = pd.DataFrame(response.data).rename(columns=DB_TO_UI_REP)
         num_cols = ["Amount Paid", "Savings Amount", "Loan Repayment Amount"]
         for c in num_cols:
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+                
         return df
     except Exception as e:
         st.error(f"Database Error: {e}")
@@ -2202,9 +2194,12 @@ elif page == "Collections":
                         sav_data = {}
                         rep_data = {}
                         
-                        # ---- GROUP-LEVEL SAVINGS ----
-                        st.markdown("### 🏛️ Group-Level Savings")
-                        st.caption("Input communal group savings and withdrawal amounts.")
+                        col_tab, eod_tab = st.tabs(["👥 Members Collection", "📤 End of Day / Global Outflows"])
+                        
+                        with col_tab:
+                            # ---- GROUP-LEVEL SAVINGS ----
+                            st.markdown("### 🏛️ Group-Level Savings")
+                            st.caption("Input communal group savings and withdrawal amounts.")
                         gsc1, gsc2, gsc3 = st.columns(3)
                         global_group_savings = gsc1.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=None, placeholder="0")
                         global_group_wd = gsc2.number_input("Group Savings Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
@@ -2265,9 +2260,10 @@ elif page == "Collections":
                                     "asset_cr": asset_cr_col, "cc": cc_col, "cfd": cfd_col, "bonus": bonus_col
                                 }
                         
-                        # ---- END OF DAY / GLOBAL OUTFLOWS (Below Tabs) ----
-                        st.markdown("### 📤 End of Day / Global Outflows")
-                        st.caption("Log your daily branch expenses, bank deposits, and withdrawals here.")
+                        with eod_tab:
+                            # ---- END OF DAY / GLOBAL OUTFLOWS ----
+                            st.markdown("### 📤 End of Day / Global Outflows")
+                            st.caption("Log your daily branch expenses, bank deposits, and withdrawals here.")
                         out_1, out_2, out_3 = st.columns(3)
                         global_expenses = out_1.number_input("Office Expenses", min_value=0.0, step=500.0, value=None, placeholder="0")
                         global_bank_dep = out_2.number_input("Bank Deposited", min_value=0.0, step=500.0, value=None, placeholder="0")
