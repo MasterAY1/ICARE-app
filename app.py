@@ -1,4 +1,12 @@
 import streamlit as st
+
+st.set_page_config(
+    page_title="ICARE Microfinance - Core Banking",
+    page_icon="🌱",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 import pandas as pd
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
@@ -175,15 +183,7 @@ import sys
 import os
 import holidays
 from pandas.tseries.offsets import CustomBusinessDay
-# import extra_streamlit_components as stx  # Replaced with native JS cookies
 
-# 🚨 THE ABSOLUTE FIRST COMMAND 🚨
-st.set_page_config(
-    page_title="ICARE Microfinance - Core Banking",
-    page_icon="🌱",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 # Add utils to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
