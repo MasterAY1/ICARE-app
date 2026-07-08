@@ -1513,6 +1513,8 @@ if page == "Dashboard":
     target_monthly = 0
     collected_today = 0
     
+    total_original_active_credit = 0
+    
     today = datetime.now()
     today_str = today.strftime("%Y-%m-%d")
     today_weekday = today.strftime("%A")
@@ -1540,6 +1542,10 @@ if page == "Dashboard":
         if loan_bal > 0 and loan.get('Status') in ['Active', 'Completed', 'Approved']:
             active_loans_count += 1
             total_active_credit += loan_bal
+            
+            original_active_credit = pd.to_numeric(loan.get('Active Credit', 0), errors='coerce')
+            if pd.isna(original_active_credit): original_active_credit = 0
+            total_original_active_credit += original_active_credit
             
             product = str(loan.get('Loan Product', ''))
             fixed_repay = pd.to_numeric(loan.get('Loan Repay', 0), errors='coerce')
@@ -1572,12 +1578,15 @@ if page == "Dashboard":
     st.divider()
     
     st.markdown("### 🏦 Credit Summary")
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     c1.metric("👥 People with Active Loans", f"{active_loans_count}")
-    c2.metric("📈 Total Active Credit Balance", f"₦{total_active_credit:,.0f}")
-    c3.metric("🎉 Fully Paid Loans", f"{fully_paid_count}")
+    c2.metric("📈 Total Active Credit", f"₦{total_original_active_credit:,.0f}")
+    c3.metric("📉 Total Outstanding Balance", f"₦{total_active_credit:,.0f}")
+    
+    c4, c5, _ = st.columns(3)
+    c4.metric("🎉 Fully Paid Loans", f"{fully_paid_count}")
     od_color = "inverse" if total_overdue > 0 else "normal"
-    c4.metric("🚨 Total Overdue Amount", f"₦{total_overdue:,.0f}", delta_color=od_color)
+    c5.metric("🚨 Total Overdue Amount", f"₦{total_overdue:,.0f}", delta_color=od_color)
 
     st.divider()
     st.markdown("### 🎯 Daily Target & Performance")
