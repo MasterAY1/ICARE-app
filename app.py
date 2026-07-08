@@ -2470,20 +2470,64 @@ elif page == "Daily Report":
                     loan_bal = c_loan['Active Credit'] - l_amt
                     
                 detailed_data.append({
+                    "Client ID": cid,
                     "Client Name": row.get('Client Name', 'Unknown'),
                     "Phone": c_loan['Phone'] if c_loan is not None else '',
                     "Group": c_loan['Group Name'] if c_loan is not None else '',
                     "Cash Paid Today": row.get('Amount Paid', 0),
-                    "Loan Paid Today": row.get('Loan Repayment Amount', 0) + row.get('Others Amount', 0) + row.get('Recovery Amount', 0) + row.get('initial_payment', 0),
+                    "Loan Paid Today": row.get('Loan Repayment Amount', 0),
+                    "Others Amount": row.get('Others Amount', 0),
+                    "Recovery Amount": row.get('Recovery Amount', 0),
+                    "initial_payment": row.get('initial_payment', 0),
                     "Savings Paid Today": row.get('Savings Amount', 0),
-                    "Withdrawal Today": row.get('Withdrawal Amount', 0) + row.get('Markup Paid', 0),
+                    "Withdrawal Amount": row.get('Withdrawal Amount', 0),
+                    "Markup Paid": row.get('Markup Paid', 0),
+                    "Group Savings Deposit": row.get('Group Savings Deposit', 0),
+                    "Group Savings Withdrawal": row.get('Group Savings Withdrawal', 0),
+                    "Misc Fee": row.get('Misc Fees', 0),
+                    "Passbook": row.get('Pass Book Bonus', 0),
                     "Current Loan Balance": loan_bal,
                     "Total Acc. Savings": acc_savings,
                     "Officer": row.get('Officer', ''),
-                    "Note": row.get('Note', '')
+                    "Note": str(row.get('Note', ''))
                 })
             
-            st.dataframe(pd.DataFrame(detailed_data), use_container_width=True)
+            df_detailed = pd.DataFrame(detailed_data)
+            if not df_detailed.empty:
+                # Convert necessary columns to numeric
+                for col in ["Cash Paid Today", "Loan Paid Today", "Others Amount", "Recovery Amount", "initial_payment",
+                            "Savings Paid Today", "Withdrawal Amount", "Markup Paid", 
+                            "Group Savings Deposit", "Group Savings Withdrawal", "Misc Fee", "Passbook"]:
+                    df_detailed[col] = pd.to_numeric(df_detailed[col], errors='coerce').fillna(0)
+                
+                # Combine derived columns
+                df_detailed["Loan Paid Today"] = df_detailed["Loan Paid Today"] + df_detailed["Others Amount"] + df_detailed["Recovery Amount"] + df_detailed["initial_payment"]
+                df_detailed["Withdrawal Today"] = df_detailed["Withdrawal Amount"] + df_detailed["Markup Paid"]
+                df_detailed["Group Savings"] = df_detailed["Group Savings Deposit"] - df_detailed["Group Savings Withdrawal"]
+                
+                # Group by Client ID
+                agg_funcs = {
+                    "Client Name": "first",
+                    "Phone": "first",
+                    "Group": "first",
+                    "Cash Paid Today": "sum",
+                    "Loan Paid Today": "sum",
+                    "Savings Paid Today": "sum",
+                    "Withdrawal Today": "sum",
+                    "Group Savings": "sum",
+                    "Misc Fee": "sum",
+                    "Passbook": "sum",
+                    "Current Loan Balance": "last",
+                    "Total Acc. Savings": "last",
+                    "Officer": "first",
+                    "Note": lambda x: ' | '.join(filter(lambda v: pd.notna(v) and str(v).strip() != '' and str(v).strip() != 'nan', set(x)))
+                }
+                df_detailed = df_detailed.groupby("Client ID", as_index=False).agg(agg_funcs)
+                df_detailed = df_detailed[["Client Name", "Phone", "Group", "Cash Paid Today", "Loan Paid Today", 
+                                           "Savings Paid Today", "Withdrawal Today", "Group Savings", "Misc Fee", 
+                                           "Passbook", "Current Loan Balance", "Total Acc. Savings", "Officer", "Note"]]
+                
+            st.dataframe(df_detailed, use_container_width=True)
     else:
         st.info("No records found in database.")
 
