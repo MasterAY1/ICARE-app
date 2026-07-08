@@ -425,7 +425,7 @@ st.markdown("""
     .welcome-banner p { color: rgba(255,255,255,0.8); margin: 6px 0 0 0; font-size: 0.9rem; }
     .welcome-banner .wb-gold { color: #8CC63F; font-weight: 600; }
     
-    /* === LOGIN PAGE — PREMIUM FINTECH v2.0 === */
+    /* === LOGIN PAGE — PREMIUM SPLIT LAYOUT v3.0 === */
     .login-page-bg {
         position: fixed;
         top: 0; left: 0; right: 0; bottom: 0;
@@ -492,31 +492,148 @@ st.markdown("""
         100% { bottom: 110%; opacity: 0; }
     }
     
-    .login-glass-card {
-        background: rgba(255, 255, 255, 0.06);
-        backdrop-filter: blur(24px) saturate(140%);
-        -webkit-backdrop-filter: blur(24px) saturate(140%);
-        border-radius: 24px;
-        padding: 48px 40px 40px;
-        border: 1px solid rgba(255,255,255,0.1);
-        box-shadow: 0 8px 32px rgba(0,0,0,0.3), 
-                    0 0 0 1px rgba(255,255,255,0.05),
-                    inset 0 1px 0 rgba(255,255,255,0.1);
-        max-width: 440px;
+    /* Split layout container */
+    .login-split-wrap {
+        display: flex;
+        gap: 0;
+        max-width: 1000px;
         margin: 0 auto;
+        min-height: 85vh;
+        align-items: center;
         animation: loginCardIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
     }
     @keyframes loginCardIn {
         0% { opacity: 0; transform: translateY(30px) scale(0.97); }
         100% { opacity: 1; transform: translateY(0) scale(1); }
     }
+    
+    /* Left panel — About ICARE */
+    .login-info-panel {
+        flex: 1.1;
+        padding: 48px 44px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    .login-info-panel .info-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(140,198,63,0.12);
+        color: #8CC63F;
+        font-size: 0.65rem;
+        font-weight: 700;
+        padding: 5px 14px;
+        border-radius: 20px;
+        border: 1px solid rgba(140,198,63,0.2);
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        margin-bottom: 20px;
+        width: fit-content;
+    }
+    .login-info-panel .info-headline {
+        font-size: 1.7rem;
+        font-weight: 800;
+        color: #FFFFFF;
+        line-height: 1.25;
+        margin: 0 0 6px 0;
+        letter-spacing: -0.5px;
+    }
+    .login-info-panel .info-headline span {
+        background: linear-gradient(135deg, #8CC63F, #2E86C1);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .login-info-panel .info-slogan {
+        font-size: 0.85rem;
+        color: #8CC63F;
+        font-weight: 600;
+        font-style: italic;
+        margin: 0 0 20px 0;
+        letter-spacing: 0.3px;
+    }
+    .login-info-panel .info-desc {
+        font-size: 0.78rem;
+        color: rgba(255,255,255,0.55);
+        line-height: 1.8;
+        margin: 0 0 24px 0;
+    }
+    .login-info-panel .info-divider {
+        width: 40px;
+        height: 2px;
+        background: linear-gradient(90deg, #8CC63F, transparent);
+        margin: 0 0 20px 0;
+        border-radius: 2px;
+    }
+    .login-info-panel .info-block {
+        margin-bottom: 16px;
+    }
+    .login-info-panel .info-block-label {
+        font-size: 0.62rem;
+        font-weight: 700;
+        color: rgba(255,255,255,0.35);
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        margin: 0 0 5px 0;
+    }
+    .login-info-panel .info-block-text {
+        font-size: 0.75rem;
+        color: rgba(255,255,255,0.65);
+        line-height: 1.7;
+        margin: 0;
+    }
+    .login-info-panel .info-values {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 4px;
+    }
+    .login-info-panel .info-values span {
+        background: rgba(255,255,255,0.06);
+        color: rgba(255,255,255,0.6);
+        font-size: 0.68rem;
+        font-weight: 600;
+        padding: 4px 12px;
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.08);
+    }
+    .login-info-panel .info-address {
+        font-size: 0.68rem;
+        color: rgba(255,255,255,0.35);
+        margin: 20px 0 0 0;
+        padding-top: 16px;
+        border-top: 1px solid rgba(255,255,255,0.06);
+        line-height: 1.6;
+    }
+    .login-info-panel .info-address svg {
+        width: 11px; height: 11px;
+        vertical-align: -1px;
+        margin-right: 4px;
+        fill: rgba(255,255,255,0.3);
+    }
+    
+    /* Right panel — Login form */
+    .login-glass-card {
+        flex: 0.9;
+        background: rgba(255, 255, 255, 0.06);
+        backdrop-filter: blur(24px) saturate(140%);
+        -webkit-backdrop-filter: blur(24px) saturate(140%);
+        border-radius: 24px;
+        padding: 44px 36px 36px;
+        border: 1px solid rgba(255,255,255,0.1);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3), 
+                    0 0 0 1px rgba(255,255,255,0.05),
+                    inset 0 1px 0 rgba(255,255,255,0.1);
+        max-width: 420px;
+    }
     .login-glass-card .login-logo-wrap {
         text-align: center;
         margin-bottom: 6px;
     }
     .login-glass-card .login-logo-wrap img {
-        width: 80px;
-        height: 80px;
+        width: 72px;
+        height: 72px;
         object-fit: cover;
         border-radius: 50%;
         box-shadow: 0 0 0 3px rgba(140,198,63,0.3), 0 4px 20px rgba(0,0,0,0.3);
@@ -528,43 +645,43 @@ st.markdown("""
         50% { box-shadow: 0 0 0 6px rgba(140,198,63,0.15), 0 4px 30px rgba(140,198,63,0.15); }
     }
     .login-glass-card .login-brand-name {
-        font-size: 2rem;
+        font-size: 1.6rem;
         font-weight: 800;
         color: #FFFFFF;
-        letter-spacing: 8px;
-        padding-left: 8px;
-        margin: 12px 0 0 0;
+        letter-spacing: 6px;
+        padding-left: 6px;
+        margin: 10px 0 0 0;
         text-align: center;
         text-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
     .login-glass-card .login-org-name {
-        font-size: 0.72rem;
-        color: rgba(255,255,255,0.5);
+        font-size: 0.68rem;
+        color: rgba(255,255,255,0.45);
         text-align: center;
         line-height: 1.7;
         margin: 4px 0 0 0;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.3px;
     }
     .login-glass-card .login-accent-line {
-        width: 50px;
+        width: 44px;
         height: 3px;
         background: linear-gradient(90deg, #8CC63F, #2E86C1);
-        margin: 22px auto;
+        margin: 18px auto;
         border-radius: 4px;
         box-shadow: 0 0 12px rgba(140,198,63,0.3);
     }
     .login-glass-card .login-title {
-        font-size: 1.15rem;
+        font-size: 1.05rem;
         font-weight: 700;
         color: #FFFFFF;
         text-align: center;
         margin: 0 0 2px 0;
     }
     .login-glass-card .login-subtitle {
-        font-size: 0.78rem;
-        color: rgba(255,255,255,0.45);
+        font-size: 0.75rem;
+        color: rgba(255,255,255,0.4);
         text-align: center;
-        margin: 0 0 24px 0;
+        margin: 0 0 20px 0;
     }
     
     /* Style Streamlit form inputs on login page */
@@ -620,8 +737,8 @@ st.markdown("""
     
     .login-footer-bar {
         text-align: center;
-        margin-top: 24px;
-        padding-top: 20px;
+        margin-top: 20px;
+        padding-top: 16px;
         border-top: 1px solid rgba(255,255,255,0.08);
     }
     .login-footer-bar p {
@@ -645,6 +762,26 @@ st.markdown("""
     }
     .login-footer-bar .secured-badge svg {
         width: 12px; height: 12px;
+    }
+    
+    /* Mobile responsive — stack vertically */
+    @media (max-width: 768px) {
+        .login-split-wrap {
+            flex-direction: column;
+            gap: 0;
+            min-height: auto;
+            padding: 16px;
+        }
+        .login-info-panel {
+            padding: 24px 20px 16px;
+            text-align: center;
+        }
+        .login-info-panel .info-badge { margin: 0 auto 14px; }
+        .login-info-panel .info-headline { font-size: 1.3rem; }
+        .login-info-panel .info-divider { margin: 0 auto 16px; }
+        .login-info-panel .info-values { justify-content: center; }
+        .login-info-panel .info-address { text-align: center; }
+        .login-glass-card { max-width: 100%; padding: 32px 24px 28px; }
     }
     
     /* Hide default Streamlit bg on login */
@@ -1169,50 +1306,89 @@ if not st.session_state['logged_in']:
         .stApp { background: transparent !important; }
         [data-testid="stSidebar"] { display: none !important; }
         header[data-testid="stHeader"] { display: none !important; }
-        .stMainBlockContainer { max-width: 520px !important; margin: 0 auto !important; padding-top: 4vh !important; }
+        .stMainBlockContainer { max-width: 1100px !important; margin: 0 auto !important; padding-top: 2vh !important; }
     </style>""", unsafe_allow_html=True)
     
-    st.markdown(f"""
-        <div class='login-glass-card'>
-            <div class='login-logo-wrap'>
-                <img src="data:image/jpeg;base64,{LOGO_B64}">
+    # Split layout: info panel (left) + login form (right)
+    info_col, spacer_col, form_col = st.columns([1.15, 0.1, 0.85])
+    
+    with info_col:
+        st.markdown("""
+            <div class='login-info-panel'>
+                <div class='info-badge'>🌱 Est. 2006 — South-West Nigeria</div>
+                <p class='info-headline'>Empowering Communities,<br><span>Growing Together</span></p>
+                <p class='info-slogan'>"Building a better community through inspiration, motivation and empowerment"</p>
+                <p class='info-desc'>
+                    ICARE (Initiative for Community Advancement, Relief and Empowerment), 
+                    founded by Mrs. Alayo L.S., is a Non-Governmental Organization dedicated to the 
+                    intellectual and socio-economic growth of its members. Operating across South-Western 
+                    Nigeria, ICARE runs micro-credit programmes for traders and artisans, asset acquisition 
+                    schemes, agric-enterprise ventures, and skill acquisition programmes for the youths.
+                </p>
+                <div class='info-divider'></div>
+                <div class='info-block'>
+                    <p class='info-block-label'>Our Vision</p>
+                    <p class='info-block-text'>To be among the foremost catalysts in initiating and implementing 
+                    sustainable programmes focused on empowering people for growth and self-reliance.</p>
+                </div>
+                <div class='info-block'>
+                    <p class='info-block-label'>Core Values</p>
+                    <div class='info-values'>
+                        <span>Integrity</span>
+                        <span>Commitment</span>
+                        <span>Competence</span>
+                        <span>Teamwork</span>
+                    </div>
+                </div>
+                <p class='info-address'>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/></svg>
+                    H.Q: 7 Ibifiele Street, Aiyegbami, Sagamu, Ogun State, Nigeria
+                </p>
             </div>
-            <p class='login-brand-name'>ICARE</p>
-            <p class='login-org-name'>Initiative for Community Advancement,<br>Relief and Empowerment</p>
-            <div class='login-accent-line'></div>
-            <p class='login-title'>Welcome Back</p>
-            <p class='login-subtitle'>Sign in to your banking portal</p>
-        </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
     
-    with st.form("login"):
-        username = st.text_input("Username", placeholder="Enter your username")
-        pw = st.text_input("Password", type="password", placeholder="Enter your password")
+    with form_col:
+        st.markdown(f"""
+            <div class='login-glass-card'>
+                <div class='login-logo-wrap'>
+                    <img src="data:image/jpeg;base64,{LOGO_B64}">
+                </div>
+                <p class='login-brand-name'>ICARE</p>
+                <p class='login-org-name'>Initiative for Community Advancement,<br>Relief and Empowerment</p>
+                <div class='login-accent-line'></div>
+                <p class='login-title'>Welcome Back</p>
+                <p class='login-subtitle'>ICARE — Growing Together</p>
+            </div>
+        """, unsafe_allow_html=True)
         
-        submitted = st.form_submit_button("SIGN IN", use_container_width=True)
+        with st.form("login"):
+            username = st.text_input("Username", placeholder="Enter your username")
+            pw = st.text_input("Password", type="password", placeholder="Enter your password")
+            
+            submitted = st.form_submit_button("SIGN IN", use_container_width=True)
+            
+            if submitted:
+                st.session_state['logout_in_progress'] = False
+                auth_result = authenticate_user(username, pw)
+                if auth_result:
+                    _set_auth_token(auth_result['user_name'])
+                    st.session_state['logged_in'] = True
+                    st.session_state['user'] = auth_result['user_name']
+                    st.session_state['role'] = auth_result['user_role']
+                    st.session_state['branch'] = auth_result['branch_name']
+                    st.rerun()
+                else:
+                    st.error("Invalid credentials. Please try again.")
         
-        if submitted:
-            st.session_state['logout_in_progress'] = False
-            auth_result = authenticate_user(username, pw)
-            if auth_result:
-                _set_auth_token(auth_result['user_name'])
-                st.session_state['logged_in'] = True
-                st.session_state['user'] = auth_result['user_name']
-                st.session_state['role'] = auth_result['user_role']
-                st.session_state['branch'] = auth_result['branch_name']
-                st.rerun()
-            else:
-                st.error("Invalid credentials. Please try again.")
-    
-    st.markdown(f"""
-        <div class='login-footer-bar'>
-            <p>Core Banking System v{APP_VERSION}</p>
-            <span class='secured-badge'>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 16l-4-4 1.41-1.41L11 14.17l6.59-6.59L19 9l-8 8z"/></svg>
-                256-bit Secured Connection
-            </span>
-        </div>
-    """, unsafe_allow_html=True)
+        st.markdown(f"""
+            <div class='login-footer-bar'>
+                <p>Core Banking System v{APP_VERSION}</p>
+                <span class='secured-badge'>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 16l-4-4 1.41-1.41L11 14.17l6.59-6.59L19 9l-8 8z"/></svg>
+                    256-bit Secured Connection
+                </span>
+            </div>
+        """, unsafe_allow_html=True)
     st.stop()
 
 # --- 5. SIDEBAR ---
