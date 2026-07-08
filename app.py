@@ -2123,313 +2123,238 @@ elif page == "Collections":
         else:
             target_co = USER
             
-        # Top-level sub-navigation for Collections page
-        collection_view = st.radio("Select View", ["👥 Member Collections", "📤 End of Day / Global Outflows"], horizontal=True, label_visibility="collapsed")
-        st.markdown("---")
+        # Top-level sub-navigation for Collections page (Removed End of Day)
+        st.markdown("### 👥 Member Collections")
+        # Show all clients that are not strictly closed, so completed clients can still deposit savings
+        co_loans = all_loans[(all_loans['Officer'] == target_co) & (all_loans['Status'] != 'Closed')]
         
-        if collection_view == "👥 Member Collections":
-            # Show all clients that are not strictly closed, so completed clients can still deposit savings
-            co_loans = all_loans[(all_loans['Officer'] == target_co) & (all_loans['Status'] != 'Closed')]
+        if co_loans.empty:
+            st.info("No active or pending members for this officer.")
+        else:
+            groups = ["Ungrouped"] + sorted(co_loans[co_loans['Group Name'].notna()]['Group Name'].unique().tolist())
+            selected_group = st.selectbox("Select Group", groups)
             
-            if co_loans.empty:
-                st.info("No active or pending members for this officer.")
+            if selected_group == "Ungrouped":
+                group_loans = co_loans[co_loans['Group Name'].isna() | (co_loans['Group Name'] == "")]
             else:
-                groups = ["Ungrouped"] + sorted(co_loans[co_loans['Group Name'].notna()]['Group Name'].unique().tolist())
-                selected_group = st.selectbox("Select Group", groups)
+                group_loans = co_loans[co_loans['Group Name'] == selected_group]
                 
-                if selected_group == "Ungrouped":
-                    group_loans = co_loans[co_loans['Group Name'].isna() | (co_loans['Group Name'] == "")]
-                else:
-                    group_loans = co_loans[co_loans['Group Name'] == selected_group]
+            if group_loans.empty:
+                st.info("No active or pending members in this group.")
+            else:
+                st.markdown(f"### Members in {selected_group}")
+                
+                # Fetch history for today to prefill/check
+                today_reps = repayments[(repayments['Date'] == date_str) & (repayments['Officer'] == target_co)] if not repayments.empty else pd.DataFrame()
+                
+                # Pre-compute member data
+                member_info = {}
+                for _, member in group_loans.iterrows():
+                    cid = member['Client ID']
+                    mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
+                    acc_sav = mem_reps['Savings Amount'].astype(float).sum() if not mem_reps.empty else 0
+                    acc_wd = mem_reps['Withdrawal Amount'].astype(float).sum() if 'Withdrawal Amount' in mem_reps.columns and not mem_reps.empty else 0
+                    sav_bal = acc_sav - acc_wd
+                    total_paid = mem_reps['Loan Repayment Amount'].astype(float).sum() if not mem_reps.empty else 0
+                    act_cred = float(member.get('Active Credit', 0))
+                    rem_bal = act_cred - total_paid
+                    exp_rep = float(member.get('Loan Repayment', 0))
+                    today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
+                    default_rep = exp_rep if today_paid.empty else 0.0
+                    member_info[cid] = {
+                        "member": member,
+                        "sav_bal": sav_bal,
+                        "rem_bal": rem_bal,
+                        "act_cred": act_cred,
+                        "default_rep": default_rep,
+                        "start_date": str(member.get('Start Date', ''))
+                    }
+                
+                if st.session_state.get('pending_collections') and st.session_state.get('collections_group') == selected_group and st.session_state.get('collections_date') == date_str:
+                    st.markdown("### 🔍 Review Group Collections")
+                    to_insert = st.session_state['pending_collections']
                     
-                if group_loans.empty:
-                    st.info("No active or pending members in this group.")
-                else:
-                    st.markdown(f"### Members in {selected_group}")
+                    total_in = sum(float(tx.get('Amount Paid', 0)) + float(tx.get('Bank Withdrawal', 0)) for tx in to_insert)
+                    total_out = sum(float(tx.get('Withdrawal Amount', 0)) + float(tx.get('Expenses', 0)) + float(tx.get('Bank Deposited', 0)) + float(tx.get('Product Withdrawal', 0)) + float(tx.get('Laps Transferred', 0)) for tx in to_insert)
+                    net_cash = total_in - total_out
                     
-                    # Fetch history for today to prefill/check
-                    today_reps = repayments[(repayments['Date'] == date_str) & (repayments['Officer'] == target_co)] if not repayments.empty else pd.DataFrame()
+                    st.info(f"**Total Money Collected (Cash In):** ₦{total_in:,.0f}")
+                    st.warning(f"**Total Money Given Out (Cash Out):** ₦{total_out:,.0f}")
+                    st.success(f"**NET CASH EXPECTED FROM GROUP:** ₦{net_cash:,.0f}")
                     
-                    # Pre-compute member data
-                    member_info = {}
-                    for _, member in group_loans.iterrows():
-                        cid = member['Client ID']
-                        mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
-                        acc_sav = mem_reps['Savings Amount'].astype(float).sum() if not mem_reps.empty else 0
-                        acc_wd = mem_reps['Withdrawal Amount'].astype(float).sum() if 'Withdrawal Amount' in mem_reps.columns and not mem_reps.empty else 0
-                        sav_bal = acc_sav - acc_wd
-                        total_paid = mem_reps['Loan Repayment Amount'].astype(float).sum() if not mem_reps.empty else 0
-                        act_cred = float(member.get('Active Credit', 0))
-                        rem_bal = act_cred - total_paid
-                        exp_rep = float(member.get('Loan Repayment', 0))
-                        today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
-                        default_rep = exp_rep if today_paid.empty else 0.0
-                        member_info[cid] = {
-                            "member": member,
-                            "sav_bal": sav_bal,
-                            "rem_bal": rem_bal,
-                            "act_cred": act_cred,
-                            "default_rep": default_rep,
-                            "start_date": str(member.get('Start Date', ''))
-                        }
+                    c1, c2 = st.columns(2)
+                    if c1.button("🔙 Edit / Go Back"):
+                        del st.session_state['pending_collections']
+                        st.rerun()
                     
-                    if st.session_state.get('pending_collections') and st.session_state.get('collections_group') == selected_group and st.session_state.get('collections_date') == date_str:
-                        st.markdown("### 🔍 Review Group Collections")
-                        to_insert = st.session_state['pending_collections']
-                        
-                        total_in = sum(float(tx.get('Amount Paid', 0)) + float(tx.get('Bank Withdrawal', 0)) for tx in to_insert)
-                        total_out = sum(float(tx.get('Withdrawal Amount', 0)) + float(tx.get('Expenses', 0)) + float(tx.get('Bank Deposited', 0)) + float(tx.get('Product Withdrawal', 0)) + float(tx.get('Laps Transferred', 0)) for tx in to_insert)
-                        net_cash = total_in - total_out
-                        
-                        st.info(f"**Total Money Collected (Cash In):** ₦{total_in:,.0f}")
-                        st.warning(f"**Total Money Given Out (Cash Out):** ₦{total_out:,.0f}")
-                        st.success(f"**NET CASH EXPECTED FROM GROUP:** ₦{net_cash:,.0f}")
-                        
-                        c1, c2 = st.columns(2)
-                        if c1.button("🔙 Edit / Go Back"):
-                            del st.session_state['pending_collections']
-                            st.rerun()
-                        
-                        if c2.button("✅ Confirm & Save to Database", type="primary", use_container_width=True):
-                            db_payload = []
-                            for tx in to_insert:
-                                db_payload.append({UI_TO_DB_REP[k]: v for k, v in tx.items() if k in UI_TO_DB_REP})
-                            try:
-                                supabase.table('repayments').insert(db_payload).execute()
-                                st.success("Group Collections Submitted Successfully!")
-                                del st.session_state['pending_collections']
-                                import time
-                                time.sleep(2)
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error saving: {e}")
-                    else:
-                        with st.form("collections_form"):
-                            sav_data = {}
-                            rep_data = {}
-                            
-                            # ---- GROUP-LEVEL SAVINGS ----
-                            st.markdown("### 🏛️ Group-Level Savings")
-                            st.caption("Input communal group savings and withdrawal amounts.")
-                            gsc1, gsc2, gsc3 = st.columns(3)
-                            global_group_savings = gsc1.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=None, placeholder="0")
-                            global_group_wd = gsc2.number_input("Group Savings Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
-                            global_laps_reserved = gsc3.number_input("Laps Reserved", min_value=0.0, step=500.0, value=None, placeholder="0")
-                            st.markdown("---")
-                            
-                            # ---- PER-CLIENT COLLECTIONS ----
-                            st.markdown("### 📋 Client Collections (Savings & Repayments)")
-                            for cid, info in member_info.items():
-                                m = info['member']
-                                prod = str(m['Loan Product'])
-                                is_asset = str(cid).endswith("-ASSET")
-                                
-                                if is_asset:
-                                    title = f"📋 {m['Client Name']} (ASSET) - Rem: ₦{info['rem_bal']:,.0f}"
-                                else:
-                                    title = f"👤 {m['Client Name']} ({cid}) - Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
-                                    
-                                with st.expander(title):
-                                    s_date_str = info.get("start_date", "")
-                                    s_date = pd.to_datetime(s_date_str, errors='coerce') if s_date_str and str(s_date_str).strip() not in ['None', 'nan', ''] else pd.NaT
-                                    view_dt = pd.to_datetime(date_str)
-                                    
-                                    if pd.notna(s_date) and s_date > view_dt:
-                                        st.warning(f"⚠️ **Next Repayment Due On:** {s_date.strftime('%Y-%m-%d')}")
-                                        st.caption("*Collection is locked until the start date.*")
-                                        continue
-                                    
-                                    if not is_asset:
-                                        st.markdown("**🏦 Savings**")
-                                        sc1, sc2 = st.columns(2)
-                                        s_dep = sc1.number_input("Savings Deposit", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"sdep_{cid}")
-                                        s_wd = sc2.number_input("Savings Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"swd_{cid}")
-                                        sav_data[cid] = {"dep": s_dep, "wd": s_wd}
-                                        st.markdown("---")
-                                    
-                                    st.markdown(f"**💵 Loan ({prod})** - Active Cr: ₦{info['act_cred']:,.0f}")
-                                    d_rep = float(info['default_rep'])
-                                    
-                                    rep_col = st.number_input(f"Credit Repayment (Expected: ₦{d_rep:,.0f})", min_value=0.0, step=500.0, value=d_rep if d_rep > 0 else None, placeholder="0", key=f"rep_{cid}")
-                                    
-                                    rep_data[cid] = {
-                                        "rep": rep_col, "app": 0, "pb": 0, "misc": 0,
-                                        "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0
-                                    }
-                            
-                            st.markdown("---")
-                            submit_btn = st.form_submit_button("Calculate Totals & Review Members", type="primary", use_container_width=True)
-                            
-                            if submit_btn:
-                                to_insert = []
-                                
-                                # Process per-client data
-                                for cid, info in member_info.items():
-                                    m = info['member']
-                                    s = sav_data.get(cid, {"dep": 0, "wd": 0})
-                                    r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0})
-                                    
-                                    sav = float(s['dep'] or 0)
-                                    sav_wd = float(s['wd'] or 0)
-                                    rep = float(r['rep'] or 0)
-                                    app = float(r['app'] or 0)
-                                    pb = float(r['pb'] or 0)
-                                    misc = float(r['misc'] or 0)
-                                    asset_cr = float(r['asset_cr'] or 0)
-                                    cc = float(r['cc'] or 0)
-                                    cfd = float(r['cfd'] or 0)
-                                    bon = float(r['bonus'] or 0)
-                                    
-                                    if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
-                                        continue
-                                    
-                                    prod_low = str(m['Loan Product']).lower()
-                                    rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
-                                    
-                                    if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep
-                                    elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep
-                                    elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep
-                                    elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep
-                                    elif "month" in prod_low: rep_mth = rep
-                                    else: rep_60d = rep
-                                    
-                                    tx_data = {
-                                        "Date": date_str,
-                                        "Client ID": cid,
-                                        "Client Name": m['Client Name'],
-                                        "Officer": target_co,
-                                        "Branch": m['Branch'],
-                                        "Amount Paid": sav + rep + app + pb + misc + asset_cr + cc + cfd + bon,
-                                        "Transaction Type": "Loan",
-                                        "Note": "Daily Collection",
-                                        "Savings Amount": sav,
-                                        "Withdrawal Amount": sav_wd,
-                                        "Loan Repayment Amount": rep,
-                                        "Repayment 12 Weeks": rep_12w,
-                                        "Repayment 24 Weeks": rep_24w,
-                                        "Repayment 60 Days": rep_60d,
-                                        "Repayment 120 Days": rep_120d,
-                                        "Monthly": rep_mth,
-                                        "Bank Withdrawal": 0,
-                                        "Asset Sales": 0,
-                                        "App Fee": app,
-                                        "Pass Book Bonus": pb,
-                                        "Misc Fees": misc,
-                                        "Asset Credit Sales": asset_cr,
-                                        "Cash and Carry": cc,
-                                        "Credit Form": 0,
-                                        "Credit Form Damage": cfd,
-                                        "Bonus": bon,
-                                        "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
-                                        "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
-                                        "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
-                                        "Laps Reserved": 0, "Laps Transferred": 0,
-                                        "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
-                                    }
-                                    to_insert.append(tx_data)
-                                
-                                # Process Group-Level Inflows
-                                global_group_savings = float(global_group_savings or 0)
-                                global_group_wd = float(global_group_wd or 0)
-                                global_laps_reserved = float(global_laps_reserved or 0)
-                                
-                                if global_group_savings > 0 or global_group_wd > 0 or global_laps_reserved > 0:
-                                    g_data = {
-                                        "Date": date_str, "Client ID": f"GROUP-{selected_group}", "Client Name": f"{selected_group} Meeting",
-                                        "Officer": target_co, "Branch": BRANCH,
-                                        "Amount Paid": global_group_savings + global_laps_reserved,
-                                        "Transaction Type": "Group Meeting", "Note": "Group Level Inputs",
-                                        "Savings Amount": global_group_savings, "Withdrawal Amount": global_group_wd,
-                                        "Laps Reserved": global_laps_reserved,
-                                        "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
-                                        "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0, "Bank Withdrawal": 0,
-                                        "Asset Sales": 0, "App Fee": 0, "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
-                                        "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
-                                        "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
-                                        "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0, "Laps Transferred": 0,
-                                        "Group Savings Deposit": global_group_savings, "Group Savings Withdrawal": global_group_wd
-                                    }
-                                    to_insert.append(g_data)
-                                    
-                                if to_insert:
-                                    st.session_state['pending_collections'] = to_insert
-                                    st.session_state['collections_group'] = selected_group
-                                    st.session_state['collections_date'] = date_str
-                                    st.rerun()
-                                else:
-                                    st.warning("No data entered to save.")
-                                    
-        elif collection_view == "📤 End of Day / Global Outflows":
-            st.markdown("### 📤 End of Day / Global Outflows")
-            st.caption("Log your daily branch expenses, bank deposits, and withdrawals here.")
-            
-            with st.form("eod_form"):
-                out_1, out_2, out_3 = st.columns(3)
-                global_expenses = out_1.number_input("Office Expenses", min_value=0.0, step=500.0, value=None, placeholder="0")
-                global_bank_dep = out_2.number_input("Bank Deposited", min_value=0.0, step=500.0, value=None, placeholder="0")
-                global_bank_wd = out_3.number_input("Bank Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
-                
-                out_4, out_5 = st.columns(2)
-                global_prod_wd = out_4.number_input("Product Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
-                global_laps_trans = out_5.number_input("Laps Transferred", min_value=0.0, step=500.0, value=None, placeholder="0")
-                
-                st.markdown("---")
-                st.markdown("### Additional Global Collections")
-                fee_1, fee_2, fee_3 = st.columns(3)
-                global_app_fee = fee_1.number_input("Processing Fee", min_value=0.0, step=500.0, value=None, placeholder="0")
-                global_passbook = fee_2.number_input("Pass Book", min_value=0.0, step=500.0, value=None, placeholder="0")
-                global_misc_fee = fee_3.number_input("Misc Fee", min_value=0.0, step=500.0, value=None, placeholder="0")
-                
-                fee_4, fee_5, fee_6 = st.columns(3)
-                global_asset_cr = fee_4.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=None, placeholder="0")
-                global_cc = fee_5.number_input("Cash & Carry", min_value=0.0, step=500.0, value=None, placeholder="0")
-                global_cfd = fee_6.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=None, placeholder="0")
-                
-                global_bonus = st.number_input("Bonus", min_value=0.0, step=500.0, value=None, placeholder="0")
-                
-                st.markdown("---")
-                submit_eod = st.form_submit_button("Save End of Day", type="primary", use_container_width=True)
-                
-                if submit_eod:
-                    global_expenses = float(global_expenses or 0)
-                    global_bank_dep = float(global_bank_dep or 0)
-                    global_bank_wd = float(global_bank_wd or 0)
-                    global_prod_wd = float(global_prod_wd or 0)
-                    global_laps_trans = float(global_laps_trans or 0)
-                    
-                    global_app_fee = float(global_app_fee or 0)
-                    global_passbook = float(global_passbook or 0)
-                    global_misc_fee = float(global_misc_fee or 0)
-                    global_asset_cr = float(global_asset_cr or 0)
-                    global_cc = float(global_cc or 0)
-                    global_cfd = float(global_cfd or 0)
-                    global_bonus = float(global_bonus or 0)
-                    
-                    if any(x > 0 for x in [global_expenses, global_bank_dep, global_bank_wd, global_prod_wd, global_laps_trans, 
-                                           global_app_fee, global_passbook, global_misc_fee, global_asset_cr, global_cc, global_cfd, global_bonus]):
-                        g_out = {
-                            "Date": date_str, "Client ID": f"GLOBAL-{target_co}", "Client Name": f"{target_co} End of Day",
-                            "Officer": target_co, "Branch": BRANCH,
-                            "Amount Paid": sum([global_app_fee, global_passbook, global_misc_fee, global_asset_cr, global_cc, global_cfd, global_bonus]),
-                            "Transaction Type": "End of Day", "Note": "Branch/Officer Global Inputs",
-                            "Savings Amount": 0, "Withdrawal Amount": 0, "Laps Reserved": 0,
-                            "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
-                            "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0,
-                            "Bank Withdrawal": global_bank_wd, "Asset Sales": 0, "App Fee": global_app_fee, "Pass Book Bonus": global_passbook,
-                            "Misc Fees": global_misc_fee, "Asset Credit Sales": global_asset_cr, "Cash and Carry": global_cc, "Credit Form": 0, "Credit Form Damage": global_cfd, "Bonus": global_bonus,
-                            "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
-                            "Product Withdrawal": global_prod_wd, "Expenses": global_expenses, "Bank Deposited": global_bank_dep, "Laps Transferred": global_laps_trans,
-                            "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
-                        }
-                        
-                        db_payload = {UI_TO_DB_REP[k]: v for k, v in g_out.items() if k in UI_TO_DB_REP}
+                    if c2.button("✅ Confirm & Save to Database", type="primary", use_container_width=True):
+                        db_payload = []
+                        for tx in to_insert:
+                            db_payload.append({UI_TO_DB_REP[k]: v for k, v in tx.items() if k in UI_TO_DB_REP})
                         try:
-                            supabase.table('repayments').insert([db_payload]).execute()
-                            st.success("End of Day Outflows Submitted Successfully!")
+                            supabase.table('repayments').insert(db_payload).execute()
+                            st.success("Group Collections Submitted Successfully!")
+                            del st.session_state['pending_collections']
+                            import time
+                            time.sleep(2)
+                            st.rerun()
                         except Exception as e:
                             st.error(f"Error saving: {e}")
-                    else:
-                        st.warning("No data entered to save.")
+                else:
+                    with st.form("collections_form"):
+                        sav_data = {}
+                        rep_data = {}
+                        
+                        # ---- GROUP-LEVEL SAVINGS ----
+                        st.markdown("### 🏛️ Group-Level Savings")
+                        st.caption("Input communal group savings and withdrawal amounts.")
+                        gsc1, gsc2, gsc3 = st.columns(3)
+                        global_group_savings = gsc1.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=None, placeholder="0")
+                        global_group_wd = gsc2.number_input("Group Savings Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
+                        global_laps_reserved = gsc3.number_input("Laps Reserved", min_value=0.0, step=500.0, value=None, placeholder="0")
+                        st.markdown("---")
+                        
+                        # ---- PER-CLIENT COLLECTIONS ----
+                        st.markdown("### 📋 Client Collections (Savings & Repayments)")
+                        for cid, info in member_info.items():
+                            m = info['member']
+                            prod = str(m['Loan Product'])
+                            is_asset = str(cid).endswith("-ASSET")
+                            
+                            if is_asset:
+                                title = f"📋 {m['Client Name']} (ASSET) - Rem: ₦{info['rem_bal']:,.0f}"
+                            else:
+                                title = f"👤 {m['Client Name']} ({cid}) - Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
+                                
+                            with st.expander(title):
+                                s_date_str = info.get("start_date", "")
+                                s_date = pd.to_datetime(s_date_str, errors='coerce') if s_date_str and str(s_date_str).strip() not in ['None', 'nan', ''] else pd.NaT
+                                view_dt = pd.to_datetime(date_str)
+                                
+                                if pd.notna(s_date) and s_date > view_dt:
+                                    st.warning(f"⚠️ **Next Repayment Due On:** {s_date.strftime('%Y-%m-%d')}")
+                                    st.caption("*Collection is locked until the start date.*")
+                                    continue
+                                
+                                if not is_asset:
+                                    st.markdown("**🏦 Savings**")
+                                    sc1, sc2 = st.columns(2)
+                                    s_dep = sc1.number_input("Savings Deposit", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"sdep_{cid}")
+                                    s_wd = sc2.number_input("Savings Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"swd_{cid}")
+                                    sav_data[cid] = {"dep": s_dep, "wd": s_wd}
+                                    st.markdown("---")
+                                
+                                st.markdown(f"**💵 Loan ({prod})** - Active Cr: ₦{info['act_cred']:,.0f}")
+                                d_rep = float(info['default_rep'])
+                                
+                                rep_col = st.number_input(f"Credit Repayment (Expected: ₦{d_rep:,.0f})", min_value=0.0, step=500.0, value=d_rep if d_rep > 0 else None, placeholder="0", key=f"rep_{cid}")
+                                
+                                rep_data[cid] = {
+                                    "rep": rep_col, "app": 0, "pb": 0, "misc": 0,
+                                    "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0
+                                }
+                        
+                        st.markdown("---")
+                        submit_btn = st.form_submit_button("Calculate Totals & Review Members", type="primary", use_container_width=True)
+                        
+                        if submit_btn:
+                            to_insert = []
+                            
+                            # Process per-client data
+                            for cid, info in member_info.items():
+                                m = info['member']
+                                s = sav_data.get(cid, {"dep": 0, "wd": 0})
+                                r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0})
+                                
+                                sav = float(s['dep'] or 0)
+                                sav_wd = float(s['wd'] or 0)
+                                rep = float(r['rep'] or 0)
+                                app = float(r['app'] or 0)
+                                pb = float(r['pb'] or 0)
+                                misc = float(r['misc'] or 0)
+                                asset_cr = float(r['asset_cr'] or 0)
+                                cc = float(r['cc'] or 0)
+                                cfd = float(r['cfd'] or 0)
+                                bon = float(r['bonus'] or 0)
+                                
+                                if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
+                                    continue
+                                
+                                prod_low = str(m['Loan Product']).lower()
+                                rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
+                                
+                                if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep
+                                elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep
+                                elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep
+                                elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep
+                                elif "month" in prod_low: rep_mth = rep
+                                else: rep_60d = rep
+                                
+                                tx_data = {
+                                    "Date": date_str,
+                                    "Client ID": cid,
+                                    "Client Name": m['Client Name'],
+                                    "Officer": target_co,
+                                    "Branch": m['Branch'],
+                                    "Amount Paid": sav + rep + app + pb + misc + asset_cr + cc + cfd + bon,
+                                    "Transaction Type": "Loan",
+                                    "Note": "Daily Collection",
+                                    "Savings Amount": sav,
+                                    "Withdrawal Amount": sav_wd,
+                                    "Loan Repayment Amount": rep,
+                                    "Repayment 12 Weeks": rep_12w,
+                                    "Repayment 24 Weeks": rep_24w,
+                                    "Repayment 60 Days": rep_60d,
+                                    "Repayment 120 Days": rep_120d,
+                                    "Monthly": rep_mth,
+                                    "Bank Withdrawal": 0,
+                                    "Asset Sales": 0,
+                                    "App Fee": app,
+                                    "Pass Book Bonus": pb,
+                                    "Misc Fees": misc,
+                                    "Asset Credit Sales": asset_cr,
+                                    "Cash and Carry": cc,
+                                    "Credit Form": 0,
+                                    "Credit Form Damage": cfd,
+                                    "Bonus": bon,
+                                    "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
+                                    "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                    "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
+                                    "Laps Reserved": 0, "Laps Transferred": 0,
+                                    "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
+                                }
+                                to_insert.append(tx_data)
+                            
+                            # Process Group-Level Inflows
+                            global_group_savings = float(global_group_savings or 0)
+                            global_group_wd = float(global_group_wd or 0)
+                            global_laps_reserved = float(global_laps_reserved or 0)
+                            
+                            if global_group_savings > 0 or global_group_wd > 0 or global_laps_reserved > 0:
+                                g_data = {
+                                    "Date": date_str, "Client ID": f"GROUP-{selected_group}", "Client Name": f"{selected_group} Meeting",
+                                    "Officer": target_co, "Branch": BRANCH,
+                                    "Amount Paid": global_group_savings + global_laps_reserved,
+                                    "Transaction Type": "Group Meeting", "Note": "Group Level Inputs",
+                                    "Savings Amount": global_group_savings, "Withdrawal Amount": global_group_wd,
+                                    "Laps Reserved": global_laps_reserved,
+                                    "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
+                                    "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0, "Bank Withdrawal": 0,
+                                    "Asset Sales": 0, "App Fee": 0, "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
+                                    "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
+                                    "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                    "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0, "Laps Transferred": 0,
+                                    "Group Savings Deposit": global_group_savings, "Group Savings Withdrawal": global_group_wd
+                                }
+                                to_insert.append(g_data)
+                                
+                            if to_insert:
+                                st.session_state['pending_collections'] = to_insert
+                                st.session_state['collections_group'] = selected_group
+                                st.session_state['collections_date'] = date_str
+                                st.rerun()
+                            else:
+                                st.warning("No data entered to save.")
 
 elif page == "Daily Report":
     st.title("Daily Collections Report")
@@ -2741,50 +2666,76 @@ elif page == "WhatsApp Cashbook":
     # ========================================================
     # LEDGER DISPLAY & MANUAL OUTFLOWS
     # ========================================================
-    st.markdown("---")
-    st.markdown(f"### 📋 Daily Ledger for {CO_DISPLAY_MAP.get(target_co, target_co)} - {date_str}")
+    st.markdown("### 📤 End of Day / Global Outflows")
+    st.caption("Log your daily branch expenses, bank deposits, and withdrawals here.")
     
-    def sum_col(df, col):
-        if col in df.columns:
-            return pd.to_numeric(df[col], errors='coerce').fillna(0).sum()
-        return 0.0
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("#### Setup & Manual Outflows")
-        bf_cash = st.number_input("Opening Balance (B/F Cash)", value=0.0, step=500.0, key="ledger_opening")
-        laps_res = st.number_input("Laps Reserved (Left Inflow)", value=0.0, step=500.0)
+    with st.form("eod_form"):
+        out_0, out_1, out_2, out_3 = st.columns(4)
+        global_opening = out_0.number_input("Opening Balance (B/F Cash)", min_value=0.0, step=500.0, value=None, placeholder="0")
+        global_expenses = out_1.number_input("Office Expenses", min_value=0.0, step=500.0, value=None, placeholder="0")
+        global_bank_dep = out_2.number_input("Bank Deposited", min_value=0.0, step=500.0, value=None, placeholder="0")
+        global_bank_wd = out_3.number_input("Bank Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
         
-        st.markdown("##### Outflows (Right)")
-        product_wd = st.number_input("Product Withdrawal (Savings WD)", value=0.0, step=500.0)
-        bank_dep = st.number_input("Bank Deposited", value=0.0, step=500.0)
-        expenses = st.number_input("Expenses", value=0.0, step=500.0)
-        laps_trans = st.number_input("Laps Transferred", value=0.0, step=500.0)
+        out_4, out_5 = st.columns(2)
+        global_prod_wd = out_4.number_input("Product Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
+        global_laps_trans = out_5.number_input("Laps Transferred", min_value=0.0, step=500.0, value=None, placeholder="0")
         
-        submit_manual = st.button("Save Manual Entries", type="primary")
-        if submit_manual:
-            tx_data = {
-                "Date": date_str, "Client ID": "CASHBOOK", "Client Name": "Cashbook Entry",
-                "Officer": target_co, "Branch": BRANCH,
-                "Transaction Type": "Cashbook Entry", "Amount Paid": 0, "Note": "Cashbook Manual Outflows",
-                "Laps Reserved": laps_res, "Product Withdrawal": product_wd,
-                "Bank Deposited": bank_dep, "Expenses": expenses, "Laps Transferred": laps_trans,
-                "Savings Amount": 0, "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0,
-                "Repayment 24 Weeks": 0, "Repayment 60 Days": 0, "Repayment 120 Days": 0,
-                "Monthly": 0, "Contingency": 0, "Bank Withdrawal": 0, "Asset Sales": 0,
-                "App Fee": 0, "Pass Book Bonus": 0, "Daily 11%": 0, "Daily 20%": 0,
-                "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0, "Group Savings Deposit": 0,
-                "Group Savings Withdrawal": 0, "Misc Fees": 0, "Withdrawal Amount": 0
-            }
-            try:
-                db_data = {UI_TO_DB_REP[k]: v for k, v in tx_data.items()}
-                supabase.table("repayments").insert([db_data]).execute()
-                st.success("Manual entries saved!")
-                import time
-                time.sleep(1)
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error saving: {e}")
+        st.markdown("---")
+        st.markdown("### Additional Global Collections")
+        fee_1, fee_2, fee_3 = st.columns(3)
+        global_app_fee = fee_1.number_input("Processing Fee", min_value=0.0, step=500.0, value=None, placeholder="0")
+        global_passbook = fee_2.number_input("Pass Book", min_value=0.0, step=500.0, value=None, placeholder="0")
+        global_misc_fee = fee_3.number_input("Misc Fee", min_value=0.0, step=500.0, value=None, placeholder="0")
+        
+        fee_4, fee_5, fee_6 = st.columns(3)
+        global_asset_cr = fee_4.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=None, placeholder="0")
+        global_cc = fee_5.number_input("Cash & Carry", min_value=0.0, step=500.0, value=None, placeholder="0")
+        global_cfd = fee_6.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=None, placeholder="0")
+        
+        global_bonus = st.number_input("Bonus", min_value=0.0, step=500.0, value=None, placeholder="0")
+        
+        st.markdown("---")
+        submit_eod = st.form_submit_button("Save End of Day", type="primary", use_container_width=True)
+        
+        if submit_eod:
+            global_opening = float(global_opening or 0)
+            global_expenses = float(global_expenses or 0)
+            global_bank_dep = float(global_bank_dep or 0)
+            global_bank_wd = float(global_bank_wd or 0)
+            global_prod_wd = float(global_prod_wd or 0)
+            global_laps_trans = float(global_laps_trans or 0)
+            
+            global_app_fee = float(global_app_fee or 0)
+            global_passbook = float(global_passbook or 0)
+            global_misc_fee = float(global_misc_fee or 0)
+            global_asset_cr = float(global_asset_cr or 0)
+            global_cc = float(global_cc or 0)
+            global_cfd = float(global_cfd or 0)
+            global_bonus = float(global_bonus or 0)
+            
+            if any(x > 0 for x in [global_opening, global_expenses, global_bank_dep, global_bank_wd, global_prod_wd, global_laps_trans, 
+                                   global_app_fee, global_passbook, global_misc_fee, global_asset_cr, global_cc, global_cfd, global_bonus]):
+                g_out = {
+                    "Date": date_str, "Client ID": f"GLOBAL-{target_co}", "Client Name": f"{target_co} End of Day",
+                    "Officer": target_co, "Branch": BRANCH,
+                    "Amount Paid": sum([global_app_fee, global_passbook, global_misc_fee, global_asset_cr, global_cc, global_cfd, global_bonus]),
+                    "Transaction Type": "End of Day", "Note": "Branch/Officer Global Inputs",
+                    "Opening Balance": global_opening, "Savings Amount": 0, "Withdrawal Amount": 0, "Laps Reserved": 0,
+                    "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
+                    "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0,
+                    "Bank Withdrawal": global_bank_wd, "Asset Sales": 0, "App Fee": global_app_fee, "Pass Book Bonus": global_passbook,
+                    "Misc Fees": global_misc_fee, "Asset Credit Sales": global_asset_cr, "Cash and Carry": global_cc, "Credit Form": 0, "Credit Form Damage": global_cfd, "Bonus": global_bonus,
+                    "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                    "Product Withdrawal": global_prod_wd, "Expenses": global_expenses, "Bank Deposited": global_bank_dep, "Laps Transferred": global_laps_trans,
+                    "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
+                }
+                
+                db_payload = {UI_TO_DB_REP[k]: v for k, v in g_out.items() if k in UI_TO_DB_REP}
+                try:
+                    supabase.table('repayments').insert([db_payload]).execute()
+                    st.success("End of Day Outflows Submitted Successfully!")
+                except Exception as e:
+                    st.error(f"Error saving: {e}")
 
     # Calculate New Active Disbursements (from loans table originated today by this CO)
     co_loans = all_loans[all_loans['Officer'] == target_co] if not all_loans.empty else pd.DataFrame()
@@ -2968,49 +2919,49 @@ elif page == "Master Cashbook":
             auto_opening = 0.0
         
         # ---- DISPLAY AUTO-SUMMED VALUES ----
-        st.markdown("### 📥 Left (Inflows) — Auto-Summed from CO Data")
+        st.markdown("### 📊 Daily Ledger (Auto-Summed from CO Data)")
         
-        a1, a2, a3, a4 = st.columns(4)
-        a1.metric("Credit Rep (Daily)", f"₦{auto_rep_daily:,.0f}")
-        a2.metric("Credit Rep (12 Wks)", f"₦{auto_rep_12w:,.0f}")
-        a3.metric("Credit Rep (24 Wks)", f"₦{auto_rep_24w:,.0f}")
-        a4.metric("Credit Rep (Monthly)", f"₦{auto_rep_mth:,.0f}")
+        inflow_labels = [
+            "Opening Balance", "Credit Rep (Daily)", "Credit Rep (12 Wks)", "Credit Rep (24 Wks)", 
+            "Credit Rep (Monthly)", "Savings Deposit", "Laps Reserve", "Daily 11%", "Weekly 11%", 
+            "Risk Premium", "Passbook", "Credit Form (Proc. Fee)", "Contingency (1%)", 
+            "Asset Credit Sales", "Cash and Carry", "Cr Form Damage", "Misc Fees", "Bonus"
+        ]
+        inflow_vals = [
+            auto_opening, auto_rep_daily, auto_rep_12w, auto_rep_24w, auto_rep_mth, 
+            auto_savings, auto_laps_res, auto_daily_11, auto_weekly_11, auto_risk_premium, 
+            auto_passbook, auto_app_fee, auto_contingency, auto_asset_cr_sales, 
+            auto_cash_carry, auto_credit_form_dmg, auto_misc, auto_bonus
+        ]
+
+        outflow_labels = [
+            "Fund to Asset Program", "Fund to Product Finance", "Savings Withdrawal", 
+            "Laps Returns", "Office Expenses", "Bank Deposit", "Bank Withdrawal", 
+            "Product Withdrawal", "", "", "", "", "", "", "", "", "", ""
+        ] 
+        outflow_vals = [
+            auto_fund_asset, auto_fund_finance, auto_savings_wd, auto_laps_ret, 
+            auto_expenses, auto_bank_dep, auto_bank_wd, auto_prod_wd, 
+            "", "", "", "", "", "", "", "", "", ""
+        ]
+
+        df_preview = pd.DataFrame({
+            "📥 Inflows (Left)": inflow_labels,
+            "Amount (₦) ": inflow_vals,
+            "📤 Outflows (Right)": outflow_labels,
+            "Amount (₦)  ": outflow_vals
+        })
         
-        b1, b2, b3, b4 = st.columns(4)
-        b1.metric("Savings Deposit", f"₦{auto_savings:,.0f}")
-        b2.metric("Laps Reserve", f"₦{auto_laps_res:,.0f}")
-        b3.metric("Daily 11%", f"₦{auto_daily_11:,.0f}")
-        b4.metric("Weekly 11%", f"₦{auto_weekly_11:,.0f}")
-        
-        e1, e2, e3, e4 = st.columns(4)
-        e1.metric("Risk Premium", f"₦{auto_risk_premium:,.0f}")
-        e2.metric("Passbook", f"₦{auto_passbook:,.0f}")
-        e3.metric("Credit Form (Proc. Fee)", f"₦{auto_app_fee:,.0f}")
-        e4.metric("Contingency (1%)", f"₦{auto_contingency:,.0f}")
-        
-        f1, f2, f3, f4 = st.columns(4)
-        f1.metric("Asset Credit Sales", f"₦{auto_asset_cr_sales:,.0f}")
-        f2.metric("Cash and Carry", f"₦{auto_cash_carry:,.0f}")
-        f3.metric("Cr Form Damage", f"₦{auto_credit_form_dmg:,.0f}")
-        f4.metric("Misc Fees", f"₦{auto_misc:,.0f}")
-        
-        g1, _ = st.columns(2)
-        g1.metric("Bonus", f"₦{auto_bonus:,.0f}")
-        
-        st.markdown("---")
-        st.markdown("### 📤 Right (Outflows) — Auto-Summed from CO Data")
-        
-        h1, h2, h3, h4 = st.columns(4)
-        h1.metric("Fund to Asset Program", f"₦{auto_fund_asset:,.0f}")
-        h2.metric("Fund to Product Finance", f"₦{auto_fund_finance:,.0f}")
-        h3.metric("Savings Withdrawal", f"₦{auto_savings_wd:,.0f}")
-        h4.metric("Laps Returns", f"₦{auto_laps_ret:,.0f}")
-        
-        i1, i2, i3, i4 = st.columns(4)
-        i1.metric("Office Expenses", f"₦{auto_expenses:,.0f}")
-        i2.metric("Bank Deposit", f"₦{auto_bank_dep:,.0f}")
-        i3.metric("Bank Withdrawal", f"₦{auto_bank_wd:,.0f}")
-        i4.metric("Product Withdrawal", f"₦{auto_prod_wd:,.0f}")
+        def format_currency(x):
+            if isinstance(x, (int, float)):
+                return f"₦{x:,.0f}"
+            return x
+            
+        df_display = df_preview.copy()
+        df_display["Amount (₦) "] = df_display["Amount (₦) "].apply(format_currency)
+        df_display["Amount (₦)  "] = df_display["Amount (₦)  "].apply(format_currency)
+
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
         
         # ---- MANUAL BM INPUTS ----
         st.markdown("---")
