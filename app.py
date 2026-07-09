@@ -3110,120 +3110,118 @@ elif page == "Master Cashbook":
                     st.error(f"Failed to save: {e}")
     
     elif cashbook_section == "📱 WhatsApp Cashbook (CO View)":
-            if repayments.empty:
-                repayments = pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
+        view_date = st.date_input("Select Date", datetime.now().date(), key="wa_mc_date")
+        date_str = view_date.strftime("%Y-%m-%d")
+        
+        repayments = all_repayments.copy() if not all_repayments.empty else pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
+        repayments['DateStr'] = pd.to_datetime(repayments['Date'], errors='coerce').dt.date.astype(str)
 
-            repayments['DateStr'] = pd.to_datetime(repayments['Date'], errors='coerce').dt.date.astype(str)
+        # --- RBAC FILTERING ---
+        st.markdown("### 🏢 Select Credit Officer")
+        daily_reps_all = repayments[repayments['DateStr'] == date_str]
+        if ROLE == "BM":
+            daily_reps_all = daily_reps_all[daily_reps_all['Branch'] == BRANCH]
 
-            # --- RBAC FILTERING ---
-            if True: # Always show dropdown in Master Cashbook view
-                st.markdown("### 🏢 Managerial Controls")
-                daily_reps_all = repayments[repayments['DateStr'] == date_str]
-                if ROLE == "BM":
-                    daily_reps_all = daily_reps_all[daily_reps_all['Branch'] == BRANCH]
+        unique_officers = daily_reps_all['Officer'].dropna().unique().tolist()
+        if unique_officers:
+            display_options = [CO_DISPLAY_MAP.get(o, o) for o in unique_officers]
+            selected_display = st.selectbox("Select Credit Officer", display_options, key="wa_cashbook_co")
+            target_co = CO_NAME_MAP.get(selected_display, selected_display)
+        else:
+            st.info("No officers have records for this date.")
+            target_co = USER
 
-                unique_officers = daily_reps_all['Officer'].dropna().unique().tolist()
-                if unique_officers:
-                    display_options = [CO_DISPLAY_MAP.get(o, o) for o in unique_officers]
-                    selected_display = st.selectbox("Select Credit Officer", display_options, key="wa_cashbook_co")
-                    target_co = CO_NAME_MAP.get(selected_display, selected_display)
-                else:
-                    st.info("No officers have records for this date.")
-                    target_co = USER
-            else:
-                target_co = USER
+        daily_reps = repayments[(repayments['DateStr'] == date_str) & (repayments['Officer'] == target_co)]
 
-            daily_reps = repayments[(repayments['DateStr'] == date_str) & (repayments['Officer'] == target_co)]
+        # ========================================================
+        # LEDGER DISPLAY & MANUAL OUTFLOWS
+        # ========================================================
+        # Calculate New Active Disbursements (from loans table originated today by this CO)
+        co_loans = all_loans[all_loans['Officer'] == target_co] if not all_loans.empty else pd.DataFrame()
+        d_act = w_act = m_act = 0
+        if not co_loans.empty:
+            co_loans['DateStr'] = pd.to_datetime(co_loans['Date'], errors='coerce').dt.date.astype(str)
+            today_loans = co_loans[co_loans['DateStr'] == date_str]
+            for _, loan in today_loans.iterrows():
+                prod = str(loan.get('Loan Product', '')).lower()
+                amt = pd.to_numeric(loan.get('Active Credit', 0), errors='coerce')
+                if pd.isna(amt): amt = 0
+                if "daily" in prod or "60" in prod or "120" in prod: d_act += amt
+                elif "weekly" in prod or "12w" in prod or "24w" in prod: w_act += amt
+                elif "month" in prod or "3m" in prod or "6m" in prod: m_act += amt
 
-            # ========================================================
-            # LEDGER DISPLAY & MANUAL OUTFLOWS
-            # ========================================================
-            # Calculate New Active Disbursements (from loans table originated today by this CO)
-            co_loans = all_loans[all_loans['Officer'] == target_co] if not all_loans.empty else pd.DataFrame()
-            d_act = w_act = m_act = 0
-            if not co_loans.empty:
-                co_loans['DateStr'] = pd.to_datetime(co_loans['Date'], errors='coerce').dt.date.astype(str)
-                today_loans = co_loans[co_loans['DateStr'] == date_str]
-                for _, loan in today_loans.iterrows():
-                    prod = str(loan.get('Loan Product', '')).lower()
-                    amt = pd.to_numeric(loan.get('Active Credit', 0), errors='coerce')
-                    if pd.isna(amt): amt = 0
-                    if "daily" in prod or "60" in prod or "120" in prod: d_act += amt
-                    elif "weekly" in prod or "12w" in prod or "24w" in prod: w_act += amt
-                    elif "month" in prod or "3m" in prod or "6m" in prod: m_act += amt
+        # Sum all the columns from daily_reps
+        def sum_col(df, col):
+            if df.empty or col not in df.columns:
+                return 0.0
+            return pd.to_numeric(df[col], errors='coerce').fillna(0).sum()
 
-            # Sum all the columns from daily_reps
-            def sum_col(df, col):
-                if df.empty or col not in df.columns:
-                    return 0.0
-                return pd.to_numeric(df[col], errors='coerce').fillna(0).sum()
+        bf_cash = sum_col(daily_reps, 'Opening Balance')
+        t_sav = sum_col(daily_reps, 'Savings Amount')
+        t_r12w = sum_col(daily_reps, 'Repayment 12 Weeks')
+        t_r24w = sum_col(daily_reps, 'Repayment 24 Weeks')
+        t_r60d = sum_col(daily_reps, 'Repayment 60 Days')
+        t_r120d = sum_col(daily_reps, 'Repayment 120 Days')
+        t_rmth = sum_col(daily_reps, 'Monthly')
+        t_cont = sum_col(daily_reps, 'Contingency')
+        t_bwd = sum_col(daily_reps, 'Bank Withdrawal')
+        t_asale = sum_col(daily_reps, 'Asset Sales')
+        t_app = sum_col(daily_reps, 'App Fee')
+        t_pb = sum_col(daily_reps, 'Pass Book Bonus')
+        t_misc = sum_col(daily_reps, 'Misc Fees')
 
-            bf_cash = sum_col(daily_reps, 'Opening Balance')
-            t_sav = sum_col(daily_reps, 'Savings Amount')
-            t_r12w = sum_col(daily_reps, 'Repayment 12 Weeks')
-            t_r24w = sum_col(daily_reps, 'Repayment 24 Weeks')
-            t_r60d = sum_col(daily_reps, 'Repayment 60 Days')
-            t_r120d = sum_col(daily_reps, 'Repayment 120 Days')
-            t_rmth = sum_col(daily_reps, 'Monthly')
-            t_cont = sum_col(daily_reps, 'Contingency')
-            t_bwd = sum_col(daily_reps, 'Bank Withdrawal')
-            t_asale = sum_col(daily_reps, 'Asset Sales')
-            t_app = sum_col(daily_reps, 'App Fee')
-            t_pb = sum_col(daily_reps, 'Pass Book Bonus')
-            t_misc = sum_col(daily_reps, 'Misc Fees')
+        t_d11 = sum_col(daily_reps, 'Daily 11%')
+        t_d20 = sum_col(daily_reps, 'Daily 20%')
+        t_w11 = sum_col(daily_reps, 'Weekly 11%')
+        t_w20 = sum_col(daily_reps, 'Weekly 20%')
+        t_mm = sum_col(daily_reps, 'Monthly 11%/20%')
+        t_pwd = sum_col(daily_reps, 'Product Withdrawal')
+        t_exp = sum_col(daily_reps, 'Expenses')
+        t_bdep = sum_col(daily_reps, 'Bank Deposited')
+        t_lres = sum_col(daily_reps, 'Laps Reserved')
+        t_ltrans = sum_col(daily_reps, 'Laps Transferred')
+        t_cc = sum_col(daily_reps, 'Cash Carry')
 
-            t_d11 = sum_col(daily_reps, 'Daily 11%')
-            t_d20 = sum_col(daily_reps, 'Daily 20%')
-            t_w11 = sum_col(daily_reps, 'Weekly 11%')
-            t_w20 = sum_col(daily_reps, 'Weekly 20%')
-            t_mm = sum_col(daily_reps, 'Monthly 11%/20%')
-            t_pwd = sum_col(daily_reps, 'Product Withdrawal')
-            t_exp = sum_col(daily_reps, 'Expenses')
-            t_bdep = sum_col(daily_reps, 'Bank Deposited')
-            t_lres = sum_col(daily_reps, 'Laps Reserved')
-            t_ltrans = sum_col(daily_reps, 'Laps Transferred')
-            t_cc = sum_col(daily_reps, 'Cash Carry')
+        left_total = bf_cash + t_lres + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_misc
+        right_total = t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_ltrans + t_cc
+        closing_bal = left_total - right_total
 
-            left_total = bf_cash + t_lres + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_misc
-            right_total = t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_ltrans + t_cc
-            closing_bal = left_total - right_total
+        # Build the single-row dataframe for the ledger
+        ledger_data = {
+            "Date": [date_str],
+            "Opening balance": [bf_cash],
+            "Savings": [t_sav],
+            "Repayment 12 weeks": [t_r12w],
+            "Repayment 24 weeks": [t_r24w],
+            "Repayment 60 days": [t_r60d],
+            "Repayment 120 days": [t_r120d],
+            "monthly": [t_rmth],
+            "Contigency": [t_cont],
+            "Bank withdrawal": [t_bwd],
+            "Asset sales": [t_asale],
+            "App fee": [t_app],
+            "Pass book bonus": [t_pb],
+            "Misc Fees": [t_misc],
+            "Laps Reserved": [t_lres],
+            "Daily 11%": [t_d11],
+            "Daily 20%": [t_d20],
+            "Weekly 11%": [t_w11],
+            "Weekly 20%": [t_w20],
+            "Monthly 11%/20%": [t_mm],
+            "Cash Carry": [t_cc],
+            "Total": [left_total],
+            "Product Withdrawal": [t_pwd],
+            "Weekly Active": [w_act],
+            "Daily Active": [d_act],
+            "Monthly Active": [m_act],
+            "Expenses": [t_exp],
+            "Bank": [t_bdep],
+            "Laps Transferred": [t_ltrans],
+            "Total.1": [right_total],
+            "Closing balance": [closing_bal]
+        }
 
-            # Build the single-row dataframe for the ledger
-            ledger_data = {
-                "Date": [date_str],
-                "Opening balance": [bf_cash],
-                "Savings": [t_sav],
-                "Repayment 12 weeks": [t_r12w],
-                "Repayment 24 weeks": [t_r24w],
-                "Repayment 60 days": [t_r60d],
-                "Repayment 120 days": [t_r120d],
-                "monthly": [t_rmth],
-                "Contigency": [t_cont],
-                "Bank withdrawal": [t_bwd],
-                "Asset sales": [t_asale],
-                "App fee": [t_app],
-                "Pass book bonus": [t_pb],
-                "Misc Fees": [t_misc],
-                "Laps Reserved": [t_lres],
-                "Daily 11%": [t_d11],
-                "Daily 20%": [t_d20],
-                "Weekly 11%": [t_w11],
-                "Weekly 20%": [t_w20],
-                "Monthly 11%/20%": [t_mm],
-                "Cash Carry": [t_cc],
-                "Total": [left_total],
-                "Product Withdrawal": [t_pwd],
-                "Weekly Active": [w_act],
-                "Daily Active": [d_act],
-                "Monthly Active": [m_act],
-                "Expenses": [t_exp],
-                "Bank": [t_bdep],
-                "Laps Transferred": [t_ltrans],
-                "Total.1": [right_total],
-                "Closing balance": [closing_bal]
-            }
-
-            st.dataframe(pd.DataFrame(ledger_data).T.rename(columns={0: "Amount"}).style.format(precision=0, thousands=","), height=500)
+        st.dataframe(pd.DataFrame(ledger_data).T.rename(columns={0: "Amount"}).style.format(precision=0, thousands=","), height=500)
 
 
     elif cashbook_section == "📊 Monthly Ledger":
