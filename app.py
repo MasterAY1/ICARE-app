@@ -1670,18 +1670,26 @@ elif page == "Loan Origination":
                             # Inject Upfront Revenue (Contingency & Markup)
                             amt_val = pd.to_numeric(loan_row.get("Loan Amount", 0), errors='coerce')
                             prod_str = str(loan_row.get("Loan Product", ""))
-                            rate = 0.12 if "60" in prod_str or "12 Week" in prod_str or "3 Month" in prod_str else 0.21
+                            prod_low = prod_str.lower()
+                            
+                            # Products: "Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"
+                            # 11% rate products: 60 Days, 12W, 3M
+                            # 21% rate products: 120 Days, 24W, 6M
+                            is_11_pct = ("60 day" in prod_low or "12w" in prod_low or "3m" in prod_low)
+                            rate = 0.12 if is_11_pct else 0.21
                             interest_val = amt_val * rate
                             
                             cont_val = interest_val * (1/12) if rate == 0.12 else interest_val * (1/21)
                             markup_val = interest_val - cont_val
                             
-                            dur_val = 60
-                            if "120" in prod_str: dur_val = 120
-                            elif "12 Week" in prod_str: dur_val = 12
-                            elif "24 Week" in prod_str: dur_val = 24
-                            elif "3 Month" in prod_str: dur_val = 3
-                            elif "6 Month" in prod_str: dur_val = 6
+                            # Determine duration bucket
+                            if "120" in prod_low: dur_val = 120
+                            elif "60" in prod_low: dur_val = 60
+                            elif "24w" in prod_low: dur_val = 24
+                            elif "12w" in prod_low: dur_val = 12
+                            elif "6m" in prod_low: dur_val = 6
+                            elif "3m" in prod_low: dur_val = 3
+                            else: dur_val = 60
                             
                             d11 = markup_val if rate == 0.12 and dur_val == 60 else 0
                             w11 = markup_val if rate == 0.12 and dur_val == 12 else 0
@@ -2849,31 +2857,34 @@ elif page == "Master Cashbook":
             return pd.to_numeric(df[col], errors='coerce').fillna(0).sum()
         
         # Auto-sum LEFT (Inflows) from CO collections
-        auto_rep_daily = ssum(day_reps, 'Repayment 60 Days') + ssum(day_reps, 'Repayment 120 Days')
+        auto_rep_60d = ssum(day_reps, 'Repayment 60 Days')
+        auto_rep_120d = ssum(day_reps, 'Repayment 120 Days')
         auto_rep_12w = ssum(day_reps, 'Repayment 12 Weeks')
         auto_rep_24w = ssum(day_reps, 'Repayment 24 Weeks')
         auto_rep_mth = ssum(day_reps, 'Monthly')
         auto_savings = ssum(day_reps, 'Savings Amount')
         auto_laps_res = ssum(day_reps, 'Laps Reserved')
         auto_daily_11 = ssum(day_reps, 'Daily 11%')
+        auto_daily_20 = ssum(day_reps, 'Daily 20%')
         auto_weekly_11 = ssum(day_reps, 'Weekly 11%')
-        auto_risk_premium = ssum(day_reps, 'Markup Paid')
+        auto_weekly_20 = ssum(day_reps, 'Weekly 20%')
+        auto_monthly_markup = ssum(day_reps, 'Monthly 11%/20%')
         auto_passbook = ssum(day_reps, 'Pass Book Bonus')
-        auto_app_fee = ssum(day_reps, 'App Fee')  # Processing Fee / Credit Form — single canonical field
+        auto_app_fee = ssum(day_reps, 'App Fee')
         auto_asset_cr_sales = ssum(day_reps, 'Asset Credit Sales')
         auto_cash_carry = ssum(day_reps, 'Cash and Carry')
         auto_contingency = ssum(day_reps, 'Contingency')
         auto_credit_form_dmg = ssum(day_reps, 'Credit Form Damage')
         auto_bonus = ssum(day_reps, 'Bonus')
         auto_misc = ssum(day_reps, 'Misc Fees')
+        auto_bank_wd = ssum(day_reps, 'Bank Withdrawal')
         
         # Auto-sum RIGHT (Outflows) from CO entries
         auto_savings_wd = ssum(day_reps, 'Withdrawal Amount')
+        auto_prod_wd = ssum(day_reps, 'Product Withdrawal')
         auto_expenses = ssum(day_reps, 'Expenses')
         auto_laps_ret = ssum(day_reps, 'Laps Transferred')
         auto_bank_dep = ssum(day_reps, 'Bank Deposited')
-        auto_bank_wd = ssum(day_reps, 'Bank Withdrawal')
-        auto_prod_wd = ssum(day_reps, 'Product Withdrawal')
         
         # Auto-sum VAULT FUNDING from loans disbursed today
         if not all_loans.empty:
@@ -2888,15 +2899,29 @@ elif page == "Master Cashbook":
         
         auto_fund_asset = 0.0
         auto_fund_finance = 0.0
+        auto_disb_60d = 0.0
+        auto_disb_120d = 0.0
+        auto_disb_12w = 0.0
+        auto_disb_24w = 0.0
+        auto_disb_mth = 0.0
         if not today_loans.empty:
             for _, loan in today_loans.iterrows():
                 principal = pd.to_numeric(loan.get('Loan Amount', 0), errors='coerce')
+                active_cr = pd.to_numeric(loan.get('Active Credit', 0), errors='coerce')
                 if pd.isna(principal): principal = 0
+                if pd.isna(active_cr): active_cr = 0
                 cat = str(loan.get('Product Category', 'Finance'))
+                prod = str(loan.get('Loan Product', '')).lower()
                 if 'Asset' in cat:
                     auto_fund_asset += principal
                 else:
                     auto_fund_finance += principal
+                # Route active credit to product-specific disbursement
+                if '120' in prod: auto_disb_120d += active_cr
+                elif '60' in prod: auto_disb_60d += active_cr
+                elif '24w' in prod: auto_disb_24w += active_cr
+                elif '12w' in prod: auto_disb_12w += active_cr
+                elif '3m' in prod or '6m' in prod: auto_disb_mth += active_cr
         
         # ---- OPENING BALANCE: Fetch previous day's closing ----
         prev_date = (view_date - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -2906,38 +2931,61 @@ elif page == "Master Cashbook":
         except Exception:
             auto_opening = 0.0
         
-        # ---- DISPLAY AUTO-SUMMED VALUES ----
+        # ---- DISPLAY AUTO-SUMMED VALUES (Excel T-Account Layout) ----
         st.markdown("### 📊 Daily Ledger (Auto-Summed from CO Data)")
         
-        inflow_labels = [
-            "Opening Balance", "Credit Rep (Daily)", "Credit Rep (12 Wks)", "Credit Rep (24 Wks)", 
-            "Credit Rep (Monthly)", "Savings Deposit", "Laps Reserve", "Daily 11%", "Weekly 11%", 
-            "Risk Premium", "Passbook", "Credit Form (Proc. Fee)", "Contingency (1%)", 
-            "Asset Credit Sales", "Cash and Carry", "Cr Form Damage", "Misc Fees", "Bonus"
+        # Build LEFT (Inflows) matching Excel columns A–AA
+        inflow_items = [
+            ("Opening Balance", auto_opening),
+            ("Savings Deposit", auto_savings),
+            ("Credit Rep (60 Days)", auto_rep_60d),
+            ("Credit Rep (120 Days)", auto_rep_120d),
+            ("Credit Rep (12 Weeks)", auto_rep_12w),
+            ("Credit Rep (24 Weeks)", auto_rep_24w),
+            ("Credit Rep (Monthly)", auto_rep_mth),
+            ("Laps Reserve", auto_laps_res),
+            ("Asset Credit Sales", auto_asset_cr_sales),
+            ("Cash & Carry", auto_cash_carry),
+            ("Daily 11%", auto_daily_11),
+            ("Daily 20%", auto_daily_20),
+            ("Weekly 11%", auto_weekly_11),
+            ("Weekly 20%", auto_weekly_20),
+            ("Monthly 11%/20%", auto_monthly_markup),
+            ("Contingency (1%)", auto_contingency),
+            ("Credit Form Damage", auto_credit_form_dmg),
+            ("Bonus", auto_bonus),
+            ("Credit Form / App Fee", auto_app_fee),
+            ("Pass Book", auto_passbook),
+            ("Bank Withdrawal", auto_bank_wd),
         ]
-        inflow_vals = [
-            auto_opening, auto_rep_daily, auto_rep_12w, auto_rep_24w, auto_rep_mth, 
-            auto_savings, auto_laps_res, auto_daily_11, auto_weekly_11, auto_risk_premium, 
-            auto_passbook, auto_app_fee, auto_contingency, auto_asset_cr_sales, 
-            auto_cash_carry, auto_credit_form_dmg, auto_misc, auto_bonus
+        
+        # Build RIGHT (Outflows) matching Excel columns AC–AR
+        outflow_items = [
+            ("Active Loan (60 Days)", auto_disb_60d),
+            ("Active Loan (120 Days)", auto_disb_120d),
+            ("Active Loan (12 Weeks)", auto_disb_12w),
+            ("Active Loan (24 Weeks)", auto_disb_24w),
+            ("Active Loan (Monthly)", auto_disb_mth),
+            ("Fund To Assets", auto_fund_asset),
+            ("Fund to Finance", auto_fund_finance),
+            ("Product/Savings Withdrawal", auto_prod_wd + auto_savings_wd),
+            ("Office Expenses", auto_expenses),
+            ("Laps Return", auto_laps_ret),
+            ("Bank Deposit", auto_bank_dep),
         ]
-
-        outflow_labels = [
-            "Fund to Asset Program", "Fund to Product Finance", "Savings Withdrawal", 
-            "Laps Returns", "Office Expenses", "Bank Deposit", "Bank Withdrawal", 
-            "Product Withdrawal", "", "", "", "", "", "", "", "", "", ""
-        ] 
-        outflow_vals = [
-            auto_fund_asset, auto_fund_finance, auto_savings_wd, auto_laps_ret, 
-            auto_expenses, auto_bank_dep, auto_bank_wd, auto_prod_wd, 
-            "", "", "", "", "", "", "", "", "", ""
-        ]
-
+        
+        # Pad shorter list
+        max_rows = max(len(inflow_items), len(outflow_items))
+        while len(inflow_items) < max_rows:
+            inflow_items.append(("", ""))
+        while len(outflow_items) < max_rows:
+            outflow_items.append(("", ""))
+        
         df_preview = pd.DataFrame({
-            "📥 Inflows (Left)": inflow_labels,
-            "Amount (₦) ": inflow_vals,
-            "📤 Outflows (Right)": outflow_labels,
-            "Amount (₦)  ": outflow_vals
+            "📥 Inflows (Left)": [i[0] for i in inflow_items],
+            "Amount (₦) ": [i[1] for i in inflow_items],
+            "📤 Outflows (Right)": [o[0] for o in outflow_items],
+            "Amount (₦)  ": [o[1] for o in outflow_items]
         })
         
         def format_currency(x):
@@ -2957,33 +3005,34 @@ elif page == "Master Cashbook":
         
         with st.form("master_cashbook_form"):
             st.markdown("#### 📥 Inflows (Vault Funding Received)")
-            m1, m2 = st.columns(2)
+            m1, m2, m3 = st.columns(3)
             funds_ho = m1.number_input("Funds Received from Head Office", min_value=0.0, step=1000.0, value=0.0)
-            funds_branch = m2.number_input("Funds Received from Other Branch", min_value=0.0, step=1000.0, value=0.0)
+            funds_branch = m2.number_input("Funds Received from Branch Office", min_value=0.0, step=1000.0, value=0.0)
+            funds_area = m3.number_input("Funds Received from Other Areas", min_value=0.0, step=1000.0, value=0.0)
             
             st.markdown("#### 📤 Outflows (Corporate Transfers)")
-            n1, n2 = st.columns(2)
-            xfer_ho = n1.number_input("Fund Transferred to H.O.", min_value=0.0, step=1000.0, value=0.0)
-            xfer_branch = n2.number_input("Fund Transferred to Other Branch", min_value=0.0, step=1000.0, value=0.0)
+            n1, n2, n3 = st.columns(3)
+            xfer_branch = n1.number_input("Fund Transferred to Branch Office", min_value=0.0, step=1000.0, value=0.0)
+            xfer_ho = n2.number_input("Fund Transferred to H.O.", min_value=0.0, step=1000.0, value=0.0)
+            xfer_area = n3.number_input("Fund Transferred to Other Areas", min_value=0.0, step=1000.0, value=0.0)
             
-            o1, o2 = st.columns(2)
-            xfer_area = o1.number_input("Fund Transferred to Other Area", min_value=0.0, step=1000.0, value=0.0)
-            salaries = o2.number_input("Staff Salaries", min_value=0.0, step=1000.0, value=0.0)
+            salaries = st.number_input("Staff Salaries", min_value=0.0, step=1000.0, value=0.0)
             
             # ---- CALCULATE TOTALS ----
             total_inflows = (
-                auto_opening + auto_rep_daily + auto_rep_12w + auto_rep_24w + auto_rep_mth +
-                auto_savings + auto_laps_res + auto_daily_11 + auto_weekly_11 +
-                auto_risk_premium + auto_passbook + auto_app_fee +
-                auto_asset_cr_sales + auto_cash_carry + auto_contingency +
-                auto_credit_form_dmg + auto_bonus + auto_misc +
-                funds_ho + funds_branch
+                auto_opening + auto_savings + auto_rep_60d + auto_rep_120d + auto_rep_12w + auto_rep_24w + auto_rep_mth +
+                auto_laps_res + funds_ho + funds_branch + funds_area +
+                auto_asset_cr_sales + auto_cash_carry +
+                auto_daily_11 + auto_daily_20 + auto_weekly_11 + auto_weekly_20 + auto_monthly_markup +
+                auto_contingency + auto_credit_form_dmg + auto_bonus + auto_app_fee + auto_passbook + auto_bank_wd
             )
             
             total_outflows = (
-                auto_fund_asset + auto_fund_finance + auto_savings_wd +
-                auto_expenses + auto_laps_ret + auto_bank_dep + auto_prod_wd +
-                xfer_ho + xfer_branch + xfer_area + salaries
+                auto_disb_60d + auto_disb_120d + auto_disb_12w + auto_disb_24w + auto_disb_mth +
+                xfer_branch + xfer_ho + xfer_area +
+                auto_fund_asset + auto_fund_finance +
+                auto_prod_wd + auto_savings_wd + salaries +
+                auto_expenses + auto_laps_ret + auto_bank_dep
             )
             
             closing_balance = total_inflows - total_outflows
@@ -3007,7 +3056,7 @@ elif page == "Master Cashbook":
                     "date": date_str,
                     "branch": BRANCH,
                     "opening_balance": auto_opening,
-                    "rep_daily": auto_rep_daily,
+                    "rep_daily": auto_rep_60d + auto_rep_120d,
                     "rep_12_weeks": auto_rep_12w,
                     "rep_24_weeks": auto_rep_24w,
                     "rep_monthly": auto_rep_mth,
@@ -3021,7 +3070,7 @@ elif page == "Master Cashbook":
                     "weekly_11_pct": auto_weekly_11,
                     "savings_adj_no": 0,
                     "savings_adj_amount": 0,
-                    "risk_premium_returns": auto_risk_premium,
+                    "risk_premium_returns": 0,
                     "passbook": auto_passbook,
                     "app_fee": auto_app_fee,
                     "asset_credit_sales": auto_asset_cr_sales,
