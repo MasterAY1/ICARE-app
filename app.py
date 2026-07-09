@@ -2805,8 +2805,7 @@ elif page == "WhatsApp Cashbook":
         "Closing balance": [closing_bal]
     }
     
-    with c2:
-        st.dataframe(pd.DataFrame(ledger_data).T.rename(columns={0: "Amount"}).style.format(precision=0, thousands=","), height=500)
+    st.dataframe(pd.DataFrame(ledger_data).T.rename(columns={0: "Amount"}).style.format(precision=0, thousands=","), height=500)
     
     st.markdown("---")
     c_l, c_r = st.columns(2)
@@ -3175,8 +3174,7 @@ elif page == "Master Cashbook":
                 "Closing balance": [closing_bal]
             }
 
-            with c2:
-                st.dataframe(pd.DataFrame(ledger_data).T.rename(columns={0: "Amount"}).style.format(precision=0, thousands=","), height=500)
+            st.dataframe(pd.DataFrame(ledger_data).T.rename(columns={0: "Amount"}).style.format(precision=0, thousands=","), height=500)
 
 
     elif cashbook_section == "📊 Monthly Ledger":
