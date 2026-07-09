@@ -2735,6 +2735,11 @@ elif page == "WhatsApp Cashbook":
             elif "month" in prod or "3m" in prod or "6m" in prod: m_act += amt
 
     # Sum all the columns from daily_reps
+    def sum_col(df, col):
+        if df.empty or col not in df.columns:
+            return 0.0
+        return pd.to_numeric(df[col], errors='coerce').fillna(0).sum()
+        
     t_sav = sum_col(daily_reps, 'Savings Amount')
     t_r12w = sum_col(daily_reps, 'Repayment 12 Weeks')
     t_r24w = sum_col(daily_reps, 'Repayment 24 Weeks')
@@ -3099,6 +3104,11 @@ elif page == "Master Cashbook":
                     elif "month" in prod or "3m" in prod or "6m" in prod: m_act += amt
 
             # Sum all the columns from daily_reps
+            def sum_col(df, col):
+                if df.empty or col not in df.columns:
+                    return 0.0
+                return pd.to_numeric(df[col], errors='coerce').fillna(0).sum()
+
             t_sav = sum_col(daily_reps, 'Savings Amount')
             t_r12w = sum_col(daily_reps, 'Repayment 12 Weeks')
             t_r24w = sum_col(daily_reps, 'Repayment 24 Weeks')
