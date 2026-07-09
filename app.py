@@ -2740,6 +2740,7 @@ elif page == "WhatsApp Cashbook":
             return 0.0
         return pd.to_numeric(df[col], errors='coerce').fillna(0).sum()
         
+    bf_cash = sum_col(daily_reps, 'Opening Balance')
     t_sav = sum_col(daily_reps, 'Savings Amount')
     t_r12w = sum_col(daily_reps, 'Repayment 12 Weeks')
     t_r24w = sum_col(daily_reps, 'Repayment 24 Weeks')
@@ -3109,6 +3110,7 @@ elif page == "Master Cashbook":
                     return 0.0
                 return pd.to_numeric(df[col], errors='coerce').fillna(0).sum()
 
+            bf_cash = sum_col(daily_reps, 'Opening Balance')
             t_sav = sum_col(daily_reps, 'Savings Amount')
             t_r12w = sum_col(daily_reps, 'Repayment 12 Weeks')
             t_r24w = sum_col(daily_reps, 'Repayment 24 Weeks')
