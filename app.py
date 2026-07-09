@@ -1453,12 +1453,13 @@ with st.sidebar:
     
     if ROLE in ["Officer", "CO"]:
         st.markdown("<p class='nav-section-label'>OPERATIONS</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "WhatsApp Cashbook", "Audit Ledger"]
-    elif ROLE in ["BM", "AM"]:
+        nav_options = ["Dashboard", "Loan Origination", "Portfolio", "Collections", "Daily Report", "WhatsApp Cashbook", "Audit Ledger"]
+    elif ROLE == "BM":
         st.markdown("<p class='nav-section-label'>EXECUTIVE</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "Loan Origination", "Portfolio", "Master Cashbook", "Audit Ledger"]
-        if ROLE == "AM":
-            nav_options.append("User Management")
+        nav_options = ["Dashboard", "Portfolio", "Master Cashbook", "Audit Ledger"]
+    elif ROLE == "AM":
+        st.markdown("<p class='nav-section-label'>EXECUTIVE</p>", unsafe_allow_html=True)
+        nav_options = ["Dashboard", "Master Cashbook", "Audit Ledger", "User Management"]
     else:  # Admin
         st.markdown("<p class='nav-section-label'>ADMINISTRATION</p>", unsafe_allow_html=True)
         nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "Portfolio", "Master Cashbook", "Audit Ledger", "Reports & Export", "User Management"]
