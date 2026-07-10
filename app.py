@@ -2613,7 +2613,25 @@ elif page == "Audit Ledger":
             display_cols = [c for c in ['Date', 'Client ID', 'Client Name', 'Officer', 'Branch', 'Loan Product', 'Loan Amount', 'Active Credit', 'Loan Repay', 'Status'] if c in filtered.columns]
             
             st.markdown(f"**{len(filtered)} records found**")
-            st.dataframe(filtered[display_cols].sort_values(['Date', 'Client ID'], ascending=[False, True]), use_container_width=True, hide_index=True)
+            
+            display_df = filtered[display_cols].sort_values(['Date', 'Client ID'], ascending=[False, True])
+            
+            # Clean up zeros for cleaner display
+            for col in ['Loan Amount', 'Active Credit', 'Loan Repay']:
+                if col in display_df.columns:
+                    display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
+                    display_df[col] = display_df[col].replace(0, None)
+            
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Loan Amount": st.column_config.NumberColumn(format="₦%d"),
+                    "Active Credit": st.column_config.NumberColumn(format="₦%d"),
+                    "Loan Repay": st.column_config.NumberColumn(format="₦%d")
+                }
+            )
     
     elif audit_section == "💰 Repayments Ledger":
         all_reps = load_repayments()
@@ -2652,7 +2670,28 @@ elif page == "Audit Ledger":
             display_cols = [c for c in ['id', 'Date', 'Client ID', 'Client Name', 'Officer', 'Amount Paid', 'Savings Amount', 'Loan Repayment Amount', 'Withdrawal Amount', 'Transaction Type', 'Note'] if c in filtered.columns]
             
             st.markdown(f"**{len(filtered)} records found**")
-            st.dataframe(filtered[display_cols].sort_values(['Date', 'Client ID'], ascending=[False, True]), use_container_width=True, hide_index=True)
+            
+            display_df = filtered[display_cols].sort_values(['Date', 'Client ID'], ascending=[False, True])
+            
+            # Clean up zeros for cleaner display
+            for col in ['Amount Paid', 'Savings Amount', 'Loan Repayment Amount', 'Withdrawal Amount']:
+                if col in display_df.columns:
+                    display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
+                    display_df[col] = display_df[col].replace(0, None)
+                    
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Amount Paid": st.column_config.NumberColumn(format="₦%d"),
+                    "Savings Amount": st.column_config.NumberColumn(format="₦%d"),
+                    "Loan Repayment Amount": st.column_config.NumberColumn(format="₦%d"),
+                    "Withdrawal Amount": st.column_config.NumberColumn(format="₦%d"),
+                    "Note": st.column_config.TextColumn(width="large"),
+                    "Transaction Type": st.column_config.TextColumn(width="medium")
+                }
+            )
             
             # Reversal Form (Only for Managers/Admins)
             if ROLE in ["BM", "AM", "Admin"]:
