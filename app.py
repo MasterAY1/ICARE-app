@@ -2632,10 +2632,75 @@ elif page == "Audit Ledger":
             
             filtered = filtered.drop(columns=['_dstr'], errors='ignore')
             
-            display_cols = [c for c in ['Date', 'Client ID', 'Client Name', 'Officer', 'Amount Paid', 'Savings Amount', 'Loan Repayment Amount', 'Withdrawal Amount', 'Transaction Type', 'Note'] if c in filtered.columns]
+            display_cols = [c for c in ['id', 'Date', 'Client ID', 'Client Name', 'Officer', 'Amount Paid', 'Savings Amount', 'Loan Repayment Amount', 'Withdrawal Amount', 'Transaction Type', 'Note'] if c in filtered.columns]
             
             st.markdown(f"**{len(filtered)} records found**")
             st.dataframe(filtered[display_cols].sort_values('Date', ascending=False), use_container_width=True, hide_index=True)
+            
+            # Reversal Form (Only for Managers/Admins)
+            if ROLE in ["BM", "AM", "Admin"]:
+                st.markdown("---")
+                st.markdown("### 🔄 Reverse a Transaction")
+                st.warning("Reversing a transaction will post a negative entry today to correct cashbook balances and client savings.")
+                
+                with st.form("reverse_form"):
+                    rev_id = st.text_input("Enter Transaction ID (`id` column) to Reverse")
+                    rev_reason = st.text_input("Reason for Reversal", placeholder="e.g., Wrong savings amount entered")
+                    submit_rev = st.form_submit_button("Reverse Transaction", type="primary")
+                    
+                    if submit_rev:
+                        if not rev_id:
+                            st.error("Please enter a valid Transaction ID.")
+                        elif not rev_reason:
+                            st.error("Please provide a reason for the reversal.")
+                        else:
+                            try:
+                                rev_id = int(rev_id)
+                                target_row = filtered[filtered['id'] == rev_id]
+                                if target_row.empty:
+                                    st.error("Transaction ID not found in current search results.")
+                                else:
+                                    # Create negative mirror
+                                    orig_tx = target_row.iloc[0].to_dict()
+                                    
+                                    # List of numeric columns to invert
+                                    numeric_cols = [
+                                        'Amount Paid', 'Savings Amount', 'Loan Repayment Amount', 'Processing Fee Paid',
+                                        'Markup Paid', 'Pass Book Paid', 'Recovery Amount', 'Withdrawal Amount', 'Mgt Fee Paid',
+                                        'Others Amount', 'Repayment 12 Weeks', 'Repayment 24 Weeks', 'Repayment 60 Days',
+                                        'Repayment 120 Days', 'Monthly', 'Contingency', 'Bank Withdrawal', 'Asset Sales',
+                                        'App Fee', 'Pass Book Bonus', 'Daily 11%', 'Daily 20%', 'Weekly 11%', 'Weekly 20%',
+                                        'Monthly 11%/20%', 'Cash Carry', 'Product Withdrawal', 'Weekly Active', 'Daily Active',
+                                        'Monthly Active', 'Expenses', 'Bank Deposited', 'Laps Reserved', 'Laps Transferred',
+                                        'initial_payment', 'Group Savings Deposit', 'Group Savings Withdrawal', 'Misc Fees',
+                                        'Asset Credit Sales', 'Cash and Carry', 'Credit Form', 'Credit Form Damage', 'Bonus'
+                                    ]
+                                    
+                                    new_tx = {}
+                                    for key, value in orig_tx.items():
+                                        if key in numeric_cols:
+                                            val = pd.to_numeric(value, errors='coerce')
+                                            new_tx[key] = -float(val) if not pd.isna(val) else 0.0
+                                        elif key == 'Date':
+                                            new_tx[key] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                        elif key == 'Note':
+                                            new_tx[key] = f"REVERSAL of Tx #{rev_id}. Reason: {rev_reason} (by {USER})"
+                                        elif key == '_dstr' or key == 'id':
+                                            continue # Don't map temp cols or old ID
+                                        else:
+                                            new_tx[key] = value
+                                            
+                                    # Map back to DB column names
+                                    db_new_tx = {UI_TO_DB_REP.get(k, k): v for k, v in new_tx.items() if k in UI_TO_DB_REP}
+                                    
+                                    # Insert to Supabase
+                                    response = supabase.table("repayments").insert(db_new_tx).execute()
+                                    st.success(f"Transaction #{rev_id} successfully reversed! Refreshing...")
+                                    st.rerun()
+                            except ValueError:
+                                st.error("Transaction ID must be a number.")
+                            except Exception as e:
+                                st.error(f"Error reversing transaction: {e}")
 
 elif page == "WhatsApp Cashbook":
     st.title("📖 CO Daily Cashbook")
@@ -3019,13 +3084,21 @@ elif page == "Master Cashbook":
             
             salaries = st.number_input("Staff Salaries", min_value=0.0, step=1000.0, value=0.0)
             
+            st.markdown("#### ⚖️ Manual Adjustments")
+            st.info("Use these fields ONLY to correct manual mistakes made on previous days. Do not use for normal transactions.")
+            adj1, adj2 = st.columns(2)
+            adj_inflow = adj1.number_input("Adjustment Inflow (+) (₦)", min_value=0.0, step=1000.0, value=0.0)
+            adj_outflow = adj2.number_input("Adjustment Outflow (-) (₦)", min_value=0.0, step=1000.0, value=0.0)
+            adj_reason = st.text_input("Reason for Adjustment", placeholder="E.g., Correcting Staff Salary typo from yesterday")
+            
             # ---- CALCULATE TOTALS ----
             total_inflows = (
                 auto_opening + auto_savings + auto_rep_60d + auto_rep_120d + auto_rep_12w + auto_rep_24w + auto_rep_mth +
                 auto_laps_res + funds_ho + funds_branch + funds_area +
                 auto_asset_cr_sales + auto_cash_carry +
                 auto_daily_11 + auto_daily_20 + auto_weekly_11 + auto_weekly_20 + auto_monthly_markup +
-                auto_contingency + auto_credit_form_dmg + auto_bonus + auto_app_fee + auto_passbook + auto_bank_wd
+                auto_contingency + auto_credit_form_dmg + auto_bonus + auto_app_fee + auto_passbook + auto_bank_wd +
+                adj_inflow
             )
             
             total_outflows = (
@@ -3033,7 +3106,8 @@ elif page == "Master Cashbook":
                 xfer_branch + xfer_ho + xfer_area +
                 auto_fund_asset + auto_fund_finance +
                 auto_prod_wd + auto_savings_wd + salaries +
-                auto_expenses + auto_laps_ret + auto_bank_dep
+                auto_expenses + auto_laps_ret + auto_bank_dep +
+                adj_outflow
             )
             
             closing_balance = total_inflows - total_outflows
@@ -3095,7 +3169,10 @@ elif page == "Master Cashbook":
                     "product_withdrawal": auto_prod_wd,
                     "total_inflows": total_inflows,
                     "total_outflows": total_outflows,
-                    "closing_balance": closing_balance
+                    "closing_balance": closing_balance,
+                    "adjustment_in": adj_inflow,
+                    "adjustment_out": adj_outflow,
+                    "adjustment_reason": adj_reason
                 }
                 
                 try:
