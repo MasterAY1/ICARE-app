@@ -1453,7 +1453,7 @@ with st.sidebar:
     
     if ROLE in ["Officer", "CO"]:
         st.markdown("<p class='nav-section-label'>OPERATIONS</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "Loan Origination", "Portfolio", "Collections", "Daily Report", "WhatsApp Cashbook", "Audit Ledger"]
+        nav_options = ["Dashboard", "Loan Origination", "Portfolio", "Collections", "WhatsApp Cashbook", "Audit Ledger"]
     elif ROLE == "BM":
         st.markdown("<p class='nav-section-label'>EXECUTIVE</p>", unsafe_allow_html=True)
         nav_options = ["Dashboard", "Portfolio", "Master Cashbook", "Audit Ledger"]
@@ -1462,7 +1462,7 @@ with st.sidebar:
         nav_options = ["Dashboard", "Master Cashbook", "Audit Ledger", "User Management"]
     else:  # Admin
         st.markdown("<p class='nav-section-label'>ADMINISTRATION</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "Loan Origination", "Collections", "Daily Report", "Portfolio", "Master Cashbook", "Audit Ledger", "Reports & Export", "User Management"]
+        nav_options = ["Dashboard", "Loan Origination", "Collections", "Portfolio", "Master Cashbook", "Audit Ledger", "Reports & Export", "User Management"]
     
     page = st.radio("Navigation", nav_options, label_visibility="collapsed")
     
@@ -1508,13 +1508,23 @@ if page == "Dashboard":
     fully_paid_count = 0
     total_overdue = 0
     
+    # Daily Tracking
+    collected_today = 0
+    today_savings_deposited = 0
+    today_savings_withdrawn = 0
+    today_full_payment_count = 0
+    today_full_payment_amount = 0
+    
     # Target calculations
     target_daily = 0
     target_weekly = 0
     target_monthly = 0
-    collected_today = 0
     
     total_original_active_credit = 0
+    
+    # Group Data Tracking
+    group_data = {}
+    has_weekly = False
     
     today = datetime.now()
     today_str = today.strftime("%Y-%m-%d")
@@ -1534,7 +1544,47 @@ if page == "Dashboard":
         # Calculate actual collected today for this client
         today_payments = c_payments[c_payments['Date'] == today_str]
         today_loan_paid = pd.to_numeric(today_payments['Loan Repayment Amount'], errors='coerce').fillna(0).sum()
+        today_sav_dep = pd.to_numeric(today_payments['Savings Amount'], errors='coerce').fillna(0).sum()
+        today_sav_wd = pd.to_numeric(today_payments['Withdrawal Amount'], errors='coerce').fillna(0).sum()
+        
         collected_today += today_loan_paid
+        today_savings_deposited += today_sav_dep
+        today_savings_withdrawn += today_sav_wd
+        
+        # Full payment logic (loan balance reached <= 0 today by a payment made today)
+        if loan_bal <= 0 and today_loan_paid > 0 and (loan_bal + today_loan_paid > 0):
+            today_full_payment_count += 1
+            today_full_payment_amount += today_loan_paid
+            
+        group_name = loan.get('Group', '')
+        product = str(loan.get('Loan Product', ''))
+        fixed_repay = pd.to_numeric(loan.get('Loan Repay', 0), errors='coerce')
+        if pd.isna(fixed_repay): fixed_repay = 0
+        
+        if pd.notna(group_name) and str(group_name).strip() != "":
+            gn = str(group_name).strip()
+            if gn not in group_data:
+                group_data[gn] = {'members': 0, 'savings': 0, 'active_credit': 0, 'loan_balance': 0, '12w_active': 0, '12w_bal': 0, '24w_active': 0, '24w_bal': 0, 'global_savings': 0}
+            
+            group_data[gn]['members'] += 1
+            group_data[gn]['savings'] += s_amt if s_amt > 0 else 0
+            
+            orig_ac = pd.to_numeric(loan.get('Active Credit', 0), errors='coerce')
+            if pd.isna(orig_ac): orig_ac = 0
+            
+            if "week" in product.lower() or "12w" in product.lower() or "24w" in product.lower():
+                has_weekly = True
+            
+            if loan.get('Status') in ['Active', 'Completed', 'Approved']:
+                group_data[gn]['active_credit'] += orig_ac
+                group_data[gn]['loan_balance'] += loan_bal if loan_bal > 0 else 0
+                
+                if "12 week" in product.lower() or "12w" in product.lower():
+                    group_data[gn]['12w_active'] += orig_ac
+                    group_data[gn]['12w_bal'] += loan_bal if loan_bal > 0 else 0
+                elif "24 week" in product.lower() or "24w" in product.lower():
+                    group_data[gn]['24w_active'] += orig_ac
+                    group_data[gn]['24w_bal'] += loan_bal if loan_bal > 0 else 0
         
         if s_amt > 0:
             total_people_with_savings += 1
@@ -1547,10 +1597,6 @@ if page == "Dashboard":
             original_active_credit = pd.to_numeric(loan.get('Active Credit', 0), errors='coerce')
             if pd.isna(original_active_credit): original_active_credit = 0
             total_original_active_credit += original_active_credit
-            
-            product = str(loan.get('Loan Product', ''))
-            fixed_repay = pd.to_numeric(loan.get('Loan Repay', 0), errors='coerce')
-            if pd.isna(fixed_repay): fixed_repay = 0
             
             if is_working_day:
                 if "Daily" in product or "120 Days" in product or "Cash and Carry" in product:
@@ -1571,38 +1617,138 @@ if page == "Dashboard":
         elif loan_bal <= 0 and loan.get('Status') in ['Active', 'Completed', 'Approved']:
             fully_paid_count += 1
             
-    st.markdown("### 💰 Savings Summary")
-    s1, s2 = st.columns(2)
-    s1.metric("👥 People with Savings", f"{total_people_with_savings}")
-    s2.metric("🐷 Total Savings Balance", f"₦{total_savings:,.0f}")
-    
-    st.divider()
-    
-    st.markdown("### 🏦 Credit Summary")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("👥 People with Active Loans", f"{active_loans_count}")
-    c2.metric("📈 Total Active Credit", f"₦{total_original_active_credit:,.0f}")
-    c3.metric("📉 Total Outstanding Balance", f"₦{total_active_credit:,.0f}")
-    
-    c4, c5, _ = st.columns(3)
-    c4.metric("🎉 Fully Paid Loans", f"{fully_paid_count}")
-    od_color = "inverse" if total_overdue > 0 else "normal"
-    c5.metric("🚨 Total Overdue Amount", f"₦{total_overdue:,.0f}", delta_color=od_color)
-
-    st.divider()
-    st.markdown("### 🎯 Daily Target & Performance")
+    # Process Group Globals
+    group_globals = all_repayments[all_repayments['Client ID'].str.startswith("GROUP-", na=False)]
+    if ROLE in ["CO", "Officer"]:
+        group_globals = group_globals[group_globals['Officer'] == USER]
+    elif ROLE == "BM":
+        group_globals = group_globals[group_globals['Branch'] == BRANCH]
+        
+    for _, row in group_globals.iterrows():
+        g_id = str(row.get('Client ID', ''))
+        gn = g_id.replace("GROUP-", "").strip()
+        if gn in group_data:
+            s_dep = pd.to_numeric(row.get('Savings Amount', 0), errors='coerce')
+            s_wd = pd.to_numeric(row.get('Withdrawal Amount', 0), errors='coerce')
+            if pd.isna(s_dep): s_dep = 0
+            if pd.isna(s_wd): s_wd = 0
+            group_data[gn]['global_savings'] += (s_dep - s_wd)
+            
+    st.markdown("### 📅 Today's Operations Summary")
     t1, t2, t3 = st.columns(3)
+    net_savings = today_savings_deposited - today_savings_withdrawn
+    t1.metric("📥 Savings Deposited Today", f"₦{today_savings_deposited:,.0f}")
+    t2.metric("📤 Savings Withdrawn Today", f"₦{today_savings_withdrawn:,.0f}")
+    t3.metric("🐷 Net Savings Today", f"₦{net_savings:,.0f}")
     
+    t4, t5, t6 = st.columns(3)
     total_target = target_daily + target_weekly + target_monthly
     excess = collected_today - total_target
     excess_color = "normal" if excess >= 0 else "inverse"
-    
     target_breakdown = f"Daily: ₦{target_daily:,.0f} | Weekly: ₦{target_weekly:,.0f} | Monthly: ₦{target_monthly:,.0f}"
     
-    t1.metric("📊 Expected Repayment Target", f"₦{total_target:,.0f}", target_breakdown, delta_color="off")
-    t2.metric("💵 Total Collected Today", f"₦{collected_today:,.0f}")
-    t3.metric("🚀 Excess / Shortfall", f"₦{excess:,.0f}", delta_color=excess_color)
+    t4.metric("📊 Expected Repayment Target", f"₦{total_target:,.0f}", target_breakdown, delta_color="off")
+    t5.metric("💵 Total Repayment Collected Today", f"₦{collected_today:,.0f}")
+    t6.metric("🚀 Excess / Shortfall (Collected)", f"₦{excess:,.0f}", delta_color=excess_color)
+    
+    fp_col1, fp_col2 = st.columns(2)
+    fp_col1.metric("🏆 Full Payments Today (Count)", f"{today_full_payment_count} people")
+    fp_col2.metric("💰 Full Payments Today (Amount)", f"₦{today_full_payment_amount:,.0f}")
+            
+    st.divider()
+            
+    st.markdown("### 💰 Overall Portfolio Summary")
+    s1, s2 = st.columns(2)
+    s1.metric("👥 People with Savings", f"{total_people_with_savings}")
+    s2.metric("🐷 Sum Total of All Savings", f"₦{total_savings:,.0f}")
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("👥 People with Active Loans", f"{active_loans_count}")
+    c2.metric("📈 Sum Total Active Credit", f"₦{total_original_active_credit:,.0f}")
+    c3.metric("📉 Sum Total Credit Balance", f"₦{total_active_credit:,.0f}")
+    
+    c4, c5, _ = st.columns(3)
+    c4.metric("🎉 Total Fully Paid Loans (All-Time)", f"{fully_paid_count}")
+    od_color = "inverse" if total_overdue > 0 else "normal"
+    c5.metric("🚨 Total Overdue Amount", f"₦{total_overdue:,.0f}", delta_color=od_color)
 
+    if group_data:
+        st.divider()
+        st.markdown("### 🏘️ Group-Wise Summaries")
+        
+        # Build main group dataframe
+        g_list = []
+        for gn, d in group_data.items():
+            g_list.append({
+                "Group Name": gn,
+                "Members": d['members'],
+                "Total Savings": d['savings'],
+                "Group Savings": d['global_savings'],
+                "Active Credit": d['active_credit'],
+                "Credit Balance": d['loan_balance']
+            })
+            
+        g_df = pd.DataFrame(g_list)
+        
+        # Add a Total row
+        total_row = pd.DataFrame([{
+            "Group Name": "TOTAL",
+            "Members": g_df['Members'].sum(),
+            "Total Savings": g_df['Total Savings'].sum(),
+            "Group Savings": g_df['Group Savings'].sum(),
+            "Active Credit": g_df['Active Credit'].sum(),
+            "Credit Balance": g_df['Credit Balance'].sum()
+        }])
+        g_df = pd.concat([g_df, total_row], ignore_index=True)
+        
+        st.dataframe(
+            g_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Total Savings": st.column_config.NumberColumn(format="₦%d"),
+                "Group Savings": st.column_config.NumberColumn(format="₦%d"),
+                "Active Credit": st.column_config.NumberColumn(format="₦%d"),
+                "Credit Balance": st.column_config.NumberColumn(format="₦%d")
+            }
+        )
+        
+        if has_weekly:
+            st.markdown("#### 📅 Weekly Products Breakdown (12 Weeks vs 24 Weeks)")
+            w_list = []
+            for gn, d in group_data.items():
+                if d['12w_active'] > 0 or d['12w_bal'] > 0 or d['24w_active'] > 0 or d['24w_bal'] > 0:
+                    w_list.append({
+                        "Group Name": gn,
+                        "12 Weeks Active": d['12w_active'],
+                        "12 Weeks Balance": d['12w_bal'],
+                        "24 Weeks Active": d['24w_active'],
+                        "24 Weeks Balance": d['24w_bal']
+                    })
+            if w_list:
+                w_df = pd.DataFrame(w_list)
+                
+                # Add a Total row
+                w_total = pd.DataFrame([{
+                    "Group Name": "TOTAL",
+                    "12 Weeks Active": w_df['12 Weeks Active'].sum(),
+                    "12 Weeks Balance": w_df['12 Weeks Balance'].sum(),
+                    "24 Weeks Active": w_df['24 Weeks Active'].sum(),
+                    "24 Weeks Balance": w_df['24 Weeks Balance'].sum()
+                }])
+                w_df = pd.concat([w_df, w_total], ignore_index=True)
+                
+                st.dataframe(
+                    w_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "12 Weeks Active": st.column_config.NumberColumn(format="₦%d"),
+                        "12 Weeks Balance": st.column_config.NumberColumn(format="₦%d"),
+                        "24 Weeks Active": st.column_config.NumberColumn(format="₦%d"),
+                        "24 Weeks Balance": st.column_config.NumberColumn(format="₦%d")
+                    }
+                )
 
 elif page == "Loan Origination":
     st.title("Origination & Registration")
