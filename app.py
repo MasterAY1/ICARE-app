@@ -2569,10 +2569,17 @@ elif page == "Audit Ledger":
     
     audit_section = st.radio("View", ["📋 Loans Ledger", "💰 Repayments Ledger"], horizontal=True, label_visibility="collapsed")
     
-    al1, al2 = st.columns(2)
+    al1, al2, al3 = st.columns([1, 1, 2])
     audit_date_from = al1.date_input("From Date", datetime.now().date() - timedelta(days=30), key="audit_from")
     audit_date_to = al2.date_input("To Date", datetime.now().date(), key="audit_to")
-    search_term = st.text_input("🔍 Search by Client Name or ID", placeholder="Type to filter...", key="audit_search")
+    
+    # Officer Filter for Managers
+    selected_co = "All Officers"
+    if ROLE in ["Admin", "BM", "AM"]:
+        co_list = ["All Officers"] + list(CO_NAME_MAP.keys())
+        selected_co = al3.selectbox("Filter by Officer", co_list)
+        
+    search_term = st.text_input("🔍 Search by Client Name, ID, or Officer", placeholder="Type to filter...", key="audit_search")
     
     if audit_section == "📋 Loans Ledger":
         all_loans = load_loans()
@@ -2581,6 +2588,9 @@ elif page == "Audit Ledger":
         else:
             # Role-based filter
             filtered = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
+            
+            if selected_co != "All Officers":
+                filtered = filtered[filtered['Officer'] == selected_co]
             
             # Date filter (string-based to avoid tz mismatch)
             filtered['_dstr'] = pd.to_datetime(filtered['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
@@ -2592,7 +2602,8 @@ elif page == "Audit Ledger":
             if search_term:
                 mask = (
                     filtered['Client Name'].str.contains(search_term, case=False, na=False) |
-                    filtered['Client ID'].str.contains(search_term, case=False, na=False)
+                    filtered['Client ID'].str.contains(search_term, case=False, na=False) |
+                    filtered['Officer'].str.contains(search_term, case=False, na=False)
                 )
                 filtered = filtered[mask]
             
@@ -2615,6 +2626,9 @@ elif page == "Audit Ledger":
                 filtered = all_reps[all_reps['Branch'] == BRANCH]
             else:
                 filtered = all_reps
+                
+            if selected_co != "All Officers":
+                filtered = filtered[filtered['Officer'] == selected_co]
             
             # Date filter (string-based to avoid tz mismatch)
             filtered['_dstr'] = pd.to_datetime(filtered['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
@@ -2626,7 +2640,8 @@ elif page == "Audit Ledger":
             if search_term:
                 mask = (
                     filtered['Client Name'].str.contains(search_term, case=False, na=False) |
-                    filtered['Client ID'].str.contains(search_term, case=False, na=False)
+                    filtered['Client ID'].str.contains(search_term, case=False, na=False) |
+                    filtered['Officer'].str.contains(search_term, case=False, na=False)
                 )
                 filtered = filtered[mask]
             
