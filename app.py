@@ -2590,7 +2590,8 @@ elif page == "Audit Ledger":
             filtered = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
             
             if selected_co != "All Officers":
-                filtered = filtered[filtered['Officer'] == selected_co]
+                target_co_id = CO_NAME_MAP.get(selected_co, selected_co)
+                filtered = filtered[filtered['Officer'] == target_co_id]
             
             # Date filter (string-based to avoid tz mismatch)
             filtered['_dstr'] = pd.to_datetime(filtered['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
@@ -2612,7 +2613,7 @@ elif page == "Audit Ledger":
             display_cols = [c for c in ['Date', 'Client ID', 'Client Name', 'Officer', 'Branch', 'Loan Product', 'Loan Amount', 'Active Credit', 'Loan Repay', 'Status'] if c in filtered.columns]
             
             st.markdown(f"**{len(filtered)} records found**")
-            st.dataframe(filtered[display_cols].sort_values('Date', ascending=False), use_container_width=True, hide_index=True)
+            st.dataframe(filtered[display_cols].sort_values(['Date', 'Client ID'], ascending=[False, True]), use_container_width=True, hide_index=True)
     
     elif audit_section == "💰 Repayments Ledger":
         all_reps = load_repayments()
@@ -2628,7 +2629,8 @@ elif page == "Audit Ledger":
                 filtered = all_reps
                 
             if selected_co != "All Officers":
-                filtered = filtered[filtered['Officer'] == selected_co]
+                target_co_id = CO_NAME_MAP.get(selected_co, selected_co)
+                filtered = filtered[filtered['Officer'] == target_co_id]
             
             # Date filter (string-based to avoid tz mismatch)
             filtered['_dstr'] = pd.to_datetime(filtered['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
@@ -2650,7 +2652,7 @@ elif page == "Audit Ledger":
             display_cols = [c for c in ['id', 'Date', 'Client ID', 'Client Name', 'Officer', 'Amount Paid', 'Savings Amount', 'Loan Repayment Amount', 'Withdrawal Amount', 'Transaction Type', 'Note'] if c in filtered.columns]
             
             st.markdown(f"**{len(filtered)} records found**")
-            st.dataframe(filtered[display_cols].sort_values('Date', ascending=False), use_container_width=True, hide_index=True)
+            st.dataframe(filtered[display_cols].sort_values(['Date', 'Client ID'], ascending=[False, True]), use_container_width=True, hide_index=True)
             
             # Reversal Form (Only for Managers/Admins)
             if ROLE in ["BM", "AM", "Admin"]:
