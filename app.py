@@ -2673,7 +2673,8 @@ elif page == "Audit Ledger":
                                         'Monthly 11%/20%', 'Cash Carry', 'Product Withdrawal', 'Weekly Active', 'Daily Active',
                                         'Monthly Active', 'Expenses', 'Bank Deposited', 'Laps Reserved', 'Laps Transferred',
                                         'initial_payment', 'Group Savings Deposit', 'Group Savings Withdrawal', 'Misc Fees',
-                                        'Asset Credit Sales', 'Cash and Carry', 'Credit Form', 'Credit Form Damage', 'Bonus'
+                                        'Asset Credit Sales', 'Cash and Carry', 'Credit Form', 'Credit Form Damage', 'Bonus',
+                                        'Opening Balance'
                                     ]
                                     
                                     new_tx = {}
