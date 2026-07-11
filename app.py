@@ -1,5 +1,16 @@
 import streamlit as st
 
+from database.repositories.unit_of_work import SupabaseUnitOfWork
+from domain.queries import LoanFilter, RepaymentFilter, CashbookFilter
+from domain.entities.loan import Loan
+from domain.entities.repayment import Repayment
+from domain.entities.cashbook_entry import CashbookEntry
+from domain.entities.branch_closure import BranchClosure
+from domain.events import *
+from core.exceptions import *
+from core.cache import CacheProvider
+
+
 # --- CLEAN ARCHITECTURE CONFIG IMPORTS ---
 from config.settings import *
 from config.roles import *
@@ -29,19 +40,15 @@ import holidays
 # Initialize Nigerian holidays
 ng_holidays = holidays.Nigeria()
 
-@st.cache_data(ttl=3600)
+@CacheProvider.cache_data(ttl=3600)
 def get_custom_closures():
     try:
-        res = supabase.table("branch_closures").select("*").execute()
-        if res.data:
-            closures = []
-            for row in res.data:
-                s_date = datetime.strptime(row['start_date'], "%Y-%m-%d").date()
-                e_date = datetime.strptime(row['end_date'], "%Y-%m-%d").date()
-                closures.append((s_date, e_date, row['reason']))
-            return closures
+        with SupabaseUnitOfWork() as uow:
+            closures = uow.branch_closures.find_all()
+            return [(c.start_date, c.end_date, c.reason) for c in closures]
     except Exception:
         pass
+    return []
     return []
 
 def get_next_working_day(target_date, custom_closures=None):
@@ -203,23 +210,22 @@ from utils.reports import (
 
 # --- 1. CONFIGURATION & CLOUD DB SETUP ---
 
-# Initialize Supabase
-@st.cache_resource
-def init_connection():
-    try:
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_KEY"]
-        return create_client(url, key)
-    except Exception as e:
-        st.error(f"Failed to connect to database: {e}")
-        return None
 
-supabase = init_connection()
 
-@st.cache_data(ttl=600)
+@CacheProvider.cache_data(ttl=600)
 def load_co_mapping():
-    if not supabase:
-        return {}, {}
+    try:
+        with SupabaseUnitOfWork() as uow:
+            users = uow.users.find_all()
+            co_users = [u for u in users if u.role in ['CO', 'Officer']]
+            name_map = {u.full_name.strip(): u.username for u in co_users if u.full_name}
+            display_map = {v: k for k, v in name_map.items()}
+            return name_map, display_map
+    except Exception:
+        pass
+    return {}, {}
+
+CO_NAME_MAP, CO_DISPLAY_MAP = load_co_mapping()
 
 # Custom CSS — ICARE Banking Design System v5.0 (Brand Colors)
 st.markdown("""
@@ -873,104 +879,136 @@ UI_TO_DB_REP = {v: k for k, v in DB_TO_UI_REP.items()}
 
 def load_loans():
     """Load loans filtered by RBAC"""
-    if not supabase:
-        return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
     try:
-        query = supabase.table("loans").select("*")
-        
-        # RBAC Filters
-        if ROLE in ['CO', 'Officer']:
-            query = query.eq('officer', USER)
-        elif ROLE == 'BM':
-            query = query.eq('branch', BRANCH)
+        with SupabaseUnitOfWork() as uow:
+            filters = LoanFilter()
+            if ROLE in ['CO', 'Officer']: filters.officer = USER
+            elif ROLE == 'BM': filters.branch = BRANCH
+            filters.size = 2000
             
-        response = query.execute()
-        if not response.data:
-            return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
-        df = pd.DataFrame(response.data).rename(columns=DB_TO_UI_LOANS)
-        num_cols = ['Loan Amount', 'Active Credit', 'Loan Repay', 'Total Due']
-        for c in num_cols:
-            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+            loans = uow.loans.find_all()
+            if ROLE in ['CO', 'Officer']: loans = [L for L in loans if L.credit_officer == USER]
+            elif ROLE == 'BM': loans = [L for L in loans if L.branch == BRANCH]
             
-        # Deduplicate to always return the latest state of each client
-        if not df.empty and 'Date' in df.columns and 'Client ID' in df.columns:
-            df = df.sort_values('Date').groupby('Client ID').last().reset_index()
-            
-        return df
+            if not loans:
+                return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
+                
+            from mappers.base_mappers import LoanMapper
+            df = pd.DataFrame([LoanMapper.to_database(L) for L in loans]).rename(columns=DB_TO_UI_LOANS)
+            num_cols = ['Loan Amount', 'Active Credit', 'Loan Repay', 'Total Due']
+            for c in num_cols:
+                if c in df.columns:
+                    df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+            if not df.empty and 'Date' in df.columns and 'Client ID' in df.columns:
+                df = df.sort_values('Date').groupby('Client ID').last().reset_index()
+            return df
     except Exception as e:
         st.error(f"Database Error: {e}")
         return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
 
 
+
 def load_repayments():
     """Load repayments filtered by RBAC"""
-    if not supabase:
-        return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
     try:
-        query = supabase.table("repayments").select("*")
-        
-        # RBAC Filters
-        if ROLE in ['CO', 'Officer']:
-            query = query.eq('officer', USER)
-        elif ROLE == 'BM':
-            query = query.eq('branch', BRANCH)
+        with SupabaseUnitOfWork() as uow:
+            filters = RepaymentFilter()
+            if ROLE in ['CO', 'Officer']: filters.officer = USER
+            elif ROLE == 'BM': filters.branch = BRANCH
+            filters.size = 2000
             
-        response = query.execute()
-        if not response.data:
-            return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
-        
-        df = pd.DataFrame(response.data).rename(columns=DB_TO_UI_REP)
-        num_cols = ["Amount Paid", "Savings Amount", "Loan Repayment Amount"]
-        for c in num_cols:
-            if c in df.columns:
-                df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+            reps = uow.repayments.find_recent(filters)
+            if not reps:
+                return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
                 
-        return df
+            from mappers.base_mappers import RepaymentMapper
+            df = pd.DataFrame([RepaymentMapper.to_database(R) for R in reps]).rename(columns=DB_TO_UI_REP)
+            num_cols = ['Amt Paid', 'Savings Amount', 'Loan Repayment Amount', 'Withdrawal Amount', 'Others Amount', 'Recovery Amount', 'Initial Payment']
+            for c in num_cols:
+                if c in df.columns:
+                    df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+            return df
     except Exception as e:
         st.error(f"Database Error: {e}")
         return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
 
 def save_new_loan(data):
     """Save new loan to database"""
-    if not supabase:
-        st.error("Database not connected")
-        return
-    db_data = {UI_TO_DB_LOANS[k]: v for k, v in data.items() if k in UI_TO_DB_LOANS}
-    supabase.table("loans").upsert(db_data).execute()
+    try:
+        with SupabaseUnitOfWork() as uow:
+            db_data = {UI_TO_DB_LOANS[k]: v for k, v in data.items() if k in UI_TO_DB_LOANS}
+            from mappers.base_mappers import LoanMapper
+            # Add missing defaults if not in db_data so mapper doesn't fail
+            if 'id' not in db_data: db_data['id'] = ''
+            if 'client_name' not in db_data: db_data['client_name'] = ''
+            if 'branch' not in db_data: db_data['branch'] = BRANCH
+            if 'credit_officer' not in db_data: db_data['credit_officer'] = db_data.get('officer', USER)
+            
+            loan = LoanMapper.to_domain(db_data)
+            uow.loans.create(loan)
+    except Exception as e:
+        st.error(f"Error saving loan: {e}")
 
 def save_repayment(data):
     """Save repayment to database"""
-    if not supabase:
-        st.error("Database not connected")
-        return
-    db_data = {UI_TO_DB_REP[k]: v for k, v in data.items() if k in UI_TO_DB_REP}
-    supabase.table("repayments").insert(db_data).execute()
+    try:
+        with SupabaseUnitOfWork() as uow:
+            db_data = {UI_TO_DB_REP[k]: v for k, v in data.items() if k in UI_TO_DB_REP}
+            from mappers.base_mappers import RepaymentMapper
+            
+            # Map old DB keys expected by mapper
+            if 'credit_officer' not in db_data: db_data['credit_officer'] = db_data.get('officer', USER)
+            if 'branch' not in db_data: db_data['branch'] = BRANCH
+            
+            rep = RepaymentMapper.to_domain(db_data)
+            uow.repayments.create(rep)
+    except Exception as e:
+        st.error(f"Error saving repayment: {e}")
 
 def update_database_safe(edited_subset, user_role, user_name, branch):
     """Update database with edited data"""
-    if not supabase:
-        st.error("Database not connected")
-        return
-    
-    query = supabase.table("loans").select("client_id")
-    if user_role == "BM":
-        query = query.eq("branch", branch)
-    elif user_role == "Officer":
-        query = query.eq("officer", user_name)
-    
-    original_ids = [r["client_id"] for r in query.execute().data]
-    kept_ids = edited_subset["Client ID"].tolist()
-    ids_to_delete = set(original_ids) - set(kept_ids)
-    
-    for d_id in ids_to_delete:
-        supabase.table("loans").delete().eq("client_id", d_id).execute()
-    
-    for _, row in edited_subset.iterrows():
-        db_data = {UI_TO_DB_LOANS[k]: row[k] for k in row.keys() if k in UI_TO_DB_LOANS}
-        # Translate display name back to DB username before saving
-        if "officer" in db_data:
-            db_data["officer"] = CO_NAME_MAP.get(db_data["officer"], db_data["officer"])
-        supabase.table("loans").upsert(db_data).execute()
+    try:
+        with SupabaseUnitOfWork() as uow:
+            filters = LoanFilter()
+            if user_role == "BM":
+                filters.branch = branch
+            elif user_role == "Officer":
+                filters.officer = user_name
+            
+            # Since pagination is 1-based, we'd loop, but we will grab up to 1000 for now.
+            filters.size = 1000
+            existing_loans = uow.loans.find_active(filters)
+            original_ids = [L.client_id for L in existing_loans]
+            
+            kept_ids = edited_subset["Client ID"].tolist()
+            ids_to_delete = set(original_ids) - set(kept_ids)
+            
+            for d_id in ids_to_delete:
+                uow.loans.delete_by_client_id(d_id)
+            
+            from mappers.base_mappers import LoanMapper
+            loans_to_update = []
+            for _, row in edited_subset.iterrows():
+                db_data = {UI_TO_DB_LOANS[k]: row[k] for k in row.keys() if k in UI_TO_DB_LOANS}
+                if "officer" in db_data:
+                    db_data["credit_officer"] = CO_NAME_MAP.get(db_data["officer"], db_data["officer"])
+                
+                # Fetch existing to get id
+                existing_matches = [L for L in existing_loans if L.client_id == db_data.get('client_id')]
+                if existing_matches:
+                    db_data["id"] = existing_matches[0].id
+                
+                loan = LoanMapper.to_domain(db_data)
+                loans_to_update.append(loan)
+            
+            # Repositories should ideally have bulk upsert, but we update individually for now
+            for L in loans_to_update:
+                if L.id:
+                    uow.loans.update(L)
+                else:
+                    uow.loans.create(L)
+    except Exception as e:
+        st.error(f"Error updating database safely: {e}")
 
 def get_clients_for_user(df, user_role, user_name, branch):
     """Filter clients based on user role"""
@@ -1260,11 +1298,11 @@ if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
         
     if auth_token:
         try:
-            res = supabase.table("app_users").select("*").ilike("username", auth_token).execute()
-            if res.data and len(res.data) > 0:
-                user = res.data[0]
+            with SupabaseUnitOfWork() as uow:
+                user = uow.users.find_by_username(auth_token)
+            if user:
                 st.session_state['logged_in'] = True
-                st.session_state['user'] = user['username']
+                st.session_state['user'] = user.username
                 st.session_state['role'] = user['role']
                 st.session_state['branch'] = user['branch_name']
             else:
@@ -1674,12 +1712,15 @@ elif page == "Loan Origination":
                         expected_end_date = schedule[-1] if schedule else final_start_date
                         
                         try:
-                            supabase.table("loans").update({
-                                "status": STATUS_ACTIVE, 
-                                "disbursement_date": today_str,
-                                "start_date": final_start_date.strftime("%Y-%m-%d"),
-                                "expected_end_date": expected_end_date.strftime("%Y-%m-%d")
-                            }).eq("client_id", selected_client_id).eq("status", STATUS_PENDING).execute()
+                            with SupabaseUnitOfWork() as uow:
+                                loans = uow.loans.find_by_client_id(selected_client_id)
+                                pending_loans = [L for L in loans if L.status == STATUS_PENDING]
+                                for L in pending_loans:
+                                    L.status = STATUS_ACTIVE
+                                    L.disbursement_date = today_str
+                                    L.start_date = final_start_date.strftime("%Y-%m-%d")
+                                    L.expected_end_date = expected_end_date.strftime("%Y-%m-%d")
+                                    uow.loans.update(L)
                             
                             st.success(f"Successfully activated loan! Disbursement Date set to {today_str}.")
                             
@@ -1946,8 +1987,9 @@ elif page == "Loan Origination":
                                     if is_asset:
                                         client_id = f"{client_id}-ASSET"
                                         
-                                    existing_check = supabase.table("loans").select("client_id").eq("client_id", client_id).execute()
-                                    if existing_check.data and len(existing_check.data) > 0:
+                                    with SupabaseUnitOfWork() as uow:
+                                        existing_loans = uow.loans.find_by_client_id(client_id)
+                                    if existing_loans:
                                         skip_count += 1
                                         continue
                                         
@@ -2538,7 +2580,7 @@ elif page == "Collections":
                         for tx in to_insert:
                             db_payload.append({UI_TO_DB_REP[k]: v for k, v in tx.items() if k in UI_TO_DB_REP})
                         try:
-                            supabase.table('repayments').insert(db_payload).execute()
+                            save_repayment({v: db_payload.get(k, db_payload.get(v)) for k, v in DB_TO_UI_REP.items() if k in db_payload or v in db_payload})
                             st.success("Group Collections Submitted Successfully!")
                             del st.session_state['pending_collections']
                             import time
@@ -3088,7 +3130,7 @@ elif page == "Audit Ledger":
                                     db_new_tx = {UI_TO_DB_REP.get(k, k): v for k, v in new_tx.items() if k in UI_TO_DB_REP}
                                     
                                     # Insert to Supabase
-                                    response = supabase.table("repayments").insert(db_new_tx).execute()
+                                    save_repayment({v: db_new_tx.get(k, db_new_tx.get(v)) for k, v in DB_TO_UI_REP.items() if k in db_new_tx or v in db_new_tx})
                                     st.success(f"Transaction #{rev_id} successfully reversed! Refreshing...")
                                     st.rerun()
                             except ValueError:
@@ -3183,7 +3225,7 @@ elif page == "WhatsApp Cashbook":
                 
                 db_payload = {UI_TO_DB_REP[k]: v for k, v in g_out.items() if k in UI_TO_DB_REP}
                 try:
-                    supabase.table('repayments').insert([db_payload]).execute()
+                    save_repayment({v: db_payload.get(k, db_payload.get(v)) for k, v in DB_TO_UI_REP.items() if k in db_payload or v in db_payload})
                     st.success("End of Day Outflows Submitted Successfully!")
                 except Exception as e:
                     st.error(f"Error saving: {e}")
@@ -3386,7 +3428,9 @@ elif page == "Master Cashbook":
         # ---- OPENING BALANCE: Fetch previous day's closing ----
         prev_date = (view_date - timedelta(days=1)).strftime("%Y-%m-%d")
         try:
-            prev_row = supabase.table("master_cashbook").select("closing_balance").eq("date", prev_date).eq("branch", BRANCH).execute()
+            with SupabaseUnitOfWork() as uow:
+                prev_entry = uow.cashbook.find_by_date_and_branch(prev_date, BRANCH)
+            prev_row = type('obj', (object,), {'data': [{'closing_balance': prev_entry.closing_balance}] if prev_entry else []})
             auto_opening = float(prev_row.data[0]['closing_balance']) if prev_row.data else 0.0
         except Exception:
             auto_opening = 0.0
@@ -3571,12 +3615,16 @@ elif page == "Master Cashbook":
                 
                 try:
                     # Upsert: check if row exists for this date+branch
-                    existing = supabase.table("master_cashbook").select("id").eq("date", date_str).eq("branch", BRANCH).execute()
-                    if existing.data:
-                        supabase.table("master_cashbook").update(mc_data).eq("date", date_str).eq("branch", BRANCH).execute()
-                        st.success("Master Cashbook entry UPDATED successfully!")
-                    else:
-                        supabase.table("master_cashbook").insert(mc_data).execute()
+                    from mappers.base_mappers import CashbookMapper
+                    with SupabaseUnitOfWork() as uow:
+                        existing = uow.cashbook.find_by_date_and_branch(date_str, BRANCH)
+                        if 'id' not in mc_data: mc_data['id'] = existing.id if existing else ''
+                        cb_entry = CashbookMapper.to_domain(mc_data)
+                        if existing:
+                            uow.cashbook.update(cb_entry)
+                            st.success("Master Cashbook entry UPDATED successfully!")
+                        else:
+                            uow.cashbook.create(cb_entry)
                         st.success("Master Cashbook entry SAVED successfully!")
                 except Exception as e:
                     st.error(f"Failed to save: {e}")
@@ -3711,7 +3759,14 @@ elif page == "Master Cashbook":
             start_date = f"{cb_year}-{cb_month:02d}-01"
             end_date = f"{cb_year}-{cb_month:02d}-{last_day:02d}"
             
-            result = supabase.table("master_cashbook").select("*").eq("branch", BRANCH).gte("date", start_date).lte("date", end_date).order("date").execute()
+            with SupabaseUnitOfWork() as uow:
+                filters = CashbookFilter()
+                filters.branch = BRANCH
+                filters.start_date = start_date
+                filters.end_date = end_date
+                entries = uow.cashbook.find_range(filters)
+            from mappers.base_mappers import CashbookMapper
+            result = type('obj', (object,), {'data': [CashbookMapper.to_database(e) for e in entries]})
             
             if result.data:
                 ledger_df = pd.DataFrame(result.data)
@@ -4014,7 +4069,10 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
     
     # Fetch all users
     try:
-        res = supabase.table("app_users").select("*").execute()
+        with SupabaseUnitOfWork() as uow:
+            users = uow.users.find_all()
+        from mappers.base_mappers import UserMapper
+        res = type('obj', (object,), {'data': [UserMapper.to_database(u) for u in users]})
         all_users = res.data if res.data else []
     except Exception as e:
         st.error(f"Failed to fetch users: {e}")
@@ -4043,13 +4101,9 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
                 else:
                     hashed_pw = hash_password(new_password)
                     try:
-                        supabase.table("app_users").insert({
-                            "username": new_username,
-                            "full_name": new_fullname,
-                            "role": new_role,
-                            "branch_name": new_branch,
-                            "password": hashed_pw
-                        }).execute()
+                        with SupabaseUnitOfWork() as uow:
+                            new_u = User(id='', username=new_username, password_hash=hashed_pw, full_name=new_fullname, role=new_role, branch_name=new_branch, created_at='')
+                            uow.users.create(new_u)
                         st.success(f"User {new_username} created successfully!")
                         st.rerun()
                     except Exception as e:
@@ -4068,7 +4122,8 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
                 else:
                     hashed_pw = hash_password(reset_password)
                     try:
-                        supabase.table("app_users").update({"password": hashed_pw}).eq("username", reset_username).execute()
+                        with SupabaseUnitOfWork() as uow:
+                            uow.users.update_password(reset_username, hashed_pw)
                         st.success(f"Password reset for {reset_username}!")
                     except Exception as e:
                         st.error(f"Failed to reset password: {e}")
@@ -4100,7 +4155,11 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
                     st.error("Please enter a new name.")
                 else:
                     try:
-                        supabase.table("app_users").update({"full_name": new_officer_name}).eq("username", update_username).execute()
+                        with SupabaseUnitOfWork() as uow:
+                            u = uow.users.find_by_username(update_username)
+                            if u:
+                                u.full_name = new_officer_name
+                                uow.users.update(u)
                         st.success(f"Updated {update_username} to {new_officer_name}!")
                         st.rerun()
                     except Exception as e:
@@ -4131,12 +4190,10 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
                     st.error("Please provide a reason and select a full date range (start and end).")
                 else:
                     try:
-                        supabase.table("branch_closures").insert({
-                            "start_date": closure_dates[0].strftime("%Y-%m-%d"),
-                            "end_date": closure_dates[1].strftime("%Y-%m-%d"),
-                            "reason": closure_reason,
-                            "created_by": USER
-                        }).execute()
+                        with SupabaseUnitOfWork() as uow:
+                            # Note: domain entity might not track created_by right now, but repository handles it
+                            closure = BranchClosure(id='', start_date=closure_dates[0], end_date=closure_dates[1], reason=closure_reason)
+                            uow.branch_closures.create(closure)
                         st.success("Branch closure added successfully!")
                         get_custom_closures.clear() # clear cache
                         st.rerun()
@@ -4154,4 +4211,3 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
         else:
             st.info("No custom closures recorded.")
         st.markdown("</div>", unsafe_allow_html=True)
-

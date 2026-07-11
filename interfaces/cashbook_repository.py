@@ -1,0 +1,9 @@
+from typing import Protocol, List, Optional
+from domain.entities.cashbook_entry import CashbookEntry
+from domain.queries import CashbookFilter
+from interfaces.base_repository import Repository
+
+class CashbookRepository(Repository[CashbookEntry], Protocol):
+    def find_by_date_and_branch(self, date_str: str, branch: str) -> Optional[CashbookEntry]: ...
+    def find_range(self, filters: CashbookFilter) -> List[CashbookEntry]: ...
+    def find_previous(self, date_str: str, branch: str) -> Optional[CashbookEntry]: ...

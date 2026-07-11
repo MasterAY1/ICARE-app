@@ -1,3 +1,9 @@
-"""
-Placeholder module for repayment_repository.py
-"""
+from typing import Protocol, List
+from domain.entities.repayment import Repayment
+from domain.queries import RepaymentFilter
+from interfaces.base_repository import Repository
+
+class RepaymentRepository(Repository[Repayment], Protocol):
+    def find_by_loan(self, loan_id: str) -> List[Repayment]: ...
+    def find_recent(self, filters: RepaymentFilter) -> List[Repayment]: ...
+    def create_many(self, repayments: List[Repayment]) -> None: ...

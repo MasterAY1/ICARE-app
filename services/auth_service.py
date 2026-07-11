@@ -116,8 +116,6 @@ class AuthService:
 
     @staticmethod
     def get_user() -> CurrentUser:
-@staticmethod
-    def get_user() -> CurrentUser:
         return get_current_user()
 
     @staticmethod
