@@ -1,3 +1,6 @@
-"""
-Placeholder module for feature_flags.py
-"""
+# Feature Toggles
+ENABLE_SMS_NOTIFICATIONS = False
+ENABLE_WHATSAPP_NOTIFICATIONS = False
+ENABLE_EMAIL_NOTIFICATIONS = False
+ENABLE_AUTO_APPROVAL = False
+ENABLE_EXPERIMENTAL_DASHBOARD = False

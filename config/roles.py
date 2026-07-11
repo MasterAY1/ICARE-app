@@ -1,3 +1,14 @@
-"""
-Placeholder module for roles.py
-"""
+# Role Definitions
+ROLE_SUPER_ADMIN = "Super Admin"
+ROLE_ADMIN = "Admin"
+ROLE_BRANCH_MANAGER = "Branch Manager"
+ROLE_CREDIT_OFFICER = "Credit Officer"
+ROLE_ACCOUNT_MANAGER = "Account Manager"
+
+ALL_ROLES = [
+    ROLE_SUPER_ADMIN,
+    ROLE_ADMIN,
+    ROLE_BRANCH_MANAGER,
+    ROLE_CREDIT_OFFICER,
+    ROLE_ACCOUNT_MANAGER
+]

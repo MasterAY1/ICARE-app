@@ -1,5 +1,13 @@
 import streamlit as st
 
+# --- CLEAN ARCHITECTURE CONFIG IMPORTS ---
+from config.settings import *
+from config.roles import *
+from config.constants import *
+from config.mappings import *
+from config.themes import *
+from config.feature_flags import *
+
 st.set_page_config(
     page_title="ICARE Microfinance - Core Banking",
     page_icon="🌱",
@@ -195,8 +203,6 @@ from utils.reports import (
 )
 
 # --- 1. CONFIGURATION & CLOUD DB SETUP ---
-COMPANY_NAME = "ICARE Microfinance"
-APP_VERSION = "3.0.0"
 
 # Initialize Supabase
 @st.cache_resource
@@ -1003,7 +1009,7 @@ def get_clients_for_user(df, user_role, user_name, branch):
     """Filter clients based on user role"""
     if df.empty:
         return df
-    if user_role == "Admin":
+    if user_role == ROLE_ADMIN:
         return df
     elif user_role == "BM":
         return df[df['Branch'] == branch]
@@ -1013,9 +1019,9 @@ def get_clients_for_user(df, user_role, user_name, branch):
 
 # --- 3. MATH HELPERS & RISK LOGIC ---
 
-def calculate_overdue(start_date_str, product, fixed_repay, total_loan_paid, status='Active'):
+def calculate_overdue(start_date_str, product, fixed_repay, total_loan_paid, status=STATUS_ACTIVE):
     """Calculate overdue amount for a client"""
-    if status in ['Registered', 'Pending']:
+    if status in ['Registered', STATUS_PENDING]:
         return 0, 0
     
     try:
@@ -1404,11 +1410,11 @@ USER = st.session_state['user']
 BRANCH = st.session_state['branch']
 
 # Role badge colors (ICARE brand palette)
-role_colors = {"Admin": "#1B4F72", "BM": "#2E86C1", "CO": "#8CC63F", "Officer": "#8CC63F", "AM": "#2E86C1"}
+role_colors = {ROLE_ADMIN: COLOR_SECONDARY, "BM": COLOR_PRIMARY, "CO": "#8CC63F", "Officer": "#8CC63F", "AM": COLOR_PRIMARY}
 role_color = role_colors.get(ROLE, "#6B7280")
 
 # Role display labels
-role_labels = {"Admin": "Administrator", "BM": "Branch Manager", "CO": "Credit Officer", "Officer": "Credit Officer", "AM": "Area Manager"}
+role_labels = {ROLE_ADMIN: "Administrator", "BM": ROLE_BRANCH_MANAGER, "CO": ROLE_CREDIT_OFFICER, "Officer": ROLE_CREDIT_OFFICER, "AM": "Area Manager"}
 role_label = role_labels.get(ROLE, ROLE)
 
 with st.sidebar:
@@ -1559,7 +1565,7 @@ if page == "Dashboard":
             if "week" in product.lower() or "12w" in product.lower() or "24w" in product.lower():
                 has_weekly = True
             
-            if loan.get('Status') in ['Active', 'Completed', 'Approved']:
+            if loan.get('Status') in [STATUS_ACTIVE, STATUS_COMPLETED, STATUS_APPROVED]:
                 group_data[gn]['active_credit'] += orig_ac
                 group_data[gn]['loan_balance'] += loan_bal if loan_bal > 0 else 0
                 
@@ -1574,7 +1580,7 @@ if page == "Dashboard":
             total_people_with_savings += 1
             total_savings += s_amt
             
-        if loan_bal > 0 and loan.get('Status') in ['Active', 'Completed', 'Approved']:
+        if loan_bal > 0 and loan.get('Status') in [STATUS_ACTIVE, STATUS_COMPLETED, STATUS_APPROVED]:
             active_loans_count += 1
             total_active_credit += loan_bal
             
@@ -1596,9 +1602,9 @@ if page == "Dashboard":
             # calculate overdue
             start_date_str = loan.get('Date', '')
             if start_date_str and product:
-                exp_paid, overdue_amt = calculate_overdue(start_date_str, product, fixed_repay, l_amt, loan.get('Status', 'Active'))
+                exp_paid, overdue_amt = calculate_overdue(start_date_str, product, fixed_repay, l_amt, loan.get('Status', STATUS_ACTIVE))
                 total_overdue += overdue_amt
-        elif loan_bal <= 0 and loan.get('Status') in ['Active', 'Completed', 'Approved']:
+        elif loan_bal <= 0 and loan.get('Status') in [STATUS_ACTIVE, STATUS_COMPLETED, STATUS_APPROVED]:
             fully_paid_count += 1
             
     # Process Group Globals
@@ -1743,12 +1749,12 @@ elif page == "Loan Origination":
         st.subheader("Pending Disbursements")
         all_loans = load_loans()
         my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
-        pending_clients = my_loans[(my_loans['Status'] == 'Pending') & (pd.to_numeric(my_loans['Loan Amount'], errors='coerce').fillna(0) > 0)]
+        pending_clients = my_loans[(my_loans['Status'] == STATUS_PENDING) & (pd.to_numeric(my_loans['Loan Amount'], errors='coerce').fillna(0) > 0)]
         if pending_clients.empty:
             st.info("✅ No pending loans found.")
         else:
             st.dataframe(pending_clients[['Client ID', 'Client Name', 'Date', 'Officer', 'Loan Amount', 'Loan Product']], use_container_width=True)
-            if ROLE in ["AM", "BM", "Admin"]:
+            if ROLE in ["AM", "BM", ROLE_ADMIN]:
                 st.markdown("### 🔑 Checker Action: Activate Loan")
                 with st.form("activate_loan_form"):
                     opts = pending_clients['Client ID'].tolist()
@@ -1790,11 +1796,11 @@ elif page == "Loan Origination":
                         
                         try:
                             supabase.table("loans").update({
-                                "status": "Active", 
+                                "status": STATUS_ACTIVE, 
                                 "disbursement_date": today_str,
                                 "start_date": final_start_date.strftime("%Y-%m-%d"),
                                 "expected_end_date": expected_end_date.strftime("%Y-%m-%d")
-                            }).eq("client_id", selected_client_id).eq("status", "Pending").execute()
+                            }).eq("client_id", selected_client_id).eq("status", STATUS_PENDING).execute()
                             
                             st.success(f"Successfully activated loan! Disbursement Date set to {today_str}.")
                             
@@ -1986,7 +1992,7 @@ elif page == "Loan Origination":
                         "Active Credit": 0,
                         "Loan Repay": 0,
                         "Total Due": 0,
-                        "Status": "Pending"
+                        "Status": STATUS_PENDING
                     }
                     save_new_loan(data)
                     st.success(f"Successfully registered client! Client ID: {new_client_id}")
@@ -2084,7 +2090,7 @@ elif page == "Loan Origination":
                                     remaining_bal = get_amt(member_row, ['Current credit balance', 'Current Credit Balance'])
                                     savings_bal = get_amt(member_row, ['Savings Balance', 'Savings balance'])
                                     
-                                    status = "Active" if active_credit > 0 or principal_loan > 0 else "Pending"
+                                    status = STATUS_ACTIVE if active_credit > 0 or principal_loan > 0 else STATUS_PENDING
                                     
                                     data = {
                                         "Client ID": client_id,
@@ -2300,9 +2306,9 @@ elif page == "Loan Origination":
                         product_category = f1.selectbox("Product Category", ["Finance", "Asset"])
                         
                         if product_category == "Finance":
-                            prods = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
+                            prods = FINANCE_PRODUCTS
                         else:
-                            prods = ["60-Day Asset", "120-Day Asset", "Weekly 12W Asset", "Weekly 24W Asset", "Monthly 3M Asset", "Monthly 6M Asset", "Cash and Carry"]
+                            prods = ASSET_PRODUCTS
                             
                         product = f2.selectbox("Loan Product", prods)
                         raw_amount = st.number_input("Requested Loan Amount / Asset Cost (₦)", min_value=0.0, step=10000.0, value=None, placeholder="0")
@@ -2365,7 +2371,7 @@ elif page == "Loan Origination":
                             if not existing_loan.empty:
                                 last_stat = existing_loan.sort_values('Date').iloc[-1]
                                 # If it is Active or Pending AND has an actual loan amount (not just a registration placeholder)
-                                if last_stat['Status'] in ['Active', 'Pending'] and float(last_stat.get('Loan Amount', 0)) > 0:
+                                if last_stat['Status'] in [STATUS_ACTIVE, STATUS_PENDING] and float(last_stat.get('Loan Amount', 0)) > 0:
                                     is_blocked = True
                                     
                             if is_blocked:
@@ -2403,7 +2409,7 @@ elif page == "Loan Origination":
                                 kyc["Active Credit"] = active_credit
                                 kyc["Loan Repay"] = final_repay
                                 kyc["Total Due"] = active_credit
-                                kyc["Status"] = "Pending"
+                                kyc["Status"] = STATUS_PENDING
                                 
                                 kyc["Processing Fee"] = 0
                                 kyc["Pass Book Fee"] = 0
@@ -2587,7 +2593,7 @@ elif page == "Collections":
         elif col_mode == "👤 Individual / Group Entry":
             st.markdown("### 👥 Member Collections")
         # Show all clients that are not strictly closed, so completed clients can still deposit savings
-        co_loans = all_loans[(all_loans['Officer'] == target_co) & (all_loans['Status'] != 'Closed')]
+        co_loans = all_loans[(all_loans['Officer'] == target_co) & (all_loans['Status'] != STATUS_CLOSED)]
         
         if co_loans.empty:
             st.info("No active or pending members for this officer.")
@@ -2829,7 +2835,7 @@ elif page == "Daily Report":
     # Filter for the selected date for new active loans
     if not all_loans.empty:
         all_loans['DateStr'] = pd.to_datetime(all_loans['Date'], errors='coerce').dt.date.astype(str)
-        daily_loans = all_loans[(all_loans['DateStr'] == date_str) & (all_loans['Status'].isin(['Active', 'Completed', 'Approved']))]
+        daily_loans = all_loans[(all_loans['DateStr'] == date_str) & (all_loans['Status'].isin([STATUS_ACTIVE, STATUS_COMPLETED, STATUS_APPROVED]))]
         if ROLE == "BM":
             daily_loans = daily_loans[daily_loans['Branch'] == BRANCH]
         elif ROLE == "Officer":
@@ -3027,7 +3033,7 @@ elif page == "Audit Ledger":
     
     # Officer Filter for Managers
     selected_co = "All Officers"
-    if ROLE in ["Admin", "BM", "AM"]:
+    if ROLE in [ROLE_ADMIN, "BM", "AM"]:
         co_list = ["All Officers"] + list(CO_NAME_MAP.keys())
         selected_co = al3.selectbox("Filter by Officer", co_list)
         
@@ -3146,7 +3152,7 @@ elif page == "Audit Ledger":
             )
             
             # Reversal Form (Only for Managers/Admins)
-            if ROLE in ["BM", "AM", "Admin"]:
+            if ROLE in ["BM", "AM", ROLE_ADMIN]:
                 st.markdown("---")
                 st.markdown("### 🔄 Reverse a Transaction")
                 st.warning("Reversing a transaction will post a negative entry today to correct cashbook balances and client savings.")
@@ -3467,7 +3473,7 @@ elif page == "Master Cashbook":
             today_loans = all_loans[
                 (all_loans['_dt'].dt.date.astype(str) == date_str) &
                 (all_loans['Branch'] == BRANCH) &
-                (all_loans['Status'].isin(['Active', 'Approved', 'Completed']))
+                (all_loans['Status'].isin([STATUS_ACTIVE, STATUS_APPROVED, STATUS_COMPLETED]))
             ]
         else:
             today_loans = pd.DataFrame()
@@ -3925,7 +3931,7 @@ elif page == "Portfolio":
         for _, row in my_loans.iterrows():
             c_payments = repayments[repayments['Client ID'] == row['Client ID']] if not repayments.empty else pd.DataFrame()
             s_amt, l_amt = calculate_client_savings(c_payments, row['Loan Repay'])
-            expected, overdue = calculate_overdue(row['Date'], row['Loan Product'], row['Loan Repay'], l_amt, row.get('Status', 'Active'))
+            expected, overdue = calculate_overdue(row['Date'], row['Loan Product'], row['Loan Repay'], l_amt, row.get('Status', STATUS_ACTIVE))
             row_data = row.to_dict()
             row_data['Acc. Savings'] = s_amt
             row_data['Paid to Loan'] = l_amt
@@ -3950,9 +3956,9 @@ elif page == "Portfolio":
             key="db_edit",
             column_config={
                 "Client ID": st.column_config.TextColumn("Client ID", disabled=True),
-                "Status": st.column_config.SelectboxColumn("Status", options=["Pending", "Approved", "Active", "Completed", "Closed"]),
+                "Status": st.column_config.SelectboxColumn("Status", options=[STATUS_PENDING, STATUS_APPROVED, STATUS_ACTIVE, STATUS_COMPLETED, STATUS_CLOSED]),
                 "Meeting Day": st.column_config.SelectboxColumn("Meeting Day", options=["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]),
-                "Branch": st.column_config.TextColumn("Branch", disabled=(ROLE != "Admin")),
+                "Branch": st.column_config.TextColumn("Branch", disabled=(ROLE != ROLE_ADMIN)),
                 "Officer": st.column_config.SelectboxColumn("Officer", options=list(CO_NAME_MAP.keys()) if CO_NAME_MAP else ["CO1", "CO2"], disabled=(ROLE == "Officer")),
                 "Loan Balance": st.column_config.NumberColumn("Balance", disabled=True, format="₦%d"),
                 "Acc. Savings": st.column_config.NumberColumn("Savings", disabled=True, format="₦%d"),
@@ -4087,7 +4093,7 @@ elif page in ["Reports", "Reports & Export"]:
     st.markdown("</div>", unsafe_allow_html=True)
     
     # Officer Reports
-    if ROLE in ["Admin", "BM"]:
+    if ROLE in [ROLE_ADMIN, "BM"]:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.subheader("👥 Officer Performance Reports")
         
@@ -4121,7 +4127,7 @@ elif page in ["Reports", "Reports & Export"]:
 # ==========================================
 # 14. USER MANAGEMENT (AM / Admin)
 # ==========================================
-elif page == "User Management" and ROLE in ["AM", "Admin"]:
+elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
     st.markdown("<div class='dashboard-header'>", unsafe_allow_html=True)
     st.markdown("<h1>🔐 User Management</h1>", unsafe_allow_html=True)
     st.markdown("<p>Manage application users, reset passwords, and handle officer turnover.</p>", unsafe_allow_html=True)
@@ -4145,7 +4151,7 @@ elif page == "User Management" and ROLE in ["AM", "Admin"]:
         with st.form("add_user_form"):
             new_username = st.text_input("Username (e.g. CO5, BM_Ikeja)")
             new_fullname = st.text_input("Full Name (e.g. Mr. Ayomide)")
-            new_role = st.selectbox("Role", ["CO", "BM", "AM", "Admin"])
+            new_role = st.selectbox("Role", ["CO", "BM", "AM", ROLE_ADMIN])
             new_branch = st.text_input("Branch Name (e.g. Ogijo)")
             new_password = st.text_input("Password", type="password")
             
