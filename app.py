@@ -2278,8 +2278,148 @@ elif page == "Collections":
         else:
             target_co = USER
             
-        # Top-level sub-navigation for Collections page (Removed End of Day)
-        st.markdown("### 👥 Member Collections")
+        col_mode = st.radio("Collection Mode", ["👤 Individual / Group Entry", "📥 Bulk Upload (Excel)"], horizontal=True, label_visibility="collapsed")
+        
+        if col_mode == "📥 Bulk Upload (Excel)":
+            st.markdown("### 📥 Bulk Upload (Excel Template)")
+            with open("Master_Balancing_Template_V2.xlsx", "rb") as template_file:
+                st.download_button(
+                    label="⬇️ Download Master Balancing Template",
+                    data=template_file,
+                    file_name="Master_Balancing_Template.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+                
+            uploaded_file = st.file_uploader("Upload filled Master Balancing Template", type=["xlsx"])
+            if uploaded_file:
+                try:
+                    df = pd.read_excel(uploaded_file)
+                    st.success(f"File loaded successfully! Found {len(df)} rows.")
+                    
+                    if st.button("🚀 Process Upload", use_container_width=True):
+                        new_records = []
+                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        for idx, row in df.iterrows():
+                            cid = str(row.get('Member Reference', '')).strip()
+                            gn = str(row.get('Group Name', '')).strip()
+                            co_name = str(row.get('Credit Officer Name', '')).strip()
+                            
+                            # Safely parse amounts
+                            def get_amt(col_name):
+                                val = row.get(col_name, 0)
+                                if pd.isna(val): return 0
+                                try: return float(val)
+                                except: return 0
+                            
+                            lr_amt = get_amt("Today's Loan Repayment")
+                            s_dep = get_amt("Today's Savings Deposit")
+                            s_wd = get_amt("Today's Savings Withdrawal")
+                            gs_dep = get_amt("Group Savings Deposit")
+                            gs_wd = get_amt("Group Savings Withdrawal")
+                            laps_dep = get_amt("Laps Savings Deposit")
+                            laps_wd = get_amt("Laps Savings Withdrawal")
+                            
+                            # 1. Individual Transactions
+                            if lr_amt > 0 or s_dep > 0 or s_wd > 0:
+                                if cid and cid != 'nan':
+                                    new_records.append({
+                                        "id": str(uuid.uuid4()),
+                                        "Date": date_str,
+                                        "Time": timestamp,
+                                        "Client ID": cid,
+                                        "Client Name": str(row.get('Full Name', '')),
+                                        "Officer": target_co,
+                                        "Branch": BRANCH,
+                                        "Amount Paid": 0, # Legacy, keeping 0
+                                        "Savings Amount": s_dep,
+                                        "Withdrawal Amount": s_wd,
+                                        "Loan Repayment Amount": lr_amt,
+                                        "Processing Fee Paid": 0,
+                                        "Insurance Fee Paid": 0,
+                                        "App Fee Paid": 0,
+                                        "Pass Book Paid": 0,
+                                        "Recovery Amount": 0,
+                                        "Mgt Fee Paid": 0,
+                                        "Others Amount": 0,
+                                        "Laps Amount Transferred": 0,
+                                        "Transaction Type": "Collection (Bulk Upload)",
+                                        "Note": f"Bulk Uploaded by {USER}",
+                                        "Reversed": False
+                                    })
+                                    
+                            # 2. Group Savings
+                            if gs_dep > 0 or gs_wd > 0:
+                                if gn and gn != 'nan':
+                                    new_records.append({
+                                        "id": str(uuid.uuid4()),
+                                        "Date": date_str,
+                                        "Time": timestamp,
+                                        "Client ID": f"GROUP-{gn}",
+                                        "Client Name": f"{gn} Meeting",
+                                        "Officer": target_co,
+                                        "Branch": BRANCH,
+                                        "Amount Paid": 0,
+                                        "Savings Amount": gs_dep,
+                                        "Withdrawal Amount": gs_wd,
+                                        "Loan Repayment Amount": 0,
+                                        "Processing Fee Paid": 0,
+                                        "Insurance Fee Paid": 0,
+                                        "App Fee Paid": 0,
+                                        "Pass Book Paid": 0,
+                                        "Recovery Amount": 0,
+                                        "Mgt Fee Paid": 0,
+                                        "Others Amount": 0,
+                                        "Laps Amount Transferred": 0,
+                                        "Transaction Type": "Group Global Savings (Bulk Upload)",
+                                        "Note": f"Bulk Uploaded by {USER}",
+                                        "Reversed": False
+                                    })
+                                    
+                            # 3. Laps Savings
+                            if laps_dep > 0 or laps_wd > 0:
+                                new_records.append({
+                                    "id": str(uuid.uuid4()),
+                                    "Date": date_str,
+                                    "Time": timestamp,
+                                    "Client ID": f"GLOBAL-LAPS-{BRANCH}",
+                                    "Client Name": f"Laps Savings ({BRANCH})",
+                                    "Officer": target_co,
+                                    "Branch": BRANCH,
+                                    "Amount Paid": 0,
+                                    "Savings Amount": laps_dep,
+                                    "Withdrawal Amount": laps_wd,
+                                    "Loan Repayment Amount": 0,
+                                    "Processing Fee Paid": 0,
+                                    "Insurance Fee Paid": 0,
+                                    "App Fee Paid": 0,
+                                    "Pass Book Paid": 0,
+                                    "Recovery Amount": 0,
+                                    "Mgt Fee Paid": 0,
+                                    "Others Amount": 0,
+                                    "Laps Amount Transferred": 0,
+                                    "Transaction Type": "Laps Savings (Bulk Upload)",
+                                    "Note": f"Bulk Uploaded by {USER}",
+                                    "Reversed": False
+                                })
+                                
+                        if new_records:
+                            new_df = pd.DataFrame(new_records)
+                            updated_repayments = pd.concat([repayments, new_df], ignore_index=True)
+                            save_repayments(updated_repayments)
+                            st.success(f"✅ Successfully processed {len(new_records)} transactions from the bulk upload!")
+                            
+                            # Optional delay and rerun
+                            import time
+                            time.sleep(2)
+                            st.rerun()
+                        else:
+                            st.warning("No valid transactions found in the uploaded file.")
+                except Exception as e:
+                    st.error(f"Error parsing file: {e}")
+                    
+        elif col_mode == "👤 Individual / Group Entry":
+            st.markdown("### 👥 Member Collections")
         # Show all clients that are not strictly closed, so completed clients can still deposit savings
         co_loans = all_loans[(all_loans['Officer'] == target_co) & (all_loans['Status'] != 'Closed')]
         
