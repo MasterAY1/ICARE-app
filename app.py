@@ -1058,47 +1058,21 @@ def calculate_overdue(start_date_str, product, fixed_repay, total_loan_paid, sta
 
 def calculate_loan_setup(amount, product_type, product_category="Finance"):
     """Calculate loan setup parameters"""
-    if "Asset" in str(product_category):
-        if "Cash and Carry" in str(product_type):
-            rate = 0.0
-            duration = 1
-            freq = "One-Time"
-            round_step = 1
-            force_gap = False
-        elif "60-Day" in str(product_type):
-            rate = 0.12
-            duration = 60
-            freq = "Daily"
-            round_step = 50
-            force_gap = False
-        else:
-            rate = 0.21
-            duration = 120
-            freq = "Daily"
-            round_step = 50
-            force_gap = False
-            
-        interest = amount * rate
-        # For assets, upfront fee determines actual repayment later.
-        # We'll return 0 for gap and a default loan_repayment assuming 0 upfront.
-        gap = 0
-        loan_repayment = (amount + interest) / duration
-        return {
-            "freq": freq,
-            "duration": duration,
-            "interest": interest,
-            "initial_payment": gap,
-            "loan_repayment": loan_repayment
-        }
-        
-    # Finance Product Logic
-    if "120" in str(product_type):
+    
+    # 1. Determine Product Parameters
+    if "Cash and Carry" in str(product_type):
+        rate = 0.0
+        duration = 1
+        freq = "One-Time"
+        round_step = 1
+        force_gap = False
+    elif "120" in str(product_type):
         rate = 0.21
         duration = 120
         freq = "Daily"
         round_step = 50
         force_gap = False
-    elif "Daily" in str(product_type) or "60" in str(product_type): # Daily Loan (60 Days)
+    elif "Daily" in str(product_type) or "60" in str(product_type):
         rate = 0.12
         duration = 60
         freq = "Daily"
@@ -1128,28 +1102,38 @@ def calculate_loan_setup(amount, product_type, product_category="Finance"):
         freq = "Weekly"
         round_step = 50
         force_gap = True
-    
+        
     interest = amount * rate
-    raw_val = amount / duration
     
-    if raw_val.is_integer():
-        loan_repayment = int(raw_val)
+    # 2. Asset vs Finance Logic
+    is_asset = "Asset" in str(product_category) or "Asset" in str(product_type)
+    
+    if is_asset:
         gap = 0
+        loan_repayment = (amount + interest) / duration if duration > 0 else 0
     else:
-        loan_repayment = math.floor(raw_val / round_step) * round_step
-        while True:
-            gap = amount - (loan_repayment * duration)
-            is_valid = True if gap >= 0 else False
-            if force_gap and (gap % 1000 != 0 or gap < 1000):
-                is_valid = False
-            if is_valid:
-                break
-            loan_repayment -= round_step
-            if loan_repayment <= 0:
-                loan_repayment = 0
-                gap = amount
-                break
-    
+        # Finance Gap Calculation Logic
+        import math
+        raw_val = amount / duration if duration > 0 else 0
+        
+        if raw_val.is_integer():
+            loan_repayment = int(raw_val)
+            gap = 0
+        else:
+            loan_repayment = math.floor(raw_val / round_step) * round_step
+            while True:
+                gap = amount - (loan_repayment * duration)
+                is_valid = True if gap >= 0 else False
+                if force_gap and (gap % 1000 != 0 or gap < 1000):
+                    is_valid = False
+                if is_valid:
+                    break
+                loan_repayment -= round_step
+                if loan_repayment <= 0:
+                    loan_repayment = 0
+                    gap = amount
+                    break
+                    
     return {
         "freq": freq,
         "duration": duration,
@@ -2071,7 +2055,7 @@ elif page == "Loan Origination":
                                     
                                     # Fetch loan type and handle ASSET suffix logic
                                     loan_type = str(member_row.get('Loan Type (Product)', ''))
-                                    is_asset = loan_type in ["60-Day Asset", "120-Day Asset", "Cash and Carry"]
+                                    is_asset = "asset" in loan_type.lower() or "cash and carry" in loan_type.lower()
                                     
                                     client_id = generate_client_id(all_loans, branch_val, group_ref_val, m_num_val, is_bulk=True)
                                     if is_asset:
@@ -2318,7 +2302,7 @@ elif page == "Loan Origination":
                         if product_category == "Finance":
                             prods = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
                         else:
-                            prods = ["60-Day Asset", "120-Day Asset", "Cash and Carry"]
+                            prods = ["60-Day Asset", "120-Day Asset", "Weekly 12W Asset", "Weekly 24W Asset", "Monthly 3M Asset", "Monthly 6M Asset", "Cash and Carry"]
                             
                         product = f2.selectbox("Loan Product", prods)
                         raw_amount = st.number_input("Requested Loan Amount / Asset Cost (₦)", min_value=0.0, step=10000.0, value=None, placeholder="0")
