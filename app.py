@@ -2034,6 +2034,12 @@ elif page == "Loan Origination":
                         return pd.DataFrame()
                     df_groups = extract_table(raw_groups, 'Group Reference', 'Group Name')
                     df_members = extract_table(raw_members, 'Member Reference', 'Full Name')
+                    try:
+                        raw_branch = pd.read_excel(uploaded_file, sheet_name='Branch and Officer List', header=None)
+                        df_branch = extract_table(raw_branch, 'Branch Name', 'Region Name')
+                    except:
+                        df_branch = pd.DataFrame()
+                        
                     if not df_groups.empty and 'Group Name' in df_groups.columns:
                         df_groups = df_groups.dropna(subset=['Group Reference', 'Group Name'])
                         df_groups = df_groups[~df_groups['Group Name'].astype(str).str.contains('Example', case=False, na=False)]
@@ -2044,9 +2050,13 @@ elif page == "Loan Origination":
                     num_members = len(df_members)
                     st.success(f"File parsed! Found **{num_groups} Groups** and **{num_members} Members**.")
                     if st.button("🚀 Confirm and Import", use_container_width=True):
-                        with st.spinner("Importing data..."):
+                        with st.spinner("Importing data & balances..."):
                             success_count = 0
                             skip_count = 0
+                            new_repayments = []
+                            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            date_str = datetime.now().strftime("%Y-%m-%d")
+                            
                             for index, member_row in df_members.iterrows():
                                 try:
                                     group_ref = member_row.get('Group Reference')
@@ -2058,13 +2068,40 @@ elif page == "Loan Origination":
                                     except: m_num_val = index + 1
                                     branch_val = str(group_row.get('Branch Name', BRANCH))
                                     group_ref_val = str(member_row.get('Group Reference', ''))
+                                    
+                                    # Fetch loan type and handle ASSET suffix logic
+                                    loan_type = str(member_row.get('Loan Type (Product)', ''))
+                                    is_asset = loan_type in ["60-Day Asset", "120-Day Asset", "Cash and Carry"]
+                                    
                                     client_id = generate_client_id(all_loans, branch_val, group_ref_val, m_num_val, is_bulk=True)
+                                    if is_asset:
+                                        client_id = f"{client_id}-ASSET"
+                                        
                                     existing_check = supabase.table("loans").select("client_id").eq("client_id", client_id).execute()
                                     if existing_check.data and len(existing_check.data) > 0:
                                         skip_count += 1
                                         continue
+                                        
                                     phone_val = str(member_row.get('Phone Number', ''))
                                     if phone_val.lower() == 'nan' or not phone_val.strip(): phone_val = "00000000000"
+                                    
+                                    # Safe extraction of financial amounts
+                                    def get_amt(row_data, keys):
+                                        for k in keys:
+                                            if k in row_data:
+                                                v = row_data.get(k)
+                                                if pd.notna(v):
+                                                    try: return float(str(v).replace(',', ''))
+                                                    except: pass
+                                        return 0.0
+                                        
+                                    principal_loan = get_amt(member_row, ['Principal loan', 'Principal Loan'])
+                                    active_credit = get_amt(member_row, ['Active credit', 'Active Credit', 'Active Credit (Disbursed)'])
+                                    remaining_bal = get_amt(member_row, ['Current credit balance', 'Current Credit Balance'])
+                                    savings_bal = get_amt(member_row, ['Savings Balance', 'Savings balance'])
+                                    
+                                    status = "Active" if active_credit > 0 or principal_loan > 0 else "Pending"
+                                    
                                     data = {
                                         "Client ID": client_id,
                                         "Client Name": str(member_row.get('Full Name', '')),
@@ -2077,17 +2114,162 @@ elif page == "Loan Origination":
                                         "Date": datetime.now().strftime("%Y-%m-%d"),
                                         "Officer": USER,
                                         "Branch": branch_val,
-                                        "Loan Amount": 0,
-                                        "Active Credit": 0,
-                                        "Loan Repay": 0,
-                                        "Total Due": 0,
-                                        "Status": "Pending"
+                                        "Loan Amount": principal_loan,
+                                        "Active Credit": active_credit,
+                                        "Loan Repay": remaining_bal,
+                                        "Total Due": remaining_bal,
+                                        "Status": status,
+                                        "Loan Product": loan_type
                                     }
                                     save_new_loan(data)
                                     success_count += 1
+                                    
+                                    # Inject Historical Savings for Member
+                                    if savings_bal > 0:
+                                        new_repayments.append({
+                                            "id": str(uuid.uuid4()),
+                                            "Date": date_str,
+                                            "Time": timestamp,
+                                            "Client ID": client_id,
+                                            "Client Name": str(member_row.get('Full Name', '')),
+                                            "Officer": USER,
+                                            "Branch": branch_val,
+                                            "Amount Paid": 0,
+                                            "Savings Amount": savings_bal,
+                                            "Withdrawal Amount": 0,
+                                            "Loan Repayment Amount": 0,
+                                            "Processing Fee Paid": 0,
+                                            "Insurance Fee Paid": 0,
+                                            "App Fee Paid": 0,
+                                            "Pass Book Paid": 0,
+                                            "Recovery Amount": 0,
+                                            "Mgt Fee Paid": 0,
+                                            "Others Amount": 0,
+                                            "Laps Amount Transferred": 0,
+                                            "Transaction Type": "Opening Savings Balance",
+                                            "Note": "System Onboarding Import",
+                                            "Reversed": False
+                                        })
                                 except Exception as e:
                                     print(f"Error row {index}: {e}")
-                            st.success(f"Import Complete! Registered {success_count} members. Skipped {skip_count} existing.")
+                                    
+                            # Inject Group Savings Balances
+                            seen_groups = set()
+                            for _, group_row in df_groups.iterrows():
+                                gname = str(group_row.get('Group Name', ''))
+                                branch_val = str(group_row.get('Branch Name', BRANCH))
+                                g_savings = 0.0
+                                for k in ['Group Savings', 'Current Group Savings Balance']:
+                                    if k in group_row and pd.notna(group_row[k]):
+                                        try:
+                                            g_savings = float(str(group_row[k]).replace(',', ''))
+                                            break
+                                        except: pass
+                                
+                                if gname and g_savings > 0 and gname not in seen_groups:
+                                    seen_groups.add(gname)
+                                    new_repayments.append({
+                                        "id": str(uuid.uuid4()),
+                                        "Date": date_str,
+                                        "Time": timestamp,
+                                        "Client ID": f"GROUP-{gname}",
+                                        "Client Name": f"{gname} Meeting",
+                                        "Officer": USER,
+                                        "Branch": branch_val,
+                                        "Amount Paid": 0,
+                                        "Savings Amount": g_savings,
+                                        "Withdrawal Amount": 0,
+                                        "Loan Repayment Amount": 0,
+                                        "Processing Fee Paid": 0,
+                                        "Insurance Fee Paid": 0,
+                                        "App Fee Paid": 0,
+                                        "Pass Book Paid": 0,
+                                        "Recovery Amount": 0,
+                                        "Mgt Fee Paid": 0,
+                                        "Others Amount": 0,
+                                        "Laps Amount Transferred": 0,
+                                        "Transaction Type": "Opening Savings Balance",
+                                        "Note": "System Onboarding Import",
+                                        "Reversed": False
+                                    })
+                                    
+                            # Inject Branch Laps & Misc Fees
+                            if not df_branch.empty:
+                                for _, branch_row in df_branch.iterrows():
+                                    bname = str(branch_row.get('Branch Name', BRANCH))
+                                    laps_sav = 0.0
+                                    misc_sav = 0.0
+                                    
+                                    for k in ['Branch Laps Savings Balance', 'Branch Laps Savings', 'Laps Savings']:
+                                        if k in branch_row and pd.notna(branch_row[k]):
+                                            try: laps_sav = float(str(branch_row[k]).replace(',', ''))
+                                            except: pass
+                                            
+                                    for k in ['Misc Fees Savings Balance', 'Misc Fees Savings', 'Misc Fees']:
+                                        if k in branch_row and pd.notna(branch_row[k]):
+                                            try: misc_sav = float(str(branch_row[k]).replace(',', ''))
+                                            except: pass
+                                            
+                                    if laps_sav > 0:
+                                        new_repayments.append({
+                                            "id": str(uuid.uuid4()),
+                                            "Date": date_str,
+                                            "Time": timestamp,
+                                            "Client ID": f"GLOBAL-LAPS-{bname}",
+                                            "Client Name": f"Laps Savings ({bname})",
+                                            "Officer": USER,
+                                            "Branch": bname,
+                                            "Amount Paid": 0,
+                                            "Savings Amount": laps_sav,
+                                            "Withdrawal Amount": 0,
+                                            "Loan Repayment Amount": 0,
+                                            "Processing Fee Paid": 0,
+                                            "Insurance Fee Paid": 0,
+                                            "App Fee Paid": 0,
+                                            "Pass Book Paid": 0,
+                                            "Recovery Amount": 0,
+                                            "Mgt Fee Paid": 0,
+                                            "Others Amount": 0,
+                                            "Laps Amount Transferred": 0,
+                                            "Transaction Type": "Opening Savings Balance",
+                                            "Note": "System Onboarding Import",
+                                            "Reversed": False
+                                        })
+                                        
+                                    if misc_sav > 0:
+                                        new_repayments.append({
+                                            "id": str(uuid.uuid4()),
+                                            "Date": date_str,
+                                            "Time": timestamp,
+                                            "Client ID": f"GLOBAL-MISC-{bname}",
+                                            "Client Name": f"Misc Fees Savings ({bname})",
+                                            "Officer": USER,
+                                            "Branch": bname,
+                                            "Amount Paid": 0,
+                                            "Savings Amount": misc_sav,
+                                            "Withdrawal Amount": 0,
+                                            "Loan Repayment Amount": 0,
+                                            "Processing Fee Paid": 0,
+                                            "Insurance Fee Paid": 0,
+                                            "App Fee Paid": 0,
+                                            "Pass Book Paid": 0,
+                                            "Recovery Amount": 0,
+                                            "Mgt Fee Paid": 0,
+                                            "Others Amount": 0,
+                                            "Laps Amount Transferred": 0,
+                                            "Transaction Type": "Opening Savings Balance",
+                                            "Note": "System Onboarding Import",
+                                            "Reversed": False
+                                        })
+                                        
+                            # Save all new opening balances
+                            if new_repayments:
+                                reps_df = load_repayments()
+                                new_reps_df = pd.DataFrame(new_repayments)
+                                updated_reps = pd.concat([reps_df, new_reps_df], ignore_index=True)
+                                save_repayments(updated_reps)
+                                
+                            st.success(f"✅ Import Complete! Registered {success_count} members. Added {len(new_repayments)} opening balance entries. Skipped {skip_count} existing.")
                 except Exception as e:
                     st.error(f"Error reading file: {e}")
             st.markdown("</div>", unsafe_allow_html=True)
