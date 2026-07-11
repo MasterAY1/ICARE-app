@@ -23,7 +23,6 @@ import uuid
 import hashlib
 import base64
 import os
-import bcrypt
 from supabase import create_client, Client
 import holidays
 
@@ -221,38 +220,6 @@ supabase = init_connection()
 def load_co_mapping():
     if not supabase:
         return {}, {}
-    try:
-        res = supabase.table("app_users").select("username, full_name").in_("role", ["CO", "Officer"]).execute()
-        if res.data:
-            name_map = {row["full_name"].strip(): row["username"] for row in res.data if row.get("full_name")}
-            display_map = {v: k for k, v in name_map.items()}
-            return name_map, display_map
-    except Exception as e:
-        print(f"Error loading CO mapping: {e}")
-    return {}, {}
-
-CO_NAME_MAP, CO_DISPLAY_MAP = load_co_mapping()
-
-# --- RBAC AUTHENTICATION ---
-def authenticate_user(username, password):
-    if not supabase:
-        return None
-    try:
-        res = supabase.table("app_users").select("*").ilike("username", username).execute()
-        if res.data and len(res.data) > 0:
-            user = res.data[0]
-            stored_hash = user.get("password", "")
-            
-            # Check if the stored password matches the bcrypt hash
-            if str(stored_hash).startswith("$2") and bcrypt.checkpw(str(password).encode('utf-8'), str(stored_hash).encode('utf-8')):
-                return {
-                    'user_name': user['username'],
-                    'user_role': user['role'],
-                    'branch_name': user['branch_name']
-                }
-    except Exception as e:
-        st.error(f"Auth error: {e}")
-    return None
 
 # Custom CSS — ICARE Banking Design System v5.0 (Brand Colors)
 st.markdown("""
@@ -912,10 +879,10 @@ def load_loans():
         query = supabase.table("loans").select("*")
         
         # RBAC Filters
-        if st.session_state.get('role') in ['CO', 'Officer']:
-            query = query.eq('officer', st.session_state.get('user'))
-        elif st.session_state.get('role') == 'BM':
-            query = query.eq('branch', st.session_state.get('branch'))
+        if ROLE in ['CO', 'Officer']:
+            query = query.eq('officer', USER)
+        elif ROLE == 'BM':
+            query = query.eq('branch', BRANCH)
             
         response = query.execute()
         if not response.data:
@@ -943,10 +910,10 @@ def load_repayments():
         query = supabase.table("repayments").select("*")
         
         # RBAC Filters
-        if st.session_state.get('role') in ['CO', 'Officer']:
-            query = query.eq('officer', st.session_state.get('user'))
-        elif st.session_state.get('role') == 'BM':
-            query = query.eq('branch', st.session_state.get('branch'))
+        if ROLE in ['CO', 'Officer']:
+            query = query.eq('officer', USER)
+        elif ROLE == 'BM':
+            query = query.eq('branch', BRANCH)
             
         response = query.execute()
         if not response.data:
@@ -1308,106 +1275,18 @@ if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
     else:
         st.session_state['logged_in'] = False
 
-if not st.session_state['logged_in']:
-    # Inject gradient background + particles over Streamlit's default
-    st.markdown("""
-        <div class="login-page-bg"></div>
-        <div class="login-particles">
-            <span></span><span></span><span></span>
-            <span></span><span></span><span></span>
-        </div>
-    """, unsafe_allow_html=True)
-    st.markdown("""<style>
-        .stApp { background: transparent !important; }
-        [data-testid="stSidebar"] { display: none !important; }
-        header[data-testid="stHeader"] { display: none !important; }
-        .stMainBlockContainer { max-width: 1100px !important; margin: 0 auto !important; padding-top: 2vh !important; }
-    </style>""", unsafe_allow_html=True)
-    
-    # Split layout: info panel (left) + login form (right)
-    info_col, spacer_col, form_col = st.columns([1.15, 0.1, 0.85])
-    
-    with info_col:
-        st.markdown("""
-            <div class='login-info-panel'>
-                <div class='info-badge'>🌱 Est. 2006 — South-West Nigeria</div>
-                <p class='info-headline'>Empowering Communities,<br><span>Growing Together</span></p>
-                <p class='info-slogan'>"Building a better community through inspiration, motivation and empowerment"</p>
-                <p class='info-desc'>
-                    ICARE (Initiative for Community Advancement, Relief and Empowerment), 
-                    founded by Mrs. Alayo L.S., is a Non-Governmental Organization dedicated to the 
-                    intellectual and socio-economic growth of its members. Operating across South-Western 
-                    Nigeria, ICARE runs micro-credit programmes for traders and artisans, asset acquisition 
-                    schemes, agric-enterprise ventures, and skill acquisition programmes for the youths.
-                </p>
-                <div class='info-divider'></div>
-                <div class='info-block'>
-                    <p class='info-block-label'>Our Vision</p>
-                    <p class='info-block-text'>To be among the foremost catalysts in initiating and implementing 
-                    sustainable programmes focused on empowering people for growth and self-reliance.</p>
-                </div>
-                <div class='info-block'>
-                    <p class='info-block-label'>Core Values</p>
-                    <div class='info-values'>
-                        <span>Integrity</span>
-                        <span>Commitment</span>
-                        <span>Competence</span>
-                        <span>Teamwork</span>
-                    </div>
-                </div>
-                <p class='info-address'>
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/></svg>
-                    H.Q: 7 Ibifiele Street, Aiyegbami, Sagamu, Ogun State, Nigeria
-                </p>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    with form_col:
-        with st.form("login"):
-            st.markdown(f"""
-                <div class='login-logo-wrap'>
-                    <img src="data:image/jpeg;base64,{LOGO_B64}">
-                </div>
-                <p class='login-brand-name'>ICARE</p>
-                <p class='login-org-name'>Initiative for Community Advancement,<br>Relief and Empowerment</p>
-                <div class='login-accent-line'></div>
-                <p class='login-title'>Welcome Back</p>
-                <p class='login-subtitle'>ICARE — Growing Together</p>
-            """, unsafe_allow_html=True)
-            
-            username = st.text_input("Username", placeholder="Enter your username")
-            pw = st.text_input("Password", type="password", placeholder="Enter your password")
-            
-            submitted = st.form_submit_button("SIGN IN", use_container_width=True)
-            
-            if submitted:
-                st.session_state['logout_in_progress'] = False
-                auth_result = authenticate_user(username, pw)
-                if auth_result:
-                    _set_auth_token(auth_result['user_name'])
-                    st.session_state['logged_in'] = True
-                    st.session_state['user'] = auth_result['user_name']
-                    st.session_state['role'] = auth_result['user_role']
-                    st.session_state['branch'] = auth_result['branch_name']
-                    st.rerun()
-                else:
-                    st.error("Invalid credentials. Please try again.")
-        
-        st.markdown(f"""
-            <div class='login-footer-bar'>
-                <p>Core Banking System v{APP_VERSION}</p>
-                <span class='secured-badge'>
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 16l-4-4 1.41-1.41L11 14.17l6.59-6.59L19 9l-8 8z"/></svg>
-                    256-bit Secured Connection
-                </span>
-            </div>
-        """, unsafe_allow_html=True)
-    st.stop()
+# --- ROUTING ---
+from navigation.router import route_app
+from auth.password import hash_password
+route_app()
 
 # --- 5. SIDEBAR ---
-ROLE = st.session_state['role']
-USER = st.session_state['user']
-BRANCH = st.session_state['branch']
+from services.auth_service import AuthService
+current_user = AuthService.get_user()
+ROLE = current_user.role if current_user else None
+USER = current_user.username if current_user else None
+BRANCH = current_user.branch if current_user else None
+
 
 # Role badge colors (ICARE brand palette)
 role_colors = {ROLE_ADMIN: COLOR_SECONDARY, "BM": COLOR_PRIMARY, "CO": "#8CC63F", "Officer": "#8CC63F", "AM": COLOR_PRIMARY}
@@ -4162,7 +4041,7 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
                 elif new_username in user_usernames:
                     st.error("Username already exists!")
                 else:
-                    hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    hashed_pw = hash_password(new_password)
                     try:
                         supabase.table("app_users").insert({
                             "username": new_username,
@@ -4187,7 +4066,7 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
                 if not reset_password:
                     st.error("Please enter a new password.")
                 else:
-                    hashed_pw = bcrypt.hashpw(reset_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    hashed_pw = hash_password(reset_password)
                     try:
                         supabase.table("app_users").update({"password": hashed_pw}).eq("username", reset_username).execute()
                         st.success(f"Password reset for {reset_username}!")
