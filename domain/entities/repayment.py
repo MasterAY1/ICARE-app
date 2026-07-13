@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from datetime import date, datetime
 
@@ -18,4 +18,6 @@ class Repayment:
     transaction_type: str
     branch: str
     credit_officer: str
-    created_at: Optional[datetime]
+    note: Optional[str] = ""
+    created_at: Optional[datetime] = None
+    extra_fields: dict = field(default_factory=dict)

@@ -5,6 +5,9 @@ from interfaces.user_repository import UserRepository
 from interfaces.audit_repository import AuditRepository
 from interfaces.cashbook_repository import CashbookRepository
 from interfaces.branch_closure_repository import BranchClosureRepository
+from interfaces.event_store_repository import EventStoreRepository
+from interfaces.posting_rules_repository import PostingRulesRepository
+from interfaces.ledger_repository import LedgerRepository
 
 class UnitOfWork(Protocol):
     loans: LoanRepository
@@ -13,6 +16,9 @@ class UnitOfWork(Protocol):
     audit: AuditRepository
     cashbook: CashbookRepository
     branch_closures: BranchClosureRepository
+    event_store: EventStoreRepository
+    posting_rules: PostingRulesRepository
+    ledger: LedgerRepository
 
     def __enter__(self) -> 'UnitOfWork': ...
     def __exit__(self, exc_type, exc_val, traceback) -> None: ...

@@ -1,6 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from datetime import date, datetime
+from domain.enums import LoanStatus, ClientStatus, SavingsStatus
 
 @dataclass
 class Loan:
@@ -14,11 +15,14 @@ class Loan:
     gap_fee: float
     expected_installment: float
     total_payable: float
-    status: str
+    status: LoanStatus
     branch: str
     credit_officer: str
-    start_date: Optional[date]
-    end_date: Optional[date]
-    created_at: Optional[datetime]
-    group_name: Optional[str]
-    is_asset: bool
+    client_status: ClientStatus = field(default=ClientStatus.ACTIVE)
+    savings_status: SavingsStatus = field(default=SavingsStatus.NORMAL)
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    created_at: Optional[datetime] = None
+    group_name: Optional[str] = None
+    is_asset: bool = False
+    extra_fields: dict = field(default_factory=dict)

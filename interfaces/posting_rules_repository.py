@@ -1,0 +1,6 @@
+from typing import Protocol, Optional, List
+from domain.entities.posting_rule import PostingRule
+
+class PostingRulesRepository(Protocol):
+    def get_rule(self, event_type: str, version: int = 1) -> Optional[PostingRule]: ...
+    def save_rule(self, rule: PostingRule) -> None: ...

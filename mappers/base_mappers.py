@@ -1,13 +1,16 @@
 from domain.entities.loan import Loan
+from domain.enums import LoanStatus, ClientStatus, SavingsStatus
 from domain.entities.repayment import Repayment
 from domain.entities.user import User
 from domain.entities.audit_event import AuditEvent
 from domain.entities.cashbook_entry import CashbookEntry
 from domain.entities.branch_closure import BranchClosure
-from datetime import datetime
+from datetime import datetime, date
 
 def _parse_date(date_str):
     if not date_str: return None
+    if isinstance(date_str, (date, datetime)):
+        return date_str if isinstance(date_str, date) else date_str.date()
     try:
         return datetime.strptime(str(date_str).split('T')[0], "%Y-%m-%d").date()
     except Exception:
@@ -15,83 +18,177 @@ def _parse_date(date_str):
 
 def _parse_datetime(dt_str):
     if not dt_str: return None
+    if isinstance(dt_str, datetime):
+        return dt_str
     try:
-        return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+        return datetime.fromisoformat(str(dt_str).replace("Z", "+00:00"))
     except Exception:
         return None
 
 class LoanMapper:
     @staticmethod
     def to_domain(dto: dict) -> Loan:
+        # Resolve client profile details from joined table if present
+        c_dto = dto.get("clients") or {}
+        if not isinstance(c_dto, dict):
+            c_dto = {}
+            
+        # Resolve branch name from join
+        b_name = dto.get("branch", "")
+        if dto.get("branches") and isinstance(dto.get("branches"), dict):
+            b_name = dto.get("branches", {}).get("name", b_name)
+
+        # Resolve officer name from join
+        o_name = dto.get("officer", dto.get("credit_officer", ""))
+        if dto.get("app_users") and isinstance(dto.get("app_users"), dict):
+            o_name = dto.get("app_users", {}).get("full_name", dto.get("app_users", {}).get("username", o_name))
+
+        # Check loan product from product mapping or join if we add it
+        prod_name = dto.get("loan_product", dto.get("product_type", ""))
+        if dto.get("loan_products") and isinstance(dto.get("loan_products"), dict):
+            prod_name = dto.get("loan_products", {}).get("name", prod_name)
+
+        # Build extra_fields with fallback client columns
+        extra = {
+            "nickname": c_dto.get("nickname") or dto.get("nickname", ""),
+            "phone": c_dto.get("phone") or dto.get("phone", ""),
+            "address": c_dto.get("address") or dto.get("address", ""),
+            "marital_status": c_dto.get("marital_status") or dto.get("marital_status", ""),
+            "business_type": c_dto.get("business_type") or dto.get("business_type", ""),
+            "average_monthly_income": float(c_dto.get("average_monthly_income") or dto.get("average_monthly_income", 0.0) or 0.0),
+            "other_obligations": c_dto.get("other_obligations") or dto.get("other_obligations", ""),
+            "guarantor_name": dto.get("guarantor_name", ""),
+            "guarantor_nickname": dto.get("guarantor_nickname", ""),
+            "guarantor_marital_status": dto.get("guarantor_marital_status", ""),
+            "guarantor_home_address": dto.get("guarantor_home_address", ""),
+            "guarantor_occupation": dto.get("guarantor_occupation", ""),
+            "guarantor_office_address": dto.get("guarantor_office_address", ""),
+            "guarantor_phone": dto.get("guarantor_phone", ""),
+            "guarantor_relationship": dto.get("guarantor_relationship", ""),
+            "group_location": dto.get("group_location", ""),
+            "group_leader_name": dto.get("group_leader_name", ""),
+            "group_formation_date": dto.get("group_formation_date", ""),
+            "group_savings": float(dto.get("group_savings") or 0.0),
+            "branch_contingency": float(dto.get("branch_contingency") or 0.0),
+            "branch_contingency_2": float(dto.get("branch_contingency_2") or 0.0),
+            "disbursement_date": dto.get("disbursement_date"),
+            "meeting_day": dto.get("meeting_day", ""),
+            "processing_fee": float(dto.get("processing_fee") or 0.0),
+            "markup": float(dto.get("markup") or 0.0),
+            "pass_book_fee": float(dto.get("pass_book_fee") or 0.0)
+        }
+        # merge any other extra fields from JSONB
+        if dto.get("extra_fields") and isinstance(dto.get("extra_fields"), dict):
+            extra.update(dto.get("extra_fields"))
+
+        loan_id = str(dto.get("loan_id", dto.get("id") or ""))
+        client_id = str(dto.get("client_id", ""))
+        client_name = c_dto.get("name") or dto.get("client_name", "")
+
         return Loan(
-            id=str(dto.get("id")),
-            client_id=str(dto.get("client_id")),
-            client_name=str(dto.get("client_name", "")),
-            product_type=str(dto.get("product_type", "")),
-            amount=float(dto.get("amount", 0)),
+            id=loan_id,
+            client_id=client_id,
+            client_name=client_name,
+            product_type=prod_name,
+            amount=float(dto.get("loan_amount", dto.get("amount", 0))),
             duration=int(dto.get("duration", 0)),
             frequency=str(dto.get("frequency", "")),
             gap_fee=float(dto.get("gap_fee", 0)),
             expected_installment=float(dto.get("expected_installment", 0)),
             total_payable=float(dto.get("total_payable", 0)),
-            status=str(dto.get("status", "")),
-            branch=str(dto.get("branch", "")),
-            credit_officer=str(dto.get("credit_officer", "")),
+            status=LoanStatus(dto.get("status", LoanStatus.DRAFT.value)) if dto.get("status") else LoanStatus.DRAFT,
+            client_status=ClientStatus(dto.get("client_status", ClientStatus.ACTIVE.value)) if dto.get("client_status") else ClientStatus.ACTIVE,
+            savings_status=SavingsStatus(dto.get("savings_status", SavingsStatus.NORMAL.value)) if dto.get("savings_status") else SavingsStatus.NORMAL,
+            branch=b_name,
+            credit_officer=o_name,
             start_date=_parse_date(dto.get("start_date")),
-            end_date=_parse_date(dto.get("end_date")),
+            end_date=_parse_date(dto.get("expected_end_date", dto.get("end_date"))),
             created_at=_parse_datetime(dto.get("created_at")),
             group_name=dto.get("group_name"),
-            is_asset=bool(dto.get("is_asset", False))
+            is_asset=bool(dto.get("is_asset", False)),
+            extra_fields=extra
         )
         
     @staticmethod
     def to_database(entity: Loan) -> dict:
-        return {
+        db_dict = {
             "id": entity.id,
             "client_id": entity.client_id,
             "client_name": entity.client_name,
-            "product_type": entity.product_type,
-            "amount": entity.amount,
+            "loan_product": entity.product_type,
+            "loan_amount": entity.amount,
             "duration": entity.duration,
             "frequency": entity.frequency,
             "gap_fee": entity.gap_fee,
             "expected_installment": entity.expected_installment,
             "total_payable": entity.total_payable,
-            "status": entity.status,
+            "status": entity.status.value if hasattr(entity.status, 'value') else entity.status,
+            "client_status": entity.client_status.value if hasattr(entity.client_status, 'value') else entity.client_status,
+            "savings_status": entity.savings_status.value if hasattr(entity.savings_status, 'value') else entity.savings_status,
             "branch": entity.branch,
-            "credit_officer": entity.credit_officer,
+            "officer": entity.credit_officer,
             "start_date": entity.start_date.isoformat() if entity.start_date else None,
-            "end_date": entity.end_date.isoformat() if entity.end_date else None,
+            "expected_end_date": entity.end_date.isoformat() if entity.end_date else None,
             "group_name": entity.group_name,
             "is_asset": entity.is_asset
         }
+        # Keep client profile columns flattened for UI database representations
+        db_dict.update(entity.extra_fields)
+        return db_dict
 
 class RepaymentMapper:
     @staticmethod
     def to_domain(dto: dict) -> Repayment:
+        # Resolve branch name from join
+        b_name = dto.get("branch", "")
+        if dto.get("branches") and isinstance(dto.get("branches"), dict):
+            b_name = dto.get("branches", {}).get("name", b_name)
+
+        # Resolve officer name from join
+        o_name = dto.get("officer", dto.get("credit_officer", ""))
+        if dto.get("app_users") and isinstance(dto.get("app_users"), dict):
+            o_name = dto.get("app_users", {}).get("full_name", dto.get("app_users", {}).get("username", o_name))
+
+        # Resolve client name from join
+        c_name = dto.get("client_name", "")
+        if dto.get("clients") and isinstance(dto.get("clients"), dict):
+            c_name = dto.get("clients", {}).get("name", c_name)
+
+        # Setup all collection fields expected by domain Repayment
+        savings_dep = float(dto.get("savings_amount", 0))
+        loan_repay = float(dto.get("loan_repayment_amount", 0))
+        amt_paid = float(dto.get("amount_paid", 0))
+        if amt_paid <= 0:
+            # Fallback
+            amt_paid = savings_dep + loan_repay + float(dto.get("processing_fee_paid", 0)) + float(dto.get("withdrawal_amount", 0)) + float(dto.get("others_amount", 0))
+            
+        extra = {k: v for k, v in dto.items() if k not in ["id", "loan_id", "client_id", "amount_paid", "savings_amount", "loan_repayment_amount", "withdrawal_amount", "others_amount", "recovery_amount", "initial_payment", "date", "payment_date", "transaction_type", "branch", "officer", "credit_officer", "note", "created_at", "clients", "branches", "app_users"]}
+        extra["client_name"] = c_name
+
         return Repayment(
-            id=str(dto.get("id")),
-            loan_id=str(dto.get("loan_id")),
-            client_id=str(dto.get("client_id")),
-            amount_paid=float(dto.get("amount_paid", 0)),
-            savings_amount=float(dto.get("savings_amount", 0)),
-            loan_repayment_amount=float(dto.get("loan_repayment_amount", 0)),
+            id=str(dto.get("id") or ""),
+            loan_id=str(dto.get("loan_id", dto.get("client_id", ""))),
+            client_id=str(dto.get("client_id", "")),
+            amount_paid=amt_paid,
+            savings_amount=savings_dep,
+            loan_repayment_amount=loan_repay or amt_paid,
             withdrawal_amount=float(dto.get("withdrawal_amount", 0)),
             others_amount=float(dto.get("others_amount", 0)),
             recovery_amount=float(dto.get("recovery_amount", 0)),
             initial_payment=float(dto.get("initial_payment", 0)),
-            payment_date=_parse_date(dto.get("payment_date")),
-            transaction_type=str(dto.get("transaction_type", "")),
-            branch=str(dto.get("branch", "")),
-            credit_officer=str(dto.get("credit_officer", "")),
-            created_at=_parse_datetime(dto.get("created_at"))
+            payment_date=_parse_date(dto.get("date", dto.get("payment_date"))),
+            transaction_type=str(dto.get("transaction_type", "Loan")),
+            branch=b_name,
+            credit_officer=o_name,
+            note=str(dto.get("note") or ""),
+            created_at=_parse_datetime(dto.get("created_at")),
+            extra_fields=extra
         )
         
     @staticmethod
     def to_database(entity: Repayment) -> dict:
-        return {
+        db_dict = {
             "id": entity.id,
-            "loan_id": entity.loan_id,
             "client_id": entity.client_id,
             "amount_paid": entity.amount_paid,
             "savings_amount": entity.savings_amount,
@@ -100,45 +197,93 @@ class RepaymentMapper:
             "others_amount": entity.others_amount,
             "recovery_amount": entity.recovery_amount,
             "initial_payment": entity.initial_payment,
-            "payment_date": entity.payment_date.isoformat() if entity.payment_date else None,
+            "date": entity.payment_date.isoformat() if entity.payment_date else None,
             "transaction_type": entity.transaction_type,
             "branch": entity.branch,
-            "credit_officer": entity.credit_officer
+            "officer": entity.credit_officer,
+            "note": entity.note
         }
+        db_dict.update(entity.extra_fields)
+        return db_dict
 
 class UserMapper:
     @staticmethod
     def to_domain(dto: dict) -> User:
+        b_name = dto.get("branch_name", "")
+        if dto.get("branches") and isinstance(dto.get("branches"), dict):
+            b_name = dto.get("branches", {}).get("name", b_name)
+            
+        role_name = dto.get("role", "")
+        ur = dto.get("user_roles")
+        if ur and isinstance(ur, list) and len(ur) > 0:
+            role_name = ur[0].get("roles", {}).get("name", role_name)
+            
+        pwd = dto.get("password_hash", dto.get("password", ""))
+        
         return User(
             id=str(dto.get("id")),
             username=str(dto.get("username")),
             full_name=str(dto.get("full_name")),
-            role=str(dto.get("role")),
-            branch_name=str(dto.get("branch_name")),
-            password_hash=str(dto.get("password")),
+            role=role_name,
+            branch_name=b_name,
+            password_hash=pwd,
             created_at=_parse_datetime(dto.get("created_at"))
         )
 
 class CashbookMapper:
     @staticmethod
     def to_domain(dto: dict) -> CashbookEntry:
+        b_name = dto.get("branch", "")
+        if dto.get("branches") and isinstance(dto.get("branches"), dict):
+            b_name = dto.get("branches", {}).get("name", b_name)
+
         return CashbookEntry(
             id=dto.get("id"),
             date=_parse_date(dto.get("date")),
-            branch=str(dto.get("branch")),
+            branch=b_name,
             opening_balance=float(dto.get("opening_balance", 0)),
+            rep_daily=float(dto.get("rep_daily", 0)),
+            rep_12_weeks=float(dto.get("rep_12_weeks", 0)),
+            rep_24_weeks=float(dto.get("rep_24_weeks", 0)),
+            rep_monthly=float(dto.get("rep_monthly", 0)),
             savings_deposit=float(dto.get("savings_deposit", 0)),
-            loan_recovery=float(dto.get("loan_recovery", 0)),
-            disbursement=float(dto.get("disbursement", 0)),
+            laps_reserve=float(dto.get("laps_reserve", 0)),
+            funds_received_ho=float(dto.get("funds_received_ho", 0)),
+            funds_received_other_branch=float(dto.get("funds_received_other_branch", 0)),
+            loan_received_asset=float(dto.get("loan_received_asset", 0)),
+            loan_received_finance=float(dto.get("loan_received_finance", 0)),
+            daily_11_pct=float(dto.get("daily_11_pct", 0)),
+            weekly_11_pct=float(dto.get("weekly_11_pct", 0)),
+            savings_adj_no=float(dto.get("savings_adj_no", 0)),
+            savings_adj_amount=float(dto.get("savings_adj_amount", 0)),
+            risk_premium_returns=float(dto.get("risk_premium_returns", 0)),
+            passbook=float(dto.get("passbook", 0)),
+            app_fee=float(dto.get("app_fee", 0)),
+            asset_credit_sales=float(dto.get("asset_credit_sales", 0)),
+            cash_and_carry=float(dto.get("cash_and_carry", 0)),
+            contingency=float(dto.get("contingency", 0)),
+            credit_form=float(dto.get("credit_form", 0)),
+            credit_form_damage=float(dto.get("credit_form_damage", 0)),
+            bonus=float(dto.get("bonus", 0)),
+            misc_fees=float(dto.get("misc_fees", 0)),
+            fund_transferred_other_branch=float(dto.get("fund_transferred_other_branch", 0)),
+            fund_transferred_ho=float(dto.get("fund_transferred_ho", 0)),
+            fund_to_other_area=float(dto.get("fund_to_other_area", 0)),
+            fund_to_asset_program=float(dto.get("fund_to_asset_program", 0)),
+            fund_to_product_finance=float(dto.get("fund_to_product_finance", 0)),
             savings_withdrawal=float(dto.get("savings_withdrawal", 0)),
+            staff_salaries=float(dto.get("staff_salaries", 0)),
             office_expenses=float(dto.get("office_expenses", 0)),
+            laps_returns=float(dto.get("laps_returns", 0)),
             bank_deposit=float(dto.get("bank_deposit", 0)),
-            staff_salary=float(dto.get("staff_salary", 0)),
+            bank_withdrawal=float(dto.get("bank_withdrawal", 0)),
+            product_withdrawal=float(dto.get("product_withdrawal", 0)),
+            total_inflows=float(dto.get("total_inflows", 0)),
+            total_outflows=float(dto.get("total_outflows", 0)),
             closing_balance=float(dto.get("closing_balance", 0)),
-            shortage=float(dto.get("shortage", 0)),
-            excess=float(dto.get("excess", 0)),
-            is_balanced=bool(dto.get("is_balanced", False)),
-            status=str(dto.get("status", ""))
+            adjustment_in=float(dto.get("adjustment_in", 0)),
+            adjustment_out=float(dto.get("adjustment_out", 0)),
+            adjustment_reason=str(dto.get("adjustment_reason", ""))
         )
         
     @staticmethod
@@ -147,18 +292,48 @@ class CashbookMapper:
             "date": entity.date.isoformat() if entity.date else None,
             "branch": entity.branch,
             "opening_balance": entity.opening_balance,
+            "rep_daily": entity.rep_daily,
+            "rep_12_weeks": entity.rep_12_weeks,
+            "rep_24_weeks": entity.rep_24_weeks,
+            "rep_monthly": entity.rep_monthly,
             "savings_deposit": entity.savings_deposit,
-            "loan_recovery": entity.loan_recovery,
-            "disbursement": entity.disbursement,
+            "laps_reserve": entity.laps_reserve,
+            "funds_received_ho": entity.funds_received_ho,
+            "funds_received_other_branch": entity.funds_received_other_branch,
+            "loan_received_asset": entity.loan_received_asset,
+            "loan_received_finance": entity.loan_received_finance,
+            "daily_11_pct": entity.daily_11_pct,
+            "weekly_11_pct": entity.weekly_11_pct,
+            "savings_adj_no": entity.savings_adj_no,
+            "savings_adj_amount": entity.savings_adj_amount,
+            "risk_premium_returns": entity.risk_premium_returns,
+            "passbook": entity.passbook,
+            "app_fee": entity.app_fee,
+            "asset_credit_sales": entity.asset_credit_sales,
+            "cash_and_carry": entity.cash_and_carry,
+            "contingency": entity.contingency,
+            "credit_form": entity.credit_form,
+            "credit_form_damage": entity.credit_form_damage,
+            "bonus": entity.bonus,
+            "misc_fees": entity.misc_fees,
+            "fund_transferred_other_branch": entity.fund_transferred_other_branch,
+            "fund_transferred_ho": entity.fund_transferred_ho,
+            "fund_to_other_area": entity.fund_to_other_area,
+            "fund_to_asset_program": entity.fund_to_asset_program,
+            "fund_to_product_finance": entity.fund_to_product_finance,
             "savings_withdrawal": entity.savings_withdrawal,
+            "staff_salaries": entity.staff_salaries,
             "office_expenses": entity.office_expenses,
+            "laps_returns": entity.laps_returns,
             "bank_deposit": entity.bank_deposit,
-            "staff_salary": entity.staff_salary,
+            "bank_withdrawal": entity.bank_withdrawal,
+            "product_withdrawal": entity.product_withdrawal,
+            "total_inflows": entity.total_inflows,
+            "total_outflows": entity.total_outflows,
             "closing_balance": entity.closing_balance,
-            "shortage": entity.shortage,
-            "excess": entity.excess,
-            "is_balanced": entity.is_balanced,
-            "status": entity.status
+            "adjustment_in": entity.adjustment_in,
+            "adjustment_out": entity.adjustment_out,
+            "adjustment_reason": entity.adjustment_reason
         }
         if entity.id: d["id"] = entity.id
         return d
