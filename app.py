@@ -1936,31 +1936,31 @@ elif page == "Loan Origination":
             # Dynamic form layout (no st.form wrapper)
             st.markdown("#### 1. Personal Info")
             c1, c2, c3 = st.columns(3)
-            name = c1.text_input("Full Name")
-            nickname = c2.text_input("Nickname")
-            phone = c3.text_input("Phone Number")
-            address = st.text_input("Home Address")
+            name = c1.text_input("Full Name", key="reg_client_name")
+            nickname = c2.text_input("Nickname", key="reg_client_nickname")
+            phone = c3.text_input("Phone Number", key="reg_client_phone")
+            address = st.text_input("Home Address", key="reg_client_address")
             
             c4, c5, c6 = st.columns(3)
-            marital = c4.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"])
-            biz_type = c5.text_input("Business Type", value="Trader")
-            raw_inc = c6.number_input("Average Monthly Income (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0")
+            marital = c4.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"], key="reg_client_marital")
+            biz_type = c5.text_input("Business Type", value="Trader", key="reg_client_biz_type")
+            raw_inc = c6.number_input("Average Monthly Income (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0", key="reg_client_income")
             income = float(raw_inc) if raw_inc else 0.0
-            biz_address = st.text_input("Business Address")
-            other_obs = st.text_input("Other Financial Obligations (if any)")
+            biz_address = st.text_input("Business Address", key="reg_client_biz_address")
+            other_obs = st.text_input("Other Financial Obligations (if any)", key="reg_client_obligations")
             
             st.markdown("#### 2. Guarantor Info")
             g1, g2, g3 = st.columns(3)
-            g_name = g1.text_input("Guarantor Full Name")
-            g_nick = g2.text_input("Guarantor Nickname")
-            g_phone = g3.text_input("Guarantor Phone")
-            g_address = st.text_input("Guarantor Home Address")
+            g_name = g1.text_input("Guarantor Full Name", key="reg_guarantor_name")
+            g_nick = g2.text_input("Guarantor Nickname", key="reg_guarantor_nickname")
+            g_phone = g3.text_input("Guarantor Phone", key="reg_guarantor_phone")
+            g_address = st.text_input("Guarantor Home Address", key="reg_guarantor_address")
             
             g4, g5, g6 = st.columns(3)
-            g_marital = g4.selectbox("Guarantor Marital Status", ["Single", "Married", "Divorced", "Widowed"])
-            g_occ = g5.text_input("Guarantor Occupation")
-            g_rel = g6.text_input("Relationship with Client")
-            g_office = st.text_input("Guarantor Office Address")
+            g_marital = g4.selectbox("Guarantor Marital Status", ["Single", "Married", "Divorced", "Widowed"], key="reg_guarantor_marital")
+            g_occ = g5.text_input("Guarantor Occupation", key="reg_guarantor_occupation")
+            g_rel = g6.text_input("Relationship with Client", key="reg_guarantor_relationship")
+            g_office = st.text_input("Guarantor Office Address", key="reg_guarantor_office")
             
             st.markdown("#### 3. Group Info")
             
@@ -1974,7 +1974,7 @@ elif page == "Loan Origination":
                 existing_groups = []
                 
             group_options = ["Individual (No Group)", "+ Create New Group"] + existing_groups
-            selected_group_mode = st.selectbox("Assign to Group", group_options)
+            selected_group_mode = st.selectbox("Assign to Group", group_options, key="reg_selected_group_mode")
             
             # Variables for saving
             final_group_name = ""
@@ -1985,12 +1985,12 @@ elif page == "Loan Origination":
             
             if selected_group_mode == "+ Create New Group":
                 gr1, gr2 = st.columns(2)
-                final_group_name = gr1.text_input("New Group Name", placeholder="e.g. Alaba Market Traders")
-                final_group_loc = gr2.text_input("Group Location")
+                final_group_name = gr1.text_input("New Group Name", placeholder="e.g. Alaba Market Traders", key="reg_new_group_name")
+                final_group_loc = gr2.text_input("Group Location", key="reg_new_group_loc")
                 gr3, gr4 = st.columns(2)
-                final_meeting_day = gr3.selectbox("Meeting Day", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Daily"])
-                final_group_leader = gr4.text_input("Group Leader Name")
-                new_group_date = st.date_input("Group Formation Date", datetime.now())
+                final_meeting_day = gr3.selectbox("Meeting Day", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Daily"], key="reg_new_group_meeting_day")
+                final_group_leader = gr4.text_input("Group Leader Name", key="reg_new_group_leader")
+                new_group_date = st.date_input("Group Formation Date", datetime.now(), key="reg_new_group_date")
                 final_group_date = new_group_date.strftime("%Y-%m-%d")
             elif selected_group_mode != "Individual (No Group)":
                 # User selected an existing group
