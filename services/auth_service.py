@@ -9,33 +9,27 @@ import streamlit as st
 class AuthService:
     @staticmethod
     def login(username, password) -> bool:
-        """Authenticates a user and creates a session."""
+        """Authenticates a user and creates a session using UserRepository."""
         try:
-            res = supabase.table("users").select("*").eq("username", username).execute()
+            from database.repositories.unit_of_work import SupabaseUnitOfWork
+            with SupabaseUnitOfWork() as uow:
+                user = uow.users.find_by_username(username)
             
-            if res.data and len(res.data) > 0:
-                user_record = res.data[0]
-                hashed_password = user_record.get('password', '')
-                
-                if verify_password(password, hashed_password):
-                    # Load User
-                    role = user_record.get('role', 'Unknown')
-                    
-                    # Load Permissions
+            if user:
+                if verify_password(password, user.password_hash):
+                    role = user.role
                     user_permissions = PERMISSIONS.get(role, set())
                     
                     current_user = CurrentUser(
-                        id=str(user_record.get('id', '')),
-                        username=user_record.get('username'),
+                        id=user.id,
+                        username=user.username,
                         role=role,
-                        branch=user_record.get('branch', 'Unknown'),
+                        branch=user.branch_name or 'Unknown',
                         permissions=user_permissions
                     )
                     
-                    # Create Session
                     create_session(current_user)
                     
-                    # Audit Login
                     AuthService.log_audit_event(
                         username=current_user.username,
                         branch=current_user.branch,
@@ -97,17 +91,18 @@ class AuthService:
             if "auth" in st.query_params:
                 auth_user = st.query_params["auth"]
                 try:
-                    res = supabase.table("app_users").select("*").eq("username", auth_user).execute()
-                    if res.data and len(res.data) > 0:
-                        user_record = res.data[0]
-                        role = user_record.get('role', 'Unknown')
+                    from database.repositories.unit_of_work import SupabaseUnitOfWork
+                    with SupabaseUnitOfWork() as uow:
+                        user = uow.users.find_by_username(auth_user)
+                    if user:
+                        role = user.role
                         user_permissions = PERMISSIONS.get(role, set())
                         
                         current_user = CurrentUser(
-                            id=str(user_record.get('id', '')),
-                            username=user_record.get('username'),
+                            id=user.id,
+                            username=user.username,
                             role=role,
-                            branch=user_record.get('branch_name', 'Unknown'), # Note: DB column is branch_name
+                            branch=user.branch_name or 'Unknown',
                             permissions=user_permissions
                         )
                         create_session(current_user)
