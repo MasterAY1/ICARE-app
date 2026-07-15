@@ -270,12 +270,37 @@ st.markdown("""
         border-color: #2E86C1 !important;
         box-shadow: 0 0 0 3px rgba(46, 134, 193, 0.12) !important;
     }
-    label[data-testid="stWidgetLabel"], label[data-testid="stWidgetLabel"] p, div[data-testid="stWidgetLabel"] p {
+    /* Enforce high-contrast dark color for all form labels, captions, and select dropdown texts */
+    div[data-testid="stWidgetLabel"] p,
+    label[data-testid="stWidgetLabel"] p,
+    div[data-testid="stWidgetLabel"] label,
+    .stTextInput label,
+    .stNumberInput label,
+    .stSelectbox label,
+    .stTextArea label,
+    .stDateInput label,
+    .stFileUploader label,
+    .stTextInput p,
+    .stNumberInput p,
+    .stSelectbox p,
+    .stTextArea p,
+    .stDateInput p {
         color: #1B4F72 !important;
         font-weight: 600 !important;
+        font-size: 0.9rem !important;
+    }
+    .stMarkdown p, .stMarkdown span {
+        color: #1B4F72 !important;
     }
     div[data-testid="InputInstructions"] {
         color: #475569 !important;
+    }
+    
+    /* Force Streamlit content container to take full desktop width */
+    div[data-testid="stMainBlockContainer"] {
+        max-width: 95% !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
     }
     
     /* === BUTTONS === */
