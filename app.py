@@ -270,6 +270,13 @@ st.markdown("""
         border-color: #2E86C1 !important;
         box-shadow: 0 0 0 3px rgba(46, 134, 193, 0.12) !important;
     }
+    label[data-testid="stWidgetLabel"], label[data-testid="stWidgetLabel"] p, div[data-testid="stWidgetLabel"] p {
+        color: #1B4F72 !important;
+        font-weight: 600 !important;
+    }
+    div[data-testid="InputInstructions"] {
+        color: #475569 !important;
+    }
     
     /* === BUTTONS === */
     .stButton > button { 
