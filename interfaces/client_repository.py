@@ -1,3 +1,8 @@
-"""
-Placeholder module for client_repository.py
-"""
+from typing import Protocol, List, Optional
+from domain.entities.client import Client
+from interfaces.base_repository import Repository
+
+class ClientRepository(Repository[Client], Protocol):
+    def find_by_code(self, client_code: str) -> Optional[Client]: ...
+    def search_by_name_or_code(self, query: str) -> List[Client]: ...
+    def get_next_member_sequence(self, group_id: str) -> int: ...

@@ -5,6 +5,8 @@ from domain.entities.user import User
 from domain.entities.audit_event import AuditEvent
 from domain.entities.cashbook_entry import CashbookEntry
 from domain.entities.branch_closure import BranchClosure
+from domain.entities.client import Client
+from domain.entities.guarantor import Guarantor, LoanGuarantor
 from datetime import datetime, date
 
 def _parse_date(date_str):
@@ -347,3 +349,104 @@ class BranchClosureMapper:
             end_date=_parse_date(dto.get("end_date")),
             reason=str(dto.get("reason"))
         )
+
+class ClientMapper:
+    @staticmethod
+    def to_domain(dto: dict) -> Client:
+        return Client(
+            id=str(dto.get("client_id", "") or dto.get("id", "")),
+            name=str(dto.get("name", "")),
+            client_code=str(dto.get("client_code", "")),
+            nickname=dto.get("nickname"),
+            phone=dto.get("phone"),
+            address=dto.get("address"),
+            business_address=dto.get("business_address"),
+            dob=_parse_date(dto.get("dob")),
+            gender=dto.get("gender"),
+            marital_status=dto.get("marital_status"),
+            occupation=dto.get("occupation"),
+            business_type=dto.get("business_type"),
+            id_means=dto.get("id_means"),
+            next_of_kin=dto.get("next_of_kin"),
+            passport_url=dto.get("passport_url"),
+            signature_url=dto.get("signature_url"),
+            registration_date=_parse_date(dto.get("registration_date")),
+            branch_id=dto.get("branch_id"),
+            group_id=dto.get("group_id"),
+            officer_id=dto.get("officer_id"),
+            status=str(dto.get("status", "Active")),
+            average_monthly_income=float(dto.get("average_monthly_income") or 0.0),
+            other_obligations=dto.get("other_obligations")
+        )
+
+    @staticmethod
+    def to_database(entity: Client) -> dict:
+        return {
+            "client_id": entity.id,
+            "name": entity.name,
+            "client_code": entity.client_code,
+            "nickname": entity.nickname,
+            "phone": entity.phone,
+            "address": entity.address,
+            "business_address": entity.business_address,
+            "dob": entity.dob.isoformat() if entity.dob else None,
+            "gender": entity.gender,
+            "marital_status": entity.marital_status,
+            "occupation": entity.occupation,
+            "business_type": entity.business_type,
+            "id_means": entity.id_means,
+            "next_of_kin": entity.next_of_kin,
+            "passport_url": entity.passport_url,
+            "signature_url": entity.signature_url,
+            "registration_date": entity.registration_date.isoformat() if entity.registration_date else None,
+            "branch_id": entity.branch_id,
+            "group_id": entity.group_id,
+            "officer_id": entity.officer_id,
+            "status": entity.status,
+            "average_monthly_income": entity.average_monthly_income,
+            "other_obligations": entity.other_obligations
+        }
+
+class GuarantorMapper:
+    @staticmethod
+    def to_domain(dto: dict) -> Guarantor:
+        return Guarantor(
+            guarantor_id=str(dto.get("guarantor_id", "") or dto.get("id", "")),
+            name=str(dto.get("name", "")),
+            phone=dto.get("phone"),
+            address=dto.get("address"),
+            occupation=dto.get("occupation"),
+            business_address=dto.get("business_address")
+        )
+
+    @staticmethod
+    def to_database(entity: Guarantor) -> dict:
+        return {
+            "guarantor_id": entity.guarantor_id,
+            "name": entity.name,
+            "phone": entity.phone,
+            "address": entity.address,
+            "occupation": entity.occupation,
+            "business_address": entity.business_address
+        }
+
+class LoanGuarantorMapper:
+    @staticmethod
+    def to_domain(dto: dict) -> LoanGuarantor:
+        return LoanGuarantor(
+            id=str(dto.get("id", "")),
+            loan_id=str(dto.get("loan_id", "")),
+            guarantor_id=str(dto.get("guarantor_id", "")),
+            relationship=dto.get("relationship"),
+            signature_url=dto.get("signature_url")
+        )
+
+    @staticmethod
+    def to_database(entity: LoanGuarantor) -> dict:
+        return {
+            "id": entity.id,
+            "loan_id": entity.loan_id,
+            "guarantor_id": entity.guarantor_id,
+            "relationship": entity.relationship,
+            "signature_url": entity.signature_url
+        }

@@ -8,6 +8,8 @@ from database.repositories.branch_closure_repository import SupabaseBranchClosur
 from database.repositories.event_store_repository import SupabaseEventStoreRepository
 from database.repositories.posting_rules_repository import SupabasePostingRulesRepository
 from database.repositories.ledger_repository import SupabaseLedgerRepository
+from database.repositories.client_repository import SupabaseClientRepository
+from database.repositories.guarantor_repository import SupabaseGuarantorRepository
 from database.repositories.savings_repository import (
     SupabaseIndividualSavingsRepository,
     SupabaseGroupSavingsRepository,
@@ -32,6 +34,8 @@ class SupabaseUnitOfWork(UnitOfWork):
         self.event_store = SupabaseEventStoreRepository(self.client)
         self.posting_rules = SupabasePostingRulesRepository(self.client)
         self.ledger = SupabaseLedgerRepository(self.client)
+        self.clients = SupabaseClientRepository(self.client)
+        self.guarantors = SupabaseGuarantorRepository(self.client)
 
     def __enter__(self):
         return self

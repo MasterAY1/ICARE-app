@@ -11,7 +11,7 @@ class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
     def __init__(self, client):
         super().__init__(client)
         self.table_name = "loans"
-        self.columns = "loan_id,client_id,product_id,branch_id,officer_id,date,loan_amount,active_credit,loan_repay,total_due,status,product_category,disbursement_date,start_date,expected_end_date,version,extra_fields,currency_code,created_at,updated_at,is_deleted,clients(name,nickname,phone,address,marital_status,business_type,average_monthly_income,other_obligations),branches(name),app_users(username,full_name)"
+        self.columns = "loan_id,client_id,product_id,branch_id,officer_id,date,loan_amount,active_credit,loan_repay,total_due,status,product_category,disbursement_date,start_date,expected_end_date,version,extra_fields,currency_code,created_at,updated_at,is_deleted,clients(name,nickname,phone,address,marital_status,business_type,average_monthly_income,other_obligations),branches(name),app_users(username,full_name),loan_products(name)"
 
     def _resolve_branch_id(self, branch_name: str) -> str:
         if not branch_name:
@@ -96,10 +96,6 @@ class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
         branch_id = self._resolve_branch_id(entity.branch)
         officer_id = self._resolve_officer_id(entity.credit_officer)
         product_id = self._resolve_product_id(entity.product_type)
-        
-        # Ensure client profile is saved first
-        self._upsert_client_profile(entity)
-        self._upsert_group_relation(entity, branch_id, officer_id)
 
         loan_id = entity.id if (entity.id and len(entity.id) == 36) else None
         

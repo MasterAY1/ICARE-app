@@ -1,24 +1,5 @@
 import streamlit as st
 
-from database.repositories.unit_of_work import SupabaseUnitOfWork
-from domain.queries import LoanFilter, RepaymentFilter, CashbookFilter
-from domain.entities.loan import Loan
-from domain.entities.repayment import Repayment
-from domain.entities.cashbook_entry import CashbookEntry
-from domain.entities.branch_closure import BranchClosure
-from domain.events import *
-from core.exceptions import *
-from core.cache import CacheProvider
-
-
-# --- CLEAN ARCHITECTURE CONFIG IMPORTS ---
-from config.settings import *
-from config.roles import *
-from config.constants import *
-from config.mappings import *
-from config.themes import *
-from config.feature_flags import *
-
 st.set_page_config(
     page_title="ICARE Microfinance - Core Banking",
     page_icon="🌱",
@@ -34,21 +15,26 @@ import uuid
 import hashlib
 import base64
 import os
+import bcrypt
 from supabase import create_client, Client
 import holidays
 
 # Initialize Nigerian holidays
 ng_holidays = holidays.Nigeria()
 
-@CacheProvider.cache_data(ttl=3600)
+@st.cache_data(ttl=3600)
 def get_custom_closures():
     try:
-        with SupabaseUnitOfWork() as uow:
-            closures = uow.branch_closures.find_all()
-            return [(c.start_date, c.end_date, c.reason) for c in closures]
+        res = supabase.table("branch_closures").select("*").execute()
+        if res.data:
+            closures = []
+            for row in res.data:
+                s_date = datetime.strptime(row['start_date'], "%Y-%m-%d").date()
+                e_date = datetime.strptime(row['end_date'], "%Y-%m-%d").date()
+                closures.append((s_date, e_date, row['reason']))
+            return closures
     except Exception:
         pass
-    return []
     return []
 
 def get_next_working_day(target_date, custom_closures=None):
@@ -209,23 +195,58 @@ from utils.reports import (
 )
 
 # --- 1. CONFIGURATION & CLOUD DB SETUP ---
+COMPANY_NAME = "ICARE Microfinance"
+APP_VERSION = "3.0.0"
 
-
-
-@CacheProvider.cache_data(ttl=600)
-def load_co_mapping():
+# Initialize Supabase
+@st.cache_resource
+def init_connection():
     try:
-        with SupabaseUnitOfWork() as uow:
-            users = uow.users.find_all()
-            co_users = [u for u in users if u.role in ['CO', 'Officer']]
-            name_map = {u.full_name.strip(): u.username for u in co_users if u.full_name}
+        url = st.secrets["SUPABASE_URL"]
+        key = st.secrets["SUPABASE_KEY"]
+        return create_client(url, key)
+    except Exception as e:
+        st.error(f"Failed to connect to database: {e}")
+        return None
+
+supabase = init_connection()
+
+@st.cache_data(ttl=600)
+def load_co_mapping():
+    if not supabase:
+        return {}, {}
+    try:
+        res = supabase.table("app_users").select("username, full_name").in_("role", ["CO", "Officer"]).execute()
+        if res.data:
+            name_map = {row["full_name"].strip(): row["username"] for row in res.data if row.get("full_name")}
             display_map = {v: k for k, v in name_map.items()}
             return name_map, display_map
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Error loading CO mapping: {e}")
     return {}, {}
 
 CO_NAME_MAP, CO_DISPLAY_MAP = load_co_mapping()
+
+# --- RBAC AUTHENTICATION ---
+def authenticate_user(username, password):
+    if not supabase:
+        return None
+    try:
+        res = supabase.table("app_users").select("*").ilike("username", username).execute()
+        if res.data and len(res.data) > 0:
+            user = res.data[0]
+            stored_hash = user.get("password", "")
+            
+            # Check if the stored password matches the bcrypt hash
+            if str(stored_hash).startswith("$2") and bcrypt.checkpw(str(password).encode('utf-8'), str(stored_hash).encode('utf-8')):
+                return {
+                    'user_name': user['username'],
+                    'user_role': user['role'],
+                    'branch_name': user['branch_name']
+                }
+    except Exception as e:
+        st.error(f"Auth error: {e}")
+    return None
 
 # Custom CSS — ICARE Banking Design System v5.0 (Brand Colors)
 st.markdown("""
@@ -879,282 +900,110 @@ UI_TO_DB_REP = {v: k for k, v in DB_TO_UI_REP.items()}
 
 def load_loans():
     """Load loans filtered by RBAC"""
+    if not supabase:
+        return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
     try:
-        with SupabaseUnitOfWork() as uow:
-            filters = LoanFilter()
-            if ROLE in ['CO', 'Officer']: filters.officer = USER
-            elif ROLE == 'BM': filters.branch = BRANCH
-            filters.size = 2000
+        query = supabase.table("loans").select("*")
+        
+        # RBAC Filters
+        if st.session_state.get('role') in ['CO', 'Officer']:
+            query = query.eq('officer', st.session_state.get('user'))
+        elif st.session_state.get('role') == 'BM':
+            query = query.eq('branch', st.session_state.get('branch'))
             
-            loans = uow.loans.find_all()
-            if ROLE in ['CO', 'Officer']: loans = [L for L in loans if L.credit_officer == USER]
-            elif ROLE == 'BM': loans = [L for L in loans if L.branch == BRANCH]
+        response = query.execute()
+        if not response.data:
+            return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
+        df = pd.DataFrame(response.data).rename(columns=DB_TO_UI_LOANS)
+        num_cols = ['Loan Amount', 'Active Credit', 'Loan Repay', 'Total Due']
+        for c in num_cols:
+            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
             
-            if not loans:
-                return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
-                
-            from mappers.base_mappers import LoanMapper
-            df = pd.DataFrame([LoanMapper.to_database(L) for L in loans]).rename(columns=DB_TO_UI_LOANS)
-            num_cols = ['Loan Amount', 'Active Credit', 'Loan Repay', 'Total Due']
-            for c in num_cols:
-                if c in df.columns:
-                    df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-            if not df.empty and 'Date' in df.columns and 'Client ID' in df.columns:
-                df = df.sort_values('Date').groupby('Client ID').last().reset_index()
-            return df
+        # Deduplicate to always return the latest state of each client
+        if not df.empty and 'Date' in df.columns and 'Client ID' in df.columns:
+            df = df.sort_values('Date').groupby('Client ID').last().reset_index()
+            
+        return df
     except Exception as e:
         st.error(f"Database Error: {e}")
         return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
 
 
-
 def load_repayments():
     """Load repayments filtered by RBAC"""
+    if not supabase:
+        return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
     try:
-        with SupabaseUnitOfWork() as uow:
-            filters = RepaymentFilter()
-            if ROLE in ['CO', 'Officer']: filters.officer = USER
-            elif ROLE == 'BM': filters.branch = BRANCH
-            filters.size = 2000
+        query = supabase.table("repayments").select("*")
+        
+        # RBAC Filters
+        if st.session_state.get('role') in ['CO', 'Officer']:
+            query = query.eq('officer', st.session_state.get('user'))
+        elif st.session_state.get('role') == 'BM':
+            query = query.eq('branch', st.session_state.get('branch'))
             
-            reps = uow.repayments.find_recent(filters)
-            if not reps:
-                return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
+        response = query.execute()
+        if not response.data:
+            return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
+        
+        df = pd.DataFrame(response.data).rename(columns=DB_TO_UI_REP)
+        num_cols = ["Amount Paid", "Savings Amount", "Loan Repayment Amount"]
+        for c in num_cols:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
                 
-            from mappers.base_mappers import RepaymentMapper
-            df = pd.DataFrame([RepaymentMapper.to_database(R) for R in reps]).rename(columns=DB_TO_UI_REP)
-            num_cols = ['Amt Paid', 'Savings Amount', 'Loan Repayment Amount', 'Withdrawal Amount', 'Others Amount', 'Recovery Amount', 'Initial Payment']
-            for c in num_cols:
-                if c in df.columns:
-                    df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-            return df
+        return df
     except Exception as e:
         st.error(f"Database Error: {e}")
         return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
 
 def save_new_loan(data):
-    """Save new loan and intercept upfront misc savings"""
-    try:
-        from database.repositories.unit_of_work import SupabaseUnitOfWork
-        from services.savings_service import SavingsService
-        with SupabaseUnitOfWork() as uow:
-            db_data = {UI_TO_DB_LOANS[k]: v for k, v in data.items() if k in UI_TO_DB_LOANS}
-            from mappers.base_mappers import LoanMapper
-            
-            if 'id' not in db_data: db_data['id'] = ''
-            if 'client_name' not in db_data: db_data['client_name'] = ''
-            if 'branch' not in db_data: db_data['branch'] = BRANCH
-            if 'credit_officer' not in db_data: db_data['credit_officer'] = db_data.get('officer', USER)
-            
-            loan = LoanMapper.to_domain(db_data)
-            from services.loan_service import LoanService
-            LoanService.disburse_loan(uow, loan)
-            
-            # Post upfront Misc Fees to Misc Savings Bucket
-            misc_fees = float(db_data.get('misc_fees', 0))
-            if misc_fees > 0:
-                SavingsService.post_misc_savings(
-                    uow, 
-                    client_id=loan.client_id, 
-                    client_name=loan.client_name, 
-                    branch=loan.branch, 
-                    officer=loan.officer, 
-                    deposit_amount=misc_fees, 
-                    remarks="Upfront Misc Fee Collection"
-                )
-    except Exception as e:
-        st.error(f"Error saving loan: {e}")
-
+    """Save new loan to database"""
+    if not supabase:
+        st.error("Database not connected")
+        return
+    db_data = {UI_TO_DB_LOANS[k]: v for k, v in data.items() if k in UI_TO_DB_LOANS}
+    supabase.table("loans").upsert(db_data).execute()
 
 def save_repayment(data):
-    """Save repayment and route savings to respective buckets"""
-    try:
-        from database.repositories.unit_of_work import SupabaseUnitOfWork
-        from services.savings_service import SavingsService
-        with SupabaseUnitOfWork() as uow:
-            db_data = {UI_TO_DB_REP[k]: v for k, v in data.items() if k in UI_TO_DB_REP}
-            from mappers.base_mappers import RepaymentMapper
-            
-            # Map old DB keys expected by mapper
-            if 'credit_officer' not in db_data: db_data['credit_officer'] = db_data.get('officer', USER)
-            if 'branch' not in db_data: db_data['branch'] = BRANCH
-            
-            client_id = db_data.get('client_id', '')
-            client_name = db_data.get('client_name', client_id)
-            branch = db_data.get('branch', BRANCH)
-            officer = db_data.get('credit_officer', USER)
-            
-            # Extract Savings
-            savings_dep = float(db_data.get('savings_amount', 0))
-            savings_wd = float(db_data.get('withdrawal_amount', 0))
-            group_dep = float(db_data.get('group_savings_dep', 0))
-            group_wd = float(db_data.get('group_savings_wd', 0))
-            laps_res = float(db_data.get('laps_reserved', 0))
-            laps_trans = float(db_data.get('laps_transferred', 0))
-            misc_fees = float(db_data.get('misc_fees', 0))
-            loan_repay = float(db_data.get('loan_repayment_amount', 0))
-            
-            # Route Group Savings
-            if client_id.startswith('GROUP-'):
-                group_name = client_id.replace('GROUP-', '')
-                SavingsService.post_group_savings(uow, group_name, branch, officer, group_dep, group_wd, remarks=db_data.get('note'))
-                return # Do not insert a dummy loan or a repayment row
-            
-            # Route LAPS
-            if client_id.startswith('GLOBAL-'):
-                SavingsService.post_laps_savings(uow, client_id, client_name, branch, officer, laps_res, laps_trans)
-                return # Do not insert a dummy loan or a repayment row
-
-            # Route Individual Savings
-            if savings_dep > 0 or savings_wd > 0:
-                SavingsService.post_individual_savings(uow, client_id, client_name, branch, officer, savings_dep, savings_wd, remarks=db_data.get('note'))
-                
-            # Record loan repayment to schedule and update outstanding loan balance
-            if loan_repay > 0:
-                res_l = uow.client.table("loans").select("loan_id, active_credit").eq("client_id", client_id).eq("status", "Active").execute()
-                if res_l.data:
-                    active_loan_id = res_l.data[0]["loan_id"]
-                    from services.schedule_service import ScheduleService
-                    p_date_str = db_data.get('date') or datetime.now().strftime("%Y-%m-%d")
-                    p_date = datetime.strptime(p_date_str, "%Y-%m-%d").date()
-                    
-                    ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date)
-                    
-                    # Update loan outstanding balance
-                    current_outstanding = float(res_l.data[0].get("active_credit") or 0.0)
-                    new_outstanding = max(0.0, current_outstanding - loan_repay)
-                    uow.client.table("loans").update({"active_credit": new_outstanding}).eq("loan_id", active_loan_id).execute()
-
-            # Route Misc Savings if collected during collections
-            if misc_fees > 0:
-                SavingsService.post_misc_savings(uow, client_id, client_name, branch, officer, misc_fees, remarks=db_data.get('note'))
-
-            # Route Cash and Carry
-            cc_amount = float(db_data.get('cash_and_carry', 0))
-            if cc_amount > 0:
-                import uuid
-                from domain.entities.event_store import DomainEvent
-                from services.posting_engine import FinancialPostingEngine
-                event_cc = DomainEvent(
-                    event_id=str(uuid.uuid4()),
-                    aggregate_id=client_id,
-                    aggregate_type="Asset",
-                    event_type="AssetSoldCash",
-                    payload={"branch": branch, "officer": officer, "amount": cc_amount, "narration": f"Cash & Carry asset sale to {client_name}"}
-                )
-                uow.event_store.append(event_cc)
-                FinancialPostingEngine.post_event(uow, event_cc)
-
-            # Route Credit Form Damage
-            cfd_amount = float(db_data.get('credit_form_damage', 0))
-            if cfd_amount > 0:
-                import uuid
-                from domain.entities.event_store import DomainEvent
-                from services.posting_engine import FinancialPostingEngine
-                event_cfd = DomainEvent(
-                    event_id=str(uuid.uuid4()),
-                    aggregate_id=client_id,
-                    aggregate_type="Fee",
-                    event_type="FeeCharged",
-                    payload={"branch": branch, "officer": officer, "amount": cfd_amount, "narration": f"Credit Form Damage fee from {client_name}"}
-                )
-                uow.event_store.append(event_cfd)
-                FinancialPostingEngine.post_event(uow, event_cfd)
-
-            # Route Application / Processing Fee
-            app_fee_amt = float(db_data.get('processing_fee_paid', 0))
-            if app_fee_amt > 0:
-                import uuid
-                from domain.entities.event_store import DomainEvent
-                from services.posting_engine import FinancialPostingEngine
-                event_app = DomainEvent(
-                    event_id=str(uuid.uuid4()),
-                    aggregate_id=client_id,
-                    aggregate_type="Fee",
-                    event_type="FeeCharged",
-                    payload={"branch": branch, "officer": officer, "amount": app_fee_amt, "narration": f"Processing Fee from {client_name}"}
-                )
-                uow.event_store.append(event_app)
-                FinancialPostingEngine.post_event(uow, event_app)
-
-            # Proceed to insert into repayments table if there's actual repayment
-            # or if it's a legacy record. We'll always insert it so history isn't lost.
-            rep = RepaymentMapper.to_domain(db_data)
-            try:
-                from services.repayment_service import RepaymentService
-                RepaymentService.post_repayment(uow, rep)
-            except Exception as re:
-                st.error(f"Error inserting repayment for {client_id}: {re}")
-                return
-    except Exception as e:
-        st.error(f"Error in save_repayment logic: {e}")
-
-
-def save_repayments(data_list):
-    """Save multiple repayments to database"""
-    for data in data_list:
-        save_repayment(data)
+    """Save repayment to database"""
+    if not supabase:
+        st.error("Database not connected")
+        return
+    db_data = {UI_TO_DB_REP[k]: v for k, v in data.items() if k in UI_TO_DB_REP}
+    supabase.table("repayments").insert(db_data).execute()
 
 def update_database_safe(edited_subset, user_role, user_name, branch):
     """Update database with edited data"""
-    try:
-        with SupabaseUnitOfWork() as uow:
-            filters = LoanFilter()
-            if user_role == "BM":
-                filters.branch = branch
-            elif user_role == "Officer":
-                filters.officer = user_name
-            
-            # Since pagination is 1-based, we'd loop, but we will grab up to 1000 for now.
-            filters.size = 1000
-            existing_loans = uow.loans.find_active(filters)
-            original_ids = [L.client_id for L in existing_loans]
-            
-            kept_ids = edited_subset["Client ID"].tolist()
-            ids_to_delete = set(original_ids) - set(kept_ids)
-            
-            for d_id in ids_to_delete:
-                uow.loans.delete_by_client_id(d_id)
-            
-            from mappers.base_mappers import LoanMapper
-            loans_to_update = []
-            for _, row in edited_subset.iterrows():
-                db_data = {UI_TO_DB_LOANS[k]: row[k] for k in row.keys() if k in UI_TO_DB_LOANS}
-                if "officer" in db_data:
-                    db_data["credit_officer"] = CO_NAME_MAP.get(db_data["officer"], db_data["officer"])
-                
-                # Fetch existing to get id
-                existing_matches = [L for L in existing_loans if L.client_id == db_data.get('client_id')]
-                if existing_matches:
-                    db_data["id"] = existing_matches[0].id
-                # Intercept Client Closure logic
-                if db_data.get("status") == STATUS_CLOSED:
-                    db_data["client_status"] = "Closed"
-                    # Preserve original loan status, or set to Completed if none found
-                    if existing_matches:
-                        original_status = existing_matches[0].status
-                        db_data["status"] = original_status.value if hasattr(original_status, 'value') else original_status
-                    else:
-                        db_data["status"] = "Completed"
-                        
-                loan = LoanMapper.to_domain(db_data)
-                loans_to_update.append(loan)
-            
-            # Repositories should ideally have bulk upsert, but we update individually for now
-            from services.loan_service import LoanService
-            for L in loans_to_update:
-                if L.id:
-                    uow.loans.update(L)
-                else:
-                    LoanService.disburse_loan(uow, L)
-    except Exception as e:
-        st.error(f"Error updating database safely: {e}")
+    if not supabase:
+        st.error("Database not connected")
+        return
+    
+    query = supabase.table("loans").select("client_id")
+    if user_role == "BM":
+        query = query.eq("branch", branch)
+    elif user_role == "Officer":
+        query = query.eq("officer", user_name)
+    
+    original_ids = [r["client_id"] for r in query.execute().data]
+    kept_ids = edited_subset["Client ID"].tolist()
+    ids_to_delete = set(original_ids) - set(kept_ids)
+    
+    for d_id in ids_to_delete:
+        supabase.table("loans").delete().eq("client_id", d_id).execute()
+    
+    for _, row in edited_subset.iterrows():
+        db_data = {UI_TO_DB_LOANS[k]: row[k] for k in row.keys() if k in UI_TO_DB_LOANS}
+        # Translate display name back to DB username before saving
+        if "officer" in db_data:
+            db_data["officer"] = CO_NAME_MAP.get(db_data["officer"], db_data["officer"])
+        supabase.table("loans").upsert(db_data).execute()
 
 def get_clients_for_user(df, user_role, user_name, branch):
     """Filter clients based on user role"""
     if df.empty:
         return df
-    if user_role == ROLE_ADMIN:
+    if user_role == "Admin":
         return df
     elif user_role == "BM":
         return df[df['Branch'] == branch]
@@ -1164,9 +1013,9 @@ def get_clients_for_user(df, user_role, user_name, branch):
 
 # --- 3. MATH HELPERS & RISK LOGIC ---
 
-def calculate_overdue(start_date_str, product, fixed_repay, total_loan_paid, status=STATUS_ACTIVE):
+def calculate_overdue(start_date_str, product, fixed_repay, total_loan_paid, status='Active'):
     """Calculate overdue amount for a client"""
-    if status in ['Registered', STATUS_PENDING]:
+    if status in ['Registered', 'Pending']:
         return 0, 0
     
     try:
@@ -1438,11 +1287,11 @@ if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
         
     if auth_token:
         try:
-            with SupabaseUnitOfWork() as uow:
-                user = uow.users.find_by_username(auth_token)
-            if user:
+            res = supabase.table("app_users").select("*").ilike("username", auth_token).execute()
+            if res.data and len(res.data) > 0:
+                user = res.data[0]
                 st.session_state['logged_in'] = True
-                st.session_state['user'] = user.username
+                st.session_state['user'] = user['username']
                 st.session_state['role'] = user['role']
                 st.session_state['branch'] = user['branch_name']
             else:
@@ -1453,25 +1302,113 @@ if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
     else:
         st.session_state['logged_in'] = False
 
-# --- ROUTING ---
-from navigation.router import route_app
-from auth.password import hash_password
-route_app()
+if not st.session_state['logged_in']:
+    # Inject gradient background + particles over Streamlit's default
+    st.markdown("""
+        <div class="login-page-bg"></div>
+        <div class="login-particles">
+            <span></span><span></span><span></span>
+            <span></span><span></span><span></span>
+        </div>
+    """, unsafe_allow_html=True)
+    st.markdown("""<style>
+        .stApp { background: transparent !important; }
+        [data-testid="stSidebar"] { display: none !important; }
+        header[data-testid="stHeader"] { display: none !important; }
+        .stMainBlockContainer { max-width: 1100px !important; margin: 0 auto !important; padding-top: 2vh !important; }
+    </style>""", unsafe_allow_html=True)
+    
+    # Split layout: info panel (left) + login form (right)
+    info_col, spacer_col, form_col = st.columns([1.15, 0.1, 0.85])
+    
+    with info_col:
+        st.markdown("""
+            <div class='login-info-panel'>
+                <div class='info-badge'>🌱 Est. 2006 — South-West Nigeria</div>
+                <p class='info-headline'>Empowering Communities,<br><span>Growing Together</span></p>
+                <p class='info-slogan'>"Building a better community through inspiration, motivation and empowerment"</p>
+                <p class='info-desc'>
+                    ICARE (Initiative for Community Advancement, Relief and Empowerment), 
+                    founded by Mrs. Alayo L.S., is a Non-Governmental Organization dedicated to the 
+                    intellectual and socio-economic growth of its members. Operating across South-Western 
+                    Nigeria, ICARE runs micro-credit programmes for traders and artisans, asset acquisition 
+                    schemes, agric-enterprise ventures, and skill acquisition programmes for the youths.
+                </p>
+                <div class='info-divider'></div>
+                <div class='info-block'>
+                    <p class='info-block-label'>Our Vision</p>
+                    <p class='info-block-text'>To be among the foremost catalysts in initiating and implementing 
+                    sustainable programmes focused on empowering people for growth and self-reliance.</p>
+                </div>
+                <div class='info-block'>
+                    <p class='info-block-label'>Core Values</p>
+                    <div class='info-values'>
+                        <span>Integrity</span>
+                        <span>Commitment</span>
+                        <span>Competence</span>
+                        <span>Teamwork</span>
+                    </div>
+                </div>
+                <p class='info-address'>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/></svg>
+                    H.Q: 7 Ibifiele Street, Aiyegbami, Sagamu, Ogun State, Nigeria
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with form_col:
+        with st.form("login"):
+            st.markdown(f"""
+                <div class='login-logo-wrap'>
+                    <img src="data:image/jpeg;base64,{LOGO_B64}">
+                </div>
+                <p class='login-brand-name'>ICARE</p>
+                <p class='login-org-name'>Initiative for Community Advancement,<br>Relief and Empowerment</p>
+                <div class='login-accent-line'></div>
+                <p class='login-title'>Welcome Back</p>
+                <p class='login-subtitle'>ICARE — Growing Together</p>
+            """, unsafe_allow_html=True)
+            
+            username = st.text_input("Username", placeholder="Enter your username")
+            pw = st.text_input("Password", type="password", placeholder="Enter your password")
+            
+            submitted = st.form_submit_button("SIGN IN", use_container_width=True)
+            
+            if submitted:
+                st.session_state['logout_in_progress'] = False
+                auth_result = authenticate_user(username, pw)
+                if auth_result:
+                    _set_auth_token(auth_result['user_name'])
+                    st.session_state['logged_in'] = True
+                    st.session_state['user'] = auth_result['user_name']
+                    st.session_state['role'] = auth_result['user_role']
+                    st.session_state['branch'] = auth_result['branch_name']
+                    st.rerun()
+                else:
+                    st.error("Invalid credentials. Please try again.")
+        
+        st.markdown(f"""
+            <div class='login-footer-bar'>
+                <p>Core Banking System v{APP_VERSION}</p>
+                <span class='secured-badge'>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 16l-4-4 1.41-1.41L11 14.17l6.59-6.59L19 9l-8 8z"/></svg>
+                    256-bit Secured Connection
+                </span>
+            </div>
+        """, unsafe_allow_html=True)
+    st.stop()
 
 # --- 5. SIDEBAR ---
-from services.auth_service import AuthService
-current_user = AuthService.get_user()
-ROLE = current_user.role if current_user else None
-USER = current_user.username if current_user else None
-BRANCH = current_user.branch if current_user else None
-
+ROLE = st.session_state['role']
+USER = st.session_state['user']
+BRANCH = st.session_state['branch']
 
 # Role badge colors (ICARE brand palette)
-role_colors = {ROLE_ADMIN: COLOR_SECONDARY, "BM": COLOR_PRIMARY, "CO": "#8CC63F", "Officer": "#8CC63F", "AM": COLOR_PRIMARY}
+role_colors = {"Admin": "#1B4F72", "BM": "#2E86C1", "CO": "#8CC63F", "Officer": "#8CC63F", "AM": "#2E86C1"}
 role_color = role_colors.get(ROLE, "#6B7280")
 
 # Role display labels
-role_labels = {ROLE_ADMIN: "Administrator", "BM": ROLE_BRANCH_MANAGER, "CO": ROLE_CREDIT_OFFICER, "Officer": ROLE_CREDIT_OFFICER, "AM": "Area Manager"}
+role_labels = {"Admin": "Administrator", "BM": "Branch Manager", "CO": "Credit Officer", "Officer": "Credit Officer", "AM": "Area Manager"}
 role_label = role_labels.get(ROLE, ROLE)
 
 with st.sidebar:
@@ -1622,7 +1559,7 @@ if page == "Dashboard":
             if "week" in product.lower() or "12w" in product.lower() or "24w" in product.lower():
                 has_weekly = True
             
-            if loan.get('Status') in [STATUS_ACTIVE, STATUS_COMPLETED, STATUS_APPROVED]:
+            if loan.get('Status') in ['Active', 'Completed', 'Approved']:
                 group_data[gn]['active_credit'] += orig_ac
                 group_data[gn]['loan_balance'] += loan_bal if loan_bal > 0 else 0
                 
@@ -1637,7 +1574,7 @@ if page == "Dashboard":
             total_people_with_savings += 1
             total_savings += s_amt
             
-        if loan_bal > 0 and loan.get('Status') in [STATUS_ACTIVE, STATUS_COMPLETED, STATUS_APPROVED]:
+        if loan_bal > 0 and loan.get('Status') in ['Active', 'Completed', 'Approved']:
             active_loans_count += 1
             total_active_credit += loan_bal
             
@@ -1659,9 +1596,9 @@ if page == "Dashboard":
             # calculate overdue
             start_date_str = loan.get('Date', '')
             if start_date_str and product:
-                exp_paid, overdue_amt = calculate_overdue(start_date_str, product, fixed_repay, l_amt, loan.get('Status', STATUS_ACTIVE))
+                exp_paid, overdue_amt = calculate_overdue(start_date_str, product, fixed_repay, l_amt, loan.get('Status', 'Active'))
                 total_overdue += overdue_amt
-        elif loan_bal <= 0 and loan.get('Status') in [STATUS_ACTIVE, STATUS_COMPLETED, STATUS_APPROVED]:
+        elif loan_bal <= 0 and loan.get('Status') in ['Active', 'Completed', 'Approved']:
             fully_paid_count += 1
             
     # Process Group Globals
@@ -1706,26 +1643,8 @@ if page == "Dashboard":
             
     st.markdown("### 💰 Overall Portfolio Summary")
     s1, s2 = st.columns(2)
-    try:
-        from database.repositories.unit_of_work import SupabaseUnitOfWork
-        from services.savings_service import SavingsService
-        with SupabaseUnitOfWork() as uow:
-            sav_totals = SavingsService.get_branch_totals(uow, BRANCH)
-            real_total_savings = sav_totals['total_active_savings']
-            ind_sav = sav_totals['individual_savings']
-            grp_sav = sav_totals['group_savings']
-            misc_sav = sav_totals['misc_savings']
-            laps_sav = sav_totals['laps_savings']
-    except Exception as e:
-        st.error(f"Error fetching savings from DB: {e}")
-        real_total_savings, ind_sav, grp_sav, misc_sav, laps_sav = 0, 0, 0, 0, 0
-
     s1.metric("👥 People with Savings", f"{total_people_with_savings}")
-    s2.metric("🐷 Total Branch Savings (Active)", f"₦{real_total_savings:,.0f}")
-    s2.caption(f"**Individual:** ₦{ind_sav:,.0f} | **Group:** ₦{grp_sav:,.0f} | **Misc:** ₦{misc_sav:,.0f}")
-    
-    st.markdown("### 🔒 LAPS Savings (Excluded from Active)")
-    st.metric("LAPS Balance", f"₦{laps_sav:,.0f}")
+    s2.metric("🐷 Sum Total of All Savings", f"₦{total_savings:,.0f}")
     
     c1, c2, c3 = st.columns(3)
     c1.metric("👥 People with Active Loans", f"{active_loans_count}")
@@ -1824,12 +1743,12 @@ elif page == "Loan Origination":
         st.subheader("Pending Disbursements")
         all_loans = load_loans()
         my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
-        pending_clients = my_loans[(my_loans['Status'] == STATUS_PENDING) & (pd.to_numeric(my_loans['Loan Amount'], errors='coerce').fillna(0) > 0)]
+        pending_clients = my_loans[(my_loans['Status'] == 'Pending') & (pd.to_numeric(my_loans['Loan Amount'], errors='coerce').fillna(0) > 0)]
         if pending_clients.empty:
             st.info("✅ No pending loans found.")
         else:
             st.dataframe(pending_clients[['Client ID', 'Client Name', 'Date', 'Officer', 'Loan Amount', 'Loan Product']], use_container_width=True)
-            if ROLE in ["AM", "BM", ROLE_ADMIN]:
+            if ROLE in ["AM", "BM", "Admin"]:
                 st.markdown("### 🔑 Checker Action: Activate Loan")
                 with st.form("activate_loan_form"):
                     opts = pending_clients['Client ID'].tolist()
@@ -1870,14 +1789,12 @@ elif page == "Loan Origination":
                         expected_end_date = schedule[-1] if schedule else final_start_date
                         
                         try:
-                            with SupabaseUnitOfWork() as uow:
-                                loans = uow.loans.find_by_client_id(selected_client_id)
-                                pending_loans = [L for L in loans if (L.status.value == STATUS_PENDING if hasattr(L.status, 'value') else L.status == STATUS_PENDING)]
-                                for L in pending_loans:
-                                    L.status = LoanStatus.ACTIVE if 'LoanStatus' in globals() else STATUS_ACTIVE
-                                    L.start_date = final_start_date
-                                    L.end_date = expected_end_date
-                                    uow.loans.update(L)
+                            supabase.table("loans").update({
+                                "status": "Active", 
+                                "disbursement_date": today_str,
+                                "start_date": final_start_date.strftime("%Y-%m-%d"),
+                                "expected_end_date": expected_end_date.strftime("%Y-%m-%d")
+                            }).eq("client_id", selected_client_id).eq("status", "Pending").execute()
                             
                             st.success(f"Successfully activated loan! Disbursement Date set to {today_str}.")
                             
@@ -1946,165 +1863,136 @@ elif page == "Loan Origination":
         reg_type = st.radio("Registration Method", ["Single Client", "📦 Bulk Onboarding"], horizontal=True)
         
         if reg_type == "Single Client":
-            # Load branches and groups using UOW
-            with SupabaseUnitOfWork() as uow:
-                # Find branch_id and branch code for user's branch name
-                res_b = uow.client.table("branches").select("branch_id, code").eq("name", BRANCH).execute()
-                if res_b.data:
-                    branch_id = res_b.data[0]["branch_id"]
-                    branch_code = res_b.data[0]["code"] or BRANCH[:3].upper()
-                else:
-                    branch_id = None
-                    branch_code = BRANCH[:3].upper()
-
-                # Find all active groups for this branch
-                if branch_id:
-                    res_g = uow.client.table("groups").select("*").eq("branch_id", branch_id).execute()
-                    groups_list = res_g.data
-                else:
-                    groups_list = []
-
-            group_names = [g["name"] for g in groups_list]
-            group_options = ["Individual (No Group)", "+ Create New Group"] + group_names
-            selected_group_mode = st.selectbox("Assign to Group", group_options, key="reg_selected_group_mode")
+            # Dynamic form layout (no st.form wrapper)
+            st.markdown("#### 1. Personal Info")
+            c1, c2, c3 = st.columns(3)
+            name = c1.text_input("Full Name")
+            nickname = c2.text_input("Nickname")
+            phone = c3.text_input("Phone Number")
+            address = st.text_input("Home Address")
             
+            c4, c5, c6 = st.columns(3)
+            marital = c4.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"])
+            biz_type = c5.text_input("Business Type", value="Trader")
+            raw_inc = c6.number_input("Average Monthly Income (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0")
+            income = float(raw_inc) if raw_inc else 0.0
+            biz_address = st.text_input("Business Address")
+            other_obs = st.text_input("Other Financial Obligations (if any)")
+            
+            st.markdown("#### 2. Guarantor Info")
+            g1, g2, g3 = st.columns(3)
+            g_name = g1.text_input("Guarantor Full Name")
+            g_nick = g2.text_input("Guarantor Nickname")
+            g_phone = g3.text_input("Guarantor Phone")
+            g_address = st.text_input("Guarantor Home Address")
+            
+            g4, g5, g6 = st.columns(3)
+            g_marital = g4.selectbox("Guarantor Marital Status", ["Single", "Married", "Divorced", "Widowed"])
+            g_occ = g5.text_input("Guarantor Occupation")
+            g_rel = g6.text_input("Relationship with Client")
+            g_office = st.text_input("Guarantor Office Address")
+            
+            st.markdown("#### 3. Group Info")
+            
+            # Load all loans to find existing groups for this branch
+            all_loans_for_groups = load_loans()
+            branch_loans = all_loans_for_groups[all_loans_for_groups['Branch'] == BRANCH] if not all_loans_for_groups.empty else pd.DataFrame()
+            
+            if not branch_loans.empty and 'Group Name' in branch_loans.columns:
+                existing_groups = sorted([g for g in branch_loans['Group Name'].dropna().unique().tolist() if str(g).strip()])
+            else:
+                existing_groups = []
+                
+            group_options = ["Individual (No Group)", "+ Create New Group"] + existing_groups
+            selected_group_mode = st.selectbox("Assign to Group", group_options)
+            
+            # Variables for saving
             final_group_name = ""
-            final_group_id = None
-            final_group_number = ""
+            final_group_loc = ""
+            final_meeting_day = "Daily"
+            final_group_leader = ""
+            final_group_date = datetime.now().strftime("%Y-%m-%d")
             
             if selected_group_mode == "+ Create New Group":
-                gr1, gr2, gr3 = st.columns(3)
-                final_group_name = gr1.text_input("New Group Name", placeholder="e.g. Alaba Traders", key="reg_new_group_name")
-                final_group_number = gr2.text_input("New Group Number (2-digits)", placeholder="e.g. 01", key="reg_new_group_number")
-                final_meeting_day = gr3.selectbox("Meeting Day", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Daily"], key="reg_new_group_meeting_day")
+                gr1, gr2 = st.columns(2)
+                final_group_name = gr1.text_input("New Group Name", placeholder="e.g. Alaba Market Traders")
+                final_group_loc = gr2.text_input("Group Location")
+                gr3, gr4 = st.columns(2)
+                final_meeting_day = gr3.selectbox("Meeting Day", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Daily"])
+                final_group_leader = gr4.text_input("Group Leader Name")
+                new_group_date = st.date_input("Group Formation Date", datetime.now())
+                final_group_date = new_group_date.strftime("%Y-%m-%d")
             elif selected_group_mode != "Individual (No Group)":
-                # Find existing group
-                group_data = next((g for g in groups_list if g["name"] == selected_group_mode), None)
-                if group_data:
-                    final_group_id = group_data["group_id"]
-                    final_group_name = group_data["name"]
-                    final_group_number = group_data.get("group_number") or ""
-                    st.info(f"✅ Selected group '{final_group_name}' (Code: {final_group_number}) meets on {group_data.get('meeting_day')}")
+                # User selected an existing group
+                final_group_name = selected_group_mode
+                # Pull data from the first member found in this group
+                group_members = branch_loans[branch_loans['Group Name'] == final_group_name]
+                if not group_members.empty:
+                    first_member = group_members.iloc[0]
+                    def get_val(key, default):
+                        val = first_member.get(key)
+                        if pd.isna(val) or str(val).strip().lower() in ['nan', 'none', 'nat', '']:
+                            return default
+                        return str(val).strip()
+                        
+                    final_group_loc = get_val('Group Location', '')
+                    final_meeting_day = get_val('Meeting Day', 'Daily')
+                    final_group_leader = get_val('Group Leader Name', '')
+                    final_group_date = get_val('Group Formation Date', datetime.now().strftime("%Y-%m-%d"))
+                st.info(f"✅ Found group info: Meets on {final_meeting_day} at {final_group_loc}")
             
             st.markdown("---")
+            submitted_reg = st.button("💾 Register Client", type="primary", use_container_width=True)
             
-            with st.form("client_registration_details_form"):
-                st.markdown("#### 1. Personal Profile Details")
-                c1, c2, c3 = st.columns(3)
-                name = c1.text_input("Full Name", key="reg_client_name")
-                nickname = c2.text_input("Nickname", key="reg_client_nickname")
-                phone = c3.text_input("Phone Number", key="reg_client_phone")
-                
-                c4, c5, c6 = st.columns(3)
-                dob = c4.date_input("Date of Birth", value=date(1990, 1, 1), key="reg_client_dob")
-                gender = c5.selectbox("Gender", ["Male", "Female"], key="reg_client_gender")
-                marital = c6.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"], key="reg_client_marital")
-                
-                c7, c8, c9 = st.columns(3)
-                occupation = c7.text_input("Occupation", key="reg_client_occupation")
-                biz_type = c8.text_input("Business Type", value="Trader", key="reg_client_biz_type")
-                raw_inc = c9.number_input("Average Monthly Income (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0", key="reg_client_income")
-                
-                address = st.text_input("Home Address", key="reg_client_address")
-                biz_address = st.text_input("Business Address", key="reg_client_biz_address")
-                
-                c10, c11 = st.columns(2)
-                id_means = c10.selectbox("Means of ID", ["National ID (NIN)", "Voter's Card", "Driver's License", "International Passport", "None"], key="reg_client_id_means")
-                next_of_kin = c11.text_input("Next of Kin Name & Phone", key="reg_client_next_of_kin")
-                
-                c12, c13 = st.columns(2)
-                passport_url = c12.text_input("Passport Photo URL (Optional)", key="reg_client_passport")
-                signature_url = c13.text_input("Signature URL (Optional)", key="reg_client_signature")
-                
-                other_obs = st.text_input("Other Financial Obligations (if any)", key="reg_client_obligations")
-                
-                submitted_reg = st.form_submit_button("💾 Register Client", type="primary", use_container_width=True)
-                
-                if submitted_reg:
-                    name_val = st.session_state.get("reg_client_name", "").strip()
-                    phone_val = st.session_state.get("reg_client_phone", "").strip()
+            if submitted_reg:
+                if not name or not phone:
+                    st.error("Name and Phone are required!")
+                elif selected_group_mode == "+ Create New Group" and not final_group_name.strip():
+                    st.error("Please enter the New Group Name.")
+                else:
+                    g_val = final_group_name if final_group_name.strip() else "IND"
+                    all_loans_for_id = load_loans()
+                    next_num = get_next_client_number(all_loans_for_id, BRANCH, g_val)
+                    new_client_id = generate_client_id(all_loans_for_id, BRANCH, g_val, next_num)
                     
-                    if not name_val or not phone_val:
-                        st.error("Name and Phone are required!")
-                    elif selected_group_mode == "+ Create New Group" and (not final_group_name.strip() or not final_group_number.strip()):
-                        st.error("Please enter the Group Name and Group Number.")
-                    else:
-                        try:
-                            with SupabaseUnitOfWork() as uow:
-                                # 1. Create group if needed
-                                if selected_group_mode == "+ Create New Group":
-                                    res_u = uow.client.table("app_users").select("id").eq("username", USER).execute()
-                                    officer_id = res_u.data[0]["id"] if res_u.data else None
-                                    
-                                    new_group = {
-                                        "name": final_group_name.strip(),
-                                        "group_number": final_group_number.strip(),
-                                        "meeting_day": final_meeting_day,
-                                        "branch_id": branch_id,
-                                        "officer_id": officer_id,
-                                        "current_member_sequence": 0
-                                    }
-                                    res_g_ins = uow.client.table("groups").insert(new_group).execute()
-                                    if res_g_ins.data:
-                                        final_group_id = res_g_ins.data[0]["group_id"]
-                                        final_group_number = res_g_ins.data[0]["group_number"]
-                                
-                                # 2. Generate sequential member number and Client ID
-                                if selected_group_mode == "Individual (No Group)":
-                                    g_code = "IND"
-                                    res_count = uow.client.table("clients").select("client_id", count="exact").is_("group_id", "null").eq("branch_id", branch_id).execute()
-                                    next_seq = (res_count.count or 0) + 1
-                                else:
-                                    g_code = final_group_number
-                                    next_seq = uow.clients.get_next_member_sequence(final_group_id)
-                                
-                                member_number_str = str(next_seq).zfill(3)
-                                generated_client_code = f"{branch_code}-{g_code}-{member_number_str}"
-                                
-                                # 3. Save Client
-                                from domain.entities.client import Client
-                                client_entity = Client(
-                                    id=str(uuid.uuid4()),
-                                    name=name_val,
-                                    client_code=generated_client_code,
-                                    nickname=st.session_state.get("reg_client_nickname"),
-                                    phone=phone_val,
-                                    address=st.session_state.get("reg_client_address"),
-                                    business_address=st.session_state.get("reg_client_biz_address"),
-                                    dob=st.session_state.get("reg_client_dob"),
-                                    gender=st.session_state.get("reg_client_gender"),
-                                    marital_status=st.session_state.get("reg_client_marital"),
-                                    occupation=st.session_state.get("reg_client_occupation"),
-                                    business_type=st.session_state.get("reg_client_biz_type"),
-                                    id_means=st.session_state.get("reg_client_id_means"),
-                                    next_of_kin=st.session_state.get("reg_client_next_of_kin"),
-                                    passport_url=st.session_state.get("reg_client_passport"),
-                                    signature_url=st.session_state.get("reg_client_signature"),
-                                    registration_date=date.today(),
-                                    branch_id=branch_id,
-                                    group_id=final_group_id,
-                                    officer_id=uow.loans._resolve_officer_id(USER),
-                                    status="Active",
-                                    average_monthly_income=float(raw_inc or 0.0),
-                                    other_obligations=st.session_state.get("reg_client_obligations")
-                                )
-                                uow.clients.create(client_entity)
-                                
-                                # 4. Create membership
-                                uow.client.table("client_memberships").insert({
-                                    "client_id": client_entity.id,
-                                    "group_id": final_group_id,
-                                    "branch_id": branch_id,
-                                    "officer_id": client_entity.officer_id,
-                                    "start_date": date.today().isoformat()
-                                }).execute()
-                                
-                                st.success(f"Successfully registered client! Assigned Client ID: {generated_client_code}")
-                                import time
-                                time.sleep(2)
-                                st.rerun()
-                        except Exception as ex:
-                            st.error(f"Error registering client: {ex}")
+                    data = {
+                        "Client ID": new_client_id,
+                        "Client Name": name,
+                        "Nickname": nickname,
+                        "Phone": phone,
+                        "Address": address,
+                        "Business Address": biz_address,
+                        "Marital Status": marital,
+                        "Business Type": biz_type,
+                        "Average Monthly Income": income,
+                        "Other Obligations": other_obs,
+                        "Guarantor Name": g_name,
+                        "Guarantor Nickname": g_nick,
+                        "Guarantor Marital Status": g_marital,
+                        "Guarantor Home Address": g_address,
+                        "Guarantor Occupation": g_occ,
+                        "Guarantor Office Address": g_office,
+                        "Guarantor Phone": g_phone,
+                        "Guarantor Relationship": g_rel,
+                        "Group Name": final_group_name,
+                        "Group Location": final_group_loc,
+                        "Group Leader Name": final_group_leader,
+                        "Group Formation Date": final_group_date,
+                        "Meeting Day": final_meeting_day,
+                        "Date": datetime.now().strftime("%Y-%m-%d"),
+                        "Officer": USER,
+                        "Branch": BRANCH,
+                        "Loan Amount": 0,
+                        "Active Credit": 0,
+                        "Loan Repay": 0,
+                        "Total Due": 0,
+                        "Status": "Pending"
+                    }
+                    save_new_loan(data)
+                    st.success(f"Successfully registered client! Client ID: {new_client_id}")
+                    import time
+                    time.sleep(2)
+                    st.rerun()
                         
         else:
             st.markdown("<div class='card'>", unsafe_allow_html=True)
@@ -2145,486 +2033,389 @@ elif page == "Loan Origination":
                     num_groups = len(df_groups)
                     num_members = len(df_members)
                     st.success(f"File parsed! Found **{num_groups} Groups** and **{num_members} Members**.")
-                    
                     if st.button("🚀 Confirm and Import", use_container_width=True):
                         with st.spinner("Importing data & balances..."):
                             success_count = 0
-                            update_count = 0
                             skip_count = 0
+                            new_repayments = []
                             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             date_str = datetime.now().strftime("%Y-%m-%d")
                             
-                            with SupabaseUnitOfWork() as uow:
-                                # 1. First process Groups
-                                group_mapping = {}  # maps group name -> group_id
-                                for index, group_row in df_groups.iterrows():
-                                    gname = str(group_row.get('Group Name', '')).strip()
-                                    if not gname or "example" in gname.lower():
+                            for index, member_row in df_members.iterrows():
+                                try:
+                                    group_ref = member_row.get('Group Reference')
+                                    group_match = df_groups[df_groups['Group Reference'] == group_ref] if 'Group Reference' in df_groups.columns else pd.DataFrame()
+                                    if group_match.empty: continue
+                                    group_row = group_match.iloc[0]
+                                    m_num_raw = member_row.get('Member Number')
+                                    try: m_num_val = int(float(m_num_raw))
+                                    except: m_num_val = index + 1
+                                    branch_val = str(group_row.get('Branch Name', BRANCH))
+                                    group_ref_val = str(member_row.get('Group Reference', ''))
+                                    
+                                    # Fetch loan type and handle ASSET suffix logic
+                                    loan_type = str(member_row.get('Loan Type (Product)', ''))
+                                    is_asset = "asset" in loan_type.lower() or "cash and carry" in loan_type.lower()
+                                    
+                                    client_id = generate_client_id(all_loans, branch_val, group_ref_val, m_num_val, is_bulk=True)
+                                    if is_asset:
+                                        client_id = f"{client_id}-ASSET"
+                                        
+                                    existing_check = supabase.table("loans").select("client_id").eq("client_id", client_id).execute()
+                                    if existing_check.data and len(existing_check.data) > 0:
+                                        skip_count += 1
                                         continue
+                                        
+                                    phone_val = str(member_row.get('Phone Number', ''))
+                                    if phone_val.lower() == 'nan' or not phone_val.strip(): phone_val = "00000000000"
                                     
-                                    # Resolve branch_id
-                                    bname = str(group_row.get('Branch Name', BRANCH)).strip()
-                                    res_b = uow.client.table("branches").select("branch_id").eq("name", bname).execute()
-                                    branch_id = res_b.data[0]["branch_id"] if res_b.data else None
+                                    # Safe extraction of financial amounts
+                                    def get_amt(row_data, keys):
+                                        for k in keys:
+                                            if k in row_data:
+                                                v = row_data.get(k)
+                                                if pd.notna(v):
+                                                    try: return float(str(v).replace(',', ''))
+                                                    except: pass
+                                        return 0.0
+                                        
+                                    principal_loan = get_amt(member_row, ['Principal loan', 'Principal Loan'])
+                                    active_credit = get_amt(member_row, ['Active credit', 'Active Credit', 'Active Credit (Disbursed)'])
+                                    remaining_bal = get_amt(member_row, ['Current credit balance', 'Current Credit Balance'])
+                                    savings_bal = get_amt(member_row, ['Savings Balance', 'Savings balance'])
                                     
-                                    # Resolve officer_id
-                                    oname = str(group_row.get('Credit Officer Name', USER)).strip()
-                                    res_u = uow.client.table("app_users").select("id").eq("username", oname).execute()
-                                    officer_id = res_u.data[0]["id"] if res_u.data else None
+                                    status = "Active" if active_credit > 0 or principal_loan > 0 else "Pending"
                                     
-                                    # Check if group already exists
-                                    res_g = uow.client.table("groups").select("group_id").eq("name", gname).execute()
-                                    if res_g.data:
-                                        group_id = res_g.data[0]["group_id"]
-                                        uow.client.table("groups").update({
-                                            "meeting_day": str(group_row.get('Meeting Day/Time', 'Daily')),
-                                            "branch_id": branch_id,
-                                            "officer_id": officer_id
-                                        }).eq("group_id", group_id).execute()
-                                    else:
-                                        # Insert new group
-                                        new_g = {
-                                            "name": gname,
-                                            "meeting_day": str(group_row.get('Meeting Day/Time', 'Daily')),
-                                            "branch_id": branch_id,
-                                            "officer_id": officer_id,
-                                            "group_number": str(group_row.get('Group Reference', '01'))[-2:],
-                                            "current_member_sequence": 0
-                                        }
-                                        res_g_ins = uow.client.table("groups").insert(new_g).execute()
-                                        group_id = res_g_ins.data[0]["group_id"] if res_g_ins.data else None
+                                    data = {
+                                        "Client ID": client_id,
+                                        "Client Name": str(member_row.get('Full Name', '')),
+                                        "Phone": phone_val,
+                                        "Address": str(member_row.get('Home Address', '')),
+                                        "Business Type": str(member_row.get('Business Type', 'Trader')),
+                                        "Group Name": str(group_row.get('Group Name', '')),
+                                        "Group Location": str(group_row.get('Meeting Location', '')),
+                                        "Meeting Day": str(group_row.get('Meeting Day/Time', 'Daily')),
+                                        "Date": datetime.now().strftime("%Y-%m-%d"),
+                                        "Officer": USER,
+                                        "Branch": branch_val,
+                                        "Loan Amount": principal_loan,
+                                        "Active Credit": active_credit,
+                                        "Loan Repay": remaining_bal,
+                                        "Total Due": remaining_bal,
+                                        "Status": status,
+                                        "Loan Product": loan_type
+                                    }
+                                    save_new_loan(data)
+                                    success_count += 1
                                     
-                                    group_mapping[gname] = group_id
-
-                                # 2. Process Members
-                                from domain.entities.client import Client
-                                for index, member_row in df_members.iterrows():
-                                    try:
-                                        name_val = str(member_row.get('Full Name', '')).strip()
-                                        if not name_val or "example" in name_val.lower():
-                                            continue
-                                            
-                                        group_name = str(member_row.get('Group Name', '')).strip()
-                                        group_id = group_mapping.get(group_name)
-                                        
-                                        # Resolve branch
-                                        bname = str(member_row.get('Branch Name', BRANCH)).strip()
-                                        res_b = uow.client.table("branches").select("branch_id, code").eq("name", bname).execute()
-                                        if res_b.data:
-                                            branch_id = res_b.data[0]["branch_id"]
-                                            branch_code = res_b.data[0]["code"] or bname[:3].upper()
-                                        else:
-                                            branch_id = None
-                                            branch_code = bname[:3].upper()
-                                            
-                                        # Resolve officer
-                                        oname = str(member_row.get('Credit Officer Name', USER)).strip()
-                                        res_u = uow.client.table("app_users").select("id").eq("username", oname).execute()
-                                        officer_id = res_u.data[0]["id"] if res_u.data else None
-                                        
-                                        # Check if client already exists (by name and phone)
-                                        phone_val = str(member_row.get('Phone Number', '')).strip()
-                                        if phone_val.lower() == 'nan' or not phone_val:
-                                            phone_val = "00000000000"
-                                            
-                                        res_cl = uow.client.table("clients").select("*").eq("name", name_val).eq("phone", phone_val).execute()
-                                        
-                                        if res_cl.data:
-                                            client_id = res_cl.data[0]["client_id"]
-                                            client_code = res_cl.data[0]["client_code"]
-                                            uow.client.table("clients").update({
-                                                "nickname": str(member_row.get('Nickname', '')),
-                                                "address": str(member_row.get('Home Address', '')),
-                                                "business_address": str(member_row.get('Business Address', '')),
-                                                "business_type": str(member_row.get('Business Type', 'Trader')),
-                                                "occupation": str(member_row.get('Occupation', 'Trader')),
-                                                "group_id": group_id
-                                            }).eq("client_id", client_id).execute()
-                                            update_count += 1
-                                        else:
-                                            # Generate sequential client code
-                                            if not group_id:
-                                                g_code = "IND"
-                                                res_count = uow.client.table("clients").select("client_id", count="exact").is_("group_id", "null").eq("branch_id", branch_id).execute()
-                                                next_seq = (res_count.count or 0) + 1
-                                            else:
-                                                g_code = str(member_row.get('Group Reference', '01'))[-2:]
-                                                next_seq = uow.clients.get_next_member_sequence(group_id)
-                                                
-                                            member_number_str = str(next_seq).zfill(3)
-                                            client_code = f"{branch_code}-{g_code}-{member_number_str}"
-                                            client_id = str(uuid.uuid4())
-                                            
-                                            # Create new client
-                                            new_cl = Client(
-                                                id=client_id,
-                                                name=name_val,
-                                                client_code=client_code,
-                                                nickname=str(member_row.get('Nickname', '')),
-                                                phone=phone_val,
-                                                address=str(member_row.get('Home Address', '')),
-                                                business_address=str(member_row.get('Business Address', '')),
-                                                dob=date(1990, 1, 1),
-                                                gender="Female" if "female" in str(member_row.get('Gender', '')).lower() else "Male",
-                                                marital_status="Married",
-                                                occupation=str(member_row.get('Occupation', 'Trader')),
-                                                business_type=str(member_row.get('Business Type', 'Trader')),
-                                                id_means="None",
-                                                next_of_kin="",
-                                                passport_url="",
-                                                signature_url="",
-                                                registration_date=date.today(),
-                                                branch_id=branch_id,
-                                                group_id=group_id,
-                                                officer_id=officer_id or uow.loans._resolve_officer_id(USER),
-                                                status="Active",
-                                                average_monthly_income=0.0,
-                                                other_obligations=""
-                                            )
-                                            uow.clients.create(new_cl)
-                                            success_count += 1
-                                            
-                                            # Create membership
-                                            uow.client.table("client_memberships").insert({
-                                                "client_id": client_id,
-                                                "group_id": group_id,
-                                                "branch_id": branch_id,
-                                                "officer_id": new_cl.officer_id,
-                                                "start_date": date.today().isoformat()
-                                            }).execute()
-
-                                        # Parse and load balances
-                                        def get_amt(row_data, keys):
-                                            for k in keys:
-                                                if k in row_data:
-                                                    v = row_data.get(k)
-                                                    if pd.notna(v):
-                                                        try: return float(str(v).replace(',', ''))
-                                                        except: pass
-                                            return 0.0
-
-                                        principal_loan = get_amt(member_row, ['Principal loan', 'Principal Loan'])
-                                        active_credit = get_amt(member_row, ['Active credit', 'Active Credit', 'Active Credit (Disbursed)'])
-                                        remaining_bal = get_amt(member_row, ['Current credit balance', 'Current Credit Balance'])
-                                        savings_bal = get_amt(member_row, ['Savings Balance', 'Savings balance'])
-                                        loan_type = str(member_row.get('Loan Type (Product)', ''))
-                                        
-                                        # If client has active loan:
-                                        if active_credit > 0 or remaining_bal > 0:
-                                            res_active_loan = uow.client.table("loans").select("loan_id").eq("client_id", client_id).eq("status", "Active").execute()
-                                            if not res_active_loan.data:
-                                                from domain.entities.loan import Loan
-                                                from domain.enums import LoanStatus
-                                                
-                                                loan_id = str(uuid.uuid4())
-                                                loan_entity = Loan(
-                                                    id=loan_id,
-                                                    client_id=client_id,
-                                                    client_name=name_val,
-                                                    product_type=loan_type or "Weekly 24W",
-                                                    amount=principal_loan or active_credit,
-                                                    duration=24 if "24" in loan_type else 12,
-                                                    frequency="Weekly" if "week" in loan_type.lower() else "Daily",
-                                                    gap_fee=0.0,
-                                                    expected_installment=remaining_bal / 24,
-                                                    total_payable=principal_loan or active_credit,
-                                                    status=LoanStatus.ACTIVE,
-                                                    branch=bname,
-                                                    credit_officer=oname or USER,
-                                                    start_date=date.today() - timedelta(weeks=4),
-                                                    extra_fields={"lifecycle_status": "Active"}
-                                                )
-                                                uow.loans.create(loan_entity)
-                                                
-                                                from services.schedule_service import ScheduleService
-                                                ScheduleService.generate_schedule(uow, loan_entity, date.today() - timedelta(weeks=4))
-                                        
-                                        # Inject opening savings
-                                        if savings_bal > 0:
-                                            from services.savings_service import SavingsService
-                                            SavingsService.post_individual_savings(
-                                                uow, client_id, name_val, bname, oname or USER, savings_bal, 0.0,
-                                                remarks="Opening Savings Balance from Onboarding Import"
-                                            )
-                                    except Exception as ex:
-                                        print(f"Error importing row {index}: {ex}")
-
-                                # 3. Process Group-Level Opening Savings
-                                from services.savings_service import SavingsService
-                                for gname, group_id in group_mapping.items():
-                                    group_row = df_groups[df_groups['Group Name'] == gname].iloc[0]
-                                    g_savings = 0.0
-                                    for k in ['Group Savings', 'Current Group Savings Balance']:
-                                        if k in group_row and pd.notna(group_row[k]):
-                                            try:
-                                                g_savings = float(str(group_row[k]).replace(',', ''))
-                                                break
+                                    # Inject Historical Savings for Member
+                                    if savings_bal > 0:
+                                        new_repayments.append({
+                                            "id": str(uuid.uuid4()),
+                                            "Date": date_str,
+                                            "Time": timestamp,
+                                            "Client ID": client_id,
+                                            "Client Name": str(member_row.get('Full Name', '')),
+                                            "Officer": USER,
+                                            "Branch": branch_val,
+                                            "Amount Paid": 0,
+                                            "Savings Amount": savings_bal,
+                                            "Withdrawal Amount": 0,
+                                            "Loan Repayment Amount": 0,
+                                            "Processing Fee Paid": 0,
+                                            "Insurance Fee Paid": 0,
+                                            "App Fee Paid": 0,
+                                            "Pass Book Paid": 0,
+                                            "Recovery Amount": 0,
+                                            "Mgt Fee Paid": 0,
+                                            "Others Amount": 0,
+                                            "Laps Amount Transferred": 0,
+                                            "Transaction Type": "Opening Savings Balance",
+                                            "Note": "System Onboarding Import",
+                                            "Reversed": False
+                                        })
+                                except Exception as e:
+                                    print(f"Error row {index}: {e}")
+                                    
+                            # Inject Group Savings Balances
+                            seen_groups = set()
+                            for _, group_row in df_groups.iterrows():
+                                gname = str(group_row.get('Group Name', ''))
+                                branch_val = str(group_row.get('Branch Name', BRANCH))
+                                g_savings = 0.0
+                                for k in ['Group Savings', 'Current Group Savings Balance']:
+                                    if k in group_row and pd.notna(group_row[k]):
+                                        try:
+                                            g_savings = float(str(group_row[k]).replace(',', ''))
+                                            break
+                                        except: pass
+                                
+                                if gname and g_savings > 0 and gname not in seen_groups:
+                                    seen_groups.add(gname)
+                                    new_repayments.append({
+                                        "id": str(uuid.uuid4()),
+                                        "Date": date_str,
+                                        "Time": timestamp,
+                                        "Client ID": f"GROUP-{gname}",
+                                        "Client Name": f"{gname} Meeting",
+                                        "Officer": USER,
+                                        "Branch": branch_val,
+                                        "Amount Paid": 0,
+                                        "Savings Amount": g_savings,
+                                        "Withdrawal Amount": 0,
+                                        "Loan Repayment Amount": 0,
+                                        "Processing Fee Paid": 0,
+                                        "Insurance Fee Paid": 0,
+                                        "App Fee Paid": 0,
+                                        "Pass Book Paid": 0,
+                                        "Recovery Amount": 0,
+                                        "Mgt Fee Paid": 0,
+                                        "Others Amount": 0,
+                                        "Laps Amount Transferred": 0,
+                                        "Transaction Type": "Opening Savings Balance",
+                                        "Note": "System Onboarding Import",
+                                        "Reversed": False
+                                    })
+                                    
+                            # Inject Branch Laps & Misc Fees
+                            if not df_branch.empty:
+                                for _, branch_row in df_branch.iterrows():
+                                    bname = str(branch_row.get('Branch Name', BRANCH))
+                                    laps_sav = 0.0
+                                    misc_sav = 0.0
+                                    
+                                    for k in ['Branch Laps Savings Balance', 'Branch Laps Savings', 'Laps Savings']:
+                                        if k in branch_row and pd.notna(branch_row[k]):
+                                            try: laps_sav = float(str(branch_row[k]).replace(',', ''))
                                             except: pass
-                                    
-                                    if g_savings > 0:
-                                        SavingsService.post_group_savings(
-                                            uow, gname, BRANCH, USER, g_savings, 0.0,
-                                            remarks="Opening Group Savings from Onboarding Import"
-                                        )
-
-                                # 4. Process Branch Laps and Misc opening balances
-                                if not df_branch.empty:
-                                    for _, branch_row in df_branch.iterrows():
-                                        bname = str(branch_row.get('Branch Name', BRANCH))
-                                        laps_sav = 0.0
-                                        misc_sav = 0.0
-                                        for k in ['Branch Laps Savings Balance', 'Branch Laps Savings', 'Laps Savings']:
-                                            if k in branch_row and pd.notna(branch_row[k]):
-                                                try: laps_sav = float(str(branch_row[k]).replace(',', ''))
-                                                except: pass
-                                        for k in ['Misc Fees Savings Balance', 'Misc Fees Savings', 'Misc Fees']:
-                                            if k in branch_row and pd.notna(branch_row[k]):
-                                                try: misc_sav = float(str(branch_row[k]).replace(',', ''))
-                                                except: pass
-                                                
-                                        if laps_sav > 0:
-                                            SavingsService.post_laps_savings(
-                                                uow, f"GLOBAL-LAPS-{bname}", f"Laps Savings ({bname})", bname, USER, laps_sav, 0.0
-                                            )
-                                        if misc_sav > 0:
-                                            SavingsService.post_misc_savings(
-                                                uow, f"GLOBAL-MISC-{bname}", f"Misc Fees Savings ({bname})", bname, USER, misc_sav,
-                                                remarks="Opening Balance from Onboarding Import"
-                                            )
                                             
-                            st.success(f"✅ Onboarding Import Complete! Registered {success_count} new members. Updated {update_count} existing members. Skipped {skip_count} duplicates.")
-                            import time
-                            time.sleep(2)
-                            st.rerun()
+                                    for k in ['Misc Fees Savings Balance', 'Misc Fees Savings', 'Misc Fees']:
+                                        if k in branch_row and pd.notna(branch_row[k]):
+                                            try: misc_sav = float(str(branch_row[k]).replace(',', ''))
+                                            except: pass
+                                            
+                                    if laps_sav > 0:
+                                        new_repayments.append({
+                                            "id": str(uuid.uuid4()),
+                                            "Date": date_str,
+                                            "Time": timestamp,
+                                            "Client ID": f"GLOBAL-LAPS-{bname}",
+                                            "Client Name": f"Laps Savings ({bname})",
+                                            "Officer": USER,
+                                            "Branch": bname,
+                                            "Amount Paid": 0,
+                                            "Savings Amount": laps_sav,
+                                            "Withdrawal Amount": 0,
+                                            "Loan Repayment Amount": 0,
+                                            "Processing Fee Paid": 0,
+                                            "Insurance Fee Paid": 0,
+                                            "App Fee Paid": 0,
+                                            "Pass Book Paid": 0,
+                                            "Recovery Amount": 0,
+                                            "Mgt Fee Paid": 0,
+                                            "Others Amount": 0,
+                                            "Laps Amount Transferred": 0,
+                                            "Transaction Type": "Opening Savings Balance",
+                                            "Note": "System Onboarding Import",
+                                            "Reversed": False
+                                        })
+                                        
+                                    if misc_sav > 0:
+                                        new_repayments.append({
+                                            "id": str(uuid.uuid4()),
+                                            "Date": date_str,
+                                            "Time": timestamp,
+                                            "Client ID": f"GLOBAL-MISC-{bname}",
+                                            "Client Name": f"Misc Fees Savings ({bname})",
+                                            "Officer": USER,
+                                            "Branch": bname,
+                                            "Amount Paid": 0,
+                                            "Savings Amount": misc_sav,
+                                            "Withdrawal Amount": 0,
+                                            "Loan Repayment Amount": 0,
+                                            "Processing Fee Paid": 0,
+                                            "Insurance Fee Paid": 0,
+                                            "App Fee Paid": 0,
+                                            "Pass Book Paid": 0,
+                                            "Recovery Amount": 0,
+                                            "Mgt Fee Paid": 0,
+                                            "Others Amount": 0,
+                                            "Laps Amount Transferred": 0,
+                                            "Transaction Type": "Opening Savings Balance",
+                                            "Note": "System Onboarding Import",
+                                            "Reversed": False
+                                        })
+                                        
+                            # Save all new opening balances
+                            if new_repayments:
+                                reps_df = load_repayments()
+                                new_reps_df = pd.DataFrame(new_repayments)
+                                updated_reps = pd.concat([reps_df, new_reps_df], ignore_index=True)
+                                save_repayments(updated_reps)
+                                
+                            st.success(f"✅ Import Complete! Registered {success_count} members. Added {len(new_repayments)} opening balance entries. Skipped {skip_count} existing.")
                 except Exception as e:
                     st.error(f"Error reading file: {e}")
             st.markdown("</div>", unsafe_allow_html=True)
 
     elif orig_section == "📝 Loan Application":
         st.subheader("📝 Loan Application")
-        
-        # 1. Search Client
-        search_query = st.text_input("🔍 Search Client by Name or Client ID", key="loan_app_search_query")
-        
-        selected_client_id = None
-        selected_client = None
-        
-        if search_query:
-            with SupabaseUnitOfWork() as uow:
-                found_clients = uow.clients.search_by_name_or_code(search_query)
-                
-            if not found_clients:
-                st.warning("No clients found matching the search criteria.")
+        all_loans_df = load_loans()
+        if all_loans_df.empty:
+            st.warning("No clients registered in the database.")
+        else:
+            latest_status = all_loans_df.sort_values('Date').groupby('Client ID').last().reset_index()
+            # Filter out auxiliary -ASSET profiles from the origination dropdown list
+            base_clients = latest_status[~latest_status['Client ID'].str.endswith("-ASSET", na=False)].copy()
+            
+            if base_clients.empty:
+                st.warning("No clients registered in the database.")
             else:
-                client_options = {f"{c.client_code} - {c.name}": c for c in found_clients}
-                selected_display = st.selectbox("Select Client", [""] + list(client_options.keys()), key="loan_app_selected_client_select")
-                if selected_display:
-                    selected_client = client_options[selected_display]
-                    selected_client_id = selected_client.id
-        
-        if selected_client:
-            # 2. Prefill client metadata
-            st.markdown("### 👤 Client Profile Summary")
-            col1, col2, col3 = st.columns(3)
-            col1.markdown(f"**Client ID:** `{selected_client.client_code}`")
-            col2.markdown(f"**Full Name:** {selected_client.name}")
-            col3.markdown(f"**Phone:** {selected_client.phone or 'N/A'}")
-            
-            col4, col5, col6 = st.columns(3)
-            with SupabaseUnitOfWork() as uow:
-                res_b = uow.client.table("branches").select("name").eq("branch_id", selected_client.branch_id).execute()
-                branch_name = res_b.data[0]["name"] if res_b.data else "Unknown"
+                # 1. Filter by Group
+                unique_groups = ["All Groups"] + sorted(base_clients['Group Name'].dropna().unique().tolist())
+                selected_group = st.selectbox("Filter by Group (Optional):", unique_groups)
                 
-                res_g = uow.client.table("groups").select("name").eq("group_id", selected_client.group_id).execute()
-                group_name = res_g.data[0]["name"] if res_g.data else "Individual (No Group)"
+                if selected_group != "All Groups":
+                    base_clients = base_clients[base_clients['Group Name'] == selected_group]
                 
-                res_u = uow.client.table("app_users").select("full_name").eq("id", selected_client.officer_id).execute()
-                officer_name = res_u.data[0]["full_name"] if res_u.data else "Unknown"
-                
-            col4.markdown(f"**Branch:** {branch_name}")
-            col5.markdown(f"**Group:** {group_name}")
-            col6.markdown(f"**Credit Officer:** {officer_name}")
-
-            # 3. Load Savings Balance
-            with SupabaseUnitOfWork() as uow:
-                res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", selected_client.id).execute()
-                res_wd = uow.client.table("individual_savings").select("withdrawal_amount").eq("client_id", selected_client.id).execute()
-                savings_bal = sum(float(d.get("deposit_amount") or 0) for d in res_dep.data) - sum(float(w.get("withdrawal_amount") or 0) for w in res_wd.data)
-            
-            st.info(f"💰 **Current Pooled Savings Balance:** ₦{savings_bal:,.2f}")
-
-            # 4. Loan Specific fields
-            st.markdown("### 📝 Apply for a New Loan")
-            with st.form("loan_application_details_form"):
-                st.markdown("#### 1. Loan Product Parameters")
-                col_p1, col_p2 = st.columns(2)
-                
-                with SupabaseUnitOfWork() as uow:
-                    res_p = uow.client.table("loan_products").select("name").eq("is_active", True).execute()
-                    product_options = [p["name"] for p in res_p.data] if res_p.data else ["Daily 60 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
-                
-                product_type = col_p1.selectbox("Loan Product", product_options, key="loan_app_product")
-                requested_amount = col_p2.number_input("Requested Loan Amount (₦)", min_value=0.0, step=10000.0, key="loan_app_amount")
-                
-                # 5. Loan Renewal / Eligibility Checker
-                if requested_amount > 0:
-                    from services.renewal_service import RenewalService
-                    with SupabaseUnitOfWork() as uow:
-                        is_eligible, reasons = RenewalService.check_eligibility(uow, selected_client_id, requested_amount, product_type)
+                if base_clients.empty:
+                    st.info("No clients in this group.")
+                else:
+                    base_clients['DisplayName'] = base_clients['Client Name'] + " (" + base_clients['Client ID'] + ")"
+                    options = [""] + base_clients['DisplayName'].tolist()
+                    selected_display = st.selectbox("Select Registered/Completed Client:", options)
                     
-                    if is_eligible:
-                        st.success("✅ **ELIGIBLE FOR RENEWAL:** " + " ".join(reasons))
-                    else:
-                        st.error("❌ **NOT ELIGIBLE FOR RENEWAL:**")
-                        for r in reasons:
-                            st.write(f"- {r}")
-
-                st.markdown("#### 2. Guarantors Details")
-                st.write("Please provide details for up to 2 Guarantors.")
-                
-                col_g1, col_g2 = st.columns(2)
-                
-                with col_g1:
-                    st.markdown("**Guarantor 1**")
-                    g1_name = st.text_input("Full Name", key="loan_app_g1_name")
-                    g1_phone = st.text_input("Phone Number", key="loan_app_g1_phone")
-                    g1_address = st.text_input("Home Address", key="loan_app_g1_address")
-                    g1_occ = st.text_input("Occupation", key="loan_app_g1_occ")
-                    g1_biz = st.text_input("Business Address", key="loan_app_g1_biz")
-                    g1_rel = st.text_input("Relationship with Client", key="loan_app_g1_rel")
-                    
-                with col_g2:
-                    st.markdown("**Guarantor 2**")
-                    g2_name = st.text_input("Full Name", key="loan_app_g2_name")
-                    g2_phone = st.text_input("Phone Number", key="loan_app_g2_phone")
-                    g2_address = st.text_input("Home Address", key="loan_app_g2_address")
-                    g2_occ = st.text_input("Occupation", key="loan_app_g2_occ")
-                    g2_biz = st.text_input("Business Address", key="loan_app_g2_biz")
-                    g2_rel = st.text_input("Relationship with Client", key="loan_app_g2_rel")
-
-                st.markdown("#### 3. Loan Notes")
-                notes = st.text_area("Remarks / Notes", key="loan_app_notes")
-                
-                submitted_loan_app = st.form_submit_button("Submit Application for BM Approval", type="primary", use_container_width=True)
-                
-                if submitted_loan_app:
-                    if requested_amount <= 0:
-                        st.error("Please enter a valid Loan Amount.")
-                    elif not g1_name.strip() or not g1_phone.strip():
-                        st.error("At least one Guarantor's Name and Phone are required.")
-                    else:
-                        try:
-                            with SupabaseUnitOfWork() as uow:
-                                lifecycle_status = "Submitted"
+                    if selected_display:
+                        selected_row = base_clients[base_clients['DisplayName'] == selected_display].iloc[0]
+                        target_client_id = selected_row['Client ID']
+                        
+                        reps = load_repayments()
+                        client_reps = reps[reps['Client ID'] == target_client_id] if not reps.empty else __import__('pandas').DataFrame()
+                        savings, _ = calculate_client_savings(client_reps, 0)
+                        
+                        st.info(f"💰 **Current Pooled Savings Balance:** ₦{savings:,.0f}")
+                        
+                        st.markdown("#### Financial Details")
+                        f1, f2 = st.columns(2)
+                        product_category = f1.selectbox("Product Category", ["Finance", "Asset"])
+                        
+                        if product_category == "Finance":
+                            prods = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
+                        else:
+                            prods = ["60-Day Asset", "120-Day Asset", "Weekly 12W Asset", "Weekly 24W Asset", "Monthly 3M Asset", "Monthly 6M Asset", "Cash and Carry"]
+                            
+                        product = f2.selectbox("Loan Product", prods)
+                        raw_amount = st.number_input("Requested Loan Amount / Asset Cost (₦)", min_value=0.0, step=10000.0, value=None, placeholder="0")
+                        amount = float(raw_amount) if raw_amount else 0.0
+                        
+                        setup = calculate_loan_setup(amount, product, product_category)
+                        interest = setup.get('interest', 0)
+                        dur = setup.get('duration', 60)
+                        
+                        if product_category == "Asset":
+                            # ---- ASSET ORIGINATION ENGINE ----
+                            total_cost = amount + interest
+                            st.markdown(f"**Asset Cost:** ₦{amount:,.0f}")
+                            st.markdown(f"**Interest ({int(setup.get('interest',0)/amount*100) if amount > 0 else 0}%):** ₦{interest:,.0f}")
+                            st.markdown(f"**Total Cost (Principal + Interest):** ₦{total_cost:,.0f}")
+                            
+                            raw_dp = st.number_input("Initial Cash Downpayment (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0")
+                            initial_downpayment = float(raw_dp) if raw_dp else 0.0
+                            
+                            active_credit = total_cost - initial_downpayment
+                            final_repay = active_credit / dur if dur > 0 else 0
+                            
+                            st.markdown("---")
+                            st.markdown(f"**Active Loan (Total Cost - Downpayment):** ₦{active_credit:,.0f}")
+                            st.markdown(f"**Expected Installment:** ₦{final_repay:,.0f} x {dur} {setup.get('freq', 'Daily')}")
+                            
+                            if initial_downpayment > 0:
+                                st.info(f"💵 Ensure the ₦{initial_downpayment:,.0f} downpayment is collected physically. It will be banked as part of total cash.")
+                            
+                            total_upfront_required = 0  # No savings deduction for asset loans
+                        else:
+                            # ---- FINANCE ORIGINATION ENGINE (existing logic) ----
+                            raw_gap = st.number_input("Gap Fee / Base Savings (₦)", min_value=0.0, step=1000.0, value=None, placeholder="0")
+                            base_savings_req = float(raw_gap) if raw_gap else 0.0
+                            initial_downpayment = 0
+                            
+                            active_credit = amount - base_savings_req
+                            final_repay = active_credit / dur if dur > 0 else 0
                                 
-                                res_p_meta = uow.client.table("loan_products").select("*").eq("name", product_type).execute()
-                                if res_p_meta.data:
-                                    prod_meta = res_p_meta.data[0]
-                                    rate = float(prod_meta.get("interest_rate", 0) or 0)
-                                    rate = rate / 100.0 if rate > 1.0 else rate
-                                    duration = int(prod_meta.get("installments", 12) or 12)
-                                    cycle = prod_meta.get("repayment_cycle", "Weekly")
-                                    savings_req = float(prod_meta.get("savings_requirement", 0) or 0)
+                            total_upfront_required = interest + base_savings_req
+                            
+                            st.markdown(f"**Calculated Upfront Requirement:**")
+                            st.markdown(f"- Interest: ₦{interest:,.0f}")
+                            st.markdown(f"- Gap Fee (Base Savings): ₦{base_savings_req:,.0f}")
+                            st.markdown(f"**Total Required:** ₦{total_upfront_required:,.0f}")
+                            
+                            if total_upfront_required > 0:
+                                if savings < total_upfront_required:
+                                    st.error(f"❌ **INSUFFICIENT SAVINGS:** Client has ₦{savings:,.0f} but needs ₦{total_upfront_required:,.0f}. Please collect additional savings via the Cashbook first.")
                                 else:
-                                    rate = 0.12
-                                    duration = 12
-                                    cycle = "Weekly"
-                                    savings_req = 0.0
-
-                                interest = requested_amount * rate
-                                total_payable = requested_amount + interest
-                                expected_installment = total_payable / duration if duration > 0 else total_payable
-
-                                required_savings = savings_req * requested_amount
-                                if savings_bal < required_savings:
-                                    st.error(f"Cannot submit application: Insufficient savings balance (₦{savings_bal:,.2f}). Required is ₦{required_savings:,.2f}.")
-                                    st.stop()
-
-                                from domain.entities.loan import Loan
-                                from domain.enums import LoanStatus
-                                
-                                loan_id = str(uuid.uuid4())
-                                loan_entity = Loan(
-                                    id=loan_id,
-                                    client_id=selected_client_id,
-                                    client_name=selected_client.name,
-                                    product_type=product_type,
-                                    amount=requested_amount,
-                                    duration=duration,
-                                    frequency=cycle,
-                                    gap_fee=0.0,
-                                    expected_installment=expected_installment,
-                                    total_payable=total_payable,
-                                    status=LoanStatus.PENDING,
-                                    branch=branch_name,
-                                    credit_officer=USER,
-                                    start_date=date.today(),
-                                    extra_fields={
-                                        "lifecycle_status": lifecycle_status,
-                                        "notes": notes
+                                    st.success(f"✅ **SUFFICIENT SAVINGS:** Client has enough to cover the upfront fees.")
+                            
+                        submitted_app = st.button("Submit Application for BM Approval", use_container_width=True)
+                        if submitted_app:
+                            # Validation: Check for existing loan of the SAME category
+                            check_id = target_client_id if product_category == "Finance" else f"{target_client_id}-ASSET"
+                            existing_loan = all_loans_df[all_loans_df['Client ID'] == check_id]
+                            
+                            is_blocked = False
+                            if not existing_loan.empty:
+                                last_stat = existing_loan.sort_values('Date').iloc[-1]
+                                # If it is Active or Pending AND has an actual loan amount (not just a registration placeholder)
+                                if last_stat['Status'] in ['Active', 'Pending'] and float(last_stat.get('Loan Amount', 0)) > 0:
+                                    is_blocked = True
+                                    
+                            if is_blocked:
+                                st.error(f"❌ Cannot submit: This client already has an Active or Pending {product_category} loan!")
+                            elif product_category == "Finance" and savings < total_upfront_required:
+                                st.error("Cannot submit! Insufficient savings.")
+                            else:
+                                # For Finance: auto-deduct upfront fees from savings
+                                if product_category == "Finance" and total_upfront_required > 0:
+                                    wd_data = {
+                                        "Date": datetime.now().strftime("%Y-%m-%d"),
+                                        "Client ID": target_client_id,
+                                        "Client Name": selected_row['Client Name'],
+                                        "Officer": USER,
+                                        "Branch": BRANCH,
+                                        "Withdrawal Amount": total_upfront_required,
+                                        "Note": f"Auto-deducted Upfront Fees (Interest: {interest}, Gap: {base_savings_req}) for Loan App"
                                     }
-                                )
-                                uow.loans.create(loan_entity)
+                                    save_repayment(wd_data)
+                                
 
-                                if g1_name.strip():
-                                    res_g1 = uow.guarantors.find_by_phone(g1_phone.strip())
-                                    if res_g1:
-                                        g1_id = res_g1.guarantor_id
-                                    else:
-                                        from domain.entities.guarantor import Guarantor
-                                        g1_ent = uow.guarantors.create_guarantor(Guarantor(
-                                            guarantor_id=str(uuid.uuid4()),
-                                            name=g1_name.strip(),
-                                            phone=g1_phone.strip(),
-                                            address=g1_address.strip(),
-                                            occupation=g1_occ.strip(),
-                                            business_address=g1_biz.strip()
-                                        ))
-                                        g1_id = g1_ent.guarantor_id
-                                        
-                                    from domain.entities.guarantor import LoanGuarantor
-                                    uow.guarantors.link_to_loan(LoanGuarantor(
-                                        id=str(uuid.uuid4()),
-                                        loan_id=loan_id,
-                                        guarantor_id=g1_id,
-                                        relationship=g1_rel.strip()
-                                    ))
-
-                                if g2_name.strip():
-                                    res_g2 = uow.guarantors.find_by_phone(g2_phone.strip())
-                                    if res_g2:
-                                        g2_id = res_g2.guarantor_id
-                                    else:
-                                        from domain.entities.guarantor import Guarantor
-                                        g2_ent = uow.guarantors.create_guarantor(Guarantor(
-                                            guarantor_id=str(uuid.uuid4()),
-                                            name=g2_name.strip(),
-                                            phone=g2_phone.strip(),
-                                            address=g2_address.strip(),
-                                            occupation=g2_occ.strip(),
-                                            business_address=g2_biz.strip()
-                                        ))
-                                        g2_id = g2_ent.guarantor_id
-                                        
-                                    from domain.entities.guarantor import LoanGuarantor
-                                    uow.guarantors.link_to_loan(LoanGuarantor(
-                                        id=str(uuid.uuid4()),
-                                        loan_id=loan_id,
-                                        guarantor_id=g2_id,
-                                        relationship=g2_rel.strip()
-                                    ))
-
-                                from services.schedule_service import ScheduleService
-                                ScheduleService.generate_schedule(uow, loan_entity, date.today() + timedelta(days=7))
-
-                                st.success("Application submitted successfully! Repayment schedule generated and loan is Pending BM Approval.")
+                                
+                                kyc = selected_row.to_dict()
+                                kyc.pop('DisplayName', None)
+                                kyc.pop('DateStr', None)
+                                kyc.pop('id', None)
+                                
+                                kyc["Client ID"] = check_id  # Use base ID for Finance, suffixed ID for Asset
+                                kyc["Date"] = datetime.now().strftime("%Y-%m-%d")
+                                kyc["Officer"] = USER
+                                kyc["Branch"] = BRANCH
+                                kyc["Product Category"] = product_category
+                                kyc["Loan Product"] = product
+                                kyc["Loan Amount"] = amount
+                                kyc["Active Credit"] = active_credit
+                                kyc["Loan Repay"] = final_repay
+                                kyc["Total Due"] = active_credit
+                                kyc["Status"] = "Pending"
+                                
+                                kyc["Processing Fee"] = 0
+                                kyc["Pass Book Fee"] = 0
+                                kyc["Group Savings"] = 0
+                                kyc["Branch Contingency"] = 0
+                                
+                                save_new_loan(kyc)
+                                
+                                st.success("Application submitted successfully! It is now Pending BM Authorization.")
                                 import time
                                 time.sleep(2)
                                 st.rerun()
-                        except Exception as ex:
-                            st.error(f"Error submitting loan application: {ex}")
-                            
-                            
 
 
 elif page == "Collections":
@@ -2796,7 +2587,7 @@ elif page == "Collections":
         elif col_mode == "👤 Individual / Group Entry":
             st.markdown("### 👥 Member Collections")
         # Show all clients that are not strictly closed, so completed clients can still deposit savings
-        co_loans = all_loans[(all_loans['Officer'] == target_co) & (all_loans['Status'] != STATUS_CLOSED)]
+        co_loans = all_loans[(all_loans['Officer'] == target_co) & (all_loans['Status'] != 'Closed')]
         
         if co_loans.empty:
             st.info("No active or pending members for this officer.")
@@ -2817,61 +2608,28 @@ elif page == "Collections":
                 # Fetch history for today to prefill/check
                 today_reps = repayments[(repayments['Date'] == date_str) & (repayments['Officer'] == target_co)] if not repayments.empty else pd.DataFrame()
                 
-                # Clear state if group or date changed
-                if st.session_state.get('collections_group') != selected_group or st.session_state.get('collections_date') != date_str:
-                    st.session_state['pending_collections'] = []
-                
                 # Pre-compute member data
                 member_info = {}
-                from services.schedule_service import ScheduleService
-                with SupabaseUnitOfWork() as uow:
-                    for _, member in group_loans.iterrows():
-                        cid = member['Client ID']
-                        mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
-                        acc_sav = mem_reps['Savings Amount'].astype(float).sum() if not mem_reps.empty else 0
-                        acc_wd = mem_reps['Withdrawal Amount'].astype(float).sum() if 'Withdrawal Amount' in mem_reps.columns and not mem_reps.empty else 0
-                        sav_bal = acc_sav - acc_wd
-                        total_paid = mem_reps['Loan Repayment Amount'].astype(float).sum() if not mem_reps.empty else 0
-                        
-                        # Find active loan
-                        res_l = uow.client.table("loans").select("loan_id, active_credit").eq("client_id", cid).eq("status", "Active").execute()
-                        if res_l.data:
-                            active_loan_id = res_l.data[0]["loan_id"]
-                            act_cred = float(res_l.data[0].get("active_credit") or 0.0)
-                            expected_rep_schedule = ScheduleService.get_expected_repayment(uow, active_loan_id, view_date)
-                        else:
-                            active_loan_id = None
-                            act_cred = float(member.get('Active Credit', 0))
-                            expected_rep_schedule = float(member.get('Loan Repayment', 0))
-                            
-                        rem_bal = act_cred - total_paid
-                        
-                        # Check if user has a pending collection in session state (Edit/Go Back state)
-                        pending_list = st.session_state.get('pending_collections', [])
-                        pending_tx = next((tx for tx in pending_list if tx["Client ID"] == cid), None)
-                        
-                        if pending_tx:
-                            prev_dep = float(pending_tx.get("Savings Amount") or 0.0)
-                            prev_wd = float(pending_tx.get("Withdrawal Amount") or 0.0)
-                            prev_rep = float(pending_tx.get("Loan Repayment Amount") or 0.0)
-                        else:
-                            prev_dep = 0.0
-                            prev_wd = 0.0
-                            # Default to expected repayment if no previous value in session state
-                            today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
-                            prev_rep = expected_rep_schedule if today_paid.empty else 0.0
-                            
-                        member_info[cid] = {
-                            "member": member,
-                            "sav_bal": sav_bal,
-                            "rem_bal": rem_bal,
-                            "act_cred": act_cred,
-                            "expected_rep_schedule": expected_rep_schedule,
-                            "prev_dep": prev_dep,
-                            "prev_wd": prev_wd,
-                            "prev_rep": prev_rep,
-                            "start_date": str(member.get('Start Date', ''))
-                        }
+                for _, member in group_loans.iterrows():
+                    cid = member['Client ID']
+                    mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
+                    acc_sav = mem_reps['Savings Amount'].astype(float).sum() if not mem_reps.empty else 0
+                    acc_wd = mem_reps['Withdrawal Amount'].astype(float).sum() if 'Withdrawal Amount' in mem_reps.columns and not mem_reps.empty else 0
+                    sav_bal = acc_sav - acc_wd
+                    total_paid = mem_reps['Loan Repayment Amount'].astype(float).sum() if not mem_reps.empty else 0
+                    act_cred = float(member.get('Active Credit', 0))
+                    rem_bal = act_cred - total_paid
+                    exp_rep = float(member.get('Loan Repayment', 0))
+                    today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
+                    default_rep = exp_rep if today_paid.empty else 0.0
+                    member_info[cid] = {
+                        "member": member,
+                        "sav_bal": sav_bal,
+                        "rem_bal": rem_bal,
+                        "act_cred": act_cred,
+                        "default_rep": default_rep,
+                        "start_date": str(member.get('Start Date', ''))
+                    }
                 
                 if st.session_state.get('pending_collections') and st.session_state.get('collections_group') == selected_group and st.session_state.get('collections_date') == date_str:
                     st.markdown("### 🔍 Review Group Collections")
@@ -2881,23 +2639,21 @@ elif page == "Collections":
                     total_out = sum(float(tx.get('Withdrawal Amount', 0)) + float(tx.get('Expenses', 0)) + float(tx.get('Bank Deposited', 0)) + float(tx.get('Product Withdrawal', 0)) + float(tx.get('Laps Transferred', 0)) for tx in to_insert)
                     net_cash = total_in - total_out
                     
-                    total_savings = sum(float(tx.get('Savings Amount', 0)) for tx in to_insert)
-                    total_wd = sum(float(tx.get('Withdrawal Amount', 0)) for tx in to_insert)
-                    total_net_savings = total_savings - total_wd
-                    
                     st.info(f"**Total Money Collected (Cash In):** ₦{total_in:,.0f}")
                     st.warning(f"**Total Money Given Out (Cash Out):** ₦{total_out:,.0f}")
                     st.success(f"**NET CASH EXPECTED FROM GROUP:** ₦{net_cash:,.0f}")
-                    st.markdown(f"**Total Net Savings:** ₦{total_net_savings:,.0f} *(Includes Individual & Group Savings)*")
                     
                     c1, c2 = st.columns(2)
                     if c1.button("🔙 Edit / Go Back"):
-                        # Keep pending_collections, just rerun to show form populated with previous values
+                        del st.session_state['pending_collections']
                         st.rerun()
                     
                     if c2.button("✅ Confirm & Save to Database", type="primary", use_container_width=True):
+                        db_payload = []
+                        for tx in to_insert:
+                            db_payload.append({UI_TO_DB_REP[k]: v for k, v in tx.items() if k in UI_TO_DB_REP})
                         try:
-                            save_repayments(to_insert)
+                            supabase.table('repayments').insert(db_payload).execute()
                             st.success("Group Collections Submitted Successfully!")
                             del st.session_state['pending_collections']
                             import time
@@ -2911,31 +2667,12 @@ elif page == "Collections":
                         rep_data = {}
                         
                         # ---- GROUP-LEVEL SAVINGS ----
-                        group_savings_balance = 0.0
-                        if selected_group != "Ungrouped":
-                            g_reps = repayments[repayments['Client ID'] == f"GROUP-{selected_group}"] if not repayments.empty else pd.DataFrame()
-                            if not g_reps.empty:
-                                group_savings_balance = g_reps['Savings Amount'].sum() - g_reps['Withdrawal Amount'].sum()
-                                
-                        st.markdown(f"### 🏛️ Group-Level Savings (Available: ₦{group_savings_balance:,.0f})")
+                        st.markdown("### 🏛️ Group-Level Savings")
                         st.caption("Input communal group savings and withdrawal amounts.")
-                        
-                        # Load previous group values if any
-                        pending_list = st.session_state.get('pending_collections', [])
-                        pending_g = next((tx for tx in pending_list if tx["Client ID"] == f"GROUP-{selected_group}"), None)
-                        if pending_g:
-                            prev_g_dep = float(pending_g.get("Savings Amount") or 0.0)
-                            prev_g_wd = float(pending_g.get("Withdrawal Amount") or 0.0)
-                            prev_laps = float(pending_g.get("Laps Reserved") or 0.0)
-                        else:
-                            prev_g_dep = 0.0
-                            prev_g_wd = 0.0
-                            prev_laps = 0.0
-                            
                         gsc1, gsc2, gsc3 = st.columns(3)
-                        global_group_savings = gsc1.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=prev_g_dep if prev_g_dep > 0 else None, placeholder="0", key="global_grp_sav")
-                        global_group_wd = gsc2.number_input("Group Savings Withdrawal", min_value=0.0, step=500.0, value=prev_g_wd if prev_g_wd > 0 else None, placeholder="0", key="global_grp_wd")
-                        global_laps_reserved = gsc3.number_input("Laps Reserved", min_value=0.0, step=500.0, value=prev_laps if prev_laps > 0 else None, placeholder="0", key="global_laps_res")
+                        global_group_savings = gsc1.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=None, placeholder="0")
+                        global_group_wd = gsc2.number_input("Group Savings Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
+                        global_laps_reserved = gsc3.number_input("Laps Reserved", min_value=0.0, step=500.0, value=None, placeholder="0")
                         st.markdown("---")
                         
                         # ---- PER-CLIENT COLLECTIONS ----
@@ -2963,15 +2700,15 @@ elif page == "Collections":
                                 if not is_asset:
                                     st.markdown("**🏦 Savings**")
                                     sc1, sc2 = st.columns(2)
-                                    s_dep = sc1.number_input("Savings Deposit", min_value=0.0, step=500.0, value=info['prev_dep'] if info['prev_dep'] > 0 else None, placeholder="0", key=f"sdep_{cid}")
-                                    s_wd = sc2.number_input("Savings Withdrawal", min_value=0.0, step=500.0, value=info['prev_wd'] if info['prev_wd'] > 0 else None, placeholder="0", key=f"swd_{cid}")
+                                    s_dep = sc1.number_input("Savings Deposit", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"sdep_{cid}")
+                                    s_wd = sc2.number_input("Savings Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0", key=f"swd_{cid}")
                                     sav_data[cid] = {"dep": s_dep, "wd": s_wd}
                                     st.markdown("---")
                                 
                                 st.markdown(f"**💵 Loan ({prod})** - Active Cr: ₦{info['act_cred']:,.0f}")
-                                st.markdown(f"ℹ️ *Expected repayment calculated from schedule: ₦{info['expected_rep_schedule']:,.2f}*")
+                                d_rep = float(info['default_rep'])
                                 
-                                rep_col = st.number_input(f"Credit Repayment", min_value=0.0, step=500.0, value=info['prev_rep'] if info['prev_rep'] > 0 else None, placeholder="0", key=f"rep_{cid}")
+                                rep_col = st.number_input(f"Credit Repayment (Expected: ₦{d_rep:,.0f})", min_value=0.0, step=500.0, value=d_rep if d_rep > 0 else None, placeholder="0", key=f"rep_{cid}")
                                 
                                 rep_data[cid] = {
                                     "rep": rep_col, "app": 0, "pb": 0, "misc": 0,
@@ -3092,7 +2829,7 @@ elif page == "Daily Report":
     # Filter for the selected date for new active loans
     if not all_loans.empty:
         all_loans['DateStr'] = pd.to_datetime(all_loans['Date'], errors='coerce').dt.date.astype(str)
-        daily_loans = all_loans[(all_loans['DateStr'] == date_str) & (all_loans['Status'].isin([STATUS_ACTIVE, STATUS_COMPLETED, STATUS_APPROVED]))]
+        daily_loans = all_loans[(all_loans['DateStr'] == date_str) & (all_loans['Status'].isin(['Active', 'Completed', 'Approved']))]
         if ROLE == "BM":
             daily_loans = daily_loans[daily_loans['Branch'] == BRANCH]
         elif ROLE == "Officer":
@@ -3282,7 +3019,7 @@ elif page == "Audit Ledger":
     st.title("📒 Audit Ledger")
     st.caption("Complete transaction history — Loans & Repayments")
     
-    audit_section = st.radio("View", ["📋 Loans Ledger", "💰 Repayments Ledger", "⚖️ Double-Entry Ledger"], horizontal=True, label_visibility="collapsed")
+    audit_section = st.radio("View", ["📋 Loans Ledger", "💰 Repayments Ledger"], horizontal=True, label_visibility="collapsed")
     
     al1, al2, al3 = st.columns([1, 1, 2])
     audit_date_from = al1.date_input("From Date", datetime.now().date() - timedelta(days=30), key="audit_from")
@@ -3290,7 +3027,7 @@ elif page == "Audit Ledger":
     
     # Officer Filter for Managers
     selected_co = "All Officers"
-    if ROLE in [ROLE_ADMIN, "BM", "AM"]:
+    if ROLE in ["Admin", "BM", "AM"]:
         co_list = ["All Officers"] + list(CO_NAME_MAP.keys())
         selected_co = al3.selectbox("Filter by Officer", co_list)
         
@@ -3409,7 +3146,7 @@ elif page == "Audit Ledger":
             )
             
             # Reversal Form (Only for Managers/Admins)
-            if ROLE in ["BM", "AM", ROLE_ADMIN]:
+            if ROLE in ["BM", "AM", "Admin"]:
                 st.markdown("---")
                 st.markdown("### 🔄 Reverse a Transaction")
                 st.warning("Reversing a transaction will post a negative entry today to correct cashbook balances and client savings.")
@@ -3426,6 +3163,7 @@ elif page == "Audit Ledger":
                             st.error("Please provide a reason for the reversal.")
                         else:
                             try:
+                                rev_id = int(rev_id)
                                 target_row = filtered[filtered['id'] == rev_id]
                                 if target_row.empty:
                                     st.error("Transaction ID not found in current search results.")
@@ -3465,92 +3203,13 @@ elif page == "Audit Ledger":
                                     db_new_tx = {UI_TO_DB_REP.get(k, k): v for k, v in new_tx.items() if k in UI_TO_DB_REP}
                                     
                                     # Insert to Supabase
-                                    save_repayment({v: db_new_tx.get(k, db_new_tx.get(v)) for k, v in DB_TO_UI_REP.items() if k in db_new_tx or v in db_new_tx})
+                                    response = supabase.table("repayments").insert(db_new_tx).execute()
                                     st.success(f"Transaction #{rev_id} successfully reversed! Refreshing...")
                                     st.rerun()
                             except ValueError:
                                 st.error("Transaction ID must be a number.")
                             except Exception as e:
                                 st.error(f"Error reversing transaction: {e}")
-
-    elif audit_section == "⚖️ Double-Entry Ledger":
-        try:
-            with SupabaseUnitOfWork() as uow:
-                branch_id = uow.cashbook._resolve_branch_id(BRANCH)
-                res = uow.client.table("financial_ledger_entries") \
-                    .select("*, financial_transactions!inner(event_id, posting_date, narration, reference, officer_id, status, event_store(event_type))") \
-                    .eq("branch_id", branch_id) \
-                    .gte("financial_transactions.posting_date", audit_date_from.isoformat()) \
-                    .lte("financial_transactions.posting_date", audit_date_to.isoformat()) \
-                    .execute()
-                
-                entries_list = res.data or []
-                
-                formatted_data = []
-                account_names = {
-                    "1000": "Vault Cash", "1010": "Main Vault", "1020": "Branch Vault", "1050": "Bank",
-                    "1200": "Loan Portfolio", "1300": "Asset Inventory",
-                    "2000": "Individual Deposits", "2010": "Group Deposits", "2020": "Internal Savings", "2030": "LAPS Savings",
-                    "3000": "Fee Income", "3100": "Head Office Capital", "3200": "Asset Sales",
-                    "4000": "Office Expenses", "4100": "Salary Expenses"
-                }
-                
-                for entry in entries_list:
-                    tx = entry.get("financial_transactions") or {}
-                    ev_store = tx.get("event_store") or {}
-                    event_type = ev_store.get("event_type") or "Manual/System Entry"
-                    
-                    code = entry.get("account_code")
-                    name = account_names.get(code, "Unknown Account")
-                    
-                    amount = float(entry.get("amount") or 0.0)
-                    side = entry.get("side")
-                    
-                    debit_val = amount if side == "Debit" else None
-                    credit_val = amount if side == "Credit" else None
-                    
-                    formatted_data.append({
-                        "Posting Date": tx.get("posting_date"),
-                        "Transaction ID": entry.get("transaction_id"),
-                        "Event Type": event_type,
-                        "Narration": tx.get("narration"),
-                        "Account Code": code,
-                        "Account Name": name,
-                        "Debit (₦)": debit_val,
-                        "Credit (₦)": credit_val,
-                        "Reference": tx.get("reference"),
-                        "Status": tx.get("status")
-                    })
-                
-                if not formatted_data:
-                    st.info("No double-entry ledger postings found for the selected range.")
-                else:
-                    df_ledger = pd.DataFrame(formatted_data).sort_values(["Posting Date", "Transaction ID"], ascending=[False, False])
-                    
-                    if search_term:
-                        mask = (
-                            df_ledger['Narration'].str.contains(search_term, case=False, na=False) |
-                            df_ledger['Transaction ID'].str.contains(search_term, case=False, na=False) |
-                            df_ledger['Account Name'].str.contains(search_term, case=False, na=False) |
-                            df_ledger['Event Type'].str.contains(search_term, case=False, na=False)
-                        )
-                        df_ledger = df_ledger[mask]
-                        
-                    st.markdown(f"**{len(df_ledger)} ledger entries found**")
-                    
-                    st.dataframe(
-                        df_ledger,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "Debit (₦)": st.column_config.NumberColumn(format="₦%d"),
-                            "Credit (₦)": st.column_config.NumberColumn(format="₦%d"),
-                            "Transaction ID": st.column_config.TextColumn(width="medium"),
-                            "Narration": st.column_config.TextColumn(width="large")
-                        }
-                    )
-        except Exception as ex:
-            st.error(f"Error loading double-entry ledger: {ex}")
 
 elif page == "WhatsApp Cashbook":
     st.title("📖 CO Daily Cashbook")
@@ -3637,8 +3296,9 @@ elif page == "WhatsApp Cashbook":
                     "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
                 }
                 
+                db_payload = {UI_TO_DB_REP[k]: v for k, v in g_out.items() if k in UI_TO_DB_REP}
                 try:
-                    save_repayment(g_out)
+                    supabase.table('repayments').insert([db_payload]).execute()
                     st.success("End of Day Outflows Submitted Successfully!")
                 except Exception as e:
                     st.error(f"Error saving: {e}")
@@ -3807,7 +3467,7 @@ elif page == "Master Cashbook":
             today_loans = all_loans[
                 (all_loans['_dt'].dt.date.astype(str) == date_str) &
                 (all_loans['Branch'] == BRANCH) &
-                (all_loans['Status'].isin([STATUS_ACTIVE, STATUS_APPROVED, STATUS_COMPLETED]))
+                (all_loans['Status'].isin(['Active', 'Approved', 'Completed']))
             ]
         else:
             today_loans = pd.DataFrame()
@@ -3841,9 +3501,7 @@ elif page == "Master Cashbook":
         # ---- OPENING BALANCE: Fetch previous day's closing ----
         prev_date = (view_date - timedelta(days=1)).strftime("%Y-%m-%d")
         try:
-            with SupabaseUnitOfWork() as uow:
-                prev_entry = uow.cashbook.find_by_date_and_branch(prev_date, BRANCH)
-            prev_row = type('obj', (object,), {'data': [{'closing_balance': prev_entry.closing_balance}] if prev_entry else []})
+            prev_row = supabase.table("master_cashbook").select("closing_balance").eq("date", prev_date).eq("branch", BRANCH).execute()
             auto_opening = float(prev_row.data[0]['closing_balance']) if prev_row.data else 0.0
         except Exception:
             auto_opening = 0.0
@@ -4027,41 +3685,16 @@ elif page == "Master Cashbook":
                 }
                 
                 try:
-                    with SupabaseUnitOfWork() as uow:
-                        from services.treasury_service import TreasuryService
-                        branch_id = uow.cashbook._resolve_branch_id(BRANCH)
-                        
-                        posted_any = False
-                        if funds_ho > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_IN', funds_ho, BRANCH, USER, remarks=f"HO Funding: {funds_ho}")
-                            posted_any = True
-                        if funds_branch > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'INTER_BRANCH_IN', funds_branch, BRANCH, USER, remarks=f"Branch Funding: {funds_branch}")
-                            posted_any = True
-                        if xfer_branch > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'INTER_BRANCH_OUT', xfer_branch, BRANCH, USER, remarks=f"Transfer to Branch: {xfer_branch}")
-                            posted_any = True
-                        if xfer_ho > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_OUT', xfer_ho, BRANCH, USER, remarks=f"Transfer to HO: {xfer_ho}")
-                            posted_any = True
-                        if salaries > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'SALARY', salaries, BRANCH, USER, remarks=f"Salary Payment: {salaries}")
-                            posted_any = True
-                        if adj_inflow > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_IN', adj_inflow, BRANCH, USER, remarks=f"Inflow Adjustment: {adj_reason or 'Manual Adjustment'}")
-                            posted_any = True
-                        if adj_outflow > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'OFFICE_EXPENSE', adj_outflow, BRANCH, USER, remarks=f"Outflow Adjustment: {adj_reason or 'Manual Adjustment'}")
-                            posted_any = True
-                            
-                        uow.cashbook.rebuild_projection(branch_id, view_date)
-                        
-                        if posted_any:
-                            st.success("Treasury transactions posted and Cashbook projection rebuilt successfully!")
-                        else:
-                            st.success("Cashbook projection updated and verified successfully!")
+                    # Upsert: check if row exists for this date+branch
+                    existing = supabase.table("master_cashbook").select("id").eq("date", date_str).eq("branch", BRANCH).execute()
+                    if existing.data:
+                        supabase.table("master_cashbook").update(mc_data).eq("date", date_str).eq("branch", BRANCH).execute()
+                        st.success("Master Cashbook entry UPDATED successfully!")
+                    else:
+                        supabase.table("master_cashbook").insert(mc_data).execute()
+                        st.success("Master Cashbook entry SAVED successfully!")
                 except Exception as e:
-                    st.error(f"Failed to save and post cashbook manual entries: {e}")
+                    st.error(f"Failed to save: {e}")
     
     elif cashbook_section == "📱 WhatsApp Cashbook (CO View)":
         view_date = st.date_input("Select Date", datetime.now().date(), key="wa_mc_date")
@@ -4193,14 +3826,7 @@ elif page == "Master Cashbook":
             start_date = f"{cb_year}-{cb_month:02d}-01"
             end_date = f"{cb_year}-{cb_month:02d}-{last_day:02d}"
             
-            with SupabaseUnitOfWork() as uow:
-                filters = CashbookFilter()
-                filters.branch = BRANCH
-                filters.start_date = start_date
-                filters.end_date = end_date
-                entries = uow.cashbook.find_range(filters)
-            from mappers.base_mappers import CashbookMapper
-            result = type('obj', (object,), {'data': [CashbookMapper.to_database(e) for e in entries]})
+            result = supabase.table("master_cashbook").select("*").eq("branch", BRANCH).gte("date", start_date).lte("date", end_date).order("date").execute()
             
             if result.data:
                 ledger_df = pd.DataFrame(result.data)
@@ -4299,7 +3925,7 @@ elif page == "Portfolio":
         for _, row in my_loans.iterrows():
             c_payments = repayments[repayments['Client ID'] == row['Client ID']] if not repayments.empty else pd.DataFrame()
             s_amt, l_amt = calculate_client_savings(c_payments, row['Loan Repay'])
-            expected, overdue = calculate_overdue(row['Date'], row['Loan Product'], row['Loan Repay'], l_amt, row.get('Status', STATUS_ACTIVE))
+            expected, overdue = calculate_overdue(row['Date'], row['Loan Product'], row['Loan Repay'], l_amt, row.get('Status', 'Active'))
             row_data = row.to_dict()
             row_data['Acc. Savings'] = s_amt
             row_data['Paid to Loan'] = l_amt
@@ -4324,9 +3950,9 @@ elif page == "Portfolio":
             key="db_edit",
             column_config={
                 "Client ID": st.column_config.TextColumn("Client ID", disabled=True),
-                "Status": st.column_config.SelectboxColumn("Status", options=[STATUS_PENDING, STATUS_APPROVED, STATUS_ACTIVE, STATUS_COMPLETED, STATUS_CLOSED]),
+                "Status": st.column_config.SelectboxColumn("Status", options=["Pending", "Approved", "Active", "Completed", "Closed"]),
                 "Meeting Day": st.column_config.SelectboxColumn("Meeting Day", options=["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]),
-                "Branch": st.column_config.TextColumn("Branch", disabled=(ROLE != ROLE_ADMIN)),
+                "Branch": st.column_config.TextColumn("Branch", disabled=(ROLE != "Admin")),
                 "Officer": st.column_config.SelectboxColumn("Officer", options=list(CO_NAME_MAP.keys()) if CO_NAME_MAP else ["CO1", "CO2"], disabled=(ROLE == "Officer")),
                 "Loan Balance": st.column_config.NumberColumn("Balance", disabled=True, format="₦%d"),
                 "Acc. Savings": st.column_config.NumberColumn("Savings", disabled=True, format="₦%d"),
@@ -4461,7 +4087,7 @@ elif page in ["Reports", "Reports & Export"]:
     st.markdown("</div>", unsafe_allow_html=True)
     
     # Officer Reports
-    if ROLE in [ROLE_ADMIN, "BM"]:
+    if ROLE in ["Admin", "BM"]:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.subheader("👥 Officer Performance Reports")
         
@@ -4495,7 +4121,7 @@ elif page in ["Reports", "Reports & Export"]:
 # ==========================================
 # 14. USER MANAGEMENT (AM / Admin)
 # ==========================================
-elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
+elif page == "User Management" and ROLE in ["AM", "Admin"]:
     st.markdown("<div class='dashboard-header'>", unsafe_allow_html=True)
     st.markdown("<h1>🔐 User Management</h1>", unsafe_allow_html=True)
     st.markdown("<p>Manage application users, reset passwords, and handle officer turnover.</p>", unsafe_allow_html=True)
@@ -4503,10 +4129,7 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
     
     # Fetch all users
     try:
-        with SupabaseUnitOfWork() as uow:
-            users = uow.users.find_all()
-        from mappers.base_mappers import UserMapper
-        res = type('obj', (object,), {'data': [UserMapper.to_database(u) for u in users]})
+        res = supabase.table("app_users").select("*").execute()
         all_users = res.data if res.data else []
     except Exception as e:
         st.error(f"Failed to fetch users: {e}")
@@ -4522,7 +4145,7 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
         with st.form("add_user_form"):
             new_username = st.text_input("Username (e.g. CO5, BM_Ikeja)")
             new_fullname = st.text_input("Full Name (e.g. Mr. Ayomide)")
-            new_role = st.selectbox("Role", ["CO", "BM", "AM", ROLE_ADMIN])
+            new_role = st.selectbox("Role", ["CO", "BM", "AM", "Admin"])
             new_branch = st.text_input("Branch Name (e.g. Ogijo)")
             new_password = st.text_input("Password", type="password")
             
@@ -4533,11 +4156,15 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
                 elif new_username in user_usernames:
                     st.error("Username already exists!")
                 else:
-                    hashed_pw = hash_password(new_password)
+                    hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
                     try:
-                        with SupabaseUnitOfWork() as uow:
-                            new_u = User(id='', username=new_username, password_hash=hashed_pw, full_name=new_fullname, role=new_role, branch_name=new_branch, created_at='')
-                            uow.users.create(new_u)
+                        supabase.table("app_users").insert({
+                            "username": new_username,
+                            "full_name": new_fullname,
+                            "role": new_role,
+                            "branch_name": new_branch,
+                            "password": hashed_pw
+                        }).execute()
                         st.success(f"User {new_username} created successfully!")
                         st.rerun()
                     except Exception as e:
@@ -4554,10 +4181,9 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
                 if not reset_password:
                     st.error("Please enter a new password.")
                 else:
-                    hashed_pw = hash_password(reset_password)
+                    hashed_pw = bcrypt.hashpw(reset_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
                     try:
-                        with SupabaseUnitOfWork() as uow:
-                            uow.users.update_password(reset_username, hashed_pw)
+                        supabase.table("app_users").update({"password": hashed_pw}).eq("username", reset_username).execute()
                         st.success(f"Password reset for {reset_username}!")
                     except Exception as e:
                         st.error(f"Failed to reset password: {e}")
@@ -4589,11 +4215,7 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
                     st.error("Please enter a new name.")
                 else:
                     try:
-                        with SupabaseUnitOfWork() as uow:
-                            u = uow.users.find_by_username(update_username)
-                            if u:
-                                u.full_name = new_officer_name
-                                uow.users.update(u)
+                        supabase.table("app_users").update({"full_name": new_officer_name}).eq("username", update_username).execute()
                         st.success(f"Updated {update_username} to {new_officer_name}!")
                         st.rerun()
                     except Exception as e:
@@ -4624,10 +4246,12 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
                     st.error("Please provide a reason and select a full date range (start and end).")
                 else:
                     try:
-                        with SupabaseUnitOfWork() as uow:
-                            # Note: domain entity might not track created_by right now, but repository handles it
-                            closure = BranchClosure(id='', start_date=closure_dates[0], end_date=closure_dates[1], reason=closure_reason)
-                            uow.branch_closures.create(closure)
+                        supabase.table("branch_closures").insert({
+                            "start_date": closure_dates[0].strftime("%Y-%m-%d"),
+                            "end_date": closure_dates[1].strftime("%Y-%m-%d"),
+                            "reason": closure_reason,
+                            "created_by": USER
+                        }).execute()
                         st.success("Branch closure added successfully!")
                         get_custom_closures.clear() # clear cache
                         st.rerun()
@@ -4645,3 +4269,4 @@ elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
         else:
             st.info("No custom closures recorded.")
         st.markdown("</div>", unsafe_allow_html=True)
+

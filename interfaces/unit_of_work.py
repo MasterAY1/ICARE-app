@@ -8,6 +8,8 @@ from interfaces.branch_closure_repository import BranchClosureRepository
 from interfaces.event_store_repository import EventStoreRepository
 from interfaces.posting_rules_repository import PostingRulesRepository
 from interfaces.ledger_repository import LedgerRepository
+from interfaces.client_repository import ClientRepository
+from interfaces.guarantor_repository import GuarantorRepository
 
 class UnitOfWork(Protocol):
     loans: LoanRepository
@@ -19,6 +21,8 @@ class UnitOfWork(Protocol):
     event_store: EventStoreRepository
     posting_rules: PostingRulesRepository
     ledger: LedgerRepository
+    clients: ClientRepository
+    guarantors: GuarantorRepository
 
     def __enter__(self) -> 'UnitOfWork': ...
     def __exit__(self, exc_type, exc_val, traceback) -> None: ...
