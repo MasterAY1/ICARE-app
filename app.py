@@ -258,6 +258,7 @@ st.markdown("""
     div[data-testid="stMetricValue"] { color: #1B4F72 !important; font-size: 1.7rem; font-weight: 800; }
     div[data-testid="stMetricLabel"] { color: #6B7280 !important; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     
+    
     /* === INPUTS === */
     .stTextInput input, .stNumberInput input, .stSelectbox div, 
     .stTextArea textarea, .stDateInput input {
@@ -270,34 +271,94 @@ st.markdown("""
         border-color: #2E86C1 !important;
         box-shadow: 0 0 0 3px rgba(46, 134, 193, 0.12) !important;
     }
-    /* Enforce high-contrast dark color for all form labels, captions, and select dropdown texts */
+    
+    /* === LABEL FIX — NUCLEAR: covers Streamlit 1.32 through 1.57+ === */
+    /* Strategy: target EVERY possible label/text element inside widget containers */
+    
+    /* 1. Modern Streamlit (1.40+) data-testid selectors */
     div[data-testid="stWidgetLabel"] p,
-    label[data-testid="stWidgetLabel"] p,
     div[data-testid="stWidgetLabel"] label,
+    div[data-testid="stWidgetLabel"] span,
+    div[data-testid="stWidgetLabel"],
+    label[data-testid="stWidgetLabel"] p,
+    label[data-testid="stWidgetLabel"] span,
+    label[data-testid="stWidgetLabel"] {
+        color: #1B4F72 !important;
+        font-weight: 600 !important;
+        font-size: 0.9rem !important;
+    }
+    
+    /* 2. Streamlit 1.32 class-based selectors (what Streamlit Cloud runs) */
+    .stTextInput > label,
+    .stNumberInput > label,
+    .stSelectbox > label,
+    .stTextArea > label,
+    .stDateInput > label,
+    .stFileUploader > label,
     .stTextInput label,
     .stNumberInput label,
     .stSelectbox label,
     .stTextArea label,
     .stDateInput label,
     .stFileUploader label,
-    .stTextInput p,
-    .stNumberInput p,
-    .stSelectbox p,
-    .stTextArea p,
-    .stDateInput p {
+    .stTextInput > label > div,
+    .stNumberInput > label > div,
+    .stSelectbox > label > div,
+    .stTextArea > label > div,
+    .stDateInput > label > div,
+    .stTextInput > label > div > p,
+    .stNumberInput > label > div > p,
+    .stSelectbox > label > div > p,
+    .stTextArea > label > div > p,
+    .stDateInput > label > div > p {
         color: #1B4F72 !important;
         font-weight: 600 !important;
         font-size: 0.9rem !important;
     }
-    .stMarkdown p, .stMarkdown span {
+    
+    /* 3. Catch-all: any <p> or <span> inside any widget label structure */
+    .stTextInput p, .stNumberInput p, .stSelectbox p,
+    .stTextArea p, .stDateInput p, .stFileUploader p,
+    .stTextInput span, .stNumberInput span, .stSelectbox span,
+    .stTextArea span, .stDateInput span {
+        color: #1B4F72 !important;
+        font-weight: 600 !important;
+        font-size: 0.9rem !important;
+    }
+    
+    /* 4. Streamlit form section headers */
+    .stMarkdown p, .stMarkdown span, .stMarkdown h4 {
         color: #1B4F72 !important;
     }
+    
+    /* 5. Override Streamlit's CSS custom properties for text color */
+    :root {
+        --text-color: #1A1D23 !important;
+    }
+    .stApp {
+        --text-color: #1A1D23 !important;
+    }
+    
+    /* 6. Input instruction hints */
     div[data-testid="InputInstructions"] {
         color: #475569 !important;
     }
     
-    /* Force Streamlit content container to take full desktop width */
+    /* === FULL-WIDTH LAYOUT — covers both Streamlit 1.32 and 1.57+ === */
+    /* Modern Streamlit container */
     div[data-testid="stMainBlockContainer"] {
+        max-width: 95% !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+    }
+    /* Streamlit 1.32 uses .main .block-container */
+    .main .block-container {
+        max-width: 95% !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+    }
+    /* Additional fallback */
+    section.main > div.block-container {
         max-width: 95% !important;
         padding-left: 2rem !important;
         padding-right: 2rem !important;
