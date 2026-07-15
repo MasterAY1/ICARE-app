@@ -66,7 +66,6 @@ def render_login_page():
         """, unsafe_allow_html=True)
     
     with form_col:
-        st.markdown("<div class='login-form-container'>", unsafe_allow_html=True)
         with st.form("login"):
             st.markdown(f"""
                 <div class='login-logo-wrap'>
@@ -90,7 +89,6 @@ def render_login_page():
                     st.rerun()
                 else:
                     st.error("Invalid credentials. Please try again.")
-        st.markdown("</div>", unsafe_allow_html=True)
         
         st.markdown(f"""
             <div class='login-footer-bar'>

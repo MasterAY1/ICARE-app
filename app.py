@@ -676,7 +676,8 @@ st.markdown("""
         margin-right: 4px;
         fill: rgba(255,255,255,0.3);
     /* Right panel — Login form */
-    .login-form-container [data-testid="stForm"] {
+    /* Right panel — Login form */
+    .stApp:has(.login-page-bg) [data-testid="stForm"] {
         background: rgba(255, 255, 255, 0.06) !important;
         backdrop-filter: blur(24px) saturate(140%) !important;
         -webkit-backdrop-filter: blur(24px) saturate(140%) !important;
@@ -688,11 +689,11 @@ st.markdown("""
                     inset 0 1px 0 rgba(255,255,255,0.1) !important;
         max-width: 420px !important;
     }
-    .login-form-container [data-testid="stForm"] .login-logo-wrap {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] .login-logo-wrap {
         text-align: center;
         margin-bottom: 6px;
     }
-    .login-form-container [data-testid="stForm"] .login-logo-wrap img {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] .login-logo-wrap img {
         width: 72px;
         height: 72px;
         object-fit: cover;
@@ -705,7 +706,7 @@ st.markdown("""
         0%, 100% { box-shadow: 0 0 0 3px rgba(140,198,63,0.3), 0 4px 20px rgba(0,0,0,0.3); }
         50% { box-shadow: 0 0 0 6px rgba(140,198,63,0.15), 0 4px 30px rgba(140,198,63,0.15); }
     }
-    .login-form-container [data-testid="stForm"] .login-brand-name {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] .login-brand-name {
         font-size: 1.6rem;
         font-weight: 800;
         color: #FFFFFF;
@@ -715,7 +716,7 @@ st.markdown("""
         text-align: center;
         text-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
-    .login-form-container [data-testid="stForm"] .login-org-name {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] .login-org-name {
         font-size: 0.68rem;
         color: rgba(255,255,255,0.45);
         text-align: center;
@@ -723,7 +724,7 @@ st.markdown("""
         margin: 4px 0 0 0;
         letter-spacing: 0.3px;
     }
-    .login-form-container [data-testid="stForm"] .login-accent-line {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] .login-accent-line {
         width: 44px;
         height: 3px;
         background: linear-gradient(90deg, #8CC63F, #2E86C1);
@@ -731,14 +732,14 @@ st.markdown("""
         border-radius: 4px;
         box-shadow: 0 0 12px rgba(140,198,63,0.3);
     }
-    .login-form-container [data-testid="stForm"] .login-title {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] .login-title {
         font-size: 1.05rem;
         font-weight: 700;
         color: #FFFFFF !important;
         text-align: center;
         margin: 0 0 2px 0;
     }
-    .login-form-container [data-testid="stForm"] .login-subtitle {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] .login-subtitle {
         font-size: 0.75rem;
         color: rgba(255,255,255,0.4) !important;
         text-align: center;
@@ -746,10 +747,10 @@ st.markdown("""
     }
     
     /* Style Streamlit form inputs on login page ONLY */
-    /* Scoped to .login-form-container parent so it does NOT affect other forms */
-    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] label,
-    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] label span,
-    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] label p {
+    /* Scoped to login page parent so it does NOT affect other forms */
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] label,
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] label span,
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] label p {
         color: rgba(255,255,255,0.7) !important;
         -webkit-text-fill-color: rgba(255,255,255,0.7) !important;
         font-weight: 500 !important;
@@ -757,24 +758,24 @@ st.markdown("""
         letter-spacing: 0.3px;
     }
     /* Dark semi-transparent input box — login only */
-    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="input"] {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="input"] {
         background-color: rgba(255,255,255,0.08) !important;
         border: 1px solid rgba(255,255,255,0.12) !important;
         border-radius: 12px !important;
         transition: all 0.3s ease !important;
     }
-    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="input"]:focus-within {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="input"]:focus-within {
         border-color: rgba(140,198,63,0.5) !important;
         box-shadow: 0 0 0 3px rgba(140,198,63,0.1) !important;
         background-color: rgba(255,255,255,0.12) !important;
     }
     /* Clear inner container background — login only */
-    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="base-input"] {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="base-input"] {
         background-color: transparent !important;
         background: transparent !important;
     }
     /* White typed text for visibility — login only */
-    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] input {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] input {
         color: #FFFFFF !important;
         -webkit-text-fill-color: #FFFFFF !important;
         background-color: transparent !important;
@@ -784,24 +785,24 @@ st.markdown("""
         caret-color: #FFFFFF !important;
         font-weight: 500 !important;
     }
-    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] input::placeholder {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] input::placeholder {
         color: rgba(255,255,255,0.4) !important;
         -webkit-text-fill-color: rgba(255,255,255,0.4) !important;
     }
     /* Password eye icon — login only */
-    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] button {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] button {
         color: rgba(255,255,255,0.6) !important;
     }
-    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] button svg {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] button svg {
         fill: rgba(255,255,255,0.6) !important;
     }
     /* Hide the "Press Enter to submit form" helper text — login only */
-    .login-form-container [data-testid="stForm"] [data-testid="InputInstructions"] {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="InputInstructions"] {
         display: none !important;
     }
     
     /* Fix button */
-    .login-form-container [data-testid="stForm"] [data-testid="stFormSubmitButton"] button {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stFormSubmitButton"] button {
         background: linear-gradient(135deg, #8CC63F 0%, #6BA825 100%) !important;
         color: #FFFFFF !important;
         border: none !important;
@@ -815,18 +816,18 @@ st.markdown("""
         box-shadow: 0 4px 16px rgba(140,198,63,0.3) !important;
         width: 100% !important;
     }
-    .login-form-container [data-testid="stForm"] [data-testid="stFormSubmitButton"] button p {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stFormSubmitButton"] button p {
         color: #FFFFFF !important;
         -webkit-text-fill-color: #FFFFFF !important;
         font-weight: 700 !important;
         font-size: 0.9rem !important;
     }
-    .login-form-container [data-testid="stForm"] [data-testid="stFormSubmitButton"] button:hover {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stFormSubmitButton"] button:hover {
         transform: translateY(-2px) !important;
         box-shadow: 0 6px 24px rgba(140,198,63,0.4) !important;
         background: linear-gradient(135deg, #9AD44D 0%, #7CBB30 100%) !important;
     }
-    .login-form-container [data-testid="stForm"] [data-testid="stFormSubmitButton"] button:active {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stFormSubmitButton"] button:active {
         transform: translateY(0) !important;
     }
     
