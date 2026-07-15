@@ -2157,6 +2157,7 @@ elif page == "Loan Origination":
                             with SupabaseUnitOfWork() as uow:
                                 # 1. First process Groups
                                 group_mapping = {}  # maps group name -> group_id
+                                group_rows_map = {} # maps group name -> group_row
                                 for index, group_row in df_groups.iterrows():
                                     gname = str(group_row.get('Group Name', '')).strip()
                                     if not gname or "example" in gname.lower():
@@ -2195,20 +2196,29 @@ elif page == "Loan Origination":
                                         group_id = res_g_ins.data[0]["group_id"] if res_g_ins.data else None
                                     
                                     group_mapping[gname] = group_id
+                                    group_rows_map[gname] = group_row
 
                                 # 2. Process Members
                                 from domain.entities.client import Client
+                                import re
+                                
                                 for index, member_row in df_members.iterrows():
                                     try:
                                         name_val = str(member_row.get('Full Name', '')).strip()
                                         if not name_val or "example" in name_val.lower():
                                             continue
                                             
-                                        group_name = str(member_row.get('Group Name', '')).strip()
+                                        group_ref = member_row.get('Group Reference')
+                                        group_match = df_groups[df_groups['Group Reference'] == group_ref] if 'Group Reference' in df_groups.columns else pd.DataFrame()
+                                        if group_match.empty:
+                                            continue
+                                            
+                                        group_row = group_match.iloc[0]
+                                        group_name = str(group_row.get('Group Name', '')).strip()
                                         group_id = group_mapping.get(group_name)
                                         
                                         # Resolve branch
-                                        bname = str(member_row.get('Branch Name', BRANCH)).strip()
+                                        bname = str(group_row.get('Branch Name', BRANCH)).strip()
                                         res_b = uow.client.table("branches").select("branch_id, code").eq("name", bname).execute()
                                         if res_b.data:
                                             branch_id = res_b.data[0]["branch_id"]
@@ -2218,57 +2228,69 @@ elif page == "Loan Origination":
                                             branch_code = bname[:3].upper()
                                             
                                         # Resolve officer
-                                        oname = str(member_row.get('Credit Officer Name', USER)).strip()
+                                        oname = str(group_row.get('Credit Officer Name', USER)).strip()
                                         res_u = uow.client.table("app_users").select("id").eq("username", oname).execute()
                                         officer_id = res_u.data[0]["id"] if res_u.data else None
                                         
-                                        # Check if client already exists (by name and phone)
                                         phone_val = str(member_row.get('Phone Number', '')).strip()
                                         if phone_val.lower() == 'nan' or not phone_val:
                                             phone_val = "00000000000"
                                             
-                                        res_cl = uow.client.table("clients").select("*").eq("name", name_val).eq("phone", phone_val).execute()
+                                        # Check Client ID formatting
+                                        ref_val = str(member_row.get('Member Reference', '')).strip()
+                                        is_valid_id = bool(re.match(r'^[A-Z]{3}-\d{2}-\d{3}$', ref_val))
                                         
-                                        if res_cl.data:
+                                        # Check if client already exists (by Client ID or unique Phone)
+                                        res_cl = None
+                                        if is_valid_id:
+                                            res_cl = uow.client.table("clients").select("*").eq("client_code", ref_val).execute()
+                                        if (not res_cl or not res_cl.data) and phone_val != "00000000000" and len(phone_val) >= 7:
+                                            res_cl = uow.client.table("clients").select("*").eq("phone", phone_val).execute()
+                                            
+                                        if res_cl and res_cl.data:
                                             client_id = res_cl.data[0]["client_id"]
                                             client_code = res_cl.data[0]["client_code"]
                                             uow.client.table("clients").update({
-                                                "nickname": str(member_row.get('Nickname', '')),
-                                                "address": str(member_row.get('Home Address', '')),
-                                                "business_address": str(member_row.get('Business Address', '')),
-                                                "business_type": str(member_row.get('Business Type', 'Trader')),
-                                                "occupation": str(member_row.get('Occupation', 'Trader')),
+                                                "nickname": str(member_row.get('Nickname', '')) if pd.notna(member_row.get('Nickname')) else "",
+                                                "address": str(member_row.get('Home Address', '')) if pd.notna(member_row.get('Home Address')) else "",
+                                                "business_address": str(member_row.get('Business Address', '')) if pd.notna(member_row.get('Business Address')) else "",
+                                                "business_type": str(member_row.get('Business Type', 'Trader')) if pd.notna(member_row.get('Business Type')) else "Trader",
+                                                "occupation": str(member_row.get('Occupation', 'Trader')) if pd.notna(member_row.get('Occupation')) else "Trader",
                                                 "group_id": group_id
                                             }).eq("client_id", client_id).execute()
                                             update_count += 1
                                         else:
-                                            # Generate sequential client code
-                                            if not group_id:
-                                                g_code = "IND"
-                                                res_count = uow.client.table("clients").select("client_id", count="exact").is_("group_id", "null").eq("branch_id", branch_id).execute()
-                                                next_seq = (res_count.count or 0) + 1
+                                            # Generate sequential Client ID
+                                            if is_valid_id:
+                                                client_code = ref_val
                                             else:
-                                                g_code = str(member_row.get('Group Reference', '01'))[-2:]
-                                                next_seq = uow.clients.get_next_member_sequence(group_id)
+                                                if not group_id:
+                                                    g_code = "IND"
+                                                    res_count = uow.client.table("clients").select("client_id", count="exact").is_("group_id", "null").eq("branch_id", branch_id).execute()
+                                                    next_seq = (res_count.count or 0) + 1
+                                                else:
+                                                    g_code = str(group_row.get('Group Reference', '01'))[-2:]
+                                                    next_seq = uow.clients.get_next_member_sequence(group_id)
+                                                    
+                                                member_number_str = str(next_seq).zfill(3)
+                                                client_code = f"{branch_code}-{g_code}-{member_number_str}"
                                                 
-                                            member_number_str = str(next_seq).zfill(3)
-                                            client_code = f"{branch_code}-{g_code}-{member_number_str}"
                                             client_id = str(uuid.uuid4())
                                             
-                                            # Create new client
+                                            # Create new client profile
                                             new_cl = Client(
                                                 id=client_id,
                                                 name=name_val,
                                                 client_code=client_code,
-                                                nickname=str(member_row.get('Nickname', '')),
+                                                nickname=str(member_row.get('Nickname', '')) if pd.notna(member_row.get('Nickname')) else "",
                                                 phone=phone_val,
-                                                address=str(member_row.get('Home Address', '')),
-                                                business_address=str(member_row.get('Business Address', '')),
+                                                address=str(member_row.get('Home Address', '')) if pd.notna(member_row.get('Home Address')) else "",
+                                                business_address=str(member_row.get('Business Address', '')) if pd.notna(member_row.get('Business Address')) else "",
                                                 dob=date(1990, 1, 1),
                                                 gender="Female" if "female" in str(member_row.get('Gender', '')).lower() else "Male",
                                                 marital_status="Married",
-                                                occupation=str(member_row.get('Occupation', 'Trader')),
-                                                business_type=str(member_row.get('Business Type', 'Trader')),
+                                                occupation=str(member_row.get('Occupation', 'Trader')) if pd.notna(member_row.get('Occupation')) else "Trader",
+                                                business_type=str(member_row.get('Business Type', 'Trader')) if pd.notna(member_row.get('Business Type')) else "Trader",
                                                 id_means="None",
                                                 next_of_kin="",
                                                 passport_url="",
@@ -2284,7 +2306,7 @@ elif page == "Loan Origination":
                                             uow.clients.create(new_cl)
                                             success_count += 1
                                             
-                                            # Create membership
+                                            # Link group membership
                                             uow.client.table("client_memberships").insert({
                                                 "client_id": client_id,
                                                 "group_id": group_id,
@@ -2293,7 +2315,7 @@ elif page == "Loan Origination":
                                                 "start_date": date.today().isoformat()
                                             }).execute()
 
-                                        # Parse and load balances
+                                        # Parse financial amounts
                                         def get_amt(row_data, keys):
                                             for k in keys:
                                                 if k in row_data:
@@ -2309,7 +2331,7 @@ elif page == "Loan Origination":
                                         savings_bal = get_amt(member_row, ['Savings Balance', 'Savings balance'])
                                         loan_type = str(member_row.get('Loan Type (Product)', ''))
                                         
-                                        # If client has active loan:
+                                        # Import active loan
                                         if active_credit > 0 or remaining_bal > 0:
                                             res_active_loan = uow.client.table("loans").select("loan_id").eq("client_id", client_id).eq("status", "Active").execute()
                                             if not res_active_loan.data:
@@ -2339,7 +2361,7 @@ elif page == "Loan Origination":
                                                 from services.schedule_service import ScheduleService
                                                 ScheduleService.generate_schedule(uow, loan_entity, date.today() - timedelta(weeks=4))
                                         
-                                        # Inject opening savings
+                                        # Import opening savings
                                         if savings_bal > 0:
                                             from services.savings_service import SavingsService
                                             SavingsService.post_individual_savings(
@@ -2352,7 +2374,7 @@ elif page == "Loan Origination":
                                 # 3. Process Group-Level Opening Savings
                                 from services.savings_service import SavingsService
                                 for gname, group_id in group_mapping.items():
-                                    group_row = df_groups[df_groups['Group Name'] == gname].iloc[0]
+                                    group_row = group_rows_map[gname]
                                     g_savings = 0.0
                                     for k in ['Group Savings', 'Current Group Savings Balance']:
                                         if k in group_row and pd.notna(group_row[k]):
