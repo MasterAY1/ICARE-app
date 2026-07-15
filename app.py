@@ -675,7 +675,8 @@ st.markdown("""
         vertical-align: -1px;
         margin-right: 4px;
         fill: rgba(255,255,255,0.3);
-    /* Right panel — Login form */
+    }
+    
     /* Right panel — Login form */
     .stApp:has(.login-page-bg) [data-testid="stForm"] {
         background: rgba(255, 255, 255, 0.06) !important;
