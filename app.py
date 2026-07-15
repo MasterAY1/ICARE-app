@@ -27,7 +27,7 @@ st.set_page_config(
 )
 
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import math
 import uuid
