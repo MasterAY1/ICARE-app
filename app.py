@@ -260,6 +260,11 @@ st.markdown("""
     
     
     /* === INPUTS === */
+    [data-testid="stTextInput"] input,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stSelectbox"] div,
+    [data-testid="stTextArea"] textarea,
+    [data-testid="stDateInput"] input,
     .stTextInput input, .stNumberInput input, .stSelectbox div, 
     .stTextArea textarea, .stDateInput input {
         background-color: #FFFFFF !important;
@@ -267,101 +272,101 @@ st.markdown("""
         border: 1px solid #D1D5DB;
         border-radius: 8px;
     }
+    [data-testid="stTextInput"] input:focus,
+    [data-testid="stNumberInput"] input:focus,
     .stTextInput input:focus, .stNumberInput input:focus {
         border-color: #2E86C1 !important;
         box-shadow: 0 0 0 3px rgba(46, 134, 193, 0.12) !important;
     }
     
-    /* === LABEL FIX — NUCLEAR: covers Streamlit 1.32 through 1.57+ === */
-    /* Strategy: target EVERY possible label/text element inside widget containers */
+    /* === LABEL FIX — DEFINITIVE === */
+    /* Root cause: Streamlit 1.32 uses data-testid attributes, NOT CSS classes  */
+    /* for text inputs. .stTextInput does not exist — must use [data-testid].   */
     
-    /* 1. Modern Streamlit (1.40+) data-testid selectors */
-    div[data-testid="stWidgetLabel"] p,
-    div[data-testid="stWidgetLabel"] label,
-    div[data-testid="stWidgetLabel"] span,
-    div[data-testid="stWidgetLabel"],
-    label[data-testid="stWidgetLabel"] p,
-    label[data-testid="stWidgetLabel"] span,
-    label[data-testid="stWidgetLabel"] {
+    /* 1. Attribute selectors — works on ALL Streamlit versions */
+    [data-testid="stTextInput"] label,
+    [data-testid="stTextInput"] label *,
+    [data-testid="stNumberInput"] label,
+    [data-testid="stNumberInput"] label *,
+    [data-testid="stSelectbox"] label,
+    [data-testid="stSelectbox"] label *,
+    [data-testid="stTextArea"] label,
+    [data-testid="stTextArea"] label *,
+    [data-testid="stDateInput"] label,
+    [data-testid="stDateInput"] label *,
+    [data-testid="stFileUploader"] label,
+    [data-testid="stFileUploader"] label *,
+    [data-testid="stRadio"] label,
+    [data-testid="stRadio"] label *,
+    [data-testid="stCheckbox"] label,
+    [data-testid="stCheckbox"] label * {
         color: #1B4F72 !important;
         font-weight: 600 !important;
         font-size: 0.9rem !important;
     }
     
-    /* 2. Streamlit 1.32 class-based selectors (what Streamlit Cloud runs) */
-    .stTextInput > label,
-    .stNumberInput > label,
-    .stSelectbox > label,
-    .stTextArea > label,
-    .stDateInput > label,
-    .stFileUploader > label,
-    .stTextInput label,
-    .stNumberInput label,
-    .stSelectbox label,
-    .stTextArea label,
-    .stDateInput label,
-    .stFileUploader label,
-    .stTextInput > label > div,
-    .stNumberInput > label > div,
-    .stSelectbox > label > div,
-    .stTextArea > label > div,
-    .stDateInput > label > div,
-    .stTextInput > label > div > p,
-    .stNumberInput > label > div > p,
-    .stSelectbox > label > div > p,
-    .stTextArea > label > div > p,
-    .stDateInput > label > div > p {
+    /* 2. Widget label data-testid (present in both old and new Streamlit) */
+    [data-testid="stWidgetLabel"],
+    [data-testid="stWidgetLabel"] *,
+    [data-testid="stMarkdownContainer"] p {
+        color: #1B4F72 !important;
+        font-weight: 600 !important;
+    }
+    
+    /* 3. Class-based fallback for any version that uses classes */
+    .stTextInput label, .stTextInput label *,
+    .stNumberInput label, .stNumberInput label *,
+    .stSelectbox label, .stSelectbox label *,
+    .stTextArea label, .stTextArea label *,
+    .stDateInput label, .stDateInput label *,
+    .stFileUploader label, .stFileUploader label * {
         color: #1B4F72 !important;
         font-weight: 600 !important;
         font-size: 0.9rem !important;
     }
     
-    /* 3. Catch-all: any <p> or <span> inside any widget label structure */
-    .stTextInput p, .stNumberInput p, .stSelectbox p,
-    .stTextArea p, .stDateInput p, .stFileUploader p,
-    .stTextInput span, .stNumberInput span, .stSelectbox span,
-    .stTextArea span, .stDateInput span {
+    /* 4. ABSOLUTE NUCLEAR — every label and paragraph in the entire app */
+    .stApp label,
+    .stApp label p,
+    .stApp label span,
+    .stApp label div {
         color: #1B4F72 !important;
         font-weight: 600 !important;
-        font-size: 0.9rem !important;
     }
     
-    /* 4. Streamlit form section headers */
+    /* 5. Form section headers */
     .stMarkdown p, .stMarkdown span, .stMarkdown h4 {
         color: #1B4F72 !important;
     }
     
-    /* 5. Override Streamlit's CSS custom properties for text color */
-    :root {
-        --text-color: #1A1D23 !important;
-    }
-    .stApp {
-        --text-color: #1A1D23 !important;
-    }
+    /* 6. CSS custom property override */
+    :root { --text-color: #1A1D23 !important; }
+    .stApp { --text-color: #1A1D23 !important; }
     
-    /* 6. Input instruction hints */
+    /* 7. Input instruction hints */
+    [data-testid="InputInstructions"],
     div[data-testid="InputInstructions"] {
         color: #475569 !important;
     }
     
-    /* === FULL-WIDTH LAYOUT — covers both Streamlit 1.32 and 1.57+ === */
-    /* Modern Streamlit container */
+    /* === FULL-WIDTH LAYOUT === */
+    /* Streamlit 1.32 */
+    .main .block-container,
+    section.main > div.block-container,
+    section[data-testid="stMain"] > div.block-container {
+        max-width: 95% !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+    }
+    /* Streamlit 1.40+ */
     div[data-testid="stMainBlockContainer"] {
         max-width: 95% !important;
         padding-left: 2rem !important;
         padding-right: 2rem !important;
     }
-    /* Streamlit 1.32 uses .main .block-container */
-    .main .block-container {
-        max-width: 95% !important;
-        padding-left: 2rem !important;
-        padding-right: 2rem !important;
-    }
-    /* Additional fallback */
-    section.main > div.block-container {
-        max-width: 95% !important;
-        padding-left: 2rem !important;
-        padding-right: 2rem !important;
+    /* Form container should also be full width */
+    [data-testid="stForm"] {
+        width: 100% !important;
     }
     
     /* === BUTTONS === */
