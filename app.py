@@ -1996,34 +1996,35 @@ elif page == "Loan Origination":
             st.markdown("---")
             
             with st.form("client_registration_details_form"):
-                st.markdown("#### 1. Personal Profile Details")
+                st.markdown("#### 1. Personal Info")
                 c1, c2, c3 = st.columns(3)
                 name = c1.text_input("Full Name", key="reg_client_name")
                 nickname = c2.text_input("Nickname", key="reg_client_nickname")
                 phone = c3.text_input("Phone Number", key="reg_client_phone")
+                address = st.text_input("Home Address", key="reg_client_address")
                 
                 c4, c5, c6 = st.columns(3)
-                dob = c4.date_input("Date of Birth", value=date(1990, 1, 1), key="reg_client_dob")
-                gender = c5.selectbox("Gender", ["Male", "Female"], key="reg_client_gender")
-                marital = c6.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"], key="reg_client_marital")
-                
-                c7, c8, c9 = st.columns(3)
-                occupation = c7.text_input("Occupation", key="reg_client_occupation")
-                biz_type = c8.text_input("Business Type", value="Trader", key="reg_client_biz_type")
-                raw_inc = c9.number_input("Average Monthly Income (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0", key="reg_client_income")
-                
-                address = st.text_input("Home Address", key="reg_client_address")
+                marital = c4.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"], key="reg_client_marital")
+                biz_type = c5.text_input("Business Type", value="Trader", key="reg_client_biz_type")
+                raw_inc = c6.number_input("Average Monthly Income (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0", key="reg_client_income")
                 biz_address = st.text_input("Business Address", key="reg_client_biz_address")
-                
-                c10, c11 = st.columns(2)
-                id_means = c10.selectbox("Means of ID", ["National ID (NIN)", "Voter's Card", "Driver's License", "International Passport", "None"], key="reg_client_id_means")
-                next_of_kin = c11.text_input("Next of Kin Name & Phone", key="reg_client_next_of_kin")
-                
-                c12, c13 = st.columns(2)
-                passport_url = c12.text_input("Passport Photo URL (Optional)", key="reg_client_passport")
-                signature_url = c13.text_input("Signature URL (Optional)", key="reg_client_signature")
-                
                 other_obs = st.text_input("Other Financial Obligations (if any)", key="reg_client_obligations")
+                
+                # Means of ID dropdown kept intact
+                id_means = st.selectbox("Means of ID", ["National ID (NIN)", "Voter's Card", "Driver's License", "International Passport", "None"], key="reg_client_id_means")
+                
+                st.markdown("#### 2. Guarantor Info")
+                g1, g2, g3 = st.columns(3)
+                g_name = g1.text_input("Guarantor Full Name", key="reg_guarantor_name")
+                g_nick = g2.text_input("Guarantor Nickname", key="reg_guarantor_nickname")
+                g_phone = g3.text_input("Guarantor Phone", key="reg_guarantor_phone")
+                g_address = st.text_input("Guarantor Home Address", key="reg_guarantor_address")
+                
+                g4, g5, g6 = st.columns(3)
+                g_marital = g4.selectbox("Guarantor Marital Status", ["Single", "Married", "Divorced", "Widowed"], key="reg_guarantor_marital")
+                g_occ = g5.text_input("Guarantor Occupation", key="reg_guarantor_occupation")
+                g_rel = g6.text_input("Relationship with Client", key="reg_guarantor_relationship")
+                g_office = st.text_input("Guarantor Office Address", key="reg_guarantor_office")
                 
                 submitted_reg = st.form_submit_button("💾 Register Client", type="primary", use_container_width=True)
                 
@@ -2078,15 +2079,15 @@ elif page == "Loan Origination":
                                     phone=phone_val,
                                     address=st.session_state.get("reg_client_address"),
                                     business_address=st.session_state.get("reg_client_biz_address"),
-                                    dob=st.session_state.get("reg_client_dob"),
-                                    gender=st.session_state.get("reg_client_gender"),
+                                    dob=date(1990, 1, 1),
+                                    gender="Female",
                                     marital_status=st.session_state.get("reg_client_marital"),
-                                    occupation=st.session_state.get("reg_client_occupation"),
+                                    occupation="Trader",
                                     business_type=st.session_state.get("reg_client_biz_type"),
                                     id_means=st.session_state.get("reg_client_id_means"),
-                                    next_of_kin=st.session_state.get("reg_client_next_of_kin"),
-                                    passport_url=st.session_state.get("reg_client_passport"),
-                                    signature_url=st.session_state.get("reg_client_signature"),
+                                    next_of_kin="",
+                                    passport_url="",
+                                    signature_url="",
                                     registration_date=date.today(),
                                     branch_id=branch_id,
                                     group_id=final_group_id,
@@ -2104,6 +2105,36 @@ elif page == "Loan Origination":
                                     "branch_id": branch_id,
                                     "officer_id": client_entity.officer_id,
                                     "start_date": date.today().isoformat()
+                                }).execute()
+                                
+                                # 5. Create dummy Pending loan to hold guarantor details and client profile references
+                                default_product_res = uow.client.table("loan_products").select("product_id").limit(1).execute()
+                                default_product_id = default_product_res.data[0]["product_id"] if default_product_res.data else None
+                                
+                                uow.client.table("loans").insert({
+                                    "loan_id": str(uuid.uuid4()),
+                                    "client_id": client_entity.id,
+                                    "product_id": default_product_id,
+                                    "branch_id": branch_id,
+                                    "officer_id": client_entity.officer_id,
+                                    "date": date.today().isoformat(),
+                                    "loan_amount": 0.0,
+                                    "active_credit": 0.0,
+                                    "loan_repay": 0.0,
+                                    "total_due": 0.0,
+                                    "status": "Pending",
+                                    "nickname": client_entity.nickname,
+                                    "marital_status": client_entity.marital_status,
+                                    "average_monthly_income": client_entity.average_monthly_income,
+                                    "other_obligations": client_entity.other_obligations,
+                                    "guarantor_name": st.session_state.get("reg_guarantor_name"),
+                                    "guarantor_nickname": st.session_state.get("reg_guarantor_nickname"),
+                                    "guarantor_phone": st.session_state.get("reg_guarantor_phone"),
+                                    "guarantor_home_address": st.session_state.get("reg_guarantor_address"),
+                                    "guarantor_marital_status": st.session_state.get("reg_guarantor_marital"),
+                                    "guarantor_occupation": st.session_state.get("reg_guarantor_occupation"),
+                                    "guarantor_relationship": st.session_state.get("reg_guarantor_relationship"),
+                                    "guarantor_office_address": st.session_state.get("reg_guarantor_office")
                                 }).execute()
                                 
                                 st.success(f"Successfully registered client! Assigned Client ID: {generated_client_code}")
