@@ -773,27 +773,27 @@ st.markdown("""
         background-color: transparent !important;
         background: transparent !important;
     }
-    /* White typed text changed to black for visibility — login only */
+    /* White typed text for visibility — login only */
     .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] input {
-        color: #000000 !important;
-        -webkit-text-fill-color: #000000 !important;
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
         background-color: transparent !important;
         background: transparent !important;
         padding: 12px 16px !important;
         font-size: 0.9rem !important;
-        caret-color: #000000 !important;
+        caret-color: #FFFFFF !important;
         font-weight: 500 !important;
     }
     .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] input::placeholder {
-        color: rgba(0,0,0,0.4) !important;
-        -webkit-text-fill-color: rgba(0,0,0,0.4) !important;
+        color: rgba(255,255,255,0.4) !important;
+        -webkit-text-fill-color: rgba(255,255,255,0.4) !important;
     }
     /* Password eye icon — login only */
     .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] button {
-        color: rgba(0,0,0,0.6) !important;
+        color: rgba(255,255,255,0.6) !important;
     }
     .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] button svg {
-        fill: rgba(0,0,0,0.6) !important;
+        fill: rgba(255,255,255,0.6) !important;
     }
     /* Hide the "Press Enter to submit form" helper text — login only */
     .login-form-container [data-testid="stForm"] [data-testid="InputInstructions"] {
