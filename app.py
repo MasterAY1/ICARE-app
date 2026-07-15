@@ -279,11 +279,15 @@ st.markdown("""
         box-shadow: 0 0 0 3px rgba(46, 134, 193, 0.12) !important;
     }
     
-    /* === LABEL FIX — DEFINITIVE === */
-    /* Root cause: Streamlit 1.32 uses data-testid attributes, NOT CSS classes  */
-    /* for text inputs. .stTextInput does not exist — must use [data-testid].   */
+    /* === LABEL FIX === */
+    /* Root cause: login CSS set -webkit-text-fill-color to white on ALL forms. */
+    /* Must override -webkit-text-fill-color, not just color.                   */
     
-    /* 1. Attribute selectors — works on ALL Streamlit versions */
+    /* 1. Override for ALL form text input labels (beats login CSS) */
+    [data-testid="stForm"] [data-testid="stTextInput"] label,
+    [data-testid="stForm"] [data-testid="stTextInput"] label span,
+    [data-testid="stForm"] [data-testid="stTextInput"] label p,
+    [data-testid="stForm"] [data-testid="stTextInput"] label div,
     [data-testid="stTextInput"] label,
     [data-testid="stTextInput"] label *,
     [data-testid="stNumberInput"] label,
@@ -295,76 +299,59 @@ st.markdown("""
     [data-testid="stDateInput"] label,
     [data-testid="stDateInput"] label *,
     [data-testid="stFileUploader"] label,
-    [data-testid="stFileUploader"] label *,
-    [data-testid="stRadio"] label,
-    [data-testid="stRadio"] label *,
-    [data-testid="stCheckbox"] label,
-    [data-testid="stCheckbox"] label * {
+    [data-testid="stFileUploader"] label * {
         color: #1B4F72 !important;
+        -webkit-text-fill-color: #1B4F72 !important;
         font-weight: 600 !important;
         font-size: 0.9rem !important;
     }
     
-    /* 2. Widget label data-testid (present in both old and new Streamlit) */
+    /* 2. Widget label and markdown containers */
     [data-testid="stWidgetLabel"],
-    [data-testid="stWidgetLabel"] *,
-    [data-testid="stMarkdownContainer"] p {
+    [data-testid="stWidgetLabel"] * {
         color: #1B4F72 !important;
+        -webkit-text-fill-color: #1B4F72 !important;
         font-weight: 600 !important;
     }
     
-    /* 3. Class-based fallback for any version that uses classes */
+    /* 3. Class-based fallback */
     .stTextInput label, .stTextInput label *,
     .stNumberInput label, .stNumberInput label *,
     .stSelectbox label, .stSelectbox label *,
     .stTextArea label, .stTextArea label *,
-    .stDateInput label, .stDateInput label *,
-    .stFileUploader label, .stFileUploader label * {
+    .stDateInput label, .stDateInput label * {
         color: #1B4F72 !important;
+        -webkit-text-fill-color: #1B4F72 !important;
         font-weight: 600 !important;
         font-size: 0.9rem !important;
     }
     
-    /* 4. ABSOLUTE NUCLEAR — every label and paragraph in the entire app */
-    .stApp label,
-    .stApp label p,
-    .stApp label span,
-    .stApp label div {
+    /* 4. Nuclear — every label in main content area */
+    section.main label,
+    section.main label *,
+    .main label,
+    .main label * {
         color: #1B4F72 !important;
+        -webkit-text-fill-color: #1B4F72 !important;
         font-weight: 600 !important;
     }
     
-    /* 5. Form section headers */
-    .stMarkdown p, .stMarkdown span, .stMarkdown h4 {
-        color: #1B4F72 !important;
-    }
-    
-    /* 6. CSS custom property override */
-    :root { --text-color: #1A1D23 !important; }
-    .stApp { --text-color: #1A1D23 !important; }
-    
-    /* 7. Input instruction hints */
+    /* 5. Input instruction hints */
     [data-testid="InputInstructions"],
     div[data-testid="InputInstructions"] {
         color: #475569 !important;
+        -webkit-text-fill-color: #475569 !important;
     }
     
     /* === FULL-WIDTH LAYOUT === */
-    /* Streamlit 1.32 */
     .main .block-container,
     section.main > div.block-container,
-    section[data-testid="stMain"] > div.block-container {
-        max-width: 95% !important;
-        padding-left: 2rem !important;
-        padding-right: 2rem !important;
-    }
-    /* Streamlit 1.40+ */
+    section[data-testid="stMain"] > div.block-container,
     div[data-testid="stMainBlockContainer"] {
         max-width: 95% !important;
         padding-left: 2rem !important;
         padding-right: 2rem !important;
     }
-    /* Form container should also be full width */
     [data-testid="stForm"] {
         width: 100% !important;
     }
@@ -688,10 +675,8 @@ st.markdown("""
         vertical-align: -1px;
         margin-right: 4px;
         fill: rgba(255,255,255,0.3);
-    }
-    
     /* Right panel — Login form */
-    [data-testid="stForm"] {
+    .login-form-container [data-testid="stForm"] {
         background: rgba(255, 255, 255, 0.06) !important;
         backdrop-filter: blur(24px) saturate(140%) !important;
         -webkit-backdrop-filter: blur(24px) saturate(140%) !important;
@@ -703,11 +688,11 @@ st.markdown("""
                     inset 0 1px 0 rgba(255,255,255,0.1) !important;
         max-width: 420px !important;
     }
-    [data-testid="stForm"] .login-logo-wrap {
+    .login-form-container [data-testid="stForm"] .login-logo-wrap {
         text-align: center;
         margin-bottom: 6px;
     }
-    [data-testid="stForm"] .login-logo-wrap img {
+    .login-form-container [data-testid="stForm"] .login-logo-wrap img {
         width: 72px;
         height: 72px;
         object-fit: cover;
@@ -720,7 +705,7 @@ st.markdown("""
         0%, 100% { box-shadow: 0 0 0 3px rgba(140,198,63,0.3), 0 4px 20px rgba(0,0,0,0.3); }
         50% { box-shadow: 0 0 0 6px rgba(140,198,63,0.15), 0 4px 30px rgba(140,198,63,0.15); }
     }
-    [data-testid="stForm"] .login-brand-name {
+    .login-form-container [data-testid="stForm"] .login-brand-name {
         font-size: 1.6rem;
         font-weight: 800;
         color: #FFFFFF;
@@ -730,7 +715,7 @@ st.markdown("""
         text-align: center;
         text-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
-    [data-testid="stForm"] .login-org-name {
+    .login-form-container [data-testid="stForm"] .login-org-name {
         font-size: 0.68rem;
         color: rgba(255,255,255,0.45);
         text-align: center;
@@ -738,7 +723,7 @@ st.markdown("""
         margin: 4px 0 0 0;
         letter-spacing: 0.3px;
     }
-    [data-testid="stForm"] .login-accent-line {
+    .login-form-container [data-testid="stForm"] .login-accent-line {
         width: 44px;
         height: 3px;
         background: linear-gradient(90deg, #8CC63F, #2E86C1);
@@ -746,49 +731,50 @@ st.markdown("""
         border-radius: 4px;
         box-shadow: 0 0 12px rgba(140,198,63,0.3);
     }
-    [data-testid="stForm"] .login-title {
+    .login-form-container [data-testid="stForm"] .login-title {
         font-size: 1.05rem;
         font-weight: 700;
         color: #FFFFFF !important;
         text-align: center;
         margin: 0 0 2px 0;
     }
-    [data-testid="stForm"] .login-subtitle {
+    .login-form-container [data-testid="stForm"] .login-subtitle {
         font-size: 0.75rem;
         color: rgba(255,255,255,0.4) !important;
         text-align: center;
         margin: 0 0 20px 0;
     }
     
-    /* Style Streamlit form inputs on login page */
-    [data-testid="stForm"] [data-testid="stTextInput"] label,
-    [data-testid="stForm"] [data-testid="stTextInput"] label span,
-    [data-testid="stForm"] [data-testid="stTextInput"] label p {
+    /* Style Streamlit form inputs on login page ONLY */
+    /* Scoped to .login-form-container parent so it does NOT affect other forms */
+    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] label,
+    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] label span,
+    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] label p {
         color: rgba(255,255,255,0.7) !important;
         -webkit-text-fill-color: rgba(255,255,255,0.7) !important;
         font-weight: 500 !important;
         font-size: 0.8rem !important;
         letter-spacing: 0.3px;
     }
-    /* Dark semi-transparent input box */
-    [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="input"] {
+    /* Dark semi-transparent input box — login only */
+    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="input"] {
         background-color: rgba(255,255,255,0.08) !important;
         border: 1px solid rgba(255,255,255,0.12) !important;
         border-radius: 12px !important;
         transition: all 0.3s ease !important;
     }
-    [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="input"]:focus-within {
+    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="input"]:focus-within {
         border-color: rgba(140,198,63,0.5) !important;
         box-shadow: 0 0 0 3px rgba(140,198,63,0.1) !important;
         background-color: rgba(255,255,255,0.12) !important;
     }
-    /* Clear inner container background so it doesn't paint white */
-    [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="base-input"] {
+    /* Clear inner container background — login only */
+    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="base-input"] {
         background-color: transparent !important;
         background: transparent !important;
     }
-    /* White typed text changed to black for visibility */
-    [data-testid="stForm"] [data-testid="stTextInput"] input {
+    /* White typed text changed to black for visibility — login only */
+    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] input {
         color: #000000 !important;
         -webkit-text-fill-color: #000000 !important;
         background-color: transparent !important;
@@ -798,24 +784,24 @@ st.markdown("""
         caret-color: #000000 !important;
         font-weight: 500 !important;
     }
-    [data-testid="stForm"] [data-testid="stTextInput"] input::placeholder {
+    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] input::placeholder {
         color: rgba(0,0,0,0.4) !important;
         -webkit-text-fill-color: rgba(0,0,0,0.4) !important;
     }
-    /* Password eye icon */
-    [data-testid="stForm"] [data-testid="stTextInput"] button {
+    /* Password eye icon — login only */
+    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] button {
         color: rgba(0,0,0,0.6) !important;
     }
-    [data-testid="stForm"] [data-testid="stTextInput"] button svg {
+    .login-form-container [data-testid="stForm"] [data-testid="stTextInput"] button svg {
         fill: rgba(0,0,0,0.6) !important;
     }
-    /* Hide the "Press Enter to submit form" helper text */
-    [data-testid="stForm"] [data-testid="InputInstructions"] {
+    /* Hide the "Press Enter to submit form" helper text — login only */
+    .login-form-container [data-testid="stForm"] [data-testid="InputInstructions"] {
         display: none !important;
     }
-
+    
     /* Fix button */
-    [data-testid="stForm"] [data-testid="stFormSubmitButton"] button {
+    .login-form-container [data-testid="stForm"] [data-testid="stFormSubmitButton"] button {
         background: linear-gradient(135deg, #8CC63F 0%, #6BA825 100%) !important;
         color: #FFFFFF !important;
         border: none !important;
@@ -829,18 +815,18 @@ st.markdown("""
         box-shadow: 0 4px 16px rgba(140,198,63,0.3) !important;
         width: 100% !important;
     }
-    [data-testid="stForm"] [data-testid="stFormSubmitButton"] button p {
+    .login-form-container [data-testid="stForm"] [data-testid="stFormSubmitButton"] button p {
         color: #FFFFFF !important;
         -webkit-text-fill-color: #FFFFFF !important;
         font-weight: 700 !important;
         font-size: 0.9rem !important;
     }
-    [data-testid="stForm"] [data-testid="stFormSubmitButton"] button:hover {
+    .login-form-container [data-testid="stForm"] [data-testid="stFormSubmitButton"] button:hover {
         transform: translateY(-2px) !important;
         box-shadow: 0 6px 24px rgba(140,198,63,0.4) !important;
         background: linear-gradient(135deg, #9AD44D 0%, #7CBB30 100%) !important;
     }
-    [data-testid="stForm"] [data-testid="stFormSubmitButton"] button:active {
+    .login-form-container [data-testid="stForm"] [data-testid="stFormSubmitButton"] button:active {
         transform: translateY(0) !important;
     }
     
