@@ -1569,6 +1569,7 @@ USER = current_user.username if current_user else None
 BRANCH = current_user.branch if current_user else None
 BRANCH_ID = current_user.branch_id if current_user else None
 ASSIGNED_BRANCH_IDS = current_user.assigned_branch_ids if current_user else []
+branch_display = "Head Office" if ROLE in ["Admin", "Super Admin", ROLE_ADMIN, ROLE_SUPER_ADMIN] else (f"{BRANCH} Branch" if BRANCH else "No Branch")
 
 
 # Role badge colors (ICARE brand palette)
@@ -1610,7 +1611,7 @@ with st.sidebar:
             <p style='color: #0F172A; margin: 0; font-size: 0.92rem; font-weight: 600;'>{CO_DISPLAY_MAP.get(USER, USER)}</p>
             <p style='color: #64748B; margin: 6px 0 0 0; font-size: 0.78rem;'>
                 <span style='background: {role_color}; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.68rem; font-weight: 600;'>{role_label}</span>
-                &nbsp; {BRANCH} Branch
+                &nbsp; {branch_display}
             </p>
         </div>
     """, unsafe_allow_html=True)
@@ -1646,7 +1647,7 @@ display_name = CO_DISPLAY_MAP.get(USER, USER)
 st.markdown(f"""
     <div class='welcome-banner'>
         <h2>{greeting}, {display_name}</h2>
-        <p>{role_label} &mdash; <span class='wb-gold'>{BRANCH} Branch</span> &middot; {datetime.now().strftime('%A, %B %d, %Y')}</p>
+        <p>{role_label} &mdash; <span class='wb-gold'>{branch_display}</span> &middot; {datetime.now().strftime('%A, %B %d, %Y')}</p>
     </div>
 """, unsafe_allow_html=True)
 
