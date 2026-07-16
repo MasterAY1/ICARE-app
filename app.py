@@ -2115,8 +2115,12 @@ elif page == "Loan Origination":
                 biz_address = st.text_input("Business Address", key="reg_client_biz_address")
                 other_obs = st.text_input("Other Financial Obligations (if any)", key="reg_client_obligations")
                 
-                # Means of ID dropdown kept intact
-                id_means = st.selectbox("Means of ID", ["National ID (NIN)", "Voter's Card", "Driver's License", "International Passport", "None"], key="reg_client_id_means")
+                # Means of ID Section
+                st.markdown("##### 🆔 Means of Identification")
+                id_col1, id_col2, id_col3 = st.columns(3)
+                id_means = id_col1.selectbox("Means of ID", ["National ID (NIN)", "Voter's Card", "Driver's License", "International Passport", "None"], key="reg_client_id_means")
+                id_number = id_col2.text_input("ID Number", placeholder="Enter identification number", key="reg_client_id_number")
+                id_file = id_col3.file_uploader("Upload ID Document", type=["jpg", "jpeg", "png", "pdf"], key="reg_client_id_file")
                 
                 st.markdown("#### 2. Guarantor Info")
                 g1, g2, g3 = st.columns(3)
@@ -2175,9 +2179,42 @@ elif page == "Loan Origination":
                                 generated_client_code = f"{branch_code}-{g_code}-{member_number_str}"
                                 
                                 # 3. Save Client
+                                client_uuid = str(uuid.uuid4())
+                                
+                                # Upload ID Document to Supabase Storage if provided
+                                uploaded_id_url = ""
+                                id_file_data = st.session_state.get("reg_client_id_file")
+                                if id_file_data:
+                                    try:
+                                        file_bytes = id_file_data.read()
+                                        file_ext = id_file_data.name.split('.')[-1]
+                                        storage_path = f"{client_uuid}/id_document.{file_ext}"
+                                        
+                                        # Try to ensure bucket exists
+                                        try:
+                                            buckets = uow.client.storage.list_buckets()
+                                            bucket_names = [b.name for b in buckets]
+                                            if "client-ids" not in bucket_names:
+                                                uow.client.storage.create_bucket("client-ids", options={"public": True})
+                                        except Exception:
+                                            pass
+                                            
+                                        # Upload file
+                                        uow.client.storage.from_("client-ids").upload(
+                                            path=storage_path,
+                                            file=file_bytes,
+                                            file_options={"content-type": id_file_data.type}
+                                        )
+                                        
+                                        # Get public URL
+                                        uploaded_id_url = uow.client.storage.from_("client-ids").get_public_url(storage_path)
+                                    except Exception as upload_err:
+                                        st.warning(f"⚠️ ID Document upload failed (Make sure 'client-ids' bucket is created in Supabase): {upload_err}")
+                                        uploaded_id_url = ""
+                                
                                 from domain.entities.client import Client
                                 client_entity = Client(
-                                    id=str(uuid.uuid4()),
+                                    id=client_uuid,
                                     name=name_val,
                                     client_code=generated_client_code,
                                     nickname=st.session_state.get("reg_client_nickname"),
@@ -2190,6 +2227,8 @@ elif page == "Loan Origination":
                                     occupation="Trader",
                                     business_type=st.session_state.get("reg_client_biz_type"),
                                     id_means=st.session_state.get("reg_client_id_means"),
+                                    id_number=st.session_state.get("reg_client_id_number"),
+                                    id_card_url=uploaded_id_url,
                                     next_of_kin="",
                                     passport_url="",
                                     signature_url="",

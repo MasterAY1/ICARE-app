@@ -17,6 +17,8 @@ class Client:
     occupation: Optional[str] = None
     business_type: Optional[str] = None
     id_means: Optional[str] = None
+    id_number: Optional[str] = None
+    id_card_url: Optional[str] = None
     next_of_kin: Optional[str] = None
     passport_url: Optional[str] = None
     signature_url: Optional[str] = None
