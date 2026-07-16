@@ -8,7 +8,7 @@ class SupabaseUserRepository(BaseRepository[User], UserRepository):
     def __init__(self, client):
         super().__init__(client)
         self.table_name = "app_users"
-        self.columns = "*, branches(name), user_roles(role_id, roles(name))"
+        self.columns = "*, branches!app_users_branch_id_fkey(name), user_roles(role_id, roles(name))"
 
     def find_by_id(self, id: str) -> Optional[User]:
         query = self.client.table(self.table_name).select(self.columns).eq("id", id)
