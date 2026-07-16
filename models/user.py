@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Set
+from typing import Set, List
 
 @dataclass
 class CurrentUser:
@@ -7,4 +7,7 @@ class CurrentUser:
     username: str
     role: str
     branch: str
+    branch_id: str = ""
     permissions: Set[str] = field(default_factory=set)
+    assigned_branch_ids: List[str] = field(default_factory=list)
+    assigned_branches: List[str] = field(default_factory=list)

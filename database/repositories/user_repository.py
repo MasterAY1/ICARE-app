@@ -27,6 +27,86 @@ class SupabaseUserRepository(BaseRepository[User], UserRepository):
         res = self._execute(query)
         return [UserMapper.to_domain(d) for d in res.data]
 
+    def find_by_branch_id(self, branch_id: str) -> List[User]:
+        """Return all users that belong to the given branch."""
+        query = self.client.table(self.table_name).select(self.columns).eq("branch_id", branch_id)
+        res = self._execute(query)
+        return [UserMapper.to_domain(d) for d in res.data]
+
+    # ------------------------------------------------------------------
+    # Area-Manager branch assignments
+    # ------------------------------------------------------------------
+
+    def load_am_assignments(self, am_id: str) -> list:
+        """Return list of ``{"branch_id": ..., "name": ...}`` for an Area Manager."""
+        query = (
+            self.client.table("area_manager_assignments")
+            .select("branch_id, branches(name)")
+            .eq("am_id", am_id)
+        )
+        res = self._execute(query)
+        results = []
+        for row in res.data:
+            b = row.get("branches") or {}
+            results.append({
+                "branch_id": row.get("branch_id"),
+                "name": b.get("name", ""),
+            })
+        return results
+
+    def save_am_assignments(self, am_id: str, branch_ids: list) -> bool:
+        """Replace all branch assignments for an Area Manager."""
+        # Delete existing
+        del_query = (
+            self.client.table("area_manager_assignments")
+            .delete()
+            .eq("am_id", am_id)
+        )
+        self._execute(del_query)
+
+        if not branch_ids:
+            return True
+
+        # Insert new
+        rows = [{"am_id": am_id, "branch_id": bid} for bid in branch_ids]
+        ins_query = self.client.table("area_manager_assignments").insert(rows)
+        res = self._execute(ins_query)
+        return len(res.data) > 0
+
+    # ------------------------------------------------------------------
+    # User activation / deactivation
+    # ------------------------------------------------------------------
+
+    def activate_user(self, user_id: str) -> bool:
+        """Set ``is_active = True`` for the given user."""
+        query = self.client.table(self.table_name).update({"is_active": True}).eq("id", user_id)
+        res = self._execute(query)
+        return len(res.data) > 0
+
+    def deactivate_user(self, user_id: str) -> bool:
+        """Set ``is_active = False`` for the given user."""
+        query = self.client.table(self.table_name).update({"is_active": False}).eq("id", user_id)
+        res = self._execute(query)
+        return len(res.data) > 0
+
+    # ------------------------------------------------------------------
+    # Timestamp helpers
+    # ------------------------------------------------------------------
+
+    def update_last_login(self, user_id: str) -> None:
+        """Set ``last_login`` to the current server timestamp."""
+        query = self.client.table(self.table_name).update({"last_login": "now()"}).eq("id", user_id)
+        self._execute(query)
+
+    def update_last_activity(self, user_id: str) -> None:
+        """Set ``last_activity`` to the current server timestamp."""
+        query = self.client.table(self.table_name).update({"last_activity": "now()"}).eq("id", user_id)
+        self._execute(query)
+
+    # ------------------------------------------------------------------
+    # Internal helpers (unchanged)
+    # ------------------------------------------------------------------
+
     def _resolve_branch_id(self, branch_name: str) -> Optional[str]:
         if not branch_name:
             return None
@@ -49,6 +129,10 @@ class SupabaseUserRepository(BaseRepository[User], UserRepository):
             self.client.table("user_roles").upsert({"user_id": user_id, "role_id": role_id}).execute()
         except Exception:
             pass
+
+    # ------------------------------------------------------------------
+    # CRUD (unchanged)
+    # ------------------------------------------------------------------
 
     def create(self, entity: User) -> User:
         branch_id = self._resolve_branch_id(entity.branch_name)

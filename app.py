@@ -749,9 +749,9 @@ st.markdown("""
     
     /* Style Streamlit form inputs on login page ONLY */
     /* Scoped to login page parent so it does NOT affect other forms */
-    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] label,
-    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] label span,
-    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] label p {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] label,
+    .stApp:has(.login-page-bg) [data-testid="stForm"] label span,
+    .stApp:has(.login-page-bg) [data-testid="stForm"] label p {
         color: rgba(255,255,255,0.7) !important;
         -webkit-text-fill-color: rgba(255,255,255,0.7) !important;
         font-weight: 500 !important;
@@ -759,24 +759,24 @@ st.markdown("""
         letter-spacing: 0.3px;
     }
     /* Dark semi-transparent input box — login only */
-    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="input"] {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-baseweb="input"] {
         background-color: rgba(255,255,255,0.08) !important;
         border: 1px solid rgba(255,255,255,0.12) !important;
         border-radius: 12px !important;
         transition: all 0.3s ease !important;
     }
-    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="input"]:focus-within {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-baseweb="input"]:focus-within {
         border-color: rgba(140,198,63,0.5) !important;
         box-shadow: 0 0 0 3px rgba(140,198,63,0.1) !important;
         background-color: rgba(255,255,255,0.12) !important;
     }
     /* Clear inner container background — login only */
-    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] [data-baseweb="base-input"] {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-baseweb="base-input"] {
         background-color: transparent !important;
         background: transparent !important;
     }
     /* White typed text for visibility — login only */
-    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] input {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] input {
         color: #FFFFFF !important;
         -webkit-text-fill-color: #FFFFFF !important;
         background-color: transparent !important;
@@ -786,15 +786,15 @@ st.markdown("""
         caret-color: #FFFFFF !important;
         font-weight: 500 !important;
     }
-    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] input::placeholder {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] input::placeholder {
         color: rgba(255,255,255,0.4) !important;
         -webkit-text-fill-color: rgba(255,255,255,0.4) !important;
     }
     /* Password eye icon — login only */
-    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] button {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-baseweb="input"] button {
         color: rgba(255,255,255,0.6) !important;
     }
-    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="stTextInput"] button svg {
+    .stApp:has(.login-page-bg) [data-testid="stForm"] [data-baseweb="input"] button svg {
         fill: rgba(255,255,255,0.6) !important;
     }
     /* Hide the "Press Enter to submit form" helper text — login only */
@@ -964,17 +964,22 @@ DB_TO_UI_REP = {
 UI_TO_DB_REP = {v: k for k, v in DB_TO_UI_REP.items()}
 
 def load_loans():
-    """Load loans filtered by RBAC"""
+    """Load loans filtered by RBAC hierarchy (UUID-based)"""
     try:
         with SupabaseUnitOfWork() as uow:
             filters = LoanFilter()
-            if ROLE in ['CO', 'Officer']: filters.officer = USER
-            elif ROLE == 'BM': filters.branch = BRANCH
             filters.size = 2000
             
             loans = uow.loans.find_all()
-            if ROLE in ['CO', 'Officer']: loans = [L for L in loans if L.credit_officer == USER]
-            elif ROLE == 'BM': loans = [L for L in loans if L.branch == BRANCH]
+            # UUID-based hierarchy filtering
+            if ROLE in ['CO', 'Officer', ROLE_CREDIT_OFFICER]:
+                user_id = current_user.id if current_user else None
+                loans = [L for L in loans if L.officer_id == user_id]
+            elif ROLE in ['BM', ROLE_BRANCH_MANAGER]:
+                loans = [L for L in loans if L.branch_id == BRANCH_ID]
+            elif ROLE in ['AM', 'Area Manager']:
+                loans = [L for L in loans if L.branch_id in ASSIGNED_BRANCH_IDS]
+            # Admin / Super Admin: no filter
             
             if not loans:
                 return pd.DataFrame(columns=list(DB_TO_UI_LOANS.values()))
@@ -995,15 +1000,21 @@ def load_loans():
 
 
 def load_repayments():
-    """Load repayments filtered by RBAC"""
+    """Load repayments filtered by RBAC hierarchy (UUID-based)"""
     try:
         with SupabaseUnitOfWork() as uow:
             filters = RepaymentFilter()
-            if ROLE in ['CO', 'Officer']: filters.officer = USER
-            elif ROLE == 'BM': filters.branch = BRANCH
+            if ROLE in ['CO', 'Officer', ROLE_CREDIT_OFFICER]:
+                filters.officer = USER
+            elif ROLE in ['BM', ROLE_BRANCH_MANAGER]:
+                filters.branch = BRANCH
             filters.size = 2000
             
             reps = uow.repayments.find_recent(filters)
+            # Additional UUID-based filtering for AM
+            if ROLE in ['AM', 'Area Manager'] and reps:
+                reps = [r for r in reps if r.branch_id in ASSIGNED_BRANCH_IDS]
+            
             if not reps:
                 return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
                 
@@ -1237,14 +1248,19 @@ def update_database_safe(edited_subset, user_role, user_name, branch):
         st.error(f"Error updating database safely: {e}")
 
 def get_clients_for_user(df, user_role, user_name, branch):
-    """Filter clients based on user role"""
+    """Filter clients based on user role hierarchy (backward-compatible DataFrame filter)"""
     if df.empty:
         return df
-    if user_role == ROLE_ADMIN:
+    if user_role in [ROLE_ADMIN, 'Super Admin', 'Admin']:
         return df
-    elif user_role == "BM":
+    elif user_role in ['AM', 'Area Manager']:
+        # Filter by assigned branches
+        if ASSIGNED_BRANCH_IDS and 'Branch' in df.columns:
+            return df[df['Branch'].isin(current_user.assigned_branches)] if current_user else df
+        return df
+    elif user_role in ['BM', ROLE_BRANCH_MANAGER]:
         return df[df['Branch'] == branch]
-    elif user_role in ["Officer", "CO"]:
+    elif user_role in ['Officer', 'CO', ROLE_CREDIT_OFFICER]:
         return df[df['Officer'] == user_name]
     return pd.DataFrame(columns=df.columns)
 
@@ -1546,18 +1562,33 @@ route_app()
 
 # --- 5. SIDEBAR ---
 from services.auth_service import AuthService
+from auth.authorization import has_permission, can_render_widget, get_nav_options
 current_user = AuthService.get_user()
 ROLE = current_user.role if current_user else None
 USER = current_user.username if current_user else None
 BRANCH = current_user.branch if current_user else None
+BRANCH_ID = current_user.branch_id if current_user else None
+ASSIGNED_BRANCH_IDS = current_user.assigned_branch_ids if current_user else []
 
 
 # Role badge colors (ICARE brand palette)
-role_colors = {ROLE_ADMIN: COLOR_SECONDARY, "BM": COLOR_PRIMARY, "CO": "#8CC63F", "Officer": "#8CC63F", "AM": COLOR_PRIMARY}
+role_colors = {
+    ROLE_ADMIN: COLOR_SECONDARY, "Admin": COLOR_SECONDARY,
+    ROLE_BRANCH_MANAGER: COLOR_PRIMARY, "BM": COLOR_PRIMARY,
+    ROLE_CREDIT_OFFICER: "#8CC63F", "CO": "#8CC63F", "Officer": "#8CC63F",
+    "Area Manager": COLOR_PRIMARY, "AM": COLOR_PRIMARY,
+    "Super Admin": COLOR_SECONDARY,
+}
 role_color = role_colors.get(ROLE, "#6B7280")
 
 # Role display labels
-role_labels = {ROLE_ADMIN: "Administrator", "BM": ROLE_BRANCH_MANAGER, "CO": ROLE_CREDIT_OFFICER, "Officer": ROLE_CREDIT_OFFICER, "AM": "Area Manager"}
+role_labels = {
+    ROLE_ADMIN: "Administrator", "Admin": "Administrator",
+    ROLE_BRANCH_MANAGER: ROLE_BRANCH_MANAGER, "BM": ROLE_BRANCH_MANAGER,
+    ROLE_CREDIT_OFFICER: ROLE_CREDIT_OFFICER, "CO": ROLE_CREDIT_OFFICER, "Officer": ROLE_CREDIT_OFFICER,
+    "Area Manager": "Area Manager", "AM": "Area Manager",
+    "Super Admin": "Super Admin",
+}
 role_label = role_labels.get(ROLE, ROLE)
 
 with st.sidebar:
@@ -1584,18 +1615,12 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
     
-    if ROLE in ["Officer", "CO"]:
-        st.markdown("<p class='nav-section-label'>OPERATIONS</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "Loan Origination", "Portfolio", "Collections", "WhatsApp Cashbook", "Audit Ledger"]
-    elif ROLE == "BM":
-        st.markdown("<p class='nav-section-label'>EXECUTIVE</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "Portfolio", "Master Cashbook", "Audit Ledger"]
-    elif ROLE == "AM":
-        st.markdown("<p class='nav-section-label'>EXECUTIVE</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "Master Cashbook", "Audit Ledger", "User Management"]
-    else:  # Admin
-        st.markdown("<p class='nav-section-label'>ADMINISTRATION</p>", unsafe_allow_html=True)
-        nav_options = ["Dashboard", "Loan Origination", "Collections", "Portfolio", "Master Cashbook", "Audit Ledger", "Reports & Export", "User Management"]
+    # Permission-driven navigation
+    nav_section = "OPERATIONS" if ROLE in ["Officer", "CO", ROLE_CREDIT_OFFICER] else (
+        "EXECUTIVE" if ROLE in ["BM", ROLE_BRANCH_MANAGER, "AM", "Area Manager"] else "ADMINISTRATION"
+    )
+    st.markdown(f"<p class='nav-section-label'>{nav_section}</p>", unsafe_allow_html=True)
+    nav_options = get_nav_options(current_user) if current_user else ["Dashboard"]
     
     page = st.radio("Navigation", nav_options, label_visibility="collapsed")
     
@@ -4632,155 +4657,276 @@ elif page in ["Reports", "Reports & Export"]:
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ==========================================
-# 14. USER MANAGEMENT (AM / Admin)
+# 14. USER MANAGEMENT (Admin / BM / AM)
 # ==========================================
-elif page == "User Management" and ROLE in ["AM", ROLE_ADMIN]:
+elif page == "User Management":
+    from services.user_service import UserService
+    
     st.markdown("<div class='dashboard-header'>", unsafe_allow_html=True)
     st.markdown("<h1>🔐 User Management</h1>", unsafe_allow_html=True)
     st.markdown("<p>Manage application users, reset passwords, and handle officer turnover.</p>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
     
-    # Fetch all users
-    try:
-        with SupabaseUnitOfWork() as uow:
-            users = uow.users.find_all()
-        from mappers.base_mappers import UserMapper
-        res = type('obj', (object,), {'data': [UserMapper.to_database(u) for u in users]})
-        all_users = res.data if res.data else []
-    except Exception as e:
-        st.error(f"Failed to fetch users: {e}")
-        all_users = []
-        
+    # Fetch users scoped to the requesting user's role
+    all_users = UserService.list_users(current_user)
     user_usernames = [u['username'] for u in all_users]
     
-    col1, col2 = st.columns(2)
+    # Tab layout based on role
+    is_admin = ROLE in [ROLE_ADMIN, 'Super Admin', 'Admin']
+    is_bm = ROLE in ['BM', ROLE_BRANCH_MANAGER]
+    is_am = ROLE in ['AM', 'Area Manager']
     
-    with col1:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("➕ Add New User")
-        with st.form("add_user_form"):
-            new_username = st.text_input("Username (e.g. CO5, BM_Ikeja)")
-            new_fullname = st.text_input("Full Name (e.g. Mr. Ayomide)")
-            new_role = st.selectbox("Role", ["CO", "BM", "AM", ROLE_ADMIN])
-            new_branch = st.text_input("Branch Name (e.g. Ogijo)")
-            new_password = st.text_input("Password", type="password")
-            
-            submit_new = st.form_submit_button("Create User", use_container_width=True)
-            if submit_new:
-                if not new_username or not new_password or not new_fullname:
-                    st.error("Username, Full Name, and Password are required.")
-                elif new_username in user_usernames:
-                    st.error("Username already exists!")
-                else:
-                    hashed_pw = hash_password(new_password)
-                    try:
-                        with SupabaseUnitOfWork() as uow:
-                            new_u = User(id='', username=new_username, password_hash=hashed_pw, full_name=new_fullname, role=new_role, branch_name=new_branch, created_at='')
-                            uow.users.create(new_u)
-                        st.success(f"User {new_username} created successfully!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed to create user: {e}")
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("🔑 Reset Password")
-        with st.form("reset_pw_form"):
-            reset_username = st.selectbox("Select User", user_usernames)
-            reset_password = st.text_input("New Password", type="password")
-            submit_reset = st.form_submit_button("Reset Password", use_container_width=True)
-            if submit_reset:
-                if not reset_password:
-                    st.error("Please enter a new password.")
-                else:
-                    hashed_pw = hash_password(reset_password)
-                    try:
-                        with SupabaseUnitOfWork() as uow:
-                            uow.users.update_password(reset_username, hashed_pw)
-                        st.success(f"Password reset for {reset_username}!")
-                    except Exception as e:
-                        st.error(f"Failed to reset password: {e}")
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-    with col2:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("🔄 Update Officer Name (Turnover)")
-        st.info("When an officer leaves, update the Full Name tied to their generic username (e.g. CO2) so that historical data remains intact but the new officer's name is used going forward.")
-        
-        co_users = [u for u in all_users if u['role'] in ['CO', 'Officer']]
-        co_usernames = [u['username'] for u in co_users]
-        
-        with st.form("update_officer_form"):
-            update_username = st.selectbox("Select Officer ID", co_usernames)
-            # Find current name
-            current_name = ""
-            for u in co_users:
-                if u['username'] == update_username:
-                    current_name = u.get('full_name', '')
-                    break
-                    
-            st.write(f"**Current Name:** {current_name}")
-            new_officer_name = st.text_input("New Full Name")
-            
-            submit_update = st.form_submit_button("Update Officer Name", use_container_width=True)
-            if submit_update:
-                if not new_officer_name:
-                    st.error("Please enter a new name.")
-                else:
-                    try:
-                        with SupabaseUnitOfWork() as uow:
-                            u = uow.users.find_by_username(update_username)
-                            if u:
-                                u.full_name = new_officer_name
-                                uow.users.update(u)
-                        st.success(f"Updated {update_username} to {new_officer_name}!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed to update name: {e}")
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
+    if is_admin:
+        tabs = st.tabs(["👥 Users", "➕ Create User", "🔑 Reset Password", "🔄 Officer Turnover", "🏢 AM Assignments", "🏢 Branch Closures", "📋 Audit Logs", "📊 Login History"])
+    elif is_bm:
+        tabs = st.tabs(["👥 Branch Staff", "🔑 Reset Password", "🏢 Branch Closures"])
+    elif is_am:
+        tabs = st.tabs(["👥 Branch Staff (Read Only)"])
+    else:
+        st.error("You do not have permission to access User Management.")
+        st.stop()
+    
+    # --- Tab: Users List ---
+    with tabs[0]:
         st.subheader("👥 Current Users")
-        df_users = pd.DataFrame(all_users)
-        if not df_users.empty:
-            st.dataframe(df_users[['username', 'full_name', 'role', 'branch_name', 'created_at']], use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<hr/>", unsafe_allow_html=True)
-    st.subheader("🏢 Branch Settings & Closures")
-    st.write("Manage custom branch closures (e.g., operational shutdowns, end-of-year breaks). These dates will be strictly excluded when calculating loan repayment schedules.")
+        if all_users:
+            df_users = pd.DataFrame(all_users)
+            display_cols = ['username', 'full_name', 'role', 'branch_name', 'is_active', 'last_login', 'created_at']
+            display_cols = [c for c in display_cols if c in df_users.columns]
+            st.dataframe(df_users[display_cols], use_container_width=True)
+            
+            # Admin / BM: Activate / Deactivate toggles
+            if is_admin or is_bm:
+                st.markdown("---")
+                st.subheader("⚡ Activate / Deactivate Users")
+                target_username = st.selectbox("Select User", user_usernames, key="toggle_user")
+                target_user_data = next((u for u in all_users if u['username'] == target_username), None)
+                
+                if target_user_data:
+                    current_status = target_user_data.get('is_active', True)
+                    st.write(f"**Current Status:** {'✅ Active' if current_status else '❌ Inactive'}")
+                    
+                    col_a, col_d = st.columns(2)
+                    with col_a:
+                        if st.button("✅ Activate", key="activate_btn", use_container_width=True, disabled=current_status):
+                            result = UserService.activate_user(target_user_data['id'], current_user)
+                            if result['success']:
+                                st.success(result['message'])
+                                st.rerun()
+                            else:
+                                st.error(result['message'])
+                    with col_d:
+                        if st.button("❌ Deactivate", key="deactivate_btn", use_container_width=True, disabled=not current_status):
+                            result = UserService.deactivate_user(target_user_data['id'], current_user)
+                            if result['success']:
+                                st.success(result['message'])
+                                st.rerun()
+                            else:
+                                st.error(result['message'])
+        else:
+            st.info("No users found.")
     
-    c3, c4 = st.columns(2)
-    with c3:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("#### ➕ Add New Closure")
-        with st.form("add_closure_form"):
-            closure_dates = st.date_input("Select Date Range", [], key="closure_range")
-            closure_reason = st.text_input("Reason (e.g. End of Year Break)")
-            submit_closure = st.form_submit_button("Save Closure", use_container_width=True)
-            if submit_closure:
-                if not closure_reason or len(closure_dates) != 2:
-                    st.error("Please provide a reason and select a full date range (start and end).")
-                else:
+    # --- Tab: Create User (Admin Only) ---
+    if is_admin:
+        with tabs[1]:
+            st.subheader("➕ Add New User")
+            st.info("Only Head Office administrators can create new users.")
+            with st.form("add_user_form"):
+                new_username = st.text_input("Username (e.g. CO5, BM_Ikeja)")
+                new_fullname = st.text_input("Full Name (e.g. Mr. Ayomide)")
+                new_role = st.selectbox("Role", ["Credit Officer", "Branch Manager", "Area Manager", "Admin"])
+                new_branch = st.text_input("Branch Name (e.g. Ogijo)")
+                new_password = st.text_input("Password", type="password")
+                
+                submit_new = st.form_submit_button("Create User", use_container_width=True)
+                if submit_new:
+                    result = UserService.create_user(
+                        username=new_username,
+                        full_name=new_fullname,
+                        password=new_password,
+                        role=new_role,
+                        branch_name=new_branch,
+                        requesting_user=current_user,
+                    )
+                    if result['success']:
+                        st.success(result['message'])
+                        st.rerun()
+                    else:
+                        st.error(result['message'])
+    
+    # --- Tab: Reset Password (Admin + BM) ---
+    if is_admin or is_bm:
+        pw_tab_idx = 2 if is_admin else 1
+        with tabs[pw_tab_idx]:
+            st.subheader("🔑 Reset Password")
+            if is_bm:
+                st.info("You can only reset passwords for staff in your branch.")
+            with st.form("reset_pw_form"):
+                reset_username = st.selectbox("Select User", user_usernames, key="reset_user")
+                reset_password = st.text_input("New Password", type="password")
+                submit_reset = st.form_submit_button("Reset Password", use_container_width=True)
+                if submit_reset:
+                    result = UserService.reset_password(reset_username, reset_password, current_user)
+                    if result['success']:
+                        st.success(result['message'])
+                    else:
+                        st.error(result['message'])
+    
+    # --- Tab: Officer Turnover (Admin Only) ---
+    if is_admin:
+        with tabs[3]:
+            st.subheader("🔄 Update Officer Name (Turnover)")
+            st.info("When an officer leaves, update the Full Name tied to their generic username (e.g. CO2) so that historical data remains intact but the new officer's name is used going forward.")
+            
+            co_users = [u for u in all_users if u['role'] in ['Credit Officer', 'CO', 'Officer']]
+            co_usernames = [u['username'] for u in co_users]
+            
+            with st.form("update_officer_form"):
+                update_username = st.selectbox("Select Officer ID", co_usernames)
+                # Find current name
+                current_name = ""
+                for u in co_users:
+                    if u['username'] == update_username:
+                        current_name = u.get('full_name', '')
+                        break
+                        
+                st.write(f"**Current Name:** {current_name}")
+                new_officer_name = st.text_input("New Full Name")
+                
+                submit_update = st.form_submit_button("Update Officer Name", use_container_width=True)
+                if submit_update:
+                    result = UserService.update_officer_name(update_username, new_officer_name, current_user)
+                    if result['success']:
+                        st.success(result['message'])
+                        st.rerun()
+                    else:
+                        st.error(result['message'])
+    
+    # --- Tab: AM Branch Assignments (Admin Only) ---
+    if is_admin:
+        with tabs[4]:
+            st.subheader("🏢 Area Manager Branch Assignments")
+            st.info("Each Area Manager supervises 5-7 branches. Assign branches below.")
+            
+            am_users = [u for u in all_users if u['role'] in ['Area Manager', 'AM']]
+            if am_users:
+                selected_am = st.selectbox("Select Area Manager", [u['username'] for u in am_users], key="am_select")
+                am_data = next((u for u in am_users if u['username'] == selected_am), None)
+                
+                if am_data:
+                    # Load current assignments
+                    current_assignments = UserService.get_am_assignments(am_data['id'])
+                    current_branch_ids = [a['branch_id'] for a in current_assignments]
+                    current_branch_names = [a['name'] for a in current_assignments]
+                    
+                    st.write(f"**Currently Assigned ({len(current_assignments)}):** {', '.join(current_branch_names) if current_branch_names else 'None'}")
+                    
+                    # Load all branches
                     try:
                         with SupabaseUnitOfWork() as uow:
-                            # Note: domain entity might not track created_by right now, but repository handles it
-                            closure = BranchClosure(id='', start_date=closure_dates[0], end_date=closure_dates[1], reason=closure_reason)
-                            uow.branch_closures.create(closure)
-                        st.success("Branch closure added successfully!")
-                        get_custom_closures.clear() # clear cache
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed to add closure: {e}")
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-    with c4:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("#### 📅 Active Closures")
-        closures_list = get_custom_closures()
-        if closures_list:
-            closure_data = [{"Start Date": c[0].strftime('%Y-%m-%d'), "End Date": c[1].strftime('%Y-%m-%d'), "Reason": c[2]} for c in closures_list]
-            st.dataframe(pd.DataFrame(closure_data), use_container_width=True)
-        else:
-            st.info("No custom closures recorded.")
-        st.markdown("</div>", unsafe_allow_html=True)
+                            branches_res = uow.client.table("branches").select("branch_id, name").eq("is_active", True).execute()
+                        all_branches = branches_res.data if branches_res.data else []
+                    except Exception:
+                        all_branches = []
+                    
+                    if all_branches:
+                        branch_options = {b['name']: b['branch_id'] for b in all_branches}
+                        
+                        with st.form("am_assignment_form"):
+                            selected_branches = st.multiselect(
+                                "Select Branches (5-7 required)",
+                                options=list(branch_options.keys()),
+                                default=[n for n in current_branch_names if n in branch_options],
+                            )
+                            
+                            submit_am = st.form_submit_button("Save Assignments", use_container_width=True)
+                            if submit_am:
+                                selected_ids = [branch_options[n] for n in selected_branches if n in branch_options]
+                                result = UserService.save_am_assignments(am_data['id'], selected_ids, current_user)
+                                if result['success']:
+                                    st.success(result['message'])
+                                    st.rerun()
+                                else:
+                                    st.error(result['message'])
+            else:
+                st.info("No Area Managers found. Create one first using the 'Create User' tab.")
+    
+    # --- Tab: Branch Closures ---
+    if is_admin or is_bm:
+        closure_tab_idx = 5 if is_admin else 2
+        with tabs[closure_tab_idx]:
+            st.subheader("🏢 Branch Settings & Closures")
+            st.write("Manage custom branch closures (e.g., operational shutdowns, end-of-year breaks). These dates will be strictly excluded when calculating loan repayment schedules.")
+            
+            c3, c4 = st.columns(2)
+            with c3:
+                st.markdown("<div class='card'>", unsafe_allow_html=True)
+                st.markdown("#### ➕ Add New Closure")
+                with st.form("add_closure_form"):
+                    closure_dates = st.date_input("Select Date Range", [], key="closure_range")
+                    closure_reason = st.text_input("Reason (e.g. End of Year Break)")
+                    submit_closure = st.form_submit_button("Save Closure", use_container_width=True)
+                    if submit_closure:
+                        if not closure_reason or len(closure_dates) != 2:
+                            st.error("Please provide a reason and select a full date range (start and end).")
+                        else:
+                            try:
+                                with SupabaseUnitOfWork() as uow:
+                                    closure = BranchClosure(id='', start_date=closure_dates[0], end_date=closure_dates[1], reason=closure_reason)
+                                    uow.branch_closures.create(closure)
+                                st.success("Branch closure added successfully!")
+                                get_custom_closures.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to add closure: {e}")
+                st.markdown("</div>", unsafe_allow_html=True)
+                
+            with c4:
+                st.markdown("<div class='card'>", unsafe_allow_html=True)
+                st.markdown("#### 📅 Active Closures")
+                closures_list = get_custom_closures()
+                if closures_list:
+                    closure_data = [{"Start Date": c[0].strftime('%Y-%m-%d'), "End Date": c[1].strftime('%Y-%m-%d'), "Reason": c[2]} for c in closures_list]
+                    st.dataframe(pd.DataFrame(closure_data), use_container_width=True)
+                else:
+                    st.info("No custom closures recorded.")
+                st.markdown("</div>", unsafe_allow_html=True)
+    
+    # --- Tab: Audit Logs (Admin Only) ---
+    if is_admin:
+        with tabs[6]:
+            st.subheader("📋 System Audit Logs")
+            st.info("Immutable audit trail. Logs cannot be modified or deleted.")
+            
+            try:
+                with SupabaseUnitOfWork() as uow:
+                    audit_entries = uow.user_audit_logs.find_recent(limit=200)
+                
+                if audit_entries:
+                    df_audit = pd.DataFrame(audit_entries)
+                    display_cols = ['timestamp', 'username', 'role', 'branch', 'action', 'module', 'entity_type', 'display_name', 'status']
+                    display_cols = [c for c in display_cols if c in df_audit.columns]
+                    st.dataframe(df_audit[display_cols], use_container_width=True, height=500)
+                else:
+                    st.info("No audit logs recorded yet.")
+            except Exception as e:
+                st.error(f"Failed to load audit logs: {e}")
+    
+    # --- Tab: Login History (Admin Only) ---
+    if is_admin:
+        with tabs[7]:
+            st.subheader("📊 Login History")
+            
+            try:
+                with SupabaseUnitOfWork() as uow:
+                    login_entries = uow.login_history.find_recent(limit=200)
+                
+                if login_entries:
+                    df_logins = pd.DataFrame(login_entries)
+                    display_cols = ['login_time', 'username', 'status', 'session_id', 'logout_time', 'failed_attempts']
+                    display_cols = [c for c in display_cols if c in df_logins.columns]
+                    st.dataframe(df_logins[display_cols], use_container_width=True, height=500)
+                else:
+                    st.info("No login history recorded yet.")
+            except Exception as e:
+                st.error(f"Failed to load login history: {e}")

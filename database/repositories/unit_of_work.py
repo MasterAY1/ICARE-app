@@ -7,6 +7,8 @@ from database.repositories.cashbook_repository import SupabaseCashbookRepository
 from database.repositories.branch_closure_repository import SupabaseBranchClosureRepository
 from database.repositories.event_store_repository import SupabaseEventStoreRepository
 from database.repositories.posting_rules_repository import SupabasePostingRulesRepository
+from database.repositories.user_audit_log_repository import SupabaseUserAuditLogRepository
+from database.repositories.login_history_repository import SupabaseLoginHistoryRepository
 from database.repositories.ledger_repository import SupabaseLedgerRepository
 from database.repositories.client_repository import SupabaseClientRepository
 from database.repositories.guarantor_repository import SupabaseGuarantorRepository
@@ -36,6 +38,8 @@ class SupabaseUnitOfWork(UnitOfWork):
         self.ledger = SupabaseLedgerRepository(self.client)
         self.clients = SupabaseClientRepository(self.client)
         self.guarantors = SupabaseGuarantorRepository(self.client)
+        self.user_audit_logs = SupabaseUserAuditLogRepository(self.client)
+        self.login_history = SupabaseLoginHistoryRepository(self.client)
 
     def __enter__(self):
         return self

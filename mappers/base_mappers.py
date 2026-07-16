@@ -229,7 +229,11 @@ class UserMapper:
             role=role_name,
             branch_name=b_name,
             password_hash=pwd,
-            created_at=_parse_datetime(dto.get("created_at"))
+            created_at=_parse_datetime(dto.get("created_at")),
+            branch_id=str(dto.get("branch_id", "")),
+            is_active=dto.get("is_active", True),
+            last_login=_parse_datetime(dto.get("last_login")),
+            last_activity=_parse_datetime(dto.get("last_activity"))
         )
 
 class CashbookMapper:
