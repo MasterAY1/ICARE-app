@@ -2361,6 +2361,10 @@ elif page == "Loan Origination":
                             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             date_str = datetime.now().strftime("%Y-%m-%d")
                             
+                            progress_bar = st.progress(0.0)
+                            status_text = st.empty()
+                            import_errors = []
+                            
                             with SupabaseUnitOfWork() as uow:
                                 # 1. First process Groups
                                 group_mapping = {}  # maps group name -> group_id
@@ -2664,7 +2668,13 @@ elif page == "Loan Origination":
                                                 uow, client_id, name_val, bname, oname or USER, savings_bal, 0.0,
                                                 remarks="Opening Savings Balance from Onboarding Import"
                                             )
+                                        # Update progress bar
+                                        pct = (index + 1) / num_members
+                                        progress_bar.progress(pct)
+                                        status_text.text(f"Processing member {index+1} of {num_members}: {name_val}")
+                                        
                                     except Exception as ex:
+                                        import_errors.append(f"Row {index+1} ({name_val}): {str(ex)}")
                                         print(f"Error importing row {index}: {ex}")
 
                                 # 3. Process Group-Level Opening Savings
@@ -2710,10 +2720,23 @@ elif page == "Loan Origination":
                                                 remarks="Opening Balance from Onboarding Import"
                                             )
                                             
-                            st.success(f"✅ Onboarding Import Complete! Registered {success_count} new members. Updated {update_count} existing members. Skipped {skip_count} duplicates.")
-                            import time
-                            time.sleep(2)
-                            st.rerun()
+                            # Clear progress bar
+                            progress_bar.empty()
+                            status_text.empty()
+                            
+                            if import_errors:
+                                st.error("⚠️ Some rows failed to import:")
+                                for err in import_errors[:20]:
+                                    st.write(err)
+                                if len(import_errors) > 20:
+                                    st.write(f"... and {len(import_errors) - 20} more errors.")
+                                st.info("Please make sure you have run the updated Supabase SQL migration script to add the required columns.")
+                            
+                            if success_count > 0 or update_count > 0:
+                                st.success(f"✅ Onboarding Import Complete! Registered {success_count} new members. Updated {update_count} existing members. Skipped {skip_count} duplicates.")
+                                import time
+                                time.sleep(3)
+                                st.rerun()
                 except Exception as e:
                     st.error(f"Error reading file: {e}")
             st.markdown("</div>", unsafe_allow_html=True)
