@@ -2122,6 +2122,10 @@ elif page == "Loan Origination":
                 id_number = id_col2.text_input("ID Number", placeholder="Enter identification number", key="reg_client_id_number")
                 id_file = id_col3.file_uploader("Upload ID Document", type=["jpg", "jpeg", "png", "pdf"], key="reg_client_id_file")
                 
+                # Passport Photograph Section
+                st.markdown("##### 📸 Passport Photograph")
+                pass_file = st.file_uploader("Upload Passport Photograph", type=["jpg", "jpeg", "png"], key="reg_client_passport")
+                
                 st.markdown("#### 2. Guarantor Info")
                 g1, g2, g3 = st.columns(3)
                 g_name = g1.text_input("Guarantor Full Name", key="reg_guarantor_name")
@@ -2134,6 +2138,15 @@ elif page == "Loan Origination":
                 g_occ = g5.text_input("Guarantor Occupation", key="reg_guarantor_occupation")
                 g_rel = g6.text_input("Relationship with Client", key="reg_guarantor_relationship")
                 g_office = st.text_input("Guarantor Office Address", key="reg_guarantor_office")
+
+                st.markdown("##### 🆔 Guarantor Identification & Passport")
+                g_id_col1, g_id_col2, g_id_col3 = st.columns(3)
+                g_id_means = g_id_col1.selectbox("Guarantor Means of ID", ["National ID (NIN)", "Voter's Card", "Driver's License", "International Passport", "None"], key="reg_guarantor_id_means")
+                g_id_number = g_id_col2.text_input("Guarantor ID Number", placeholder="Enter ID number", key="reg_guarantor_id_number")
+                g_id_file = g_id_col3.file_uploader("Upload Guarantor ID Document", type=["jpg", "jpeg", "png", "pdf"], key="reg_guarantor_id_file")
+                
+                g_pass_col1, g_pass_col2 = st.columns(2)
+                g_pass_file = g_pass_col1.file_uploader("Upload Guarantor Passport Photograph", type=["jpg", "jpeg", "png"], key="reg_guarantor_passport")
                 
                 submitted_reg = st.form_submit_button("💾 Register Client", type="primary", use_container_width=True)
                 
@@ -2181,14 +2194,14 @@ elif page == "Loan Origination":
                                 # 3. Save Client
                                 client_uuid = str(uuid.uuid4())
                                 
-                                # Upload ID Document to Supabase Storage if provided
-                                uploaded_id_url = ""
-                                id_file_data = st.session_state.get("reg_client_id_file")
-                                if id_file_data:
+                                # Setup storage path helper
+                                def upload_client_file(file_data, file_name):
+                                    if not file_data:
+                                        return ""
                                     try:
-                                        file_bytes = id_file_data.read()
-                                        file_ext = id_file_data.name.split('.')[-1]
-                                        storage_path = f"{client_uuid}/id_document.{file_ext}"
+                                        file_bytes = file_data.read()
+                                        file_ext = file_data.name.split('.')[-1]
+                                        storage_path = f"{client_uuid}/{file_name}.{file_ext}"
                                         
                                         # Try to ensure bucket exists
                                         try:
@@ -2203,14 +2216,22 @@ elif page == "Loan Origination":
                                         uow.client.storage.from_("client-ids").upload(
                                             path=storage_path,
                                             file=file_bytes,
-                                            file_options={"content-type": id_file_data.type}
+                                            file_options={"content-type": file_data.type}
                                         )
                                         
                                         # Get public URL
-                                        uploaded_id_url = uow.client.storage.from_("client-ids").get_public_url(storage_path)
+                                        return uow.client.storage.from_("client-ids").get_public_url(storage_path)
                                     except Exception as upload_err:
-                                        st.warning(f"⚠️ ID Document upload failed (Make sure 'client-ids' bucket is created in Supabase): {upload_err}")
-                                        uploaded_id_url = ""
+                                        st.warning(f"⚠️ File upload failed for '{file_name}' (Make sure 'client-ids' bucket is created in Supabase): {upload_err}")
+                                        return ""
+                                
+                                # Upload Client ID and Passport
+                                uploaded_id_url = upload_client_file(st.session_state.get("reg_client_id_file"), "id_document")
+                                uploaded_passport_url = upload_client_file(st.session_state.get("reg_client_passport"), "passport")
+                                
+                                # Upload Guarantor ID and Passport
+                                uploaded_g_id_url = upload_client_file(st.session_state.get("reg_guarantor_id_file"), "guarantor_id")
+                                uploaded_g_pass_url = upload_client_file(st.session_state.get("reg_guarantor_passport"), "guarantor_passport")
                                 
                                 from domain.entities.client import Client
                                 client_entity = Client(
@@ -2230,7 +2251,7 @@ elif page == "Loan Origination":
                                     id_number=st.session_state.get("reg_client_id_number"),
                                     id_card_url=uploaded_id_url,
                                     next_of_kin="",
-                                    passport_url="",
+                                    passport_url=uploaded_passport_url,
                                     signature_url="",
                                     registration_date=date.today(),
                                     branch_id=branch_id,
@@ -2278,7 +2299,11 @@ elif page == "Loan Origination":
                                     "guarantor_marital_status": st.session_state.get("reg_guarantor_marital"),
                                     "guarantor_occupation": st.session_state.get("reg_guarantor_occupation"),
                                     "guarantor_relationship": st.session_state.get("reg_guarantor_relationship"),
-                                    "guarantor_office_address": st.session_state.get("reg_guarantor_office")
+                                    "guarantor_office_address": st.session_state.get("reg_guarantor_office"),
+                                    "guarantor_id_means": st.session_state.get("reg_guarantor_id_means"),
+                                    "guarantor_id_number": st.session_state.get("reg_guarantor_id_number"),
+                                    "guarantor_id_card_url": uploaded_g_id_url,
+                                    "guarantor_passport_url": uploaded_g_pass_url
                                 }).execute()
                                 
                                 st.success(f"Successfully registered client! Assigned Client ID: {generated_client_code}")

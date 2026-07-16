@@ -10,6 +10,10 @@ class Guarantor:
     address: Optional[str] = None
     occupation: Optional[str] = None
     business_address: Optional[str] = None
+    id_means: Optional[str] = None
+    id_number: Optional[str] = None
+    id_card_url: Optional[str] = None
+    passport_url: Optional[str] = None
     created_at: Optional[datetime] = None
 
 @dataclass

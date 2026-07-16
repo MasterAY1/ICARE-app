@@ -424,7 +424,11 @@ class GuarantorMapper:
             phone=dto.get("phone"),
             address=dto.get("address"),
             occupation=dto.get("occupation"),
-            business_address=dto.get("business_address")
+            business_address=dto.get("business_address"),
+            id_means=dto.get("id_means"),
+            id_number=dto.get("id_number"),
+            id_card_url=dto.get("id_card_url"),
+            passport_url=dto.get("passport_url")
         )
 
     @staticmethod
@@ -435,7 +439,11 @@ class GuarantorMapper:
             "phone": entity.phone,
             "address": entity.address,
             "occupation": entity.occupation,
-            "business_address": entity.business_address
+            "business_address": entity.business_address,
+            "id_means": entity.id_means,
+            "id_number": entity.id_number,
+            "id_card_url": entity.id_card_url,
+            "passport_url": entity.passport_url
         }
 
 class LoanGuarantorMapper:
