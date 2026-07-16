@@ -2443,6 +2443,20 @@ elif page == "Loan Origination":
                                         if phone_val.lower() == 'nan' or not phone_val:
                                             phone_val = "00000000000"
                                             
+                                        # Parse client ID details
+                                        id_means_val = str(member_row.get('Means of ID', 'None')).strip() if pd.notna(member_row.get('Means of ID')) else "None"
+                                        id_number_val = str(member_row.get('ID Number', '')).strip() if pd.notna(member_row.get('ID Number')) else ""
+                                        
+                                        # Parse guarantor details
+                                        g_name_val = str(member_row.get('Guarantor Name', '')).strip() if pd.notna(member_row.get('Guarantor Name')) else ""
+                                        g_phone_val = str(member_row.get('Guarantor Phone', '')).strip() if pd.notna(member_row.get('Guarantor Phone')) else ""
+                                        g_address_val = str(member_row.get('Guarantor Address', '')).strip() if pd.notna(member_row.get('Guarantor Address')) else ""
+                                        g_occ_val = str(member_row.get('Guarantor Occupation', '')).strip() if pd.notna(member_row.get('Guarantor Occupation')) else ""
+                                        g_office_val = str(member_row.get('Guarantor Office Address', '')).strip() if pd.notna(member_row.get('Guarantor Office Address')) else ""
+                                        g_rel_val = str(member_row.get('Guarantor Relationship', '')).strip() if pd.notna(member_row.get('Guarantor Relationship')) else ""
+                                        g_id_means_val = str(member_row.get('Guarantor ID Means', 'None')).strip() if pd.notna(member_row.get('Guarantor ID Means')) else "None"
+                                        g_id_number_val = str(member_row.get('Guarantor ID Number', '')).strip() if pd.notna(member_row.get('Guarantor ID Number')) else ""
+                                            
                                         # Check Client ID formatting
                                         ref_val = str(member_row.get('Member Reference', '')).strip()
                                         is_valid_id = bool(re.match(r'^[A-Z]{3}-\d{2}-\d{3}$', ref_val))
@@ -2463,6 +2477,8 @@ elif page == "Loan Origination":
                                                 "business_address": str(member_row.get('Business Address', '')) if pd.notna(member_row.get('Business Address')) else "",
                                                 "business_type": str(member_row.get('Business Type', 'Trader')) if pd.notna(member_row.get('Business Type')) else "Trader",
                                                 "occupation": str(member_row.get('Occupation', 'Trader')) if pd.notna(member_row.get('Occupation')) else "Trader",
+                                                "id_means": id_means_val,
+                                                "id_number": id_number_val,
                                                 "group_id": group_id
                                             }).eq("client_id", client_id).execute()
                                             update_count += 1
@@ -2498,7 +2514,9 @@ elif page == "Loan Origination":
                                                 marital_status="Married",
                                                 occupation=str(member_row.get('Occupation', 'Trader')) if pd.notna(member_row.get('Occupation')) else "Trader",
                                                 business_type=str(member_row.get('Business Type', 'Trader')) if pd.notna(member_row.get('Business Type')) else "Trader",
-                                                id_means="None",
+                                                id_means=id_means_val,
+                                                id_number=id_number_val,
+                                                id_card_url="",
                                                 next_of_kin="",
                                                 passport_url="",
                                                 signature_url="",
@@ -2565,8 +2583,79 @@ elif page == "Loan Origination":
                                                 )
                                                 uow.loans.create(loan_entity)
                                                 
+                                                # Save guarantor details on the active loan row
+                                                uow.client.table("loans").update({
+                                                    "guarantor_name": g_name_val,
+                                                    "guarantor_phone": g_phone_val,
+                                                    "guarantor_home_address": g_address_val,
+                                                    "guarantor_occupation": g_occ_val,
+                                                    "guarantor_office_address": g_office_val,
+                                                    "guarantor_relationship": g_rel_val,
+                                                    "guarantor_id_means": g_id_means_val,
+                                                    "guarantor_id_number": g_id_number_val
+                                                }).eq("loan_id", loan_id).execute()
+                                                
+                                                # Create/link guarantor in first-class tables
+                                                if g_name_val and g_phone_val:
+                                                    res_g = uow.guarantors.find_by_phone(g_phone_val)
+                                                    if res_g:
+                                                        g_id = res_g.guarantor_id
+                                                    else:
+                                                        from domain.entities.guarantor import Guarantor
+                                                        g_ent = uow.guarantors.create_guarantor(Guarantor(
+                                                            guarantor_id=str(uuid.uuid4()),
+                                                            name=g_name_val,
+                                                            phone=g_phone_val,
+                                                            address=g_address_val,
+                                                            occupation=g_occ_val,
+                                                            business_address=g_office_val,
+                                                            id_means=g_id_means_val,
+                                                            id_number=g_id_number_val
+                                                        ))
+                                                        g_id = g_ent.guarantor_id
+                                                        
+                                                    from domain.entities.guarantor import LoanGuarantor
+                                                    uow.guarantors.link_to_loan(LoanGuarantor(
+                                                        id=str(uuid.uuid4()),
+                                                        loan_id=loan_id,
+                                                        guarantor_id=g_id,
+                                                        relationship=g_rel_val
+                                                    ))
+                                                
                                                 from services.schedule_service import ScheduleService
                                                 ScheduleService.generate_schedule(uow, loan_entity, date.today() - timedelta(weeks=4))
+                                        else:
+                                            # Create dummy Pending loan for guarantor details if no active loan was created
+                                            if g_name_val:
+                                                default_product_res = uow.client.table("loan_products").select("product_id").limit(1).execute()
+                                                default_product_id = default_product_res.data[0]["product_id"] if default_product_res.data else None
+                                                
+                                                uow.client.table("loans").insert({
+                                                    "loan_id": str(uuid.uuid4()),
+                                                    "client_id": client_id,
+                                                    "product_id": default_product_id,
+                                                    "branch_id": branch_id,
+                                                    "officer_id": officer_id or uow.loans._resolve_officer_id(USER),
+                                                    "date": date.today().isoformat(),
+                                                    "loan_amount": 0.0,
+                                                    "active_credit": 0.0,
+                                                    "loan_repay": 0.0,
+                                                    "total_due": 0.0,
+                                                    "status": "Pending",
+                                                    "nickname": str(member_row.get('Nickname', '')) if pd.notna(member_row.get('Nickname')) else "",
+                                                    "marital_status": "Married",
+                                                    "average_monthly_income": 0.0,
+                                                    "other_obligations": "",
+                                                    "guarantor_name": g_name_val,
+                                                    "guarantor_phone": g_phone_val,
+                                                    "guarantor_home_address": g_address_val,
+                                                    "guarantor_marital_status": "Married",
+                                                    "guarantor_occupation": g_occ_val,
+                                                    "guarantor_relationship": g_rel_val,
+                                                    "guarantor_office_address": g_office_val,
+                                                    "guarantor_id_means": g_id_means_val,
+                                                    "guarantor_id_number": g_id_number_val
+                                                }).execute()
                                         
                                         # Import opening savings
                                         if savings_bal > 0:
