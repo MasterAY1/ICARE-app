@@ -752,50 +752,50 @@ st.markdown("""
     .stApp:has(.login-page-bg) [data-testid="stForm"] label,
     .stApp:has(.login-page-bg) [data-testid="stForm"] label span,
     .stApp:has(.login-page-bg) [data-testid="stForm"] label p {
-        color: rgba(255,255,255,0.7) !important;
-        -webkit-text-fill-color: rgba(255,255,255,0.7) !important;
+        color: rgba(255,255,255,0.85) !important;
+        -webkit-text-fill-color: rgba(255,255,255,0.85) !important;
         font-weight: 500 !important;
-        font-size: 0.8rem !important;
+        font-size: 0.82rem !important;
         letter-spacing: 0.3px;
     }
-    /* Dark semi-transparent input box — login only */
+    /* White input box — login only */
     .stApp:has(.login-page-bg) [data-testid="stForm"] [data-baseweb="input"] {
-        background-color: rgba(255,255,255,0.08) !important;
-        border: 1px solid rgba(255,255,255,0.12) !important;
+        background-color: #FFFFFF !important;
+        background: #FFFFFF !important;
+        border: 1px solid #D1D5DB !important;
         border-radius: 12px !important;
         transition: all 0.3s ease !important;
     }
     .stApp:has(.login-page-bg) [data-testid="stForm"] [data-baseweb="input"]:focus-within {
-        border-color: rgba(140,198,63,0.5) !important;
-        box-shadow: 0 0 0 3px rgba(140,198,63,0.1) !important;
-        background-color: rgba(255,255,255,0.12) !important;
+        border-color: #2E86C1 !important;
+        box-shadow: 0 0 0 3px rgba(46, 134, 193, 0.12) !important;
     }
     /* Clear inner container background — login only */
     .stApp:has(.login-page-bg) [data-testid="stForm"] [data-baseweb="base-input"] {
         background-color: transparent !important;
         background: transparent !important;
     }
-    /* White typed text for visibility — login only */
+    /* Dark typed text for visibility — login only */
     .stApp:has(.login-page-bg) [data-testid="stForm"] input {
-        color: #FFFFFF !important;
-        -webkit-text-fill-color: #FFFFFF !important;
+        color: #1A1D23 !important;
+        -webkit-text-fill-color: #1A1D23 !important;
         background-color: transparent !important;
         background: transparent !important;
         padding: 12px 16px !important;
         font-size: 0.9rem !important;
-        caret-color: #FFFFFF !important;
+        caret-color: #1A1D23 !important;
         font-weight: 500 !important;
     }
     .stApp:has(.login-page-bg) [data-testid="stForm"] input::placeholder {
-        color: rgba(255,255,255,0.4) !important;
-        -webkit-text-fill-color: rgba(255,255,255,0.4) !important;
+        color: #9CA3AF !important;
+        -webkit-text-fill-color: #9CA3AF !important;
     }
     /* Password eye icon — login only */
     .stApp:has(.login-page-bg) [data-testid="stForm"] [data-baseweb="input"] button {
-        color: rgba(255,255,255,0.6) !important;
+        color: #6B7280 !important;
     }
     .stApp:has(.login-page-bg) [data-testid="stForm"] [data-baseweb="input"] button svg {
-        fill: rgba(255,255,255,0.6) !important;
+        fill: #6B7280 !important;
     }
     /* Hide the "Press Enter to submit form" helper text — login only */
     .stApp:has(.login-page-bg) [data-testid="stForm"] [data-testid="InputInstructions"] {
