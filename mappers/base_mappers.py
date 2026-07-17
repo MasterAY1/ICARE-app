@@ -133,10 +133,10 @@ class LoanMapper:
             "officer": entity.credit_officer,
             "start_date": entity.start_date.isoformat() if entity.start_date else None,
             "expected_end_date": entity.end_date.isoformat() if entity.end_date else None,
-            "group_name": entity.group_name,
-            "is_asset": entity.is_asset,
-            "officer_id": entity.officer_id,
-            "branch_id": entity.branch_id
+            "group_name": getattr(entity, 'group_name', None),
+            "is_asset": getattr(entity, 'is_asset', False),
+            "officer_id": getattr(entity, 'officer_id', None),
+            "branch_id": getattr(entity, 'branch_id', None)
         }
         # Keep client profile columns flattened for UI database representations
         db_dict.update(entity.extra_fields)

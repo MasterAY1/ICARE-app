@@ -971,14 +971,26 @@ def load_loans():
             filters.size = 2000
             
             loans = uow.loans.find_all()
-            # UUID-based hierarchy filtering
+            # UUID-based hierarchy filtering with safe fallback for cached class definitions
+            def get_loan_officer_id(L):
+                val = getattr(L, 'officer_id', None)
+                if not val and L.credit_officer:
+                    val = uow.loans._resolve_officer_id(L.credit_officer)
+                return val
+
+            def get_loan_branch_id(L):
+                val = getattr(L, 'branch_id', None)
+                if not val and L.branch:
+                    val = uow.loans._resolve_branch_id(L.branch)
+                return val
+
             if ROLE in ['CO', 'Officer', ROLE_CREDIT_OFFICER]:
                 user_id = current_user.id if current_user else None
-                loans = [L for L in loans if L.officer_id == user_id]
+                loans = [L for L in loans if get_loan_officer_id(L) == user_id]
             elif ROLE in ['BM', ROLE_BRANCH_MANAGER]:
-                loans = [L for L in loans if L.branch_id == BRANCH_ID]
+                loans = [L for L in loans if get_loan_branch_id(L) == BRANCH_ID]
             elif ROLE in ['AM', 'Area Manager']:
-                loans = [L for L in loans if L.branch_id in ASSIGNED_BRANCH_IDS]
+                loans = [L for L in loans if get_loan_branch_id(L) in ASSIGNED_BRANCH_IDS]
             # Admin / Super Admin: no filter
             
             if not loans:
@@ -1026,9 +1038,14 @@ def load_repayments():
             filters.size = 2000
             
             reps = uow.repayments.find_recent(filters)
-            # Additional UUID-based filtering for AM
+            # Additional UUID-based filtering for AM with safe fallback
             if ROLE in ['AM', 'Area Manager'] and reps:
-                reps = [r for r in reps if r.branch_id in ASSIGNED_BRANCH_IDS]
+                def get_repayment_branch_id(r):
+                    val = getattr(r, 'branch_id', None)
+                    if not val and r.branch:
+                        val = uow.repayments._resolve_branch_id(r.branch)
+                    return val
+                reps = [r for r in reps if get_repayment_branch_id(r) in ASSIGNED_BRANCH_IDS]
             
             if not reps:
                 return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
