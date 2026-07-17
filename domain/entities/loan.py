@@ -25,4 +25,6 @@ class Loan:
     created_at: Optional[datetime] = None
     group_name: Optional[str] = None
     is_asset: bool = False
+    officer_id: Optional[str] = None
+    branch_id: Optional[str] = None
     extra_fields: dict = field(default_factory=dict)

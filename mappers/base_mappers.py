@@ -108,6 +108,8 @@ class LoanMapper:
             created_at=_parse_datetime(dto.get("created_at")),
             group_name=dto.get("group_name"),
             is_asset=bool(dto.get("is_asset", False)),
+            officer_id=str(dto.get("officer_id") or "") if dto.get("officer_id") else None,
+            branch_id=str(dto.get("branch_id") or "") if dto.get("branch_id") else None,
             extra_fields=extra
         )
         
@@ -132,7 +134,9 @@ class LoanMapper:
             "start_date": entity.start_date.isoformat() if entity.start_date else None,
             "expected_end_date": entity.end_date.isoformat() if entity.end_date else None,
             "group_name": entity.group_name,
-            "is_asset": entity.is_asset
+            "is_asset": entity.is_asset,
+            "officer_id": entity.officer_id,
+            "branch_id": entity.branch_id
         }
         # Keep client profile columns flattened for UI database representations
         db_dict.update(entity.extra_fields)
