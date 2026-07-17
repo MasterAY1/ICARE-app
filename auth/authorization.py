@@ -132,7 +132,7 @@ NAV_PERMISSIONS = {
     "Audit Ledger":       {"loan.view"},
     "Reports & Export":   {"report.view"},
     "User Management":    {"all", "user.activate"},
-    "WhatsApp Cashbook":  {"collections.view"},
+    "CO Cashbook":        {"collections.view"},
 }
 
 

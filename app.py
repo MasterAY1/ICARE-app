@@ -3893,7 +3893,7 @@ elif page == "Audit Ledger":
         except Exception as ex:
             st.error(f"Error loading double-entry ledger: {ex}")
 
-elif page == "WhatsApp Cashbook":
+elif page == "CO Cashbook":
     st.title("📖 CO Daily Cashbook")
     st.caption("Daily Ledger — Auto-Calculated from Collections")
     
@@ -4088,7 +4088,7 @@ elif page == "Master Cashbook":
     st.title("🏦 Branch Manager Master Cashbook")
     st.caption("INITIATIVE FOR COMMUNITY ADVANCEMENT, RELIEF AND EMPOWERMENT — Credit Cash Book Ledger")
     
-    cashbook_section = st.radio("Navigate", ["📝 Daily Entry", "📱 WhatsApp Cashbook (CO View)", "📊 Monthly Ledger"], horizontal=True, label_visibility="collapsed")
+    cashbook_section = st.radio("Navigate", ["📝 Daily Entry", "📱 CO Cashbook (CO View)", "📊 Monthly Ledger"], horizontal=True, label_visibility="collapsed")
     
     all_loans = load_loans()
     all_repayments = load_repayments()
@@ -4404,7 +4404,7 @@ elif page == "Master Cashbook":
                 except Exception as e:
                     st.error(f"Failed to save and post cashbook manual entries: {e}")
     
-    elif cashbook_section == "📱 WhatsApp Cashbook (CO View)":
+    elif cashbook_section == "📱 CO Cashbook (CO View)":
         view_date = st.date_input("Select Date", datetime.now().date(), key="wa_mc_date")
         date_str = view_date.strftime("%Y-%m-%d")
         
