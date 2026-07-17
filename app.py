@@ -4911,7 +4911,7 @@ elif page == "User Management":
             with st.form("add_user_form"):
                 new_username = st.text_input("Username (e.g. CO5, BM_Ikeja)")
                 new_fullname = st.text_input("Full Name (e.g. Mr. Ayomide)")
-                new_role = st.selectbox("Role", ["Credit Officer", "Branch Manager", "Area Manager", "Admin"])
+                new_role = st.selectbox("Role", ["Credit Officer", "Branch Manager", "Area Manager", "Admin", "Super Admin", "Account Manager"])
                 new_branch = st.text_input("Branch Name (e.g. Ogijo)")
                 new_password = st.text_input("Password", type="password")
                 
