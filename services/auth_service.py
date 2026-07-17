@@ -55,6 +55,7 @@ class AuthService:
                 role=role,
                 branch=user.branch_name or 'Unknown',
                 branch_id=user.branch_id or '',
+                full_name=user.full_name or '',
                 permissions=user_permissions,
             )
 
