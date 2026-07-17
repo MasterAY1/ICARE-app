@@ -1608,7 +1608,7 @@ with st.sidebar:
     
     st.markdown(f"""
         <div style='background: #F8FAFC; padding: 14px 16px; border-radius: 10px; margin-bottom: 12px; border: 1px solid #E2E8F0;'>
-            <p style='color: #0F172A; margin: 0; font-size: 0.92rem; font-weight: 600;'>{CO_DISPLAY_MAP.get(USER, USER)}</p>
+            <p style='color: #0F172A; margin: 0; font-size: 0.92rem; font-weight: 600;'>{current_user.full_name if (current_user and getattr(current_user, 'full_name', None)) else CO_DISPLAY_MAP.get(USER, USER)}</p>
             <p style='color: #64748B; margin: 6px 0 0 0; font-size: 0.78rem;'>
                 <span style='background: {role_color}; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.68rem; font-weight: 600;'>{role_label}</span>
                 &nbsp; {branch_display}
@@ -1643,7 +1643,7 @@ with st.sidebar:
 # Welcome banner
 hour = datetime.now().hour
 greeting = "Good morning" if hour < 12 else ("Good afternoon" if hour < 17 else "Good evening")
-display_name = CO_DISPLAY_MAP.get(USER, USER)
+display_name = current_user.full_name if (current_user and getattr(current_user, 'full_name', None)) else CO_DISPLAY_MAP.get(USER, USER)
 st.markdown(f"""
     <div class='welcome-banner'>
         <h2>{greeting}, {display_name}</h2>
