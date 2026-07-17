@@ -1930,7 +1930,7 @@ if page == "Dashboard":
 elif page == "Loan Origination":
     st.title("Origination & Registration")
     
-    orig_section = st.radio("Navigate", ["👤 Client Registration", "📝 Loan Application", "⏳ Pending Disbursements"], horizontal=True, label_visibility="collapsed")
+    orig_section = st.radio("Navigate", ["👤 Client Registration", "📝 Loan Application", "⏳ Pending Disbursements", "✏️ Edit Client/Guarantor"], horizontal=True, label_visibility="collapsed")
 
     if orig_section == "⏳ Pending Disbursements":
         st.subheader("Pending Disbursements")
@@ -2798,14 +2798,64 @@ elif page == "Loan Origination":
             st.markdown("### 📝 Apply for a New Loan")
             with st.form("loan_application_details_form"):
                 st.markdown("#### 1. Loan Product Parameters")
-                col_p1, col_p2 = st.columns(2)
+                col_p0, col_p1, col_p2 = st.columns(3)
                 
-                with SupabaseUnitOfWork() as uow:
-                    res_p = uow.client.table("loan_products").select("name").eq("is_active", True).execute()
-                    product_options = [p["name"] for p in res_p.data] if res_p.data else ["Daily 60 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
+                product_category = col_p0.selectbox("Product Category", ["Finance", "Asset"], key="loan_app_category")
                 
-                product_type = col_p1.selectbox("Loan Product", product_options, key="loan_app_product")
-                requested_amount = col_p2.number_input("Requested Loan Amount (₦)", min_value=0.0, step=10000.0, key="loan_app_amount")
+                if product_category == "Finance":
+                    prods = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
+                else:
+                    prods = ["60-Day Asset", "120-Day Asset", "Weekly 12W Asset", "Weekly 24W Asset", "Monthly 3M Asset", "Monthly 6M Asset", "Cash and Carry"]
+                    
+                product_type = col_p1.selectbox("Loan Product", prods, key="loan_app_product")
+                requested_amount = col_p2.number_input("Requested Amount / Asset Cost (₦)", min_value=0.0, step=10000.0, key="loan_app_amount")
+                
+                # Setup parameters based on selected product type
+                rate = 0.12
+                duration = 12
+                cycle = "Weekly"
+                round_step = 50
+                force_gap = False
+                
+                if "Cash and Carry" in product_type:
+                    rate = 0.0
+                    duration = 1
+                    cycle = "One-Time"
+                    round_step = 1
+                elif "120" in product_type:
+                    rate = 0.21
+                    duration = 120
+                    cycle = "Daily"
+                    round_step = 50
+                elif "Daily" in product_type or "60" in product_type:
+                    rate = 0.12
+                    duration = 60
+                    cycle = "Daily"
+                    round_step = 50
+                elif "3 Month" in product_type or "3M" in product_type:
+                    rate = 0.12
+                    duration = 3
+                    cycle = "Monthly"
+                    round_step = 100
+                elif "6 Month" in product_type or "6M" in product_type:
+                    rate = 0.21
+                    duration = 6
+                    cycle = "Monthly"
+                    round_step = 100
+                elif "12 Week" in product_type or "12W" in product_type:
+                    rate = 0.12
+                    duration = 12
+                    cycle = "Weekly"
+                    round_step = 50
+                    force_gap = True
+                elif "24 Week" in product_type or "24W" in product_type:
+                    rate = 0.21
+                    duration = 24
+                    cycle = "Weekly"
+                    round_step = 50
+                    force_gap = True
+
+                interest = requested_amount * rate
                 
                 # 5. Loan Renewal / Eligibility Checker
                 if requested_amount > 0:
@@ -2819,6 +2869,60 @@ elif page == "Loan Origination":
                         st.error("❌ **NOT ELIGIBLE FOR RENEWAL:**")
                         for r in reasons:
                             st.write(f"- {r}")
+                
+                initial_downpayment = 0.0
+                gap_fee = 0.0
+                total_upfront_required = 0.0
+                
+                if product_category == "Asset":
+                    initial_downpayment_input = st.number_input("Initial Cash Downpayment (₦)", min_value=0.0, step=5000.0, key="loan_app_downpayment")
+                    initial_downpayment = float(initial_downpayment_input)
+                    total_cost = requested_amount + interest
+                    active_credit = total_cost - initial_downpayment
+                    expected_installment = active_credit / duration if duration > 0 else 0.0
+                    
+                    st.markdown("---")
+                    st.markdown(f"**Asset Cost:** ₦{requested_amount:,.0f} | **Interest:** ₦{interest:,.0f} | **Total Cost:** ₦{total_cost:,.0f}")
+                    st.markdown(f"**Active Loan (Total Cost - Downpayment):** ₦{active_credit:,.0f}")
+                    st.markdown(f"**Expected Installment:** ₦{expected_installment:,.0f} x {duration} {cycle}")
+                    if initial_downpayment > 0:
+                        st.info(f"💵 Ensure the ₦{initial_downpayment:,.0f} downpayment is collected physically. It will be banked as part of total cash.")
+                else:
+                    # Finance default gap calculation
+                    default_gap = 0.0
+                    raw_val = requested_amount / duration if duration > 0 else 0
+                    if not raw_val.is_integer() and requested_amount > 0:
+                        loan_repayment = math.floor(raw_val / round_step) * round_step
+                        while True:
+                            gap = requested_amount - (loan_repayment * duration)
+                            is_valid = True if gap >= 0 else False
+                            if force_gap and (gap % 1000 != 0 or gap < 1000):
+                                is_valid = False
+                            if is_valid:
+                                default_gap = float(gap)
+                                break
+                            loan_repayment -= round_step
+                            if loan_repayment <= 0:
+                                default_gap = float(requested_amount)
+                                break
+                                
+                    gap_fee_input = st.number_input("Gap Fee / Base Savings (₦)", min_value=0.0, step=1000.0, value=default_gap, key="loan_app_gap_fee")
+                    gap_fee = float(gap_fee_input)
+                    total_upfront_required = interest + gap_fee
+                    active_credit = requested_amount - gap_fee
+                    expected_installment = active_credit / duration if duration > 0 else 0.0
+                    
+                    st.markdown("---")
+                    st.markdown(f"**Calculated Upfront Requirement:**")
+                    st.markdown(f"- Interest: ₦{interest:,.0f}")
+                    st.markdown(f"- Gap Fee (Base Savings): ₦{gap_fee:,.0f}")
+                    st.markdown(f"**Total Required:** ₦{total_upfront_required:,.0f}")
+                    
+                    if total_upfront_required > 0:
+                        if savings_bal < total_upfront_required:
+                            st.error(f"❌ **INSUFFICIENT SAVINGS:** Client has ₦{savings_bal:,.2f} but needs ₦{total_upfront_required:,.0f}. Please collect additional savings first.")
+                        else:
+                            st.success(f"✅ **SUFFICIENT SAVINGS:** Client has enough to cover the upfront fees.")
 
                 st.markdown("#### 2. Guarantors Details")
                 st.write("Please provide details for up to 2 Guarantors.")
@@ -2856,35 +2960,52 @@ elif page == "Loan Origination":
                     else:
                         try:
                             with SupabaseUnitOfWork() as uow:
-                                lifecycle_status = "Submitted"
+                                # Validation: check for existing loan of the same category
+                                check_prod_cat = product_category
+                                res_existing = uow.client.table("loans").select("*").eq("client_id", selected_client_id).eq("status", "Pending").execute()
+                                # Also check if active loan exists
+                                res_active = uow.client.table("loans").select("*").eq("client_id", selected_client_id).eq("status", "Active").execute()
                                 
-                                res_p_meta = uow.client.table("loan_products").select("*").eq("name", product_type).execute()
-                                if res_p_meta.data:
-                                    prod_meta = res_p_meta.data[0]
-                                    rate = float(prod_meta.get("interest_rate", 0) or 0)
-                                    rate = rate / 100.0 if rate > 1.0 else rate
-                                    duration = int(prod_meta.get("installments", 12) or 12)
-                                    cycle = prod_meta.get("repayment_cycle", "Weekly")
-                                    savings_req = float(prod_meta.get("savings_requirement", 0) or 0)
-                                else:
-                                    rate = 0.12
-                                    duration = 12
-                                    cycle = "Weekly"
-                                    savings_req = 0.0
-
-                                interest = requested_amount * rate
-                                total_payable = requested_amount + interest
-                                expected_installment = total_payable / duration if duration > 0 else total_payable
-
-                                required_savings = savings_req * requested_amount
-                                if savings_bal < required_savings:
-                                    st.error(f"Cannot submit application: Insufficient savings balance (₦{savings_bal:,.2f}). Required is ₦{required_savings:,.2f}.")
+                                is_blocked = False
+                                for L in res_existing.data + res_active.data:
+                                    if L.get("product_category", "Finance") == check_prod_cat and float(L.get("loan_amount", 0)) > 0:
+                                        is_blocked = True
+                                        
+                                if is_blocked:
+                                    st.error(f"❌ Cannot submit: This client already has an Active or Pending {product_category} loan!")
                                     st.stop()
+                                    
+                                if product_category == "Finance" and savings_bal < total_upfront_required:
+                                    st.error("Cannot submit! Insufficient savings.")
+                                    st.stop()
+
+                                # For Finance: auto-deduct upfront fees from savings
+                                if product_category == "Finance" and total_upfront_required > 0:
+                                    from services.savings_service import SavingsService
+                                    SavingsService.post_individual_savings(
+                                        uow,
+                                        client_id=selected_client_id,
+                                        client_name=selected_client.name,
+                                        branch=branch_name,
+                                        officer=USER,
+                                        deposit_amount=0.0,
+                                        withdrawal_amount=total_upfront_required,
+                                        remarks=f"Auto-deducted Upfront Fees (Interest: {interest}, Gap: {gap_fee}) for Loan App"
+                                    )
 
                                 from domain.entities.loan import Loan
                                 from domain.enums import LoanStatus
                                 
                                 loan_id = str(uuid.uuid4())
+                                if product_category == "Finance":
+                                    final_active_credit = requested_amount - gap_fee
+                                    final_total_payable = requested_amount + interest
+                                    final_expected_installment = final_active_credit / duration if duration > 0 else 0.0
+                                else:
+                                    final_active_credit = (requested_amount + interest) - initial_downpayment
+                                    final_total_payable = final_active_credit
+                                    final_expected_installment = final_active_credit / duration if duration > 0 else 0.0
+
                                 loan_entity = Loan(
                                     id=loan_id,
                                     client_id=selected_client_id,
@@ -2893,16 +3014,22 @@ elif page == "Loan Origination":
                                     amount=requested_amount,
                                     duration=duration,
                                     frequency=cycle,
-                                    gap_fee=0.0,
-                                    expected_installment=expected_installment,
-                                    total_payable=total_payable,
+                                    gap_fee=gap_fee,
+                                    expected_installment=final_expected_installment,
+                                    total_payable=final_total_payable,
                                     status=LoanStatus.PENDING,
                                     branch=branch_name,
                                     credit_officer=USER,
                                     start_date=date.today(),
+                                    is_asset=(product_category == "Asset"),
                                     extra_fields={
-                                        "lifecycle_status": lifecycle_status,
-                                        "notes": notes
+                                        "lifecycle_status": "Submitted",
+                                        "notes": notes,
+                                        "product_category": product_category,
+                                        "initial_downpayment": initial_downpayment,
+                                        "active_credit": final_active_credit,
+                                        "loan_repay": final_expected_installment,
+                                        "total_due": final_active_credit
                                     }
                                 )
                                 uow.loans.create(loan_entity)
@@ -2964,6 +3091,244 @@ elif page == "Loan Origination":
                                 st.rerun()
                         except Exception as ex:
                             st.error(f"Error submitting loan application: {ex}")
+                            
+    elif orig_section == "✏️ Edit Client/Guarantor":
+        st.subheader("✏️ Edit Client/Guarantor Details")
+        st.info("Search for a registered client to update their personal details and their guarantor information.")
+        
+        # 1. Search Client
+        search_query = st.text_input("🔍 Search Client by Name or Client ID to Edit", key="edit_client_search_query")
+        
+        selected_client = None
+        if search_query:
+            with SupabaseUnitOfWork() as uow:
+                found_clients = uow.clients.search_by_name_or_code(search_query)
+                
+            if not found_clients:
+                st.warning("No clients found matching the search criteria.")
+            else:
+                client_options = {f"{c.client_code} - {c.name}": c for c in found_clients}
+                selected_display = st.selectbox("Select Client", [""] + list(client_options.keys()), key="edit_client_selected_select")
+                if selected_display:
+                    selected_client = client_options[selected_display]
+
+        if selected_client:
+            # Load their latest loan (to get guarantor info)
+            with SupabaseUnitOfWork() as uow:
+                # Query loans table for the latest loan associated with this client
+                res_l = uow.client.table("loans").select("*").eq("client_id", selected_client.id).order("created_at", desc=True).limit(1).execute()
+                latest_loan = res_l.data[0] if res_l.data else {}
+
+            st.markdown("### 👤 Update Client Profile & 🤝 Guarantor Details")
+            
+            with st.form("edit_client_details_form"):
+                st.markdown("#### 1. Personal Details")
+                col1, col2, col3 = st.columns(3)
+                c_name = col1.text_input("Full Name", value=selected_client.name)
+                c_phone = col2.text_input("Phone Number", value=selected_client.phone or "")
+                c_address = col3.text_input("Home Address", value=selected_client.address or "")
+                
+                col4, col5, col6 = st.columns(3)
+                c_marital = col4.selectbox("Marital Status", ["Married", "Single", "Divorced", "Widowed"], 
+                                           index=["Married", "Single", "Divorced", "Widowed"].index(selected_client.marital_status) if selected_client.marital_status in ["Married", "Single", "Divorced", "Widowed"] else 0)
+                c_biz = col5.text_input("Business Type", value=selected_client.business_type or "")
+                
+                # Fetch average_income safely
+                try:
+                    default_income = float(selected_client.average_monthly_income or 0.0)
+                except:
+                    default_income = 0.0
+                c_income = col6.number_input("Average Monthly Income (₦)", min_value=0.0, step=5000.0, value=default_income)
+                
+                c_obligations = st.text_input("Other Obligations", value=selected_client.other_obligations or "")
+                
+                st.markdown("##### 🆔 Identification Section")
+                id_col1, id_col2, id_col3 = st.columns(3)
+                
+                id_means_options = ["National ID (NIN)", "Voter's Card", "Driver's License", "International Passport", "None"]
+                default_means_idx = id_means_options.index(selected_client.id_means) if selected_client.id_means in id_means_options else 4
+                c_id_means = id_col1.selectbox("Means of ID", id_means_options, index=default_means_idx, key="edit_client_id_means")
+                c_id_number = id_col2.text_input("ID Number", value=selected_client.id_number or "", key="edit_client_id_number")
+                
+                st.write("---")
+                st.write("⚠️ *Optional: Upload new files only if you want to replace the existing ones.*")
+                
+                c_id_file = id_col3.file_uploader("Upload ID Document (replaces current)", type=["jpg", "jpeg", "png", "pdf"], key="edit_client_id_file")
+                
+                col_pass1, col_pass2 = st.columns(2)
+                c_pass_file = col_pass1.file_uploader("Upload Passport Photograph (replaces current)", type=["jpg", "jpeg", "png"], key="edit_client_passport")
+                
+                st.markdown("#### 2. Guarantor Info")
+                g_col1, g_col2, g_col3 = st.columns(3)
+                
+                g_name = g_col1.text_input("Guarantor Full Name", value=latest_loan.get("guarantor_name") or "")
+                g_phone = g_col2.text_input("Guarantor Phone Number", value=latest_loan.get("guarantor_phone") or "")
+                g_address = g_col3.text_input("Guarantor Home Address", value=latest_loan.get("guarantor_home_address") or "")
+                
+                g_col4, g_col5, g_col6 = st.columns(3)
+                g_marital_options = ["Married", "Single", "Divorced", "Widowed"]
+                g_marital_val = latest_loan.get("guarantor_marital_status") or "Married"
+                g_marital_idx = g_marital_options.index(g_marital_val) if g_marital_val in g_marital_options else 0
+                g_marital = g_col4.selectbox("Guarantor Marital Status", g_marital_options, index=g_marital_idx)
+                
+                g_occ = g_col5.text_input("Guarantor Occupation", value=latest_loan.get("guarantor_occupation") or "")
+                g_rel = g_col6.text_input("Relationship with Client", value=latest_loan.get("guarantor_relationship") or "")
+                
+                g_office = st.text_input("Guarantor Office Address", value=latest_loan.get("guarantor_office_address") or "")
+                
+                st.markdown("##### 🆔 Guarantor Identification & Passport")
+                g_id_col1, g_id_col2, g_id_col3 = st.columns(3)
+                
+                g_id_means_options = ["National ID (NIN)", "Voter's Card", "Driver's License", "International Passport", "None"]
+                g_id_means_val = latest_loan.get("guarantor_id_means") or "None"
+                g_id_means_idx = g_id_means_options.index(g_id_means_val) if g_id_means_val in g_id_means_options else 4
+                
+                g_id_means = g_id_col1.selectbox("Guarantor Means of ID", g_id_means_options, index=g_id_means_idx, key="edit_guarantor_id_means")
+                g_id_number = g_id_col2.text_input("Guarantor ID Number", value=latest_loan.get("guarantor_id_number") or "", key="edit_guarantor_id_number")
+                g_id_file = g_id_col3.file_uploader("Upload Guarantor ID Document (replaces current)", type=["jpg", "jpeg", "png", "pdf"], key="edit_guarantor_id_file")
+                
+                g_pass_col1, g_pass_col2 = st.columns(2)
+                g_pass_file = g_pass_col1.file_uploader("Upload Guarantor Passport Photograph (replaces current)", type=["jpg", "jpeg", "png"], key="edit_guarantor_passport")
+                
+                submitted_edit = st.form_submit_button("💾 Save Client & Guarantor Updates", type="primary", use_container_width=True)
+                
+                if submitted_edit:
+                    if not c_name.strip():
+                        st.error("Client Name is required.")
+                    else:
+                        try:
+                            with SupabaseUnitOfWork() as uow:
+                                # Setup storage path helper
+                                def upload_client_file(file_data, file_name):
+                                    if not file_data:
+                                        return None
+                                    try:
+                                        file_bytes = file_data.read()
+                                        file_ext = file_data.name.split('.')[-1]
+                                        storage_path = f"{selected_client.id}/{file_name}.{file_ext}"
+                                        
+                                        # Try to upload file
+                                        uow.client.storage.from_("client-ids").upload(
+                                            path=storage_path,
+                                            file=file_bytes,
+                                            file_options={"content-type": file_data.type}
+                                        )
+                                        return uow.client.storage.from_("client-ids").get_public_url(storage_path)
+                                    except Exception as upload_err:
+                                        # If already exists, we might need to overwrite/update it
+                                        try:
+                                            uow.client.storage.from_("client-ids").remove([storage_path])
+                                            uow.client.storage.from_("client-ids").upload(
+                                                path=storage_path,
+                                                file=file_bytes,
+                                                file_options={"content-type": file_data.type}
+                                            )
+                                            return uow.client.storage.from_("client-ids").get_public_url(storage_path)
+                                        except Exception as fallback_err:
+                                            st.warning(f"⚠️ File upload failed for '{file_name}': {fallback_err}")
+                                            return None
+
+                                # 1. Process files
+                                new_id_url = upload_client_file(c_id_file, "id_document")
+                                new_pass_url = upload_client_file(c_pass_file, "passport")
+                                new_g_id_url = upload_client_file(g_id_file, "guarantor_id")
+                                new_g_pass_url = upload_client_file(g_pass_file, "guarantor_passport")
+
+                                # 2. Update Client Details in Supabase clients table
+                                client_update_data = {
+                                    "name": c_name.strip(),
+                                    "phone": c_phone.strip() if c_phone.strip() else None,
+                                    "address": c_address.strip() if c_address.strip() else None,
+                                    "marital_status": c_marital,
+                                    "business_type": c_biz.strip() if c_biz.strip() else None,
+                                    "average_monthly_income": c_income,
+                                    "other_obligations": c_obligations.strip() if c_obligations.strip() else None,
+                                    "id_means": c_id_means,
+                                    "id_number": c_id_number.strip() if c_id_number.strip() else None
+                                }
+                                if new_id_url:
+                                    client_update_data["id_card_url"] = new_id_url
+                                if new_pass_url:
+                                    client_update_data["passport_url"] = new_pass_url
+                                    
+                                uow.client.table("clients").update(client_update_data).eq("client_id", selected_client.id).execute()
+
+                                # 3. Update Guarantor details in the latest loan (if exists)
+                                if latest_loan:
+                                    loan_update_data = {
+                                        "guarantor_name": g_name.strip() if g_name.strip() else None,
+                                        "guarantor_phone": g_phone.strip() if g_phone.strip() else None,
+                                        "guarantor_home_address": g_address.strip() if g_address.strip() else None,
+                                        "guarantor_marital_status": g_marital,
+                                        "guarantor_occupation": g_occ.strip() if g_occ.strip() else None,
+                                        "guarantor_relationship": g_rel.strip() if g_rel.strip() else None,
+                                        "guarantor_office_address": g_office.strip() if g_office.strip() else None,
+                                        "guarantor_id_means": g_id_means,
+                                        "guarantor_id_number": g_id_number.strip() if g_id_number.strip() else None
+                                    }
+                                    if new_g_id_url:
+                                        loan_update_data["guarantor_id_card_url"] = new_g_id_url
+                                    if new_g_pass_url:
+                                        loan_update_data["guarantor_passport_url"] = new_g_pass_url
+                                        
+                                    uow.client.table("loans").update(loan_update_data).eq("loan_id", latest_loan["loan_id"]).execute()
+                                    
+                                    # 4. Sync / Update or Create in public.guarantors table
+                                    if g_name.strip() and g_phone.strip():
+                                        res_g = uow.guarantors.find_by_phone(g_phone.strip())
+                                        guarantor_id = None
+                                        if res_g:
+                                            guarantor_id = res_g.guarantor_id
+                                            # Update guarantor details
+                                            g_update = {
+                                                "name": g_name.strip(),
+                                                "address": g_address.strip() if g_address.strip() else None,
+                                                "occupation": g_occ.strip() if g_occ.strip() else None,
+                                                "business_address": g_office.strip() if g_office.strip() else None,
+                                                "id_means": g_id_means,
+                                                "id_number": g_id_number.strip() if g_id_number.strip() else None
+                                            }
+                                            if new_g_id_url:
+                                                g_update["id_card_url"] = new_g_id_url
+                                            if new_g_pass_url:
+                                                g_update["passport_url"] = new_g_pass_url
+                                                
+                                            uow.client.table("guarantors").update(g_update).eq("guarantor_id", guarantor_id).execute()
+                                        else:
+                                            # Create new guarantor record
+                                            from domain.entities.guarantor import Guarantor
+                                            g_new = Guarantor(
+                                                guarantor_id=str(uuid.uuid4()),
+                                                name=g_name.strip(),
+                                                phone=g_phone.strip(),
+                                                address=g_address.strip() if g_address.strip() else None,
+                                                occupation=g_occ.strip() if g_occ.strip() else None,
+                                                business_address=g_office.strip() if g_office.strip() else None,
+                                                id_means=g_id_means,
+                                                id_number=g_id_number.strip() if g_id_number.strip() else None,
+                                                id_card_url=new_g_id_url,
+                                                passport_url=new_g_pass_url
+                                            )
+                                            g_ent = uow.guarantors.create_guarantor(g_new)
+                                            guarantor_id = g_ent.guarantor_id
+                                            
+                                        # Ensure loan link is established in loan_guarantors
+                                        res_link = uow.client.table("loan_guarantors").select("*").eq("loan_id", latest_loan["loan_id"]).eq("guarantor_id", guarantor_id).execute()
+                                        if not res_link.data:
+                                            from domain.entities.guarantor import LoanGuarantor
+                                            uow.guarantors.link_to_loan(LoanGuarantor(
+                                                id=str(uuid.uuid4()),
+                                                loan_id=latest_loan["loan_id"],
+                                                guarantor_id=guarantor_id,
+                                                relationship=g_rel.strip()
+                                            ))
+
+                                st.success("🎉 Client and Guarantor details updated successfully!")
+                                import time
+                                time.sleep(2)
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Error updating details: {e}")
                             
                             
 
