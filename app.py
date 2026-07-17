@@ -3285,7 +3285,7 @@ elif page == "Collections":
     all_loans = load_loans()
     repayments = load_repayments()
     
-    if all_loans.empty:
+    if False:
         st.warning("No active loans found.")
     else:
         # Filter active loans for this officer (unless BM/AM looking at all)
@@ -3443,22 +3443,55 @@ elif page == "Collections":
                     
         elif col_mode == "👤 Individual / Group Entry":
             st.markdown("### 👥 Member Collections")
-        # Show all clients that are not strictly closed, so completed clients can still deposit savings
-        co_loans = all_loans[(all_loans['Officer'] == target_co) & (all_loans['Status'] != STATUS_CLOSED)]
-        
-        if co_loans.empty:
-            st.info("No active or pending members for this officer.")
+        # Load all active clients for the target officer
+        with SupabaseUnitOfWork() as uow:
+            target_officer_id = uow.loans._resolve_officer_id(target_co)
+            if ROLE in ["BM", ROLE_BRANCH_MANAGER]:
+                res_c = uow.client.table("clients").select("client_id, client_code, name, status, client_memberships(groups(name))").eq("branch_id", BRANCH_ID).eq("status", "Active").execute()
+            elif ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
+                res_c = uow.client.table("clients").select("client_id, client_code, name, status, client_memberships(groups(name))").in_("branch_id", ASSIGNED_BRANCH_IDS).eq("status", "Active").execute()
+            elif ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
+                res_c = uow.client.table("clients").select("client_id, client_code, name, status, client_memberships(groups(name))").eq("status", "Active").execute()
+            else:
+                res_c = uow.client.table("clients").select("client_id, client_code, name, status, client_memberships(groups(name))").eq("officer_id", target_officer_id).eq("status", "Active").execute()
+                
+        clients_data = []
+        if res_c.data:
+            for c in res_c.data:
+                g_name = "Ungrouped"
+                m_list = c.get("client_memberships") or []
+                if isinstance(m_list, list):
+                    for m in m_list:
+                        if m.get("groups") and m["groups"].get("name"):
+                            g_name = m["groups"]["name"]
+                            break
+                elif isinstance(m_list, dict):
+                    if m_list.get("groups") and m_list["groups"].get("name"):
+                        g_name = m_list["groups"]["name"]
+                
+                clients_data.append({
+                    "Client ID": c["client_code"] or c["client_id"],
+                    "ID": c["client_id"],
+                    "Client Name": c["name"],
+                    "Group Name": g_name,
+                    "Officer": target_co,
+                    "Branch": BRANCH
+                })
+                
+        if not clients_data:
+            st.info("No registered active clients found for this officer.")
         else:
-            groups = ["Ungrouped"] + sorted(co_loans[co_loans['Group Name'].notna()]['Group Name'].unique().tolist())
+            co_clients_df = pd.DataFrame(clients_data)
+            groups = ["Ungrouped"] + sorted(co_clients_df[co_clients_df['Group Name'] != "Ungrouped"]['Group Name'].unique().tolist())
             selected_group = st.selectbox("Select Group", groups)
             
             if selected_group == "Ungrouped":
-                group_loans = co_loans[co_loans['Group Name'].isna() | (co_loans['Group Name'] == "")]
+                group_clients = co_clients_df[co_clients_df['Group Name'] == "Ungrouped"]
             else:
-                group_loans = co_loans[co_loans['Group Name'] == selected_group]
+                group_clients = co_clients_df[co_clients_df['Group Name'] == selected_group]
                 
-            if group_loans.empty:
-                st.info("No active or pending members in this group.")
+            if group_clients.empty:
+                st.info("No active members in this group.")
             else:
                 st.markdown(f"### Members in {selected_group}")
                 
@@ -3468,29 +3501,37 @@ elif page == "Collections":
                 # Clear state if group or date changed
                 if st.session_state.get('collections_group') != selected_group or st.session_state.get('collections_date') != date_str:
                     st.session_state['pending_collections'] = []
+                    st.session_state['collections_group'] = selected_group
+                    st.session_state['collections_date'] = date_str
                 
                 # Pre-compute member data
                 member_info = {}
                 from services.schedule_service import ScheduleService
                 with SupabaseUnitOfWork() as uow:
-                    for _, member in group_loans.iterrows():
+                    for _, member in group_clients.iterrows():
                         cid = member['Client ID']
+                        uuid_id = member['ID']
                         mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
                         acc_sav = mem_reps['Savings Amount'].astype(float).sum() if not mem_reps.empty else 0
                         acc_wd = mem_reps['Withdrawal Amount'].astype(float).sum() if 'Withdrawal Amount' in mem_reps.columns and not mem_reps.empty else 0
                         sav_bal = acc_sav - acc_wd
                         total_paid = mem_reps['Loan Repayment Amount'].astype(float).sum() if not mem_reps.empty else 0
                         
-                        # Find active loan
-                        res_l = uow.client.table("loans").select("loan_id, active_credit").eq("client_id", cid).eq("status", "Active").execute()
-                        if res_l.data:
-                            active_loan_id = res_l.data[0]["loan_id"]
-                            act_cred = float(res_l.data[0].get("active_credit") or 0.0)
+                        # Find if there is an active loan in all_loans
+                        active_loan_rows = all_loans[(all_loans['Client ID'] == uuid_id) & (all_loans['Status'] == 'Active')]
+                        if not active_loan_rows.empty:
+                            loan_row = active_loan_rows.iloc[0]
+                            active_loan_id = loan_row.get('loan_id') or loan_row.get('Loan ID')
+                            act_cred = float(loan_row.get('Active Credit', 0))
+                            loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
                             expected_rep_schedule = ScheduleService.get_expected_repayment(uow, active_loan_id, view_date)
+                            start_date_val = str(loan_row.get('Start Date', ''))
                         else:
                             active_loan_id = None
-                            act_cred = float(member.get('Active Credit', 0))
-                            expected_rep_schedule = float(member.get('Loan Repayment', 0))
+                            act_cred = 0.0
+                            loan_prod_val = "None"
+                            expected_rep_schedule = 0.0
+                            start_date_val = ""
                             
                         rem_bal = act_cred - total_paid
                         
@@ -3509,8 +3550,17 @@ elif page == "Collections":
                             today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
                             prev_rep = expected_rep_schedule if today_paid.empty else 0.0
                             
+                        # Pack member details expected by UI
+                        member_dict = member.to_dict()
+                        member_dict.update({
+                            "Active Credit": act_cred,
+                            "Loan Repay": expected_rep_schedule,
+                            "Loan Product": loan_prod_val,
+                            "Start Date": start_date_val
+                        })
+                        
                         member_info[cid] = {
-                            "member": member,
+                            "member": pd.Series(member_dict),
                             "sav_bal": sav_bal,
                             "rem_bal": rem_bal,
                             "act_cred": act_cred,
@@ -3518,7 +3568,7 @@ elif page == "Collections":
                             "prev_dep": prev_dep,
                             "prev_wd": prev_wd,
                             "prev_rep": prev_rep,
-                            "start_date": str(member.get('Start Date', ''))
+                            "start_date": start_date_val
                         }
                 
                 if st.session_state.get('pending_collections') and st.session_state.get('collections_group') == selected_group and st.session_state.get('collections_date') == date_str:
