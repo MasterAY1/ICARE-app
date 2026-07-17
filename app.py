@@ -2087,7 +2087,11 @@ elif page == "Loan Origination":
 
     elif orig_section == "👤 Client Registration":
         st.subheader("👤 Client Registration")
-        reg_type = st.radio("Registration Method", ["Single Client", "📦 Bulk Onboarding"], horizontal=True)
+        # Only Admins and Super Admins can see the Bulk Onboarding method
+        if ROLE in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
+            reg_type = st.radio("Registration Method", ["Single Client", "📦 Bulk Onboarding"], horizontal=True)
+        else:
+            reg_type = "Single Client"
         
         if reg_type == "Single Client":
             # Load branches and groups using UOW
@@ -3337,7 +3341,11 @@ elif page == "Collections":
         else:
             target_co = USER
             
-        col_mode = st.radio("Collection Mode", ["👤 Individual / Group Entry", "📥 Bulk Upload (Excel)"], horizontal=True, label_visibility="collapsed")
+        # Only Admins and Super Admins can see the Bulk Upload (Excel) option
+        if ROLE in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
+            col_mode = st.radio("Collection Mode", ["👤 Individual / Group Entry", "📥 Bulk Upload (Excel)"], horizontal=True, label_visibility="collapsed")
+        else:
+            col_mode = "👤 Individual / Group Entry"
         
         if col_mode == "📥 Bulk Upload (Excel)":
             st.markdown("### 📥 Bulk Upload (Excel Template)")
