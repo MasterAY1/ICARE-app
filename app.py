@@ -2811,11 +2811,11 @@ elif page == "Loan Origination":
 
             # 4. Loan Specific fields
             st.markdown("### 📝 Apply for a New Loan")
+            st.markdown("#### 1. Loan Product Parameters")
+            product_category = st.selectbox("Product Category", ["Finance", "Asset"], key="loan_app_category")
+            
             with st.form("loan_application_details_form"):
-                st.markdown("#### 1. Loan Product Parameters")
-                col_p0, col_p1, col_p2 = st.columns(3)
-                
-                product_category = col_p0.selectbox("Product Category", ["Finance", "Asset"], key="loan_app_category")
+                col_p1, col_p2 = st.columns(2)
                 
                 if product_category == "Finance":
                     prods = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
