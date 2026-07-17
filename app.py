@@ -2769,6 +2769,15 @@ elif page == "Loan Origination":
             with SupabaseUnitOfWork() as uow:
                 found_clients = uow.clients.search_by_name_or_code(search_query)
                 
+            # Apply RBAC hierarchy filters
+            if ROLE in ['CO', 'Officer', ROLE_CREDIT_OFFICER]:
+                user_id = current_user.id if current_user else None
+                found_clients = [c for c in found_clients if c.officer_id == user_id]
+            elif ROLE in ['BM', ROLE_BRANCH_MANAGER]:
+                found_clients = [c for c in found_clients if c.branch_id == BRANCH_ID]
+            elif ROLE in ['AM', 'Area Manager']:
+                found_clients = [c for c in found_clients if c.branch_id in ASSIGNED_BRANCH_IDS]
+                
             if not found_clients:
                 st.warning("No clients found matching the search criteria.")
             else:
@@ -3046,6 +3055,15 @@ elif page == "Loan Origination":
         if search_query:
             with SupabaseUnitOfWork() as uow:
                 found_clients = uow.clients.search_by_name_or_code(search_query)
+                
+            # Apply RBAC hierarchy filters
+            if ROLE in ['CO', 'Officer', ROLE_CREDIT_OFFICER]:
+                user_id = current_user.id if current_user else None
+                found_clients = [c for c in found_clients if c.officer_id == user_id]
+            elif ROLE in ['BM', ROLE_BRANCH_MANAGER]:
+                found_clients = [c for c in found_clients if c.branch_id == BRANCH_ID]
+            elif ROLE in ['AM', 'Area Manager']:
+                found_clients = [c for c in found_clients if c.branch_id in ASSIGNED_BRANCH_IDS]
                 
             if not found_clients:
                 st.warning("No clients found matching the search criteria.")
