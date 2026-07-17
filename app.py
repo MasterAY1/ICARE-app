@@ -5280,12 +5280,24 @@ elif page in ["Reports", "Reports & Export"]:
 # 14. USER MANAGEMENT (Admin / BM / AM)
 # ==========================================
 elif page == "User Management":
+    import sys
+    import importlib
+    import services.user_service
+    importlib.reload(services.user_service)
     from services.user_service import UserService
     
     st.markdown("<div class='dashboard-header'>", unsafe_allow_html=True)
     st.markdown("<h1>🔐 User Management</h1>", unsafe_allow_html=True)
     st.markdown("<p>Manage application users, reset passwords, and handle officer turnover.</p>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Render any flash messages from session state
+    if "user_mgmt_success" in st.session_state:
+        st.success(st.session_state["user_mgmt_success"])
+        del st.session_state["user_mgmt_success"]
+    if "user_mgmt_error" in st.session_state:
+        st.error(st.session_state["user_mgmt_error"])
+        del st.session_state["user_mgmt_error"]
     
     # Fetch users scoped to the requesting user's role
     all_users = UserService.list_users(current_user)
@@ -5331,7 +5343,7 @@ elif page == "User Management":
                         if st.button("✅ Activate", key="activate_btn", use_container_width=True, disabled=current_status):
                             result = UserService.activate_user(target_user_data['id'], current_user)
                             if result['success']:
-                                st.success(result['message'])
+                                st.session_state['user_mgmt_success'] = result['message']
                                 st.rerun()
                             else:
                                 st.error(result['message'])
@@ -5339,7 +5351,7 @@ elif page == "User Management":
                         if st.button("❌ Deactivate", key="deactivate_btn", use_container_width=True, disabled=not current_status):
                             result = UserService.deactivate_user(target_user_data['id'], current_user)
                             if result['success']:
-                                st.success(result['message'])
+                                st.session_state['user_mgmt_success'] = result['message']
                                 st.rerun()
                             else:
                                 st.error(result['message'])
@@ -5352,11 +5364,10 @@ elif page == "User Management":
                             if st.button("🔥 Permanently Delete User", key="delete_user_btn", use_container_width=True, type="primary", disabled=not confirm_del):
                                 result = UserService.remove_user_permanently(target_user_data['id'], current_user)
                                 if result['success']:
-                                    st.success(result['message'])
+                                    st.session_state['user_mgmt_success'] = result['message']
                                     st.rerun()
                                 else:
                                     st.error(result['message'])
-        else:
             st.info("No users found.")
     
     # --- Tab: Create User (Admin Only) ---
@@ -5382,7 +5393,7 @@ elif page == "User Management":
                         requesting_user=current_user,
                     )
                     if result['success']:
-                        st.success(result['message'])
+                        st.session_state['user_mgmt_success'] = result['message']
                         st.rerun()
                     else:
                         st.error(result['message'])
@@ -5401,7 +5412,8 @@ elif page == "User Management":
                 if submit_reset:
                     result = UserService.reset_password(reset_username, reset_password, current_user)
                     if result['success']:
-                        st.success(result['message'])
+                        st.session_state['user_mgmt_success'] = result['message']
+                        st.rerun()
                     else:
                         st.error(result['message'])
     
@@ -5430,7 +5442,7 @@ elif page == "User Management":
                 if submit_update:
                     result = UserService.update_officer_name(update_username, new_officer_name, current_user)
                     if result['success']:
-                        st.success(result['message'])
+                        st.session_state['user_mgmt_success'] = result['message']
                         st.rerun()
                     else:
                         st.error(result['message'])
@@ -5477,7 +5489,7 @@ elif page == "User Management":
                                 selected_ids = [branch_options[n] for n in selected_branches if n in branch_options]
                                 result = UserService.save_am_assignments(am_data['id'], selected_ids, current_user)
                                 if result['success']:
-                                    st.success(result['message'])
+                                    st.session_state['user_mgmt_success'] = result['message']
                                     st.rerun()
                                 else:
                                     st.error(result['message'])

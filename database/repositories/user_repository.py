@@ -175,6 +175,10 @@ class SupabaseUserRepository(BaseRepository[User], UserRepository):
         return len(res.data) > 0
 
     def delete(self, id: str) -> bool:
+        user = self.find_by_id(id)
+        if not user:
+            return False
         query = self.client.table(self.table_name).delete().eq("id", id)
-        res = self._execute(query)
-        return len(res.data) > 0
+        self._execute(query)
+        # Verify the user is gone
+        return self.find_by_id(id) is None
