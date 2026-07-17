@@ -986,6 +986,21 @@ def load_loans():
                 
             from mappers.base_mappers import LoanMapper
             df = pd.DataFrame([LoanMapper.to_database(L) for L in loans]).rename(columns=DB_TO_UI_LOANS)
+            
+            # Fetch actual group names from client memberships to cover newly registered pre-loan clients
+            try:
+                res_m = uow.client.table("client_memberships").select("client_id, groups(name)").execute()
+                if res_m.data:
+                    client_to_group = {}
+                    for m in res_m.data:
+                        cid = m.get("client_id")
+                        g_name = m.get("groups", {}).get("name") if m.get("groups") else None
+                        if cid and g_name:
+                            client_to_group[cid] = g_name
+                    df['Group Name'] = df['Client ID'].map(client_to_group).fillna(df['Group Name'])
+            except Exception:
+                pass
+
             num_cols = ['Loan Amount', 'Active Credit', 'Loan Repay', 'Total Due']
             for c in num_cols:
                 if c in df.columns:
@@ -2924,30 +2939,7 @@ elif page == "Loan Origination":
                         else:
                             st.success(f"✅ **SUFFICIENT SAVINGS:** Client has enough to cover the upfront fees.")
 
-                st.markdown("#### 2. Guarantors Details")
-                st.write("Please provide details for up to 2 Guarantors.")
-                
-                col_g1, col_g2 = st.columns(2)
-                
-                with col_g1:
-                    st.markdown("**Guarantor 1**")
-                    g1_name = st.text_input("Full Name", key="loan_app_g1_name")
-                    g1_phone = st.text_input("Phone Number", key="loan_app_g1_phone")
-                    g1_address = st.text_input("Home Address", key="loan_app_g1_address")
-                    g1_occ = st.text_input("Occupation", key="loan_app_g1_occ")
-                    g1_biz = st.text_input("Business Address", key="loan_app_g1_biz")
-                    g1_rel = st.text_input("Relationship with Client", key="loan_app_g1_rel")
-                    
-                with col_g2:
-                    st.markdown("**Guarantor 2**")
-                    g2_name = st.text_input("Full Name", key="loan_app_g2_name")
-                    g2_phone = st.text_input("Phone Number", key="loan_app_g2_phone")
-                    g2_address = st.text_input("Home Address", key="loan_app_g2_address")
-                    g2_occ = st.text_input("Occupation", key="loan_app_g2_occ")
-                    g2_biz = st.text_input("Business Address", key="loan_app_g2_biz")
-                    g2_rel = st.text_input("Relationship with Client", key="loan_app_g2_rel")
-
-                st.markdown("#### 3. Loan Notes")
+                st.markdown("#### 2. Loan Notes")
                 notes = st.text_area("Remarks / Notes", key="loan_app_notes")
                 
                 submitted_loan_app = st.form_submit_button("Submit Application for BM Approval", type="primary", use_container_width=True)
@@ -2955,8 +2947,6 @@ elif page == "Loan Origination":
                 if submitted_loan_app:
                     if requested_amount <= 0:
                         st.error("Please enter a valid Loan Amount.")
-                    elif not g1_name.strip() or not g1_phone.strip():
-                        st.error("At least one Guarantor's Name and Phone are required.")
                     else:
                         try:
                             with SupabaseUnitOfWork() as uow:
@@ -3033,54 +3023,6 @@ elif page == "Loan Origination":
                                     }
                                 )
                                 uow.loans.create(loan_entity)
-
-                                if g1_name.strip():
-                                    res_g1 = uow.guarantors.find_by_phone(g1_phone.strip())
-                                    if res_g1:
-                                        g1_id = res_g1.guarantor_id
-                                    else:
-                                        from domain.entities.guarantor import Guarantor
-                                        g1_ent = uow.guarantors.create_guarantor(Guarantor(
-                                            guarantor_id=str(uuid.uuid4()),
-                                            name=g1_name.strip(),
-                                            phone=g1_phone.strip(),
-                                            address=g1_address.strip(),
-                                            occupation=g1_occ.strip(),
-                                            business_address=g1_biz.strip()
-                                        ))
-                                        g1_id = g1_ent.guarantor_id
-                                        
-                                    from domain.entities.guarantor import LoanGuarantor
-                                    uow.guarantors.link_to_loan(LoanGuarantor(
-                                        id=str(uuid.uuid4()),
-                                        loan_id=loan_id,
-                                        guarantor_id=g1_id,
-                                        relationship=g1_rel.strip()
-                                    ))
-
-                                if g2_name.strip():
-                                    res_g2 = uow.guarantors.find_by_phone(g2_phone.strip())
-                                    if res_g2:
-                                        g2_id = res_g2.guarantor_id
-                                    else:
-                                        from domain.entities.guarantor import Guarantor
-                                        g2_ent = uow.guarantors.create_guarantor(Guarantor(
-                                            guarantor_id=str(uuid.uuid4()),
-                                            name=g2_name.strip(),
-                                            phone=g2_phone.strip(),
-                                            address=g2_address.strip(),
-                                            occupation=g2_occ.strip(),
-                                            business_address=g2_biz.strip()
-                                        ))
-                                        g2_id = g2_ent.guarantor_id
-                                        
-                                    from domain.entities.guarantor import LoanGuarantor
-                                    uow.guarantors.link_to_loan(LoanGuarantor(
-                                        id=str(uuid.uuid4()),
-                                        loan_id=loan_id,
-                                        guarantor_id=g2_id,
-                                        relationship=g2_rel.strip()
-                                    ))
 
                                 from services.schedule_service import ScheduleService
                                 ScheduleService.generate_schedule(uow, loan_entity, date.today() + timedelta(days=7))
