@@ -2402,6 +2402,42 @@ elif page == "Loan Origination":
                             import_errors = []
                             
                             with SupabaseUnitOfWork() as uow:
+                                # Load all system users once for fast, fuzzy, and robust officer resolution in-memory
+                                db_users = uow.users.find_all()
+                                
+                                def resolve_officer_id(name_str):
+                                    if not name_str:
+                                        return None
+                                    name_clean = str(name_str).strip().lower()
+                                    # 1. Direct username case-insensitive check
+                                    for u in db_users:
+                                        if u.username.lower() == name_clean:
+                                            return u.id
+                                    # 2. Direct full name case-insensitive check
+                                    for u in db_users:
+                                        if u.full_name.lower() == name_clean:
+                                            return u.id
+                                    # 3. Fuzzy match ignoring common titles (e.g. Mr., Mrs., Miss., Mr, Mrs, Miss)
+                                    titles = ["mr.", "mrs.", "miss.", "mr", "mrs", "miss"]
+                                    name_no_title = name_clean
+                                    for t in titles:
+                                        if name_no_title.startswith(t):
+                                            name_no_title = name_no_title[len(t):].strip()
+                                            break
+                                    for u in db_users:
+                                        u_full_clean = u.full_name.lower()
+                                        for t in titles:
+                                            if u_full_clean.startswith(t):
+                                                u_full_clean = u_full_clean[len(t):].strip()
+                                                break
+                                        if u_full_clean == name_no_title or u.username.lower() == name_no_title:
+                                            return u.id
+                                    # 4. Keyword fuzzy check (e.g. "Ayomide" in "Mr. Ayomide" or "CO2")
+                                    for u in db_users:
+                                        if name_no_title in u.full_name.lower() or name_no_title in u.username.lower():
+                                            return u.id
+                                    return None
+                                
                                 # 1. First process Groups
                                 group_mapping = {}  # maps group name -> group_id
                                 group_rows_map = {} # maps group name -> group_row
@@ -2417,8 +2453,7 @@ elif page == "Loan Origination":
                                     
                                     # Resolve officer_id
                                     oname = str(group_row.get('Credit Officer Name', USER)).strip()
-                                    res_u = uow.client.table("app_users").select("id").eq("username", oname).execute()
-                                    officer_id = res_u.data[0]["id"] if res_u.data else None
+                                    officer_id = resolve_officer_id(oname) or (current_user.id if current_user else None) or uow.loans._resolve_officer_id(USER)
                                     
                                     # Check if group already exists
                                     res_g = uow.client.table("groups").select("group_id").eq("name", gname).execute()
@@ -2473,11 +2508,10 @@ elif page == "Loan Origination":
                                         else:
                                             branch_id = None
                                             branch_code = bname[:3].upper()
-                                            
+                                        
                                         # Resolve officer
                                         oname = str(group_row.get('Credit Officer Name', USER)).strip()
-                                        res_u = uow.client.table("app_users").select("id").eq("username", oname).execute()
-                                        officer_id = res_u.data[0]["id"] if res_u.data else None
+                                        officer_id = resolve_officer_id(oname) or (current_user.id if current_user else None) or uow.loans._resolve_officer_id(USER)
                                         
                                         phone_val = str(member_row.get('Phone Number', '')).strip()
                                         if phone_val.lower() == 'nan' or not phone_val:
@@ -2618,6 +2652,8 @@ elif page == "Loan Origination":
                                                     status=LoanStatus.ACTIVE,
                                                     branch=bname,
                                                     credit_officer=oname or USER,
+                                                    officer_id=officer_id,
+                                                    branch_id=branch_id,
                                                     start_date=date.today() - timedelta(weeks=4),
                                                     extra_fields={"lifecycle_status": "Active"}
                                                 )
@@ -3041,6 +3077,8 @@ elif page == "Loan Origination":
                                     status=LoanStatus.PENDING,
                                     branch=branch_name,
                                     credit_officer=USER,
+                                    officer_id=selected_client.officer_id,
+                                    branch_id=selected_client.branch_id,
                                     start_date=date.today(),
                                     is_asset=(product_category == "Asset"),
                                     extra_fields={
