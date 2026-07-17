@@ -2819,10 +2819,11 @@ elif page == "Loan Origination":
                 
                 if product_category == "Finance":
                     prods = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
+                    product_type = col_p1.selectbox("Loan Product", prods, key="loan_app_product_finance")
                 else:
                     prods = ["60-Day Asset", "120-Day Asset", "Weekly 12W Asset", "Weekly 24W Asset", "Monthly 3M Asset", "Monthly 6M Asset", "Cash and Carry"]
+                    product_type = col_p1.selectbox("Loan Product", prods, key="loan_app_product_asset")
                     
-                product_type = col_p1.selectbox("Loan Product", prods, key="loan_app_product")
                 requested_amount = col_p2.number_input("Requested Amount / Asset Cost (₦)", min_value=0.0, step=10000.0, key="loan_app_amount")
                 
                 # Setup parameters based on selected product type
@@ -3571,7 +3572,7 @@ elif page == "Collections":
                             "start_date": start_date_val
                         }
                 
-                if st.session_state.get('pending_collections') and st.session_state.get('collections_group') == selected_group and st.session_state.get('collections_date') == date_str:
+                if st.session_state.get('pending_collections') and st.session_state.get('collections_group') == selected_group and st.session_state.get('collections_date') == date_str and not st.session_state.get('edit_collections_mode', False):
                     st.markdown("### 🔍 Review Group Collections")
                     to_insert = st.session_state['pending_collections']
                     
@@ -3590,7 +3591,7 @@ elif page == "Collections":
                     
                     c1, c2 = st.columns(2)
                     if c1.button("🔙 Edit / Go Back"):
-                        # Keep pending_collections, just rerun to show form populated with previous values
+                        st.session_state['edit_collections_mode'] = True
                         st.rerun()
                     
                     if c2.button("✅ Confirm & Save to Database", type="primary", use_container_width=True):
@@ -3598,6 +3599,8 @@ elif page == "Collections":
                             save_repayments(to_insert)
                             st.success("Group Collections Submitted Successfully!")
                             del st.session_state['pending_collections']
+                            if 'edit_collections_mode' in st.session_state:
+                                del st.session_state['edit_collections_mode']
                             import time
                             time.sleep(2)
                             st.rerun()
@@ -3774,6 +3777,7 @@ elif page == "Collections":
                                 st.session_state['pending_collections'] = to_insert
                                 st.session_state['collections_group'] = selected_group
                                 st.session_state['collections_date'] = date_str
+                                st.session_state['edit_collections_mode'] = False
                                 st.rerun()
                             else:
                                 st.warning("No data entered to save.")
