@@ -2814,7 +2814,7 @@ elif page == "Loan Origination":
             st.markdown("#### 1. Loan Product Parameters")
             product_category = st.selectbox("Product Category", ["Finance", "Asset"], key="loan_app_category")
             
-            with st.form("loan_application_details_form"):
+            with st.container():
                 col_p1, col_p2 = st.columns(2)
                 
                 if product_category == "Finance":
@@ -2943,7 +2943,7 @@ elif page == "Loan Origination":
                 st.markdown("#### 2. Loan Notes")
                 notes = st.text_area("Remarks / Notes", key="loan_app_notes")
                 
-                submitted_loan_app = st.form_submit_button("Submit Application for BM Approval", type="primary", use_container_width=True)
+                submitted_loan_app = st.button("Submit Application for BM Approval", type="primary", use_container_width=True)
                 
                 if submitted_loan_app:
                     if requested_amount <= 0:
