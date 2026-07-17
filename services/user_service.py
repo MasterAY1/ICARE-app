@@ -309,3 +309,38 @@ class UserService:
 
         except Exception:
             return []
+
+    # ---- Remove User (Admin Only) ----
+
+    @staticmethod
+    def remove_user_permanently(user_id: str, requesting_user=None) -> Dict:
+        """Permanently delete a user from the system."""
+        try:
+            if not requesting_user or requesting_user.role not in (ROLE_SUPER_ADMIN, ROLE_ADMIN):
+                return {"success": False, "message": "Unauthorized. Only Administrators can delete users."}
+
+            from database.repositories.unit_of_work import SupabaseUnitOfWork
+            with SupabaseUnitOfWork() as uow:
+                user = uow.users.find_by_id(user_id)
+                if not user:
+                    return {"success": False, "message": "User not found."}
+
+                if user.id == requesting_user.id:
+                    return {"success": False, "message": "You cannot delete your own account."}
+
+                deleted = uow.users.delete(user.id)
+                if not deleted:
+                    return {"success": False, "message": "Failed to delete user from database."}
+
+                AuditLogService.log_user_action(
+                    action="USER_DELETED",
+                    target_user_id=user.id,
+                    display_name=user.username,
+                    previous={"username": user.username, "full_name": user.full_name, "role": user.role},
+                    new=None
+                )
+
+                return {"success": True, "message": f"Successfully deleted user '{user.username}' permanently."}
+
+        except Exception as e:
+            return {"success": False, "message": f"Failed to delete user: {e}"}

@@ -5318,7 +5318,7 @@ elif page == "User Management":
             # Admin / BM: Activate / Deactivate toggles
             if is_admin or is_bm:
                 st.markdown("---")
-                st.subheader("⚡ Activate / Deactivate Users")
+                st.subheader("⚡ Manage User Status & Deletion")
                 target_username = st.selectbox("Select User", user_usernames, key="toggle_user")
                 target_user_data = next((u for u in all_users if u['username'] == target_username), None)
                 
@@ -5343,6 +5343,19 @@ elif page == "User Management":
                                 st.rerun()
                             else:
                                 st.error(result['message'])
+                                
+                    if is_admin:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        with st.expander("⚠️ Danger Zone (Permanent Deletion)"):
+                            st.write("Deleting a user permanently removes them from the database. If this user has logged transactions, clients, or loans, their reference will be preserved as empty/null in historical audit logs.")
+                            confirm_del = st.checkbox(f"Confirm I want to permanently delete the user '{target_username}'", key="confirm_del_check")
+                            if st.button("🔥 Permanently Delete User", key="delete_user_btn", use_container_width=True, type="primary", disabled=not confirm_del):
+                                result = UserService.remove_user_permanently(target_user_data['id'], current_user)
+                                if result['success']:
+                                    st.success(result['message'])
+                                    st.rerun()
+                                else:
+                                    st.error(result['message'])
         else:
             st.info("No users found.")
     
