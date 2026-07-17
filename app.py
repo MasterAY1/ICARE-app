@@ -2824,7 +2824,7 @@ elif page == "Loan Origination":
                     prods = ["60-Day Asset", "120-Day Asset", "Weekly 12W Asset", "Weekly 24W Asset", "Monthly 3M Asset", "Monthly 6M Asset", "Cash and Carry"]
                     product_type = col_p1.selectbox("Loan Product", prods, key="loan_app_product_asset")
                     
-                requested_amount = col_p2.number_input("Requested Amount / Asset Cost (₦)", min_value=0.0, step=10000.0, key="loan_app_amount")
+                requested_amount = float(col_p2.number_input("Requested Amount / Asset Cost (₦)", min_value=0.0, step=10000.0, value=None, placeholder="0", key="loan_app_amount") or 0)
                 
                 # Setup parameters based on selected product type
                 rate = 0.12
@@ -2891,8 +2891,8 @@ elif page == "Loan Origination":
                 total_upfront_required = 0.0
                 
                 if product_category == "Asset":
-                    initial_downpayment_input = st.number_input("Initial Cash Downpayment (₦)", min_value=0.0, step=5000.0, key="loan_app_downpayment")
-                    initial_downpayment = float(initial_downpayment_input)
+                    initial_downpayment_input = st.number_input("Initial Cash Downpayment (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0", key="loan_app_downpayment")
+                    initial_downpayment = float(initial_downpayment_input or 0)
                     total_cost = requested_amount + interest
                     active_credit = total_cost - initial_downpayment
                     expected_installment = active_credit / duration if duration > 0 else 0.0
@@ -2922,8 +2922,8 @@ elif page == "Loan Origination":
                                 default_gap = float(requested_amount)
                                 break
                                 
-                    gap_fee_input = st.number_input("Gap Fee / Base Savings (₦)", min_value=0.0, step=1000.0, value=default_gap, key="loan_app_gap_fee")
-                    gap_fee = float(gap_fee_input)
+                    gap_fee_input = st.number_input("Gap Fee / Base Savings (₦)", min_value=0.0, step=1000.0, value=default_gap if default_gap > 0 else None, placeholder="0", key="loan_app_gap_fee")
+                    gap_fee = float(gap_fee_input or 0)
                     total_upfront_required = interest + gap_fee
                     active_credit = requested_amount - gap_fee
                     expected_installment = active_credit / duration if duration > 0 else 0.0
@@ -3589,10 +3589,11 @@ elif page == "Collections":
                     st.success(f"**NET CASH EXPECTED FROM GROUP:** ₦{net_cash:,.0f}")
                     st.markdown(f"**Total Net Savings:** ₦{total_net_savings:,.0f} *(Includes Individual & Group Savings)*")
                     
-                    c1, c2 = st.columns(2)
-                    if c1.button("🔙 Edit / Go Back"):
+                    def _go_back_to_edit():
                         st.session_state['edit_collections_mode'] = True
-                        st.rerun()
+                    
+                    c1, c2 = st.columns(2)
+                    c1.button("🔙 Edit / Go Back", on_click=_go_back_to_edit)
                     
                     if c2.button("✅ Confirm & Save to Database", type="primary", use_container_width=True):
                         try:
