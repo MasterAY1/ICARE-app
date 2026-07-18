@@ -2458,12 +2458,20 @@ elif page == "Loan Origination":
                                     oname = str(group_row.get('Credit Officer Name', USER)).strip()
                                     officer_id = resolve_officer_id(oname) or (current_user.id if current_user else None) or uow.loans._resolve_officer_id(USER)
                                     
+                                    # Extract meeting day safely checking both potential column names
+                                    m_day = group_row.get('Meeting Day')
+                                    if m_day is None or (isinstance(m_day, float) and pd.isna(m_day)) or str(m_day).strip().lower() in ('nan', ''):
+                                        m_day = group_row.get('Meeting Day/Time')
+                                    if m_day is None or (isinstance(m_day, float) and pd.isna(m_day)) or str(m_day).strip().lower() in ('nan', ''):
+                                        m_day = 'Daily'
+                                    m_day = str(m_day).strip()
+
                                     # Check if group already exists
                                     res_g = uow.client.table("groups").select("group_id").eq("name", gname).execute()
                                     if res_g.data:
                                         group_id = res_g.data[0]["group_id"]
                                         uow.client.table("groups").update({
-                                            "meeting_day": str(group_row.get('Meeting Day/Time', 'Daily')),
+                                            "meeting_day": m_day,
                                             "branch_id": branch_id,
                                             "officer_id": officer_id
                                         }).eq("group_id", group_id).execute()
@@ -2471,7 +2479,7 @@ elif page == "Loan Origination":
                                         # Insert new group
                                         new_g = {
                                             "name": gname,
-                                            "meeting_day": str(group_row.get('Meeting Day/Time', 'Daily')),
+                                            "meeting_day": m_day,
                                             "branch_id": branch_id,
                                             "officer_id": officer_id,
                                             "group_number": str(group_row.get('Group Reference', '01'))[-2:],
