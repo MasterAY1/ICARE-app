@@ -2107,7 +2107,10 @@ elif page == "Loan Origination":
 
                 # Find all active groups for this branch
                 if branch_id:
-                    res_g = uow.client.table("groups").select("*").eq("branch_id", branch_id).execute()
+                    query = uow.client.table("groups").select("*").eq("branch_id", branch_id)
+                    if ROLE in ['CO', 'Officer', ROLE_CREDIT_OFFICER]:
+                        query = query.eq("officer_id", current_user.id)
+                    res_g = query.execute()
                     groups_list = res_g.data
                 else:
                     groups_list = []
