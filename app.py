@@ -2815,31 +2815,59 @@ elif page == "Loan Origination":
                                             remarks="Opening Group Savings from Onboarding Import"
                                         )
 
-                                # 4. Process Branch Laps and Misc opening balances
-                                if not df_branch.empty:
-                                    for _, branch_row in df_branch.iterrows():
-                                        bname = str(branch_row.get('Branch Name', BRANCH))
-                                        laps_sav = 0.0
-                                        misc_sav = 0.0
-                                        for k in ['Branch Laps Savings Balance', 'Branch Laps Savings', 'Laps Savings']:
-                                            if k in branch_row and pd.notna(branch_row[k]):
-                                                try: laps_sav = float(str(branch_row[k]).replace(',', ''))
-                                                except: pass
-                                        for k in ['Misc Fees Savings Balance', 'Misc Fees Savings', 'Misc Fees']:
-                                            if k in branch_row and pd.notna(branch_row[k]):
-                                                try: misc_sav = float(str(branch_row[k]).replace(',', ''))
-                                                except: pass
+                                # 4. Process Branch Laps and Misc opening balances dynamically
+                                laps_sav = 0.0
+                                misc_sav = 0.0
+                                laps_header_idx = -1
+                                 
+                                for idx, row in raw_branch.iterrows():
+                                    row_vals = [str(val).strip().lower() for val in row.values if pd.notna(val)]
+                                    if any('laps savings' in val or 'laps_savings' in val or 'laps savings balance' in val for val in row_vals):
+                                        laps_header_idx = idx
+                                        break
+                                        
+                                if laps_header_idx != -1 and laps_header_idx + 1 < len(raw_branch):
+                                    header_row = raw_branch.iloc[laps_header_idx]
+                                    val_row = raw_branch.iloc[laps_header_idx + 1]
+                                    laps_col_idx = -1
+                                    misc_col_idx = -1
+                                    
+                                    for col_idx, col_val in enumerate(header_row):
+                                        if pd.notna(col_val):
+                                            col_str = str(col_val).strip().lower()
+                                            if 'laps' in col_str:
+                                                laps_col_idx = col_idx
+                                            elif 'misc' in col_str or 'fees' in col_str:
+                                                misc_col_idx = col_idx
                                                 
-                                        if laps_sav > 0:
-                                            SavingsService.post_laps_savings(
-                                                uow, None, f"Laps Savings ({bname})", bname, USER, laps_sav, 0.0,
-                                                remarks="Opening Balance from Onboarding Import"
-                                            )
-                                        if misc_sav > 0:
-                                            SavingsService.post_misc_savings(
-                                                uow, None, f"Misc Fees Savings ({bname})", bname, USER, misc_sav,
-                                                remarks="Opening Balance from Onboarding Import"
-                                            )
+                                    if laps_col_idx != -1 and laps_col_idx < len(val_row):
+                                        laps_val = val_row.iloc[laps_col_idx]
+                                        if pd.notna(laps_val):
+                                            try: laps_sav = float(str(laps_val).replace(',', '').strip())
+                                            except: pass
+                                            
+                                    if misc_col_idx != -1 and misc_col_idx < len(val_row):
+                                        misc_val = val_row.iloc[misc_col_idx]
+                                        if pd.notna(misc_val):
+                                            try: misc_sav = float(str(misc_val).replace(',', '').strip())
+                                            except: pass
+                                            
+                                if laps_sav > 0 or misc_sav > 0:
+                                    # Resolve the branch name from the branch list or fallback to global BRANCH
+                                    bname = BRANCH
+                                    if not df_branch.empty:
+                                        bname = str(df_branch.iloc[0].get('Branch Name', BRANCH)).strip()
+                                        
+                                    if laps_sav > 0:
+                                        SavingsService.post_laps_savings(
+                                            uow, None, f"Laps Savings ({bname})", bname, USER, laps_sav, 0.0,
+                                            remarks="Opening Balance from Onboarding Import"
+                                        )
+                                    if misc_sav > 0:
+                                        SavingsService.post_misc_savings(
+                                            uow, None, f"Misc Fees Savings ({bname})", bname, USER, misc_sav,
+                                            remarks="Opening Balance from Onboarding Import"
+                                        )
                                             
                             # Clear progress bar
                             progress_bar.empty()
