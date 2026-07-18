@@ -186,7 +186,14 @@ CREATE TABLE public.loan_products (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     is_deleted BOOLEAN DEFAULT FALSE,
     deleted_at TIMESTAMP WITH TIME ZONE,
-    deleted_by UUID
+    deleted_by UUID,
+    installments INTEGER,
+    rounding_rule INTEGER DEFAULT 50,
+    credit_form_fee NUMERIC DEFAULT 0,
+    risk_premium NUMERIC DEFAULT 0,
+    savings_requirement NUMERIC DEFAULT 0,
+    grace_period INTEGER DEFAULT 0,
+    penalty_rule TEXT
 );
 
 -- 14. LOANS
@@ -664,11 +671,26 @@ INSERT INTO public.user_roles (user_id, role_id) VALUES
 ON CONFLICT (user_id, role_id) DO NOTHING;
 
 -- Seed Loan Products
-INSERT INTO public.loan_products (product_id, name, repayment_cycle, interest_rate, max_term, processing_fee_rate, savings_rule, penalties) VALUES
-('11111111-1111-1111-1111-111111111111', 'Daily Loan', 'Daily', 12.00, 60, 0.00, 0.00, 0.00),
-('22222222-2222-2222-2222-222222222222', 'Weekly (12W)', 'Weekly', 12.00, 12, 0.00, 0.00, 0.00),
-('33333333-3333-3333-3333-333333333333', 'Weekly (24W)', 'Weekly', 21.00, 24, 0.00, 0.00, 0.00)
-ON CONFLICT (product_id) DO NOTHING;
+INSERT INTO public.loan_products (name, repayment_cycle, interest_rate, max_term, installments, rounding_rule) VALUES
+('Daily 60 Days', 'Daily', 12.00, 60, 60, 50),
+('Daily 120 Days', 'Daily', 21.00, 120, 120, 50),
+('Weekly 12W', 'Weekly', 12.00, 12, 12, 50),
+('Weekly 24W', 'Weekly', 21.00, 24, 24, 50),
+('Monthly 3M', 'Monthly', 12.00, 3, 3, 100),
+('Monthly 6M', 'Monthly', 21.00, 6, 6, 100),
+('60-Day Asset', 'Daily', 12.00, 60, 60, 50),
+('120-Day Asset', 'Daily', 21.00, 120, 120, 50),
+('Weekly 12W Asset', 'Weekly', 12.00, 12, 12, 50),
+('Weekly 24W Asset', 'Weekly', 21.00, 24, 24, 50),
+('Monthly 3M Asset', 'Monthly', 12.00, 3, 3, 100),
+('Monthly 6M Asset', 'Monthly', 21.00, 6, 6, 100),
+('Cash and Carry', 'Monthly', 0.00, 1, 1, 1)
+ON CONFLICT (name) DO UPDATE SET
+    repayment_cycle = EXCLUDED.repayment_cycle,
+    interest_rate = EXCLUDED.interest_rate,
+    max_term = EXCLUDED.max_term,
+    installments = EXCLUDED.installments,
+    rounding_rule = EXCLUDED.rounding_rule;
 
 -- Seed Chart of Accounts
 INSERT INTO public.chart_of_accounts (account_code, account_name, account_type, normal_balance) VALUES
