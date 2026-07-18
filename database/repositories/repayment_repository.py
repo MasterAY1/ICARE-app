@@ -127,17 +127,24 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
             except Exception:
                 pass
                 
-        # Fallback dummy if still None
-        if not c_id:
-            c_id = "00000000-0000-0000-0000-000000000000"
-        if not resolved_loan:
-            # We must have a loan_id. Let's create a dummy loan if needed, or default
-            resolved_loan = "00000000-0000-0000-0000-000000000000"
+        # Fallback to None if not valid UUID to prevent FK violations
+        import uuid
+        def clean_uuid(val):
+            if not val:
+                return None
+            try:
+                uuid.UUID(str(val))
+                return str(val)
+            except ValueError:
+                return None
+
+        c_id_clean = clean_uuid(c_id)
+        resolved_loan_clean = clean_uuid(resolved_loan)
 
         db_dict = {
             "date": entity.payment_date.isoformat() if entity.payment_date else None,
-            "loan_id": resolved_loan,
-            "client_id": c_id,
+            "loan_id": resolved_loan_clean,
+            "client_id": c_id_clean,
             "amount_paid": amt,
             "officer_id": officer_id,
             "branch_id": branch_id,

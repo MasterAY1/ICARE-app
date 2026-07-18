@@ -112,12 +112,24 @@ class SupabaseSavingsRepository(BaseRepository):
         if entity.id:
             d["id"] = entity.id
 
+        import uuid
+        def clean_uuid(val):
+            if not val:
+                return None
+            try:
+                uuid.UUID(str(val))
+                return str(val)
+            except ValueError:
+                return None
+
         if self.entity_class.__name__ in ["IndividualSavings", "LapsSavings"]:
-            d["client_id"] = entity.client_id
+            d["client_id"] = clean_uuid(entity.client_id)
         elif self.entity_class.__name__ == "MiscSavings":
-            d["client_id"] = entity.client_id
+            d["client_id"] = clean_uuid(entity.client_id)
         elif self.entity_class.__name__ == "GroupSavings":
-            d["group_id"] = self._resolve_group_id(entity.group_name)
+            # If it's a fake group id or name, resolve it
+            g_id = self._resolve_group_id(entity.group_name)
+            d["group_id"] = clean_uuid(g_id)
 
         return d
 

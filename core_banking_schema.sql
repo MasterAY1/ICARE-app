@@ -150,6 +150,7 @@ CREATE TABLE public.groups (
     branch_id UUID REFERENCES public.branches(branch_id) ON DELETE RESTRICT,
     officer_id UUID REFERENCES public.app_users(id) ON DELETE SET NULL,
     status TEXT DEFAULT 'Active',
+    leader_name TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     version INTEGER DEFAULT 1,

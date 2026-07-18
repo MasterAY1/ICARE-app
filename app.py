@@ -2466,6 +2466,13 @@ elif page == "Loan Origination":
                                         m_day = 'Daily'
                                     m_day = str(m_day).strip()
 
+                                    # Extract Group Leader Name safely
+                                    leader_name = group_row.get('Group Leader Name')
+                                    if leader_name is None or (isinstance(leader_name, float) and pd.isna(leader_name)) or str(leader_name).strip().lower() in ('nan', ''):
+                                        leader_name = None
+                                    else:
+                                        leader_name = str(leader_name).strip()
+
                                     # Check if group already exists
                                     res_g = uow.client.table("groups").select("group_id").eq("name", gname).execute()
                                     if res_g.data:
@@ -2473,7 +2480,8 @@ elif page == "Loan Origination":
                                         uow.client.table("groups").update({
                                             "meeting_day": m_day,
                                             "branch_id": branch_id,
-                                            "officer_id": officer_id
+                                            "officer_id": officer_id,
+                                            "leader_name": leader_name
                                         }).eq("group_id", group_id).execute()
                                     else:
                                         # Insert new group
@@ -2482,6 +2490,7 @@ elif page == "Loan Origination":
                                             "meeting_day": m_day,
                                             "branch_id": branch_id,
                                             "officer_id": officer_id,
+                                            "leader_name": leader_name,
                                             "group_number": str(group_row.get('Group Reference', '01'))[-2:],
                                             "current_member_sequence": 0
                                         }
@@ -2745,11 +2754,37 @@ elif page == "Loan Origination":
                                                 }).execute()
                                         
                                         # Import opening savings
+                                        from services.savings_service import SavingsService
                                         if savings_bal > 0:
-                                            from services.savings_service import SavingsService
                                             SavingsService.post_individual_savings(
                                                 uow, client_id, name_val, bname, oname or USER, savings_bal, 0.0,
                                                 remarks="Opening Savings Balance from Onboarding Import"
+                                            )
+                                        
+                                        # Check if member has opening laps or misc savings
+                                        m_laps = 0.0
+                                        m_misc = 0.0
+                                        for k in ['Laps Savings', 'Branch Laps Savings', 'Laps']:
+                                            if k in member_row and pd.notna(member_row[k]):
+                                                try:
+                                                    m_laps = float(str(member_row[k]).replace(',', ''))
+                                                    break
+                                                except: pass
+                                        for k in ['Misc Savings', 'Misc Fees', 'Misc']:
+                                            if k in member_row and pd.notna(member_row[k]):
+                                                try:
+                                                    m_misc = float(str(member_row[k]).replace(',', ''))
+                                                    break
+                                                except: pass
+                                        if m_laps > 0:
+                                            SavingsService.post_laps_savings(
+                                                uow, client_id, name_val, bname, oname or USER, m_laps, 0.0,
+                                                remarks="Opening LAPS Savings from Onboarding Import"
+                                            )
+                                        if m_misc > 0:
+                                            SavingsService.post_misc_savings(
+                                                uow, client_id, name_val, bname, oname or USER, m_misc,
+                                                remarks="Opening Misc Savings from Onboarding Import"
                                             )
                                         # Update progress bar
                                         pct = (index + 1) / num_members
@@ -2773,8 +2808,10 @@ elif page == "Loan Origination":
                                             except: pass
                                     
                                     if g_savings > 0:
+                                        bname = str(group_row.get('Branch Name', BRANCH)).strip()
+                                        oname = str(group_row.get('Credit Officer Name', USER)).strip()
                                         SavingsService.post_group_savings(
-                                            uow, gname, BRANCH, USER, g_savings, 0.0,
+                                            uow, gname, bname, oname, g_savings, 0.0,
                                             remarks="Opening Group Savings from Onboarding Import"
                                         )
 
@@ -2795,11 +2832,12 @@ elif page == "Loan Origination":
                                                 
                                         if laps_sav > 0:
                                             SavingsService.post_laps_savings(
-                                                uow, f"GLOBAL-LAPS-{bname}", f"Laps Savings ({bname})", bname, USER, laps_sav, 0.0
+                                                uow, None, f"Laps Savings ({bname})", bname, USER, laps_sav, 0.0,
+                                                remarks="Opening Balance from Onboarding Import"
                                             )
                                         if misc_sav > 0:
                                             SavingsService.post_misc_savings(
-                                                uow, f"GLOBAL-MISC-{bname}", f"Misc Fees Savings ({bname})", bname, USER, misc_sav,
+                                                uow, None, f"Misc Fees Savings ({bname})", bname, USER, misc_sav,
                                                 remarks="Opening Balance from Onboarding Import"
                                             )
                                             
