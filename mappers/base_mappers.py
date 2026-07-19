@@ -176,7 +176,15 @@ class RepaymentMapper:
                 return default
 
         savings_dep = safe_float(dto.get("savings_amount"))
+        if "savings_amount" not in dto or dto["savings_amount"] is None:
+            if tx_type == "Savings" or tx_type.startswith("GROUP-"):
+                savings_dep = safe_float(dto.get("amount_paid"))
+
         withdrawal_amt = safe_float(dto.get("withdrawal_amount"))
+        if "withdrawal_amount" not in dto or dto["withdrawal_amount"] is None:
+            if tx_type == "Withdrawal":
+                withdrawal_amt = safe_float(dto.get("amount_paid"))
+
         others_amt = safe_float(dto.get("others_amount"))
         recovery_amt = safe_float(dto.get("recovery_amount"))
         initial_pay = safe_float(dto.get("initial_payment"))
@@ -187,9 +195,7 @@ class RepaymentMapper:
 
         if "loan_repayment_amount" in dto and dto["loan_repayment_amount"] is not None:
             loan_repay = safe_float(dto["loan_repayment_amount"])
-        elif tx_type.startswith("GROUP-") or tx_type.startswith("GLOBAL-"):
-            loan_repay = 0.0
-        elif savings_dep > 0 or withdrawal_amt > 0:
+        elif tx_type == "Savings" or tx_type.startswith("GROUP-") or tx_type.startswith("GLOBAL-") or tx_type == "Withdrawal":
             loan_repay = 0.0
         else:
             loan_repay = safe_float(dto.get("amount_paid"))
