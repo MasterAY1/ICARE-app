@@ -1022,17 +1022,30 @@ def load_loans():
             if not df.empty and 'Date' in df.columns:
                 df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
             
-            # Fetch actual group names from client memberships to cover newly registered pre-loan clients
+            # Fetch actual group names and meeting days from clients table to cover newly registered clients
             try:
-                res_m = uow.client.table("client_memberships").select("client_id, groups(name)").execute()
-                if res_m.data:
-                    client_to_group = {}
-                    for m in res_m.data:
-                        cid = m.get("client_id")
-                        g_name = m.get("groups", {}).get("name") if m.get("groups") else None
-                        if cid and g_name:
-                            client_to_group[cid] = g_name
-                    df['Group Name'] = df['Client ID'].map(client_to_group).fillna(df['Group Name'])
+                res_c = uow.client.table("clients").select("client_code, meeting_day, groups(name, meeting_day), app_users(full_name)").execute()
+                if res_c.data:
+                    code_to_group = {}
+                    code_to_meeting = {}
+                    code_to_officer = {}
+                    for c in res_c.data:
+                        code = c.get("client_code")
+                        g_name = c.get("groups", {}).get("name") if c.get("groups") else None
+                        m_day = c.get("meeting_day")
+                        if not m_day and c.get("groups"):
+                            m_day = c.get("groups", {}).get("meeting_day")
+                        o_name = c.get("app_users", {}).get("full_name") if c.get("app_users") else None
+                        if code:
+                            if g_name:
+                                code_to_group[code] = g_name
+                            if m_day:
+                                code_to_meeting[code] = m_day
+                            if o_name:
+                                code_to_officer[code] = o_name
+                    df['Group Name'] = df['Client ID'].map(code_to_group).fillna(df['Group Name'])
+                    df['Meeting Day'] = df['Client ID'].map(code_to_meeting).fillna(df['Meeting Day'])
+                    df['Officer'] = df['Client ID'].map(code_to_officer).fillna(df['Officer'])
             except Exception:
                 pass
 

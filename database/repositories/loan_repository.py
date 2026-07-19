@@ -212,19 +212,34 @@ class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
         return LoanMapper.to_domain(updated) if updated else entity
 
     def approve(self, loan_id: str) -> None:
-        query = self.client.table(self.table_name).update({"status": "Active"}).eq("client_id", loan_id)
-        # Try both client_id and loan_id
+        import uuid
+        is_uuid = False
         try:
-            self._execute(query)
-        except Exception:
-            self._execute(self.client.table(self.table_name).update({"status": "Active"}).eq("loan_id", loan_id))
+            uuid.UUID(str(loan_id))
+            is_uuid = True
+        except ValueError:
+            pass
+            
+        if is_uuid:
+            res = self.client.table(self.table_name).update({"status": "Active"}).eq("loan_id", loan_id).execute()
+            if res.data:
+                return
+        self.client.table(self.table_name).update({"status": "Active"}).eq("client_id", loan_id).execute()
 
     def reject(self, loan_id: str) -> None:
-        query = self.client.table(self.table_name).update({"status": "Rejected"}).eq("client_id", loan_id)
+        import uuid
+        is_uuid = False
         try:
-            self._execute(query)
-        except Exception:
-            self._execute(self.client.table(self.table_name).update({"status": "Rejected"}).eq("loan_id", loan_id))
+            uuid.UUID(str(loan_id))
+            is_uuid = True
+        except ValueError:
+            pass
+            
+        if is_uuid:
+            res = self.client.table(self.table_name).update({"status": "Rejected"}).eq("loan_id", loan_id).execute()
+            if res.data:
+                return
+        self.client.table(self.table_name).update({"status": "Rejected"}).eq("client_id", loan_id).execute()
 
     def disburse(self, loan_id: str) -> None:
         self.approve(loan_id)
