@@ -4,7 +4,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import streamlit as st
-
 def generate_portfolio_summary(loans_df, repayments_df):
     """Generate portfolio summary metrics"""
     if loans_df.empty:
@@ -23,47 +22,27 @@ def generate_portfolio_summary(loans_df, repayments_df):
     
     total_cash_in = pd.to_numeric(repayments_df['Amount Paid'], errors='coerce').sum() if not repayments_df.empty else 0
     
-    total_savings = 0
-    total_portfolio = 0
-    total_overdue = 0
-    par_balance = 0
+    # Query total active savings from single source of truth (individual_savings table)
+    total_savings = 0.0
+    try:
+        from database.repositories.unit_of_work import SupabaseUnitOfWork
+        with SupabaseUnitOfWork() as uow:
+            res_all_sav = uow.client.table("individual_savings").select("deposit_amount, withdrawal_amount").execute()
+            if res_all_sav.data:
+                for s in res_all_sav.data:
+                    total_savings += float(s.get("deposit_amount") or 0.0) - float(s.get("withdrawal_amount") or 0.0)
+    except Exception:
+        pass
+        
+    total_portfolio = 0.0
+    total_overdue = 0.0
+    par_balance = 0.0
     
     for _, row in active_loans.iterrows():
-        client_payments = repayments_df[repayments_df['Client ID'] == row['Client ID']] if not repayments_df.empty else pd.DataFrame()
-        
         fixed_repay = float(row['Loan Repay'])
-        active_credit = float(row['Active Credit'])
+        loan_balance = float(row['Active Credit'])
+        total_loan_paid = max(0.0, float(row.get('Total Due', row.get('Loan Amount', 0.0))) - loan_balance)
         
-        # Calculate savings and loan paid
-        total_loan_paid = 0
-        savings = 0
-        if not client_payments.empty:
-            for _, p_row in client_payments.iterrows():
-                # Backward compatibility
-                amount = float(p_row.get('Amount Paid', 0))
-                trans_type = p_row.get('Transaction Type', 'Loan')
-                
-                # Granular columns
-                savings_dep = float(p_row.get('Savings Amount', 0))
-                loan_rep = float(p_row.get('Loan Repayment Amount', 0))
-                withdrawal = float(p_row.get('Withdrawal Amount', 0))
-                
-                if savings_dep > 0 or loan_rep > 0 or withdrawal > 0:
-                    savings += savings_dep
-                    savings -= withdrawal
-                    total_loan_paid += loan_rep
-                else:
-                    if trans_type == 'Savings':
-                        savings += amount
-                    else:
-                        if amount > fixed_repay:
-                            savings += (amount - fixed_repay)
-                            total_loan_paid += fixed_repay
-                        else:
-                            total_loan_paid += amount
-        
-        total_savings += savings
-        loan_balance = max(0, active_credit - total_loan_paid)
         total_portfolio += loan_balance
         
         # Calculate overdue
@@ -93,7 +72,7 @@ def generate_portfolio_summary(loans_df, repayments_df):
                 par_balance += loan_balance
         except:
             pass
-    
+            
     par_percentage = (par_balance / total_portfolio * 100) if total_portfolio > 0 else 0
     
     return {
@@ -105,6 +84,7 @@ def generate_portfolio_summary(loans_df, repayments_df):
         'par_percentage': par_percentage,
         'pending_count': pending_count
     }
+
 
 def create_portfolio_chart(loans_df):
     """Create portfolio distribution chart"""
@@ -199,47 +179,36 @@ def generate_officer_report(loans_df, repayments_df, officer_name=None):
     """Generate detailed officer report"""
     if officer_name:
         loans_df = loans_df[loans_df['Officer'] == officer_name]
-        repayments_df = repayments_df[repayments_df['Officer'] == officer_name]
     
     if loans_df.empty:
         return pd.DataFrame()
+        
+    # Query client cumulative savings from individual_savings table
+    client_savings_map = {}
+    try:
+        from database.repositories.unit_of_work import SupabaseUnitOfWork
+        with SupabaseUnitOfWork() as uow:
+            res_all_sav = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount").execute()
+            res_clients = uow.client.table("clients").select("client_id, client_code").execute()
+            uuid_to_code = {c["client_id"]: c["client_code"] for c in res_clients.data if c.get("client_id") and c.get("client_code")}
+            if res_all_sav.data:
+                for s in res_all_sav.data:
+                    cid_uuid = s.get("client_id")
+                    if cid_uuid:
+                        code = uuid_to_code.get(cid_uuid, cid_uuid)
+                        dep = float(s.get("deposit_amount") or 0.0)
+                        wd = float(s.get("withdrawal_amount") or 0.0)
+                        client_savings_map[code] = client_savings_map.get(code, 0.0) + (dep - wd)
+    except Exception:
+        pass
     
     report_data = []
     
     for _, row in loans_df.iterrows():
-        client_payments = repayments_df[repayments_df['Client ID'] == row['Client ID']] if not repayments_df.empty else pd.DataFrame()
-        
         fixed_repay = float(row['Loan Repay'])
-        active_credit = float(row['Active Credit'])
-        
-        total_loan_paid = 0
-        savings = 0
-        if not client_payments.empty:
-            for _, p_row in client_payments.iterrows():
-                # Backward compatibility
-                amount = float(p_row.get('Amount Paid', 0))
-                trans_type = p_row.get('Transaction Type', 'Loan')
-                
-                # Granular columns
-                savings_dep = float(p_row.get('Savings Amount', 0))
-                loan_rep = float(p_row.get('Loan Repayment Amount', 0))
-                withdrawal = float(p_row.get('Withdrawal Amount', 0))
-                
-                if savings_dep > 0 or loan_rep > 0 or withdrawal > 0:
-                    savings += savings_dep
-                    savings -= withdrawal
-                    total_loan_paid += loan_rep
-                else:
-                    if trans_type == 'Savings':
-                        savings += amount
-                    else:
-                        if amount > fixed_repay:
-                            savings += (amount - fixed_repay)
-                            total_loan_paid += fixed_repay
-                        else:
-                            total_loan_paid += amount
-        
-        loan_balance = max(0, active_credit - total_loan_paid)
+        loan_balance = float(row['Active Credit'])
+        total_loan_paid = max(0.0, float(row.get('Total Due', row.get('Loan Amount', 0.0))) - loan_balance)
+        savings = client_savings_map.get(row['Client ID'], 0.0)
         
         # Calculate overdue
         overdue = 0
@@ -273,7 +242,7 @@ def generate_officer_report(loans_df, repayments_df, officer_name=None):
             'Phone': row['Phone'],
             'Group': row['Group Name'],
             'Product': row['Loan Product'],
-            'Active Credit': active_credit,
+            'Active Credit': float(row.get('Total Due', row.get('Loan Amount', 0.0))),
             'Loan Repay': fixed_repay,
             'Paid to Loan': total_loan_paid,
             'Loan Balance': loan_balance,

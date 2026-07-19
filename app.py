@@ -1793,14 +1793,15 @@ if page == "Dashboard":
     client_savings_map = load_client_savings_map()
     for _, loan in my_loans.iterrows():
         cid = loan.get('Client ID')
-        c_payments = all_repayments[all_repayments['Client ID'] == cid]
+        c_payments = all_repayments[all_repayments['Client ID'] == cid] if not all_repayments.empty else pd.DataFrame()
         s_amt = client_savings_map.get(cid, 0.0)
-        l_amt = pd.to_numeric(c_payments['Loan Repayment Amount'], errors='coerce').fillna(0).sum()
         
-        loan_bal = loan.get('Active Credit', 0) - l_amt
+        # Sourced from single source of truth (loans table)
+        loan_bal = float(loan.get('Active Credit', 0.0))
+        l_amt = max(0.0, float(loan.get('Total Due', 0.0)) - loan_bal)
         
         # Calculate actual collected today for this client
-        today_payments = c_payments[c_payments['Date'] == today_str]
+        today_payments = c_payments[c_payments['Date'] == today_str] if not c_payments.empty else pd.DataFrame()
         today_loan_paid = pd.to_numeric(today_payments['Loan Repayment Amount'], errors='coerce').fillna(0).sum()
         today_sav_dep = pd.to_numeric(today_payments['Savings Amount'], errors='coerce').fillna(0).sum()
         today_sav_wd = pd.to_numeric(today_payments['Withdrawal Amount'], errors='coerce').fillna(0).sum()
@@ -3744,25 +3745,26 @@ elif page == "Collections":
                             sav_bal = sum(float(d.get("deposit_amount") or 0) for d in res_dep.data) - sum(float(w.get("withdrawal_amount") or 0) for w in res_wd.data)
                         except Exception:
                             sav_bal = 0.0
-                        total_paid = mem_reps['Loan Repayment Amount'].astype(float).sum() if not mem_reps.empty else 0
-                        
                         # Find if there is an active loan in all_loans
                         active_loan_rows = all_loans[(all_loans['Client ID'] == uuid_id) & (all_loans['Status'] == 'Active')]
                         if not active_loan_rows.empty:
                             loan_row = active_loan_rows.iloc[0]
                             active_loan_id = loan_row.get('loan_id') or loan_row.get('Loan ID')
                             act_cred = float(loan_row.get('Active Credit', 0))
+                            total_due_val = float(loan_row.get('Total Due', loan_row.get('Loan Amount', 0.0)))
+                            total_paid = max(0.0, total_due_val - act_cred)
                             loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
                             expected_rep_schedule = ScheduleService.get_expected_repayment(uow, active_loan_id, view_date)
                             start_date_val = str(loan_row.get('Start Date', ''))
                         else:
                             active_loan_id = None
                             act_cred = 0.0
+                            total_paid = 0.0
                             loan_prod_val = "None"
                             expected_rep_schedule = 0.0
                             start_date_val = ""
                             
-                        rem_bal = act_cred - total_paid
+                        rem_bal = act_cred
                         
                         # Check if user has a pending collection in session state (Edit/Go Back state)
                         pending_list = st.session_state.get('pending_collections', [])
@@ -4590,37 +4592,41 @@ elif page == "CO Cashbook":
             elif "weekly" in prod or "12w" in prod or "24w" in prod: w_act += amt
             elif "month" in prod or "3m" in prod or "6m" in prod: m_act += amt
 
-    # Sum all the columns from daily_reps
-    def sum_col(df, col):
-        if df.empty or col not in df.columns:
-            return 0.0
-        return pd.to_numeric(df[col], errors='coerce').fillna(0).sum()
-        
-    bf_cash = sum_col(daily_reps, 'Opening Balance')
-    t_sav = sum_col(daily_reps, 'Savings Amount')
-    t_r12w = sum_col(daily_reps, 'Repayment 12 Weeks')
-    t_r24w = sum_col(daily_reps, 'Repayment 24 Weeks')
-    t_r60d = sum_col(daily_reps, 'Repayment 60 Days')
-    t_r120d = sum_col(daily_reps, 'Repayment 120 Days')
-    t_rmth = sum_col(daily_reps, 'Monthly')
-    t_cont = sum_col(daily_reps, 'Contingency')
-    t_bwd = sum_col(daily_reps, 'Bank Withdrawal')
-    t_asale = sum_col(daily_reps, 'Asset Sales')
-    t_app = sum_col(daily_reps, 'App Fee')
-    t_pb = sum_col(daily_reps, 'Pass Book Bonus')
-    t_misc = sum_col(daily_reps, 'Misc Fees')
+    # Load from cashbook projection table instead of summing repayments
+    bf_cash = t_sav = t_r12w = t_r24w = t_r60d = t_r120d = t_rmth = t_cont = t_bwd = t_asale = t_app = t_pb = t_misc = 0.0
+    t_d11 = t_d20 = t_w11 = t_w20 = t_mm = t_pwd = t_exp = t_bdep = t_lres = t_ltrans = t_cc = 0.0
     
-    t_d11 = sum_col(daily_reps, 'Daily 11%')
-    t_d20 = sum_col(daily_reps, 'Daily 20%')
-    t_w11 = sum_col(daily_reps, 'Weekly 11%')
-    t_w20 = sum_col(daily_reps, 'Weekly 20%')
-    t_mm = sum_col(daily_reps, 'Monthly 11%/20%')
-    t_pwd = sum_col(daily_reps, 'Product Withdrawal')
-    t_exp = sum_col(daily_reps, 'Expenses')
-    t_bdep = sum_col(daily_reps, 'Bank Deposited')
-    t_lres = sum_col(daily_reps, 'Laps Reserved')
-    t_ltrans = sum_col(daily_reps, 'Laps Transferred')
-    t_cc = sum_col(daily_reps, 'Cash Carry')
+    try:
+        from database.repositories.unit_of_work import SupabaseUnitOfWork
+        with SupabaseUnitOfWork() as uow:
+            branch_id = uow.cashbook._resolve_branch_id(BRANCH)
+            uow.cashbook.rebuild_projection(branch_id, view_date)
+            cb_entry = uow.cashbook.find_by_date_and_branch(date_str, BRANCH)
+            if cb_entry:
+                bf_cash = cb_entry.opening_balance
+                t_sav = cb_entry.savings_deposit
+                t_r12w = cb_entry.rep_12_weeks
+                t_r24w = cb_entry.rep_24_weeks
+                t_r60d = cb_entry.rep_daily
+                t_rmth = cb_entry.rep_monthly
+                t_cont = cb_entry.contingency
+                t_bwd = cb_entry.bank_withdrawal
+                t_asale = cb_entry.asset_credit_sales
+                t_app = cb_entry.app_fee
+                t_pb = cb_entry.passbook
+                t_misc = cb_entry.misc_fees
+                t_lres = cb_entry.laps_reserve
+                
+                t_d11 = cb_entry.daily_11_pct
+                t_w11 = cb_entry.weekly_11_pct
+                t_mm = cb_entry.risk_premium_returns
+                t_pwd = cb_entry.product_withdrawal
+                t_exp = cb_entry.office_expenses
+                t_bdep = cb_entry.bank_deposit
+                t_ltrans = cb_entry.laps_returns
+                t_cc = cb_entry.cash_and_carry
+    except Exception as e:
+        st.warning(f"Could not load cashbook projection: {e}")
 
     left_total = bf_cash + t_lres + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_misc
     right_total = t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_ltrans + t_cc
@@ -4689,50 +4695,42 @@ elif page == "Master Cashbook":
         view_date = st.date_input("Select Date", datetime.now().date(), key="mc_date")
         date_str = view_date.strftime("%Y-%m-%d")
         
-        # ---- AUTO-SUM: Query CO daily entries for this branch ----
-        if not all_repayments.empty:
-            all_repayments['_dt'] = pd.to_datetime(all_repayments['Date'], errors='coerce')
-            day_reps = all_repayments[
-                (all_repayments['_dt'].dt.date.astype(str) == date_str) &
-                (all_repayments['Branch'] == BRANCH)
-            ]
-        else:
-            day_reps = pd.DataFrame()
+        # ---- AUTO-SUM: Load from cashbook projection table instead of legacy summing ----
+        auto_rep_60d = auto_rep_120d = auto_rep_12w = auto_rep_24w = auto_rep_mth = auto_savings = auto_laps_res = 0.0
+        auto_daily_11 = auto_daily_20 = auto_weekly_11 = auto_weekly_20 = auto_monthly_markup = auto_passbook = 0.0
+        auto_app_fee = auto_asset_cr_sales = auto_cash_carry = auto_contingency = auto_credit_form_dmg = auto_bonus = auto_misc = auto_bank_wd = 0.0
+        auto_savings_wd = auto_prod_wd = auto_expenses = auto_laps_ret = auto_bank_dep = 0.0
         
-        def ssum(df, col):
-            if df.empty or col not in df.columns:
-                return 0.0
-            return pd.to_numeric(df[col], errors='coerce').fillna(0).sum()
-        
-        # Auto-sum LEFT (Inflows) from CO collections
-        auto_rep_60d = ssum(day_reps, 'Repayment 60 Days')
-        auto_rep_120d = ssum(day_reps, 'Repayment 120 Days')
-        auto_rep_12w = ssum(day_reps, 'Repayment 12 Weeks')
-        auto_rep_24w = ssum(day_reps, 'Repayment 24 Weeks')
-        auto_rep_mth = ssum(day_reps, 'Monthly')
-        auto_savings = ssum(day_reps, 'Savings Amount')
-        auto_laps_res = ssum(day_reps, 'Laps Reserved')
-        auto_daily_11 = ssum(day_reps, 'Daily 11%')
-        auto_daily_20 = ssum(day_reps, 'Daily 20%')
-        auto_weekly_11 = ssum(day_reps, 'Weekly 11%')
-        auto_weekly_20 = ssum(day_reps, 'Weekly 20%')
-        auto_monthly_markup = ssum(day_reps, 'Monthly 11%/20%')
-        auto_passbook = ssum(day_reps, 'Pass Book Bonus')
-        auto_app_fee = ssum(day_reps, 'App Fee')
-        auto_asset_cr_sales = ssum(day_reps, 'Asset Credit Sales')
-        auto_cash_carry = ssum(day_reps, 'Cash and Carry')
-        auto_contingency = ssum(day_reps, 'Contingency')
-        auto_credit_form_dmg = ssum(day_reps, 'Credit Form Damage')
-        auto_bonus = ssum(day_reps, 'Bonus')
-        auto_misc = ssum(day_reps, 'Misc Fees')
-        auto_bank_wd = ssum(day_reps, 'Bank Withdrawal')
-        
-        # Auto-sum RIGHT (Outflows) from CO entries
-        auto_savings_wd = ssum(day_reps, 'Withdrawal Amount')
-        auto_prod_wd = ssum(day_reps, 'Product Withdrawal')
-        auto_expenses = ssum(day_reps, 'Expenses')
-        auto_laps_ret = ssum(day_reps, 'Laps Transferred')
-        auto_bank_dep = ssum(day_reps, 'Bank Deposited')
+        try:
+            from database.repositories.unit_of_work import SupabaseUnitOfWork
+            with SupabaseUnitOfWork() as uow:
+                branch_id = uow.cashbook._resolve_branch_id(BRANCH)
+                uow.cashbook.rebuild_projection(branch_id, view_date)
+                cb_entry = uow.cashbook.find_by_date_and_branch(date_str, BRANCH)
+                if cb_entry:
+                    auto_rep_60d = cb_entry.rep_daily
+                    auto_rep_12w = cb_entry.rep_12_weeks
+                    auto_rep_24w = cb_entry.rep_24_weeks
+                    auto_rep_mth = cb_entry.rep_monthly
+                    auto_savings = cb_entry.savings_deposit
+                    auto_laps_res = cb_entry.laps_reserve
+                    auto_passbook = cb_entry.passbook
+                    auto_app_fee = cb_entry.app_fee
+                    auto_asset_cr_sales = cb_entry.asset_credit_sales
+                    auto_cash_carry = cb_entry.cash_and_carry
+                    auto_contingency = cb_entry.contingency
+                    auto_credit_form_dmg = cb_entry.credit_form_damage
+                    auto_bonus = cb_entry.bonus
+                    auto_misc = cb_entry.misc_fees
+                    auto_bank_wd = cb_entry.bank_withdrawal
+                    
+                    auto_savings_wd = cb_entry.savings_withdrawal
+                    auto_prod_wd = cb_entry.product_withdrawal
+                    auto_expenses = cb_entry.office_expenses
+                    auto_laps_ret = cb_entry.laps_returns
+                    auto_bank_dep = cb_entry.bank_deposit
+        except Exception as e:
+            st.warning(f"Could not load cashbook projection: {e}")
         
         # Auto-sum VAULT FUNDING from loans disbursed today
         if not all_loans.empty:
@@ -5231,14 +5229,14 @@ elif page == "Portfolio":
         display_data = []
         client_savings_map = load_client_savings_map()
         for _, row in my_loans.iterrows():
-            c_payments = repayments[repayments['Client ID'] == row['Client ID']] if not repayments.empty else pd.DataFrame()
             s_amt = client_savings_map.get(row['Client ID'], 0.0)
-            l_amt = pd.to_numeric(c_payments['Loan Repayment Amount'], errors='coerce').fillna(0).sum()
+            loan_bal = float(row.get('Active Credit', 0.0))
+            l_amt = max(0.0, float(row.get('Total Due', row.get('Loan Amount', 0.0))) - loan_bal)
             expected, overdue = calculate_overdue(row['Date'], row['Loan Product'], row['Loan Repay'], l_amt, row.get('Status', STATUS_ACTIVE))
             row_data = row.to_dict()
             row_data['Acc. Savings'] = s_amt
             row_data['Paid to Loan'] = l_amt
-            row_data['Loan Balance'] = row['Active Credit'] - l_amt
+            row_data['Loan Balance'] = loan_bal
             row_data['Overdue'] = overdue
             display_data.append(row_data)
         
