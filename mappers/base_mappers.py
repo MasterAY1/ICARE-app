@@ -77,7 +77,11 @@ class LoanMapper:
             "meeting_day": dto.get("meeting_day", ""),
             "processing_fee": float(dto.get("processing_fee") or 0.0),
             "markup": float(dto.get("markup") or 0.0),
-            "pass_book_fee": float(dto.get("pass_book_fee") or 0.0)
+            "pass_book_fee": float(dto.get("pass_book_fee") or 0.0),
+            "active_credit": float(dto.get("active_credit", dto.get("loan_amount", 0.0)) or 0.0),
+            "loan_repay": float(dto.get("loan_repay", dto.get("expected_installment", 0.0)) or 0.0),
+            "total_due": float(dto.get("total_due", dto.get("total_payable", 0.0)) or 0.0),
+            "date": dto.get("date", dto.get("start_date"))
         }
         # merge any other extra fields from JSONB
         if dto.get("extra_fields") and isinstance(dto.get("extra_fields"), dict):
@@ -136,7 +140,11 @@ class LoanMapper:
             "group_name": getattr(entity, 'group_name', None),
             "is_asset": getattr(entity, 'is_asset', False),
             "officer_id": getattr(entity, 'officer_id', None),
-            "branch_id": getattr(entity, 'branch_id', None)
+            "branch_id": getattr(entity, 'branch_id', None),
+            "active_credit": entity.extra_fields.get("active_credit", entity.amount),
+            "loan_repay": entity.extra_fields.get("loan_repay", entity.expected_installment),
+            "total_due": entity.extra_fields.get("total_due", entity.total_payable),
+            "date": entity.extra_fields.get("date", entity.start_date.isoformat() if entity.start_date else None)
         }
         # Keep client profile columns flattened for UI database representations
         db_dict.update(entity.extra_fields)

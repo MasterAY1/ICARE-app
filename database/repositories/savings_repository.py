@@ -99,8 +99,17 @@ class SupabaseSavingsRepository(BaseRepository):
         return self.entity_class(**kwargs)
 
     def _to_database(self, entity) -> dict:
-        branch_id = self._resolve_branch_id(entity.branch)
-        officer_id = self._resolve_officer_id(entity.officer)
+        import uuid
+        def is_valid_uuid(val):
+            if not val: return False
+            try:
+                uuid.UUID(str(val))
+                return True
+            except ValueError:
+                return False
+
+        branch_id = entity.branch if is_valid_uuid(entity.branch) else self._resolve_branch_id(entity.branch)
+        officer_id = entity.officer if is_valid_uuid(entity.officer) else self._resolve_officer_id(entity.officer)
         
         p_date = entity.date
         if p_date:

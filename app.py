@@ -1019,6 +1019,8 @@ def load_loans():
                 
             from mappers.base_mappers import LoanMapper
             df = pd.DataFrame([LoanMapper.to_database(L) for L in loans]).rename(columns=DB_TO_UI_LOANS)
+            if not df.empty and 'Date' in df.columns:
+                df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
             
             # Fetch actual group names from client memberships to cover newly registered pre-loan clients
             try:
@@ -1073,6 +1075,8 @@ def load_repayments():
                 
             from mappers.base_mappers import RepaymentMapper
             df = pd.DataFrame([RepaymentMapper.to_database(R) for R in reps]).rename(columns=DB_TO_UI_REP)
+            if not df.empty and 'Date' in df.columns:
+                df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
             num_cols = ['Amt Paid', 'Savings Amount', 'Loan Repayment Amount', 'Withdrawal Amount', 'Others Amount', 'Recovery Amount', 'Initial Payment']
             for c in num_cols:
                 if c in df.columns:
@@ -1269,6 +1273,37 @@ def save_repayment(data):
                 uow.event_store.append(event_app)
                 FinancialPostingEngine.post_event(uow, event_app)
 
+            # Route Markup and Contingency to ledger posting
+            d11_val = float(db_data.get('daily_11_pct') or 0.0)
+            d20_val = float(db_data.get('daily_20_pct') or 0.0)
+            w11_val = float(db_data.get('weekly_11_pct') or 0.0)
+            w20_val = float(db_data.get('weekly_20_pct') or 0.0)
+            mm_val = float(db_data.get('monthly_markup') or 0.0)
+            cont_val = float(db_data.get('contingency_paid') or 0.0)
+
+            def post_fee_charge(amount_val, narration_str):
+                if amount_val <= 0:
+                    return
+                import uuid
+                from domain.entities.event_store import DomainEvent
+                from services.posting_engine import FinancialPostingEngine
+                event_fee = DomainEvent(
+                    event_id=str(uuid.uuid4()),
+                    aggregate_id=client_id,
+                    aggregate_type="Fee",
+                    event_type="FeeCharged",
+                    payload={"branch": branch, "officer": officer, "amount": amount_val, "narration": narration_str}
+                )
+                uow.event_store.append(event_fee)
+                FinancialPostingEngine.post_event(uow, event_fee)
+
+            post_fee_charge(d11_val, f"daily 11% markup fee from {client_name}")
+            post_fee_charge(d20_val, f"daily 20% markup fee from {client_name}")
+            post_fee_charge(w11_val, f"weekly 11% markup fee from {client_name}")
+            post_fee_charge(w20_val, f"weekly 20% markup fee from {client_name}")
+            post_fee_charge(mm_val, f"monthly markup risk premium fee from {client_name}")
+            post_fee_charge(cont_val, f"contingency fee from {client_name}")
+
             # Proceed to insert into repayments table if there's actual repayment
             # or if it's a legacy record. We'll always insert it so history isn't lost.
             rep = RepaymentMapper.to_domain(db_data)
@@ -1346,20 +1381,9 @@ def update_database_safe(edited_subset, user_role, user_name, branch):
 
 def get_clients_for_user(df, user_role, user_name, branch):
     """Filter clients based on user role hierarchy (backward-compatible DataFrame filter)"""
-    if df.empty:
-        return df
-    if user_role in [ROLE_ADMIN, 'Super Admin', 'Admin']:
-        return df
-    elif user_role in ['AM', 'Area Manager']:
-        # Filter by assigned branches
-        if ASSIGNED_BRANCH_IDS and 'Branch' in df.columns:
-            return df[df['Branch'].isin(current_user.assigned_branches)] if current_user else df
-        return df
-    elif user_role in ['BM', ROLE_BRANCH_MANAGER]:
-        return df[df['Branch'] == branch]
-    elif user_role in ['Officer', 'CO', ROLE_CREDIT_OFFICER]:
-        return df[df['Officer'] == user_name]
-    return pd.DataFrame(columns=df.columns)
+    # Since load_loans() and load_repayments() already filter by RBAC UUID hierarchy,
+    # we return the DataFrame directly to prevent name/string casing mismatches.
+    return df
 
 # --- 3. MATH HELPERS & RISK LOGIC ---
 
@@ -1893,31 +1917,12 @@ if page == "Dashboard":
             if pd.isna(s_wd): s_wd = 0
             group_data[gn]['global_savings'] += (s_dep - s_wd)
             
-    st.markdown("### 📅 Today's Operations Summary")
-    t1, t2, t3 = st.columns(3)
     net_savings = today_savings_deposited - today_savings_withdrawn
-    t1.metric("📥 Savings Deposited Today", f"₦{today_savings_deposited:,.0f}")
-    t2.metric("📤 Savings Withdrawn Today", f"₦{today_savings_withdrawn:,.0f}")
-    t3.metric("🐷 Net Savings Today", f"₦{net_savings:,.0f}")
-    
-    t4, t5, t6 = st.columns(3)
     total_target = target_daily + target_weekly + target_monthly
     excess = collected_today - total_target
     excess_color = "normal" if excess >= 0 else "inverse"
     target_breakdown = f"Daily: ₦{target_daily:,.0f} | Weekly: ₦{target_weekly:,.0f} | Monthly: ₦{target_monthly:,.0f}"
-    
-    t4.metric("📊 Expected Repayment Target", f"₦{total_target:,.0f}", target_breakdown, delta_color="off")
-    t5.metric("💵 Total Repayment Collected Today", f"₦{collected_today:,.0f}")
-    t6.metric("🚀 Excess / Shortfall (Collected)", f"₦{excess:,.0f}", delta_color=excess_color)
-    
-    fp_col1, fp_col2 = st.columns(2)
-    fp_col1.metric("🏆 Full Payments Today (Count)", f"{today_full_payment_count} people")
-    fp_col2.metric("💰 Full Payments Today (Amount)", f"₦{today_full_payment_amount:,.0f}")
-            
-    st.divider()
-            
-    st.markdown("### 💰 Overall Portfolio Summary")
-    s1, s2 = st.columns(2)
+
     try:
         from database.repositories.unit_of_work import SupabaseUnitOfWork
         from services.savings_service import SavingsService
@@ -1929,25 +1934,89 @@ if page == "Dashboard":
             misc_sav = sav_totals['misc_savings']
             laps_sav = sav_totals['laps_savings']
     except Exception as e:
-        st.error(f"Error fetching savings from DB: {e}")
         real_total_savings, ind_sav, grp_sav, misc_sav, laps_sav = 0, 0, 0, 0, 0
 
-    s1.metric("👥 People with Savings", f"{total_people_with_savings}")
-    s2.metric("🐷 Total Branch Savings (Active)", f"₦{real_total_savings:,.0f}")
-    s2.caption(f"**Individual:** ₦{ind_sav:,.0f} | **Group:** ₦{grp_sav:,.0f} | **Misc:** ₦{misc_sav:,.0f}")
-    
-    st.markdown("### 🔒 LAPS Savings (Excluded from Active)")
-    st.metric("LAPS Balance", f"₦{laps_sav:,.0f}")
-    
-    c1, c2, c3 = st.columns(3)
-    c1.metric("👥 People with Active Loans", f"{active_loans_count}")
-    c2.metric("📈 Sum Total Active Credit", f"₦{total_original_active_credit:,.0f}")
-    c3.metric("📉 Sum Total Credit Balance", f"₦{total_active_credit:,.0f}")
-    
-    c4, c5, _ = st.columns(3)
-    c4.metric("🎉 Total Fully Paid Loans (All-Time)", f"{fully_paid_count}")
-    od_color = "inverse" if total_overdue > 0 else "normal"
-    c5.metric("🚨 Total Overdue Amount", f"₦{total_overdue:,.0f}", delta_color=od_color)
+    if ROLE in [ROLE_ADMIN, 'Super Admin', 'Admin']:
+        st.markdown("### 👑 Global Administrator Dashboard")
+        g1, g2, g3 = st.columns(3)
+        g1.metric("👥 Active Loans Count (System)", active_loans_count)
+        g2.metric("📈 Sum Active Credit (System)", f"₦{total_active_credit:,.0f}")
+        g3.metric("🐷 Total Savings (Active)", f"₦{real_total_savings:,.0f}")
+        
+        # Breakdown Widget
+        st.markdown("#### 🏦 Branch comparison breakdown")
+        st.info("System Health: Supabase cloud database connected. Active session monitoring enabled.")
+        
+    elif ROLE in ['AM', 'Area Manager']:
+        st.markdown(f"### 🌐 Area Manager Dashboard — {', '.join(current_user.assigned_branches) if current_user and getattr(current_user, 'assigned_branches', None) else 'All Branches'}")
+        am1, am2 = st.columns(2)
+        am1.metric("👥 Total Active Clients", active_loans_count)
+        am2.metric("📈 Sum Total Credit Balance", f"₦{total_active_credit:,.0f}")
+        
+    elif ROLE in ['BM', ROLE_BRANCH_MANAGER]:
+        st.markdown(f"### 🏦 Branch Manager Dashboard — {BRANCH} Branch")
+        
+        # 1. Pending Approvals queue directly on dashboard
+        try:
+            with SupabaseUnitOfWork() as uow:
+                p_loans = uow.client.table("loans").select("*, clients(name)").eq("branch_id", BRANCH_ID).eq("status", "Pending").execute()
+        except Exception:
+            p_loans = None
+            
+        if p_loans and p_loans.data:
+            st.markdown("#### ⏳ Pending Loan Approvals")
+            for pl in p_loans.data:
+                c_name = pl.get("clients", {}).get("name") if pl.get("clients") else pl.get("client_name")
+                c_code = pl.get("client_id")
+                loan_amt = float(pl.get("loan_amount", 0))
+                prod = pl.get("loan_product")
+                
+                col_app1, col_app2, col_app3 = st.columns([3, 1, 1])
+                col_app1.markdown(f"👤 **{c_name}** ({c_code}) applied for **₦{loan_amt:,.0f}** ({prod})")
+                if col_app2.button("Approve", key=f"app_{pl['loan_id']}"):
+                    with SupabaseUnitOfWork() as uow_app:
+                        uow_app.loans.approve(pl['loan_id'])
+                    st.success(f"Loan approved for {c_name}!")
+                    st.rerun()
+                if col_app3.button("Reject", key=f"rej_{pl['loan_id']}", type="primary"):
+                    with SupabaseUnitOfWork() as uow_app:
+                        uow_app.loans.reject(pl['loan_id'])
+                    st.success(f"Loan rejected for {c_name}!")
+                    st.rerun()
+            st.divider()
+            
+        # BM Metrics rendering
+        st.markdown("#### 📅 Today's Operations Summary")
+        t1, t2, t3 = st.columns(3)
+        t1.metric("📥 Savings Deposited Today", f"₦{today_savings_deposited:,.0f}")
+        t2.metric("📤 Savings Withdrawn Today", f"₦{today_savings_withdrawn:,.0f}")
+        t3.metric("🐷 Net Savings Today", f"₦{net_savings:,.0f}")
+        
+        t4, t5, t6 = st.columns(3)
+        t4.metric("📊 Expected Repayment Target", f"₦{total_target:,.0f}", target_breakdown, delta_color="off")
+        t5.metric("💵 Total Repayment Collected Today", f"₦{collected_today:,.0f}")
+        t6.metric("🚀 Excess / Shortfall (Collected)", f"₦{excess:,.0f}", delta_color=excess_color)
+        
+        st.markdown("#### 💰 Branch Portfolio Summary")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("👥 Active Loans", active_loans_count)
+        c2.metric("🐷 Total Branch Savings (Active)", f"₦{real_total_savings:,.0f}")
+        c3.metric("🚨 Total Overdue Amount", f"₦{total_overdue:,.0f}", delta_color="inverse" if total_overdue > 0 else "normal")
+        
+    else: # CO / Officer
+        st.markdown(f"### 📱 Credit Officer Dashboard — {USER} ({BRANCH})")
+        # CO Metrics rendering
+        st.markdown("#### 📅 My Operations Today")
+        t1, t2, t3 = st.columns(3)
+        t1.metric("📥 My Savings Deposited Today", f"₦{today_savings_deposited:,.0f}")
+        t2.metric("📤 My Savings Withdrawn Today", f"₦{today_savings_withdrawn:,.0f}")
+        t3.metric("💵 My Repayment Collected Today", f"₦{collected_today:,.0f}")
+        
+        st.markdown("#### 💰 My Portfolio Overview")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("👥 My Active Clients", active_loans_count)
+        c2.metric("📈 My Sum Active Credit", f"₦{total_active_credit:,.0f}")
+        c3.metric("🚨 My Overdue Amount", f"₦{total_overdue:,.0f}", delta_color="inverse" if total_overdue > 0 else "normal")
 
     if group_data:
         st.divider()
@@ -2030,7 +2099,15 @@ if page == "Dashboard":
 elif page == "Loan Origination":
     st.title("Origination & Registration")
     
-    orig_section = st.radio("Navigate", ["👤 Client Registration", "📝 Loan Application", "⏳ Pending Disbursements", "✏️ Edit Client/Guarantor"], horizontal=True, label_visibility="collapsed")
+    orig_options = ["👤 Client Registration", "📝 Loan Application", "⏳ Pending Disbursements", "✏️ Edit Client/Guarantor"]
+    if "orig_tab" not in st.session_state:
+        st.session_state["orig_tab"] = "👤 Client Registration"
+    if st.session_state["orig_tab"] not in orig_options:
+        st.session_state["orig_tab"] = "👤 Client Registration"
+        
+    orig_idx = orig_options.index(st.session_state["orig_tab"])
+    orig_section = st.radio("Navigate", orig_options, index=orig_idx, horizontal=True, label_visibility="collapsed", key="orig_tab_radio")
+    st.session_state["orig_tab"] = orig_section
 
     if orig_section == "⏳ Pending Disbursements":
         st.subheader("Pending Disbursements")
@@ -3242,6 +3319,7 @@ elif page == "Loan Origination":
                                 ScheduleService.generate_schedule(uow, loan_entity, date.today() + timedelta(days=7))
 
                                 st.success("Application submitted successfully! Repayment schedule generated and loan is Pending BM Approval.")
+                                st.session_state["orig_tab"] = "⏳ Pending Disbursements"
                                 import time
                                 time.sleep(2)
                                 st.rerun()

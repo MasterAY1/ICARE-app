@@ -140,8 +140,8 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
             except ValueError:
                 return None
 
-        branch_id = self._resolve_branch_id(entity.branch)
-        officer_id = self._resolve_officer_id(entity.credit_officer)
+        branch_id = entity.extra_fields.get("branch_id") or self._resolve_branch_id(entity.branch)
+        officer_id = entity.extra_fields.get("officer_id") or self._resolve_officer_id(entity.credit_officer)
 
         amt = float(entity.amount_paid or 0.0)
         if amt <= 0 and entity.loan_repayment_amount > 0:

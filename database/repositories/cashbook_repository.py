@@ -195,6 +195,14 @@ class SupabaseCashbookRepository(BaseRepository[CashbookEntry], CashbookReposito
                         passbook += amount
                     elif "processing" in narr or "application" in narr:
                         app_fee += amount
+                    elif "contingency" in narr:
+                        contingency += amount
+                    elif "daily" in narr:
+                        daily_11_pct += amount
+                    elif "weekly" in narr:
+                        weekly_11_pct += amount
+                    elif "monthly" in narr or "risk premium" in narr or "markup" in narr:
+                        risk_premium_returns += amount
                     else:
                         misc_fees += amount
                 elif event_type == "CashTransferred_HO_In":

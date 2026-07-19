@@ -96,8 +96,8 @@ class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
             pass
 
     def _prepare_db_data(self, entity: Loan) -> dict:
-        branch_id = self._resolve_branch_id(entity.branch)
-        officer_id = self._resolve_officer_id(entity.credit_officer)
+        branch_id = getattr(entity, 'branch_id', None) or self._resolve_branch_id(entity.branch)
+        officer_id = getattr(entity, 'officer_id', None) or self._resolve_officer_id(entity.credit_officer)
         product_id = self._resolve_product_id(entity.product_type)
 
         loan_id = entity.id if (entity.id and len(entity.id) == 36) else None
