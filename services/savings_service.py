@@ -25,28 +25,35 @@ class SavingsService:
         # 1. Persist operational data
         uow.individual_savings.create(entity)
         
-        # 2. Audit
-        action = "Individual Savings Deposit" if deposit_amount > 0 else "Individual Savings Withdrawal"
-        uow.audit.log_action(officer, "Credit Officer", action, "individual_savings", entity.id, None, {"deposit": deposit_amount, "withdrawal": withdrawal_amount})
+        try:
+            # 2. Audit
+            action = "Individual Savings Deposit" if deposit_amount > 0 else "Individual Savings Withdrawal"
+            uow.audit.log_action(officer, "Credit Officer", action, "individual_savings", entity.id, None, {"deposit": deposit_amount, "withdrawal": withdrawal_amount})
 
-        # 3. Create Event & Post
-        event_type = "SavingsDeposited" if deposit_amount > 0 else "SavingsWithdrawn"
-        amt = deposit_amount if deposit_amount > 0 else withdrawal_amount
-        event = DomainEvent(
-            event_id=str(uuid.uuid4()),
-            aggregate_id=entity.id,
-            aggregate_type="IndividualSavings",
-            event_type=event_type,
-            payload={
-                "branch": branch,
-                "officer": officer,
-                "amount": amt,
-                "reference": reference or entity.id,
-                "narration": remarks or f"Individual savings transaction for client {client_name}"
-            }
-        )
-        uow.event_store.append(event)
-        FinancialPostingEngine.post_event(uow, event)
+            # 3. Create Event & Post
+            event_type = "SavingsDeposited" if deposit_amount > 0 else "SavingsWithdrawn"
+            amt = deposit_amount if deposit_amount > 0 else withdrawal_amount
+            event = DomainEvent(
+                event_id=str(uuid.uuid4()),
+                aggregate_id=entity.id,
+                aggregate_type="IndividualSavings",
+                event_type=event_type,
+                payload={
+                    "branch": branch,
+                    "officer": officer,
+                    "amount": amt,
+                    "reference": reference or entity.id,
+                    "narration": remarks or f"Individual savings transaction for client {client_name}"
+                }
+            )
+            uow.event_store.append(event)
+            FinancialPostingEngine.post_event(uow, event)
+        except Exception as e:
+            try:
+                uow.client.table("individual_savings").delete().eq("id", entity.id).execute()
+            except Exception:
+                pass
+            raise e
 
     @staticmethod
     def post_group_savings(uow: SupabaseUnitOfWork, group_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None):
@@ -66,28 +73,35 @@ class SavingsService:
         # 1. Persist operational data
         uow.group_savings.create(entity)
         
-        # 2. Audit
-        action = "Group Savings Deposit" if deposit_amount > 0 else "Group Savings Withdrawal"
-        uow.audit.log_action(officer, "Credit Officer", action, "group_savings", entity.id, None, {"deposit": deposit_amount, "withdrawal": withdrawal_amount})
+        try:
+            # 2. Audit
+            action = "Group Savings Deposit" if deposit_amount > 0 else "Group Savings Withdrawal"
+            uow.audit.log_action(officer, "Credit Officer", action, "group_savings", entity.id, None, {"deposit": deposit_amount, "withdrawal": withdrawal_amount})
 
-        # 3. Create Event & Post
-        event_type = "SavingsDeposited" if deposit_amount > 0 else "SavingsWithdrawn"
-        amt = deposit_amount if deposit_amount > 0 else withdrawal_amount
-        event = DomainEvent(
-            event_id=str(uuid.uuid4()),
-            aggregate_id=entity.id,
-            aggregate_type="GroupSavings",
-            event_type=event_type,
-            payload={
-                "branch": branch,
-                "officer": officer,
-                "amount": amt,
-                "reference": reference or entity.id,
-                "narration": remarks or f"Group savings transaction for group {group_name}"
-            }
-        )
-        uow.event_store.append(event)
-        FinancialPostingEngine.post_event(uow, event)
+            # 3. Create Event & Post
+            event_type = "SavingsDeposited" if deposit_amount > 0 else "SavingsWithdrawn"
+            amt = deposit_amount if deposit_amount > 0 else withdrawal_amount
+            event = DomainEvent(
+                event_id=str(uuid.uuid4()),
+                aggregate_id=entity.id,
+                aggregate_type="GroupSavings",
+                event_type=event_type,
+                payload={
+                    "branch": branch,
+                    "officer": officer,
+                    "amount": amt,
+                    "reference": reference or entity.id,
+                    "narration": remarks or f"Group savings transaction for group {group_name}"
+                }
+            )
+            uow.event_store.append(event)
+            FinancialPostingEngine.post_event(uow, event)
+        except Exception as e:
+            try:
+                uow.client.table("group_savings").delete().eq("id", entity.id).execute()
+            except Exception:
+                pass
+            raise e
 
     @staticmethod
     def post_misc_savings(uow: SupabaseUnitOfWork, client_id: str, client_name: str, branch: str, officer: str, deposit_amount: float, reference: str = None, remarks: str = None):

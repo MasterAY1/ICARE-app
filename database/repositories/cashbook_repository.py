@@ -278,7 +278,9 @@ class SupabaseCashbookRepository(BaseRepository[CashbookEntry], CashbookReposito
             "total_outflows": total_outflows,
             "closing_balance": closing_balance
         }
-        self.client.table(self.table_name).upsert(cb_data, on_conflict="date,branch_id").execute()
+        print(f"[SAVINGS TRACE] Rebuilding cashbook projection for branch {branch_id} on {posting_date.isoformat()}... Inflows={total_inflows}, Outflows={total_outflows}, Closing={closing_balance}")
+        res = self.client.table(self.table_name).upsert(cb_data, on_conflict="date,branch_id").execute()
+        print(f"[SAVINGS TRACE] Cashbook projection rebuilt successfully! Result data: {res.data}")
 
     def _prepare_db_data(self, entity: CashbookEntry) -> dict:
         data = CashbookMapper.to_database(entity)

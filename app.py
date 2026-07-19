@@ -963,6 +963,27 @@ DB_TO_UI_REP = {
 }
 UI_TO_DB_REP = {v: k for k, v in DB_TO_UI_REP.items()}
 
+def load_client_savings_map():
+    """Load map of client code to cumulative savings balance from individual_savings table"""
+    client_savings_map = {}
+    try:
+        from database.repositories.unit_of_work import SupabaseUnitOfWork
+        with SupabaseUnitOfWork() as uow:
+            res_all_sav = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount").execute()
+            res_clients = uow.client.table("clients").select("client_id, client_code").execute()
+            uuid_to_code = {c["client_id"]: c["client_code"] for c in res_clients.data if c.get("client_id") and c.get("client_code")}
+            if res_all_sav.data:
+                for s in res_all_sav.data:
+                    cid_uuid = s.get("client_id")
+                    if cid_uuid:
+                        code = uuid_to_code.get(cid_uuid, cid_uuid)
+                        dep = float(s.get("deposit_amount") or 0.0)
+                        wd = float(s.get("withdrawal_amount") or 0.0)
+                        client_savings_map[code] = client_savings_map.get(code, 0.0) + (dep - wd)
+    except Exception:
+        pass
+    return client_savings_map
+
 def load_loans():
     """Load loans filtered by RBAC hierarchy (UUID-based)"""
     try:
@@ -1097,6 +1118,7 @@ def save_new_loan(data):
 
 def save_repayment(data):
     """Save repayment and route savings to respective buckets"""
+    print(f"\n[SAVINGS TRACE] Collections payload received: {data}")
     try:
         from database.repositories.unit_of_work import SupabaseUnitOfWork
         from services.savings_service import SavingsService
@@ -1109,9 +1131,28 @@ def save_repayment(data):
             if 'branch' not in db_data: db_data['branch'] = BRANCH
             
             client_id = db_data.get('client_id', '')
+            
+            # Resolve client_code to database UUID if it's not a UUID and not a group/global code
+            import uuid
+            def is_valid_uuid(val):
+                try:
+                    uuid.UUID(str(val))
+                    return True
+                except ValueError:
+                    return False
+            
+            resolved_client_id = client_id
+            if client_id and not is_valid_uuid(client_id) and not str(client_id).startswith('GROUP-') and not str(client_id).startswith('GLOBAL-'):
+                res_c = uow.client.table("clients").select("client_id").eq("client_code", client_id).execute()
+                if res_c.data:
+                    resolved_client_id = res_c.data[0]["client_id"]
+            
+            db_data['client_id'] = resolved_client_id
+            client_id = resolved_client_id
             client_name = db_data.get('client_name', client_id)
             branch = db_data.get('branch', BRANCH)
             officer = db_data.get('credit_officer', USER)
+            print(f"[SAVINGS TRACE] Resolved client/group: ID={client_id}, Name={client_name}, Branch={branch}, Officer={officer}")
             
             # Extract Savings
             savings_dep = float(db_data.get('savings_amount', 0))
@@ -1127,11 +1168,33 @@ def save_repayment(data):
             if client_id.startswith('GROUP-'):
                 group_name = client_id.replace('GROUP-', '')
                 SavingsService.post_group_savings(uow, group_name, branch, officer, group_dep, group_wd, remarks=db_data.get('note'))
+                
+                # Also save to repayments table
+                db_data['transaction_type'] = client_id  # e.g., "GROUP-group_name"
+                db_data['client_id'] = None
+                db_data['loan_repayment_amount'] = 0.0
+                rep = RepaymentMapper.to_domain(db_data)
+                try:
+                    from services.repayment_service import RepaymentService
+                    RepaymentService.post_repayment(uow, rep)
+                except Exception as re:
+                    st.error(f"Error inserting group repayment: {re}")
                 return # Do not insert a dummy loan or a repayment row
             
             # Route LAPS
             if client_id.startswith('GLOBAL-'):
                 SavingsService.post_laps_savings(uow, client_id, client_name, branch, officer, laps_res, laps_trans)
+                
+                # Also save to repayments table
+                db_data['transaction_type'] = client_id  # e.g., "GLOBAL-LAPS-branch"
+                db_data['client_id'] = None
+                db_data['loan_repayment_amount'] = 0.0
+                rep = RepaymentMapper.to_domain(db_data)
+                try:
+                    from services.repayment_service import RepaymentService
+                    RepaymentService.post_repayment(uow, rep)
+                except Exception as re:
+                    st.error(f"Error inserting laps repayment: {re}")
                 return # Do not insert a dummy loan or a repayment row
 
             # Route Individual Savings
@@ -1213,9 +1276,11 @@ def save_repayment(data):
                 from services.repayment_service import RepaymentService
                 RepaymentService.post_repayment(uow, rep)
             except Exception as re:
+                print(f"[ERROR] Error inserting repayment for {client_id}: {re}")
                 st.error(f"Error inserting repayment for {client_id}: {re}")
                 return
     except Exception as e:
+        print(f"[ERROR] Error in save_repayment logic: {e}")
         st.error(f"Error in save_repayment logic: {e}")
 
 
@@ -1725,10 +1790,12 @@ if page == "Dashboard":
     is_weekend = today_weekday in ["Saturday", "Sunday"]
     is_working_day = not (is_holiday or is_weekend)
     
+    client_savings_map = load_client_savings_map()
     for _, loan in my_loans.iterrows():
         cid = loan.get('Client ID')
         c_payments = all_repayments[all_repayments['Client ID'] == cid]
-        s_amt, l_amt = calculate_client_savings(c_payments, loan.get('Loan Repay', 0))
+        s_amt = client_savings_map.get(cid, 0.0)
+        l_amt = pd.to_numeric(c_payments['Loan Repayment Amount'], errors='coerce').fillna(0).sum()
         
         loan_bal = loan.get('Active Credit', 0) - l_amt
         
@@ -3671,9 +3738,12 @@ elif page == "Collections":
                         cid = member['Client ID']
                         uuid_id = member['ID']
                         mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
-                        acc_sav = mem_reps['Savings Amount'].astype(float).sum() if not mem_reps.empty else 0
-                        acc_wd = mem_reps['Withdrawal Amount'].astype(float).sum() if 'Withdrawal Amount' in mem_reps.columns and not mem_reps.empty else 0
-                        sav_bal = acc_sav - acc_wd
+                        try:
+                            res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", uuid_id).execute()
+                            res_wd = uow.client.table("individual_savings").select("withdrawal_amount").eq("client_id", uuid_id).execute()
+                            sav_bal = sum(float(d.get("deposit_amount") or 0) for d in res_dep.data) - sum(float(w.get("withdrawal_amount") or 0) for w in res_wd.data)
+                        except Exception:
+                            sav_bal = 0.0
                         total_paid = mem_reps['Loan Repayment Amount'].astype(float).sum() if not mem_reps.empty else 0
                         
                         # Find if there is an active loan in all_loans
@@ -4064,6 +4134,7 @@ elif page == "Daily Report":
             st.markdown("### 📝 Detailed Client Breakdown")
             
             detailed_data = []
+            client_savings_map = load_client_savings_map()
             for _, row in daily_reps.iterrows():
                 cid = row.get('Client ID')
                 c_loan = all_loans[all_loans['Client ID'] == cid].iloc[0] if cid in all_loans['Client ID'].values else None
@@ -4073,7 +4144,8 @@ elif page == "Daily Report":
                 
                 if c_loan is not None:
                     c_payments = repayments[repayments['Client ID'] == cid]
-                    s_amt, l_amt = calculate_client_savings(c_payments, c_loan['Loan Repay'])
+                    s_amt = client_savings_map.get(cid, 0.0)
+                    l_amt = pd.to_numeric(c_payments['Loan Repayment Amount'], errors='coerce').fillna(0).sum()
                     acc_savings = s_amt
                     loan_bal = c_loan['Active Credit'] - l_amt
                     
@@ -5157,9 +5229,11 @@ elif page == "Portfolio":
     
     if not my_loans.empty:
         display_data = []
+        client_savings_map = load_client_savings_map()
         for _, row in my_loans.iterrows():
             c_payments = repayments[repayments['Client ID'] == row['Client ID']] if not repayments.empty else pd.DataFrame()
-            s_amt, l_amt = calculate_client_savings(c_payments, row['Loan Repay'])
+            s_amt = client_savings_map.get(row['Client ID'], 0.0)
+            l_amt = pd.to_numeric(c_payments['Loan Repayment Amount'], errors='coerce').fillna(0).sum()
             expected, overdue = calculate_overdue(row['Date'], row['Loan Product'], row['Loan Repay'], l_amt, row.get('Status', STATUS_ACTIVE))
             row_data = row.to_dict()
             row_data['Acc. Savings'] = s_amt

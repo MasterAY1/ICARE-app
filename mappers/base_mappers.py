@@ -84,7 +84,7 @@ class LoanMapper:
             extra.update(dto.get("extra_fields"))
 
         loan_id = str(dto.get("loan_id", dto.get("id") or ""))
-        client_id = str(dto.get("client_id", ""))
+        client_id = c_dto.get("client_code") or str(dto.get("client_id", ""))
         client_name = c_dto.get("name") or dto.get("client_name", "")
 
         return Loan(
@@ -155,18 +155,48 @@ class RepaymentMapper:
         if dto.get("app_users") and isinstance(dto.get("app_users"), dict):
             o_name = dto.get("app_users", {}).get("full_name", dto.get("app_users", {}).get("username", o_name))
 
-        # Resolve client name from join
+        # Resolve client name and code from join
         c_name = dto.get("client_name", "")
+        c_code = dto.get("client_id", "")
         if dto.get("clients") and isinstance(dto.get("clients"), dict):
             c_name = dto.get("clients", {}).get("name", c_name)
+            c_code = dto.get("clients", {}).get("client_code", c_code)
+
+        tx_type = str(dto.get("transaction_type", "Loan"))
+        if tx_type.startswith("GROUP-") or tx_type.startswith("GLOBAL-"):
+            c_code = tx_type
 
         # Setup all collection fields expected by domain Repayment
-        savings_dep = float(dto.get("savings_amount", 0))
-        loan_repay = float(dto.get("loan_repayment_amount", 0))
-        amt_paid = float(dto.get("amount_paid", 0))
+        def safe_float(val, default=0.0):
+            if val is None:
+                return default
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return default
+
+        savings_dep = safe_float(dto.get("savings_amount"))
+        withdrawal_amt = safe_float(dto.get("withdrawal_amount"))
+        others_amt = safe_float(dto.get("others_amount"))
+        recovery_amt = safe_float(dto.get("recovery_amount"))
+        initial_pay = safe_float(dto.get("initial_payment"))
+        proc_fee = safe_float(dto.get("processing_fee_paid"))
+        markup_fee = safe_float(dto.get("markup_paid"))
+        passbook_fee = safe_float(dto.get("pass_book_paid"))
+        mgt_fee = safe_float(dto.get("mgt_fee_paid"))
+
+        if "loan_repayment_amount" in dto and dto["loan_repayment_amount"] is not None:
+            loan_repay = safe_float(dto["loan_repayment_amount"])
+        elif tx_type.startswith("GROUP-") or tx_type.startswith("GLOBAL-"):
+            loan_repay = 0.0
+        elif savings_dep > 0 or withdrawal_amt > 0:
+            loan_repay = 0.0
+        else:
+            loan_repay = safe_float(dto.get("amount_paid"))
+
+        amt_paid = safe_float(dto.get("amount_paid"))
         if amt_paid <= 0:
-            # Fallback
-            amt_paid = savings_dep + loan_repay + float(dto.get("processing_fee_paid", 0)) + float(dto.get("withdrawal_amount", 0)) + float(dto.get("others_amount", 0))
+            amt_paid = savings_dep + loan_repay + proc_fee + withdrawal_amt + others_amt
             
         extra = {k: v for k, v in dto.items() if k not in ["id", "loan_id", "client_id", "amount_paid", "savings_amount", "loan_repayment_amount", "withdrawal_amount", "others_amount", "recovery_amount", "initial_payment", "date", "payment_date", "transaction_type", "branch", "officer", "credit_officer", "note", "created_at", "clients", "branches", "app_users"]}
         extra["client_name"] = c_name
@@ -174,14 +204,14 @@ class RepaymentMapper:
         return Repayment(
             id=str(dto.get("id") or ""),
             loan_id=str(dto.get("loan_id", dto.get("client_id", ""))),
-            client_id=str(dto.get("client_id", "")),
+            client_id=str(c_code),
             amount_paid=amt_paid,
             savings_amount=savings_dep,
-            loan_repayment_amount=loan_repay or amt_paid,
-            withdrawal_amount=float(dto.get("withdrawal_amount", 0)),
-            others_amount=float(dto.get("others_amount", 0)),
-            recovery_amount=float(dto.get("recovery_amount", 0)),
-            initial_payment=float(dto.get("initial_payment", 0)),
+            loan_repayment_amount=loan_repay,
+            withdrawal_amount=withdrawal_amt,
+            others_amount=others_amt,
+            recovery_amount=recovery_amt,
+            initial_payment=initial_pay,
             payment_date=_parse_date(dto.get("date", dto.get("payment_date"))),
             transaction_type=str(dto.get("transaction_type", "Loan")),
             branch=b_name,

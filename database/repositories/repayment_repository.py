@@ -10,7 +10,7 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
     def __init__(self, client):
         super().__init__(client)
         self.table_name = "repayments"
-        self.columns = "id,date,loan_id,client_id,amount_paid,officer_id,branch_id,note,transaction_type,created_at,clients(name),branches(name),app_users(username, full_name)"
+        self.columns = "id,date,loan_id,client_id,amount_paid,officer_id,branch_id,note,transaction_type,created_at,savings_amount,loan_repayment_amount,processing_fee_paid,markup_paid,pass_book_paid,recovery_amount,withdrawal_amount,mgt_fee_paid,others_amount,clients(name,client_code),branches(name),app_users(username, full_name)"
 
     def _resolve_branch_id(self, branch_name: str) -> str:
         if not branch_name:
@@ -30,6 +30,9 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
             res = self.client.table("app_users").select("id").eq("username", username).execute()
             if res.data:
                 return res.data[0]["id"]
+            res_full = self.client.table("app_users").select("id").eq("full_name", username).execute()
+            if res_full.data:
+                return res_full.data[0]["id"]
         except Exception:
             pass
         return "00000000-0000-0000-0000-000000000000" # admin fallback
@@ -44,13 +47,37 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
                 return client_id
         except Exception:
             pass
+            
+        # Resolve client_code to database client UUID first if needed
+        import uuid
+        def clean_uuid(val):
+            try:
+                uuid.UUID(str(val))
+                return str(val)
+            except ValueError:
+                return None
+        
+        c_uuid = clean_uuid(client_id)
+        if not c_uuid and not str(client_id).startswith('GROUP-') and not str(client_id).startswith('GLOBAL-'):
+            try:
+                res_c = self.client.table("clients").select("client_id").eq("client_code", client_id).execute()
+                if res_c.data:
+                    c_uuid = res_c.data[0]["client_id"]
+            except Exception:
+                pass
+        else:
+            c_uuid = client_id
+            
+        if not c_uuid:
+            return None
+
         # Resolve by client active loan
         try:
-            res = self.client.table("loans").select("loan_id").eq("client_id", client_id).eq("status", "Active").execute()
+            res = self.client.table("loans").select("loan_id").eq("client_id", c_uuid).eq("status", "Active").execute()
             if res.data:
                 return res.data[0]["loan_id"]
             # Fallback to any loan for client
-            res = self.client.table("loans").select("loan_id").eq("client_id", client_id).limit(1).execute()
+            res = self.client.table("loans").select("loan_id").eq("client_id", c_uuid).limit(1).execute()
             if res.data:
                 return res.data[0]["loan_id"]
         except Exception:
@@ -101,42 +128,39 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
         return [RepaymentMapper.to_domain(d) for d in res.data]
 
     def _prepare_db_data(self, entity: Repayment) -> dict:
-        branch_id = self._resolve_branch_id(entity.branch)
-        officer_id = self._resolve_officer_id(entity.credit_officer)
-        # Note: if amount_paid is 0 (e.g. from an all-savings row), we use the actual loan repayment amount if it is set.
-        # But in a clean double-entry setup, amount_paid is the cash inflow amount for loan repayment.
-        amt = entity.amount_paid
-        if amt <= 0 and entity.loan_repayment_amount > 0:
-            amt = entity.loan_repayment_amount
-        if amt <= 0:
-            amt = 1.0 # Guarantee > 0 check constraint
-            
-        resolved_loan = self._resolve_loan_id(entity.loan_id)
-        if not resolved_loan:
-            # Try to see if client_id is set
-            resolved_loan = self._resolve_loan_id(entity.client_id)
-            
-        # Guarantee client_id is not null
-        c_id = entity.client_id
-        if not c_id and resolved_loan:
-            # fetch client_id from loans
-            try:
-                res = self.client.table("loans").select("client_id").eq("loan_id", resolved_loan).execute()
-                if res.data:
-                    c_id = res.data[0]["client_id"]
-            except Exception:
-                pass
-                
-        # Fallback to None if not valid UUID to prevent FK violations
         import uuid
         def clean_uuid(val):
-            if not val:
+            if not val or val in ["None", "null", "undefined"]:
+                return None
+            val_str = str(val).strip()
+            if val_str.startswith("GROUP-") or val_str.startswith("GLOBAL-"):
                 return None
             try:
-                uuid.UUID(str(val))
-                return str(val)
+                return str(uuid.UUID(val_str))
             except ValueError:
                 return None
+
+        branch_id = self._resolve_branch_id(entity.branch)
+        officer_id = self._resolve_officer_id(entity.credit_officer)
+
+        amt = float(entity.amount_paid or 0.0)
+        if amt <= 0 and entity.loan_repayment_amount > 0:
+            amt = float(entity.loan_repayment_amount)
+        if amt <= 0:
+            amt = 1.0
+
+        resolved_loan = self._resolve_loan_id(entity.loan_id)
+        if not resolved_loan:
+            resolved_loan = self._resolve_loan_id(entity.client_id)
+
+        c_id = entity.client_id
+        if c_id and not clean_uuid(c_id):
+            try:
+                res_c = self.client.table("clients").select("client_id").eq("client_code", c_id).execute()
+                if res_c.data:
+                    c_id = res_c.data[0]["client_id"]
+            except Exception:
+                pass
 
         c_id_clean = clean_uuid(c_id)
         resolved_loan_clean = clean_uuid(resolved_loan)
@@ -159,8 +183,10 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
         data = self._prepare_db_data(entity)
         if "id" in data and not data["id"]:
             del data["id"]
+        print(f"[SAVINGS TRACE] RepaymentRepository create called. Data: {data}")
         query = self.client.table(self.table_name).insert(data)
         res = self._execute(query)
+        print(f"[SAVINGS TRACE] SQL Insert Result for repayments: {res.data}")
         inserted = self._single_or_none(res.data)
         return RepaymentMapper.to_domain(inserted) if inserted else entity
 

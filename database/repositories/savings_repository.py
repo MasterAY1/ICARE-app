@@ -43,6 +43,17 @@ class SupabaseSavingsRepository(BaseRepository):
             res = self.client.table("groups").select("group_id").eq("name", group_name).execute()
             if res.data:
                 return res.data[0]["group_id"]
+            # Fallback to group_code check
+            res_code = self.client.table("groups").select("group_id").eq("group_code", group_name).execute()
+            if res_code.data:
+                return res_code.data[0]["group_id"]
+            try:
+                code_int = int(group_name)
+                res_int = self.client.table("groups").select("group_id").eq("group_code", code_int).execute()
+                if res_int.data:
+                    return res_int.data[0]["group_id"]
+            except ValueError:
+                pass
         except Exception:
             pass
         return "00000000-0000-0000-0000-000000000000"
@@ -122,10 +133,16 @@ class SupabaseSavingsRepository(BaseRepository):
             except ValueError:
                 return None
 
-        if self.entity_class.__name__ in ["IndividualSavings", "LapsSavings"]:
-            d["client_id"] = clean_uuid(entity.client_id)
-        elif self.entity_class.__name__ == "MiscSavings":
-            d["client_id"] = clean_uuid(entity.client_id)
+        if self.entity_class.__name__ in ["IndividualSavings", "MiscSavings", "LapsSavings"]:
+            c_id = entity.client_id
+            if c_id and not clean_uuid(c_id) and not str(c_id).startswith('GROUP-') and not str(c_id).startswith('GLOBAL-'):
+                try:
+                    res_c = self.client.table("clients").select("client_id").eq("client_code", c_id).execute()
+                    if res_c.data:
+                        c_id = res_c.data[0]["client_id"]
+                except Exception:
+                    pass
+            d["client_id"] = clean_uuid(c_id)
         elif self.entity_class.__name__ == "GroupSavings":
             # If it's a fake group id or name, resolve it
             g_id = self._resolve_group_id(entity.group_name)
@@ -137,7 +154,9 @@ class SupabaseSavingsRepository(BaseRepository):
         data = self._to_database(entity)
         if "id" in data and not data["id"]:
             del data["id"]
+        print(f"[SAVINGS TRACE] Repository create called for {self.entity_class.__name__}. Data: {data}")
         res = self.client.table(self.table_name).insert(data).execute()
+        print(f"[SAVINGS TRACE] SQL Insert Result for {self.table_name}: {res.data}")
         if res.data:
             entity.id = str(res.data[0].get("id"))
 

@@ -11,7 +11,7 @@ class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
     def __init__(self, client):
         super().__init__(client)
         self.table_name = "loans"
-        self.columns = "loan_id,client_id,product_id,branch_id,officer_id,date,loan_amount,active_credit,loan_repay,total_due,status,product_category,disbursement_date,start_date,expected_end_date,version,extra_fields,currency_code,created_at,updated_at,is_deleted,clients(name,nickname,phone,address,marital_status,business_type,average_monthly_income,other_obligations),branches(name),app_users(username,full_name),loan_products(name)"
+        self.columns = "loan_id,client_id,product_id,branch_id,officer_id,date,loan_amount,active_credit,loan_repay,total_due,status,product_category,disbursement_date,start_date,expected_end_date,version,extra_fields,currency_code,created_at,updated_at,is_deleted,clients(name,nickname,phone,address,marital_status,business_type,average_monthly_income,other_obligations,client_code),branches(name),app_users(username,full_name),loan_products(name)"
 
     def _resolve_branch_id(self, branch_name: str) -> str:
         if not branch_name:
@@ -31,6 +31,9 @@ class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
             res = self.client.table("app_users").select("id").eq("username", username).execute()
             if res.data:
                 return res.data[0]["id"]
+            res_full = self.client.table("app_users").select("id").eq("full_name", username).execute()
+            if res_full.data:
+                return res_full.data[0]["id"]
         except Exception:
             pass
         return "00000000-0000-0000-0000-000000000000" # admin fallback
@@ -99,8 +102,28 @@ class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
 
         loan_id = entity.id if (entity.id and len(entity.id) == 36) else None
         
+        # Resolve client_code to database client UUID if needed
+        c_id = entity.client_id
+        import uuid
+        def clean_uuid(val):
+            if not val:
+                return None
+            try:
+                uuid.UUID(str(val))
+                return str(val)
+            except ValueError:
+                return None
+
+        if c_id and not clean_uuid(c_id):
+            try:
+                res_c = self.client.table("clients").select("client_id").eq("client_code", c_id).execute()
+                if res_c.data:
+                    c_id = res_c.data[0]["client_id"]
+            except Exception:
+                pass
+
         db_dict = {
-            "client_id": entity.client_id,
+            "client_id": clean_uuid(c_id),
             "product_id": product_id,
             "branch_id": branch_id,
             "officer_id": officer_id,

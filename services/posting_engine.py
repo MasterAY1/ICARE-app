@@ -112,13 +112,26 @@ class FinancialPostingEngine:
             )
 
             # 6. Post double entry to ledger
+            print(f"[SAVINGS TRACE] Posting double entry event. ID: {event.event_id}, Type: {event.event_type}, Payload: {event.payload}")
             tx_id = uow.ledger.create_transaction(tx, [debit, credit])
+            print(f"[SAVINGS TRACE] Ledger transaction created successfully! TxID: {tx_id}")
 
-            # 7. Mark Completed
-            uow.event_store.mark_posted(event.event_id, "posting_engine")
+            try:
+                # 7. Mark Completed
+                uow.event_store.mark_posted(event.event_id, "posting_engine")
+                print(f"[SAVINGS TRACE] Event marked posted in event_store: {event.event_id}")
 
-            # 8. Trigger Projection Updates
-            uow.cashbook.rebuild_projection(branch_id, p_date)
+                # 8. Trigger Projection Updates
+                uow.cashbook.rebuild_projection(branch_id, p_date)
+                print(f"[SAVINGS TRACE] Cashbook projection rebuild completed for branch_id: {branch_id}")
+            except Exception as inner_ex:
+                # Rollback transaction posting from ledger
+                try:
+                    uow.client.table("financial_ledger_entries").delete().eq("transaction_id", tx_id).execute()
+                    uow.client.table("financial_transactions").delete().eq("transaction_id", tx_id).execute()
+                except Exception:
+                    pass
+                raise inner_ex
 
             return tx_id
 
