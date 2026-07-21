@@ -2172,65 +2172,16 @@ elif page == "Loan Origination":
                         expected_end_date = schedule[-1] if schedule else final_start_date
                         
                         try:
+                            from services.loan_service import LoanService
                             with SupabaseUnitOfWork() as uow:
                                 loans = uow.loans.find_by_client_id(selected_client_id)
                                 pending_loans = [L for L in loans if (L.status.value == STATUS_PENDING if hasattr(L.status, 'value') else L.status == STATUS_PENDING)]
                                 for L in pending_loans:
-                                    L.status = LoanStatus.ACTIVE if 'LoanStatus' in globals() else STATUS_ACTIVE
                                     L.start_date = final_start_date
-                                    L.end_date = expected_end_date
-                                    uow.loans.update(L)
+                                    L.expected_end_date = expected_end_date
+                                    LoanService.disburse_loan(uow, L)
                             
-                            st.success(f"Successfully activated loan! Disbursement Date set to {today_str}.")
-                            
-                            # Inject Upfront Revenue (Contingency & Markup)
-                            amt_val = pd.to_numeric(loan_row.get("Loan Amount", 0), errors='coerce')
-                            prod_str = str(loan_row.get("Loan Product", ""))
-                            prod_low = prod_str.lower()
-                            
-                            # Products: "Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"
-                            # 11% rate products: 60 Days, 12W, 3M
-                            # 21% rate products: 120 Days, 24W, 6M
-                            is_11_pct = ("60 day" in prod_low or "12w" in prod_low or "3m" in prod_low)
-                            rate = 0.12 if is_11_pct else 0.21
-                            interest_val = amt_val * rate
-                            
-                            cont_val = interest_val * (1/12) if rate == 0.12 else interest_val * (1/21)
-                            markup_val = interest_val - cont_val
-                            
-                            # Determine duration bucket
-                            if "120" in prod_low: dur_val = 120
-                            elif "60" in prod_low: dur_val = 60
-                            elif "24w" in prod_low: dur_val = 24
-                            elif "12w" in prod_low: dur_val = 12
-                            elif "6m" in prod_low: dur_val = 6
-                            elif "3m" in prod_low: dur_val = 3
-                            else: dur_val = 60
-                            
-                            d11 = markup_val if rate == 0.12 and dur_val == 60 else 0
-                            w11 = markup_val if rate == 0.12 and dur_val == 12 else 0
-                            d20 = markup_val if rate == 0.21 and dur_val == 120 else 0
-                            w20 = markup_val if rate == 0.21 and dur_val == 24 else 0
-                            m_mark = markup_val if dur_val in [3, 6] else 0
-                            
-                            rev_data = {
-                                "Date": today_str,
-                                "Client ID": selected_client_id,
-                                "Client Name": loan_row.get("Client Name", ""),
-                                "Officer": loan_row.get("Officer", USER),
-                                "Branch": loan_row.get("Branch", BRANCH),
-                                "Amount Paid": 0,
-                                "Transaction Type": "Loan",
-                                "Note": f"Upfront Revenue injected on Disbursement ({prod_str})",
-                                "Contingency": cont_val,
-                                "Daily 11%": d11,
-                                "Daily 20%": d20,
-                                "Weekly 11%": w11,
-                                "Weekly 20%": w20,
-                                "Monthly 11%/20%": m_mark
-                            }
-                            save_repayment(rev_data)
-                            st.info("✅ Upfront Revenue (Markup & Contingency) successfully logged to the Daily Cashbook.")
+                            st.success(f"Successfully activated and disbursed loan! Disbursement Date set to {today_str}.")
                             
                             if is_adjusted:
                                 st.warning(f"📅 **Schedule Adjusted:** The first repayment was automatically moved to **{final_start_date.strftime('%A, %b %d')}** because the original date fell on {shift_reason}.")
@@ -4691,33 +4642,39 @@ elif page == "CO Cashbook":
         from database.repositories.unit_of_work import SupabaseUnitOfWork
         with SupabaseUnitOfWork() as uow:
             branch_id = uow.cashbook._resolve_branch_id(BRANCH)
-            uow.cashbook.rebuild_projection(branch_id, view_date)
-            cb_entry = uow.cashbook.find_by_date_and_branch(date_str, BRANCH)
-            if cb_entry:
-                bf_cash = cb_entry.opening_balance
-                t_sav = cb_entry.savings_deposit
-                t_r12w = cb_entry.rep_12_weeks
-                t_r24w = cb_entry.rep_24_weeks
-                t_r60d = cb_entry.rep_daily
-                t_rmth = cb_entry.rep_monthly
-                t_cont = cb_entry.contingency
-                t_bwd = cb_entry.bank_withdrawal
-                t_asale = cb_entry.asset_credit_sales
-                t_app = cb_entry.app_fee
-                t_pb = cb_entry.passbook
-                t_misc = cb_entry.misc_fees
-                t_lres = cb_entry.laps_reserve
-                
-                t_d11 = cb_entry.daily_11_pct
-                t_w11 = cb_entry.weekly_11_pct
-                t_mm = cb_entry.risk_premium_returns
-                t_pwd = cb_entry.product_withdrawal
-                t_exp = cb_entry.office_expenses
-                t_bdep = cb_entry.bank_deposit
-                t_ltrans = cb_entry.laps_returns
-                t_cc = cb_entry.cash_and_carry
+            res_u = uow.client.table("app_users").select("id").eq("username", target_co).execute()
+            o_id = res_u.data[0]["id"] if res_u.data else None
+            
+            uow.cashbook.rebuild_projection(branch_id, view_date, officer_id=o_id)
+            
+            if o_id:
+                res_co = uow.client.table("co_cashbooks").select("*").eq("date", date_str).eq("branch_id", branch_id).eq("officer_id", o_id).execute()
+                if res_co.data:
+                    c = res_co.data[0]
+                    bf_cash = float(c.get("opening_balance") or 0)
+                    t_sav = float(c.get("savings_deposit") or 0)
+                    t_r12w = float(c.get("rep_12_weeks") or 0)
+                    t_r24w = float(c.get("rep_24_weeks") or 0)
+                    t_r60d = float(c.get("rep_daily") or 0)
+                    t_rmth = float(c.get("rep_monthly") or 0)
+                    t_cont = float(c.get("contingency") or 0)
+                    t_bwd = float(c.get("bank_withdrawal") or 0)
+                    t_asale = float(c.get("asset_credit_sales") or 0)
+                    t_app = float(c.get("app_fee") or 0)
+                    t_pb = float(c.get("passbook") or 0)
+                    t_misc = float(c.get("misc_fees") or 0)
+                    t_lres = float(c.get("laps_reserve") or 0)
+                    
+                    t_d11 = float(c.get("daily_11_pct") or 0)
+                    t_w11 = float(c.get("weekly_11_pct") or 0)
+                    t_mm = float(c.get("risk_premium_returns") or 0)
+                    t_pwd = float(c.get("product_withdrawal") or 0)
+                    t_exp = float(c.get("office_expenses") or 0)
+                    t_bdep = float(c.get("bank_deposit") or 0)
+                    t_ltrans = float(c.get("laps_returns") or 0)
+                    t_cc = float(c.get("cash_and_carry") or 0)
     except Exception as e:
-        st.warning(f"Could not load cashbook projection: {e}")
+        st.warning(f"Could not load CO cashbook projection: {e}")
 
     left_total = bf_cash + t_lres + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_misc
     right_total = t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_ltrans + t_cc
