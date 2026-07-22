@@ -4668,6 +4668,7 @@ elif page == "CO Cashbook":
                     t_d11 = float(c.get("daily_11_pct") or 0)
                     t_w11 = float(c.get("weekly_11_pct") or 0)
                     t_mm = float(c.get("risk_premium_returns") or 0)
+                    t_r120d = float(c.get("rep_120_days") or 0)
                     t_pwd = float(c.get("product_withdrawal") or 0)
                     t_exp = float(c.get("office_expenses") or 0)
                     t_bdep = float(c.get("bank_deposit") or 0)
@@ -4762,6 +4763,9 @@ elif page == "Master Cashbook":
                     auto_rep_mth = cb_entry.rep_monthly
                     auto_savings = cb_entry.savings_deposit
                     auto_laps_res = cb_entry.laps_reserve
+                    auto_daily_11 = cb_entry.daily_11_pct
+                    auto_weekly_11 = cb_entry.weekly_11_pct
+                    auto_monthly_markup = cb_entry.risk_premium_returns
                     auto_passbook = cb_entry.passbook
                     auto_app_fee = cb_entry.app_fee
                     auto_asset_cr_sales = cb_entry.asset_credit_sales

@@ -18,6 +18,24 @@ from database.repositories.savings_repository import (
     SupabaseMiscSavingsRepository,
     SupabaseLapsSavingsRepository
 )
+from database.repositories.fee_repositories import (
+    ProcessingFeeRepository,
+    PassbookRepository,
+    CreditFormRepository,
+    CreditFormDamageRepository,
+    BonusRepository,
+    MiscFeeRepository,
+    ContingencyRepository,
+    Markup11Repository,
+    Markup20Repository
+)
+from database.repositories.treasury_repository import (
+    TreasuryTransactionRepository,
+    BankDepositRepository,
+    BankWithdrawalRepository,
+    OfficeExpenseRepository,
+    FundTransferRepository
+)
 from database.connection import supabase
 
 class SupabaseUnitOfWork(UnitOfWork):
@@ -40,6 +58,24 @@ class SupabaseUnitOfWork(UnitOfWork):
         self.guarantors = SupabaseGuarantorRepository(self.client)
         self.user_audit_logs = SupabaseUserAuditLogRepository(self.client)
         self.login_history = SupabaseLoginHistoryRepository(self.client)
+        
+        # Specialized Fee Repositories
+        self.processing_fee = ProcessingFeeRepository(self.client)
+        self.passbook = PassbookRepository(self.client)
+        self.credit_form = CreditFormRepository(self.client)
+        self.credit_form_damage = CreditFormDamageRepository(self.client)
+        self.bonus = BonusRepository(self.client)
+        self.misc_fee = MiscFeeRepository(self.client)
+        self.contingency = ContingencyRepository(self.client)
+        self.markup_11 = Markup11Repository(self.client)
+        self.markup_20 = Markup20Repository(self.client)
+        
+        # Branch Treasury Repositories
+        self.treasury = TreasuryTransactionRepository(self.client)
+        self.bank_deposit = BankDepositRepository(self.client)
+        self.bank_withdrawal = BankWithdrawalRepository(self.client)
+        self.office_expense = OfficeExpenseRepository(self.client)
+        self.fund_transfer = FundTransferRepository(self.client)
 
     def __enter__(self):
         return self

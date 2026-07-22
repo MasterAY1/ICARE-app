@@ -7,6 +7,8 @@ class CoCashbookProjectionBuilder:
     def rebuild_co_projection(uow: UnitOfWork, branch_id: str, officer_id: str, posting_date: date) -> Optional[dict]:
         """
         Rebuilds the officer-level daily cashbook projection row in co_cashbooks.
+        Strictly contains Credit Officer originated transactions.
+        Branch treasury activities (HO transfers, salaries, expenses, loan disbursement pools) are excluded.
         """
         if isinstance(posting_date, str):
             posting_date = date.fromisoformat(posting_date)
@@ -42,17 +44,13 @@ class CoCashbookProjectionBuilder:
 
         rep_daily = rep_12_weeks = rep_24_weeks = rep_monthly = 0.0
         savings_deposit = laps_reserve = 0.0
-        funds_received_ho = funds_received_other_branch = 0.0
-        loan_received_asset = loan_received_finance = 0.0
-        daily_11_pct = weekly_11_pct = 0.0
+        daily_11_pct = weekly_11_pct = risk_premium_returns = 0.0 # risk_premium_returns = 20% Profit Sales
         savings_adj_no = 0
-        savings_adj_amount = risk_premium_returns = passbook = app_fee = 0.0
+        savings_adj_amount = passbook = app_fee = 0.0
         asset_credit_sales = cash_and_carry = contingency = credit_form = credit_form_damage = 0.0
         bonus = misc_fees = 0.0
 
-        fund_transferred_other_branch = fund_transferred_ho = fund_to_other_area = 0.0
-        fund_to_asset_program = fund_to_product_finance = savings_withdrawal = 0.0
-        staff_salaries = office_expenses = laps_returns = bank_deposit = bank_withdrawal = product_withdrawal = 0.0
+        savings_withdrawal = laps_returns = bank_deposit = bank_withdrawal = product_withdrawal = 0.0
 
         for entry in entries_list:
             acc = entry.get("account_code")
@@ -67,7 +65,7 @@ class CoCashbookProjectionBuilder:
             narr = str(tx.get("narration") or "").lower()
 
             if side == "Debit":
-                # Inflows
+                # CO Inflows
                 if event_type == "RepaymentReceived":
                     cycle = "Daily"
                     try:
@@ -95,41 +93,27 @@ class CoCashbookProjectionBuilder:
                 elif event_type in ["SavingsDeposited", "INDIVIDUAL_SAVINGS_DEPOSIT", "GROUP_SAVINGS_DEPOSIT"]:
                     if entry.get("aggregate_type") == "LapsSavings": laps_reserve += amount
                     else: savings_deposit += amount
-                elif event_type in ["FeeCharged", "MARKUP", "CONTINGENCY", "PROCESSING_FEE", "PASSBOOK"]:
+                elif event_type in ["FeeCharged", "MARKUP", "MARKUP_11", "MARKUP_20", "CONTINGENCY", "PROCESSING_FEE", "PASSBOOK"]:
                     if "passbook" in narr or "pass book" in narr: passbook += amount
                     elif "processing" in narr or "application" in narr: app_fee += amount
                     elif "contingency" in narr: contingency += amount
-                    elif "daily" in narr: daily_11_pct += amount
+                    elif "20%" in narr or "markup_20" in narr or "monthly" in narr: risk_premium_returns += amount
+                    elif "daily" in narr or "11%" in narr: daily_11_pct += amount
                     elif "weekly" in narr: weekly_11_pct += amount
-                    elif "monthly" in narr or "risk premium" in narr or "markup" in narr: risk_premium_returns += amount
                     else: misc_fees += amount
-                elif event_type == "CashTransferred_HO_In": funds_received_ho += amount
                 elif event_type == "BankWithdrawn": bank_withdrawal += amount
                 elif event_type == "AssetSoldCash": cash_and_carry += amount
                 elif event_type == "PenaltyCharged": misc_fees += amount
 
             elif side == "Credit":
-                # Outflows
-                if event_type == "LoanDisbursed":
-                    category = "Finance"
-                    try:
-                        res_l3 = uow.client.table("loans").select("product_category").eq("loan_id", entry.get("aggregate_id")).execute()
-                        if res_l3.data: category = res_l3.data[0].get("product_category", "Finance")
-                    except Exception:
-                        pass
-                    if category == "Asset": fund_to_asset_program += amount
-                    else: fund_to_product_finance += amount
-
-                elif event_type in ["SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION"]:
+                # CO Outflows (Excludes Branch Treasury Outflows)
+                if event_type in ["SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION"]:
                     savings_withdrawal += amount
                     product_withdrawal += amount
-                elif event_type == "ExpenseRecorded": office_expenses += amount
-                elif event_type == "SalaryPaid": staff_salaries += amount
                 elif event_type == "BankDeposited": bank_deposit += amount
-                elif event_type == "CashTransferred_HO_Out": fund_transferred_ho += amount
 
-        total_inflows = rep_daily + rep_12_weeks + rep_24_weeks + rep_monthly + savings_deposit + laps_reserve + funds_received_ho + funds_received_other_branch + loan_received_asset + loan_received_finance + daily_11_pct + weekly_11_pct + savings_adj_amount + risk_premium_returns + passbook + app_fee + asset_credit_sales + cash_and_carry + contingency + credit_form + credit_form_damage + bonus + misc_fees
-        total_outflows = fund_transferred_other_branch + fund_transferred_ho + fund_to_other_area + fund_to_asset_program + fund_to_product_finance + savings_withdrawal + staff_salaries + office_expenses + laps_returns + bank_deposit + bank_withdrawal + product_withdrawal
+        total_inflows = rep_daily + rep_12_weeks + rep_24_weeks + rep_monthly + savings_deposit + laps_reserve + daily_11_pct + weekly_11_pct + savings_adj_amount + risk_premium_returns + passbook + app_fee + asset_credit_sales + cash_and_carry + contingency + credit_form + credit_form_damage + bonus + misc_fees
+        total_outflows = savings_withdrawal + laps_returns + bank_deposit + bank_withdrawal + product_withdrawal
         closing_balance = opening_bal + total_inflows - total_outflows
 
         cb_data = {
@@ -143,15 +127,14 @@ class CoCashbookProjectionBuilder:
             "rep_monthly": rep_monthly,
             "savings_deposit": savings_deposit,
             "laps_reserve": laps_reserve,
-            "funds_received_ho": funds_received_ho,
-            "funds_received_other_branch": funds_received_other_branch,
-            "loan_received_asset": loan_received_asset,
-            "loan_received_finance": loan_received_finance,
-            "daily_11_pct": daily_11_pct,
-            "weekly_11_pct": weekly_11_pct,
+            "funds_received_ho": 0.0, # Removed from CO
+            "funds_received_other_branch": 0.0, # Removed from CO
+            "loan_received_asset": 0.0, # Removed from CO
+            "loan_received_finance": 0.0, # Removed from CO
+            "daily_11_pct": daily_11_pct, # Profit Sales 11% Daily
+            "weekly_11_pct": weekly_11_pct, # Profit Sales 11% Weekly
             "savings_adj_no": savings_adj_no,
             "savings_adj_amount": savings_adj_amount,
-            "risk_premium_returns": risk_premium_returns,
             "passbook": passbook,
             "app_fee": app_fee,
             "asset_credit_sales": asset_credit_sales,
@@ -161,14 +144,14 @@ class CoCashbookProjectionBuilder:
             "credit_form_damage": credit_form_damage,
             "bonus": bonus,
             "misc_fees": misc_fees,
-            "fund_transferred_other_branch": fund_transferred_other_branch,
-            "fund_transferred_ho": fund_transferred_ho,
-            "fund_to_other_area": fund_to_other_area,
-            "fund_to_asset_program": fund_to_asset_program,
-            "fund_to_product_finance": fund_to_product_finance,
+            "fund_transferred_other_branch": 0.0, # Removed from CO
+            "fund_transferred_ho": 0.0, # Removed from CO
+            "fund_to_other_area": 0.0, # Removed from CO
+            "fund_to_asset_program": 0.0, # Removed from CO
+            "fund_to_product_finance": 0.0, # Removed from CO
             "savings_withdrawal": savings_withdrawal,
-            "staff_salaries": staff_salaries,
-            "office_expenses": office_expenses,
+            "staff_salaries": 0.0, # Removed from CO
+            "office_expenses": 0.0, # Removed from CO
             "laps_returns": laps_returns,
             "bank_deposit": bank_deposit,
             "bank_withdrawal": bank_withdrawal,

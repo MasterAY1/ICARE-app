@@ -7,7 +7,8 @@ class MasterCashbookProjectionBuilder:
     def rebuild_master_projection(uow: UnitOfWork, branch_id: str, posting_date: date) -> Optional[dict]:
         """
         Rebuilds the Master Cashbook projection row by aggregating all co_cashbooks for the branch,
-        plus branch-level ledger transactions.
+        plus fetching branch-level treasury activities (HO transfers, inter-branch transfers, staff salaries,
+        office expenses, and loan disbursement pools).
         """
         if isinstance(posting_date, str):
             posting_date = date.fromisoformat(posting_date)
@@ -38,7 +39,7 @@ class MasterCashbookProjectionBuilder:
         except Exception:
             pass
 
-        # 3. Aggregate fields across all COs
+        # 3. Aggregate operational fields across COs
         numeric_fields = [
             "rep_daily", "rep_12_weeks", "rep_24_weeks", "rep_monthly",
             "savings_deposit", "laps_reserve", "loan_received_asset", "loan_received_finance",
@@ -57,6 +58,37 @@ class MasterCashbookProjectionBuilder:
         for row in co_rows:
             for field in numeric_fields:
                 totals[field] += float(row.get(field) or 0.0)
+
+        # 4. Fetch Branch Treasury Activities for the date
+        try:
+            res_t = uow.client.table("treasury_transactions").select("*").eq("branch_id", branch_id).execute()
+            start_ts = f"{p_date_str}T00:00:00"
+            end_ts = f"{p_date_str}T23:59:59"
+            t_rows = [r for r in (res_t.data or []) if start_ts <= str(r.get("created_at", "")) <= end_ts]
+            for t in t_rows:
+                ttype = t.get("transaction_type", "")
+                amt = float(t.get("amount") or 0.0)
+                if ttype == "HO_TRANSFER_IN": totals["funds_received_ho"] += amt
+                elif ttype == "HO_TRANSFER_OUT": totals["fund_transferred_ho"] += amt
+                elif ttype == "BRANCH_TRANSFER_IN": totals["funds_received_other_branch"] += amt
+                elif ttype == "BRANCH_TRANSFER_OUT": totals["fund_transferred_other_branch"] += amt
+                elif ttype == "OFFICE_EXPENSE": totals["office_expenses"] += amt
+                elif ttype == "STAFF_SALARY": totals["staff_salaries"] += amt
+        except Exception:
+            pass
+
+        # 5. Fetch Loan Disbursements for Asset & Finance pools on this date for the branch
+        try:
+            res_disb = uow.client.table("loans").select("amount, product_category, disbursement_date") \
+                .eq("branch_id", branch_id).eq("status", "Active").execute()
+            for d in (res_disb.data or []):
+                if str(d.get("disbursement_date") or "") == p_date_str:
+                    cat = d.get("product_category", "Finance")
+                    amt = float(d.get("amount") or 0.0)
+                    if cat == "Asset": totals["fund_to_asset_program"] += amt
+                    else: totals["fund_to_product_finance"] += amt
+        except Exception:
+            pass
 
         total_inflows = (
             totals["rep_daily"] + totals["rep_12_weeks"] + totals["rep_24_weeks"] + totals["rep_monthly"] +
