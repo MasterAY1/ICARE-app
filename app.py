@@ -2023,10 +2023,23 @@ if page == "Dashboard":
         st.info("System Health: Supabase cloud database connected. Active session monitoring enabled.")
         
     elif ROLE in ['AM', 'Area Manager']:
-        st.markdown(f"### 🌐 Area Manager Dashboard — {', '.join(current_user.assigned_branches) if current_user and getattr(current_user, 'assigned_branches', None) else 'All Branches'}")
-        am1, am2 = st.columns(2)
-        am1.metric("👥 Total Active Clients", active_loans_count)
-        am2.metric("📈 Sum Total Credit Balance", f"₦{total_active_credit:,.0f}")
+        st.markdown(f"### 🌐 Area Manager Dashboard")
+        assigned_b_names = sorted(list(set(my_loans['Branch'].dropna().tolist()))) if not my_loans.empty and 'Branch' in my_loans.columns else []
+        am_branch_opts = ["All Assigned Branches"] + assigned_b_names
+        selected_am_branch = st.selectbox("🌐 Select Branch to View", am_branch_opts, key="am_dashboard_branch_filter")
+        
+        if selected_am_branch != "All Assigned Branches":
+            am_loans = my_loans[my_loans['Branch'] == selected_am_branch]
+        else:
+            am_loans = my_loans
+
+        am_active_loans = len(am_loans[am_loans['Status'].isin([STATUS_ACTIVE, STATUS_APPROVED])]) if not am_loans.empty else 0
+        am_sum_credit = pd.to_numeric(am_loans['Active Credit'], errors='coerce').fillna(0).sum() if not am_loans.empty else 0.0
+        
+        am1, am2, am3 = st.columns(3)
+        am1.metric("👥 Active Clients", am_active_loans)
+        am2.metric("📈 Active Credit Balance", f"₦{am_sum_credit:,.0f}")
+        am3.metric("🏦 Branch View", selected_am_branch)
         
     elif ROLE in ['BM', ROLE_BRANCH_MANAGER]:
         st.markdown(f"### 🏦 Branch Manager Dashboard — {BRANCH} Branch")
@@ -2061,16 +2074,27 @@ if page == "Dashboard":
             st.divider()
             
         # BM Metrics rendering
-        st.markdown("#### 📅 Today's Operations Summary")
-        t1, t2, t3 = st.columns(3)
+        st.markdown("#### 📅 Branch Operations Today (All Officers)")
+        bm_closing_balance = 0.0
+        try:
+            with SupabaseUnitOfWork() as uow_bm:
+                from services.master_cashbook_projection_builder import MasterCashbookProjectionBuilder
+                mb_data = MasterCashbookProjectionBuilder.rebuild_master_projection(uow_bm, BRANCH_ID, today.date())
+                if mb_data:
+                    bm_closing_balance = float(mb_data.get("closing_balance") or 0.0)
+        except Exception:
+            pass
+
+        t1, t2, t3, t4 = st.columns(4)
         t1.metric("📥 Savings Deposited Today", f"₦{today_savings_deposited:,.0f}")
         t2.metric("📤 Savings Withdrawn Today", f"₦{today_savings_withdrawn:,.0f}")
         t3.metric("🐷 Net Savings Today", f"₦{net_savings:,.0f}")
+        t4.metric("💰 Master Cashbook Closing Balance", f"₦{bm_closing_balance:,.0f}")
         
-        t4, t5, t6 = st.columns(3)
-        t4.metric("📊 Expected Repayment Target", f"₦{total_target:,.0f}", target_breakdown, delta_color="off")
-        t5.metric("💵 Total Repayment Collected Today", f"₦{collected_today:,.0f}")
-        t6.metric("🚀 Excess / Shortfall (Collected)", f"₦{excess:,.0f}", delta_color=excess_color)
+        t5, t6, t7 = st.columns(3)
+        t5.metric("📊 Expected Repayment Target", f"₦{total_target:,.0f}", target_breakdown, delta_color="off")
+        t6.metric("💵 Total Repayment Collected Today", f"₦{collected_today:,.0f}")
+        t7.metric("🚀 Excess / Shortfall (Collected)", f"₦{excess:,.0f}", delta_color=excess_color)
         
         st.markdown("#### 💰 Branch Portfolio Summary")
         c1, c2, c3 = st.columns(3)
@@ -5445,6 +5469,15 @@ elif page in ["Reports", "Reports & Export"]:
     all_loans = load_loans()
     all_repayments = load_repayments()
     my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
+
+    if ROLE in ['AM', 'Area Manager']:
+        assigned_b_names = sorted(list(set(my_loans['Branch'].dropna().tolist()))) if not my_loans.empty and 'Branch' in my_loans.columns else []
+        am_rep_branch_opts = ["All Assigned Branches"] + assigned_b_names
+        selected_rep_am_branch = st.selectbox("🌐 Filter Reports by Branch:", am_rep_branch_opts, key="am_reports_branch_filter")
+        if selected_rep_am_branch != "All Assigned Branches":
+            my_loans = my_loans[my_loans['Branch'] == selected_rep_am_branch]
+            if not all_repayments.empty and 'Branch' in all_repayments.columns:
+                all_repayments = all_repayments[all_repayments['Branch'] == selected_rep_am_branch]
     
     # Summary Report
     st.markdown("<div class='card'>", unsafe_allow_html=True)
@@ -5517,7 +5550,7 @@ elif page in ["Reports", "Reports & Export"]:
     st.markdown("</div>", unsafe_allow_html=True)
     
     # Officer Reports
-    if ROLE in [ROLE_ADMIN, "BM"]:
+    if ROLE in [ROLE_ADMIN, "BM", "AM", "Area Manager"]:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.subheader("👥 Officer Performance Reports")
         
