@@ -196,3 +196,18 @@ class SavingsService:
             "laps_savings": laps,
             "total_active_savings": ind + grp + msc
         }
+
+    @staticmethod
+    def get_officer_totals(uow: SupabaseUnitOfWork, branch: str, officer: str) -> dict:
+        ind = uow.individual_savings.get_total_balance(branch, officer)
+        grp = uow.group_savings.get_total_balance(branch, officer)
+        msc = uow.misc_savings.get_total_balance(branch, officer)
+        laps = uow.laps_savings.get_total_balance(branch, officer)
+        
+        return {
+            "individual_savings": ind,
+            "group_savings": grp,
+            "misc_savings": msc,
+            "laps_savings": laps,
+            "total_active_savings": ind + grp + msc
+        }

@@ -177,11 +177,14 @@ class SupabaseSavingsRepository(BaseRepository):
         res = query.execute()
         return [self._to_domain(item) for item in res.data]
 
-    def get_total_balance(self, branch: Optional[str] = None) -> float:
+    def get_total_balance(self, branch: Optional[str] = None, officer: Optional[str] = None) -> float:
         query = self.client.table(self.table_name).select("deposit_amount, withdrawal_amount")
         if branch:
             branch_id = self._resolve_branch_id(branch)
             query = query.eq("branch_id", branch_id)
+        if officer:
+            officer_id = self._resolve_officer_id(officer)
+            query = query.eq("officer_id", officer_id)
         res = query.execute()
         total = 0.0
         for row in res.data:

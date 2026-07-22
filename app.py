@@ -1799,14 +1799,20 @@ if page == "Dashboard":
     active_loans_count = 0
     total_active_credit = 0
     fully_paid_count = 0
-    total_overdue = 0
     
-    # Daily Tracking
+    # Daily Operations Tracking
     collected_today = 0
     today_savings_deposited = 0
     today_savings_withdrawn = 0
     today_full_payment_count = 0
     today_full_payment_amount = 0
+    today_excess = 0
+
+    # Lifetime / Portfolio Tracking
+    total_repayments_collected = 0
+    total_excess_collected = 0
+    total_full_payment_collected = 0
+    monthly_disbursed_principal = 0
     
     # Target calculations
     target_daily = 0
@@ -1836,6 +1842,16 @@ if page == "Dashboard":
         # Sourced from single source of truth (loans table)
         loan_bal = float(loan.get('Active Credit', 0.0))
         l_amt = max(0.0, float(loan.get('Total Due', 0.0)) - loan_bal)
+        orig_principal = float(loan.get('Loan Amount', 0.0))
+        disb_date_str = str(loan.get('Disbursement Date') or loan.get('Date') or "")
+
+        if disb_date_str:
+            try:
+                disb_dt = datetime.strptime(disb_date_str[:10], "%Y-%m-%d")
+                if disb_dt.year == today.year and disb_dt.month == today.month:
+                    monthly_disbursed_principal += orig_principal
+            except Exception:
+                pass
         
         # Calculate actual collected today for this client
         today_payments = c_payments[c_payments['Date'] == today_str] if not c_payments.empty else pd.DataFrame()
@@ -1847,8 +1863,34 @@ if page == "Dashboard":
         today_savings_deposited += today_sav_dep
         today_savings_withdrawn += today_sav_wd
         
-        # Full payment logic (loan balance reached <= 0 today by a payment made today)
-        if loan_bal <= 0 and today_loan_paid > 0 and (loan_bal + today_loan_paid > 0):
+        # Portfolio repayments & excess/full payment tracking
+        if not c_payments.empty:
+            for _, rep in c_payments.iterrows():
+                rep_amt = pd.to_numeric(rep.get('Loan Repayment Amount', 0), errors='coerce')
+                if pd.isna(rep_amt): rep_amt = 0.0
+                
+                ttype = str(rep.get('Transaction Type', '')).lower()
+                note = str(rep.get('Note', '')).lower()
+                r_date = str(rep.get('Date', ''))
+
+                total_repayments_collected += rep_amt
+                
+                is_full = ("full" in ttype or "full" in note or "payoff" in note or "complete" in ttype)
+                is_excess = ("excess" in ttype or "excess" in note)
+                
+                if is_full:
+                    total_full_payment_collected += rep_amt
+                    if r_date == today_str:
+                        today_full_payment_amount += rep_amt
+                        today_full_payment_count += 1
+                        
+                if is_excess:
+                    total_excess_collected += rep_amt
+                    if r_date == today_str:
+                        today_excess += rep_amt
+
+        # Full payment logic fallback (loan balance reached <= 0 today by a payment made today)
+        if loan_bal <= 0 and today_loan_paid > 0 and (loan_bal + today_loan_paid > 0) and today_full_payment_amount == 0:
             today_full_payment_count += 1
             today_full_payment_amount += today_loan_paid
             
@@ -1933,9 +1975,13 @@ if page == "Dashboard":
     net_savings = today_savings_deposited - today_savings_withdrawn
     total_target = target_daily + target_weekly + target_monthly
     excess = collected_today - total_target
+    if today_excess == 0 and excess > 0:
+        today_excess = excess
     excess_color = "normal" if excess >= 0 else "inverse"
     target_breakdown = f"Daily: ₦{target_daily:,.0f} | Weekly: ₦{target_weekly:,.0f} | Monthly: ₦{target_monthly:,.0f}"
 
+    co_closing_balance = 0.0
+    co_total_savings = total_savings
     try:
         from database.repositories.unit_of_work import SupabaseUnitOfWork
         from services.savings_service import SavingsService
@@ -1946,6 +1992,21 @@ if page == "Dashboard":
             grp_sav = sav_totals['group_savings']
             misc_sav = sav_totals['misc_savings']
             laps_sav = sav_totals['laps_savings']
+
+            if ROLE in ["CO", "Officer"]:
+                u_res = uow.client.table("app_users").select("id").eq("username", USER).execute()
+                o_id = u_res.data[0]["id"] if u_res.data else None
+                b_res = uow.client.table("branches").select("branch_id").eq("name", BRANCH).execute()
+                b_id = b_res.data[0]["branch_id"] if b_res.data else None
+                if b_id and o_id:
+                    from services.co_cashbook_projection_builder import CoCashbookProjectionBuilder
+                    cb_data = CoCashbookProjectionBuilder.rebuild_co_projection(uow, b_id, o_id, today.date())
+                    if cb_data:
+                        co_closing_balance = float(cb_data.get("closing_balance") or 0.0)
+
+                co_sav_totals = SavingsService.get_officer_totals(uow, BRANCH, USER)
+                if co_sav_totals and co_sav_totals.get('total_active_savings', 0) > 0:
+                    co_total_savings = co_sav_totals['total_active_savings']
     except Exception as e:
         real_total_savings, ind_sav, grp_sav, misc_sav, laps_sav = 0, 0, 0, 0, 0
 
@@ -2018,18 +2079,27 @@ if page == "Dashboard":
         
     else: # CO / Officer
         st.markdown(f"### 📱 Credit Officer Dashboard — {USER} ({BRANCH})")
-        # CO Metrics rendering
+        # CO Operations Today
         st.markdown("#### 📅 My Operations Today")
-        t1, t2, t3 = st.columns(3)
-        t1.metric("📥 My Savings Deposited Today", f"₦{today_savings_deposited:,.0f}")
-        t2.metric("📤 My Savings Withdrawn Today", f"₦{today_savings_withdrawn:,.0f}")
-        t3.metric("💵 My Repayment Collected Today", f"₦{collected_today:,.0f}")
+        t1, t2, t3, t4, t5 = st.columns(5)
+        t1.metric("📥 Savings Deposit", f"₦{today_savings_deposited:,.0f}")
+        t2.metric("💵 Loan Repayment", f"₦{collected_today:,.0f}")
+        t3.metric("🚀 Excess", f"₦{today_excess:,.0f}")
+        t4.metric("🎯 Full Payment", f"₦{today_full_payment_amount:,.0f}")
+        t5.metric("💰 Cash Closing Balance", f"₦{co_closing_balance:,.0f}")
         
+        # CO Portfolio Overview
         st.markdown("#### 💰 My Portfolio Overview")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("👥 My Active Clients", active_loans_count)
-        c2.metric("📈 My Sum Active Credit", f"₦{total_active_credit:,.0f}")
-        c3.metric("🚨 My Overdue Amount", f"₦{total_overdue:,.0f}", delta_color="inverse" if total_overdue > 0 else "normal")
+        p1, p2, p3, p4 = st.columns(4)
+        p1.metric("👥 Active Clients", active_loans_count)
+        p2.metric("📈 Active Credit", f"₦{total_active_credit:,.0f}")
+        p3.metric("🐷 Total Savings", f"₦{co_total_savings:,.0f}")
+        p4.metric("💵 Total Repayment", f"₦{total_repayments_collected:,.0f}")
+
+        p5, p6, p7 = st.columns(3)
+        p5.metric("🚀 Total Excess", f"₦{total_excess_collected:,.0f}")
+        p6.metric("🎯 Total Full Payment", f"₦{total_full_payment_collected:,.0f}")
+        p7.metric("📅 Monthly Disbursed Principal", f"₦{monthly_disbursed_principal:,.0f}")
 
     if group_data:
         st.divider()
