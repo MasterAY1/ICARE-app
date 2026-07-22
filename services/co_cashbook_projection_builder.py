@@ -97,9 +97,12 @@ class CoCashbookProjectionBuilder:
                     if "passbook" in narr or "pass book" in narr: passbook += amount
                     elif "processing" in narr or "application" in narr: app_fee += amount
                     elif "contingency" in narr: contingency += amount
-                    elif "20%" in narr or "markup_20" in narr or "monthly" in narr: risk_premium_returns += amount
-                    elif "daily" in narr or "11%" in narr: daily_11_pct += amount
+                    elif "20%" in narr or "markup_20" in narr or "120" in narr or "24" in narr or "6m" in narr or "6 month" in narr:
+                        risk_premium_returns += amount
+                    elif "11%" in narr or "markup_11" in narr or "3m" in narr or "3 month" in narr or "60" in narr:
+                        daily_11_pct += amount
                     elif "weekly" in narr: weekly_11_pct += amount
+                    elif "daily" in narr: daily_11_pct += amount
                     else: misc_fees += amount
                 elif event_type == "BankWithdrawn": bank_withdrawal += amount
                 elif event_type == "AssetSoldCash": cash_and_carry += amount

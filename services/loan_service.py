@@ -79,16 +79,18 @@ class LoanService:
         cont_val = setup.get("contingency", 0.0)
         
         if markup_val > 0:
-            freq = setup.get("freq", "Daily")
+            rate = setup.get("rate", 0.12)
             prod_lower = (loan.product_type or "").lower()
-            is_monthly = "month" in prod_lower or freq == "Monthly"
+            # 11% Profit Sales: 60 Days, 12 Weeks, 3 Months (rate == 0.12)
+            # 20% Profit Sales: 120 Days, 24 Weeks, 6 Months (rate == 0.21)
+            is_20_pct = (rate == 0.21) or "120" in prod_lower or "24" in prod_lower or "6m" in prod_lower or "6 month" in prod_lower
             
-            markup_class = TransactionClassification.MARKUP_20.value if is_monthly else TransactionClassification.MARKUP_11.value
+            markup_class = TransactionClassification.MARKUP_20.value if is_20_pct else TransactionClassification.MARKUP_11.value
             
             # Persist to specialized fee repository
             b_id = uow.markup_11._resolve_branch_id(loan.branch)
             o_id = uow.markup_11._resolve_officer_id(loan.credit_officer)
-            if is_monthly:
+            if is_20_pct:
                 uow.markup_20.create_fee_entry(branch_id=b_id, officer_id=o_id, amount=markup_val, client_id=loan.client_id, loan_id=loan.id, reference=ref_id, posting_date=b_date)
             else:
                 uow.markup_11.create_fee_entry(branch_id=b_id, officer_id=o_id, amount=markup_val, client_id=loan.client_id, loan_id=loan.id, reference=ref_id, posting_date=b_date)
