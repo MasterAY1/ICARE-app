@@ -107,6 +107,30 @@ class MasterCashbookProjectionBuilder:
             totals["bank_withdrawal"] + totals["product_withdrawal"]
         )
 
+        # 6. Preserve Manual Treasury Adjustments & Verification Status
+        adj_in = 0.0
+        adj_out = 0.0
+        adj_reason = None
+        verified_by = None
+        verified_at = None
+        existing_status = "Open"
+        
+        try:
+            res_curr = uow.client.table("master_cashbook").select("adjustment_in, adjustment_out, adjustment_reason, verified_by, verified_at, status") \
+                .eq("branch_id", branch_id).eq("date", p_date_str).execute()
+            if res_curr.data:
+                curr_row = res_curr.data[0]
+                adj_in = float(curr_row.get("adjustment_in") or 0.0)
+                adj_out = float(curr_row.get("adjustment_out") or 0.0)
+                adj_reason = curr_row.get("adjustment_reason")
+                verified_by = curr_row.get("verified_by")
+                verified_at = curr_row.get("verified_at")
+                existing_status = curr_row.get("status") or "Open"
+        except Exception:
+            pass
+
+        total_inflows += adj_in
+        total_outflows += adj_out
         closing_balance = opening_bal + total_inflows - total_outflows
 
         mb_data = {
@@ -116,7 +140,12 @@ class MasterCashbookProjectionBuilder:
             "total_inflows": total_inflows,
             "total_outflows": total_outflows,
             "closing_balance": closing_balance,
-            "status": "Open",
+            "adjustment_in": adj_in,
+            "adjustment_out": adj_out,
+            "adjustment_reason": adj_reason,
+            "verified_by": verified_by,
+            "verified_at": verified_at,
+            "status": existing_status,
             "version": 1
         }
         mb_data.update(totals)
