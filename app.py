@@ -1799,6 +1799,7 @@ if page == "Dashboard":
     active_loans_count = 0
     total_active_credit = 0
     fully_paid_count = 0
+    total_overdue = 0
     
     # Daily Operations Tracking
     collected_today = 0
