@@ -51,7 +51,8 @@ class TestCollectionsWorkflow(unittest.TestCase):
         # Step 4: Verify single-source readback across Portfolio and Client Profile query source
         savings_map_updated = load_client_savings_map()
         balance_after_wd = savings_map_updated.get(client_code, 0.0)
-        self.assertEqual(balance_after_wd, balance_after_dep - 1000.0, "Net savings balance must equal deposit minus withdrawal")
+        self.assertAlmostEqual(balance_after_wd - balance_after_dep, -1000.0, msg="Net savings balance change must equal -1000.0")
+
 
         # Step 5: Verify directly from individual_savings single source of truth table
         with SupabaseUnitOfWork() as uow:
