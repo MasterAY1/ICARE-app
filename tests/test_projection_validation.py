@@ -16,10 +16,18 @@ class TestProjectionValidation(unittest.TestCase):
             branch_id = res_b.data[0]["branch_id"]
             branch_name = res_b.data[0]["name"]
             
-            res_u = uow.client.table("app_users").select("id, username").limit(1).execute()
+            res_u = uow.client.table("app_users").select("id, username, branch_id").eq("branch_id", branch_id).limit(1).execute()
+            if not res_u.data:
+                res_u = uow.client.table("app_users").select("id, username, branch_id").limit(1).execute()
             self.assertTrue(len(res_u.data) > 0, "At least one user must exist in DB")
             officer_id = res_u.data[0]["id"]
             officer_username = res_u.data[0]["username"]
+            if res_u.data[0].get("branch_id"):
+                branch_id = res_u.data[0]["branch_id"]
+                res_b2 = uow.client.table("branches").select("name").eq("branch_id", branch_id).execute()
+                if res_b2.data:
+                    branch_name = res_b2.data[0]["name"]
+
 
             p_date = BusinessDateService.get_business_date(uow, branch_name)
             p_date_str = p_date.isoformat()
