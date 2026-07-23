@@ -8,8 +8,17 @@ from config.roles import *
 # ---------------------------------------------------------------------------
 PERMISSIONS = {
     ROLE_SUPER_ADMIN: {"all"},
+    "Super Admin": {"all"},
     ROLE_ADMIN: {"all"},
+    "Admin": {"all"},
     ROLE_AREA_MANAGER: {
+        "branch.view", "branch.performance",
+        "loan.approve", "loan.view",
+        "collections.view", "par.view",
+        "savings.view", "cashbook.view",
+        "officer.view", "report.view", "audit.view",
+    },
+    "AM": {
         "branch.view", "branch.performance",
         "loan.approve", "loan.view",
         "collections.view", "par.view",
@@ -25,12 +34,35 @@ PERMISSIONS = {
         "client.assign",
         "report.view", "collections.view", "par.view", "officer.view",
     },
+    "BM": {
+        "client.view",
+        "loan.view", "loan.approve", "loan.disburse",
+        "savings.view", "savings.withdraw_approve",
+        "cashbook.view", "cashbook.manage",
+        "user.activate", "user.deactivate", "user.reset_password",
+        "client.assign",
+        "report.view", "collections.view", "par.view", "officer.view",
+    },
     ROLE_CREDIT_OFFICER: {
         "client.register", "client.view", "client.search",
         "loan.view", "loan.apply",
         "repayment.record",
         "savings.record", "savings.withdraw_apply",
-        "collections.view", "collections.edit",
+        "collections.view", "collections.edit", "report.view",
+    },
+    "CO": {
+        "client.register", "client.view", "client.search",
+        "loan.view", "loan.apply",
+        "repayment.record",
+        "savings.record", "savings.withdraw_apply",
+        "collections.view", "collections.edit", "report.view",
+    },
+    "Officer": {
+        "client.register", "client.view", "client.search",
+        "loan.view", "loan.apply",
+        "repayment.record",
+        "savings.record", "savings.withdraw_apply",
+        "collections.view", "collections.edit", "report.view",
     },
     ROLE_ACCOUNT_MANAGER: {
         "cashbook.view", "cashbook.edit", "report.view",
@@ -75,7 +107,8 @@ def require_permission(permission: str):
                 st.error("Authentication required.")
                 st.stop()
 
-            if not has_permission(user, permission):
+            user_perms = PERMISSIONS.get(user.role, set())
+            if "all" not in user_perms and permission not in user_perms:
                 st.error("You do not have permission to perform this action.")
                 st.stop()
 
@@ -131,7 +164,7 @@ NAV_PERMISSIONS = {
     "Master Cashbook":    {"cashbook.view"},
     "Audit Ledger":       {"loan.view"},
     "Reports & Export":   {"report.view"},
-    "Audit Center":       {"report.view", "loan.view"},
+    "Audit Center":       set(),          # Visible to all roles
     "User Management":    {"all", "user.activate"},
 
     "CO Cashbook":        {"collections.view"},
