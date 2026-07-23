@@ -1756,12 +1756,15 @@ with st.sidebar:
     )
     st.markdown(f"<p class='nav-section-label'>{nav_section}</p>", unsafe_allow_html=True)
     nav_options = get_nav_options(current_user) if current_user else ["Dashboard"]
+    if "Navigation" not in st.session_state or st.session_state["Navigation"] not in nav_options:
+        st.session_state["Navigation"] = "Dashboard"
     
-    page = st.radio("Navigation", nav_options, label_visibility="collapsed")
+    page = st.radio("Navigation", nav_options, key="Navigation", label_visibility="collapsed")
     
     # Security check: if the requested page is not in permitted list, fallback to Dashboard
     if page not in nav_options:
         page = "Dashboard"
+
     
     st.divider()
     

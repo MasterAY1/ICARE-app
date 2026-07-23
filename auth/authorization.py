@@ -158,11 +158,11 @@ def can_render_widget(user, widget_name: str) -> bool:
 
 NAV_PERMISSIONS = {
     "Dashboard":          set(),          # all roles see dashboard
+    "Audit Center":       set(),          # Visible to all roles
     "Loan Origination":   {"loan.apply", "loan.view"},
     "Collections":        {"collections.view"},
     "Portfolio":          {"loan.view"},
     "Master Cashbook":    {"cashbook.view"},
-    "Audit Center":       set(),          # Visible to all roles
     "Audit Ledger":       set(),          # Visible to all roles (alias to Audit Center)
     "Reports & Export":   {"report.view"},
     "User Management":    {"all", "user.activate"},
