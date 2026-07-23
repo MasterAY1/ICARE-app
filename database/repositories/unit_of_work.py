@@ -34,8 +34,16 @@ from database.repositories.treasury_repository import (
     BankDepositRepository,
     BankWithdrawalRepository,
     OfficeExpenseRepository,
-    FundTransferRepository
+    FundTransferRepository,
+    StaffSalaryRepository,
+    HeadOfficeTransferRepository,
+    BranchTransferRepository,
+    OtherAreaTransferRepository,
+    AssetProgramRepository,
+    ProductFinanceRepository,
+    CashbookAdjustmentRepository
 )
+from database.repositories.collection_performance_repository import SupabaseCollectionPerformanceRepository
 from database.connection import supabase
 
 class SupabaseUnitOfWork(UnitOfWork):
@@ -59,23 +67,56 @@ class SupabaseUnitOfWork(UnitOfWork):
         self.user_audit_logs = SupabaseUserAuditLogRepository(self.client)
         self.login_history = SupabaseLoginHistoryRepository(self.client)
         
-        # Specialized Fee Repositories
-        self.processing_fee = ProcessingFeeRepository(self.client)
-        self.passbook = PassbookRepository(self.client)
-        self.credit_form = CreditFormRepository(self.client)
-        self.credit_form_damage = CreditFormDamageRepository(self.client)
-        self.bonus = BonusRepository(self.client)
-        self.misc_fee = MiscFeeRepository(self.client)
-        self.contingency = ContingencyRepository(self.client)
-        self.markup_11 = Markup11Repository(self.client)
-        self.markup_20 = Markup20Repository(self.client)
+        # ================================================================
+        # PHASE 8: 19 Audit Ledger Repositories (STI-backed)
+        # ================================================================
         
-        # Branch Treasury Repositories
+        # --- Fee-type Audit Ledgers (backed by public.fees) ---
+        self.processing_fees = ProcessingFeeRepository(self.client)
+        self.passbook_fees = PassbookRepository(self.client)
+        self.credit_forms = CreditFormRepository(self.client)
+        self.credit_form_damage = CreditFormDamageRepository(self.client)
+        self.bonus_transactions = BonusRepository(self.client)
+        self.misc_fees = MiscFeeRepository(self.client)
+        self.contingency_transactions = ContingencyRepository(self.client)
+        self.markup_11_transactions = Markup11Repository(self.client)
+        self.markup_20_transactions = Markup20Repository(self.client)
+        
+        # --- Treasury-type Audit Ledgers (backed by public.treasury_transactions) ---
         self.treasury = TreasuryTransactionRepository(self.client)
-        self.bank_deposit = BankDepositRepository(self.client)
-        self.bank_withdrawal = BankWithdrawalRepository(self.client)
-        self.office_expense = OfficeExpenseRepository(self.client)
+        self.bank_deposits = BankDepositRepository(self.client)
+        self.bank_withdrawals = BankWithdrawalRepository(self.client)
+        self.office_expenses = OfficeExpenseRepository(self.client)
+        self.staff_salary_transactions = StaffSalaryRepository(self.client)
+        self.head_office_transfers = HeadOfficeTransferRepository(self.client)
+        self.branch_transfers = BranchTransferRepository(self.client)
+        self.other_area_transfers = OtherAreaTransferRepository(self.client)
+        self.asset_program_transactions = AssetProgramRepository(self.client)
+        self.product_finance_transactions = ProductFinanceRepository(self.client)
+        self.cashbook_adjustments = CashbookAdjustmentRepository(self.client)
+        
+        # --- Fund Transfer (legacy, retained for backward compatibility) ---
         self.fund_transfer = FundTransferRepository(self.client)
+        
+        # ================================================================
+        # PHASE 8: Collection Performance & Credit Intelligence
+        # ================================================================
+        self.collection_performance = SupabaseCollectionPerformanceRepository(self.client)
+        
+        # ================================================================
+        # Backward-compatible aliases (Phase 7 names → Phase 8 standard names)
+        # ================================================================
+        self.processing_fee = self.processing_fees
+        self.passbook = self.passbook_fees
+        self.credit_form = self.credit_forms
+        self.bonus = self.bonus_transactions
+        self.misc_fee = self.misc_fees
+        self.contingency = self.contingency_transactions
+        self.markup_11 = self.markup_11_transactions
+        self.markup_20 = self.markup_20_transactions
+        self.bank_deposit = self.bank_deposits
+        self.bank_withdrawal = self.bank_withdrawals
+        self.office_expense = self.office_expenses
 
     def __enter__(self):
         return self

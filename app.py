@@ -5580,6 +5580,28 @@ elif page in ["Reports", "Reports & Export"]:
             st.info("No data available for officer report")
         
         st.markdown("</div>", unsafe_allow_html=True)
+        
+        # Credit Intelligence & Risk Rating Report
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.subheader("⭐ Client Risk Rating & Credit Intelligence")
+        st.caption("Automated credit risk evaluation, repayment compliance %, and upgrade eligibility recommendations.")
+
+        try:
+            with SupabaseUnitOfWork() as uow_risk:
+                from services.client_risk_rating_service import ClientRiskRatingService
+                risk_dist = ClientRiskRatingService.get_branch_risk_distribution(uow_risk, BRANCH_ID)
+                
+                r1, r2, r3, r4, r5 = st.columns(5)
+                r1.metric("⭐ Excellent (Upgrade)", risk_dist.get("EXCELLENT", 0))
+                r2.metric("🟢 Good (Maintain)", risk_dist.get("GOOD", 0))
+                r3.metric("🟡 Fair (Monitor)", risk_dist.get("FAIR", 0))
+                r4.metric("🟠 Risky (No Increase)", risk_dist.get("RISKY", 0))
+                r5.metric("🔴 High Risk (Decline)", risk_dist.get("HIGH_RISK", 0))
+        except Exception:
+            st.info("No active risk rating data available.")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
 
 # ==========================================
 # 14. USER MANAGEMENT (Admin / BM / AM)
