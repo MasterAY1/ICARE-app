@@ -1790,15 +1790,17 @@ st.markdown(f"""
 
 # --- 6. PAGES ---
 
+def _nav_to_audit_center():
+    st.session_state["Navigation"] = "Audit Center"
+
 if page == "Dashboard":
     d_col1, d_col2 = st.columns([3, 1])
     with d_col1:
         st.title("Performance & Risk Dashboard")
     with d_col2:
         st.write("")
-        if st.button("🏛️ Audit Center", key="btn_dash_audit_center", use_container_width=True):
-            st.session_state["Navigation"] = "Audit Center"
-            st.rerun()
+        st.button("🏛️ Audit Center", key="btn_dash_audit_center", on_click=_nav_to_audit_center, use_container_width=True)
+
 
     
     all_loans = load_loans()
