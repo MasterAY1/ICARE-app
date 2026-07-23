@@ -4657,9 +4657,14 @@ elif page in ["Audit Center", "Audit Ledger"]:
     ])
 
     with SupabaseUnitOfWork() as uow_ac:
+        from database.repositories.audit_view_repository import SupabaseAuditViewRepository
+        if not hasattr(uow_ac, 'audit_views') or getattr(uow_ac, 'audit_views', None) is None:
+            setattr(uow_ac, 'audit_views', SupabaseAuditViewRepository(uow_ac.client))
+
         from services.audit_reporting_service import AuditReportingService
         from services.financial_reconciliation_service import FinancialReconciliationService
         from services.transaction_explorer_service import TransactionExplorerService
+
 
         # ---------------------------------------------------------------------
         # TAB 1: ⚖️ Financial Integrity & 6-Way Match
