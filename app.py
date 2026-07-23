@@ -1755,7 +1755,8 @@ with st.sidebar:
         "EXECUTIVE" if ROLE in ["BM", ROLE_BRANCH_MANAGER, "AM", "Area Manager"] else "ADMINISTRATION"
     )
     st.markdown(f"<p class='nav-section-label'>{nav_section}</p>", unsafe_allow_html=True)
-    nav_options = get_nav_options(current_user) if current_user else ["Dashboard"]
+    nav_options = get_nav_options(current_user)
+
     if "Navigation" not in st.session_state or st.session_state["Navigation"] not in nav_options:
         st.session_state["Navigation"] = "Dashboard"
     

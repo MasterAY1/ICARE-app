@@ -170,9 +170,13 @@ NAV_PERMISSIONS = {
 }
 
 
-def get_nav_options(user) -> list:
+def get_nav_options(user=None) -> list:
     """Return the list of page names the *user* is allowed to navigate to."""
-    user_perms = PERMISSIONS.get(user.role, set())
+    role = getattr(user, 'role', None) if user else (user if isinstance(user, str) else None)
+    user_perms = PERMISSIONS.get(role, set()) if role else set()
+    if user and hasattr(user, 'permissions') and user.permissions:
+        user_perms = user_perms | set(user.permissions)
+    
     is_admin = "all" in user_perms
     pages = []
     for page, required in NAV_PERMISSIONS.items():
@@ -184,3 +188,4 @@ def get_nav_options(user) -> list:
         elif required & user_perms:
             pages.append(page)
     return pages
+
