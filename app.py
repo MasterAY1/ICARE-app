@@ -4642,7 +4642,6 @@ elif page in ["Audit Center", "Audit Ledger"]:
     st.title("🏛️ Enterprise Audit & Reconciliation Center")
     st.caption("Read-only virtual ledgers, 6-way financial integrity verification, 360° transaction explorer, and 15 automated exception reports.")
 
-
     audit_tab1, audit_tab2, audit_tab3, audit_tab4, audit_tab5, audit_tab6, audit_tab7, audit_tab8, audit_tab9, audit_tab10 = st.tabs([
         "⚖️ Integrity & 6-Way Match",
         "📊 Fee Audit",
@@ -4658,13 +4657,12 @@ elif page in ["Audit Center", "Audit Ledger"]:
 
     with SupabaseUnitOfWork() as uow_ac:
         from database.repositories.audit_view_repository import SupabaseAuditViewRepository
-        if not hasattr(uow_ac, 'audit_views') or getattr(uow_ac, 'audit_views', None) is None:
-            setattr(uow_ac, 'audit_views', SupabaseAuditViewRepository(uow_ac.client))
+        audit_views = getattr(uow_ac, 'audit_views', None) or SupabaseAuditViewRepository(uow_ac.client)
+
 
         from services.audit_reporting_service import AuditReportingService
         from services.financial_reconciliation_service import FinancialReconciliationService
         from services.transaction_explorer_service import TransactionExplorerService
-
 
         # ---------------------------------------------------------------------
         # TAB 1: ⚖️ Financial Integrity & 6-Way Match
@@ -4704,7 +4702,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 "BONUS", "MISC_FEE", "CONTINGENCY", "MARKUP_11", "MARKUP_20"
             ], key="ac_fee_type")
 
-            fee_records = uow_ac.audit_views.get_fee_ledger(fee_sub, limit=300)
+            fee_records = audit_views.get_fee_ledger(fee_sub, limit=300)
             metrics = AuditReportingService.calculate_summary_metrics(fee_records, amount_key="amount")
 
             m1, m2, m3, m4, m5 = st.columns(5)
@@ -4735,7 +4733,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 "OTHER_AREA_TRANSFER", "ASSET_PROGRAM", "PRODUCT_FINANCE"
             ], key="ac_tr_type")
 
-            tr_records = uow_ac.audit_views.get_treasury_ledger(tr_sub, limit=300)
+            tr_records = audit_views.get_treasury_ledger(tr_sub, limit=300)
             t_metrics = AuditReportingService.calculate_summary_metrics(tr_records, amount_key="amount")
 
             tm1, tm2, tm3, tm4, tm5 = st.columns(5)
@@ -4761,7 +4759,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
             sav_sub = st.radio("Select Savings Ledger:", ["Individual Savings", "Group Savings", "Laps Savings"], horizontal=True)
             tbl_map = {"Individual Savings": "individual_savings", "Group Savings": "group_savings", "Laps Savings": "laps_savings"}
             
-            sav_records = uow_ac.audit_views.get_savings_ledger(tbl_map[sav_sub], limit=300)
+            sav_records = audit_views.get_savings_ledger(tbl_map[sav_sub], limit=300)
             if sav_records:
                 df_sav = pd.DataFrame(sav_records)
                 st.dataframe(df_sav, use_container_width=True)
@@ -4775,17 +4773,18 @@ elif page in ["Audit Center", "Audit Ledger"]:
             st.subheader("💵 Loan Audit Ledgers")
             loan_sub = st.radio("Select Loan View:", ["Loan Disbursements", "Repayments"], horizontal=True)
             if loan_sub == "Loan Disbursements":
-                l_records = uow_ac.audit_views.get_loan_disbursements(limit=300)
+                l_records = audit_views.get_loan_disbursements(limit=300)
                 if l_records:
                     st.dataframe(pd.DataFrame(l_records), use_container_width=True)
                 else:
                     st.info("No loan disbursements found.")
             else:
-                rep_records = uow_ac.audit_views.get_loan_repayments(limit=300)
+                rep_records = audit_views.get_loan_repayments(limit=300)
                 if rep_records:
                     st.dataframe(pd.DataFrame(rep_records), use_container_width=True)
                 else:
                     st.info("No repayments found.")
+
 
         # ---------------------------------------------------------------------
         # TAB 6: 🎯 Collection Performance

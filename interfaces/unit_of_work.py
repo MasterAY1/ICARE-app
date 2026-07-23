@@ -23,6 +23,8 @@ class UnitOfWork(Protocol):
     ledger: LedgerRepository
     clients: ClientRepository
     guarantors: GuarantorRepository
+    audit_views: Any
+
 
     def __enter__(self) -> 'UnitOfWork': ...
     def __exit__(self, exc_type, exc_val, traceback) -> None: ...
