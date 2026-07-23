@@ -162,11 +162,10 @@ NAV_PERMISSIONS = {
     "Collections":        {"collections.view"},
     "Portfolio":          {"loan.view"},
     "Master Cashbook":    {"cashbook.view"},
-    "Audit Ledger":       {"loan.view"},
-    "Reports & Export":   {"report.view"},
     "Audit Center":       set(),          # Visible to all roles
+    "Audit Ledger":       set(),          # Visible to all roles (alias to Audit Center)
+    "Reports & Export":   {"report.view"},
     "User Management":    {"all", "user.activate"},
-
     "CO Cashbook":        {"collections.view"},
 }
 

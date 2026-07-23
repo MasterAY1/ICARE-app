@@ -1788,7 +1788,15 @@ st.markdown(f"""
 # --- 6. PAGES ---
 
 if page == "Dashboard":
-    st.title("Performance & Risk Dashboard")
+    d_col1, d_col2 = st.columns([3, 1])
+    with d_col1:
+        st.title("Performance & Risk Dashboard")
+    with d_col2:
+        st.write("")
+        if st.button("🏛️ Audit Center", key="btn_dash_audit_center", use_container_width=True):
+            st.session_state["Navigation"] = "Audit Center"
+            st.rerun()
+
     
     all_loans = load_loans()
     all_repayments = load_repayments()
@@ -4350,7 +4358,7 @@ elif page == "Daily Report":
     else:
         st.info("No records found in database.")
 
-elif page == "Audit Ledger":
+elif page == "Audit Ledger Legacy":
     st.title("📒 Audit Ledger")
     st.caption("Complete transaction history — Loans & Repayments")
     
@@ -4624,9 +4632,10 @@ elif page == "Audit Ledger":
         except Exception as ex:
             st.error(f"Error loading double-entry ledger: {ex}")
 
-elif page == "Audit Center":
+elif page in ["Audit Center", "Audit Ledger"]:
     st.title("🏛️ Enterprise Audit & Reconciliation Center")
     st.caption("Read-only virtual ledgers, 6-way financial integrity verification, 360° transaction explorer, and 15 automated exception reports.")
+
 
     audit_tab1, audit_tab2, audit_tab3, audit_tab4, audit_tab5, audit_tab6, audit_tab7, audit_tab8, audit_tab9, audit_tab10 = st.tabs([
         "⚖️ Integrity & 6-Way Match",
