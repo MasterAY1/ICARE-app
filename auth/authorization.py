@@ -131,7 +131,9 @@ NAV_PERMISSIONS = {
     "Master Cashbook":    {"cashbook.view"},
     "Audit Ledger":       {"loan.view"},
     "Reports & Export":   {"report.view"},
+    "Audit Center":       {"report.view", "loan.view"},
     "User Management":    {"all", "user.activate"},
+
     "CO Cashbook":        {"collections.view"},
 }
 

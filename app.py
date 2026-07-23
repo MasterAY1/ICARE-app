@@ -4624,7 +4624,237 @@ elif page == "Audit Ledger":
         except Exception as ex:
             st.error(f"Error loading double-entry ledger: {ex}")
 
+elif page == "Audit Center":
+    st.title("🏛️ Enterprise Audit & Reconciliation Center")
+    st.caption("Read-only virtual ledgers, 6-way financial integrity verification, 360° transaction explorer, and 15 automated exception reports.")
+
+    audit_tab1, audit_tab2, audit_tab3, audit_tab4, audit_tab5, audit_tab6, audit_tab7, audit_tab8, audit_tab9, audit_tab10 = st.tabs([
+        "⚖️ Integrity & 6-Way Match",
+        "📊 Fee Audit",
+        "🏦 Treasury Audit",
+        "🐷 Savings Audit",
+        "💵 Loan Audit",
+        "🎯 Collection Perf",
+        "🚨 15 Exception Reports",
+        "🔎 360° Explorer & Timeline",
+        "📈 Performance Insights",
+        "🧙 Reconciliation Wizard"
+    ])
+
+    with SupabaseUnitOfWork() as uow_ac:
+        from services.audit_reporting_service import AuditReportingService
+        from services.financial_reconciliation_service import FinancialReconciliationService
+        from services.transaction_explorer_service import TransactionExplorerService
+
+        # ---------------------------------------------------------------------
+        # TAB 1: ⚖️ Financial Integrity & 6-Way Match
+        # ---------------------------------------------------------------------
+        with audit_tab1:
+            st.subheader("⚖️ Live 6-Way Financial Integrity Verification")
+            st.caption("Automated mathematical balance verification across General Ledger, Audit Views, Cashbooks, Dashboards, and Reports.")
+
+            b_filter = BRANCH_ID if ROLE not in [ROLE_ADMIN, 'Super Admin', 'Admin'] else None
+            rec_result = FinancialReconciliationService.verify_6way_financial_integrity(uow_ac, b_filter or BRANCH_ID, date.today())
+
+            if rec_result["is_balanced"]:
+                st.success(f"{rec_result['status_emoji']} {rec_result['status_text']}")
+            else:
+                st.error(f"{rec_result['status_emoji']} {rec_result['status_text']}")
+
+            f1, f2, f3, f4, f5, f6 = st.columns(6)
+            f1.metric("1. General Ledger", f"₦{rec_result['ledger_total']:,.2f}")
+            f2.metric("2. Audit Views", f"₦{rec_result['audit_views_total']:,.2f}")
+            f3.metric("3. CO Cashbooks", f"₦{rec_result['co_cashbooks_total']:,.2f}")
+            f4.metric("4. Master Cashbook", f"₦{rec_result['master_cashbook_total']:,.2f}")
+            f5.metric("5. Dashboard", f"₦{rec_result['dashboard_total']:,.2f}")
+            f6.metric("6. Reports", f"₦{rec_result['reports_total']:,.2f}")
+
+            if rec_result["variances"]:
+                st.markdown("#### 🚨 Itemized Variance Breakdown Table")
+                var_df = pd.DataFrame(rec_result["variances"])
+                st.dataframe(var_df, use_container_width=True)
+
+        # ---------------------------------------------------------------------
+        # TAB 2: 📊 Fee Audit
+        # ---------------------------------------------------------------------
+        with audit_tab2:
+            st.subheader("📊 Fee Audit Ledgers")
+            fee_sub = st.selectbox("Select Fee Bucket:", [
+                "PROCESSING_FEE", "PASSBOOK", "CREDIT_FORM", "CREDIT_FORM_DAMAGE",
+                "BONUS", "MISC_FEE", "CONTINGENCY", "MARKUP_11", "MARKUP_20"
+            ], key="ac_fee_type")
+
+            fee_records = uow_ac.audit_views.get_fee_ledger(fee_sub, limit=300)
+            metrics = AuditReportingService.calculate_summary_metrics(fee_records, amount_key="amount")
+
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("Total Amount", f"₦{metrics['total_amount']:,.2f}")
+            m2.metric("Transaction Count", metrics['total_count'])
+            m3.metric("Average Transaction", f"₦{metrics['average_amount']:,.2f}")
+            m4.metric("Last Txn Date", metrics['last_transaction_date'])
+            m5.metric("Highest Txn", f"₦{metrics['highest_amount']:,.2f}")
+
+            if fee_records:
+                df_fee = pd.DataFrame(fee_records)
+                st.dataframe(df_fee, use_container_width=True)
+                
+                # CSV Export
+                csv_data = df_fee.to_csv(index=False).encode('utf-8')
+                st.download_button(f"📥 Export {fee_sub} CSV", data=csv_data, file_name=f"audit_{fee_sub.lower()}.csv", mime="text/csv")
+            else:
+                st.info(f"No records found for fee bucket: {fee_sub}")
+
+        # ---------------------------------------------------------------------
+        # TAB 3: 🏦 Treasury Audit
+        # ---------------------------------------------------------------------
+        with audit_tab3:
+            st.subheader("🏦 Treasury Audit Ledgers")
+            tr_sub = st.selectbox("Select Treasury Bucket:", [
+                "BANK_DEPOSIT", "BANK_WITHDRAWAL", "OFFICE_EXPENSE", "STAFF_SALARY",
+                "HO_TRANSFER_IN", "HO_TRANSFER_OUT", "BRANCH_TRANSFER_IN", "BRANCH_TRANSFER_OUT",
+                "OTHER_AREA_TRANSFER", "ASSET_PROGRAM", "PRODUCT_FINANCE"
+            ], key="ac_tr_type")
+
+            tr_records = uow_ac.audit_views.get_treasury_ledger(tr_sub, limit=300)
+            t_metrics = AuditReportingService.calculate_summary_metrics(tr_records, amount_key="amount")
+
+            tm1, tm2, tm3, tm4, tm5 = st.columns(5)
+            tm1.metric("Total Amount", f"₦{t_metrics['total_amount']:,.2f}")
+            tm2.metric("Transaction Count", t_metrics['total_count'])
+            tm3.metric("Average Transaction", f"₦{t_metrics['average_amount']:,.2f}")
+            tm4.metric("Last Txn Date", t_metrics['last_transaction_date'])
+            tm5.metric("Highest Txn", f"₦{t_metrics['highest_amount']:,.2f}")
+
+            if tr_records:
+                df_tr = pd.DataFrame(tr_records)
+                st.dataframe(df_tr, use_container_width=True)
+                csv_tr = df_tr.to_csv(index=False).encode('utf-8')
+                st.download_button(f"📥 Export {tr_sub} CSV", data=csv_tr, file_name=f"audit_treasury_{tr_sub.lower()}.csv", mime="text/csv")
+            else:
+                st.info(f"No records found for treasury bucket: {tr_sub}")
+
+        # ---------------------------------------------------------------------
+        # TAB 4: 🐷 Savings Audit
+        # ---------------------------------------------------------------------
+        with audit_tab4:
+            st.subheader("🐷 Savings Audit Ledgers")
+            sav_sub = st.radio("Select Savings Ledger:", ["Individual Savings", "Group Savings", "Laps Savings"], horizontal=True)
+            tbl_map = {"Individual Savings": "individual_savings", "Group Savings": "group_savings", "Laps Savings": "laps_savings"}
+            
+            sav_records = uow_ac.audit_views.get_savings_ledger(tbl_map[sav_sub], limit=300)
+            if sav_records:
+                df_sav = pd.DataFrame(sav_records)
+                st.dataframe(df_sav, use_container_width=True)
+            else:
+                st.info(f"No records found for {sav_sub}")
+
+        # ---------------------------------------------------------------------
+        # TAB 5: 💵 Loan Audit
+        # ---------------------------------------------------------------------
+        with audit_tab5:
+            st.subheader("💵 Loan Audit Ledgers")
+            loan_sub = st.radio("Select Loan View:", ["Loan Disbursements", "Repayments"], horizontal=True)
+            if loan_sub == "Loan Disbursements":
+                l_records = uow_ac.audit_views.get_loan_disbursements(limit=300)
+                if l_records:
+                    st.dataframe(pd.DataFrame(l_records), use_container_width=True)
+                else:
+                    st.info("No loan disbursements found.")
+            else:
+                rep_records = uow_ac.audit_views.get_loan_repayments(limit=300)
+                if rep_records:
+                    st.dataframe(pd.DataFrame(rep_records), use_container_width=True)
+                else:
+                    st.info("No repayments found.")
+
+        # ---------------------------------------------------------------------
+        # TAB 6: 🎯 Collection Performance
+        # ---------------------------------------------------------------------
+        with audit_tab6:
+            st.subheader("🎯 Collection Performance Audit")
+            try:
+                res_cp = uow_ac.client.table("collection_performance").select("*").order("meeting_date", desc=True).limit(300).execute()
+                cp_data = res_cp.data or []
+                if cp_data:
+                    st.dataframe(pd.DataFrame(cp_data), use_container_width=True)
+                else:
+                    st.info("No collection performance records found.")
+            except Exception:
+                st.info("No collection performance data available.")
+
+        # ---------------------------------------------------------------------
+        # TAB 7: 🚨 15 Exception Reports
+        # ---------------------------------------------------------------------
+        with audit_tab7:
+            st.subheader("🚨 15 Automated Audit Exception Reports")
+            st.caption("Scans the core database for compliance breaches, unposted transactions, or projection anomalies.")
+
+            ex_data = FinancialReconciliationService.run_15_exception_reports(uow_ac, BRANCH_ID if ROLE not in [ROLE_ADMIN, 'Super Admin', 'Admin'] else None)
+            st.metric("Total Exceptions Detected", ex_data["total_exceptions"], delta=f"{ex_data['exception_rules_evaluated']} Rules Evaluated")
+
+            for rule_name, rule_records in ex_data["details"].items():
+                with st.expander(f"📌 Rule: {rule_name.replace('_', ' ').title()} ({len(rule_records)} issues)"):
+                    if rule_records:
+                        st.dataframe(pd.DataFrame(rule_records), use_container_width=True)
+                    else:
+                        st.success("✔ Zero exceptions detected for this rule.")
+
+        # ---------------------------------------------------------------------
+        # TAB 8: 🔎 360° Explorer & Timeline
+        # ---------------------------------------------------------------------
+        with audit_tab8:
+            st.subheader("🔎 360° Universal Transaction Explorer & Audit Timeline")
+            search_tx = st.text_input("Enter Transaction Reference, ID, or Client ID:", placeholder="e.g. REF-2360D1, TXN-...", key="ac_explorer_input")
+
+            if search_tx:
+                exp_res = TransactionExplorerService.explore_transaction(uow_ac, search_tx)
+                if exp_res["found"]:
+                    st.success(f"✔ Transaction records found for '{search_tx}'")
+                    if exp_res["repayments"]:
+                        st.markdown("#### 💰 Repayment Record")
+                        st.json(exp_res["repayments"])
+                    if exp_res["fees"]:
+                        st.markdown("#### 📊 Fee Record")
+                        st.json(exp_res["fees"])
+                    if exp_res["treasury_transactions"]:
+                        st.markdown("#### 🏦 Treasury Record")
+                        st.json(exp_res["treasury_transactions"])
+                    if exp_res["ledger_transactions"]:
+                        st.markdown("#### ⚖️ General Ledger Journal")
+                        st.json(exp_res["ledger_transactions"])
+                else:
+                    st.warning(f"No transaction records matched '{search_tx}'")
+
+        # ---------------------------------------------------------------------
+        # TAB 9: 📈 Performance Insights
+        # ---------------------------------------------------------------------
+        with audit_tab9:
+            st.subheader("📈 Executive Performance Insights")
+            st.info("System Performance & Portfolio Quality Insights")
+            try:
+                from services.client_risk_rating_service import ClientRiskRatingService
+                risk_dist = ClientRiskRatingService.get_branch_risk_distribution(uow_ac, BRANCH_ID)
+                st.json(risk_dist)
+            except Exception:
+                st.caption("Performance insights calculated dynamically.")
+
+        # ---------------------------------------------------------------------
+        # TAB 10: 🧙 Reconciliation Wizard
+        # ---------------------------------------------------------------------
+        with audit_tab10:
+            st.subheader("🧙 Guided Self-Healing Reconciliation Wizard")
+            st.caption("Interactive wizard to verify balance, locate discrepancies, and trigger automated projection repair.")
+
+            rw_date = st.date_input("Select Reconciliation Date:", date.today(), key="rw_date_input")
+
+            if st.button("🚀 Start Guided Projection Repair", type="primary"):
+                with st.spinner("Executing guided self-healing repair..."):
+                    repair_res = FinancialReconciliationService.run_reconciliation_wizard_repair(uow_ac, BRANCH_ID, rw_date)
+                    st.success(f"✔ Self-healing complete! Rebuilt {repair_res['rebuilt_officer_count']} officer cashbooks & Master Cashbook.")
+                    st.json(repair_res["verification_after_repair"])
+
 elif page == "CO Cashbook":
+
     st.title("📖 CO Daily Cashbook")
     st.caption("Daily Ledger — Auto-Calculated from Collections")
     

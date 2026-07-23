@@ -44,7 +44,9 @@ from database.repositories.treasury_repository import (
     CashbookAdjustmentRepository
 )
 from database.repositories.collection_performance_repository import SupabaseCollectionPerformanceRepository
+from database.repositories.audit_view_repository import SupabaseAuditViewRepository
 from database.connection import supabase
+
 
 class SupabaseUnitOfWork(UnitOfWork):
     def __init__(self):
@@ -104,8 +106,14 @@ class SupabaseUnitOfWork(UnitOfWork):
         self.collection_performance = SupabaseCollectionPerformanceRepository(self.client)
         
         # ================================================================
+        # PHASE 8.1: Audit View Repository
+        # ================================================================
+        self.audit_views = SupabaseAuditViewRepository(self.client)
+
+        # ================================================================
         # Backward-compatible aliases (Phase 7 names → Phase 8 standard names)
         # ================================================================
+
         self.processing_fee = self.processing_fees
         self.passbook = self.passbook_fees
         self.credit_form = self.credit_forms
