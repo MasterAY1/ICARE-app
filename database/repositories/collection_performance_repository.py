@@ -69,16 +69,16 @@ class SupabaseCollectionPerformanceRepository(BaseRepository):
         meeting_date: date
     ) -> List[Dict[str, Any]]:
         """Get collection performances for a branch on a date (joins via officer → branch)."""
-        # Since collection_performance doesn't have branch_id directly,
-        # we filter by officers belonging to the branch
         try:
-            officers_res = self.client.table("app_users").select("id").eq("branch_id", branch_id).execute()
+            m_date_str = meeting_date.isoformat() if isinstance(meeting_date, date) else meeting_date
+            # Allow matching either branch_id UUID or branch text name
+            officers_res = self.client.table("app_users").select("id").or_(f"branch_id.eq.{branch_id},branch.eq.{branch_id}").execute()
             officer_ids = [o["id"] for o in (officers_res.data or [])]
             if not officer_ids:
                 return []
             query = self.client.table(self.table_name).select("*") \
                 .in_("officer_id", officer_ids) \
-                .eq("meeting_date", meeting_date.isoformat())
+                .eq("meeting_date", m_date_str)
             res = query.execute()
             return res.data or []
         except Exception:

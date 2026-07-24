@@ -21,22 +21,18 @@ class CollectionPerformanceService:
         amount_paid: float,
         remarks: Optional[str] = None
     ) -> Dict[str, Any]:
-        """
-        Record collection performance for a single client meeting.
-        Status is derived automatically:
-          - PAID: amount_paid >= expected_amount
-          - PART_PAYMENT: 0 < amount_paid < expected_amount
-          - NOT_PAID: amount_paid == 0
-        """
-        return uow.collection_performance.record_performance(
-            client_id=client_id,
-            loan_id=loan_id,
-            officer_id=officer_id,
-            meeting_date=meeting_date,
-            expected_amount=expected_amount,
-            amount_paid=amount_paid,
-            remarks=remarks
-        )
+        cp = getattr(uow, 'collection_performance', None)
+        if cp and hasattr(cp, 'record_performance'):
+            return cp.record_performance(
+                client_id=client_id,
+                loan_id=loan_id,
+                officer_id=officer_id,
+                meeting_date=meeting_date,
+                expected_amount=expected_amount,
+                amount_paid=amount_paid,
+                remarks=remarks
+            )
+        return {}
 
     @staticmethod
     def get_client_compliance(
@@ -45,18 +41,23 @@ class CollectionPerformanceService:
         loan_id: str,
         limit: Optional[int] = None
     ) -> Dict[str, Any]:
-        """
-        Get compliance metrics for a client's loan:
-          - paid_count, part_payment_count, not_paid_count
-          - total_expected, total_paid
-          - compliance_pct (Total Paid / Total Expected × 100)
-          - consecutive_missed
-        """
-        return uow.collection_performance.get_client_compliance_history(
-            client_id=client_id,
-            loan_id=loan_id,
-            limit=limit
-        )
+        cp = getattr(uow, 'collection_performance', None)
+        if cp and hasattr(cp, 'get_client_compliance_history'):
+            return cp.get_client_compliance_history(
+                client_id=client_id,
+                loan_id=loan_id,
+                limit=limit
+            )
+        return {
+            "paid_count": 0,
+            "part_payment_count": 0,
+            "not_paid_count": 0,
+            "total_expected": 0.0,
+            "total_paid": 0.0,
+            "compliance_pct": 100.0,
+            "consecutive_missed": 0,
+            "total_meetings": 0
+        }
 
     @staticmethod
     def check_upgrade_eligibility(
@@ -64,11 +65,6 @@ class CollectionPerformanceService:
         client_id: str,
         loan_id: str
     ) -> Dict[str, Any]:
-        """
-        Check loan upgrade eligibility using product-specific thresholds.
-        Reads eligibility_threshold and review_meeting_count from loan_products.
-        """
-        # Resolve loan product configuration
         threshold = 90.0
         review_count = 12
 
@@ -83,12 +79,19 @@ class CollectionPerformanceService:
         except Exception:
             pass
 
-        return uow.collection_performance.get_loan_eligibility(
-            client_id=client_id,
-            loan_id=loan_id,
-            threshold=threshold,
-            review_count=review_count
-        )
+        cp = getattr(uow, 'collection_performance', None)
+        if cp and hasattr(cp, 'get_loan_eligibility'):
+            return cp.get_loan_eligibility(
+                client_id=client_id,
+                loan_id=loan_id,
+                threshold=threshold,
+                review_count=review_count
+            )
+        return {
+            "eligible_for_upgrade": False,
+            "threshold": threshold,
+            "review_count": review_count
+        }
 
     @staticmethod
     def get_officer_meeting_summary(
@@ -96,12 +99,14 @@ class CollectionPerformanceService:
         officer_id: str,
         meeting_date: date
     ) -> Dict[str, Any]:
-        """
-        Get summary of an officer's collection performance for a meeting date.
-        Returns: total_clients, paid, part_payment, not_paid, total_expected, total_collected, compliance_pct
-        """
-        records = uow.collection_performance.find_by_officer_and_date(officer_id, meeting_date)
-        
+        records = []
+        cp = getattr(uow, 'collection_performance', None)
+        if cp and hasattr(cp, 'find_by_officer_and_date'):
+            try:
+                records = cp.find_by_officer_and_date(officer_id, meeting_date)
+            except Exception:
+                records = []
+
         paid = sum(1 for r in records if r.get("status") == "PAID")
         part = sum(1 for r in records if r.get("status") == "PART_PAYMENT")
         not_paid = sum(1 for r in records if r.get("status") == "NOT_PAID")
@@ -111,7 +116,7 @@ class CollectionPerformanceService:
 
         return {
             "officer_id": officer_id,
-            "meeting_date": meeting_date.isoformat(),
+            "meeting_date": meeting_date.isoformat() if isinstance(meeting_date, date) else meeting_date,
             "total_clients": len(records),
             "paid": paid,
             "part_payment": part,
@@ -127,10 +132,13 @@ class CollectionPerformanceService:
         branch_id: str,
         meeting_date: date
     ) -> Dict[str, Any]:
-        """
-        Get summary of branch-level collection performance for a meeting date.
-        """
-        records = uow.collection_performance.find_by_branch_and_date(branch_id, meeting_date)
+        records = []
+        cp = getattr(uow, 'collection_performance', None)
+        if cp and hasattr(cp, 'find_by_branch_and_date'):
+            try:
+                records = cp.find_by_branch_and_date(branch_id, meeting_date)
+            except Exception:
+                records = []
 
         paid = sum(1 for r in records if r.get("status") == "PAID")
         part = sum(1 for r in records if r.get("status") == "PART_PAYMENT")
@@ -141,7 +149,7 @@ class CollectionPerformanceService:
 
         return {
             "branch_id": branch_id,
-            "meeting_date": meeting_date.isoformat(),
+            "meeting_date": meeting_date.isoformat() if isinstance(meeting_date, date) else meeting_date,
             "total_clients": len(records),
             "paid": paid,
             "part_payment": part,

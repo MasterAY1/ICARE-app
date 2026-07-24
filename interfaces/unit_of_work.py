@@ -24,6 +24,7 @@ class UnitOfWork(Protocol):
     clients: ClientRepository
     guarantors: GuarantorRepository
     audit_views: Any
+    collection_performance: Any
 
 
     def __enter__(self) -> 'UnitOfWork': ...
