@@ -1,4 +1,4 @@
-from typing import Protocol
+from typing import Protocol, Any
 from interfaces.loan_repository import LoanRepository
 from interfaces.repayment_repository import RepaymentRepository
 from interfaces.user_repository import UserRepository

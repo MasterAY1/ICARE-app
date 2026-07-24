@@ -4640,7 +4640,7 @@ elif page == "Audit Ledger Legacy":
 
 elif page in ["Audit Center", "Audit Ledger"]:
     st.title("🏛️ Enterprise Audit & Reconciliation Center")
-    st.caption("Read-only virtual ledgers, 6-way financial integrity verification, 360° transaction explorer, and 15 automated exception reports.")
+    st.caption("Read-only executive ledgers, 6-way financial integrity verification, 360° universal explorer, and 15 automated exception reports.")
 
     audit_tab1, audit_tab2, audit_tab3, audit_tab4, audit_tab5, audit_tab6, audit_tab7, audit_tab8, audit_tab9, audit_tab10 = st.tabs([
         "⚖️ Integrity & 6-Way Match",
@@ -4657,12 +4657,14 @@ elif page in ["Audit Center", "Audit Ledger"]:
 
     with SupabaseUnitOfWork() as uow_ac:
         from database.repositories.audit_view_repository import SupabaseAuditViewRepository
-        audit_views = getattr(uow_ac, 'audit_views', None) or SupabaseAuditViewRepository(uow_ac.client)
-
-
+        from services.audit_enricher_service import AuditEnricher
         from services.audit_reporting_service import AuditReportingService
         from services.financial_reconciliation_service import FinancialReconciliationService
         from services.transaction_explorer_service import TransactionExplorerService
+
+        audit_views = getattr(uow_ac, 'audit_views', None) or SupabaseAuditViewRepository(uow_ac.client)
+        enricher = AuditEnricher(uow=uow_ac)
+
 
         # ---------------------------------------------------------------------
         # TAB 1: ⚖️ Financial Integrity & 6-Way Match
@@ -4702,8 +4704,29 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 "BONUS", "MISC_FEE", "CONTINGENCY", "MARKUP_11", "MARKUP_20"
             ], key="ac_fee_type")
 
-            fee_records = audit_views.get_fee_ledger(fee_sub, limit=300)
-            metrics = AuditReportingService.calculate_summary_metrics(fee_records, amount_key="amount")
+            fc1, fc2, fc3 = st.columns([1, 1, 2])
+            with fc1:
+                fee_d_from = st.date_input("Date From", date(2026, 1, 1), key="fee_d_from")
+            with fc2:
+                fee_d_to = st.date_input("Date To", date.today(), key="fee_d_to")
+            with fc3:
+                fee_search = st.text_input("🔍 Search Client Code / Name / Ref:", "", key="fee_search")
+
+            raw_fee_records = audit_views.get_fee_ledger(fee_sub, date_from=fee_d_from, date_to=fee_d_to, limit=500)
+            enriched_fees = enricher.enrich_fee_records(raw_fee_records)
+
+            if fee_search:
+                s_lower = fee_search.lower()
+                enriched_fees = [
+                    f for f in enriched_fees
+                    if s_lower in str(f.get("Client Code", "")).lower()
+                    or s_lower in str(f.get("Client Name", "")).lower()
+                    or s_lower in str(f.get("Officer", "")).lower()
+                    or s_lower in str(f.get("Branch", "")).lower()
+                    or s_lower in str(f.get("Reference", "")).lower()
+                ]
+
+            metrics = AuditReportingService.calculate_summary_metrics(enriched_fees, amount_key="Amount_Raw")
 
             m1, m2, m3, m4, m5 = st.columns(5)
             m1.metric("Total Amount", f"₦{metrics['total_amount']:,.2f}")
@@ -4712,15 +4735,26 @@ elif page in ["Audit Center", "Audit Ledger"]:
             m4.metric("Last Txn Date", metrics['last_transaction_date'])
             m5.metric("Highest Txn", f"₦{metrics['highest_amount']:,.2f}")
 
-            if fee_records:
-                df_fee = pd.DataFrame(fee_records)
-                st.dataframe(df_fee, use_container_width=True)
-                
-                # CSV Export
-                csv_data = df_fee.to_csv(index=False).encode('utf-8')
+            if enriched_fees:
+                clean_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_fees])
+                st.dataframe(clean_df, use_container_width=True)
+
+                with st.expander("🔍 View Itemized Details & Technical Breakdown"):
+                    idx = st.selectbox("Select Record to Inspect:", range(len(enriched_fees)), format_func=lambda i: f"{enriched_fees[i]['Client Code']} — {enriched_fees[i]['Client Name']} ({enriched_fees[i]['Amount']})", key="sb_fee_idx")
+                    sel = enriched_fees[idx]
+                    st.markdown(f"### 📄 Fee Receipt Summary ({sel['Fee Type']})")
+                    c1, c2, c3 = st.columns(3)
+                    c1.markdown(f"**Date:** {sel['Date']}\n\n**Fee Type:** {sel['Fee Type']}")
+                    c2.markdown(f"**Client:** {sel['Client Code']} ({sel['Client Name']})\n\n**Amount:** {sel['Amount']}")
+                    c3.markdown(f"**Officer:** {sel['Officer']}\n\n**Branch:** {sel['Branch']}")
+
+                    with st.expander("🛠️ Advanced Technical Details (Auditor Only)"):
+                        st.json(sel["_raw_record"])
+
+                csv_data = clean_df.to_csv(index=False).encode('utf-8')
                 st.download_button(f"📥 Export {fee_sub} CSV", data=csv_data, file_name=f"audit_{fee_sub.lower()}.csv", mime="text/csv")
             else:
-                st.info(f"No records found for fee bucket: {fee_sub}")
+                st.info(f"No fee records found matching criteria for {fee_sub}.")
 
         # ---------------------------------------------------------------------
         # TAB 3: 🏦 Treasury Audit
@@ -4733,8 +4767,29 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 "OTHER_AREA_TRANSFER", "ASSET_PROGRAM", "PRODUCT_FINANCE"
             ], key="ac_tr_type")
 
-            tr_records = audit_views.get_treasury_ledger(tr_sub, limit=300)
-            t_metrics = AuditReportingService.calculate_summary_metrics(tr_records, amount_key="amount")
+            tc1, tc2, tc3 = st.columns([1, 1, 2])
+            with tc1:
+                tr_d_from = st.date_input("Date From", date(2026, 1, 1), key="tr_d_from")
+            with tc2:
+                tr_d_to = st.date_input("Date To", date.today(), key="tr_d_to")
+            with tc3:
+                tr_search = st.text_input("🔍 Search Category / Officer / Ref:", "", key="tr_search")
+
+            raw_tr_records = audit_views.get_treasury_ledger(tr_sub, date_from=tr_d_from, date_to=tr_d_to, limit=500)
+            enriched_tr = enricher.enrich_treasury_records(raw_tr_records)
+
+            if tr_search:
+                ts_lower = tr_search.lower()
+                enriched_tr = [
+                    t for t in enriched_tr
+                    if ts_lower in str(t.get("Category", "")).lower()
+                    or ts_lower in str(t.get("Officer", "")).lower()
+                    or ts_lower in str(t.get("Branch", "")).lower()
+                    or ts_lower in str(t.get("Reference", "")).lower()
+                    or ts_lower in str(t.get("Narration", "")).lower()
+                ]
+
+            t_metrics = AuditReportingService.calculate_summary_metrics(enriched_tr, amount_key="Amount_Raw")
 
             tm1, tm2, tm3, tm4, tm5 = st.columns(5)
             tm1.metric("Total Amount", f"₦{t_metrics['total_amount']:,.2f}")
@@ -4743,13 +4798,27 @@ elif page in ["Audit Center", "Audit Ledger"]:
             tm4.metric("Last Txn Date", t_metrics['last_transaction_date'])
             tm5.metric("Highest Txn", f"₦{t_metrics['highest_amount']:,.2f}")
 
-            if tr_records:
-                df_tr = pd.DataFrame(tr_records)
-                st.dataframe(df_tr, use_container_width=True)
-                csv_tr = df_tr.to_csv(index=False).encode('utf-8')
+            if enriched_tr:
+                clean_tr_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_tr])
+                st.dataframe(clean_tr_df, use_container_width=True)
+
+                with st.expander("🔍 View Itemized Details & Technical Breakdown"):
+                    t_idx = st.selectbox("Select Record to Inspect:", range(len(enriched_tr)), format_func=lambda i: f"{enriched_tr[i]['Category']} — {enriched_tr[i]['Amount']} ({enriched_tr[i]['Date']})", key="sb_tr_idx")
+                    t_sel = enriched_tr[t_idx]
+                    st.markdown(f"### 📄 Treasury Transaction Summary ({t_sel['Category']})")
+                    tc1, tc2, tc3 = st.columns(3)
+                    tc1.markdown(f"**Date:** {t_sel['Date']}\n\n**Category:** {t_sel['Category']}")
+                    tc2.markdown(f"**Amount:** {t_sel['Amount']}\n\n**Reference:** {t_sel['Reference']}")
+                    tc3.markdown(f"**Officer:** {t_sel['Officer']}\n\n**Branch:** {t_sel['Branch']}")
+                    st.caption(f"**Narration:** {t_sel['Narration']}")
+
+                    with st.expander("🛠️ Advanced Technical Details (Auditor Only)"):
+                        st.json(t_sel["_raw_record"])
+
+                csv_tr = clean_tr_df.to_csv(index=False).encode('utf-8')
                 st.download_button(f"📥 Export {tr_sub} CSV", data=csv_tr, file_name=f"audit_treasury_{tr_sub.lower()}.csv", mime="text/csv")
             else:
-                st.info(f"No records found for treasury bucket: {tr_sub}")
+                st.info(f"No treasury records found matching criteria for {tr_sub}.")
 
         # ---------------------------------------------------------------------
         # TAB 4: 🐷 Savings Audit
@@ -4758,13 +4827,58 @@ elif page in ["Audit Center", "Audit Ledger"]:
             st.subheader("🐷 Savings Audit Ledgers")
             sav_sub = st.radio("Select Savings Ledger:", ["Individual Savings", "Group Savings", "Laps Savings"], horizontal=True)
             tbl_map = {"Individual Savings": "individual_savings", "Group Savings": "group_savings", "Laps Savings": "laps_savings"}
-            
-            sav_records = audit_views.get_savings_ledger(tbl_map[sav_sub], limit=300)
-            if sav_records:
-                df_sav = pd.DataFrame(sav_records)
-                st.dataframe(df_sav, use_container_width=True)
+
+            sc1, sc2, sc3 = st.columns([1, 1, 2])
+            with sc1:
+                sav_d_from = st.date_input("Date From", date(2026, 1, 1), key="sav_d_from")
+            with sc2:
+                sav_d_to = st.date_input("Date To", date.today(), key="sav_d_to")
+            with sc3:
+                sav_search = st.text_input("🔍 Search Client Code / Name / Officer:", "", key="sav_search")
+
+            raw_sav_records = audit_views.get_savings_ledger(tbl_map[sav_sub], date_from=sav_d_from, date_to=sav_d_to, limit=500)
+            enriched_sav = enricher.enrich_savings_records(raw_sav_records)
+
+            if sav_search:
+                ss_lower = sav_search.lower()
+                enriched_sav = [
+                    s for s in enriched_sav
+                    if ss_lower in str(s.get("Client Code", "")).lower()
+                    or ss_lower in str(s.get("Client Name", "")).lower()
+                    or ss_lower in str(s.get("Officer", "")).lower()
+                    or ss_lower in str(s.get("Branch", "")).lower()
+                ]
+
+            tot_dep = sum(s["Deposit_Raw"] for s in enriched_sav)
+            tot_wth = sum(s["Withdrawal_Raw"] for s in enriched_sav)
+
+            sm1, sm2, sm3, sm4, sm5 = st.columns(5)
+            sm1.metric("Total Deposits", f"₦{tot_dep:,.2f}")
+            sm2.metric("Total Withdrawals", f"₦{tot_wth:,.2f}")
+            sm3.metric("Net Savings Movement", f"₦{(tot_dep - tot_wth):,.2f}")
+            sm4.metric("Transactions", len(enriched_sav))
+            sm5.metric("Active Accounts", len(set(s['Client Code'] for s in enriched_sav)))
+
+            if enriched_sav:
+                clean_sav_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_sav])
+                st.dataframe(clean_sav_df, use_container_width=True)
+
+                with st.expander("🔍 View Itemized Details & Technical Breakdown"):
+                    s_idx = st.selectbox("Select Record to Inspect:", range(len(enriched_sav)), format_func=lambda i: f"{enriched_sav[i]['Client Code']} — {enriched_sav[i]['Client Name']} (Dep: {enriched_sav[i]['Deposit']})", key="sb_sav_idx")
+                    s_sel = enriched_sav[s_idx]
+                    st.markdown("### 📄 Savings Transaction Detail")
+                    sc1_d, sc2_d, sc3_d = st.columns(3)
+                    sc1_d.markdown(f"**Date:** {s_sel['Date']}\n\n**Client Code:** {s_sel['Client Code']}")
+                    sc2_d.markdown(f"**Client Name:** {s_sel['Client Name']}\n\n**Deposit:** {s_sel['Deposit']}")
+                    sc3_d.markdown(f"**Withdrawal:** {s_sel['Withdrawal']}\n\n**Balance:** {s_sel['Balance']}")
+
+                    with st.expander("🛠️ Advanced Technical Details (Auditor Only)"):
+                        st.json(s_sel["_raw_record"])
+
+                csv_sav = clean_sav_df.to_csv(index=False).encode('utf-8')
+                st.download_button(f"📥 Export {sav_sub} CSV", data=csv_sav, file_name=f"audit_savings_{sav_sub.lower()}.csv", mime="text/csv")
             else:
-                st.info(f"No records found for {sav_sub}")
+                st.info(f"No savings records found for {sav_sub}")
 
         # ---------------------------------------------------------------------
         # TAB 5: 💵 Loan Audit
@@ -4772,19 +4886,100 @@ elif page in ["Audit Center", "Audit Ledger"]:
         with audit_tab5:
             st.subheader("💵 Loan Audit Ledgers")
             loan_sub = st.radio("Select Loan View:", ["Loan Disbursements", "Repayments"], horizontal=True)
-            if loan_sub == "Loan Disbursements":
-                l_records = audit_views.get_loan_disbursements(limit=300)
-                if l_records:
-                    st.dataframe(pd.DataFrame(l_records), use_container_width=True)
-                else:
-                    st.info("No loan disbursements found.")
-            else:
-                rep_records = audit_views.get_loan_repayments(limit=300)
-                if rep_records:
-                    st.dataframe(pd.DataFrame(rep_records), use_container_width=True)
-                else:
-                    st.info("No repayments found.")
 
+            lc1, lc2, lc3 = st.columns([1, 1, 2])
+            with lc1:
+                loan_d_from = st.date_input("Date From", date(2026, 1, 1), key="loan_d_from")
+            with lc2:
+                loan_d_to = st.date_input("Date To", date.today(), key="loan_d_to")
+            with lc3:
+                loan_search = st.text_input("🔍 Search Loan No / Client / Officer:", "", key="loan_search")
+
+            if loan_sub == "Loan Disbursements":
+                raw_l_records = audit_views.get_loan_disbursements(date_from=loan_d_from, date_to=loan_d_to, limit=500)
+                enriched_loans = enricher.enrich_loan_records(raw_l_records)
+
+                if loan_search:
+                    ls_lower = loan_search.lower()
+                    enriched_loans = [
+                        l for l in enriched_loans
+                        if ls_lower in str(l.get("Loan Number", "")).lower()
+                        or ls_lower in str(l.get("Client Code", "")).lower()
+                        or ls_lower in str(l.get("Client Name", "")).lower()
+                        or ls_lower in str(l.get("Officer", "")).lower()
+                        or ls_lower in str(l.get("Branch", "")).lower()
+                        or ls_lower in str(l.get("Product", "")).lower()
+                    ]
+
+                tot_p = sum(l["Principal_Raw"] for l in enriched_loans)
+                lm1, lm2, lm3, lm4, lm5 = st.columns(5)
+                lm1.metric("Total Principal Disbursed", f"₦{tot_p:,.2f}")
+                lm2.metric("Loans Disbursed", len(enriched_loans))
+                lm3.metric("Average Principal", f"₦{(tot_p / len(enriched_loans) if enriched_loans else 0):,.2f}")
+                lm4.metric("Borrowers Count", len(set(l['Client Code'] for l in enriched_loans)))
+                lm5.metric("Active Portfolio", f"₦{tot_p:,.2f}")
+
+                if enriched_loans:
+                    clean_l_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_loans])
+                    st.dataframe(clean_l_df, use_container_width=True)
+
+                    with st.expander("🔍 View Itemized Details & Technical Breakdown"):
+                        l_idx = st.selectbox("Select Loan to Inspect:", range(len(enriched_loans)), format_func=lambda i: f"{enriched_loans[i]['Loan Number']} — {enriched_loans[i]['Client Name']} ({enriched_loans[i]['Principal']})", key="sb_loan_idx")
+                        l_sel = enriched_loans[l_idx]
+                        st.markdown("### 📄 Loan Facility Detail")
+                        lc1_d, lc2_d, lc3_d = st.columns(3)
+                        lc1_d.markdown(f"**Loan Number:** {l_sel['Loan Number']}\n\n**Disbursement Date:** {l_sel['Disbursement Date']}")
+                        lc2_d.markdown(f"**Client:** {l_sel['Client Code']} ({l_sel['Client Name']})\n\n**Principal:** {l_sel['Principal']}")
+                        lc3_d.markdown(f"**Product:** {l_sel['Product']}\n\n**Status:** {l_sel['Status']}")
+
+                        with st.expander("🛠️ Advanced Technical Details (Auditor Only)"):
+                            st.json(l_sel["_raw_record"])
+
+                    csv_l = clean_l_df.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Export Loan Disbursements CSV", data=csv_l, file_name="audit_loan_disbursements.csv", mime="text/csv")
+                else:
+                    st.info("No loan disbursements found matching criteria.")
+            else:
+                raw_rep_records = audit_views.get_loan_repayments(date_from=loan_d_from, date_to=loan_d_to, limit=500)
+                enriched_reps = enricher.enrich_repayment_records(raw_rep_records)
+
+                if loan_search:
+                    rs_lower = loan_search.lower()
+                    enriched_reps = [
+                        r for r in enriched_reps
+                        if rs_lower in str(r.get("Client Code", "")).lower()
+                        or rs_lower in str(r.get("Client Name", "")).lower()
+                        or rs_lower in str(r.get("Officer", "")).lower()
+                        or rs_lower in str(r.get("Branch", "")).lower()
+                    ]
+
+                tot_r = sum(r["Amount_Raw"] for r in enriched_reps)
+                rm1, rm2, rm3, rm4 = st.columns(4)
+                rm1.metric("Total Repayments Collected", f"₦{tot_r:,.2f}")
+                rm2.metric("Repayment Count", len(enriched_reps))
+                rm3.metric("Average Repayment", f"₦{(tot_r / len(enriched_reps) if enriched_reps else 0):,.2f}")
+                rm4.metric("Active Paying Clients", len(set(r['Client Code'] for r in enriched_reps)))
+
+                if enriched_reps:
+                    clean_r_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_reps])
+                    st.dataframe(clean_r_df, use_container_width=True)
+
+                    with st.expander("🔍 View Itemized Details & Technical Breakdown"):
+                        r_idx = st.selectbox("Select Repayment to Inspect:", range(len(enriched_reps)), format_func=lambda i: f"{enriched_reps[i]['Client Code']} — {enriched_reps[i]['Client Name']} ({enriched_reps[i]['Amount Paid']})", key="sb_rep_idx")
+                        r_sel = enriched_reps[r_idx]
+                        st.markdown("### 📄 Repayment Receipt Detail")
+                        rc1_d, rc2_d, rc3_d = st.columns(3)
+                        rc1_d.markdown(f"**Repayment Date:** {r_sel['Repayment Date']}\n\n**Client Code:** {r_sel['Client Code']}")
+                        rc2_d.markdown(f"**Client Name:** {r_sel['Client Name']}\n\n**Amount Paid:** {r_sel['Amount Paid']}")
+                        rc3_d.markdown(f"**Officer:** {r_sel['Officer']}\n\n**Branch:** {r_sel['Branch']}")
+
+                        with st.expander("🛠️ Advanced Technical Details (Auditor Only)"):
+                            st.json(r_sel["_raw_record"])
+
+                    csv_r = clean_r_df.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Export Repayments CSV", data=csv_r, file_name="audit_loan_repayments.csv", mime="text/csv")
+                else:
+                    st.info("No repayments found matching criteria.")
 
         # ---------------------------------------------------------------------
         # TAB 6: 🎯 Collection Performance
@@ -4792,10 +4987,12 @@ elif page in ["Audit Center", "Audit Ledger"]:
         with audit_tab6:
             st.subheader("🎯 Collection Performance Audit")
             try:
-                res_cp = uow_ac.client.table("collection_performance").select("*").order("meeting_date", desc=True).limit(300).execute()
-                cp_data = res_cp.data or []
-                if cp_data:
-                    st.dataframe(pd.DataFrame(cp_data), use_container_width=True)
+                res_cp = uow_ac.client.table("collection_performance").select("*").order("meeting_date", desc=True).limit(500).execute()
+                raw_cp_data = res_cp.data or []
+                enriched_cp = enricher.enrich_collection_records(raw_cp_data)
+                if enriched_cp:
+                    clean_cp_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_cp])
+                    st.dataframe(clean_cp_df, use_container_width=True)
                 else:
                     st.info("No collection performance records found.")
             except Exception:
@@ -4819,30 +5016,37 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         st.success("✔ Zero exceptions detected for this rule.")
 
         # ---------------------------------------------------------------------
-        # TAB 8: 🔎 360° Explorer & Timeline
+        # TAB 8: 🔎 360° Universal Explorer & Timeline
         # ---------------------------------------------------------------------
         with audit_tab8:
-            st.subheader("🔎 360° Universal Transaction Explorer & Audit Timeline")
-            search_tx = st.text_input("Enter Transaction Reference, ID, or Client ID:", placeholder="e.g. REF-2360D1, TXN-...", key="ac_explorer_input")
+            st.subheader("🔎 360° Universal Human-Term Search & Audit Timeline")
+            st.caption("Search by Client Code (e.g. OGI-12-005), Customer Name, Officer, Loan Number, or Reference ID.")
+            search_tx = st.text_input("Enter Search Term:", placeholder="e.g. OGI-12-005, Adewale, Ayomide, REF-00382", key="ac_explorer_input")
 
             if search_tx:
                 exp_res = TransactionExplorerService.explore_transaction(uow_ac, search_tx)
                 if exp_res["found"]:
-                    st.success(f"✔ Transaction records found for '{search_tx}'")
+                    st.success(f"✔ Audit records matched '{search_tx}' across sub-systems")
+                    if exp_res["loans"]:
+                        st.markdown("#### 💵 Loans")
+                        st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["loans"]]), use_container_width=True)
                     if exp_res["repayments"]:
-                        st.markdown("#### 💰 Repayment Record")
-                        st.json(exp_res["repayments"])
+                        st.markdown("#### 💰 Repayments")
+                        st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["repayments"]]), use_container_width=True)
+                    if exp_res["savings"]:
+                        st.markdown("#### 🐷 Savings Ledger")
+                        st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["savings"]]), use_container_width=True)
                     if exp_res["fees"]:
-                        st.markdown("#### 📊 Fee Record")
-                        st.json(exp_res["fees"])
+                        st.markdown("#### 📊 Fee Ledger")
+                        st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["fees"]]), use_container_width=True)
                     if exp_res["treasury_transactions"]:
-                        st.markdown("#### 🏦 Treasury Record")
-                        st.json(exp_res["treasury_transactions"])
+                        st.markdown("#### 🏦 Treasury Ledger")
+                        st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["treasury_transactions"]]), use_container_width=True)
                     if exp_res["ledger_transactions"]:
-                        st.markdown("#### ⚖️ General Ledger Journal")
-                        st.json(exp_res["ledger_transactions"])
+                        st.markdown("#### ⚖️ General Ledger Journals")
+                        st.dataframe(pd.DataFrame(exp_res["ledger_transactions"]), use_container_width=True)
                 else:
-                    st.warning(f"No transaction records matched '{search_tx}'")
+                    st.warning(f"No audit records matched '{search_tx}'")
 
         # ---------------------------------------------------------------------
         # TAB 9: 📈 Performance Insights
@@ -4871,6 +5075,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     repair_res = FinancialReconciliationService.run_reconciliation_wizard_repair(uow_ac, BRANCH_ID, rw_date)
                     st.success(f"✔ Self-healing complete! Rebuilt {repair_res['rebuilt_officer_count']} officer cashbooks & Master Cashbook.")
                     st.json(repair_res["verification_after_repair"])
+
 
 elif page == "CO Cashbook":
 
