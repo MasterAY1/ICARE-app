@@ -1957,12 +1957,12 @@ if page == "Dashboard":
             wel = co_data["welcome"]
             st.info(f"👋 **Welcome {wel['officer_name']}** | {wel['branch_name']} Branch | Business Date: **{wel['date_str']}** ({wel['meeting_day']}) | System Time: {wel['time_str']}")
 
-            # Today's Repayment Summary (12w vs 24w & Total)
-            st.markdown("#### 📅 Today's Repayment Summary")
+            # Today's Repayment Summary Cards (UI-01: Product Catalogue Cycles)
+            st.markdown("#### 📅 Today's Repayment Summary (Product Cycles)")
             rep_s = co_data["repayment_summary"]
             r1, r2, r3 = st.columns(3)
-            r1.metric("🗓️ 12 Weeks (60 Days)", f"₦{rep_s['rep_12_weeks_amt']:,.0f}", f"{rep_s['rep_12_weeks_clients']} Clients Paid")
-            r2.metric("🗓️ 24 Weeks (120 Days)", f"₦{rep_s['rep_24_weeks_amt']:,.0f}", f"{rep_s['rep_24_weeks_clients']} Clients Paid")
+            r1.metric("🗓️ 12% Cycle (60D / 12W / 3M)", f"₦{rep_s['rep_12_weeks_amt']:,.0f}", f"{rep_s['rep_12_weeks_clients']} Clients Paid")
+            r2.metric("🗓️ 21% Cycle (120D / 24W / 6M)", f"₦{rep_s['rep_24_weeks_amt']:,.0f}", f"{rep_s['rep_24_weeks_clients']} Clients Paid")
             r3.metric("💵 Total Repayment Today", f"₦{rep_s['total_collected_today']:,.0f}")
 
             # Today's Meeting Portfolio Grid

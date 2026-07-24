@@ -109,7 +109,7 @@ class DashboardService:
                 if r.get("loans") and r.get("loans").get("loan_products"):
                     p_name = str(r["loans"]["loan_products"].get("name") or "").lower()
 
-                if "24" in p_name:
+                if any(k in p_name for k in ["24", "120", "21%", "6m", "6 month"]):
                     rep_24w_amt += l_pay
                     if cid and l_pay > 0: rep_24w_clients.add(cid)
                 else:
