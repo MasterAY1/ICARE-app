@@ -1702,6 +1702,7 @@ ROLE = current_user.role if current_user else None
 USER = current_user.username if current_user else None
 BRANCH = current_user.branch if current_user else None
 BRANCH_ID = current_user.branch_id if current_user else None
+USER_ID = current_user.id if current_user else None
 ASSIGNED_BRANCH_IDS = current_user.assigned_branch_ids if current_user else []
 branch_display = "Head Office" if ROLE in ["Admin", "Super Admin", ROLE_ADMIN, ROLE_SUPER_ADMIN] else (f"{BRANCH} Branch" if BRANCH else "No Branch")
 
@@ -1802,421 +1803,199 @@ if page == "Dashboard":
         st.write("")
         st.button("🏛️ Audit Center", key="btn_dash_audit_center", on_click=_nav_to_audit_center, use_container_width=True)
 
+    from services.dashboard_service import DashboardService
+    from database.repositories.unit_of_work import SupabaseUnitOfWork
 
-    
-    all_loans = load_loans()
-    all_repayments = load_repayments()
-    my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
-    
-    total_people_with_savings = 0
-    total_savings = 0
-    active_loans_count = 0
-    total_active_credit = 0
-    fully_paid_count = 0
-    total_overdue = 0
-    
-    # Daily Operations Tracking
-    collected_today = 0
-    today_savings_deposited = 0
-    today_savings_withdrawn = 0
-    today_full_payment_count = 0
-    today_full_payment_amount = 0
-    today_excess = 0
+    with SupabaseUnitOfWork() as uow:
+        # ROLE-BASED DASHBOARD DISPATCH
+        if ROLE in ["Director", "Executive", "Board"]:
+            st.markdown("### 🏛️ Executive Board Dashboard")
+            st.caption("Strategic Portfolio & Institutional Operational Overview (Read-Only)")
+            d_data = DashboardService.get_director_dashboard_data(uow)
+            
+            snap = d_data["snapshot"]
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("💵 Today's Collections", f"₦{snap['today_collections']:,.0f}")
+            c2.metric("📅 MTD Collections", f"₦{snap['mtd_collections']:,.0f}")
+            c3.metric("📈 Outstanding Portfolio", f"₦{snap['outstanding_portfolio']:,.0f}")
+            c4.metric("🐷 Total Active Savings", f"₦{snap['total_savings']:,.0f}")
 
-    # Lifetime / Portfolio Tracking
-    total_repayments_collected = 0
-    total_excess_collected = 0
-    total_full_payment_collected = 0
-    monthly_disbursed_principal = 0
-    
-    # Target calculations
-    target_daily = 0
-    target_weekly = 0
-    target_monthly = 0
-    
-    total_original_active_credit = 0
-    
-    # Group Data Tracking
-    group_data = {}
-    has_weekly = False
-    
-    today = datetime.now()
-    today_str = today.strftime("%Y-%m-%d")
-    today_weekday = today.strftime("%A")
-    closures = get_custom_closures()
-    is_holiday = today_str in closures
-    is_weekend = today_weekday in ["Saturday", "Sunday"]
-    is_working_day = not (is_holiday or is_weekend)
-    
-    client_savings_map = load_client_savings_map()
-    for _, loan in my_loans.iterrows():
-        cid = loan.get('Client ID')
-        c_payments = all_repayments[all_repayments['Client ID'] == cid] if not all_repayments.empty else pd.DataFrame()
-        s_amt = client_savings_map.get(cid, 0.0)
-        
-        # Sourced from single source of truth (loans table)
-        loan_bal = float(loan.get('Active Credit', 0.0))
-        l_amt = max(0.0, float(loan.get('Total Due', 0.0)) - loan_bal)
-        orig_principal = float(loan.get('Loan Amount', 0.0))
-        disb_date_str = str(loan.get('Disbursement Date') or loan.get('Date') or "")
+            c5, c6 = st.columns(2)
+            c5.metric("🚨 Portfolio At Risk (PAR)", snap["par_pct"], delta_color="inverse")
+            c6.metric("🎯 Portfolio Recovery Rate", snap["recovery_rate_pct"])
 
-        if disb_date_str:
-            try:
-                disb_dt = datetime.strptime(disb_date_str[:10], "%Y-%m-%d")
-                if disb_dt.year == today.year and disb_dt.month == today.month:
-                    monthly_disbursed_principal += orig_principal
-            except Exception:
-                pass
-        
-        # Calculate actual collected today for this client
-        today_payments = c_payments[c_payments['Date'] == today_str] if not c_payments.empty else pd.DataFrame()
-        today_loan_paid = pd.to_numeric(today_payments['Loan Repayment Amount'], errors='coerce').fillna(0).sum()
-        today_sav_dep = pd.to_numeric(today_payments['Savings Amount'], errors='coerce').fillna(0).sum()
-        today_sav_wd = pd.to_numeric(today_payments['Withdrawal Amount'], errors='coerce').fillna(0).sum()
-        
-        collected_today += today_loan_paid
-        today_savings_deposited += today_sav_dep
-        today_savings_withdrawn += today_sav_wd
-        
-        # Portfolio repayments & excess/full payment tracking
-        if not c_payments.empty:
-            for _, rep in c_payments.iterrows():
-                rep_amt = pd.to_numeric(rep.get('Loan Repayment Amount', 0), errors='coerce')
-                if pd.isna(rep_amt): rep_amt = 0.0
-                
-                ttype = str(rep.get('Transaction Type', '')).lower()
-                note = str(rep.get('Note', '')).lower()
-                r_date = str(rep.get('Date', ''))
-
-                total_repayments_collected += rep_amt
-                
-                is_full = ("full" in ttype or "full" in note or "payoff" in note or "complete" in ttype)
-                is_excess = ("excess" in ttype or "excess" in note)
-                
-                if is_full:
-                    total_full_payment_collected += rep_amt
-                    if r_date == today_str:
-                        today_full_payment_amount += rep_amt
-                        today_full_payment_count += 1
-                        
-                if is_excess:
-                    total_excess_collected += rep_amt
-                    if r_date == today_str:
-                        today_excess += rep_amt
-
-        # Full payment logic fallback (loan balance reached <= 0 today by a payment made today)
-        if loan_bal <= 0 and today_loan_paid > 0 and (loan_bal + today_loan_paid > 0) and today_full_payment_amount == 0:
-            today_full_payment_count += 1
-            today_full_payment_amount += today_loan_paid
-            
-        group_name = loan.get('Group', '')
-        product = str(loan.get('Loan Product', ''))
-        fixed_repay = pd.to_numeric(loan.get('Loan Repay', 0), errors='coerce')
-        if pd.isna(fixed_repay): fixed_repay = 0
-        
-        if pd.notna(group_name) and str(group_name).strip() != "":
-            gn = str(group_name).strip()
-            if gn not in group_data:
-                group_data[gn] = {'members': 0, 'savings': 0, 'active_credit': 0, 'loan_balance': 0, '12w_active': 0, '12w_bal': 0, '24w_active': 0, '24w_bal': 0, 'global_savings': 0}
-            
-            group_data[gn]['members'] += 1
-            group_data[gn]['savings'] += s_amt if s_amt > 0 else 0
-            
-            orig_ac = pd.to_numeric(loan.get('Active Credit', 0), errors='coerce')
-            if pd.isna(orig_ac): orig_ac = 0
-            
-            if "week" in product.lower() or "12w" in product.lower() or "24w" in product.lower():
-                has_weekly = True
-            
-            if loan.get('Status') in [STATUS_ACTIVE, STATUS_COMPLETED, STATUS_APPROVED]:
-                group_data[gn]['active_credit'] += orig_ac
-                group_data[gn]['loan_balance'] += loan_bal if loan_bal > 0 else 0
-                
-                if "12 week" in product.lower() or "12w" in product.lower():
-                    group_data[gn]['12w_active'] += orig_ac
-                    group_data[gn]['12w_bal'] += loan_bal if loan_bal > 0 else 0
-                elif "24 week" in product.lower() or "24w" in product.lower():
-                    group_data[gn]['24w_active'] += orig_ac
-                    group_data[gn]['24w_bal'] += loan_bal if loan_bal > 0 else 0
-        
-        if s_amt > 0:
-            total_people_with_savings += 1
-            total_savings += s_amt
-            
-        if loan_bal > 0 and loan.get('Status') in [STATUS_ACTIVE, STATUS_COMPLETED, STATUS_APPROVED]:
-            active_loans_count += 1
-            total_active_credit += loan_bal
-            
-            original_active_credit = pd.to_numeric(loan.get('Active Credit', 0), errors='coerce')
-            if pd.isna(original_active_credit): original_active_credit = 0
-            total_original_active_credit += original_active_credit
-            
-            if is_working_day:
-                if "Daily" in product or "120 Days" in product or "Cash and Carry" in product:
-                    target_daily += fixed_repay
-                else:
-                    meeting_day = str(loan.get('Meeting Day', ''))
-                    if meeting_day == today_weekday:
-                        if "Week" in product or "60-Day Asset" in product:
-                            target_weekly += fixed_repay
-                        elif "Month" in product or "120-Day Asset" in product:
-                            target_monthly += fixed_repay
-            
-            # calculate overdue
-            start_date_str = loan.get('Date', '')
-            if start_date_str and product:
-                exp_paid, overdue_amt = calculate_overdue(start_date_str, product, fixed_repay, l_amt, loan.get('Status', STATUS_ACTIVE))
-                total_overdue += overdue_amt
-        elif loan_bal <= 0 and loan.get('Status') in [STATUS_ACTIVE, STATUS_COMPLETED, STATUS_APPROVED]:
-            fully_paid_count += 1
-            
-    # Process Group Globals
-    group_globals = all_repayments[all_repayments['Client ID'].str.startswith("GROUP-", na=False)]
-    if ROLE in ["CO", "Officer"]:
-        group_globals = group_globals[group_globals['Officer'] == USER]
-    elif ROLE == "BM":
-        group_globals = group_globals[group_globals['Branch'] == BRANCH]
-        
-    for _, row in group_globals.iterrows():
-        g_id = str(row.get('Client ID', ''))
-        gn = g_id.replace("GROUP-", "").strip()
-        if gn in group_data:
-            s_dep = pd.to_numeric(row.get('Savings Amount', 0), errors='coerce')
-            s_wd = pd.to_numeric(row.get('Withdrawal Amount', 0), errors='coerce')
-            if pd.isna(s_dep): s_dep = 0
-            if pd.isna(s_wd): s_wd = 0
-            group_data[gn]['global_savings'] += (s_dep - s_wd)
-            
-    net_savings = today_savings_deposited - today_savings_withdrawn
-    total_target = target_daily + target_weekly + target_monthly
-    excess = collected_today - total_target
-    if today_excess == 0 and excess > 0:
-        today_excess = excess
-    excess_color = "normal" if excess >= 0 else "inverse"
-    target_breakdown = f"Daily: ₦{target_daily:,.0f} | Weekly: ₦{target_weekly:,.0f} | Monthly: ₦{target_monthly:,.0f}"
-
-    co_closing_balance = 0.0
-    co_total_savings = total_savings
-    try:
-        from database.repositories.unit_of_work import SupabaseUnitOfWork
-        from services.savings_service import SavingsService
-        with SupabaseUnitOfWork() as uow:
-            sav_totals = SavingsService.get_branch_totals(uow, BRANCH)
-            real_total_savings = sav_totals['total_active_savings']
-            ind_sav = sav_totals['individual_savings']
-            grp_sav = sav_totals['group_savings']
-            misc_sav = sav_totals['misc_savings']
-            laps_sav = sav_totals['laps_savings']
-
-            if ROLE in ["CO", "Officer"]:
-                u_res = uow.client.table("app_users").select("id").eq("username", USER).execute()
-                o_id = u_res.data[0]["id"] if u_res.data else None
-                b_res = uow.client.table("branches").select("branch_id").eq("name", BRANCH).execute()
-                b_id = b_res.data[0]["branch_id"] if b_res.data else None
-                if b_id and o_id:
-                    from services.co_cashbook_projection_builder import CoCashbookProjectionBuilder
-                    cb_data = CoCashbookProjectionBuilder.rebuild_co_projection(uow, b_id, o_id, today.date())
-                    if cb_data:
-                        co_closing_balance = float(cb_data.get("closing_balance") or 0.0)
-
-                co_sav_totals = SavingsService.get_officer_totals(uow, BRANCH, USER)
-                if co_sav_totals and co_sav_totals.get('total_active_savings', 0) > 0:
-                    co_total_savings = co_sav_totals['total_active_savings']
-    except Exception as e:
-        real_total_savings, ind_sav, grp_sav, misc_sav, laps_sav = 0, 0, 0, 0, 0
-
-    if ROLE in [ROLE_ADMIN, 'Super Admin', 'Admin']:
-        st.markdown("### 👑 Global Administrator Dashboard")
-        g1, g2, g3 = st.columns(3)
-        g1.metric("👥 Active Loans Count (System)", active_loans_count)
-        g2.metric("📈 Sum Active Credit (System)", f"₦{total_active_credit:,.0f}")
-        g3.metric("🐷 Total Savings (Active)", f"₦{real_total_savings:,.0f}")
-        
-        # Breakdown Widget
-        st.markdown("#### 🏦 Branch comparison breakdown")
-        st.info("System Health: Supabase cloud database connected. Active session monitoring enabled.")
-        
-    elif ROLE in ['AM', 'Area Manager']:
-        st.markdown(f"### 🌐 Area Manager Dashboard")
-        assigned_b_names = sorted(list(set(my_loans['Branch'].dropna().tolist()))) if not my_loans.empty and 'Branch' in my_loans.columns else []
-        am_branch_opts = ["All Assigned Branches"] + assigned_b_names
-        selected_am_branch = st.selectbox("🌐 Select Branch to View", am_branch_opts, key="am_dashboard_branch_filter")
-        
-        if selected_am_branch != "All Assigned Branches":
-            am_loans = my_loans[my_loans['Branch'] == selected_am_branch]
-        else:
-            am_loans = my_loans
-
-        am_active_loans = len(am_loans[am_loans['Status'].isin([STATUS_ACTIVE, STATUS_APPROVED])]) if not am_loans.empty else 0
-        am_sum_credit = pd.to_numeric(am_loans['Active Credit'], errors='coerce').fillna(0).sum() if not am_loans.empty else 0.0
-        
-        am1, am2, am3 = st.columns(3)
-        am1.metric("👥 Active Clients", am_active_loans)
-        am2.metric("📈 Active Credit Balance", f"₦{am_sum_credit:,.0f}")
-        am3.metric("🏦 Branch View", selected_am_branch)
-        
-    elif ROLE in ['BM', ROLE_BRANCH_MANAGER]:
-        st.markdown(f"### 🏦 Branch Manager Dashboard — {BRANCH} Branch")
-        
-        # 1. Pending Approvals queue directly on dashboard
-        try:
-            with SupabaseUnitOfWork() as uow:
-                p_loans = uow.client.table("loans").select("*, clients(name)").eq("branch_id", BRANCH_ID).eq("status", "Pending").execute()
-        except Exception:
-            p_loans = None
-            
-        if p_loans and p_loans.data:
-            st.markdown("#### ⏳ Pending Loan Approvals")
-            for pl in p_loans.data:
-                c_name = pl.get("clients", {}).get("name") if pl.get("clients") else pl.get("client_name")
-                c_code = pl.get("client_id")
-                loan_amt = float(pl.get("loan_amount", 0))
-                prod = pl.get("loan_product")
-                
-                col_app1, col_app2, col_app3 = st.columns([3, 1, 1])
-                col_app1.markdown(f"👤 **{c_name}** ({c_code}) applied for **₦{loan_amt:,.0f}** ({prod})")
-                if col_app2.button("Approve", key=f"app_{pl['loan_id']}"):
-                    with SupabaseUnitOfWork() as uow_app:
-                        uow_app.loans.approve(pl['loan_id'])
-                    st.success(f"Loan approved for {c_name}!")
-                    st.rerun()
-                if col_app3.button("Reject", key=f"rej_{pl['loan_id']}", type="primary"):
-                    with SupabaseUnitOfWork() as uow_app:
-                        uow_app.loans.reject(pl['loan_id'])
-                    st.success(f"Loan rejected for {c_name}!")
-                    st.rerun()
             st.divider()
-            
-        # BM Metrics rendering
-        st.markdown("#### 📅 Branch Operations Today (All Officers)")
-        bm_closing_balance = 0.0
-        try:
-            with SupabaseUnitOfWork() as uow_bm:
-                from services.master_cashbook_projection_builder import MasterCashbookProjectionBuilder
-                mb_data = MasterCashbookProjectionBuilder.rebuild_master_projection(uow_bm, BRANCH_ID, today.date())
-                if mb_data:
-                    bm_closing_balance = float(mb_data.get("closing_balance") or 0.0)
-        except Exception:
-            pass
+            st.markdown("#### 💰 Institutional Cash Position")
+            cp = d_data["cash_position"]
+            k1, k2, k3 = st.columns(3)
+            k1.metric("💵 Total Liquid Cash", f"₦{cp['total_liquid_cash']:,.0f}")
+            k2.metric("🏦 Bank Reserves", f"₦{cp['bank_reserves']:,.0f}")
+            k3.metric("🏛️ Total Treasury Position", f"₦{cp['treasury_total']:,.0f}")
 
-        t1, t2, t3, t4 = st.columns(4)
-        t1.metric("📥 Savings Deposited Today", f"₦{today_savings_deposited:,.0f}")
-        t2.metric("📤 Savings Withdrawn Today", f"₦{today_savings_withdrawn:,.0f}")
-        t3.metric("🐷 Net Savings Today", f"₦{net_savings:,.0f}")
-        t4.metric("💰 Master Cashbook Closing Balance", f"₦{bm_closing_balance:,.0f}")
-        
-        t5, t6, t7 = st.columns(3)
-        t5.metric("📊 Expected Repayment Target", f"₦{total_target:,.0f}", target_breakdown, delta_color="off")
-        t6.metric("💵 Total Repayment Collected Today", f"₦{collected_today:,.0f}")
-        t7.metric("🚀 Excess / Shortfall (Collected)", f"₦{excess:,.0f}", delta_color=excess_color)
-        
-        st.markdown("#### 💰 Branch Portfolio Summary")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("👥 Active Loans", active_loans_count)
-        c2.metric("🐷 Total Branch Savings (Active)", f"₦{real_total_savings:,.0f}")
-        c3.metric("🚨 Total Overdue Amount", f"₦{total_overdue:,.0f}", delta_color="inverse" if total_overdue > 0 else "normal")
-        
-    else: # CO / Officer
-        st.markdown(f"### 📱 Credit Officer Dashboard — {USER} ({BRANCH})")
-        # CO Operations Today
-        st.markdown("#### 📅 My Operations Today")
-        t1, t2, t3, t4, t5 = st.columns(5)
-        t1.metric("📥 Savings Deposit", f"₦{today_savings_deposited:,.0f}")
-        t2.metric("💵 Loan Repayment", f"₦{collected_today:,.0f}")
-        t3.metric("🚀 Excess", f"₦{today_excess:,.0f}")
-        t4.metric("🎯 Full Payment", f"₦{today_full_payment_amount:,.0f}")
-        t5.metric("💰 Cash Closing Balance", f"₦{co_closing_balance:,.0f}")
-        
-        # CO Portfolio Overview
-        st.markdown("#### 💰 My Portfolio Overview")
-        p1, p2, p3, p4 = st.columns(4)
-        p1.metric("👥 Active Clients", active_loans_count)
-        p2.metric("📈 Active Credit", f"₦{total_active_credit:,.0f}")
-        p3.metric("🐷 Total Savings", f"₦{co_total_savings:,.0f}")
-        p4.metric("💵 Total Repayment", f"₦{total_repayments_collected:,.0f}")
+            st.divider()
+            st.markdown("#### 🏆 Top Performing Branches")
+            st.write(", ".join([f"**{b}**" for b in d_data["top_5_branches"]]))
 
-        p5, p6, p7 = st.columns(3)
-        p5.metric("🚀 Total Excess", f"₦{total_excess_collected:,.0f}")
-        p6.metric("🎯 Total Full Payment", f"₦{total_full_payment_collected:,.0f}")
-        p7.metric("📅 Monthly Disbursed Principal", f"₦{monthly_disbursed_principal:,.0f}")
+            if d_data["strategic_alerts"]:
+                st.markdown("#### 🔔 Strategic Alerts")
+                for sa in d_data["strategic_alerts"]:
+                    st.info(f"ℹ️ {sa}")
 
-    if group_data:
-        st.divider()
-        st.markdown("### 🏘️ Group-Wise Summaries")
-        
-        # Build main group dataframe
-        g_list = []
-        for gn, d in group_data.items():
-            g_list.append({
-                "Group Name": gn,
-                "Members": d['members'],
-                "Total Savings": d['savings'],
-                "Group Savings": d['global_savings'],
-                "Active Credit": d['active_credit'],
-                "Credit Balance": d['loan_balance']
-            })
-            
-        g_df = pd.DataFrame(g_list)
-        
-        # Add a Total row
-        total_row = pd.DataFrame([{
-            "Group Name": "TOTAL",
-            "Members": g_df['Members'].sum(),
-            "Total Savings": g_df['Total Savings'].sum(),
-            "Group Savings": g_df['Group Savings'].sum(),
-            "Active Credit": g_df['Active Credit'].sum(),
-            "Credit Balance": g_df['Credit Balance'].sum()
-        }])
-        g_df = pd.concat([g_df, total_row], ignore_index=True)
-        
-        st.dataframe(
-            g_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Total Savings": st.column_config.NumberColumn(format="₦%d"),
-                "Group Savings": st.column_config.NumberColumn(format="₦%d"),
-                "Active Credit": st.column_config.NumberColumn(format="₦%d"),
-                "Credit Balance": st.column_config.NumberColumn(format="₦%d")
-            }
-        )
-        
-        if has_weekly:
-            st.markdown("#### 📅 Weekly Products Breakdown (12 Weeks vs 24 Weeks)")
-            w_list = []
-            for gn, d in group_data.items():
-                if d['12w_active'] > 0 or d['12w_bal'] > 0 or d['24w_active'] > 0 or d['24w_bal'] > 0:
-                    w_list.append({
-                        "Group Name": gn,
-                        "12 Weeks Active": d['12w_active'],
-                        "12 Weeks Balance": d['12w_bal'],
-                        "24 Weeks Active": d['24w_active'],
-                        "24 Weeks Balance": d['24w_bal']
-                    })
-            if w_list:
-                w_df = pd.DataFrame(w_list)
-                
-                # Add a Total row
-                w_total = pd.DataFrame([{
-                    "Group Name": "TOTAL",
-                    "12 Weeks Active": w_df['12 Weeks Active'].sum(),
-                    "12 Weeks Balance": w_df['12 Weeks Balance'].sum(),
-                    "24 Weeks Active": w_df['24 Weeks Active'].sum(),
-                    "24 Weeks Balance": w_df['24 Weeks Balance'].sum()
-                }])
-                w_df = pd.concat([w_df, w_total], ignore_index=True)
-                
-                st.dataframe(
-                    w_df,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "12 Weeks Active": st.column_config.NumberColumn(format="₦%d"),
-                        "12 Weeks Balance": st.column_config.NumberColumn(format="₦%d"),
-                        "24 Weeks Active": st.column_config.NumberColumn(format="₦%d"),
-                        "24 Weeks Balance": st.column_config.NumberColumn(format="₦%d")
-                    }
-                )
+        elif ROLE in [ROLE_ADMIN, "Super Admin", "Admin"]:
+            st.markdown("### 👑 Global Administrator Dashboard")
+            st.caption("System Operations, Health, & Institutional Performance")
+            a_data = DashboardService.get_admin_dashboard_data(uow)
+
+            inst = a_data["institution_summary"]
+            g1, g2, g3, g4, g5 = st.columns(5)
+            g1.metric("🏦 Branches", inst["branches"])
+            g2.metric("👤 Officers", inst["officers"])
+            g3.metric("👥 Active Clients", inst["clients"])
+            g4.metric("📈 Active Loans", inst["loans"])
+            g5.metric("🐷 Total Savings", f"₦{inst['savings']:,.0f}")
+
+            st.divider()
+            st.markdown("#### 🛡️ System & Operations Health")
+            health = a_data["system_health"]
+            h1, h2, h3 = st.columns(3)
+            h1.info(f"⚙️ **Projection Status**: {health['projection_status']}")
+            h2.info(f"📬 **Event Queue**: {health['event_queue_status']}")
+            h3.info(f"🔄 **Database Sync**: {health['db_sync_status']}")
+
+            h4, h5, h6 = st.columns(3)
+            h4.metric("❌ Failed Transactions", health["failed_transactions"])
+            h5.metric("⏳ Pending Approvals", health["pending_approvals"])
+            h6.metric("🚨 Audit Exceptions", health["audit_exceptions"])
+
+            st.divider()
+            st.markdown("#### 📅 Today's Institution Performance")
+            t_perf = a_data["today_performance"]
+            p1, p2, p3, p4 = st.columns(4)
+            p1.metric("💵 Repayments Today", f"₦{t_perf['repayment']:,.0f}")
+            p2.metric("📥 Savings Deposits", f"₦{t_perf['savings_deposits']:,.0f}")
+            p3.metric("📤 Savings Withdrawals", f"₦{t_perf['savings_withdrawals']:,.0f}")
+            p4.metric("🚀 Loan Disbursements", f"₦{t_perf['loan_disbursements']:,.0f}")
+
+        elif ROLE in ["AM", "Area Manager"]:
+            st.markdown("### 🌐 Area Manager Dashboard")
+            st.caption("Regional Operational Performance & Branch Supervision")
+            all_loans = load_loans()
+            my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
+            assigned_branches = sorted(list(set(my_loans['Branch'].dropna().tolist()))) if not my_loans.empty and 'Branch' in my_loans.columns else [BRANCH]
+            am_data = DashboardService.get_am_dashboard_data(uow, assigned_branches)
+
+            reg = am_data["regional_summary"]
+            r1, r2, r3, r4, r5 = st.columns(5)
+            r1.metric("🏦 Branches", reg["branches_count"])
+            r2.metric("👥 Active Clients", reg["active_clients"])
+            r3.metric("📈 Outstanding Portfolio", f"₦{reg['outstanding_portfolio']:,.0f}")
+            r4.metric("🐷 Total Savings", f"₦{reg['savings']:,.0f}")
+            r5.metric("💵 Today's Collection", f"₦{reg['today_collection']:,.0f}")
+
+            st.divider()
+            st.markdown("#### 🚨 Branches Requiring Immediate Attention")
+            att_b = am_data["branches_requiring_attention"]
+            if not att_b.empty:
+                st.dataframe(att_b, use_container_width=True, hide_index=True)
+            else:
+                st.success("✅ All branches operating within healthy parameters.")
+
+            st.divider()
+            st.markdown("#### 📊 Regional Branch Performance Grid")
+            st.dataframe(am_data["branch_performance"], use_container_width=True, hide_index=True)
+
+        elif ROLE in ["BM", ROLE_BRANCH_MANAGER]:
+            st.markdown(f"### 🏦 Branch Manager Dashboard — {BRANCH} Branch")
+            st.caption("Branch Daily Operations, Officer Status, & Approvals")
+            bm_data = DashboardService.get_bm_dashboard_data(uow, BRANCH, branch_id=BRANCH_ID)
+
+            # Section F: Approval Queue
+            p_loans = bm_data["approval_queue"]
+            if p_loans:
+                st.markdown("#### ⏳ Pending Loan Approvals")
+                for pl in p_loans:
+                    c_name = pl.get("clients", {}).get("name") if pl.get("clients") else pl.get("client_name")
+                    c_code = pl.get("client_id")
+                    loan_amt = float(pl.get("loan_amount", 0))
+                    prod = pl.get("loan_product")
+
+                    col_app1, col_app2, col_app3 = st.columns([3, 1, 1])
+                    col_app1.markdown(f"👤 **{c_name}** ({c_code}) applied for **₦{loan_amt:,.0f}** ({prod})")
+                    if col_app2.button("Approve", key=f"app_{pl['loan_id']}"):
+                        with SupabaseUnitOfWork() as uow_app:
+                            uow_app.loans.approve(pl['loan_id'])
+                        st.success(f"Loan approved for {c_name}!")
+                        st.rerun()
+                    if col_app3.button("Reject", key=f"rej_{pl['loan_id']}", type="primary"):
+                        with SupabaseUnitOfWork() as uow_app:
+                            uow_app.loans.reject(pl['loan_id'])
+                        st.success(f"Loan rejected for {c_name}!")
+                        st.rerun()
+                st.divider()
+
+            # Section A: Branch Summary
+            bs = bm_data["branch_summary"]
+            b1, b2, b3, b4 = st.columns(4)
+            b1.metric("👥 Active Clients", bs["active_clients"])
+            b2.metric("🐷 Active Savings", f"₦{bs['active_savings']:,.0f}")
+            b3.metric("💵 Collection Today", f"₦{bs['collection_today']:,.0f}")
+            b4.metric("🚨 PAR", bs["par"])
+
+            # Section C: Officer Collection Status
+            st.markdown("#### 📊 Officer Collection Status")
+            off_status = bm_data["officer_collection_status"]
+            if off_status:
+                st.dataframe(pd.DataFrame(off_status), use_container_width=True, hide_index=True)
+
+            # Section E: Branch Cash Position
+            st.markdown("#### 💰 Branch Cash Position (Master Cashbook)")
+            cp = bm_data["branch_cash_position"]
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Opening Balance", f"₦{cp['opening_balance']:,.0f}")
+            k2.metric("Total Inflows", f"₦{cp['cash_in']:,.0f}")
+            k3.metric("Total Outflows", f"₦{cp['cash_out']:,.0f}")
+            k4.metric("Closing Balance", f"₦{cp['closing_balance']:,.0f}")
+
+        else: # CO / Officer
+            st.markdown(f"### 📱 Credit Officer Dashboard — {USER} ({BRANCH})")
+            co_data = DashboardService.get_co_dashboard_data(uow, BRANCH, USER, officer_id=USER_ID, branch_id=BRANCH_ID)
+
+            wel = co_data["welcome"]
+            st.info(f"👋 **Welcome {wel['officer_name']}** | {wel['branch_name']} Branch | Business Date: **{wel['date_str']}** ({wel['meeting_day']}) | System Time: {wel['time_str']}")
+
+            # Section B: Today's Repayment Summary
+            st.markdown("#### 📅 Today's Repayment Summary")
+            rep_s = co_data["repayment_summary"]
+            r1, r2, r3 = st.columns(3)
+            r1.metric("💵 Total Collected Today", f"₦{rep_s['total_collected']:,.0f}")
+            r2.metric("🎯 Total Expected Today", f"₦{rep_s['total_expected']:,.0f}")
+            r3.metric("📊 Route Compliance", f"{rep_s['compliance_pct']}%")
+
+            # Section D: Today's Savings
+            st.markdown("#### 🐷 Today's Savings")
+            sav = co_data["savings"]
+            s1, s2, s3 = st.columns(3)
+            s1.metric("📥 Deposited Today", f"₦{sav['deposited']:,.0f}", f"{sav['deposited_clients']} Clients")
+            s2.metric("📤 Withdrawn Today", f"₦{sav['withdrawn']:,.0f}", f"{sav['withdrawn_clients']} Clients")
+            s3.metric("💰 Net Savings", f"₦{sav['net']:,.0f}")
+
+            # Section F: Cash Position
+            st.markdown("#### 💰 My Cash Position (CO Cashbook)")
+            cp = co_data["cash_position"]
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Opening Balance", f"₦{cp['opening_balance']:,.0f}")
+            k2.metric("Cash Inflows", f"₦{cp['cash_in']:,.0f}")
+            k3.metric("Cash Outflows", f"₦{cp['cash_out']:,.0f}")
+            k4.metric("Closing Balance", f"₦{cp['closing_balance']:,.0f}")
+
+            # Section G: Today's Attention List
+            st.markdown("#### 🚨 Today's Attention List (Part Payment / Not Paid)")
+            att_list = co_data["attention_list"]
+            if not att_list.empty:
+                st.dataframe(att_list, use_container_width=True, hide_index=True)
+            else:
+                st.success("🎉 All scheduled clients have completed full repayments for today!")
+
 
 elif page == "Loan Origination":
     st.title("Origination & Registration")
