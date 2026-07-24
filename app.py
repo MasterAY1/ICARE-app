@@ -1751,21 +1751,28 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
     
-    # Permission-driven navigation
-    nav_section = "OPERATIONS" if ROLE in ["Officer", "CO", ROLE_CREDIT_OFFICER] else (
-        "EXECUTIVE" if ROLE in ["BM", ROLE_BRANCH_MANAGER, "AM", "Area Manager"] else "ADMINISTRATION"
+    # Enterprise RBAC Scope Engine
+    from services.rbac_scope_service import RBACScopeService
+    scope = RBACScopeService.resolve_scope(current_user.to_dict() if hasattr(current_user, 'to_dict') else {
+        "id": USER_ID, "username": USER, "role": ROLE, "branch": BRANCH, "branch_id": BRANCH_ID, "assigned_branches": ASSIGNED_BRANCH_IDS
+    })
+    
+    nav_section = "OPERATIONS" if scope.scope_level == "OFFICER" else (
+        "EXECUTIVE" if scope.scope_level in ["BRANCH", "REGION"] else "ADMINISTRATION"
     )
     st.markdown(f"<p class='nav-section-label'>{nav_section}</p>", unsafe_allow_html=True)
-    nav_options = get_nav_options(current_user)
+    nav_options = RBACScopeService.get_permitted_menu_items(scope.role)
 
     if "Navigation" not in st.session_state or st.session_state["Navigation"] not in nav_options:
-        st.session_state["Navigation"] = "Dashboard"
+        st.session_state["Navigation"] = nav_options[0] if nav_options else "Dashboard"
     
     page = st.radio("Navigation", nav_options, key="Navigation", label_visibility="collapsed")
     
-    # Security check: if the requested page is not in permitted list, fallback to Dashboard
-    if page not in nav_options:
-        page = "Dashboard"
+    # Route Security Guard
+    if not RBACScopeService.is_page_permitted(scope.role, page):
+        st.error("⚠️ Access Denied: You do not have permission to access this page.")
+        st.info("If you believe this is an error, please contact your System Administrator.")
+        st.stop()
 
     
     st.divider()
@@ -5870,58 +5877,147 @@ elif page == "Master Cashbook":
 
 
 elif page == "Portfolio":
-    st.title("Portfolio Management")
-    
-    all_loans = load_loans()
-    repayments = load_repayments()
-    
-    if st.button("🔄 SYNC FROM CLOUD"):
-        st.rerun()
-    
-    my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
-    
-    if not my_loans.empty:
-        display_data = []
-        client_savings_map = load_client_savings_map()
-        for _, row in my_loans.iterrows():
-            s_amt = client_savings_map.get(row['Client ID'], 0.0)
-            loan_bal = float(row.get('Active Credit', 0.0))
-            l_amt = max(0.0, float(row.get('Total Due', row.get('Loan Amount', 0.0))) - loan_bal)
-            expected, overdue = calculate_overdue(row['Date'], row['Loan Product'], row['Loan Repay'], l_amt, row.get('Status', STATUS_ACTIVE))
-            row_data = row.to_dict()
-            row_data['Acc. Savings'] = s_amt
-            row_data['Paid to Loan'] = l_amt
-            row_data['Loan Balance'] = loan_bal
-            row_data['Overdue'] = overdue
-            display_data.append(row_data)
-        
-        display_df = pd.DataFrame(display_data)
-        if "Client ID" in display_df.columns:
-            display_df.sort_values(by="Client ID", inplace=True)
-            
-        if "Officer" in display_df.columns:
-            display_df["Officer"] = display_df["Officer"].apply(lambda x: CO_DISPLAY_MAP.get(x, x))
-        cols = ["Client ID", "Date", "Branch", "Officer", "Client Name", "Group Name", 
-                "Meeting Day", "Active Credit", "Loan Repay", "Acc. Savings", 
-                "Loan Balance", "Overdue", "Status", "Loan Product", "Phone"]
-        final_cols = [c for c in cols if c in display_df.columns]
-        
-        edited = st.data_editor(
-            display_df[final_cols],
-            num_rows="dynamic",
-            key="db_edit",
-            column_config={
-                "Client ID": st.column_config.TextColumn("Client ID", disabled=True),
-                "Status": st.column_config.SelectboxColumn("Status", options=[STATUS_PENDING, STATUS_APPROVED, STATUS_ACTIVE, STATUS_COMPLETED, STATUS_CLOSED]),
-                "Meeting Day": st.column_config.SelectboxColumn("Meeting Day", options=["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]),
-                "Branch": st.column_config.TextColumn("Branch", disabled=(ROLE != ROLE_ADMIN)),
-                "Officer": st.column_config.SelectboxColumn("Officer", options=list(CO_NAME_MAP.keys()) if CO_NAME_MAP else ["CO1", "CO2"], disabled=(ROLE == "Officer")),
-                "Loan Balance": st.column_config.NumberColumn("Balance", disabled=True, format="₦%d"),
-                "Acc. Savings": st.column_config.NumberColumn("Savings", disabled=True, format="₦%d"),
-                "Overdue": st.column_config.NumberColumn("Overdue", disabled=True, format="₦%d"),
-            },
-            use_container_width=True
+    st.title("💼 Enterprise Portfolio Intelligence & Management")
+    st.caption("Hierarchical portfolio oversight, dynamic role-scoped analytics, and 360° universal client drill-down.")
+
+    from services.portfolio_service import PortfolioService
+    from database.repositories.unit_of_work import SupabaseUnitOfWork
+    from services.rbac_scope_service import RBACScopeService
+
+    with SupabaseUnitOfWork() as uow_p:
+        p_scope = RBACScopeService.resolve_scope(current_user.to_dict() if hasattr(current_user, 'to_dict') else {
+            "id": USER_ID, "username": USER, "role": ROLE, "branch": BRANCH, "branch_id": BRANCH_ID, "assigned_branches": ASSIGNED_BRANCH_IDS
+        })
+
+        if p_scope.is_read_only():
+            st.info("👁️ **Executive Read-Only Mode**: Strategic view active. Operation and edit actions are disabled.")
+
+        # Hierarchical Scope Toolbar
+        sel_branch = None
+        sel_officer = None
+
+        if p_scope.scope_level == "OFFICER":
+            st.markdown(f"**Scope**: Credit Officer Portfolio (`{p_scope.username}`) &middot; **Branch**: {p_scope.branch_name}")
+        elif p_scope.scope_level == "BRANCH":
+            f_col1, f_col2 = st.columns(2)
+            with f_col1:
+                st.markdown(f"**Branch Scope**: `{p_scope.branch_name}`")
+                sel_branch = p_scope.branch_name
+            with f_col2:
+                off_opts = ["All"]
+                try:
+                    res_off = uow_p.client.table("app_users").select("username").eq("branch", p_scope.branch_name).execute()
+                    off_opts += [o["username"] for o in (res_off.data or []) if o.get("username")]
+                except Exception:
+                    pass
+                sel_officer = st.selectbox("👤 Filter Officer", off_opts, key="port_off_sel")
+        elif p_scope.scope_level == "REGION":
+            f_col1, f_col2 = st.columns(2)
+            with f_col1:
+                b_opts = ["All"] + p_scope.assigned_branch_names
+                sel_branch = st.selectbox("🏛️ Filter Branch", b_opts, key="port_br_sel")
+            with f_col2:
+                off_opts = ["All"]
+                try:
+                    b_tgt = sel_branch if sel_branch != "All" else p_scope.assigned_branch_names[0]
+                    res_off = uow_p.client.table("app_users").select("username").eq("branch", b_tgt).execute()
+                    off_opts += [o["username"] for o in (res_off.data or []) if o.get("username")]
+                except Exception:
+                    pass
+                sel_officer = st.selectbox("👤 Filter Officer", off_opts, key="port_off_sel")
+        else: # INSTITUTION
+            f_col1, f_col2 = st.columns(2)
+            with f_col1:
+                all_b = ["All"]
+                try:
+                    res_b = uow_p.client.table("app_users").select("branch").execute()
+                    all_b += sorted(list(set(b["branch"] for b in (res_b.data or []) if b.get("branch"))))
+                except Exception:
+                    pass
+                sel_branch = st.selectbox("🏛️ Filter Branch", all_b, key="port_br_sel")
+            with f_col2:
+                all_o = ["All"]
+                try:
+                    res_o = uow_p.client.table("app_users").select("username").execute()
+                    all_o += sorted(list(set(o["username"] for o in (res_o.data or []) if o.get("username"))))
+                except Exception:
+                    pass
+                sel_officer = st.selectbox("👤 Filter Officer", all_o, key="port_off_sel")
+
+        # Load Scoped Data
+        p_data = PortfolioService.get_portfolio_data_for_scope(
+            uow_p, p_scope, selected_branch=sel_branch, selected_officer=sel_officer
         )
+        p_sum = p_data["summary"]
+
+        st.divider()
+        st.markdown("### 📊 Portfolio Summary & Metrics")
+
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("👥 Registered Clients", f"{p_sum['total_registered_clients']:,}")
+        m2.metric("✅ Active Clients", f"{p_sum['active_clients']:,}")
+        m3.metric("🔒 Closed Clients", f"{p_sum['closed_clients']:,}")
+        m4.metric("💤 Dormant Clients", f"{p_sum['dormant_clients']:,}")
+        m5.metric("🚨 Portfolio PAR", p_sum['par'])
+
+        f1, f2, f3, f4 = st.columns(4)
+        f1.metric("💳 Active Credit", f"₦{p_sum['total_active_credit']:,.0f}")
+        f2.metric("📈 Outstanding Balance", f"₦{p_sum['total_outstanding_balance']:,.0f}")
+        f3.metric("🐷 Total Savings", f"₦{p_sum['total_savings']:,.0f}")
+        f4.metric("💵 Today's Collection", f"₦{p_sum['today_collection']:,.0f}")
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("🎯 Full Payments", f"{p_sum['full_payments']['count']} (₦{p_sum['full_payments']['amount']:,.0f})")
+        c2.metric("⚡ Excess Payments", f"{p_sum['excess_payments']['count']} (₦{p_sum['excess_payments']['amount']:,.0f})")
+        c3.metric("⏳ Part Payments", f"{p_sum['part_payments']['count']} (₦{p_sum['part_payments']['amount']:,.0f})")
+        c4.metric("⚠️ Overdue Clients", f"{p_sum['overdue']['count']} (₦{p_sum['overdue']['amount']:,.0f})")
+
+        st.divider()
+        st.markdown("### 📋 Authorized Client Portfolio Table")
+
+        client_df = p_data["client_table"]
+        if not client_df.empty:
+            st.dataframe(client_df, use_container_width=True)
+
+            # Export Controls (Obeying RBAC Scope)
+            e_col1, e_col2 = st.columns(2)
+            with e_col1:
+                csv_data = client_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    "📥 Export Scoped Portfolio (CSV)",
+                    data=csv_data,
+                    file_name=f"portfolio_{p_scope.role}_{date.today().isoformat()}.csv",
+                    mime="text/csv",
+                    key="btn_dl_port_csv"
+                )
+
+            # 360° Client Drill-down
+            st.divider()
+            st.markdown("### 🔎 360° Universal Client Drill-Down")
+            c_codes = sorted(list(set(client_df["Client Code"].astype(str))))
+            if c_codes:
+                selected_ccode = st.selectbox("Select Client Code for 360° Deep-Dive", c_codes, key="dd_client_select")
+                if selected_ccode:
+                    dd = PortfolioService.get_client_360_drilldown(uow_p, selected_ccode, p_scope)
+                    
+                    dd_t1, dd_t2, dd_t3, dd_t4, dd_t5, dd_t6 = st.tabs([
+                        "👤 Customer Info", "💵 Loan History", "📅 Repayments", "🐷 Savings", "🎯 Collections", "📜 Audit History"
+                    ])
+
+                    with dd_t1:
+                        st.json(dd["customer_info"])
+                    with dd_t2:
+                        st.dataframe(dd["loan_history"], use_container_width=True)
+                    with dd_t3:
+                        st.dataframe(dd["repayment_history"], use_container_width=True)
+                    with dd_t4:
+                        st.dataframe(dd["savings_history"], use_container_width=True)
+                    with dd_t5:
+                        st.dataframe(dd["collection_history"], use_container_width=True)
+                    with dd_t6:
+                        st.dataframe(dd["audit_history"], use_container_width=True)
+        else:
+            st.info("No client records found in authorized scope.")
         
         if st.button("🔄 POST TO GLOBAL LEDGER"):
             update_database_safe(edited, ROLE, USER, BRANCH)

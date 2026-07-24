@@ -172,20 +172,7 @@ NAV_PERMISSIONS = {
 
 def get_nav_options(user=None) -> list:
     """Return the list of page names the *user* is allowed to navigate to."""
+    from services.rbac_scope_service import RBACScopeService
     role = getattr(user, 'role', None) if user else (user if isinstance(user, str) else None)
-    user_perms = PERMISSIONS.get(role, set()) if role else set()
-    if user and hasattr(user, 'permissions') and user.permissions:
-        user_perms = user_perms | set(user.permissions)
-    
-    is_admin = "all" in user_perms
-    pages = []
-    for page, required in NAV_PERMISSIONS.items():
-        if not required:
-            # Empty set → everyone can see this page
-            pages.append(page)
-        elif is_admin:
-            pages.append(page)
-        elif required & user_perms:
-            pages.append(page)
-    return pages
+    return RBACScopeService.get_permitted_menu_items(role)
 
