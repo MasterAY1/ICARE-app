@@ -1942,11 +1942,12 @@ if page == "Dashboard":
             # Branch Cash Position
             st.markdown("#### 💰 Branch Cash Position (Master Cashbook)")
             cp = bm_data["branch_cash_position"]
-            k1, k2, k3, k4, k5 = st.columns(5)
+            k1, k2, k3, k4 = st.columns(4)
             k1.metric("Opening Balance", f"₦{cp['opening_balance']:,.0f}")
             k2.metric("Total Inflows", f"₦{cp['cash_in']:,.0f}")
             k3.metric("Total Outflows", f"₦{cp['cash_out']:,.0f}")
             k4.metric("Closing Balance", f"₦{cp['closing_balance']:,.0f}")
+            k5, k6 = st.columns(2)
             k5.metric("Status", cp["status"])
 
         else: # CO / Officer
@@ -1990,11 +1991,12 @@ if page == "Dashboard":
             # Cash Position (CoCashbookProjectionBuilder)
             st.markdown("#### 💰 Cash Position (CO Cashbook)")
             cp = co_data["cash_position"]
-            k1, k2, k3, k4, k5, k6 = st.columns(6)
+            k1, k2, k3, k4 = st.columns(4)
             k1.metric("Opening Balance", f"₦{cp['opening_balance']:,.0f}")
             k2.metric("Cash In", f"₦{cp['cash_in']:,.0f}")
             k3.metric("Cash Out", f"₦{cp['cash_out']:,.0f}")
             k4.metric("Closing Balance", f"₦{cp['closing_balance']:,.0f}")
+            k5, k6 = st.columns(2)
             k5.metric("Cashbook Status", cp["status"])
             k6.metric("Difference", f"₦{cp['difference']:,.0f}")
 
@@ -6268,7 +6270,7 @@ elif page == "User Management":
             st.dataframe(df_users[display_cols], use_container_width=True)
             
             # Admin / BM: Activate / Deactivate toggles
-            if is_admin or is_bm:
+            if (is_admin or is_bm) and user_usernames:
                 st.markdown("---")
                 st.subheader("⚡ Manage User Status & Deletion")
                 target_username = st.selectbox("Select User", user_usernames, key="toggle_user")
