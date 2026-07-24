@@ -9,7 +9,7 @@ Provides presentation-ready dashboard data for all 5 roles:
 
 Strictly adheres to the Presentation First Principle & Banking Operations Completion:
 - Zero business/financial calculations in app.py
-- All operational metrics sourced from CollectionPerformanceService, projection builders, and underlying services.
+- Bulletproof try-except error isolation across all service calls and metrics.
 """
 from typing import Dict, Any, List, Optional
 from datetime import date, datetime
@@ -42,7 +42,7 @@ class DashboardService:
         date_str = target_date.isoformat()
         meeting_day = target_date.strftime("%A")
 
-        # 1. Cash Position
+        # Default structures
         cash_position = {
             "opening_balance": 0.0,
             "cash_in": 0.0,
@@ -51,30 +51,30 @@ class DashboardService:
             "status": "Balanced",
             "difference": 0.0
         }
+
+        # 1. Cash Position
         if branch_id and officer_id:
             try:
                 cb = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, officer_id, target_date)
                 if cb:
-                    op = float(cb.get("opening_balance") or 0.0)
-                    inflow = float(cb.get("total_inflows") or 0.0)
-                    outflow = float(cb.get("total_outflows") or 0.0)
-                    close = float(cb.get("closing_balance") or 0.0)
                     cash_position = {
-                        "opening_balance": op,
-                        "cash_in": inflow,
-                        "cash_out": outflow,
-                        "closing_balance": close,
+                        "opening_balance": float(cb.get("opening_balance") or 0.0),
+                        "cash_in": float(cb.get("total_inflows") or 0.0),
+                        "cash_out": float(cb.get("total_outflows") or 0.0),
+                        "closing_balance": float(cb.get("closing_balance") or 0.0),
                         "status": "Balanced",
                         "difference": 0.0
                     }
             except Exception:
                 pass
 
-        # 2. Query repayments & loans for officer today to compute 12w vs 24w & status counts
+        # 2. Query repayments
+        reps = []
         try:
-            rep_res = uow.client.table("repayments").select("*, loans(loan_products(name))") \
-                .eq("officer", officer_name).eq("date", date_str).execute()
-            reps = rep_res.data or []
+            if officer_name:
+                rep_res = uow.client.table("repayments").select("*, loans(loan_products(name))") \
+                    .eq("officer", officer_name).eq("date", date_str).execute()
+                reps = rep_res.data or []
         except Exception:
             reps = []
 
@@ -90,40 +90,43 @@ class DashboardService:
         sav_wd_clients = set()
 
         for r in reps:
-            cid = r.get("client_id") or r.get("Client ID")
-            l_pay = float(r.get("loan_repayment_amount") or r.get("Loan Repayment Amount") or 0.0)
-            s_dep = float(r.get("savings_amount") or r.get("Savings Amount") or 0.0)
-            s_wd = float(r.get("withdrawal_amount") or r.get("Withdrawal Amount") or 0.0)
+            try:
+                cid = r.get("client_id") or r.get("Client ID")
+                l_pay = float(r.get("loan_repayment_amount") or r.get("Loan Repayment Amount") or 0.0)
+                s_dep = float(r.get("savings_amount") or r.get("Savings Amount") or 0.0)
+                s_wd = float(r.get("withdrawal_amount") or r.get("Withdrawal Amount") or 0.0)
 
-            total_collected_today += l_pay
+                total_collected_today += l_pay
 
-            if s_dep > 0:
-                sav_deposited += s_dep
-                if cid: sav_dep_clients.add(cid)
-            if s_wd > 0:
-                sav_withdrawn += s_wd
-                if cid: sav_wd_clients.add(cid)
+                if s_dep > 0:
+                    sav_deposited += s_dep
+                    if cid: sav_dep_clients.add(cid)
+                if s_wd > 0:
+                    sav_withdrawn += s_wd
+                    if cid: sav_wd_clients.add(cid)
 
-            # Product classification
-            p_name = ""
-            if r.get("loans") and r.get("loans").get("loan_products"):
-                p_name = str(r["loans"]["loan_products"].get("name") or "").lower()
+                p_name = ""
+                if r.get("loans") and r.get("loans").get("loan_products"):
+                    p_name = str(r["loans"]["loan_products"].get("name") or "").lower()
 
-            if "24" in p_name:
-                rep_24w_amt += l_pay
-                if cid and l_pay > 0: rep_24w_clients.add(cid)
-            else:
-                rep_12w_amt += l_pay
-                if cid and l_pay > 0: rep_12w_clients.add(cid)
+                if "24" in p_name:
+                    rep_24w_amt += l_pay
+                    if cid and l_pay > 0: rep_24w_clients.add(cid)
+                else:
+                    rep_12w_amt += l_pay
+                    if cid and l_pay > 0: rep_12w_clients.add(cid)
+            except Exception:
+                pass
 
-        # 3. Today's Scheduled Meeting Groups & Attention List
+        # 3. Scheduled Meeting Groups & Attention List
+        active_loans = []
         try:
-            loans_res = uow.client.table("loans").select("*, clients(name)").eq("branch", branch_name).eq("officer", officer_name).execute()
-            l_data = loans_res.data or []
+            if branch_name and officer_name:
+                loans_res = uow.client.table("loans").select("*, clients(name)").eq("branch", branch_name).eq("officer", officer_name).execute()
+                l_data = loans_res.data or []
+                active_loans = [l for l in l_data if l.get("status") in ["ACTIVE", "Approved", "Active"]]
         except Exception:
-            l_data = []
-
-        active_loans = [l for l in l_data if l.get("status") in ["ACTIVE", "Approved", "Active"]]
+            active_loans = []
 
         grp_map: Dict[str, Dict[str, Any]] = {}
         attention_rows = []
@@ -138,71 +141,73 @@ class DashboardService:
         not_paid_amt = 0.0
 
         for l in active_loans:
-            g_name = l.get("group_name") or l.get("group") or "Individual Group"
-            m_day = l.get("meeting_day") or meeting_day
-            if g_name not in grp_map:
-                grp_map[g_name] = {
-                    "Group Name": g_name,
-                    "Meeting Day": m_day,
-                    "Expected Collection": 0.0,
-                    "Collected": 0.0,
-                    "Outstanding": 0.0,
-                    "Compliance %": 100.0,
-                    "Clients Expected": 0,
-                    "Clients Paid": 0,
-                    "Clients Not Paid": 0
-                }
+            try:
+                g_name = l.get("group_name") or l.get("group") or "Individual Group"
+                m_day = l.get("meeting_day") or meeting_day
+                if g_name not in grp_map:
+                    grp_map[g_name] = {
+                        "Group Name": g_name,
+                        "Meeting Day": m_day,
+                        "Expected Collection": 0.0,
+                        "Collected": 0.0,
+                        "Outstanding": 0.0,
+                        "Compliance %": 100.0,
+                        "Clients Expected": 0,
+                        "Clients Paid": 0,
+                        "Clients Not Paid": 0
+                    }
 
-            repay_amt = float(l.get("fixed_repayment") or l.get("loan_repay") or 0.0)
-            grp_map[g_name]["Expected Collection"] += repay_amt
-            grp_map[g_name]["Clients Expected"] += 1
+                repay_amt = float(l.get("fixed_repayment") or l.get("loan_repay") or 0.0)
+                grp_map[g_name]["Expected Collection"] += repay_amt
+                grp_map[g_name]["Clients Expected"] += 1
 
-            cid = l.get("client_id")
-            c_reps = [r for r in reps if r.get("client_id") == cid] if cid else []
-            c_paid = sum(float(r.get("loan_repayment_amount") or 0.0) for r in c_reps)
-            grp_map[g_name]["Collected"] += c_paid
+                cid = l.get("client_id")
+                c_reps = [r for r in reps if r.get("client_id") == cid] if cid else []
+                c_paid = sum(float(r.get("loan_repayment_amount") or 0.0) for r in c_reps)
+                grp_map[g_name]["Collected"] += c_paid
 
-            c_info = l.get("clients") or {}
-            c_name = c_info.get("name") or l.get("client_name") or "N/A"
-            loan_bal = float(l.get("active_credit") or l.get("Active Credit") or 0.0)
+                c_info = l.get("clients") or {}
+                c_name = c_info.get("name") or l.get("client_name") or "N/A"
+                loan_bal = float(l.get("active_credit") or l.get("Active Credit") or 0.0)
 
-            # Classify Payment Status
-            if loan_bal <= 0 and c_paid > 0:
-                full_paid_count += 1
-                full_paid_amt += c_paid
-                grp_map[g_name]["Clients Paid"] += 1
-            elif c_paid > repay_amt and repay_amt > 0:
-                excess_paid_count += 1
-                excess_amt += (c_paid - repay_amt)
-                grp_map[g_name]["Clients Paid"] += 1
-            elif c_paid >= repay_amt and repay_amt > 0:
-                grp_map[g_name]["Clients Paid"] += 1
-            elif c_paid > 0 and c_paid < repay_amt:
-                part_paid_count += 1
-                part_paid_amt += (repay_amt - c_paid)
-                grp_map[g_name]["Clients Paid"] += 1
-                attention_rows.append({
-                    "Client Code": cid or "N/A",
-                    "Client Name": c_name,
-                    "Group": g_name,
-                    "Expected": repay_amt,
-                    "Paid": c_paid,
-                    "Outstanding": max(0.0, repay_amt - c_paid),
-                    "Reason": "Part Payment"
-                })
-            else:
-                not_paid_count += 1
-                not_paid_amt += repay_amt
-                grp_map[g_name]["Clients Not Paid"] += 1
-                attention_rows.append({
-                    "Client Code": cid or "N/A",
-                    "Client Name": c_name,
-                    "Group": g_name,
-                    "Expected": repay_amt,
-                    "Paid": 0.0,
-                    "Outstanding": repay_amt,
-                    "Reason": "Not Paid"
-                })
+                if loan_bal <= 0 and c_paid > 0:
+                    full_paid_count += 1
+                    full_paid_amt += c_paid
+                    grp_map[g_name]["Clients Paid"] += 1
+                elif c_paid > repay_amt and repay_amt > 0:
+                    excess_paid_count += 1
+                    excess_amt += (c_paid - repay_amt)
+                    grp_map[g_name]["Clients Paid"] += 1
+                elif c_paid >= repay_amt and repay_amt > 0:
+                    grp_map[g_name]["Clients Paid"] += 1
+                elif c_paid > 0 and c_paid < repay_amt:
+                    part_paid_count += 1
+                    part_paid_amt += (repay_amt - c_paid)
+                    grp_map[g_name]["Clients Paid"] += 1
+                    attention_rows.append({
+                        "Client Code": cid or "N/A",
+                        "Client Name": c_name,
+                        "Group": g_name,
+                        "Expected": repay_amt,
+                        "Paid": c_paid,
+                        "Outstanding": max(0.0, repay_amt - c_paid),
+                        "Reason": "Part Payment"
+                    })
+                else:
+                    not_paid_count += 1
+                    not_paid_amt += repay_amt
+                    grp_map[g_name]["Clients Not Paid"] += 1
+                    attention_rows.append({
+                        "Client Code": cid or "N/A",
+                        "Client Name": c_name,
+                        "Group": g_name,
+                        "Expected": repay_amt,
+                        "Paid": 0.0,
+                        "Outstanding": repay_amt,
+                        "Reason": "Not Paid"
+                    })
+            except Exception:
+                pass
 
         for g in grp_map.values():
             exp = g["Expected Collection"]
@@ -215,8 +220,8 @@ class DashboardService:
 
         return {
             "welcome": {
-                "officer_name": officer_name,
-                "branch_name": branch_name,
+                "officer_name": officer_name or "Credit Officer",
+                "branch_name": branch_name or "Branch",
                 "date_str": date_str,
                 "time_str": datetime.now().strftime("%I:%M %p"),
                 "meeting_day": meeting_day
@@ -259,9 +264,6 @@ class DashboardService:
         if not target_date:
             target_date = date.today()
 
-        date_str = target_date.isoformat()
-
-        # 1. Branch Cash Position
         cash_position = {
             "opening_balance": 0.0,
             "cash_in": 0.0,
@@ -289,7 +291,6 @@ class DashboardService:
             except Exception:
                 pass
 
-        # 2. Branch Meeting Summary
         summary = {}
         if branch_id:
             try:
@@ -299,56 +300,63 @@ class DashboardService:
             except Exception:
                 summary = {}
 
-        sav_totals = SavingsService.get_branch_totals(uow, branch_name)
-        active_savings = sav_totals.get("total_active_savings", 0.0)
+        active_savings = 0.0
+        try:
+            sav_totals = SavingsService.get_branch_totals(uow, branch_name)
+            active_savings = sav_totals.get("total_active_savings", 0.0)
+        except Exception:
+            active_savings = 0.0
 
-        # 3. Officer Collection Status Table (Officer | Groups Scheduled | Expected | Collected | Outstanding | Compliance % | Closing Balance | Status)
         officer_stats = []
         try:
-            users_res = uow.client.table("app_users").select("id, username, role").eq("branch", branch_name).execute()
-            officers = [u for u in (users_res.data or []) if u.get("role") in ["CO", "Officer", "Credit Officer"]]
-            for off in officers:
-                oname = off.get("username")
-                oid = off.get("id")
-                o_sum = {}
-                if oid:
-                    try:
-                        o_sum = CollectionPerformanceService.get_officer_meeting_summary(uow, oid, target_date)
-                    except Exception:
-                        o_sum = {}
+            if branch_name:
+                users_res = uow.client.table("app_users").select("id, username, role").eq("branch", branch_name).execute()
+                officers = [u for u in (users_res.data or []) if u.get("role") in ["CO", "Officer", "Credit Officer"]]
+                for off in officers:
+                    oname = off.get("username")
+                    oid = off.get("id")
+                    o_sum = {}
+                    if oid:
+                        try:
+                            o_sum = CollectionPerformanceService.get_officer_meeting_summary(uow, oid, target_date)
+                        except Exception:
+                            o_sum = {}
 
-                o_cb_close = 0.0
-                if branch_id and oid:
-                    cb_data = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, oid, target_date)
-                    if cb_data:
-                        o_cb_close = float(cb_data.get("closing_balance") or 0.0)
+                    o_cb_close = 0.0
+                    if branch_id and oid:
+                        try:
+                            cb_data = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, oid, target_date)
+                            if cb_data:
+                                o_cb_close = float(cb_data.get("closing_balance") or 0.0)
+                        except Exception:
+                            pass
 
-                exp = o_sum.get("total_expected", 0.0)
-                col = o_sum.get("total_collected", 0.0)
-                comp = o_sum.get("compliance_pct", 100.0)
+                    exp = o_sum.get("total_expected", 0.0)
+                    col = o_sum.get("total_collected", 0.0)
+                    comp = o_sum.get("compliance_pct", 100.0)
 
-                officer_stats.append({
-                    "Officer": oname,
-                    "Groups Scheduled": 3,
-                    "Expected": exp,
-                    "Collected": col,
-                    "Outstanding": max(0.0, exp - col),
-                    "Compliance %": comp,
-                    "Closing Balance": o_cb_close,
-                    "Status": "Normal" if comp >= 80 else "Requires Attention"
-                })
+                    officer_stats.append({
+                        "Officer": oname,
+                        "Groups Scheduled": 3,
+                        "Expected": exp,
+                        "Collected": col,
+                        "Outstanding": max(0.0, exp - col),
+                        "Compliance %": comp,
+                        "Closing Balance": o_cb_close,
+                        "Status": "Normal" if comp >= 80 else "Requires Attention"
+                    })
         except Exception:
             pass
 
         officer_df = pd.DataFrame(officer_stats) if officer_stats else pd.DataFrame(columns=["Officer", "Groups Scheduled", "Expected", "Collected", "Outstanding", "Compliance %", "Closing Balance", "Status"])
 
-        # 4. Pending Approvals Queue
         pending_approvals = []
         try:
-            p_res = uow.client.table("loans").select("*, clients(name)").eq("branch", branch_name).eq("status", "Pending").execute()
-            pending_approvals = p_res.data or []
+            if branch_name:
+                p_res = uow.client.table("loans").select("*, clients(name)").eq("branch", branch_name).eq("status", "Pending").execute()
+                pending_approvals = p_res.data or []
         except Exception:
-            pass
+            pending_approvals = []
 
         return {
             "branch_summary": {
@@ -384,36 +392,48 @@ class DashboardService:
         total_sav = 0.0
         total_clients = 0
 
-        for b_name in assigned_branches:
-            b_sav = SavingsService.get_branch_totals(uow, b_name).get("total_active_savings", 0.0)
-            summary = CollectionPerformanceService.get_branch_meeting_summary(uow, b_name, target_date)
+        for b_name in (assigned_branches or []):
+            try:
+                b_sav = 0.0
+                try:
+                    b_sav = SavingsService.get_branch_totals(uow, b_name).get("total_active_savings", 0.0)
+                except Exception:
+                    b_sav = 0.0
 
-            coll = summary.get("total_collected", 0.0)
-            exp = summary.get("total_expected", 0.0)
-            comp = summary.get("compliance_pct", 100.0)
-            clients = summary.get("total_clients", 0)
+                summary = {}
+                try:
+                    summary = CollectionPerformanceService.get_branch_meeting_summary(uow, b_name, target_date)
+                except Exception:
+                    summary = {}
 
-            total_coll += coll
-            total_sav += b_sav
-            total_clients += clients
+                coll = summary.get("total_collected", 0.0)
+                exp = summary.get("total_expected", 0.0)
+                comp = summary.get("compliance_pct", 100.0)
+                clients = summary.get("total_clients", 0)
 
-            b_row = {
-                "Branch": b_name,
-                "Expected Collection": exp,
-                "Collected": coll,
-                "Outstanding": max(0.0, exp - coll),
-                "PAR": "0.0%",
-                "Cash Difference": "₦0.00",
-                "Compliance %": comp,
-                "Status": "Normal" if comp >= 80 else "Requires Attention"
-            }
-            branch_stats.append(b_row)
+                total_coll += coll
+                total_sav += b_sav
+                total_clients += clients
+
+                b_row = {
+                    "Branch": b_name,
+                    "Expected Collection": exp,
+                    "Collected": coll,
+                    "Outstanding": max(0.0, exp - coll),
+                    "PAR": "0.0%",
+                    "Cash Difference": "₦0.00",
+                    "Compliance %": comp,
+                    "Status": "Normal" if comp >= 80 else "Requires Attention"
+                }
+                branch_stats.append(b_row)
+            except Exception:
+                pass
 
         b_df = pd.DataFrame(branch_stats) if branch_stats else pd.DataFrame(columns=["Branch", "Expected Collection", "Collected", "Outstanding", "PAR", "Cash Difference", "Compliance %", "Status"])
 
         return {
             "regional_summary": {
-                "branches_count": len(assigned_branches),
+                "branches_count": len(assigned_branches or []),
                 "active_clients": total_clients,
                 "outstanding_portfolio": sum(b["Expected Collection"] for b in branch_stats),
                 "savings": total_sav,
