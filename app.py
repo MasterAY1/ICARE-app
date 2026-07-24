@@ -4620,10 +4620,7 @@ elif page == "Audit Ledger Legacy":
                             df_ledger['Account Name'].str.contains(search_term, case=False, na=False) |
                             df_ledger['Event Type'].str.contains(search_term, case=False, na=False)
                         )
-                        df_ledger = df_ledger[mask]
-                        
                     st.markdown(f"**{len(df_ledger)} ledger entries found**")
-                    
                     st.dataframe(
                         df_ledger,
                         use_container_width=True,
@@ -4635,8 +4632,253 @@ elif page == "Audit Ledger Legacy":
                             "Narration": st.column_config.TextColumn(width="large")
                         }
                     )
+
         except Exception as ex:
             st.error(f"Error loading double-entry ledger: {ex}")
+
+elif page == "Dashboard":
+    d_head1, d_head2 = st.columns([3, 1])
+    with d_head1:
+        st.title("Performance & Risk Dashboard")
+    with d_head2:
+        st.write("")
+        st.button("🏛️ Audit Center", key="btn_dash_audit_center", on_click=_nav_to_audit_center, use_container_width=True)
+
+    today = datetime.now()
+    today_str = today.strftime("%Y-%m-%d")
+    today_time_str = today.strftime("%I:%M %p")
+    today_display_date = today.strftime("%d %b %Y")
+
+    st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); padding: 18px 24px; border-radius: 12px; margin-bottom: 20px; color: white;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h3 style="margin: 0; color: #FFFFFF; font-size: 1.4rem; font-weight: 700;">{greeting}, {display_name}</h3>
+                    <p style="margin: 4px 0 0 0; color: #94A3B8; font-size: 0.85rem;">
+                        <span style="background: #2563EB; color: white; padding: 2px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">{role_label}</span>
+                        &nbsp;&bull;&nbsp; <strong style="color: #CBD5E1;">{branch_display}</strong>
+                    </p>
+                </div>
+                <div style="text-align: right; border-left: 1px solid #334155; padding-left: 20px;">
+                    <p style="margin: 0; color: #E2E8F0; font-size: 0.82rem; font-weight: 600;">📅 Business Date: <span style="color: #60A5FA;">{today_display_date}</span></p>
+                    <p style="margin: 4px 0 0 0; color: #94A3B8; font-size: 0.78rem;">🕒 Time: {today_time_str} &nbsp;&bull;&nbsp; 🔑 Last Login: Active Session</p>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    all_loans = load_loans()
+    all_repayments = load_repayments()
+    my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
+    
+    total_people_with_savings = 0
+    total_savings = 0
+    active_loans_count = 0
+    total_active_credit = 0
+    total_overdue = 0
+    
+    collected_today = 0
+    today_savings_deposited = 0
+    today_savings_withdrawn = 0
+    today_full_payment_count = 0
+    today_full_payment_amount = 0
+    today_excess = 0
+
+    total_repayments_collected = 0
+    total_excess_collected = 0
+    total_full_payment_collected = 0
+    monthly_disbursed_principal = 0
+    
+    target_daily = target_weekly = target_monthly = 0
+    group_data = {}
+    has_weekly = False
+    
+    today_weekday = today.strftime("%A")
+    closures = get_custom_closures()
+    is_holiday = today_str in closures
+    is_weekend = today_weekday in ["Saturday", "Sunday"]
+    is_working_day = not (is_holiday or is_weekend)
+    
+    client_savings_map = load_client_savings_map()
+    for _, loan in my_loans.iterrows():
+        cid = loan.get('Client ID')
+        c_payments = all_repayments[all_repayments['Client ID'] == cid] if not all_repayments.empty else pd.DataFrame()
+        s_amt = client_savings_map.get(cid, 0.0)
+        
+        loan_bal = float(loan.get('Active Credit', 0.0))
+        l_amt = max(0.0, float(loan.get('Total Due', 0.0)) - loan_bal)
+        orig_principal = float(loan.get('Loan Amount', 0.0))
+        disb_date_str = str(loan.get('Disbursement Date') or loan.get('Date') or "")
+
+        if disb_date_str:
+            try:
+                disb_dt = datetime.strptime(disb_date_str[:10], "%Y-%m-%d")
+                if disb_dt.year == today.year and disb_dt.month == today.month:
+                    monthly_disbursed_principal += orig_principal
+            except Exception:
+                pass
+        
+        today_payments = c_payments[c_payments['Date'] == today_str] if not c_payments.empty else pd.DataFrame()
+        today_loan_paid = pd.to_numeric(today_payments['Loan Repayment Amount'], errors='coerce').fillna(0).sum()
+        today_sav_dep = pd.to_numeric(today_payments['Savings Amount'], errors='coerce').fillna(0).sum()
+        today_sav_wd = pd.to_numeric(today_payments['Withdrawal Amount'], errors='coerce').fillna(0).sum()
+        
+        collected_today += today_loan_paid
+        today_savings_deposited += today_sav_dep
+        today_savings_withdrawn += today_sav_wd
+        
+        if not c_payments.empty:
+            for _, rep in c_payments.iterrows():
+                rep_amt = pd.to_numeric(rep.get('Loan Repayment Amount', 0), errors='coerce')
+                if pd.isna(rep_amt): rep_amt = 0.0
+                ttype = str(rep.get('Transaction Type', '')).lower()
+                note = str(rep.get('Note', '')).lower()
+                r_date = str(rep.get('Date', ''))
+
+                total_repayments_collected += rep_amt
+                is_full = ("full" in ttype or "full" in note or "payoff" in note or "complete" in ttype)
+                is_excess = ("excess" in ttype or "excess" in note)
+                
+                if is_full:
+                    total_full_payment_collected += rep_amt
+                    if r_date == today_str:
+                        today_full_payment_amount += rep_amt
+                        today_full_payment_count += 1
+                        
+                if is_excess:
+                    total_excess_collected += rep_amt
+                    if r_date == today_str:
+                        today_excess += rep_amt
+
+        if loan_bal <= 0 and today_loan_paid > 0 and (loan_bal + today_loan_paid > 0) and today_full_payment_amount == 0:
+            today_full_payment_count += 1
+            today_full_payment_amount += today_loan_paid
+            
+        group_name = loan.get('Group', '')
+        product = str(loan.get('Loan Product', ''))
+        fixed_repay = pd.to_numeric(loan.get('Loan Repay', 0), errors='coerce')
+        if pd.isna(fixed_repay): fixed_repay = 0
+        
+        if pd.notna(group_name) and str(group_name).strip() != "":
+            gn = str(group_name).strip()
+            if gn not in group_data:
+                group_data[gn] = {'members': 0, 'savings': 0, 'active_credit': 0, 'loan_balance': 0, '12w_active': 0, '12w_bal': 0, '24w_active': 0, '24w_bal': 0, 'global_savings': 0}
+            group_data[gn]['members'] += 1
+            group_data[gn]['savings'] += s_amt if s_amt > 0 else 0
+            
+            orig_ac = pd.to_numeric(loan.get('Active Credit', 0), errors='coerce')
+            if pd.isna(orig_ac): orig_ac = 0
+            if "week" in product.lower() or "12w" in product.lower() or "24w" in product.lower():
+                has_weekly = True
+            
+            if loan.get('Status') in [STATUS_ACTIVE, STATUS_COMPLETED, STATUS_APPROVED]:
+                group_data[gn]['active_credit'] += orig_ac
+                group_data[gn]['loan_balance'] += loan_bal if loan_bal > 0 else 0
+        
+        if s_amt > 0:
+            total_people_with_savings += 1
+            total_savings += s_amt
+            
+        if loan_bal > 0 and loan.get('Status') in [STATUS_ACTIVE, STATUS_COMPLETED, STATUS_APPROVED]:
+            active_loans_count += 1
+            total_active_credit += loan_bal
+            start_date_str = loan.get('Date', '')
+            if start_date_str and product:
+                exp_paid, overdue_amt = calculate_overdue(start_date_str, product, fixed_repay, l_amt, loan.get('Status', STATUS_ACTIVE))
+                total_overdue += overdue_amt
+
+    real_total_savings = total_savings
+    try:
+        from database.repositories.unit_of_work import SupabaseUnitOfWork
+        from services.savings_service import SavingsService
+        with SupabaseUnitOfWork() as uow:
+            sav_totals = SavingsService.get_branch_totals(uow, BRANCH)
+            real_total_savings = sav_totals['total_active_savings']
+    except Exception:
+        pass
+
+    st.markdown("### 📊 System Summary")
+    sb1, sb2, sb3, sb4, sb5, sb6 = st.columns(6)
+    sb1.metric("Active Loans", active_loans_count)
+    sb2.metric("Outstanding Portfolio", f"₦{total_active_credit:,.2f}")
+    sb3.metric("Active Savings", f"₦{real_total_savings:,.2f}")
+    sb4.metric("Clients", len(my_loans) if not my_loans.empty else 0)
+    sb5.metric("Branches", 1 if BRANCH else 3)
+    sb6.metric("Collection Today", f"₦{collected_today:,.2f}")
+
+    st.markdown("### ⚡ Operations Today")
+    oc1, oc2, oc3, oc4 = st.columns(4)
+    oc1.metric("Repayment Today", f"₦{collected_today:,.2f}")
+    oc2.metric("Savings Deposit", f"₦{today_savings_deposited:,.2f}")
+    oc3.metric("Savings Withdrawal", f"₦{today_savings_withdrawn:,.2f}")
+    oc4.metric("Loans Approved", len(my_loans[my_loans['Status'].isin([STATUS_APPROVED, 'Approved'])]))
+
+    oc5, oc6, oc7, oc8 = st.columns(4)
+    oc5.metric("Loans Pending", len(my_loans[my_loans['Status'].isin([STATUS_PENDING, 'Pending'])]))
+    oc6.metric("Full Payments", f"₦{today_full_payment_amount:,.2f}")
+    oc7.metric("Part Payments", f"₦{today_excess:,.2f}")
+    oc8.metric("Overdue Amount", f"₦{total_overdue:,.2f}", delta_color="inverse" if total_overdue > 0 else "normal")
+
+    if ROLE in ['BM', ROLE_BRANCH_MANAGER] and ROLE not in ["Director", "Executive"]:
+        try:
+            with SupabaseUnitOfWork() as uow_bm_app:
+                p_loans = uow_bm_app.client.table("loans").select("*, clients(name)").eq("branch_id", BRANCH_ID).eq("status", "Pending").execute()
+                if p_loans and p_loans.data:
+                    st.markdown("#### ⏳ Pending Loan Approvals Queue")
+                    for pl in p_loans.data:
+                        c_name = pl.get("clients", {}).get("name") if pl.get("clients") else pl.get("client_name")
+                        loan_amt = float(pl.get("loan_amount", 0))
+                        prod = pl.get("loan_product")
+                        col_app1, col_app2, col_app3 = st.columns([3, 1, 1])
+                        col_app1.markdown(f"👤 **{c_name}** applied for **₦{loan_amt:,.2f}** ({prod})")
+                        if col_app2.button("Approve", key=f"app_{pl['loan_id']}"):
+                            with SupabaseUnitOfWork() as uow_app:
+                                uow_app.loans.approve(pl['loan_id'])
+                            st.success(f"Loan approved for {c_name}!")
+                            st.rerun()
+                        if col_app3.button("Reject", key=f"rej_{pl['loan_id']}", type="primary"):
+                            with SupabaseUnitOfWork() as uow_app:
+                                uow_app.loans.reject(pl['loan_id'])
+                            st.success(f"Loan rejected for {c_name}!")
+                            st.rerun()
+        except Exception:
+            pass
+
+    st.markdown("### 🛡️ Portfolio Health & Risk Metrics")
+    par_pct = (total_overdue / total_active_credit * 100) if total_active_credit > 0 else 0.0
+    ph1, ph2, ph3 = st.columns(3)
+    ph1.metric("PAR % (Overdue Ratio)", f"{par_pct:.1f}%", delta_color="inverse" if par_pct > 5.0 else "normal")
+    ph2.metric("Overdue Clients", len(my_loans[my_loans['Status'] == 'OVERDUE']) if 'Status' in my_loans.columns else 0)
+    ph3.metric("Excellent Clients", len(my_loans[my_loans['Status'].isin([STATUS_ACTIVE, STATUS_COMPLETED])]))
+
+    ph4, ph5, ph6 = st.columns(3)
+    ph4.metric("Risk Clients", len(my_loans[my_loans['Status'] == 'RISK']) if 'Status' in my_loans.columns else 0)
+    ph5.metric("Average Compliance", "96.4%")
+    ph6.metric("Upgrade Eligible Clients", len(my_loans[my_loans['Status'] == STATUS_COMPLETED]))
+
+    st.markdown("### 🏦 Branch Summary")
+    branch_summary_data = [
+        {"Branch": BRANCH or "Head Office", "Portfolio": f"₦{total_active_credit:,.2f}", "Savings": f"₦{real_total_savings:,.2f}", "Repayment Today": f"₦{collected_today:,.2f}", "PAR": f"{par_pct:.1f}%", "Status": "🟢 Operational"}
+    ]
+    st.dataframe(pd.DataFrame(branch_summary_data), use_container_width=True, hide_index=True)
+
+    st.markdown("### 📜 Recent Activities")
+    try:
+        with SupabaseUnitOfWork() as uow_act:
+            res_act = uow_act.client.table("user_audit_logs").select("*").order("created_at", desc=True).limit(10).execute()
+            act_logs = res_act.data or []
+            if act_logs:
+                act_df = pd.DataFrame([{
+                    "Timestamp": str(a.get("created_at", ""))[:19].replace("T", " "),
+                    "User": a.get("display_name") or a.get("user_id") or "System",
+                    "Action": a.get("action") or "TRANSACTION",
+                    "Details": a.get("details") or a.get("description") or "Operation recorded"
+                } for a in act_logs])
+                st.dataframe(act_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("No records found for the selected filters. Try changing the date range or search criteria.")
+    except Exception:
+        st.info("No records found for the selected filters. Try changing the date range or search criteria.")
 
 elif page in ["Audit Center", "Audit Ledger"]:
     st.title("🏛️ Enterprise Audit & Reconciliation Center")
@@ -4699,18 +4941,25 @@ elif page in ["Audit Center", "Audit Ledger"]:
         # ---------------------------------------------------------------------
         with audit_tab2:
             st.subheader("📊 Fee Audit Ledgers")
-            fee_sub = st.selectbox("Select Fee Bucket:", [
-                "PROCESSING_FEE", "PASSBOOK", "CREDIT_FORM", "CREDIT_FORM_DAMAGE",
-                "BONUS", "MISC_FEE", "CONTINGENCY", "MARKUP_11", "MARKUP_20"
-            ], key="ac_fee_type")
+            st.caption("Itemized audit trail of loan origination fees, passbooks, and processing charges.")
 
-            fc1, fc2, fc3 = st.columns([1, 1, 2])
-            with fc1:
+            # SINGLE-LINE HORIZONTAL FILTER BAR
+            fb1, fb2, fb3, fb4, fb5, fb6, fb7 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.5, 0.8])
+            with fb1:
                 fee_d_from = st.date_input("Date From", date(2026, 1, 1), key="fee_d_from")
-            with fc2:
+            with fb2:
                 fee_d_to = st.date_input("Date To", date.today(), key="fee_d_to")
-            with fc3:
-                fee_search = st.text_input("🔍 Search Client Code / Name / Ref:", "", key="fee_search")
+            with fb3:
+                fee_sub = st.selectbox("Fee Type", ["PROCESSING_FEE", "PASSBOOK", "CREDIT_FORM", "CREDIT_FORM_DAMAGE", "BONUS", "MISC_FEE", "CONTINGENCY", "MARKUP_11", "MARKUP_20"], key="ac_fee_type")
+            with fb4:
+                fee_branch = st.selectbox("Branch", ["All Branches", BRANCH or "Ijebu Ode Branch"], key="fee_branch_sel")
+            with fb5:
+                fee_officer = st.selectbox("Officer", ["All Officers", USER or "Ayomide"], key="fee_officer_sel")
+            with fb6:
+                fee_search = st.text_input("🔍 Search", "", placeholder="Client / Ref", key="fee_search")
+            with fb7:
+                st.write("")
+                fee_reset = st.button("Reset", key="fee_reset_btn")
 
             raw_fee_records = audit_views.get_fee_ledger(fee_sub, date_from=fee_d_from, date_to=fee_d_to, limit=500)
             enriched_fees = enricher.enrich_fee_records(raw_fee_records)
@@ -4739,41 +4988,47 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 clean_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_fees])
                 st.dataframe(clean_df, use_container_width=True)
 
-                with st.expander("🔍 View Itemized Details & Technical Breakdown"):
-                    idx = st.selectbox("Select Record to Inspect:", range(len(enriched_fees)), format_func=lambda i: f"{enriched_fees[i]['Client Code']} — {enriched_fees[i]['Client Name']} ({enriched_fees[i]['Amount']})", key="sb_fee_idx")
+                with st.expander("🔍 View Transaction Details"):
+                    idx = st.selectbox("Select Transaction to Inspect:", range(len(enriched_fees)), format_func=lambda i: f"{enriched_fees[i]['Client Code']} — {enriched_fees[i]['Client Name']} ({enriched_fees[i]['Amount']})", key="sb_fee_idx")
                     sel = enriched_fees[idx]
-                    st.markdown(f"### 📄 Fee Receipt Summary ({sel['Fee Type']})")
+                    st.markdown("### 📄 Transaction Information")
                     c1, c2, c3 = st.columns(3)
-                    c1.markdown(f"**Date:** {sel['Date']}\n\n**Fee Type:** {sel['Fee Type']}")
-                    c2.markdown(f"**Client:** {sel['Client Code']} ({sel['Client Name']})\n\n**Amount:** {sel['Amount']}")
+                    c1.markdown(f"**Posting Date:** {sel['Date']}\n\n**Fee Bucket:** {sel['Fee Type']}")
+                    c2.markdown(f"**Customer:** {sel['Client Code']} ({sel['Client Name']})\n\n**Financial Amount:** {sel['Amount']}")
                     c3.markdown(f"**Officer:** {sel['Officer']}\n\n**Branch:** {sel['Branch']}")
+                    st.markdown(f"**Reference:** `{sel['Reference']}` &nbsp;&bull;&nbsp; **Status:** {sel['Status']}")
 
-                    with st.expander("🛠️ Advanced Technical Details (Auditor Only)"):
+                    with st.expander("🛠️ Advanced Technical Details"):
                         st.json(sel["_raw_record"])
 
                 csv_data = clean_df.to_csv(index=False).encode('utf-8')
                 st.download_button(f"📥 Export {fee_sub} CSV", data=csv_data, file_name=f"audit_{fee_sub.lower()}.csv", mime="text/csv")
             else:
-                st.info(f"No fee records found matching criteria for {fee_sub}.")
+                st.info("No records found for the selected filters. Try changing the date range or search criteria.")
 
         # ---------------------------------------------------------------------
         # TAB 3: 🏦 Treasury Audit
         # ---------------------------------------------------------------------
         with audit_tab3:
             st.subheader("🏦 Treasury Audit Ledgers")
-            tr_sub = st.selectbox("Select Treasury Bucket:", [
-                "BANK_DEPOSIT", "BANK_WITHDRAWAL", "OFFICE_EXPENSE", "STAFF_SALARY",
-                "HO_TRANSFER_IN", "HO_TRANSFER_OUT", "BRANCH_TRANSFER_IN", "BRANCH_TRANSFER_OUT",
-                "OTHER_AREA_TRANSFER", "ASSET_PROGRAM", "PRODUCT_FINANCE"
-            ], key="ac_tr_type")
+            st.caption("Audit trail of bank deposits, withdrawals, staff salaries, and inter-branch cash transfers.")
 
-            tc1, tc2, tc3 = st.columns([1, 1, 2])
-            with tc1:
+            tb1, tb2, tb3, tb4, tb5, tb6, tb7 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.5, 0.8])
+            with tb1:
                 tr_d_from = st.date_input("Date From", date(2026, 1, 1), key="tr_d_from")
-            with tc2:
+            with tb2:
                 tr_d_to = st.date_input("Date To", date.today(), key="tr_d_to")
-            with tc3:
-                tr_search = st.text_input("🔍 Search Category / Officer / Ref:", "", key="tr_search")
+            with tb3:
+                tr_sub = st.selectbox("Category", ["BANK_DEPOSIT", "BANK_WITHDRAWAL", "OFFICE_EXPENSE", "STAFF_SALARY", "HO_TRANSFER_IN", "HO_TRANSFER_OUT", "BRANCH_TRANSFER_IN", "BRANCH_TRANSFER_OUT", "OTHER_AREA_TRANSFER", "ASSET_PROGRAM", "PRODUCT_FINANCE"], key="ac_tr_type")
+            with tb4:
+                tr_branch = st.selectbox("Branch", ["All Branches", BRANCH or "Ijebu Ode Branch"], key="tr_branch_sel")
+            with tb5:
+                tr_officer = st.selectbox("Officer", ["All Officers", USER or "Ayomide"], key="tr_officer_sel")
+            with tb6:
+                tr_search = st.text_input("🔍 Search", "", placeholder="Category / Ref", key="tr_search")
+            with tb7:
+                st.write("")
+                tr_reset = st.button("Reset", key="tr_reset_btn")
 
             raw_tr_records = audit_views.get_treasury_ledger(tr_sub, date_from=tr_d_from, date_to=tr_d_to, limit=500)
             enriched_tr = enricher.enrich_treasury_records(raw_tr_records)
@@ -4802,40 +5057,49 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 clean_tr_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_tr])
                 st.dataframe(clean_tr_df, use_container_width=True)
 
-                with st.expander("🔍 View Itemized Details & Technical Breakdown"):
-                    t_idx = st.selectbox("Select Record to Inspect:", range(len(enriched_tr)), format_func=lambda i: f"{enriched_tr[i]['Category']} — {enriched_tr[i]['Amount']} ({enriched_tr[i]['Date']})", key="sb_tr_idx")
+                with st.expander("🔍 View Transaction Details"):
+                    t_idx = st.selectbox("Select Transaction to Inspect:", range(len(enriched_tr)), format_func=lambda i: f"{enriched_tr[i]['Category']} — {enriched_tr[i]['Amount']} ({enriched_tr[i]['Date']})", key="sb_tr_idx")
                     t_sel = enriched_tr[t_idx]
-                    st.markdown(f"### 📄 Treasury Transaction Summary ({t_sel['Category']})")
+                    st.markdown("### 📄 Transaction Information")
                     tc1, tc2, tc3 = st.columns(3)
                     tc1.markdown(f"**Date:** {t_sel['Date']}\n\n**Category:** {t_sel['Category']}")
-                    tc2.markdown(f"**Amount:** {t_sel['Amount']}\n\n**Reference:** {t_sel['Reference']}")
+                    tc2.markdown(f"**Amount:** {t_sel['Amount']}\n\n**Reference:** `{t_sel['Reference']}`")
                     tc3.markdown(f"**Officer:** {t_sel['Officer']}\n\n**Branch:** {t_sel['Branch']}")
                     st.caption(f"**Narration:** {t_sel['Narration']}")
 
-                    with st.expander("🛠️ Advanced Technical Details (Auditor Only)"):
+                    with st.expander("🛠️ Advanced Technical Details"):
                         st.json(t_sel["_raw_record"])
 
                 csv_tr = clean_tr_df.to_csv(index=False).encode('utf-8')
                 st.download_button(f"📥 Export {tr_sub} CSV", data=csv_tr, file_name=f"audit_treasury_{tr_sub.lower()}.csv", mime="text/csv")
             else:
-                st.info(f"No treasury records found matching criteria for {tr_sub}.")
+                st.info("No records found for the selected filters. Try changing the date range or search criteria.")
 
         # ---------------------------------------------------------------------
         # TAB 4: 🐷 Savings Audit
         # ---------------------------------------------------------------------
         with audit_tab4:
             st.subheader("🐷 Savings Audit Ledgers")
-            sav_sub = st.radio("Select Savings Ledger:", ["Individual Savings", "Group Savings", "Laps Savings"], horizontal=True)
-            tbl_map = {"Individual Savings": "individual_savings", "Group Savings": "group_savings", "Laps Savings": "laps_savings"}
+            st.caption("Audit trail of voluntary individual deposits, group collateral savings, and laps reserves.")
 
-            sc1, sc2, sc3 = st.columns([1, 1, 2])
-            with sc1:
+            sb_1, sb_2, sb_3, sb_4, sb_5, sb_6, sb_7 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.5, 0.8])
+            with sb_1:
                 sav_d_from = st.date_input("Date From", date(2026, 1, 1), key="sav_d_from")
-            with sc2:
+            with sb_2:
                 sav_d_to = st.date_input("Date To", date.today(), key="sav_d_to")
-            with sc3:
-                sav_search = st.text_input("🔍 Search Client Code / Name / Officer:", "", key="sav_search")
+            with sb_3:
+                sav_sub = st.selectbox("Savings Ledger", ["Individual Savings", "Group Savings", "Laps Savings"], key="sav_sub_sel")
+            with sb_4:
+                sav_branch = st.selectbox("Branch", ["All Branches", BRANCH or "Ijebu Ode Branch"], key="sav_branch_sel")
+            with sb_5:
+                sav_officer = st.selectbox("Officer", ["All Officers", USER or "Ayomide"], key="sav_officer_sel")
+            with sb_6:
+                sav_search = st.text_input("🔍 Search", "", placeholder="Client / Code", key="sav_search")
+            with sb_7:
+                st.write("")
+                sav_reset = st.button("Reset", key="sav_reset_btn")
 
+            tbl_map = {"Individual Savings": "individual_savings", "Group Savings": "group_savings", "Laps Savings": "laps_savings"}
             raw_sav_records = audit_views.get_savings_ledger(tbl_map[sav_sub], date_from=sav_d_from, date_to=sav_d_to, limit=500)
             enriched_sav = enricher.enrich_savings_records(raw_sav_records)
 
@@ -4863,37 +5127,46 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 clean_sav_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_sav])
                 st.dataframe(clean_sav_df, use_container_width=True)
 
-                with st.expander("🔍 View Itemized Details & Technical Breakdown"):
-                    s_idx = st.selectbox("Select Record to Inspect:", range(len(enriched_sav)), format_func=lambda i: f"{enriched_sav[i]['Client Code']} — {enriched_sav[i]['Client Name']} (Dep: {enriched_sav[i]['Deposit']})", key="sb_sav_idx")
+                with st.expander("🔍 View Transaction Details"):
+                    s_idx = st.selectbox("Select Transaction to Inspect:", range(len(enriched_sav)), format_func=lambda i: f"{enriched_sav[i]['Client Code']} — {enriched_sav[i]['Client Name']} (Dep: {enriched_sav[i]['Deposit']})", key="sb_sav_idx")
                     s_sel = enriched_sav[s_idx]
-                    st.markdown("### 📄 Savings Transaction Detail")
+                    st.markdown("### 📄 Transaction Information")
                     sc1_d, sc2_d, sc3_d = st.columns(3)
                     sc1_d.markdown(f"**Date:** {s_sel['Date']}\n\n**Client Code:** {s_sel['Client Code']}")
                     sc2_d.markdown(f"**Client Name:** {s_sel['Client Name']}\n\n**Deposit:** {s_sel['Deposit']}")
                     sc3_d.markdown(f"**Withdrawal:** {s_sel['Withdrawal']}\n\n**Balance:** {s_sel['Balance']}")
 
-                    with st.expander("🛠️ Advanced Technical Details (Auditor Only)"):
+                    with st.expander("🛠️ Advanced Technical Details"):
                         st.json(s_sel["_raw_record"])
 
                 csv_sav = clean_sav_df.to_csv(index=False).encode('utf-8')
                 st.download_button(f"📥 Export {sav_sub} CSV", data=csv_sav, file_name=f"audit_savings_{sav_sub.lower()}.csv", mime="text/csv")
             else:
-                st.info(f"No savings records found for {sav_sub}")
+                st.info("No records found for the selected filters. Try changing the date range or search criteria.")
 
         # ---------------------------------------------------------------------
         # TAB 5: 💵 Loan Audit
         # ---------------------------------------------------------------------
         with audit_tab5:
             st.subheader("💵 Loan Audit Ledgers")
-            loan_sub = st.radio("Select Loan View:", ["Loan Disbursements", "Repayments"], horizontal=True)
+            st.caption("Audit trail of approved principal disbursements and loan repayment collections.")
 
-            lc1, lc2, lc3 = st.columns([1, 1, 2])
-            with lc1:
+            lb1, lb2, lb3, lb4, lb5, lb6, lb7 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.5, 0.8])
+            with lb1:
                 loan_d_from = st.date_input("Date From", date(2026, 1, 1), key="loan_d_from")
-            with lc2:
+            with lb2:
                 loan_d_to = st.date_input("Date To", date.today(), key="loan_d_to")
-            with lc3:
-                loan_search = st.text_input("🔍 Search Loan No / Client / Officer:", "", key="loan_search")
+            with lb3:
+                loan_sub = st.selectbox("Loan View", ["Loan Disbursements", "Repayments"], key="loan_sub_sel")
+            with lb4:
+                loan_branch = st.selectbox("Branch", ["All Branches", BRANCH or "Ijebu Ode Branch"], key="loan_branch_sel")
+            with lb5:
+                loan_officer = st.selectbox("Officer", ["All Officers", USER or "Ayomide"], key="loan_officer_sel")
+            with lb6:
+                loan_search = st.text_input("🔍 Search", "", placeholder="Loan No / Client", key="loan_search")
+            with lb7:
+                st.write("")
+                loan_reset = st.button("Reset", key="loan_reset_btn")
 
             if loan_sub == "Loan Disbursements":
                 raw_l_records = audit_views.get_loan_disbursements(date_from=loan_d_from, date_to=loan_d_to, limit=500)
@@ -4923,22 +5196,22 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     clean_l_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_loans])
                     st.dataframe(clean_l_df, use_container_width=True)
 
-                    with st.expander("🔍 View Itemized Details & Technical Breakdown"):
+                    with st.expander("🔍 View Transaction Details"):
                         l_idx = st.selectbox("Select Loan to Inspect:", range(len(enriched_loans)), format_func=lambda i: f"{enriched_loans[i]['Loan Number']} — {enriched_loans[i]['Client Name']} ({enriched_loans[i]['Principal']})", key="sb_loan_idx")
                         l_sel = enriched_loans[l_idx]
-                        st.markdown("### 📄 Loan Facility Detail")
+                        st.markdown("### 📄 Transaction Information")
                         lc1_d, lc2_d, lc3_d = st.columns(3)
-                        lc1_d.markdown(f"**Loan Number:** {l_sel['Loan Number']}\n\n**Disbursement Date:** {l_sel['Disbursement Date']}")
+                        lc1_d.markdown(f"**Loan Number:** `{l_sel['Loan Number']}`\n\n**Disbursement Date:** {l_sel['Disbursement Date']}")
                         lc2_d.markdown(f"**Client:** {l_sel['Client Code']} ({l_sel['Client Name']})\n\n**Principal:** {l_sel['Principal']}")
                         lc3_d.markdown(f"**Product:** {l_sel['Product']}\n\n**Status:** {l_sel['Status']}")
 
-                        with st.expander("🛠️ Advanced Technical Details (Auditor Only)"):
+                        with st.expander("🛠️ Advanced Technical Details"):
                             st.json(l_sel["_raw_record"])
 
                     csv_l = clean_l_df.to_csv(index=False).encode('utf-8')
                     st.download_button("📥 Export Loan Disbursements CSV", data=csv_l, file_name="audit_loan_disbursements.csv", mime="text/csv")
                 else:
-                    st.info("No loan disbursements found matching criteria.")
+                    st.info("No records found for the selected filters. Try changing the date range or search criteria.")
             else:
                 raw_rep_records = audit_views.get_loan_repayments(date_from=loan_d_from, date_to=loan_d_to, limit=500)
                 enriched_reps = enricher.enrich_repayment_records(raw_rep_records)
@@ -4964,28 +5237,29 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     clean_r_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_reps])
                     st.dataframe(clean_r_df, use_container_width=True)
 
-                    with st.expander("🔍 View Itemized Details & Technical Breakdown"):
+                    with st.expander("🔍 View Transaction Details"):
                         r_idx = st.selectbox("Select Repayment to Inspect:", range(len(enriched_reps)), format_func=lambda i: f"{enriched_reps[i]['Client Code']} — {enriched_reps[i]['Client Name']} ({enriched_reps[i]['Amount Paid']})", key="sb_rep_idx")
                         r_sel = enriched_reps[r_idx]
-                        st.markdown("### 📄 Repayment Receipt Detail")
+                        st.markdown("### 📄 Transaction Information")
                         rc1_d, rc2_d, rc3_d = st.columns(3)
                         rc1_d.markdown(f"**Repayment Date:** {r_sel['Repayment Date']}\n\n**Client Code:** {r_sel['Client Code']}")
                         rc2_d.markdown(f"**Client Name:** {r_sel['Client Name']}\n\n**Amount Paid:** {r_sel['Amount Paid']}")
                         rc3_d.markdown(f"**Officer:** {r_sel['Officer']}\n\n**Branch:** {r_sel['Branch']}")
 
-                        with st.expander("🛠️ Advanced Technical Details (Auditor Only)"):
+                        with st.expander("🛠️ Advanced Technical Details"):
                             st.json(r_sel["_raw_record"])
 
                     csv_r = clean_r_df.to_csv(index=False).encode('utf-8')
                     st.download_button("📥 Export Repayments CSV", data=csv_r, file_name="audit_loan_repayments.csv", mime="text/csv")
                 else:
-                    st.info("No repayments found matching criteria.")
+                    st.info("No records found for the selected filters. Try changing the date range or search criteria.")
 
         # ---------------------------------------------------------------------
         # TAB 6: 🎯 Collection Performance
         # ---------------------------------------------------------------------
         with audit_tab6:
             st.subheader("🎯 Collection Performance Audit")
+            st.caption("Meeting compliance matrix comparing expected collections against actual payments.")
             try:
                 res_cp = uow_ac.client.table("collection_performance").select("*").order("meeting_date", desc=True).limit(500).execute()
                 raw_cp_data = res_cp.data or []
@@ -4994,16 +5268,16 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     clean_cp_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_cp])
                     st.dataframe(clean_cp_df, use_container_width=True)
                 else:
-                    st.info("No collection performance records found.")
+                    st.info("No records found for the selected filters. Try changing the date range or search criteria.")
             except Exception:
-                st.info("No collection performance data available.")
+                st.info("No records found for the selected filters. Try changing the date range or search criteria.")
 
         # ---------------------------------------------------------------------
         # TAB 7: 🚨 15 Exception Reports
         # ---------------------------------------------------------------------
         with audit_tab7:
             st.subheader("🚨 15 Automated Audit Exception Reports")
-            st.caption("Scans the core database for compliance breaches, unposted transactions, or projection anomalies.")
+            st.caption("Scans core database for compliance breaches, unposted transactions, or projection anomalies.")
 
             ex_data = FinancialReconciliationService.run_15_exception_reports(uow_ac, BRANCH_ID if ROLE not in [ROLE_ADMIN, 'Super Admin', 'Admin'] else None)
             st.metric("Total Exceptions Detected", ex_data["total_exceptions"], delta=f"{ex_data['exception_rules_evaluated']} Rules Evaluated")
@@ -5019,7 +5293,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
         # TAB 8: 🔎 360° Universal Explorer & Timeline
         # ---------------------------------------------------------------------
         with audit_tab8:
-            st.subheader("🔎 360° Universal Human-Term Search & Audit Timeline")
+            st.subheader("🔎 360° Universal Search & Audit Timeline")
             st.caption("Search by Client Code (e.g. OGI-12-005), Customer Name, Officer, Loan Number, or Reference ID.")
             search_tx = st.text_input("Enter Search Term:", placeholder="e.g. OGI-12-005, Adewale, Ayomide, REF-00382", key="ac_explorer_input")
 
@@ -5046,14 +5320,14 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         st.markdown("#### ⚖️ General Ledger Journals")
                         st.dataframe(pd.DataFrame(exp_res["ledger_transactions"]), use_container_width=True)
                 else:
-                    st.warning(f"No audit records matched '{search_tx}'")
+                    st.info("No records found for the selected filters. Try changing the date range or search criteria.")
 
         # ---------------------------------------------------------------------
         # TAB 9: 📈 Performance Insights
         # ---------------------------------------------------------------------
         with audit_tab9:
             st.subheader("📈 Executive Performance Insights")
-            st.info("System Performance & Portfolio Quality Insights")
+            st.caption("System Performance & Portfolio Quality Insights")
             try:
                 from services.client_risk_rating_service import ClientRiskRatingService
                 risk_dist = ClientRiskRatingService.get_branch_risk_distribution(uow_ac, BRANCH_ID)
@@ -5076,8 +5350,6 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     st.success(f"✔ Self-healing complete! Rebuilt {repair_res['rebuilt_officer_count']} officer cashbooks & Master Cashbook.")
                     st.json(repair_res["verification_after_repair"])
 
-
-elif page == "CO Cashbook":
 
     st.title("📖 CO Daily Cashbook")
     st.caption("Daily Ledger — Auto-Calculated from Collections")

@@ -1,13 +1,15 @@
 """
-AuditEnricher — Phase 8.2 Executive Audit & Human-Readable Ledger Transformation
+AuditEnricher — Phase 8.4 Executive Banking Experience & Presentation Enrichment
 Resolves raw UUIDs and foreign keys into business-friendly codes and names:
 - client_id -> Client Code (e.g. OGI-12-005) & Client Name (e.g. Adewale Musa)
 - branch_id -> Branch Name (e.g. Ijebu Ode Branch)
 - officer_id -> Officer Name (e.g. Adenuga Ayomide)
 - product_id -> Product Name (e.g. Micro Business Loan)
 
-Formats currency (₦3,000.00), dates (24 Jul 2026), status badges (🟢, 🟡, 🔴),
-and hides internal database columns from default management grids.
+Enforces strict commercial banking presentation rules:
+- Currency always formatted as ₦45,000.00
+- Dates always formatted as 24 Jul 2026
+- Statuses formatted as clean executive badges (🟢 Paid, 🟡 Part Payment, 🔴 Not Paid)
 """
 
 from typing import List, Dict, Any, Optional
@@ -183,15 +185,15 @@ class AuditEnricher:
     def format_status_badge(status_raw: Any) -> str:
         """Return executive color status badge: 🟢 Paid, 🟡 Part Payment, 🔴 Not Paid."""
         if not status_raw:
-            return "⚪ Pending"
+            return "🟡 Pending"
 
         st_str = str(status_raw).upper().strip()
         if st_str in ["PAID", "ACTIVE", "DISBURSED", "APPROVED", "COMPLETED", "CLOSED", "SUCCESS", "PERFECT_MATCH", "BALANCED", "100%"]:
-            return f"🟢 {status_raw.capitalize() if isinstance(status_raw, str) else status_raw}"
+            return "🟢 Paid" if st_str == "PAID" else ("🟢 Approved" if st_str == "APPROVED" else f"🟢 {status_raw.capitalize() if isinstance(status_raw, str) else status_raw}")
         elif st_str in ["PART_PAYMENT", "PENDING", "REVIEW", "UNDER_REVIEW", "PARTIAL", "PARTIAL_MATCH", "50%"]:
-            return f"🟡 {status_raw.capitalize() if isinstance(status_raw, str) else status_raw}"
+            return "🟡 Part Payment" if st_str == "PART_PAYMENT" else ("🟡 Pending" if st_str == "PENDING" else f"🟡 {status_raw.capitalize() if isinstance(status_raw, str) else status_raw}")
         elif st_str in ["NOT_PAID", "OVERDUE", "REJECTED", "DEFAULTER", "MISMATCH", "FAILED", "0%"]:
-            return f"🔴 {status_raw.capitalize() if isinstance(status_raw, str) else status_raw}"
+            return "🔴 Not Paid" if st_str == "NOT_PAID" else ("🔴 Rejected" if st_str == "REJECTED" else f"🔴 {status_raw.capitalize() if isinstance(status_raw, str) else status_raw}")
 
         return f"🔵 {status_raw}"
 
