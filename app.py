@@ -1807,52 +1807,59 @@ if page == "Dashboard":
     from database.repositories.unit_of_work import SupabaseUnitOfWork
 
     with SupabaseUnitOfWork() as uow:
-        # ROLE-BASED DASHBOARD DISPATCH
+        # ROLE-BASED DASHBOARD DISPATCH (PHASE 8.4.1)
         if ROLE in ["Director", "Executive", "Board"]:
             st.markdown("### 🏛️ Executive Board Dashboard")
-            st.caption("Strategic Portfolio & Institutional Operational Overview (Read-Only)")
+            st.caption("Strategic Portfolio & Institutional Overview (Read-Only Executive Insights)")
             d_data = DashboardService.get_director_dashboard_data(uow)
-            
-            snap = d_data["snapshot"]
+
+            exec_ov = d_data["executive_overview"]
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("💵 Today's Collections", f"₦{snap['today_collections']:,.0f}")
-            c2.metric("📅 MTD Collections", f"₦{snap['mtd_collections']:,.0f}")
-            c3.metric("📈 Outstanding Portfolio", f"₦{snap['outstanding_portfolio']:,.0f}")
-            c4.metric("🐷 Total Active Savings", f"₦{snap['total_savings']:,.0f}")
+            c1.metric("💵 Today's Collections", f"₦{exec_ov['today_collections']:,.0f}")
+            c2.metric("📅 MTD Collections", f"₦{exec_ov['mtd_collections']:,.0f}")
+            c3.metric("📈 Outstanding Portfolio", f"₦{exec_ov['outstanding_portfolio']:,.0f}")
+            c4.metric("🐷 Total Savings", f"₦{exec_ov['total_savings']:,.0f}")
 
             c5, c6 = st.columns(2)
-            c5.metric("🚨 Portfolio At Risk (PAR)", snap["par_pct"], delta_color="inverse")
-            c6.metric("🎯 Portfolio Recovery Rate", snap["recovery_rate_pct"])
+            c5.metric("🚨 Portfolio At Risk (PAR)", exec_ov["par"], delta_color="inverse")
+            c6.metric("🎯 Recovery Rate", exec_ov["recovery_rate"])
 
             st.divider()
-            st.markdown("#### 💰 Institutional Cash Position")
-            cp = d_data["cash_position"]
-            k1, k2, k3 = st.columns(3)
-            k1.metric("💵 Total Liquid Cash", f"₦{cp['total_liquid_cash']:,.0f}")
-            k2.metric("🏦 Bank Reserves", f"₦{cp['bank_reserves']:,.0f}")
-            k3.metric("🏛️ Total Treasury Position", f"₦{cp['treasury_total']:,.0f}")
-
-            st.divider()
-            st.markdown("#### 🏆 Top Performing Branches")
-            st.write(", ".join([f"**{b}**" for b in d_data["top_5_branches"]]))
+            t_col1, t_col2 = st.columns(2)
+            with t_col1:
+                st.markdown("#### 🏆 Top Five Branches")
+                for b in d_data["top_five_branches"]:
+                    st.write(f"🥇 **{b}**")
+            with t_col2:
+                st.markdown("#### ⚠️ Bottom Five Branches")
+                for b in d_data["bottom_five_branches"]:
+                    st.write(f"🔻 **{b}**")
 
             if d_data["strategic_alerts"]:
+                st.divider()
                 st.markdown("#### 🔔 Strategic Alerts")
                 for sa in d_data["strategic_alerts"]:
                     st.info(f"ℹ️ {sa}")
 
         elif ROLE in [ROLE_ADMIN, "Super Admin", "Admin"]:
             st.markdown("### 👑 Global Administrator Dashboard")
-            st.caption("System Operations, Health, & Institutional Performance")
+            st.caption("Institution Operations & Platform Health")
             a_data = DashboardService.get_admin_dashboard_data(uow)
+            ops = a_data["today_operations"]
 
-            inst = a_data["institution_summary"]
-            g1, g2, g3, g4, g5 = st.columns(5)
-            g1.metric("🏦 Branches", inst["branches"])
-            g2.metric("👤 Officers", inst["officers"])
-            g3.metric("👥 Active Clients", inst["clients"])
-            g4.metric("📈 Active Loans", inst["loans"])
-            g5.metric("🐷 Total Savings", f"₦{inst['savings']:,.0f}")
+            st.markdown("#### 📅 Today's Institution Performance")
+            p1, p2, p3, p4 = st.columns(4)
+            p1.metric("💵 Today's Institution Collection", f"₦{ops['today_collection']:,.0f}")
+            p2.metric("📥 Today's Savings Deposits", f"₦{ops['today_savings_deposit']:,.0f}")
+            p3.metric("📤 Today's Savings Withdrawals", f"₦{ops['today_savings_withdrawal']:,.0f}")
+            p4.metric("🚀 Today's Loan Disbursement", f"₦{ops['today_disbursement']:,.0f}")
+
+            st.markdown("#### 📊 Today's Repayment Status Breakdown")
+            s1, s2, s3, s4 = st.columns(4)
+            s1.metric("🎯 Full Payments", f"₦{ops['full_payments']['amount']:,.0f}", f"{ops['full_payments']['count']} Clients")
+            s2.metric("🚀 Excess Payments", f"₦{ops['excess_payments']['amount']:,.0f}", f"{ops['excess_payments']['count']} Clients")
+            s3.metric("⚠️ Part Payments", f"₦{ops['part_payments']['amount']:,.0f}", f"{ops['part_payments']['count']} Clients")
+            s4.metric("🚨 Not Paid", f"₦{ops['not_paid']['amount']:,.0f}", f"{ops['not_paid']['count']} Clients", delta_color="inverse")
 
             st.divider()
             st.markdown("#### 🛡️ System & Operations Health")
@@ -1861,20 +1868,6 @@ if page == "Dashboard":
             h1.info(f"⚙️ **Projection Status**: {health['projection_status']}")
             h2.info(f"📬 **Event Queue**: {health['event_queue_status']}")
             h3.info(f"🔄 **Database Sync**: {health['db_sync_status']}")
-
-            h4, h5, h6 = st.columns(3)
-            h4.metric("❌ Failed Transactions", health["failed_transactions"])
-            h5.metric("⏳ Pending Approvals", health["pending_approvals"])
-            h6.metric("🚨 Audit Exceptions", health["audit_exceptions"])
-
-            st.divider()
-            st.markdown("#### 📅 Today's Institution Performance")
-            t_perf = a_data["today_performance"]
-            p1, p2, p3, p4 = st.columns(4)
-            p1.metric("💵 Repayments Today", f"₦{t_perf['repayment']:,.0f}")
-            p2.metric("📥 Savings Deposits", f"₦{t_perf['savings_deposits']:,.0f}")
-            p3.metric("📤 Savings Withdrawals", f"₦{t_perf['savings_withdrawals']:,.0f}")
-            p4.metric("🚀 Loan Disbursements", f"₦{t_perf['loan_disbursements']:,.0f}")
 
         elif ROLE in ["AM", "Area Manager"]:
             st.markdown("### 🌐 Area Manager Dashboard")
@@ -1891,14 +1884,6 @@ if page == "Dashboard":
             r3.metric("📈 Outstanding Portfolio", f"₦{reg['outstanding_portfolio']:,.0f}")
             r4.metric("🐷 Total Savings", f"₦{reg['savings']:,.0f}")
             r5.metric("💵 Today's Collection", f"₦{reg['today_collection']:,.0f}")
-
-            st.divider()
-            st.markdown("#### 🚨 Branches Requiring Immediate Attention")
-            att_b = am_data["branches_requiring_attention"]
-            if not att_b.empty:
-                st.dataframe(att_b, use_container_width=True, hide_index=True)
-            else:
-                st.success("✅ All branches operating within healthy parameters.")
 
             st.divider()
             st.markdown("#### 📊 Regional Branch Performance Grid")
@@ -1941,20 +1926,21 @@ if page == "Dashboard":
             b3.metric("💵 Collection Today", f"₦{bs['collection_today']:,.0f}")
             b4.metric("🚨 PAR", bs["par"])
 
-            # Section C: Officer Collection Status
+            # Officer Collection Status Grid
             st.markdown("#### 📊 Officer Collection Status")
-            off_status = bm_data["officer_collection_status"]
-            if off_status:
-                st.dataframe(pd.DataFrame(off_status), use_container_width=True, hide_index=True)
+            off_df = bm_data["officer_collection_status"]
+            if not off_df.empty:
+                st.dataframe(off_df, use_container_width=True, hide_index=True)
 
-            # Section E: Branch Cash Position
+            # Branch Cash Position
             st.markdown("#### 💰 Branch Cash Position (Master Cashbook)")
             cp = bm_data["branch_cash_position"]
-            k1, k2, k3, k4 = st.columns(4)
+            k1, k2, k3, k4, k5 = st.columns(5)
             k1.metric("Opening Balance", f"₦{cp['opening_balance']:,.0f}")
             k2.metric("Total Inflows", f"₦{cp['cash_in']:,.0f}")
             k3.metric("Total Outflows", f"₦{cp['cash_out']:,.0f}")
             k4.metric("Closing Balance", f"₦{cp['closing_balance']:,.0f}")
+            k5.metric("Status", cp["status"])
 
         else: # CO / Officer
             st.markdown(f"### 📱 Credit Officer Dashboard — {USER} ({BRANCH})")
@@ -1963,33 +1949,50 @@ if page == "Dashboard":
             wel = co_data["welcome"]
             st.info(f"👋 **Welcome {wel['officer_name']}** | {wel['branch_name']} Branch | Business Date: **{wel['date_str']}** ({wel['meeting_day']}) | System Time: {wel['time_str']}")
 
-            # Section B: Today's Repayment Summary
+            # Today's Repayment Summary (12w vs 24w & Total)
             st.markdown("#### 📅 Today's Repayment Summary")
             rep_s = co_data["repayment_summary"]
             r1, r2, r3 = st.columns(3)
-            r1.metric("💵 Total Collected Today", f"₦{rep_s['total_collected']:,.0f}")
-            r2.metric("🎯 Total Expected Today", f"₦{rep_s['total_expected']:,.0f}")
-            r3.metric("📊 Route Compliance", f"{rep_s['compliance_pct']}%")
+            r1.metric("🗓️ 12 Weeks (60 Days)", f"₦{rep_s['rep_12_weeks_amt']:,.0f}", f"{rep_s['rep_12_weeks_clients']} Clients Paid")
+            r2.metric("🗓️ 24 Weeks (120 Days)", f"₦{rep_s['rep_24_weeks_amt']:,.0f}", f"{rep_s['rep_24_weeks_clients']} Clients Paid")
+            r3.metric("💵 Total Repayment Today", f"₦{rep_s['total_collected_today']:,.0f}")
 
-            # Section D: Today's Savings
+            # Today's Meeting Portfolio Grid
+            st.markdown("#### 🏘️ Today's Meeting Portfolio")
+            m_port = co_data["meeting_portfolio"]
+            if not m_port.empty:
+                st.dataframe(m_port, use_container_width=True, hide_index=True)
+
+            # Today's Savings
             st.markdown("#### 🐷 Today's Savings")
             sav = co_data["savings"]
             s1, s2, s3 = st.columns(3)
-            s1.metric("📥 Deposited Today", f"₦{sav['deposited']:,.0f}", f"{sav['deposited_clients']} Clients")
-            s2.metric("📤 Withdrawn Today", f"₦{sav['withdrawn']:,.0f}", f"{sav['withdrawn_clients']} Clients")
-            s3.metric("💰 Net Savings", f"₦{sav['net']:,.0f}")
+            s1.metric("📥 Savings Deposited", f"₦{sav['deposited_amt']:,.0f}", f"{sav['deposited_clients']} Clients")
+            s2.metric("📤 Savings Withdrawn", f"₦{sav['withdrawn_amt']:,.0f}", f"{sav['withdrawn_clients']} Clients")
+            s3.metric("💰 Net Savings", f"₦{sav['net_savings']:,.0f}")
 
-            # Section F: Cash Position
-            st.markdown("#### 💰 My Cash Position (CO Cashbook)")
+            # Today's Repayment Status Cards
+            st.markdown("#### 📊 Today's Repayment Status")
+            st_cards = co_data["repayment_status"]
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("🎯 Full Payment", f"₦{st_cards['full_payment']['amount']:,.0f}", f"{st_cards['full_payment']['count']} Clients")
+            c2.metric("⚠️ Part Payment", f"₦{st_cards['part_payment']['amount']:,.0f}", f"{st_cards['part_payment']['count']} Clients")
+            c3.metric("🚀 Excess Payment", f"₦{st_cards['excess_payment']['amount']:,.0f}", f"{st_cards['excess_payment']['count']} Clients")
+            c4.metric("🚨 Not Paid", f"₦{st_cards['not_paid']['amount']:,.0f}", f"{st_cards['not_paid']['count']} Clients", delta_color="inverse")
+
+            # Cash Position (CoCashbookProjectionBuilder)
+            st.markdown("#### 💰 Cash Position (CO Cashbook)")
             cp = co_data["cash_position"]
-            k1, k2, k3, k4 = st.columns(4)
+            k1, k2, k3, k4, k5, k6 = st.columns(6)
             k1.metric("Opening Balance", f"₦{cp['opening_balance']:,.0f}")
-            k2.metric("Cash Inflows", f"₦{cp['cash_in']:,.0f}")
-            k3.metric("Cash Outflows", f"₦{cp['cash_out']:,.0f}")
+            k2.metric("Cash In", f"₦{cp['cash_in']:,.0f}")
+            k3.metric("Cash Out", f"₦{cp['cash_out']:,.0f}")
             k4.metric("Closing Balance", f"₦{cp['closing_balance']:,.0f}")
+            k5.metric("Cashbook Status", cp["status"])
+            k6.metric("Difference", f"₦{cp['difference']:,.0f}")
 
-            # Section G: Today's Attention List
-            st.markdown("#### 🚨 Today's Attention List (Part Payment / Not Paid)")
+            # Today's Attention List
+            st.markdown("#### 🚨 Today's Attention List")
             att_list = co_data["attention_list"]
             if not att_list.empty:
                 st.dataframe(att_list, use_container_width=True, hide_index=True)
