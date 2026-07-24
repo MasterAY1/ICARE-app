@@ -3452,8 +3452,15 @@ elif page == "Collections":
         st.warning("No active loans found.")
     else:
         # Filter active loans for this officer (unless BM/AM looking at all)
-        if ROLE in ["BM", "AM"]:
-            branch_loans = all_loans[all_loans['Branch'] == BRANCH] if ROLE == "BM" else all_loans
+        if ROLE in ["BM", "AM", "Branch Manager", "Area Manager"]:
+            if scope.scope_level == "BRANCH":
+                branch_loans = all_loans[all_loans['Branch'].astype(str).str.lower() == str(scope.branch_name).lower()] if scope.branch_name else all_loans
+            elif scope.scope_level == "REGION":
+                assigned_lower = [b.lower() for b in scope.assigned_branch_names]
+                branch_loans = all_loans[all_loans['Branch'].astype(str).str.lower().isin(assigned_lower)] if scope.assigned_branch_names else all_loans
+            else:
+                branch_loans = all_loans
+
             unique_officers = branch_loans['Officer'].dropna().unique().tolist()
             if unique_officers:
                 display_options = [CO_DISPLAY_MAP.get(o, o) for o in unique_officers]
@@ -6072,16 +6079,18 @@ elif page in ["Reports", "Reports & Export"]:
     
     all_loans = load_loans()
     all_repayments = load_repayments()
-    my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
+    
+    # Filter datasets using centralized RBACScopeService
+    my_loans = RBACScopeService.filter_dataframe(all_loans, scope)
+    all_repayments = RBACScopeService.filter_dataframe(all_repayments, scope)
 
-    if ROLE in ['AM', 'Area Manager']:
-        assigned_b_names = sorted(list(set(my_loans['Branch'].dropna().tolist()))) if not my_loans.empty and 'Branch' in my_loans.columns else []
+    if scope.scope_level == "REGION":
+        assigned_b_names = scope.assigned_branch_names
         am_rep_branch_opts = ["All Assigned Branches"] + assigned_b_names
         selected_rep_am_branch = st.selectbox("🌐 Filter Reports by Branch:", am_rep_branch_opts, key="am_reports_branch_filter")
         if selected_rep_am_branch != "All Assigned Branches":
-            my_loans = my_loans[my_loans['Branch'] == selected_rep_am_branch]
-            if not all_repayments.empty and 'Branch' in all_repayments.columns:
-                all_repayments = all_repayments[all_repayments['Branch'] == selected_rep_am_branch]
+            my_loans = RBACScopeService.filter_dataframe(my_loans, scope, selected_branch=selected_rep_am_branch)
+            all_repayments = RBACScopeService.filter_dataframe(all_repayments, scope, selected_branch=selected_rep_am_branch)
     
     # Summary Report
     st.markdown("<div class='card'>", unsafe_allow_html=True)
