@@ -2360,14 +2360,16 @@ elif page == "Loan Origination":
                                     "marital_status": client_entity.marital_status,
                                     "average_monthly_income": client_entity.average_monthly_income,
                                     "other_obligations": client_entity.other_obligations,
-                                    "guarantor_name": st.session_state.get("reg_guarantor_name"),
-                                    "guarantor_nickname": st.session_state.get("reg_guarantor_nickname"),
-                                    "guarantor_phone": st.session_state.get("reg_guarantor_phone"),
-                                    "guarantor_home_address": st.session_state.get("reg_guarantor_address"),
-                                    "guarantor_marital_status": st.session_state.get("reg_guarantor_marital"),
-                                    "guarantor_occupation": st.session_state.get("reg_guarantor_occupation"),
-                                    "guarantor_relationship": st.session_state.get("reg_guarantor_relationship"),
-                                    "guarantor_office_address": st.session_state.get("reg_guarantor_office"),
+                                    "extra_fields": {
+                                        "guarantor_name": st.session_state.get("reg_guarantor_name"),
+                                        "guarantor_nickname": st.session_state.get("reg_guarantor_nickname"),
+                                        "guarantor_phone": st.session_state.get("reg_guarantor_phone"),
+                                        "guarantor_home_address": st.session_state.get("reg_guarantor_address"),
+                                        "guarantor_marital_status": st.session_state.get("reg_guarantor_marital"),
+                                        "guarantor_occupation": st.session_state.get("reg_guarantor_occupation"),
+                                        "guarantor_relationship": st.session_state.get("reg_guarantor_relationship"),
+                                        "guarantor_office_address": st.session_state.get("reg_guarantor_office")
+                                    },
                                     "guarantor_id_means": st.session_state.get("reg_guarantor_id_means"),
                                     "guarantor_id_number": st.session_state.get("reg_guarantor_id_number"),
                                     "guarantor_id_card_url": uploaded_g_id_url,
@@ -2710,12 +2712,15 @@ elif page == "Loan Origination":
                                                 
                                                 # Save guarantor details on the active loan row
                                                 uow.client.table("loans").update({
-                                                    "guarantor_name": g_name_val,
-                                                    "guarantor_phone": g_phone_val,
-                                                    "guarantor_home_address": g_address_val,
-                                                    "guarantor_occupation": g_occ_val,
-                                                    "guarantor_office_address": g_office_val,
-                                                    "guarantor_relationship": g_rel_val,
+                                                    "extra_fields": {
+                                                        "lifecycle_status": "Active",
+                                                        "guarantor_name": g_name_val,
+                                                        "guarantor_phone": g_phone_val,
+                                                        "guarantor_home_address": g_address_val,
+                                                        "guarantor_occupation": g_occ_val,
+                                                        "guarantor_office_address": g_office_val,
+                                                        "guarantor_relationship": g_rel_val
+                                                    },
                                                     "guarantor_id_means": g_id_means_val,
                                                     "guarantor_id_number": g_id_number_val
                                                 }).eq("loan_id", loan_id).execute()
@@ -2771,13 +2776,15 @@ elif page == "Loan Origination":
                                                     "marital_status": "Married",
                                                     "average_monthly_income": 0.0,
                                                     "other_obligations": "",
-                                                    "guarantor_name": g_name_val,
-                                                    "guarantor_phone": g_phone_val,
-                                                    "guarantor_home_address": g_address_val,
-                                                    "guarantor_marital_status": "Married",
-                                                    "guarantor_occupation": g_occ_val,
-                                                    "guarantor_relationship": g_rel_val,
-                                                    "guarantor_office_address": g_office_val,
+                                                    "extra_fields": {
+                                                        "guarantor_name": g_name_val,
+                                                        "guarantor_phone": g_phone_val,
+                                                        "guarantor_home_address": g_address_val,
+                                                        "guarantor_marital_status": "Married",
+                                                        "guarantor_occupation": g_occ_val,
+                                                        "guarantor_relationship": g_rel_val,
+                                                        "guarantor_office_address": g_office_val
+                                                    },
                                                     "guarantor_id_means": g_id_means_val,
                                                     "guarantor_id_number": g_id_number_val
                                                 }).execute()
@@ -2969,10 +2976,11 @@ elif page == "Loan Origination":
                 res_u = uow.client.table("app_users").select("full_name").eq("id", selected_client.officer_id).execute()
                 officer_name = res_u.data[0]["full_name"] if res_u.data else "Unknown"
                 
-                res_l = uow.client.table("loans").select("guarantor_name, guarantor_phone, guarantor_relationship").eq("client_id", selected_client.id).order("created_at", desc=True).limit(1).execute()
-                g_name_val = res_l.data[0].get("guarantor_name") if res_l.data else None
-                g_phone_val = res_l.data[0].get("guarantor_phone") if res_l.data else None
-                g_rel_val = res_l.data[0].get("guarantor_relationship") if res_l.data else None
+                res_l = uow.client.table("loans").select("extra_fields").eq("client_id", selected_client.id).order("created_at", desc=True).limit(1).execute()
+                extra = res_l.data[0].get("extra_fields") or {} if res_l.data else {}
+                g_name_val = extra.get("guarantor_name")
+                g_phone_val = extra.get("guarantor_phone")
+                g_rel_val = extra.get("guarantor_relationship")
                 
             col4.markdown(f"**Branch:** {branch_name}")
             col5.markdown(f"**Group:** {group_name}")
@@ -3300,20 +3308,22 @@ elif page == "Loan Origination":
                 st.markdown("#### 2. Guarantor Info")
                 g_col1, g_col2, g_col3 = st.columns(3)
                 
-                g_name = g_col1.text_input("Guarantor Full Name", value=latest_loan.get("guarantor_name") or "")
-                g_phone = g_col2.text_input("Guarantor Phone Number", value=latest_loan.get("guarantor_phone") or "")
-                g_address = g_col3.text_input("Guarantor Home Address", value=latest_loan.get("guarantor_home_address") or "")
+                loan_extra = latest_loan.get("extra_fields") or {}
+                
+                g_name = g_col1.text_input("Guarantor Full Name", value=loan_extra.get("guarantor_name") or "")
+                g_phone = g_col2.text_input("Guarantor Phone Number", value=loan_extra.get("guarantor_phone") or "")
+                g_address = g_col3.text_input("Guarantor Home Address", value=loan_extra.get("guarantor_home_address") or "")
                 
                 g_col4, g_col5, g_col6 = st.columns(3)
                 g_marital_options = ["Married", "Single", "Divorced", "Widowed"]
-                g_marital_val = latest_loan.get("guarantor_marital_status") or "Married"
+                g_marital_val = loan_extra.get("guarantor_marital_status") or "Married"
                 g_marital_idx = g_marital_options.index(g_marital_val) if g_marital_val in g_marital_options else 0
                 g_marital = g_col4.selectbox("Guarantor Marital Status", g_marital_options, index=g_marital_idx)
                 
-                g_occ = g_col5.text_input("Guarantor Occupation", value=latest_loan.get("guarantor_occupation") or "")
-                g_rel = g_col6.text_input("Relationship with Client", value=latest_loan.get("guarantor_relationship") or "")
+                g_occ = g_col5.text_input("Guarantor Occupation", value=loan_extra.get("guarantor_occupation") or "")
+                g_rel = g_col6.text_input("Relationship with Client", value=loan_extra.get("guarantor_relationship") or "")
                 
-                g_office = st.text_input("Guarantor Office Address", value=latest_loan.get("guarantor_office_address") or "")
+                g_office = st.text_input("Guarantor Office Address", value=loan_extra.get("guarantor_office_address") or "")
                 
                 st.markdown("##### 🆔 Guarantor Identification & Passport")
                 g_id_col1, g_id_col2, g_id_col3 = st.columns(3)
@@ -3394,7 +3404,8 @@ elif page == "Loan Origination":
 
                                 # 3. Update Guarantor details in the latest loan (if exists)
                                 if latest_loan:
-                                    loan_update_data = {
+                                    loan_extra = latest_loan.get("extra_fields") or {}
+                                    loan_extra.update({
                                         "guarantor_name": g_name.strip() if g_name.strip() else None,
                                         "guarantor_phone": g_phone.strip() if g_phone.strip() else None,
                                         "guarantor_home_address": g_address.strip() if g_address.strip() else None,
@@ -3402,6 +3413,9 @@ elif page == "Loan Origination":
                                         "guarantor_occupation": g_occ.strip() if g_occ.strip() else None,
                                         "guarantor_relationship": g_rel.strip() if g_rel.strip() else None,
                                         "guarantor_office_address": g_office.strip() if g_office.strip() else None,
+                                    })
+                                    loan_update_data = {
+                                        "extra_fields": loan_extra,
                                         "guarantor_id_means": g_id_means,
                                         "guarantor_id_number": g_id_number.strip() if g_id_number.strip() else None
                                     }
