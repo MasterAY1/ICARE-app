@@ -10,7 +10,7 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
     def __init__(self, client):
         super().__init__(client)
         self.table_name = "repayments"
-        self.columns = "id,date,loan_id,client_id,amount_paid,officer_id,branch_id,note,transaction_type,created_at,clients(name,client_code),branches(name),app_users(username, full_name)"
+        self.columns = "id,date,loan_id,client_id,amount_paid,officer_id,branch_id,note,transaction_type,payment_status,expected_amount,overdue_amount,created_at,clients(name,client_code),branches(name),app_users(username, full_name)"
 
     def _resolve_branch_id(self, branch_name: str) -> str:
         if not branch_name:
@@ -172,6 +172,9 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
             "amount_paid": amt,
             "officer_id": officer_id,
             "branch_id": branch_id,
+            "payment_status": entity.payment_status or "PAID",
+            "expected_amount": entity.expected_amount or 0.0,
+            "overdue_amount": entity.overdue_amount or 0.0,
             "note": entity.note or "",
             "transaction_type": entity.transaction_type or "Loan"
         }

@@ -230,6 +230,9 @@ class RepaymentMapper:
             transaction_type=str(dto.get("transaction_type", "Loan")),
             branch=b_name,
             credit_officer=o_name,
+            payment_status=str(dto.get("payment_status") or "PAID"),
+            expected_amount=safe_float(dto.get("expected_amount")),
+            overdue_amount=safe_float(dto.get("overdue_amount")),
             note=str(dto.get("note") or ""),
             created_at=_parse_datetime(dto.get("created_at")),
             extra_fields=extra
@@ -251,6 +254,9 @@ class RepaymentMapper:
             "transaction_type": entity.transaction_type,
             "branch": entity.branch,
             "officer": entity.credit_officer,
+            "payment_status": entity.payment_status,
+            "expected_amount": entity.expected_amount,
+            "overdue_amount": entity.overdue_amount,
             "note": entity.note
         }
         db_dict.update(entity.extra_fields)

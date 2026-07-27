@@ -959,7 +959,8 @@ DB_TO_UI_REP = {
     "bank_deposited": "Bank Deposited", "closing_balance": "Closing Balance",
     "laps_reserved": "Laps Reserved", "laps_transferred": "Laps Transferred",
     "initial_payment": "initial_payment", "group_savings_dep": "Group Savings Deposit", "group_savings_wd": "Group Savings Withdrawal", "misc_fees": "Misc Fees",
-    "asset_credit_sales": "Asset Credit Sales", "cash_and_carry": "Cash and Carry", "credit_form": "Credit Form", "credit_form_damage": "Credit Form Damage", "bonus": "Bonus"
+    "asset_credit_sales": "Asset Credit Sales", "cash_and_carry": "Cash and Carry", "credit_form": "Credit Form", "credit_form_damage": "Credit Form Damage", "bonus": "Bonus",
+    "payment_status": "Payment Status", "expected_amount": "Expected Amount", "overdue_amount": "Overdue Amount"
 }
 UI_TO_DB_REP = {v: k for k, v in DB_TO_UI_REP.items()}
 
@@ -3490,7 +3491,13 @@ elif page == "Collections":
     st.title("👥 Daily Collections & Outflows")
     st.caption("Record daily repayments, savings, and end of day outflows.")
     
-    view_date = st.date_input("Select Date", datetime.now().date(), key="col_date")
+    use_late_entry = st.toggle("📅 Late Entry / Backdated Entry")
+    if use_late_entry:
+        view_date = st.date_input("Select Date", datetime.now().date(), key="col_date")
+    else:
+        view_date = datetime.now().date()
+        st.info(f"📅 Collections for {view_date.strftime('%d %B %Y')}")
+    
     date_str = view_date.strftime("%Y-%m-%d")
     
     all_loans = load_loans()
@@ -3711,12 +3718,63 @@ elif page == "Collections":
                 default_idx = groups.index(st.session_state["sel_group"])
                 del st.session_state["sel_group"]
                 
-            selected_group = st.selectbox("Select Group", groups, index=default_idx)
+            col_g1, col_g2 = st.columns([3, 1])
+            selected_group = col_g1.selectbox("Select Group", groups, index=default_idx)
             
             if selected_group == "Ungrouped":
                 group_clients = co_clients_df[co_clients_df['Group Name'] == "Ungrouped"]
             else:
                 group_clients = co_clients_df[co_clients_df['Group Name'] == selected_group]
+                
+            if col_g2.button("🖨️ Print Field Manifest", use_container_width=True):
+                manifest_html = f"""
+                <html>
+                <head>
+                    <title>Collection Manifest - {selected_group}</title>
+                    <style>
+                        body {{ font-family: sans-serif; padding: 20px; }}
+                        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+                        th, td {{ border: 1px solid #000; padding: 8px; text-align: left; }}
+                        th {{ background-color: #f2f2f2; }}
+                        .print-btn {{ padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; }}
+                        @media print {{ .print-btn {{ display: none; }} }}
+                    </style>
+                </head>
+                <body>
+                    <h2>Collection Manifest - {selected_group}</h2>
+                    <p><strong>Officer:</strong> {target_co} | <strong>Date:</strong> {date_str}</p>
+                    <button class="print-btn" onclick="window.print()">Print Manifest</button>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Client Name</th>
+                                <th>ID</th>
+                                <th>Amount Collected</th>
+                                <th>Savings</th>
+                                <th>Signature</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                """
+                
+                for _, row in group_clients.iterrows():
+                    manifest_html += f"""
+                            <tr>
+                                <td>{row['Client Name']}</td>
+                                <td>{row['Client ID']}</td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                            </tr>
+                    """
+                    
+                manifest_html += """
+                        </tbody>
+                    </table>
+                </body>
+                </html>
+                """
+                st.components.v1.html(manifest_html, height=800, scrolling=True)
                 
             if group_clients.empty:
                 st.info("No active members in this group.")
@@ -3902,13 +3960,23 @@ elif page == "Collections":
                                     st.markdown("---")
                                 
                                 st.markdown(f"**💵 Loan ({prod})** - Active Cr: ₦{info['act_cred']:,.0f}")
-                                st.markdown(f"ℹ️ *Expected repayment calculated from schedule: ₦{info['expected_rep_schedule']:,.2f}*")
+                                expected_rep = float(info['expected_rep_schedule'] or 0.0)
+                                st.markdown(f"ℹ️ *Expected repayment calculated from schedule: ₦{expected_rep:,.2f}*")
                                 
-                                rep_col = st.number_input(f"Credit Repayment", min_value=0.0, step=500.0, value=info['prev_rep'] if info['prev_rep'] > 0 else None, placeholder="0", key=f"rep_{cid}")
+                                p_status = st.radio("Payment Status", ["PAID", "CUSTOM_AMOUNT", "NOT_PAID"], index=0, horizontal=True, key=f"status_{cid}")
+                                
+                                if p_status == "NOT_PAID":
+                                    st.info("Amount will be saved as 0.")
+                                    rep_col = 0.0
+                                elif p_status == "CUSTOM_AMOUNT":
+                                    rep_col = st.number_input(f"Enter Collection Amount", min_value=0.0, step=500.0, value=float(info['prev_rep']) if info['prev_rep'] and info['prev_rep'] > 0 else None, placeholder="0", key=f"rep_{cid}")
+                                else:
+                                    rep_col = st.number_input(f"Expected Repayment Amount", min_value=0.0, step=500.0, value=float(info['prev_rep']) if info['prev_rep'] and info['prev_rep'] > 0 else expected_rep, key=f"rep_{cid}")
                                 
                                 rep_data[cid] = {
                                     "rep": rep_col, "app": 0, "pb": 0, "misc": 0,
-                                    "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0
+                                    "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0,
+                                    "payment_status": p_status, "expected_amount": expected_rep
                                 }
                         
                         st.markdown("---")
@@ -3921,7 +3989,7 @@ elif page == "Collections":
                             for cid, info in member_info.items():
                                 m = info['member']
                                 s = sav_data.get(cid, {"dep": 0, "wd": 0})
-                                r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0})
+                                r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0, "payment_status": "PAID", "expected_amount": 0.0})
                                 
                                 sav = float(s['dep'] or 0)
                                 sav_wd = float(s['wd'] or 0)
@@ -3935,7 +4003,8 @@ elif page == "Collections":
                                 bon = float(r['bonus'] or 0)
                                 
                                 if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
-                                    continue
+                                    if r.get("payment_status") != "NOT_PAID":
+                                        continue
                                 
                                 prod_low = str(m['Loan Product']).lower()
                                 rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
@@ -3974,6 +4043,9 @@ elif page == "Collections":
                                     "Credit Form": 0,
                                     "Credit Form Damage": cfd,
                                     "Bonus": bon,
+                                    "Payment Status": r.get("payment_status", "PAID"),
+                                    "Expected Amount": r.get("expected_amount", 0.0),
+                                    "Overdue Amount": max(0.0, r.get("expected_amount", 0.0) - rep),
                                     "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
                                     "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
                                     "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,

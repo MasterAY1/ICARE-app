@@ -18,6 +18,9 @@ class Repayment:
     transaction_type: str
     branch: str
     credit_officer: str
+    payment_status: Optional[str] = None
+    expected_amount: Optional[float] = 0.0
+    overdue_amount: Optional[float] = 0.0
     note: Optional[str] = ""
     created_at: Optional[datetime] = None
     extra_fields: dict = field(default_factory=dict)
