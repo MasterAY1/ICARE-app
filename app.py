@@ -2969,9 +2969,21 @@ elif page == "Loan Origination":
                 res_u = uow.client.table("app_users").select("full_name").eq("id", selected_client.officer_id).execute()
                 officer_name = res_u.data[0]["full_name"] if res_u.data else "Unknown"
                 
+                res_l = uow.client.table("loans").select("guarantor_name, guarantor_phone, guarantor_relationship").eq("client_id", selected_client.id).order("created_at", desc=True).limit(1).execute()
+                g_name_val = res_l.data[0].get("guarantor_name") if res_l.data else None
+                g_phone_val = res_l.data[0].get("guarantor_phone") if res_l.data else None
+                g_rel_val = res_l.data[0].get("guarantor_relationship") if res_l.data else None
+                
             col4.markdown(f"**Branch:** {branch_name}")
             col5.markdown(f"**Group:** {group_name}")
             col6.markdown(f"**Credit Officer:** {officer_name}")
+
+            if g_name_val or g_phone_val:
+                st.markdown("##### 🤝 Guarantor Details")
+                g_col1, g_col2, g_col3 = st.columns(3)
+                g_col1.markdown(f"**Name:** {g_name_val or 'N/A'}")
+                g_col2.markdown(f"**Phone:** {g_phone_val or 'N/A'}")
+                g_col3.markdown(f"**Relationship:** {g_rel_val or 'N/A'}")
 
             # 3. Load Savings Balance
             with SupabaseUnitOfWork() as uow:
