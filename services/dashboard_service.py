@@ -214,9 +214,17 @@ class DashboardService:
             col = g["Collected"]
             g["Outstanding"] = max(0.0, exp - col)
             g["Compliance %"] = round((col / exp * 100.0), 1) if exp > 0 else 100.0
+            if col >= exp and exp > 0:
+                g["Status"] = "🟢 Completed"
+            elif col > 0 and col < exp:
+                g["Status"] = "🟡 In Progress"
+            elif exp > 0 and col == 0:
+                g["Status"] = "🔴 Pending"
+            else:
+                g["Status"] = "🟢 Completed"
 
         attention_df = pd.DataFrame(attention_rows) if attention_rows else pd.DataFrame(columns=["Client Code", "Client Name", "Group", "Expected", "Paid", "Outstanding", "Reason"])
-        meeting_portfolio_df = pd.DataFrame(list(grp_map.values())) if grp_map else pd.DataFrame(columns=["Group Name", "Meeting Day", "Expected Collection", "Collected", "Outstanding", "Compliance %", "Clients Expected", "Clients Paid", "Clients Not Paid"])
+        meeting_portfolio_df = pd.DataFrame(list(grp_map.values())) if grp_map else pd.DataFrame(columns=["Group Name", "Meeting Day", "Expected Collection", "Collected", "Outstanding", "Compliance %", "Clients Expected", "Clients Paid", "Clients Not Paid", "Status"])
 
         return {
             "welcome": {

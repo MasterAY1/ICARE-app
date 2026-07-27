@@ -1800,7 +1800,13 @@ st.markdown(f"""
 # --- 6. PAGES ---
 
 def _nav_to_audit_center():
-    st.session_state["Navigation"] = "Audit Center"
+    # Detect permitted target alias for user role
+    from services.rbac_scope_service import RBACScopeService
+    u = st.session_state.get("user") or {}
+    r = u.get("role") or u.get("user_role") if isinstance(u, dict) else getattr(u, 'role', 'CO')
+    permitted = RBACScopeService.get_permitted_menu_items(str(r))
+    target = "Audit Ledger" if "Audit Ledger" in permitted else ("Audit Center" if "Audit Center" in permitted else "Dashboard")
+    st.session_state["Navigation"] = target
 
 if page == "Dashboard":
     d_col1, d_col2 = st.columns([3, 1])
@@ -1951,45 +1957,57 @@ if page == "Dashboard":
             k5.metric("Status", cp["status"])
 
         else: # CO / Officer
-            st.markdown(f"### 📱 Credit Officer Dashboard — {USER} ({BRANCH})")
+            st.markdown(f"### Credit Officer Dashboard — {USER} ({BRANCH})")
             co_data = DashboardService.get_co_dashboard_data(uow, BRANCH, USER, officer_id=USER_ID, branch_id=BRANCH_ID)
 
             wel = co_data["welcome"]
-            st.info(f"👋 **Welcome {wel['officer_name']}** | {wel['branch_name']} Branch | Business Date: **{wel['date_str']}** ({wel['meeting_day']}) | System Time: {wel['time_str']}")
+            st.info(f"Welcome **{wel['officer_name']}** | {wel['branch_name']} Branch | Business Date: **{wel['date_str']}** ({wel['meeting_day']}) | System Time: {wel['time_str']}")
 
-            # Today's Repayment Summary Cards (UI-01: Product Catalogue Cycles)
-            st.markdown("#### 📅 Today's Repayment Summary (Product Cycles)")
+            # Today's Repayment Summary Cards (UI-02: Clean Titles, Emoji Reduction)
+            st.markdown("#### Today's Repayment Summary")
             rep_s = co_data["repayment_summary"]
             r1, r2, r3 = st.columns(3)
-            r1.metric("🗓️ 12% Cycle (60D / 12W / 3M)", f"₦{rep_s['rep_12_weeks_amt']:,.0f}", f"{rep_s['rep_12_weeks_clients']} Clients Paid")
-            r2.metric("🗓️ 21% Cycle (120D / 24W / 6M)", f"₦{rep_s['rep_24_weeks_amt']:,.0f}", f"{rep_s['rep_24_weeks_clients']} Clients Paid")
-            r3.metric("💵 Total Repayment Today", f"₦{rep_s['total_collected_today']:,.0f}")
+            r1.metric("60D / 12W / 3M", f"₦{rep_s['rep_12_weeks_amt']:,.0f}", f"{rep_s['rep_12_weeks_clients']} Clients Paid")
+            r2.metric("120D / 24W / 6M", f"₦{rep_s['rep_24_weeks_amt']:,.0f}", f"{rep_s['rep_24_weeks_clients']} Clients Paid")
+            r3.metric("Total Repayment Today", f"₦{rep_s['total_collected_today']:,.0f}")
 
-            # Today's Meeting Portfolio Grid
-            st.markdown("#### 🏘️ Today's Meeting Portfolio")
+            # Today's Meeting Portfolio Grid & Start Collection Actions (UI-02)
+            st.markdown("#### Today's Meeting Portfolio")
             m_port = co_data["meeting_portfolio"]
             if not m_port.empty:
                 st.dataframe(m_port, use_container_width=True, hide_index=True)
+                
+                st.markdown("##### Quick Action: Start Collection")
+                g_cols = st.columns(min(len(m_port), 4))
+                for idx, row in m_port.iterrows():
+                    g_name = row["Group Name"]
+                    status_badge = row.get("Status", "🟢 Completed")
+                    col_idx = idx % len(g_cols)
+                    with g_cols[col_idx]:
+                        if st.button(f"Start {g_name} ({status_badge})", key=f"start_grp_{idx}", use_container_width=True):
+                            st.session_state["Navigation"] = "Collections"
+                            st.session_state["sel_group"] = g_name
+                            st.rerun()
 
             # Today's Savings
-            st.markdown("#### 🐷 Today's Savings")
+            st.markdown("#### Today's Savings")
             sav = co_data["savings"]
             s1, s2, s3 = st.columns(3)
-            s1.metric("📥 Savings Deposited", f"₦{sav['deposited_amt']:,.0f}", f"{sav['deposited_clients']} Clients")
-            s2.metric("📤 Savings Withdrawn", f"₦{sav['withdrawn_amt']:,.0f}", f"{sav['withdrawn_clients']} Clients")
-            s3.metric("💰 Net Savings", f"₦{sav['net_savings']:,.0f}")
+            s1.metric("Savings Deposited", f"₦{sav['deposited_amt']:,.0f}", f"{sav['deposited_clients']} Clients")
+            s2.metric("Savings Withdrawn", f"₦{sav['withdrawn_amt']:,.0f}", f"{sav['withdrawn_clients']} Clients")
+            s3.metric("Net Savings", f"₦{sav['net_savings']:,.0f}")
 
             # Today's Repayment Status Cards
-            st.markdown("#### 📊 Today's Repayment Status")
+            st.markdown("#### Today's Repayment Status")
             st_cards = co_data["repayment_status"]
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("🎯 Full Payment", f"₦{st_cards['full_payment']['amount']:,.0f}", f"{st_cards['full_payment']['count']} Clients")
-            c2.metric("⚠️ Part Payment", f"₦{st_cards['part_payment']['amount']:,.0f}", f"{st_cards['part_payment']['count']} Clients")
-            c3.metric("🚀 Excess Payment", f"₦{st_cards['excess_payment']['amount']:,.0f}", f"{st_cards['excess_payment']['count']} Clients")
-            c4.metric("🚨 Not Paid", f"₦{st_cards['not_paid']['amount']:,.0f}", f"{st_cards['not_paid']['count']} Clients", delta_color="inverse")
+            c1.metric("Full Payment", f"₦{st_cards['full_payment']['amount']:,.0f}", f"{st_cards['full_payment']['count']} Clients")
+            c2.metric("Part Payment", f"₦{st_cards['part_payment']['amount']:,.0f}", f"{st_cards['part_payment']['count']} Clients")
+            c3.metric("Excess Payment", f"₦{st_cards['excess_payment']['amount']:,.0f}", f"{st_cards['excess_payment']['count']} Clients")
+            c4.metric("Not Paid", f"₦{st_cards['not_paid']['amount']:,.0f}", f"{st_cards['not_paid']['count']} Clients", delta_color="inverse")
 
-            # Cash Position (CoCashbookProjectionBuilder)
-            st.markdown("#### 💰 Cash Position (CO Cashbook)")
+            # Cash Position (CO Cashbook)
+            st.markdown("#### Cash Position (CO Cashbook)")
             cp = co_data["cash_position"]
             k1, k2, k3, k4 = st.columns(4)
             k1.metric("Opening Balance", f"₦{cp['opening_balance']:,.0f}")
@@ -2001,7 +2019,7 @@ if page == "Dashboard":
             k6.metric("Difference", f"₦{cp['difference']:,.0f}")
 
             # Today's Attention List
-            st.markdown("#### 🚨 Today's Attention List")
+            st.markdown("#### Today's Attention List")
             att_list = co_data["attention_list"]
             if not att_list.empty:
                 st.dataframe(att_list, use_container_width=True, hide_index=True)
@@ -3659,7 +3677,13 @@ elif page == "Collections":
         else:
             co_clients_df = pd.DataFrame(clients_data)
             groups = ["Ungrouped"] + sorted(co_clients_df[co_clients_df['Group Name'] != "Ungrouped"]['Group Name'].unique().tolist())
-            selected_group = st.selectbox("Select Group", groups)
+            
+            default_idx = 0
+            if "sel_group" in st.session_state and st.session_state["sel_group"] in groups:
+                default_idx = groups.index(st.session_state["sel_group"])
+                del st.session_state["sel_group"]
+                
+            selected_group = st.selectbox("Select Group", groups, index=default_idx)
             
             if selected_group == "Ungrouped":
                 group_clients = co_clients_df[co_clients_df['Group Name'] == "Ungrouped"]
