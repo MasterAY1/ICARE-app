@@ -1988,6 +1988,8 @@ if page == "Dashboard":
                             st.session_state["Navigation"] = "Collections"
                             st.session_state["sel_group"] = g_name
                             st.rerun()
+            else:
+                st.info("No active groups scheduled for today.")
 
             # Today's Savings
             st.markdown("#### Today's Savings")
