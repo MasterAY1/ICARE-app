@@ -132,6 +132,7 @@ class PortfolioService:
         overdue_count = 0
         overdue_amt = 0.0
 
+        product_summary = {}
         client_rows = []
 
         for l in loans_raw:
@@ -146,6 +147,14 @@ class PortfolioService:
                 c_code = c_info.get("client_code") or cid or "N/A"
                 bal = float(l.get("active_credit") or l.get("balance") or 0.0)
                 repay_fixed = float(l.get("fixed_repayment") or l.get("loan_repay") or 0.0)
+                disbursed = float(l.get("disbursed_amount") or l.get("principal") or 0.0)
+                prod_name = l.get("loan_product") or "Unknown"
+
+                if prod_name not in product_summary:
+                    product_summary[prod_name] = {"active_credit": 0.0, "loan_balance": 0.0, "count": 0}
+                product_summary[prod_name]["active_credit"] += disbursed
+                product_summary[prod_name]["loan_balance"] += bal
+                product_summary[prod_name]["count"] += 1
 
                 # Matching repayment today
                 c_reps = [r for r in repayments_today if r.get("client_id") == cid]
@@ -170,7 +179,7 @@ class PortfolioService:
                     "Branch": l.get("branch") or scope.branch_name,
                     "Officer": l.get("officer") or scope.username,
                     "Group": l.get("group_name") or l.get("group") or "Individual",
-                    "Disbursed Amount": float(l.get("disbursed_amount") or 0.0),
+                    "Disbursed Amount": disbursed,
                     "Outstanding Balance": bal,
                     "Fixed Repayment": repay_fixed,
                     "Today Paid": paid_today,
@@ -199,7 +208,8 @@ class PortfolioService:
                 "excess_payments": {"count": excess_payments_count, "amount": excess_payments_amt},
                 "part_payments": {"count": part_payments_count, "amount": part_payments_amt},
                 "overdue": {"count": overdue_count, "amount": overdue_amt},
-                "par": f"{par_pct}%"
+                "par": f"{par_pct}%",
+                "product_summary": product_summary
             },
             "client_table": client_df
         }

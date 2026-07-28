@@ -6106,6 +6106,22 @@ elif page == "Portfolio":
         c4.metric("⚠️ Overdue Clients", f"{p_sum['overdue']['count']} (₦{p_sum['overdue']['amount']:,.0f})")
 
         st.divider()
+        st.markdown("### 📦 Loan Products Summary")
+        prod_sum = p_sum.get("product_summary", {})
+        if prod_sum:
+            prod_rows = []
+            for prod, metrics in prod_sum.items():
+                prod_rows.append({
+                    "Loan Product": prod,
+                    "Active Credit": f"₦{metrics['active_credit']:,.0f}",
+                    "Outstanding Balance": f"₦{metrics['loan_balance']:,.0f}",
+                    "Active Loans": metrics['count']
+                })
+            st.dataframe(pd.DataFrame(prod_rows), use_container_width=True, hide_index=True)
+        else:
+            st.info("No active loan products in portfolio.")
+
+        st.divider()
         st.markdown("### 📋 Authorized Client Portfolio Table")
 
         client_df = p_data["client_table"]
