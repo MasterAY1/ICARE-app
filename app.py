@@ -6010,7 +6010,7 @@ elif page == "Master Cashbook":
 
 
 elif page == "Portfolio":
-    st.title("💼 Enterprise Portfolio Intelligence & Management")
+    st.title("Enterprise Portfolio Intelligence & Management")
     st.caption("Hierarchical portfolio oversight, dynamic role-scoped analytics, and 360° universal client drill-down.")
 
     from services.portfolio_service import PortfolioService
@@ -6023,7 +6023,7 @@ elif page == "Portfolio":
         })
 
         if p_scope.is_read_only():
-            st.info("👁️ **Executive Read-Only Mode**: Strategic view active. Operation and edit actions are disabled.")
+            st.info("**Executive Read-Only Mode**: Strategic view active. Operation and edit actions are disabled.")
 
         # Hierarchical Scope Toolbar
         sel_branch = None
@@ -6043,12 +6043,12 @@ elif page == "Portfolio":
                     off_opts += [o["username"] for o in (res_off.data or []) if o.get("username")]
                 except Exception:
                     pass
-                sel_officer = st.selectbox("👤 Filter Officer", off_opts, key="port_off_sel")
+                sel_officer = st.selectbox("Filter Officer", off_opts, key="port_off_sel")
         elif p_scope.scope_level == "REGION":
             f_col1, f_col2 = st.columns(2)
             with f_col1:
                 b_opts = ["All"] + p_scope.assigned_branch_names
-                sel_branch = st.selectbox("🏛️ Filter Branch", b_opts, key="port_br_sel")
+                sel_branch = st.selectbox("Filter Branch", b_opts, key="port_br_sel")
             with f_col2:
                 off_opts = ["All"]
                 try:
@@ -6057,7 +6057,7 @@ elif page == "Portfolio":
                     off_opts += [o["username"] for o in (res_off.data or []) if o.get("username")]
                 except Exception:
                     pass
-                sel_officer = st.selectbox("👤 Filter Officer", off_opts, key="port_off_sel")
+                sel_officer = st.selectbox("Filter Officer", off_opts, key="port_off_sel")
         else: # INSTITUTION
             f_col1, f_col2 = st.columns(2)
             with f_col1:
@@ -6067,7 +6067,7 @@ elif page == "Portfolio":
                     all_b += sorted(list(set(b["branch"] for b in (res_b.data or []) if b.get("branch"))))
                 except Exception:
                     pass
-                sel_branch = st.selectbox("🏛️ Filter Branch", all_b, key="port_br_sel")
+                sel_branch = st.selectbox("Filter Branch", all_b, key="port_br_sel")
             with f_col2:
                 all_o = ["All"]
                 try:
@@ -6075,7 +6075,7 @@ elif page == "Portfolio":
                     all_o += sorted(list(set(o["username"] for o in (res_o.data or []) if o.get("username"))))
                 except Exception:
                     pass
-                sel_officer = st.selectbox("👤 Filter Officer", all_o, key="port_off_sel")
+                sel_officer = st.selectbox("Filter Officer", all_o, key="port_off_sel")
 
         # Load Scoped Data
         p_data = PortfolioService.get_portfolio_data_for_scope(
@@ -6084,29 +6084,29 @@ elif page == "Portfolio":
         p_sum = p_data["summary"]
 
         st.divider()
-        st.markdown("### 📊 Portfolio Summary & Metrics")
+        st.markdown("### Portfolio Summary & Metrics")
 
         m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("👥 Registered Clients", f"{p_sum['total_registered_clients']:,}")
-        m2.metric("✅ Active Clients", f"{p_sum['active_clients']:,}")
-        m3.metric("🔒 Closed Clients", f"{p_sum['closed_clients']:,}")
-        m4.metric("💤 Dormant Clients", f"{p_sum['dormant_clients']:,}")
-        m5.metric("🚨 Portfolio PAR", p_sum['par'])
+        m1.metric("Registered Clients", f"{p_sum['total_registered_clients']:,}")
+        m2.metric("Active Clients", f"{p_sum['active_clients']:,}")
+        m3.metric("Closed Clients", f"{p_sum['closed_clients']:,}")
+        m4.metric("Dormant Clients", f"{p_sum['dormant_clients']:,}")
+        m5.metric("Portfolio PAR", p_sum['par'])
 
         f1, f2, f3, f4 = st.columns(4)
-        f1.metric("💳 Active Credit", f"₦{p_sum['total_active_credit']:,.0f}")
-        f2.metric("📈 Outstanding Balance", f"₦{p_sum['total_outstanding_balance']:,.0f}")
-        f3.metric("🐷 Total Savings", f"₦{p_sum['total_savings']:,.0f}")
-        f4.metric("💵 Today's Collection", f"₦{p_sum['today_collection']:,.0f}")
+        f1.metric("Active Credit", f"₦{p_sum['total_active_credit']:,.0f}")
+        f2.metric("Outstanding Balance", f"₦{p_sum['total_outstanding_balance']:,.0f}")
+        f3.metric("Total Savings", f"₦{p_sum['total_savings']:,.0f}")
+        f4.metric("Today's Collection", f"₦{p_sum['today_collection']:,.0f}")
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("🎯 Full Payments", f"{p_sum['full_payments']['count']} (₦{p_sum['full_payments']['amount']:,.0f})")
-        c2.metric("⚡ Excess Payments", f"{p_sum['excess_payments']['count']} (₦{p_sum['excess_payments']['amount']:,.0f})")
-        c3.metric("⏳ Part Payments", f"{p_sum['part_payments']['count']} (₦{p_sum['part_payments']['amount']:,.0f})")
-        c4.metric("⚠️ Overdue Clients", f"{p_sum['overdue']['count']} (₦{p_sum['overdue']['amount']:,.0f})")
+        c1.metric("Full Payments", f"{p_sum['full_payments']['count']} (₦{p_sum['full_payments']['amount']:,.0f})")
+        c2.metric("Excess Payments", f"{p_sum['excess_payments']['count']} (₦{p_sum['excess_payments']['amount']:,.0f})")
+        c3.metric("Part Payments", f"{p_sum['part_payments']['count']} (₦{p_sum['part_payments']['amount']:,.0f})")
+        c4.metric("Overdue Clients", f"{p_sum['overdue']['count']} (₦{p_sum['overdue']['amount']:,.0f})")
 
         st.divider()
-        st.markdown("### 📦 Loan Products Summary")
+        st.markdown("### Loan Products Summary")
         prod_sum = p_sum.get("product_summary", {})
         if prod_sum:
             prod_rows = []
@@ -6122,7 +6122,7 @@ elif page == "Portfolio":
             st.info("No active loan products in portfolio.")
 
         st.divider()
-        st.markdown("### 📋 Authorized Client Portfolio Table")
+        st.markdown("### Authorized Client Portfolio Table")
 
         client_df = p_data["client_table"]
         if not client_df.empty:
@@ -6133,7 +6133,7 @@ elif page == "Portfolio":
             with e_col1:
                 csv_data = client_df.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    "📥 Export Scoped Portfolio (CSV)",
+                    "Export Scoped Portfolio (CSV)",
                     data=csv_data,
                     file_name=f"portfolio_{p_scope.role}_{date.today().isoformat()}.csv",
                     mime="text/csv",
@@ -6142,7 +6142,7 @@ elif page == "Portfolio":
 
             # 360° Client Drill-down
             st.divider()
-            st.markdown("### 🔎 360° Universal Client Drill-Down")
+            st.markdown("### 360° Universal Client Drill-Down")
             c_codes = sorted(list(set(client_df["Client Code"].astype(str))))
             if c_codes:
                 selected_ccode = st.selectbox("Select Client Code for 360° Deep-Dive", c_codes, key="dd_client_select")
@@ -6150,7 +6150,7 @@ elif page == "Portfolio":
                     dd = PortfolioService.get_client_360_drilldown(uow_p, selected_ccode, p_scope)
                     
                     dd_t1, dd_t2, dd_t3, dd_t4, dd_t5, dd_t6 = st.tabs([
-                        "👤 Customer Info", "💵 Loan History", "📅 Repayments", "🐷 Savings", "🎯 Collections", "📜 Audit History"
+                        "Customer Info", "Loan History", "Repayments", "Savings", "Collections", "Audit History"
                     ])
 
                     with dd_t1:
