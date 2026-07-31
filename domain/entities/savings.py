@@ -56,3 +56,6 @@ class LapsSavings:
     remarks: Optional[str] = None
     date: Optional[datetime] = None
     id: Optional[str] = None
+    migration_batch_id: Optional[str] = None
+    migration_source: Optional[str] = "SYSTEM"
+    owner_known: bool = True

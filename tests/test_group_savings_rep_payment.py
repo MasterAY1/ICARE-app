@@ -34,11 +34,13 @@ class TestGroupSavingsRepayment(unittest.TestCase):
             # 1. Operational group_savings row
             res_gs = uow.client.table("group_savings").select("*").eq("deposit_amount", 5000.0).order("created_at", desc=True).limit(1).execute()
             self.assertTrue(len(res_gs.data) >= 1, "Expected group_savings record to be created")
+            gs_id = res_gs.data[0]["id"]
 
             # 2. Event Store record
-            res_evt = uow.client.table("event_store").select("*").order("created_at", desc=True).limit(1).execute()
-            self.assertTrue(len(res_evt.data) >= 1, "Expected event_store record for group savings")
-            evt_id = res_evt.data[0]["event_id"]
+            res_evt = uow.client.table("event_store").select("*").eq("event_type", "SavingsDeposited").order("created_at", desc=True).limit(10).execute()
+            matched_evts = [e for e in res_evt.data if gs_id in str(e.get("payload", ""))]
+            self.assertTrue(len(matched_evts) >= 1, "Expected event_store record for group savings")
+            evt_id = matched_evts[0]["event_id"]
 
             # 3. Financial transaction & ledger double entry
             res_tx = uow.client.table("financial_transactions").select("*").eq("event_id", evt_id).execute()

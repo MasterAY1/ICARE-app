@@ -89,11 +89,16 @@ class FinancialPostingEngine:
                 status="Posted"
             )
 
+            debit_acc = rule.debit_account
+            credit_acc = rule.credit_account
+            if event.event_type == "LapsPaidOut" and not payload.get("cash_paid", True):
+                credit_acc = "1050"  # Bank account for non-cash payout
+
             debit = LedgerEntry(
                 entry_id=None,
                 transaction_id="",
                 branch_id=branch_id,
-                account_code=rule.debit_account,
+                account_code=debit_acc,
                 side="Debit",
                 amount=amount,
                 aggregate_type=event.aggregate_type,
@@ -104,7 +109,7 @@ class FinancialPostingEngine:
                 entry_id=None,
                 transaction_id="",
                 branch_id=branch_id,
-                account_code=rule.credit_account,
+                account_code=credit_acc,
                 side="Credit",
                 amount=amount,
                 aggregate_type=event.aggregate_type,

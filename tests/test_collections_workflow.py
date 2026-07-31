@@ -13,6 +13,10 @@ class TestCollectionsWorkflow(unittest.TestCase):
         client_code = "OGI-28-001"
         today_str = date.today().isoformat()
 
+        # Step 0: Record initial balance before test operations
+        savings_map_initial = load_client_savings_map()
+        balance_before = savings_map_initial.get(client_code, 0.0)
+
         # Step 1: Deposit Savings (₦3,000)
         dep_payload = {
             'Date': today_str,
@@ -31,7 +35,7 @@ class TestCollectionsWorkflow(unittest.TestCase):
         # Step 2: Read-back balance via Portfolio savings map
         savings_map = load_client_savings_map()
         balance_after_dep = savings_map.get(client_code, 0.0)
-        self.assertTrue(balance_after_dep >= 3000.0, "Portfolio savings map should reflect deposit")
+        self.assertAlmostEqual(balance_after_dep - balance_before, 3000.0, msg="Portfolio savings map should reflect +3000 deposit")
 
         # Step 3: Withdraw Savings (₦1,000)
         wd_payload = {

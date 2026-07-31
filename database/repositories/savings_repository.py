@@ -93,6 +93,10 @@ class SupabaseSavingsRepository(BaseRepository):
         if self.entity_class.__name__ in ["IndividualSavings", "MiscSavings", "LapsSavings"]:
             kwargs["client_id"] = dto.get("client_id", "")
             kwargs["client_name"] = c_name
+            if self.entity_class.__name__ == "LapsSavings":
+                kwargs["migration_batch_id"] = dto.get("migration_batch_id")
+                kwargs["migration_source"] = dto.get("migration_source", "SYSTEM")
+                kwargs["owner_known"] = dto.get("owner_known", True)
         elif self.entity_class.__name__ == "GroupSavings":
             kwargs["group_name"] = g_name
             
@@ -131,6 +135,11 @@ class SupabaseSavingsRepository(BaseRepository):
         }
         if entity.id:
             d["id"] = entity.id
+
+        if self.entity_class.__name__ == "LapsSavings":
+            d["migration_batch_id"] = getattr(entity, "migration_batch_id", None)
+            d["migration_source"] = getattr(entity, "migration_source", "SYSTEM")
+            d["owner_known"] = getattr(entity, "owner_known", True)
 
         import uuid
         def clean_uuid(val):
@@ -177,7 +186,7 @@ class SupabaseSavingsRepository(BaseRepository):
         res = query.execute()
         return [self._to_domain(item) for item in res.data]
 
-    def get_total_balance(self, branch: Optional[str] = None, officer: Optional[str] = None) -> float:
+    def get_total_balance(self, branch: Optional[str] = None, officer: Optional[str] = None, client_id: Optional[str] = None, group_name: Optional[str] = None) -> float:
         query = self.client.table(self.table_name).select("deposit_amount, withdrawal_amount")
         if branch:
             branch_id = self._resolve_branch_id(branch)
@@ -185,6 +194,11 @@ class SupabaseSavingsRepository(BaseRepository):
         if officer:
             officer_id = self._resolve_officer_id(officer)
             query = query.eq("officer_id", officer_id)
+        if client_id and self.entity_class.__name__ in ["IndividualSavings", "MiscSavings", "LapsSavings"]:
+            query = query.eq("client_id", client_id)
+        if group_name and self.entity_class.__name__ == "GroupSavings":
+            group_id = self._resolve_group_id(group_name)
+            query = query.eq("group_id", group_id)
         res = query.execute()
         total = 0.0
         for row in res.data:

@@ -90,21 +90,26 @@ class MasterCashbookProjectionBuilder:
         except Exception:
             pass
 
+        # Corrected Master Cashbook Formulas (ICARE Business Rules)
+        # Bank Withdrawal = Inflow (cash brought into operational position)
+        # Total Outflows = Physical cash outflows (savings_withdrawal + laps_returns + bank_deposit + loan disbursements + treasury outflows)
+        # product_withdrawal = Informational value reduction column (NOT included in cash outflows to avoid double-counting)
         total_inflows = (
             totals["rep_daily"] + totals["rep_12_weeks"] + totals["rep_24_weeks"] + totals["rep_monthly"] +
-            totals["savings_deposit"] + totals["laps_reserve"] + totals["funds_received_ho"] +
-            totals["funds_received_other_branch"] + totals["loan_received_asset"] + totals["loan_received_finance"] +
+            totals["savings_deposit"] + totals["laps_reserve"] + totals["bank_withdrawal"] +
+            totals["funds_received_ho"] + totals["funds_received_other_branch"] +
+            totals["loan_received_asset"] + totals["loan_received_finance"] +
             totals["daily_11_pct"] + totals["weekly_11_pct"] + totals["savings_adj_amount"] +
-            totals["risk_premium_returns"] + totals["passbook"] + totals["app_fee"] + totals["asset_credit_sales"] +
-            totals["cash_and_carry"] + totals["contingency"] + totals["credit_form"] + totals["credit_form_damage"] +
-            totals["bonus"] + totals["misc_fees"]
+            totals["risk_premium_returns"] + totals["passbook"] + totals["app_fee"] +
+            totals["asset_credit_sales"] + totals["cash_and_carry"] + totals["contingency"] +
+            totals["credit_form"] + totals["credit_form_damage"] + totals["bonus"] + totals["misc_fees"]
         )
 
         total_outflows = (
+            totals["bank_deposit"] + totals["savings_withdrawal"] + totals["laps_returns"] +
+            totals["fund_to_asset_program"] + totals["fund_to_product_finance"] +
             totals["fund_transferred_other_branch"] + totals["fund_transferred_ho"] + totals["fund_to_other_area"] +
-            totals["fund_to_asset_program"] + totals["fund_to_product_finance"] + totals["savings_withdrawal"] +
-            totals["staff_salaries"] + totals["office_expenses"] + totals["laps_returns"] + totals["bank_deposit"] +
-            totals["bank_withdrawal"] + totals["product_withdrawal"]
+            totals["staff_salaries"] + totals["office_expenses"]
         )
 
         # 6. Preserve Manual Treasury Adjustments & Verification Status

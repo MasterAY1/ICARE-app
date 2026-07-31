@@ -47,15 +47,18 @@ class TestRBACScopeService(unittest.TestCase):
         co_items = RBACScopeService.get_permitted_menu_items("CO")
         self.assertIn("Dashboard", co_items)
         self.assertIn("Portfolio", co_items)
+        self.assertIn("Withdrawal Operations", co_items)
         self.assertNotIn("User Management", co_items)
 
         bm_items = RBACScopeService.get_permitted_menu_items("Branch Manager")
         self.assertIn("Loan Origination", bm_items)
         self.assertIn("Master Cashbook", bm_items)
+        self.assertIn("Withdrawal Operations", bm_items)
         self.assertNotIn("User Management", bm_items)
 
         admin_items = RBACScopeService.get_permitted_menu_items("Admin")
         self.assertIn("User Management", admin_items)
+        self.assertIn("Withdrawal Operations", admin_items)
 
 
 if __name__ == "__main__":

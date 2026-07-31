@@ -210,7 +210,7 @@ class RepaymentMapper:
 
         amt_paid = safe_float(dto.get("amount_paid"))
         if amt_paid <= 0:
-            amt_paid = savings_dep + loan_repay + proc_fee + withdrawal_amt + others_amt
+            amt_paid = savings_dep + loan_repay + proc_fee + others_amt
             
         extra = {k: v for k, v in dto.items() if k not in ["id", "loan_id", "client_id", "amount_paid", "savings_amount", "loan_repayment_amount", "withdrawal_amount", "others_amount", "recovery_amount", "initial_payment", "date", "payment_date", "transaction_type", "branch", "officer", "credit_officer", "note", "created_at", "clients", "branches", "app_users"]}
         extra["client_name"] = c_name

@@ -318,6 +318,9 @@ CREATE TABLE public.laps_savings (
     withdrawal_amount NUMERIC DEFAULT 0 CHECK (withdrawal_amount >= 0),
     reference TEXT,
     remarks TEXT,
+    migration_batch_id TEXT,
+    migration_source TEXT DEFAULT 'SYSTEM',
+    owner_known BOOLEAN DEFAULT TRUE,
     version INTEGER DEFAULT 1,
     currency_code TEXT DEFAULT 'NGN',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -729,7 +732,11 @@ INSERT INTO public.posting_rules (event_type, debit_account, credit_account, ver
 ('ExpenseRecorded', '4000', '1000', 1, TRUE),
 ('SalaryPaid', '4100', '1000', 1, TRUE),
 ('AssetSoldCash', '1000', '3200', 1, TRUE),
-('PenaltyCharged', '1000', '3000', 1, TRUE)
+('PenaltyCharged', '1000', '3000', 1, TRUE),
+('LoanOffsetFromSavings', '2000', '1200', 1, TRUE),
+('LapsTransferred', '2000', '2030', 1, TRUE),
+('LapsPaidOut', '2030', '1000', 1, TRUE),
+('LapsMigrated', '3000', '2030', 1, TRUE)
 ON CONFLICT (event_type, version) DO UPDATE SET
     debit_account = EXCLUDED.debit_account,
     credit_account = EXCLUDED.credit_account,

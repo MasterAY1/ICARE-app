@@ -1318,16 +1318,15 @@ def save_repayment(data):
             post_fee_charge(mm_val, f"monthly markup risk premium fee from {client_name}")
             post_fee_charge(cont_val, f"contingency fee from {client_name}")
 
-            # Proceed to insert into repayments table if there's actual repayment
-            # or if it's a legacy record. We'll always insert it so history isn't lost.
-            rep = RepaymentMapper.to_domain(db_data)
-            try:
-                from services.repayment_service import RepaymentService
-                RepaymentService.post_repayment(uow, rep)
-            except Exception as re:
-                print(f"[ERROR] Error inserting repayment for {client_id}: {re}")
-                st.error(f"Error inserting repayment for {client_id}: {re}")
-                return
+            # Proceed to insert into repayments table if there's actual repayment / cash inflow
+            if rep.amount_paid > 0 or rep.loan_repayment_amount > 0:
+                try:
+                    from services.repayment_service import RepaymentService
+                    RepaymentService.post_repayment(uow, rep)
+                except Exception as re:
+                    print(f"[ERROR] Error inserting repayment for {client_id}: {re}")
+                    st.error(f"Error inserting repayment for {client_id}: {re}")
+                    return
     except Exception as e:
         print(f"[ERROR] Error in save_repayment logic: {e}")
         st.error(f"Error in save_repayment logic: {e}")
@@ -4085,6 +4084,277 @@ elif page == "Collections":
                                 st.rerun()
                             else:
                                 st.warning("No data entered to save.")
+
+elif page == "Withdrawal Operations":
+    st.title("💸 Withdrawal Operations & Account Transfers")
+    st.caption("Execute client cash withdrawals, loan offsets, LAPS transfers, and LAPS payouts in full compliance with ICARE core banking rules.")
+
+    # 1. Role Scope Check
+    user_dict = current_user.to_dict() if hasattr(current_user, 'to_dict') else {
+        "id": USER_ID, "username": USER, "role": ROLE, "branch": BRANCH, "branch_id": BRANCH_ID, "assigned_branches": ASSIGNED_BRANCH_IDS
+    }
+    user_scope = RBACScopeService.resolve_scope(user_dict)
+
+    if user_scope.is_read_only():
+        st.warning("🔒 Read-Only Access: Your role permits viewing reports and ledger history, but submitting financial withdrawal transactions is restricted.")
+        st.stop()
+
+    uow = SupabaseUnitOfWork(supabase_client)
+
+    # 2. Client Selection
+    st.markdown("### 👤 Step 1: Select Client")
+    clients_df = load_clients()
+
+    if clients_df.empty:
+        st.warning("No client profiles found in system.")
+        st.stop()
+
+    # Scope client list to branch / assigned officer
+    if user_scope.scope_level == "OFFICER":
+        if "Officer" in clients_df.columns:
+            clients_df = clients_df[clients_df["Officer"].str.lower() == user_scope.username.lower()]
+
+    client_options = {}
+    for idx, row in clients_df.iterrows():
+        c_id = str(row.get("ClientID") or row.get("id") or "")
+        c_name = str(row.get("Name") or "")
+        c_code = str(row.get("ClientCode") or "")
+        c_branch = str(row.get("Branch") or "")
+        label = f"{c_name} ({c_code or c_id[:8]}) — {c_branch}"
+        client_options[label] = row
+
+    selected_label = st.selectbox("Search Client by Name or Code", list(client_options.keys()))
+
+    if selected_label:
+        client_row = client_options[selected_label]
+        c_id = str(client_row.get("ClientID") or client_row.get("id") or "")
+        c_name = str(client_row.get("Name") or "")
+        c_branch = str(client_row.get("Branch") or BRANCH or "Lagos")
+
+        # 3. Load Financial Position
+        st.markdown("### 📊 Step 2: Financial Position & Savings Balances")
+
+        g_name = str(client_row.get("GroupName") or client_row.get("group_name") or "")
+        ind_savings = uow.individual_savings.get_total_balance(branch=c_branch, client_id=c_id)
+        grp_savings = uow.group_savings.get_total_balance(branch=c_branch, group_name=g_name) if g_name else 0.0
+        msc_savings = uow.misc_savings.get_total_balance(branch=c_branch, client_id=c_id)
+        laps_balance = uow.laps_savings.get_total_balance(branch=c_branch, client_id=c_id)
+
+        # Query client active loans
+        active_loans = []
+        try:
+            res_l = supabase_client.table("loans").select("*").eq("client_id", c_id).eq("status", "Active").execute()
+            active_loans = res_l.data or []
+        except Exception:
+            pass
+
+        tot_loan_due = sum(float(l.get("total_due") or l.get("active_credit") or 0.0) for l in active_loans)
+
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Individual Savings", f"₦{ind_savings:,.2f}")
+        col2.metric("Group Savings", f"₦{grp_savings:,.2f}")
+        col3.metric("Misc Savings", f"₦{msc_savings:,.2f}")
+        col4.metric("LAPS Balance", f"₦{laps_balance:,.2f}")
+        col5.metric("Active Loans Due", f"₦{tot_loan_due:,.2f}")
+
+        st.markdown("---")
+
+        # 4. Transaction Type Selector
+        st.markdown("### ⚙️ Step 3: Select Withdrawal Operation Type")
+
+        op_type = st.radio(
+            "Transaction Type",
+            [
+                "💵 Customer Cash Withdrawal",
+                "🔄 Loan Offset From Savings",
+                "💼 Transfer To LAPS",
+                "🏦 LAPS Payout"
+            ],
+            horizontal=True
+        )
+
+        st.info({
+            "💵 Customer Cash Withdrawal": "Client withdraws physical cash from savings balance. (Reduces physical vault cash)",
+            "🔄 Loan Offset From Savings": "Apply client savings balance directly to settle active loan. (ZERO physical vault cash movement)",
+            "💼 Transfer To LAPS": "Transfer client savings into LAPS investment bucket. (ZERO physical vault cash movement)",
+            "🏦 LAPS Payout": "Payout client LAPS funds. Toggle for physical Cash Payout vs Non-Cash Bank Transfer."
+        }[op_type])
+
+        with st.form("withdrawal_operation_form"):
+            col_a, col_b = st.columns(2)
+
+            with col_a:
+                if op_type == "🏦 LAPS Payout":
+                    source_savings_type = "LapsSavings"
+                    st.text_input("Source Savings Bucket", "LAPS Savings", disabled=True)
+                else:
+                    source_savings_type = st.selectbox(
+                        "Source Savings Bucket",
+                        ["IndividualSavings", "GroupSavings", "MiscSavings"]
+                    )
+
+                amount_val = st.number_input("Amount (₦)", min_value=0.01, step=1000.0, format="%.2f")
+
+            with col_b:
+                target_loan_id = None
+                payout_cash_paid = True
+
+                if op_type == "🔄 Loan Offset From Savings":
+                    if active_loans:
+                        loan_opts = {f"Loan #{l.get('loan_id')[:8]} — Due: ₦{float(l.get('total_due') or 0.0):,.2f}": l.get("loan_id") for l in active_loans}
+                        sel_loan_label = st.selectbox("Target Loan to Offset", list(loan_opts.keys()))
+                        target_loan_id = loan_opts[sel_loan_label]
+                    else:
+                        st.error("No active loans found for this client to offset.")
+                        target_loan_id = None
+
+                elif op_type == "🏦 LAPS Payout":
+                    payout_method = st.radio("Payout Method", ["Physical Cash (Vault Cash)", "Non-Cash (Bank Transfer)"])
+                    payout_cash_paid = (payout_method == "Physical Cash (Vault Cash)")
+
+                reference_input = st.text_input("Reference / Voucher No. (Optional)", f"REF-WTH-{datetime.now().strftime('%Y%m%d%H%M%S')}")
+                remarks_input = st.text_area("Narration / Remarks", f"{op_type} for {c_name}")
+
+            submitted = st.form_submit_button("🚀 Process Transaction", use_container_width=True)
+
+            if submitted:
+                if amount_val <= 0:
+                    st.error("Amount must be greater than zero.")
+                elif op_type == "🔄 Loan Offset From Savings" and not target_loan_id:
+                    st.error("Please select an active loan to perform loan offset.")
+                else:
+                    try:
+                        res = None
+                        if op_type == "💵 Customer Cash Withdrawal":
+                            if source_savings_type == "IndividualSavings":
+                                SavingsService.post_individual_savings(
+                                    uow=uow, client_id=c_id, client_name=c_name, branch=c_branch,
+                                    officer=USER, deposit_amount=0.0, withdrawal_amount=amount_val,
+                                    reference=reference_input, remarks=remarks_input
+                                )
+                            elif source_savings_type == "GroupSavings":
+                                SavingsService.post_group_savings(
+                                    uow=uow, group_name=c_name, branch=c_branch,
+                                    officer=USER, deposit_amount=0.0, withdrawal_amount=amount_val,
+                                    reference=reference_input, remarks=remarks_input
+                                )
+                            else:
+                                SavingsService.post_misc_savings(
+                                    uow=uow, client_id=c_id, client_name=c_name, branch=c_branch,
+                                    officer=USER, deposit_amount=0.0,
+                                    reference=reference_input, remarks=remarks_input
+                                )
+                            res = {"status": "SUCCESS", "affects_cash_vault": True, "amount": amount_val}
+
+                        elif op_type == "🔄 Loan Offset From Savings":
+                            res = SavingsService.post_loan_offset_from_savings(
+                                uow=uow, client_id=c_id, client_name=c_name, loan_id=target_loan_id,
+                                source_savings_type=source_savings_type, branch=c_branch,
+                                officer=USER, amount=amount_val, reference=reference_input, remarks=remarks_input
+                            )
+
+                        elif op_type == "💼 Transfer To LAPS":
+                            res = SavingsService.transfer_to_laps(
+                                uow=uow, client_id=c_id, client_name=c_name,
+                                source_savings_type=source_savings_type, branch=c_branch,
+                                officer=USER, amount=amount_val, reference=reference_input, remarks=remarks_input
+                            )
+
+                        elif op_type == "🏦 LAPS Payout":
+                            res = SavingsService.pay_laps(
+                                uow=uow, client_id=c_id, client_name=c_name, branch=c_branch,
+                                officer=USER, amount=amount_val, cash_paid=payout_cash_paid,
+                                reference=reference_input, remarks=remarks_input
+                            )
+
+                        if res and res.get("status") == "SUCCESS":
+                            st.success(f"✅ Transaction Processed Successfully! (Amount: ₦{amount_val:,.2f})")
+                            if res.get("affects_cash_vault"):
+                                st.warning("💵 Physical Cash Vault Movement: Vault Cash updated accordingly.")
+                            else:
+                                st.info("🔄 Zero Physical Cash Movement: Internal ledger transaction executed with ZERO vault cash impact.")
+
+                            st.rerun()
+
+                    except Exception as ex:
+                        st.error(f"❌ Transaction Failed: {str(ex)}")
+
+elif page == "Legacy LAPS Migration":
+    st.title("🏛️ Legacy LAPS Bulk Migration Console (Super Admin)")
+    st.caption("Upload historical Loan Application Savings (LAPS) records from legacy Excel workbooks with owner mapping, audit tracking, and zero physical cash vault impact.")
+
+    if ROLE not in ["Admin", "Super Admin", "SUPER_ADMIN", "ADMIN"]:
+        st.error("⛔ Access Denied: Legacy LAPS Migration is restricted to Super Admin / Admin roles.")
+    else:
+        st.markdown("---")
+        st.subheader("📥 Bulk Excel File Upload")
+        
+        st.info("💡 **Excel Format Requirements**: Columns MUST include `client_name` (or `Name`), `amount` (or `LAPS Balance`), `branch` (or `Branch`), `officer` (or `Officer`). Optional columns: `client_id`, `owner_known` ('Yes'/'No' or True/False), `remarks`.")
+        
+        uploaded_file = st.file_uploader("Upload Legacy LAPS Excel Sheet (.xlsx, .xls)", type=["xlsx", "xls"])
+        source_name = st.text_input("Migration Source Identifier", value="EXCEL_MIGRATION_BATCH")
+        
+        if uploaded_file is not None:
+            try:
+                import pandas as pd
+                df_mig = pd.read_excel(uploaded_file)
+                st.subheader("Preview Uploaded Migration Data")
+                st.dataframe(df_mig.head(10), use_container_width=True)
+                st.caption(f"Total Rows Detected: {len(df_mig)}")
+
+                if st.button("🚀 Process Bulk LAPS Migration", type="primary"):
+                    records_to_migrate = []
+                    for idx, row in df_mig.iterrows():
+                        rec = {
+                            "client_id": row.get("client_id") or row.get("Client ID") or row.get("client_code") or None,
+                            "client_name": row.get("client_name") or row.get("Name") or row.get("Client Name") or "Legacy Account",
+                            "amount": float(row.get("amount") or row.get("LAPS Balance") or row.get("Balance") or row.get("deposit_amount") or 0.0),
+                            "branch": row.get("branch") or row.get("Branch") or "Main Branch",
+                            "officer": row.get("officer") or row.get("Officer") or USER,
+                            "owner_known": row.get("owner_known") if "owner_known" in row else (row.get("Owner Known") if "Owner Known" in row else None),
+                            "remarks": row.get("remarks") or row.get("Remarks") or "Legacy LAPS bulk import"
+                        }
+                        records_to_migrate.append(rec)
+
+                    with get_uow() as uow:
+                        from services.laps_migration_service import LAPSMigrationService
+                        res = LAPSMigrationService.migrate_legacy_laps(
+                            uow=uow,
+                            records=records_to_migrate,
+                            user_id=USER,
+                            source_name=source_name
+                        )
+
+                    if res["success_count"] > 0:
+                        st.success(f"🎉 Successfully Migrated {res['success_count']} LAPS Records! (Total Value: ₦{res['total_amount_migrated']:,.2f})")
+                        st.info(f"🏷️ Batch ID: **{res['batch_id']}**")
+                        st.warning("🔄 Zero Physical Cash Movement: Opening equity ledger entries posted with ZERO vault cash impact.")
+
+                    if res["failed_count"] > 0:
+                        st.error(f"⚠️ Failed Records: {res['failed_count']}")
+                        with st.expander("View Error Details"):
+                            for err in res["errors"]:
+                                st.write(f"- {err}")
+
+            except Exception as ex:
+                st.error(f"❌ Failed to parse Excel file: {str(ex)}")
+
+        st.markdown("---")
+        st.subheader("📜 Historical LAPS Migration Batches")
+        try:
+            with get_uow() as uow:
+                laps_records = uow.laps_savings.get_all()
+                df_laps = pd.DataFrame([vars(r) for r in laps_records])
+                if not df_laps.empty and "migration_batch_id" in df_laps.columns:
+                    mig_df = df_laps[df_laps["migration_batch_id"].notnull()]
+                    if not mig_df.empty:
+                        st.dataframe(mig_df[["migration_batch_id", "client_name", "branch", "officer", "deposit_amount", "owner_known", "migration_source", "date"]], use_container_width=True)
+                    else:
+                        st.info("No migrated LAPS records found yet.")
+                else:
+                    st.info("No migrated LAPS records found yet.")
+        except Exception as ex:
+            st.info(f"Could not load migration history: {ex}")
 
 elif page == "Daily Report":
     st.title("Daily Collections Report")

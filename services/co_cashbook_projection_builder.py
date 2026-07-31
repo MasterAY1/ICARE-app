@@ -113,10 +113,25 @@ class CoCashbookProjectionBuilder:
                 if event_type in ["SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION"]:
                     savings_withdrawal += amount
                     product_withdrawal += amount
-                elif event_type == "BankDeposited": bank_deposit += amount
+                elif event_type == "BankDeposited":
+                    bank_deposit += amount
+                elif event_type == "LapsPaidOut":
+                    laps_returns += amount
+                    product_withdrawal += amount
 
-        total_inflows = rep_daily + rep_12_weeks + rep_24_weeks + rep_monthly + savings_deposit + laps_reserve + daily_11_pct + weekly_11_pct + savings_adj_amount + risk_premium_returns + passbook + app_fee + asset_credit_sales + cash_and_carry + contingency + credit_form + credit_form_damage + bonus + misc_fees
-        total_outflows = savings_withdrawal + laps_returns + bank_deposit + bank_withdrawal + product_withdrawal
+        # Corrected Cashbook Formulas (ICARE Business Rules)
+        # Bank Withdrawal = Inflow (cash brought into vault)
+        # Total Outflows = Physical cash outflows only (savings_withdrawal + laps_returns + bank_deposit)
+        # product_withdrawal = Informational value reduction column (NOT included in cash outflows to avoid double-counting)
+        total_inflows = (
+            rep_daily + rep_12_weeks + rep_24_weeks + rep_monthly +
+            savings_deposit + laps_reserve + bank_withdrawal +
+            daily_11_pct + weekly_11_pct + savings_adj_amount +
+            risk_premium_returns + passbook + app_fee +
+            asset_credit_sales + cash_and_carry + contingency +
+            credit_form + credit_form_damage + bonus + misc_fees
+        )
+        total_outflows = savings_withdrawal + laps_returns + bank_deposit
         closing_balance = opening_bal + total_inflows - total_outflows
 
         cb_data = {

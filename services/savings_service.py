@@ -2,7 +2,10 @@ import uuid
 from datetime import datetime
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from domain.entities.savings import IndividualSavings, GroupSavings, MiscSavings, LapsSavings
+from domain.entities.repayment import Repayment
 from domain.entities.event_store import DomainEvent
+from domain.enums import TransactionClassification
+from services.withdrawal_classification_engine import WithdrawalClassificationEngine
 from services.posting_engine import FinancialPostingEngine
 
 class SavingsService:
@@ -211,3 +214,386 @@ class SavingsService:
             "laps_savings": laps,
             "total_active_savings": ind + grp + msc
         }
+
+    @staticmethod
+    def post_loan_offset_from_savings(
+        uow: SupabaseUnitOfWork,
+        client_id: str,
+        client_name: str,
+        loan_id: str,
+        source_savings_type: str,
+        branch: str,
+        officer: str,
+        amount: float,
+        reference: str = None,
+        remarks: str = None
+    ) -> dict:
+        """
+        Executes atomic loan offset using client savings balance:
+        - Reduces client savings (source_savings_type)
+        - Creates loan repayment record against loan_id
+        - Emits LoanOffsetFromSavings domain event (ZERO physical cash movement)
+        - Logs audit record
+        """
+        if amount <= 0:
+            raise ValueError("Offset amount must be greater than zero.")
+
+        cls_info = WithdrawalClassificationEngine.classify_withdrawal(
+            TransactionClassification.LOAN_OFFSET, amount
+        )
+
+        source_entity = None
+        repayment_entity = None
+
+        if source_savings_type == "GroupSavings":
+            source_entity = GroupSavings(
+                group_name=client_name,
+                branch=branch,
+                officer=officer,
+                deposit_amount=0.0,
+                withdrawal_amount=amount,
+                reference=reference,
+                remarks=remarks or f"Loan offset withdrawal from GroupSavings",
+                date=datetime.now()
+            )
+            uow.group_savings.create(source_entity)
+        elif source_savings_type == "MiscSavings":
+            source_entity = MiscSavings(
+                client_id=client_id,
+                client_name=client_name,
+                branch=branch,
+                officer=officer,
+                deposit_amount=0.0,
+                withdrawal_amount=amount,
+                reference=reference,
+                remarks=remarks or f"Loan offset withdrawal from MiscSavings",
+                date=datetime.now()
+            )
+            uow.misc_savings.create(source_entity)
+        else: # IndividualSavings
+            source_entity = IndividualSavings(
+                client_id=client_id,
+                client_name=client_name,
+                branch=branch,
+                officer=officer,
+                deposit_amount=0.0,
+                withdrawal_amount=amount,
+                reference=reference,
+                remarks=remarks or f"Loan offset withdrawal from IndividualSavings",
+                date=datetime.now()
+            )
+            uow.individual_savings.create(source_entity)
+
+        try:
+            repayment_entity = Repayment(
+                id=str(uuid.uuid4()),
+                loan_id=loan_id,
+                client_id=client_id,
+                amount_paid=amount,
+                savings_amount=0.0,
+                loan_repayment_amount=amount,
+                withdrawal_amount=0.0,
+                others_amount=0.0,
+                recovery_amount=0.0,
+                initial_payment=0.0,
+                payment_date=datetime.now().date(),
+                transaction_type="LOAN_OFFSET",
+                branch=branch,
+                credit_officer=officer,
+                payment_status="PAID",
+                note=remarks or f"Loan offset of {amount} from {source_savings_type}"
+            )
+            uow.repayments.create(repayment_entity)
+
+            uow.audit.log_action(
+                officer,
+                "Credit Officer",
+                "Loan Offset From Savings",
+                "loans",
+                loan_id,
+                None,
+                {"amount": amount, "source": source_savings_type, "savings_id": source_entity.id}
+            )
+
+            event = DomainEvent(
+                event_id=str(uuid.uuid4()),
+                aggregate_id=source_entity.id,
+                aggregate_type="LoanOffset",
+                event_type="LoanOffsetFromSavings",
+                payload={
+                    "client_id": client_id,
+                    "loan_id": loan_id,
+                    "source_savings_type": source_savings_type,
+                    "branch": branch,
+                    "officer": officer,
+                    "amount": amount,
+                    "reference": reference or source_entity.id,
+                    "classification": TransactionClassification.LOAN_OFFSET.value,
+                    "narration": remarks or f"Loan offset of {amount:,.2f} from {source_savings_type} for loan {loan_id}"
+                }
+            )
+            uow.event_store.append(event)
+            try:
+                FinancialPostingEngine.post_event(uow, event)
+            except ValueError as ve:
+                if "No active posting rule found" in str(ve):
+                    pass
+                else:
+                    raise ve
+
+            return {
+                "status": "SUCCESS",
+                "event_id": event.event_id,
+                "amount": amount,
+                "source_savings_id": source_entity.id,
+                "repayment_id": repayment_entity.id,
+                "affects_cash_vault": cls_info["affects_cash_vault"]
+            }
+
+        except Exception as e:
+            if source_entity and source_entity.id:
+                tbl = "group_savings" if source_savings_type == "GroupSavings" else ("misc_savings" if source_savings_type == "MiscSavings" else "individual_savings")
+                try:
+                    uow.client.table(tbl).delete().eq("id", source_entity.id).execute()
+                except Exception:
+                    pass
+            if repayment_entity and repayment_entity.id:
+                try:
+                    uow.client.table("repayments").delete().eq("id", repayment_entity.id).execute()
+                except Exception:
+                    pass
+            raise e
+
+    @staticmethod
+    def transfer_to_laps(
+        uow: SupabaseUnitOfWork,
+        client_id: str,
+        client_name: str,
+        source_savings_type: str,
+        branch: str,
+        officer: str,
+        amount: float,
+        reference: str = None,
+        remarks: str = None
+    ) -> dict:
+        """
+        Executes atomic internal savings transfer into LAPS:
+        - Decreases source savings (IndividualSavings, GroupSavings, MiscSavings)
+        - Increases LAPS balance in laps_savings
+        - Emits ONE LapsTransferred domain event (ZERO physical cash movement)
+        - Logs audit record
+        """
+        if amount <= 0:
+            raise ValueError("Transfer amount must be greater than zero.")
+
+        cls_info = WithdrawalClassificationEngine.classify_withdrawal(
+            TransactionClassification.LAPS_TRANSFER, amount
+        )
+
+        source_entity = None
+        laps_entity = None
+
+        if source_savings_type == "GroupSavings":
+            source_entity = GroupSavings(
+                group_name=client_name,
+                branch=branch,
+                officer=officer,
+                deposit_amount=0.0,
+                withdrawal_amount=amount,
+                reference=reference,
+                remarks=remarks or f"LAPS transfer withdrawal from GroupSavings",
+                date=datetime.now()
+            )
+            uow.group_savings.create(source_entity)
+        elif source_savings_type == "MiscSavings":
+            source_entity = MiscSavings(
+                client_id=client_id,
+                client_name=client_name,
+                branch=branch,
+                officer=officer,
+                deposit_amount=0.0,
+                withdrawal_amount=amount,
+                reference=reference,
+                remarks=remarks or f"LAPS transfer withdrawal from MiscSavings",
+                date=datetime.now()
+            )
+            uow.misc_savings.create(source_entity)
+        else: # IndividualSavings
+            source_entity = IndividualSavings(
+                client_id=client_id,
+                client_name=client_name,
+                branch=branch,
+                officer=officer,
+                deposit_amount=0.0,
+                withdrawal_amount=amount,
+                reference=reference,
+                remarks=remarks or f"LAPS transfer withdrawal from IndividualSavings",
+                date=datetime.now()
+            )
+            uow.individual_savings.create(source_entity)
+
+        try:
+            laps_entity = LapsSavings(
+                client_id=client_id,
+                client_name=client_name,
+                branch=branch,
+                officer=officer,
+                deposit_amount=amount,
+                withdrawal_amount=0.0,
+                reference=reference,
+                remarks=remarks or f"LAPS transfer deposit from {source_savings_type}",
+                date=datetime.now()
+            )
+            uow.laps_savings.create(laps_entity)
+
+            uow.audit.log_action(
+                officer,
+                "Credit Officer",
+                "LAPS Transfer",
+                "laps_savings",
+                laps_entity.id,
+                None,
+                {"amount": amount, "source": source_savings_type, "source_id": source_entity.id}
+            )
+
+            event = DomainEvent(
+                event_id=str(uuid.uuid4()),
+                aggregate_id=laps_entity.id,
+                aggregate_type="LapsSavings",
+                event_type="LapsTransferred",
+                payload={
+                    "client_id": client_id,
+                    "source_savings_type": source_savings_type,
+                    "destination": "LAPS",
+                    "branch": branch,
+                    "officer": officer,
+                    "amount": amount,
+                    "reference": reference or laps_entity.id,
+                    "classification": TransactionClassification.LAPS_TRANSFER.value,
+                    "narration": remarks or f"LAPS transfer of {amount:,.2f} from {source_savings_type} for client {client_name}"
+                }
+            )
+            uow.event_store.append(event)
+            try:
+                FinancialPostingEngine.post_event(uow, event)
+            except ValueError as ve:
+                if "No active posting rule found" in str(ve):
+                    pass
+                else:
+                    raise ve
+
+            return {
+                "status": "SUCCESS",
+                "event_id": event.event_id,
+                "amount": amount,
+                "source_savings_id": source_entity.id,
+                "laps_savings_id": laps_entity.id,
+                "affects_cash_vault": cls_info["affects_cash_vault"]
+            }
+
+        except Exception as e:
+            if source_entity and source_entity.id:
+                tbl = "group_savings" if source_savings_type == "GroupSavings" else ("misc_savings" if source_savings_type == "MiscSavings" else "individual_savings")
+                try:
+                    uow.client.table(tbl).delete().eq("id", source_entity.id).execute()
+                except Exception:
+                    pass
+            if laps_entity and laps_entity.id:
+                try:
+                    uow.client.table("laps_savings").delete().eq("id", laps_entity.id).execute()
+                except Exception:
+                    pass
+            raise e
+
+    @staticmethod
+    def pay_laps(
+        uow: SupabaseUnitOfWork,
+        client_id: str,
+        client_name: str,
+        branch: str,
+        officer: str,
+        amount: float,
+        cash_paid: bool = True,
+        reference: str = None,
+        remarks: str = None
+    ) -> dict:
+        """
+        Executes LAPS payout to client:
+        - Decreases LAPS balance in laps_savings (withdrawal_amount = amount)
+        - Emits LapsPaidOut domain event
+        - Physical cash movement occurs ONLY if cash_paid = True
+        - Logs audit record with cash_paid flag
+        """
+        if amount <= 0:
+            raise ValueError("Payout amount must be greater than zero.")
+
+        cls_info = WithdrawalClassificationEngine.classify_withdrawal(
+            TransactionClassification.LAPS_PAYOUT, amount, is_cash_paid=cash_paid
+        )
+
+        laps_entity = LapsSavings(
+            client_id=client_id,
+            client_name=client_name,
+            branch=branch,
+            officer=officer,
+            deposit_amount=0.0,
+            withdrawal_amount=amount,
+            reference=reference,
+            remarks=remarks or f"LAPS payout ({'Cash' if cash_paid else 'Non-Cash'}) for client {client_name}",
+            date=datetime.now()
+        )
+        uow.laps_savings.create(laps_entity)
+
+        try:
+            uow.audit.log_action(
+                officer,
+                "Credit Officer",
+                "LAPS Payout",
+                "laps_savings",
+                laps_entity.id,
+                None,
+                {"amount": amount, "cash_paid": cash_paid}
+            )
+
+            event = DomainEvent(
+                event_id=str(uuid.uuid4()),
+                aggregate_id=laps_entity.id,
+                aggregate_type="LapsSavings",
+                event_type="LapsPaidOut",
+                payload={
+                    "client_id": client_id,
+                    "amount": amount,
+                    "branch": branch,
+                    "officer": officer,
+                    "cash_paid": cash_paid,
+                    "reference": reference or laps_entity.id,
+                    "classification": TransactionClassification.LAPS_PAYOUT.value,
+                    "narration": remarks or f"LAPS payout of {amount:,.2f} ({'Cash' if cash_paid else 'Non-Cash'}) for client {client_name}"
+                }
+            )
+            uow.event_store.append(event)
+            try:
+                FinancialPostingEngine.post_event(uow, event)
+            except ValueError as ve:
+                if "No active posting rule found" in str(ve):
+                    pass
+                else:
+                    raise ve
+
+            return {
+                "status": "SUCCESS",
+                "event_id": event.event_id,
+                "amount": amount,
+                "laps_savings_id": laps_entity.id,
+                "cash_paid": cash_paid,
+                "affects_cash_vault": cls_info["affects_cash_vault"]
+            }
+
+        except Exception as e:
+            if laps_entity and laps_entity.id:
+                try:
+                    uow.client.table("laps_savings").delete().eq("id", laps_entity.id).execute()
+                except Exception:
+                    pass
+            raise e
+
