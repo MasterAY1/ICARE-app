@@ -4100,8 +4100,7 @@ elif page == "Withdrawal Operations":
         st.warning("🔒 Read-Only Access: Your role permits viewing reports and ledger history, but submitting financial withdrawal transactions is restricted.")
         st.stop()
 
-    uow = SupabaseUnitOfWork(supabase_client)
-
+    uow = SupabaseUnitOfWork()
     # 2. Client Selection
     st.markdown("### 👤 Step 1: Select Client")
     clients_df = load_clients()
