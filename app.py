@@ -1932,6 +1932,104 @@ if page == "Dashboard":
                         st.rerun()
                 st.divider()
 
+            # Section G: Withdrawal Approval Queue
+            res_wr = uow.client.table("withdrawal_requests").select("*").eq("branch_id", BRANCH_ID).eq("status", "PENDING").order("created_at", desc=False).execute()
+            pending_withdrawals = res_wr.data or []
+            if pending_withdrawals:
+                st.markdown("#### 💸 Pending Withdrawal Approvals")
+                for wr in pending_withdrawals:
+                    wr_id = wr["id"]
+                    wr_type = wr["savings_type"]
+                    wr_op = wr["operation_type"]
+                    wr_amt = float(wr["amount"])
+                    wr_name = wr["client_name"]
+                    wr_by = wr["requested_by"]
+                    wr_remarks = wr.get("remarks") or ""
+                    wr_date = wr["created_at"][:10]
+
+                    st.markdown(f"**{wr_type} — {wr_op}** | ₦{wr_amt:,.2f} | {wr_name} | Requested by: {wr_by} | {wr_date}")
+                    if wr_remarks:
+                        st.caption(f"  ↳ {wr_remarks}")
+
+                    wa_col1, wa_col2, wa_col3 = st.columns([2, 1, 1])
+
+                    if wa_col2.button("✅ Approve", key=f"approve_wr_{wr_id}"):
+                        try:
+                            with SupabaseUnitOfWork() as uow_wr:
+                                # Execute the actual withdrawal based on type
+                                if wr_op == "Cash Withdrawal":
+                                    if wr_type == "Individual":
+                                        SavingsService.post_individual_savings(
+                                            uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                            branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                        )
+                                    elif wr_type == "Group":
+                                        SavingsService.post_group_savings(
+                                            uow=uow_wr, group_name=wr.get("group_name") or wr_name, branch=BRANCH,
+                                            officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                        )
+                                    elif wr_type == "Misc":
+                                        SavingsService.post_misc_savings(
+                                            uow=uow_wr, client_id=wr.get("client_id") or "", client_name=wr_name,
+                                            branch=BRANCH, officer=wr_by, deposit_amount=0.0,
+                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                        )
+                                elif wr_op == "Loan Offset":
+                                    source_type = "IndividualSavings" if wr_type == "Individual" else "GroupSavings"
+                                    SavingsService.post_loan_offset_from_savings(
+                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                        loan_id=wr.get("loan_id"), source_savings_type=source_type,
+                                        branch=BRANCH, officer=wr_by, amount=wr_amt,
+                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                    )
+                                elif wr_op == "LAPS Transfer":
+                                    source_type = "IndividualSavings" if wr_type == "Individual" else "GroupSavings"
+                                    SavingsService.transfer_to_laps(
+                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                        source_savings_type=source_type, branch=BRANCH, officer=wr_by, amount=wr_amt,
+                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                    )
+                                elif wr_op == "LAPS Payout":
+                                    cash_paid = (wr.get("payout_method") or "Cash") == "Cash"
+                                    SavingsService.pay_laps(
+                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                        branch=BRANCH, officer=wr_by, amount=wr_amt, cash_paid=cash_paid,
+                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                    )
+
+                                # Mark as approved
+                                uow_wr.client.table("withdrawal_requests").update({
+                                    "status": "APPROVED",
+                                    "approved_by": USER,
+                                    "approved_at": datetime.now().isoformat()
+                                }).eq("id", wr_id).execute()
+
+                            st.success(f"✅ Withdrawal approved and executed! (₦{wr_amt:,.2f} — {wr_name})")
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"❌ Approval failed: {str(ex)}")
+
+                    if wa_col3.button("❌ Reject", key=f"reject_wr_{wr_id}"):
+                        st.session_state[f"rejecting_{wr_id}"] = True
+
+                    if st.session_state.get(f"rejecting_{wr_id}"):
+                        reject_reason = wa_col1.text_input("Rejection Reason", key=f"rej_reason_{wr_id}", placeholder="Why is this being rejected?")
+                        if wa_col1.button("Confirm Rejection", key=f"confirm_rej_{wr_id}"):
+                            uow.client.table("withdrawal_requests").update({
+                                "status": "REJECTED",
+                                "approved_by": USER,
+                                "approved_at": datetime.now().isoformat(),
+                                "rejection_reason": reject_reason or "Rejected by BM"
+                            }).eq("id", wr_id).execute()
+                            st.session_state[f"rejecting_{wr_id}"] = False
+                            st.success(f"Withdrawal request rejected for {wr_name}.")
+                            st.rerun()
+
+                    st.markdown("---")
+                st.divider()
+
             # Section A: Branch Summary
             bs = bm_data["branch_summary"]
             b1, b2, b3, b4 = st.columns(4)
@@ -4086,211 +4184,302 @@ elif page == "Collections":
                                 st.warning("No data entered to save.")
 
 elif page == "Withdrawal Operations":
-    st.title("💸 Withdrawal Operations & Account Transfers")
-    st.caption("Execute client cash withdrawals, loan offsets, LAPS transfers, and LAPS payouts in full compliance with ICARE core banking rules.")
+    st.title("💸 Withdrawal Operations")
+    st.caption("Submit withdrawal requests for BM approval. All withdrawals require Branch Manager authorization before execution.")
 
-    # 1. Role Scope Check
     user_dict = current_user.to_dict() if hasattr(current_user, 'to_dict') else {
         "id": USER_ID, "username": USER, "role": ROLE, "branch": BRANCH, "branch_id": BRANCH_ID, "assigned_branches": ASSIGNED_BRANCH_IDS
     }
     user_scope = RBACScopeService.resolve_scope(user_dict)
 
     if user_scope.is_read_only():
-        st.warning("🔒 Read-Only Access: Your role permits viewing reports and ledger history, but submitting financial withdrawal transactions is restricted.")
+        st.warning("🔒 Read-Only Access: Your role does not permit withdrawal operations.")
         st.stop()
 
     uow = SupabaseUnitOfWork()
-    # 2. Client Selection
-    st.markdown("### 👤 Step 1: Select Client")
-    res_c = uow.client.table("clients").select(
-        "client_id, client_code, name, branches(name), app_users(username)"
-    ).eq("status", "Active").execute()
-    
-    clients_data = []
-    if res_c.data:
-        for c in res_c.data:
-            clients_data.append({
-                "id": c.get("client_id"),
-                "ClientCode": c.get("client_code"),
-                "Name": c.get("name"),
-                "Branch": c.get("branches", {}).get("name") if c.get("branches") else "",
-                "Officer": c.get("app_users", {}).get("username") if c.get("app_users") else ""
-            })
-    clients_df = pd.DataFrame(clients_data)
 
-    if clients_df.empty:
-        st.warning("No client profiles found in system.")
-        st.stop()
+    # ── Savings Type Selector ──
+    savings_type = st.selectbox("Select Savings Type", ["Individual Savings", "Group Savings", "Misc Savings", "LAPS Savings"])
 
-    # Scope client list to branch / assigned officer
-    if user_scope.scope_level == "OFFICER":
-        if "Officer" in clients_df.columns:
-            clients_df = clients_df[clients_df["Officer"].str.lower() == user_scope.username.lower()]
+    # ════════════════════════════════════════════════════════════════════
+    # INDIVIDUAL SAVINGS
+    # ════════════════════════════════════════════════════════════════════
+    if savings_type == "Individual Savings":
+        # Search for client
+        if ROLE in ["BM", ROLE_BRANCH_MANAGER]:
+            res_c = uow.client.table("clients").select("client_id, client_code, name").eq("branch_id", BRANCH_ID).eq("status", "Active").execute()
+        elif ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
+            res_c = uow.client.table("clients").select("client_id, client_code, name").in_("branch_id", ASSIGNED_BRANCH_IDS).eq("status", "Active").execute()
+        elif ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
+            res_c = uow.client.table("clients").select("client_id, client_code, name").eq("status", "Active").execute()
+        else:
+            officer_id = uow.loans._resolve_officer_id(USER)
+            res_c = uow.client.table("clients").select("client_id, client_code, name").eq("officer_id", officer_id).eq("status", "Active").execute()
 
-    client_options = {}
-    for idx, row in clients_df.iterrows():
-        c_id = str(row.get("ClientID") or row.get("id") or "")
-        c_name = str(row.get("Name") or "")
-        c_code = str(row.get("ClientCode") or "")
-        c_branch = str(row.get("Branch") or "")
-        label = f"{c_name} ({c_code or c_id[:8]}) — {c_branch}"
-        client_options[label] = row
+        client_opts = {}
+        if res_c.data:
+            for c in res_c.data:
+                label = f"{c['name']} ({c.get('client_code') or c['client_id'][:8]})"
+                client_opts[label] = c
 
-    selected_label = st.selectbox("Search Client by Name or Code", list(client_options.keys()))
+        if not client_opts:
+            st.info("No active clients found for your scope.")
+            st.stop()
 
-    if selected_label:
-        client_row = client_options[selected_label]
-        c_id = str(client_row.get("ClientID") or client_row.get("id") or "")
-        c_name = str(client_row.get("Name") or "")
-        c_branch = str(client_row.get("Branch") or BRANCH or "Lagos")
+        sel_client_label = st.selectbox("🔍 Search Client", list(client_opts.keys()), placeholder="Type client name or code...")
+        sel_client = client_opts[sel_client_label]
+        c_id = sel_client["client_id"]
+        c_name = sel_client["name"]
 
-        # 3. Load Financial Position
-        st.markdown("### 📊 Step 2: Financial Position & Savings Balances")
+        # Show balance
+        ind_bal = uow.individual_savings.get_total_balance(client_id=c_id)
+        st.metric("💰 Individual Savings Balance", f"₦{ind_bal:,.2f}")
 
-        g_name = str(client_row.get("GroupName") or client_row.get("group_name") or "")
-        ind_savings = uow.individual_savings.get_total_balance(branch=c_branch, client_id=c_id)
-        grp_savings = uow.group_savings.get_total_balance(branch=c_branch, group_name=g_name) if g_name else 0.0
-        msc_savings = uow.misc_savings.get_total_balance(branch=c_branch, client_id=c_id)
-        laps_balance = uow.laps_savings.get_total_balance(branch=c_branch, client_id=c_id)
+        # Operation type
+        op_type = st.radio("Withdrawal Operation", ["💵 Cash Withdrawal", "🔄 Loan Offset", "💼 LAPS Transfer"], horizontal=True)
 
-        # Query client active loans
-        active_loans = []
-        try:
-            res_l = supabase_client.table("loans").select("*").eq("client_id", c_id).eq("status", "Active").execute()
-            active_loans = res_l.data or []
-        except Exception:
-            pass
+        with st.form("ind_withdrawal_form"):
+            amount_val = st.number_input("Amount (₦)", min_value=0.01, step=500.0, format="%.2f")
 
-        tot_loan_due = sum(float(l.get("total_due") or l.get("active_credit") or 0.0) for l in active_loans)
-
-        col1, col2, col3, col4, col5 = st.columns(5)
-        col1.metric("Individual Savings", f"₦{ind_savings:,.2f}")
-        col2.metric("Group Savings", f"₦{grp_savings:,.2f}")
-        col3.metric("Misc Savings", f"₦{msc_savings:,.2f}")
-        col4.metric("LAPS Balance", f"₦{laps_balance:,.2f}")
-        col5.metric("Active Loans Due", f"₦{tot_loan_due:,.2f}")
-
-        st.markdown("---")
-
-        # 4. Transaction Type Selector
-        st.markdown("### ⚙️ Step 3: Select Withdrawal Operation Type")
-
-        op_type = st.radio(
-            "Transaction Type",
-            [
-                "💵 Customer Cash Withdrawal",
-                "🔄 Loan Offset From Savings",
-                "💼 Transfer To LAPS",
-                "🏦 LAPS Payout"
-            ],
-            horizontal=True
-        )
-
-        st.info({
-            "💵 Customer Cash Withdrawal": "Client withdraws physical cash from savings balance. (Reduces physical vault cash)",
-            "🔄 Loan Offset From Savings": "Apply client savings balance directly to settle active loan. (ZERO physical vault cash movement)",
-            "💼 Transfer To LAPS": "Transfer client savings into LAPS investment bucket. (ZERO physical vault cash movement)",
-            "🏦 LAPS Payout": "Payout client LAPS funds. Toggle for physical Cash Payout vs Non-Cash Bank Transfer."
-        }[op_type])
-
-        with st.form("withdrawal_operation_form"):
-            col_a, col_b = st.columns(2)
-
-            with col_a:
-                if op_type == "🏦 LAPS Payout":
-                    source_savings_type = "LapsSavings"
-                    st.text_input("Source Savings Bucket", "LAPS Savings", disabled=True)
+            target_loan_id = None
+            if op_type == "🔄 Loan Offset":
+                res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit").eq("client_id", c_id).eq("status", "Active").execute()
+                active_loans = res_l.data or []
+                if active_loans:
+                    loan_opts = {f"Loan {l['loan_id'][:8]} — Active Credit: ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in active_loans}
+                    sel_loan = st.selectbox("Select Loan to Offset", list(loan_opts.keys()))
+                    target_loan_id = loan_opts[sel_loan]
                 else:
-                    source_savings_type = st.selectbox(
-                        "Source Savings Bucket",
-                        ["IndividualSavings", "GroupSavings", "MiscSavings"]
-                    )
+                    st.warning("No active loans found for this client.")
 
-                amount_val = st.number_input("Amount (₦)", min_value=0.01, step=1000.0, format="%.2f")
-
-            with col_b:
-                target_loan_id = None
-                payout_cash_paid = True
-
-                if op_type == "🔄 Loan Offset From Savings":
-                    if active_loans:
-                        loan_opts = {f"Loan #{l.get('loan_id')[:8]} — Due: ₦{float(l.get('total_due') or 0.0):,.2f}": l.get("loan_id") for l in active_loans}
-                        sel_loan_label = st.selectbox("Target Loan to Offset", list(loan_opts.keys()))
-                        target_loan_id = loan_opts[sel_loan_label]
-                    else:
-                        st.error("No active loans found for this client to offset.")
-                        target_loan_id = None
-
-                elif op_type == "🏦 LAPS Payout":
-                    payout_method = st.radio("Payout Method", ["Physical Cash (Vault Cash)", "Non-Cash (Bank Transfer)"])
-                    payout_cash_paid = (payout_method == "Physical Cash (Vault Cash)")
-
-                reference_input = st.text_input("Reference / Voucher No. (Optional)", f"REF-WTH-{datetime.now().strftime('%Y%m%d%H%M%S')}")
-                remarks_input = st.text_area("Narration / Remarks", f"{op_type} for {c_name}")
-
-            submitted = st.form_submit_button("🚀 Process Transaction", use_container_width=True)
+            remarks_input = st.text_area("Remarks", placeholder="Reason for withdrawal...")
+            submitted = st.form_submit_button("📤 Submit for BM Approval", use_container_width=True)
 
             if submitted:
                 if amount_val <= 0:
                     st.error("Amount must be greater than zero.")
-                elif op_type == "🔄 Loan Offset From Savings" and not target_loan_id:
-                    st.error("Please select an active loan to perform loan offset.")
+                elif amount_val > ind_bal and op_type != "🔄 Loan Offset":
+                    st.error(f"Insufficient balance. Available: ₦{ind_bal:,.2f}")
+                elif op_type == "🔄 Loan Offset" and not target_loan_id:
+                    st.error("Select an active loan to offset.")
                 else:
-                    try:
-                        res = None
-                        if op_type == "💵 Customer Cash Withdrawal":
-                            if source_savings_type == "IndividualSavings":
-                                SavingsService.post_individual_savings(
-                                    uow=uow, client_id=c_id, client_name=c_name, branch=c_branch,
-                                    officer=USER, deposit_amount=0.0, withdrawal_amount=amount_val,
-                                    reference=reference_input, remarks=remarks_input
-                                )
-                            elif source_savings_type == "GroupSavings":
-                                SavingsService.post_group_savings(
-                                    uow=uow, group_name=c_name, branch=c_branch,
-                                    officer=USER, deposit_amount=0.0, withdrawal_amount=amount_val,
-                                    reference=reference_input, remarks=remarks_input
-                                )
-                            else:
-                                SavingsService.post_misc_savings(
-                                    uow=uow, client_id=c_id, client_name=c_name, branch=c_branch,
-                                    officer=USER, deposit_amount=0.0,
-                                    reference=reference_input, remarks=remarks_input
-                                )
-                            res = {"status": "SUCCESS", "affects_cash_vault": True, "amount": amount_val}
+                    op_map = {"💵 Cash Withdrawal": "Cash Withdrawal", "🔄 Loan Offset": "Loan Offset", "💼 LAPS Transfer": "LAPS Transfer"}
+                    uow.client.table("withdrawal_requests").insert({
+                        "savings_type": "Individual",
+                        "operation_type": op_map[op_type],
+                        "client_id": c_id,
+                        "client_name": c_name,
+                        "loan_id": target_loan_id,
+                        "branch_id": BRANCH_ID,
+                        "requested_by": USER,
+                        "amount": float(amount_val),
+                        "reference": f"REF-WTH-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                        "remarks": remarks_input or f"{op_map[op_type]} request for {c_name}",
+                        "status": "PENDING"
+                    }).execute()
+                    st.success(f"✅ Withdrawal request submitted for BM approval! (₦{amount_val:,.2f})")
+                    st.rerun()
 
-                        elif op_type == "🔄 Loan Offset From Savings":
-                            res = SavingsService.post_loan_offset_from_savings(
-                                uow=uow, client_id=c_id, client_name=c_name, loan_id=target_loan_id,
-                                source_savings_type=source_savings_type, branch=c_branch,
-                                officer=USER, amount=amount_val, reference=reference_input, remarks=remarks_input
-                            )
+    # ════════════════════════════════════════════════════════════════════
+    # GROUP SAVINGS
+    # ════════════════════════════════════════════════════════════════════
+    elif savings_type == "Group Savings":
+        if ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
+            res_g = uow.client.table("groups").select("group_id, name").execute()
+        else:
+            res_g = uow.client.table("groups").select("group_id, name").eq("branch_id", BRANCH_ID).execute()
 
-                        elif op_type == "💼 Transfer To LAPS":
-                            res = SavingsService.transfer_to_laps(
-                                uow=uow, client_id=c_id, client_name=c_name,
-                                source_savings_type=source_savings_type, branch=c_branch,
-                                officer=USER, amount=amount_val, reference=reference_input, remarks=remarks_input
-                            )
+        group_opts = {}
+        if res_g.data:
+            for g in res_g.data:
+                group_opts[g["name"]] = g
 
-                        elif op_type == "🏦 LAPS Payout":
-                            res = SavingsService.pay_laps(
-                                uow=uow, client_id=c_id, client_name=c_name, branch=c_branch,
-                                officer=USER, amount=amount_val, cash_paid=payout_cash_paid,
-                                reference=reference_input, remarks=remarks_input
-                            )
+        if not group_opts:
+            st.info("No groups found for your branch.")
+            st.stop()
 
-                        if res and res.get("status") == "SUCCESS":
-                            st.success(f"✅ Transaction Processed Successfully! (Amount: ₦{amount_val:,.2f})")
-                            if res.get("affects_cash_vault"):
-                                st.warning("💵 Physical Cash Vault Movement: Vault Cash updated accordingly.")
-                            else:
-                                st.info("🔄 Zero Physical Cash Movement: Internal ledger transaction executed with ZERO vault cash impact.")
+        sel_group_label = st.selectbox("🔍 Search Group", list(group_opts.keys()), placeholder="Type group name...")
+        sel_group = group_opts[sel_group_label]
+        g_name = sel_group["name"]
 
-                            st.rerun()
+        # Show balance
+        grp_bal = uow.group_savings.get_total_balance(group_name=g_name)
+        st.metric("💰 Group Savings Balance", f"₦{grp_bal:,.2f}")
 
-                    except Exception as ex:
-                        st.error(f"❌ Transaction Failed: {str(ex)}")
+        op_type = st.radio("Withdrawal Operation", ["💵 Cash Withdrawal", "🔄 Loan Offset (Member Debt)", "💼 LAPS Transfer (Group Closed)"], horizontal=True)
+
+        with st.form("grp_withdrawal_form"):
+            amount_val = st.number_input("Amount (₦)", min_value=0.01, step=500.0, format="%.2f")
+
+            target_loan_id = None
+            client_name_for_offset = None
+            if "Loan Offset" in op_type:
+                # Select which member's loan to offset from group savings
+                res_members = uow.client.table("client_memberships").select("clients(client_id, client_code, name)").eq("group_id", sel_group["group_id"]).execute()
+                members = []
+                if res_members.data:
+                    for m in res_members.data:
+                        cl = m.get("clients")
+                        if cl:
+                            members.append(cl)
+                if members:
+                    member_opts = {f"{m['name']} ({m.get('client_code') or m['client_id'][:8]})": m for m in members}
+                    sel_member_label = st.selectbox("Select Member", list(member_opts.keys()))
+                    sel_member = member_opts[sel_member_label]
+                    client_name_for_offset = sel_member["name"]
+
+                    res_l = uow.client.table("loans").select("loan_id, active_credit").eq("client_id", sel_member["client_id"]).eq("status", "Active").execute()
+                    if res_l.data:
+                        loan_opts = {f"Loan {l['loan_id'][:8]} — ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in res_l.data}
+                        sel_loan = st.selectbox("Select Loan", list(loan_opts.keys()))
+                        target_loan_id = loan_opts[sel_loan]
+                    else:
+                        st.warning("No active loans for this member.")
+                else:
+                    st.warning("No members found in this group.")
+
+            remarks_input = st.text_area("Remarks", placeholder="Reason for withdrawal...")
+            submitted = st.form_submit_button("📤 Submit for BM Approval", use_container_width=True)
+
+            if submitted:
+                if amount_val <= 0:
+                    st.error("Amount must be greater than zero.")
+                elif amount_val > grp_bal:
+                    st.error(f"Insufficient group balance. Available: ₦{grp_bal:,.2f}")
+                elif "Loan Offset" in op_type and not target_loan_id:
+                    st.error("Select a member and loan to offset.")
+                else:
+                    op_clean = "Cash Withdrawal" if "Cash" in op_type else ("Loan Offset" if "Loan Offset" in op_type else "LAPS Transfer")
+                    uow.client.table("withdrawal_requests").insert({
+                        "savings_type": "Group",
+                        "operation_type": op_clean,
+                        "client_id": sel_member["client_id"] if "Loan Offset" in op_type and 'sel_member' in dir() else None,
+                        "client_name": client_name_for_offset or g_name,
+                        "group_name": g_name,
+                        "loan_id": target_loan_id,
+                        "branch_id": BRANCH_ID,
+                        "requested_by": USER,
+                        "amount": float(amount_val),
+                        "reference": f"REF-GRP-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                        "remarks": remarks_input or f"Group {op_clean} from {g_name}",
+                        "status": "PENDING"
+                    }).execute()
+                    st.success(f"✅ Group withdrawal request submitted for BM approval! (₦{amount_val:,.2f})")
+                    st.rerun()
+
+    # ════════════════════════════════════════════════════════════════════
+    # MISC SAVINGS (Read-only for CO, BM can withdraw)
+    # ════════════════════════════════════════════════════════════════════
+    elif savings_type == "Misc Savings":
+        misc_bal = uow.misc_savings.get_total_balance(branch=BRANCH)
+        st.metric("💰 Branch Misc Savings Balance", f"₦{misc_bal:,.2f}")
+
+        if ROLE not in ["BM", ROLE_BRANCH_MANAGER, ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
+            st.info("🔒 Misc Savings is managed by the Branch Manager. You can view the balance but cannot submit withdrawals.")
+        else:
+            st.markdown("**As Branch Manager, you can submit a Misc Savings withdrawal.**")
+
+            with st.form("misc_withdrawal_form"):
+                amount_val = st.number_input("Amount (₦)", min_value=0.01, step=500.0, format="%.2f")
+                remarks_input = st.text_area("Remarks", placeholder="Reason for Misc withdrawal...")
+                submitted = st.form_submit_button("📤 Submit Misc Withdrawal", use_container_width=True)
+
+                if submitted:
+                    if amount_val <= 0:
+                        st.error("Amount must be greater than zero.")
+                    elif amount_val > misc_bal:
+                        st.error(f"Insufficient Misc balance. Available: ₦{misc_bal:,.2f}")
+                    else:
+                        uow.client.table("withdrawal_requests").insert({
+                            "savings_type": "Misc",
+                            "operation_type": "Cash Withdrawal",
+                            "client_name": f"Branch Misc - {BRANCH}",
+                            "branch_id": BRANCH_ID,
+                            "requested_by": USER,
+                            "amount": float(amount_val),
+                            "reference": f"REF-MISC-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                            "remarks": remarks_input or f"Misc Savings withdrawal by {USER}",
+                            "status": "PENDING"
+                        }).execute()
+                        st.success(f"✅ Misc withdrawal request submitted! (₦{amount_val:,.2f})")
+                        st.rerun()
+
+    # ════════════════════════════════════════════════════════════════════
+    # LAPS SAVINGS (Closed client/group payouts)
+    # ════════════════════════════════════════════════════════════════════
+    elif savings_type == "LAPS Savings":
+        st.caption("LAPS records for closed clients and groups. Submit a payout request when a closed client returns to collect their savings.")
+
+        # Search LAPS records
+        res_laps = uow.client.table("laps_savings").select("id, client_id, deposit_amount, withdrawal_amount, remarks, created_at").execute()
+        laps_data = {}
+        if res_laps.data:
+            for lr in res_laps.data:
+                cid = lr.get("client_id") or lr.get("id")
+                if cid not in laps_data:
+                    laps_data[cid] = {"client_id": cid, "balance": 0.0, "remarks": lr.get("remarks") or ""}
+                laps_data[cid]["balance"] += float(lr.get("deposit_amount") or 0) - float(lr.get("withdrawal_amount") or 0)
+
+        if not laps_data:
+            st.info("No LAPS savings records found.")
+            st.stop()
+
+        laps_list = [v for v in laps_data.values() if v["balance"] > 0]
+        if not laps_list:
+            st.info("No LAPS balances available for payout.")
+            st.stop()
+
+        laps_opts = {f"{l['client_id'][:12]}... — Balance: ₦{l['balance']:,.2f}": l for l in laps_list}
+        sel_laps_label = st.selectbox("🔍 Select LAPS Record", list(laps_opts.keys()))
+        sel_laps = laps_opts[sel_laps_label]
+
+        st.metric("💰 LAPS Balance", f"₦{sel_laps['balance']:,.2f}")
+
+        with st.form("laps_payout_form"):
+            amount_val = st.number_input("Payout Amount (₦)", min_value=0.01, step=500.0, format="%.2f")
+            payout_method = st.radio("Payout Method", ["Cash", "Bank Transfer"], horizontal=True)
+            remarks_input = st.text_area("Remarks", placeholder="Client details, reason for payout...")
+            submitted = st.form_submit_button("📤 Submit LAPS Payout for BM Approval", use_container_width=True)
+
+            if submitted:
+                if amount_val <= 0:
+                    st.error("Amount must be greater than zero.")
+                elif amount_val > sel_laps["balance"]:
+                    st.error(f"Insufficient LAPS balance. Available: ₦{sel_laps['balance']:,.2f}")
+                else:
+                    uow.client.table("withdrawal_requests").insert({
+                        "savings_type": "LAPS",
+                        "operation_type": "LAPS Payout",
+                        "client_id": sel_laps["client_id"],
+                        "client_name": remarks_input.split('\n')[0][:50] if remarks_input else f"LAPS Client {sel_laps['client_id'][:8]}",
+                        "branch_id": BRANCH_ID,
+                        "requested_by": USER,
+                        "amount": float(amount_val),
+                        "payout_method": payout_method,
+                        "reference": f"REF-LAPS-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                        "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
+                        "status": "PENDING"
+                    }).execute()
+                    st.success(f"✅ LAPS payout request submitted for BM approval! (₦{amount_val:,.2f})")
+                    st.rerun()
+
+    # ── My Pending Requests ──
+    st.markdown("---")
+    st.markdown("### 📋 My Pending Withdrawal Requests")
+    res_pending = uow.client.table("withdrawal_requests").select("*").eq("requested_by", USER).order("created_at", desc=True).limit(20).execute()
+
+    if res_pending.data:
+        for req in res_pending.data:
+            status_icon = {"PENDING": "⏳", "APPROVED": "✅", "REJECTED": "❌"}.get(req["status"], "❓")
+            st.markdown(
+                f"{status_icon} **{req['savings_type']} — {req['operation_type']}** | "
+                f"₦{float(req['amount']):,.2f} | {req['client_name']} | "
+                f"Status: **{req['status']}** | {req['created_at'][:10]}"
+            )
+            if req["status"] == "REJECTED" and req.get("rejection_reason"):
+                st.caption(f"  ↳ Reason: {req['rejection_reason']}")
+    else:
+        st.info("No withdrawal requests submitted yet.")
 
 elif page == "Legacy LAPS Migration":
     st.title("🏛️ Legacy LAPS Bulk Migration Console (Super Admin)")
