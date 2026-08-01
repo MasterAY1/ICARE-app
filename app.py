@@ -3923,10 +3923,10 @@ elif page == "Collections":
                             prev_g_wd = 0.0
                             prev_laps = 0.0
                             
-                        gsc1, gsc2, gsc3 = st.columns(3)
+                        gsc1, gsc2 = st.columns(2)
                         global_group_savings = gsc1.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=prev_g_dep if prev_g_dep > 0 else None, placeholder="0", key="global_grp_sav")
-                        global_group_wd = gsc2.number_input("Group Savings Withdrawal", min_value=0.0, step=500.0, value=prev_g_wd if prev_g_wd > 0 else None, placeholder="0", key="global_grp_wd")
-                        global_laps_reserved = gsc3.number_input("Laps Reserved", min_value=0.0, step=500.0, value=prev_laps if prev_laps > 0 else None, placeholder="0", key="global_laps_res")
+                        global_group_wd = 0.0
+                        global_laps_reserved = gsc2.number_input("Laps Reserved", min_value=0.0, step=500.0, value=prev_laps if prev_laps > 0 else None, placeholder="0", key="global_laps_res")
                         st.markdown("---")
                         
                         # ---- PER-CLIENT COLLECTIONS ----
@@ -3953,9 +3953,8 @@ elif page == "Collections":
                                 
                                 if not is_asset:
                                     st.markdown("**🏦 Savings**")
-                                    sc1, sc2 = st.columns(2)
-                                    s_dep = sc1.number_input("Savings Deposit", min_value=0.0, step=500.0, value=info['prev_dep'] if info['prev_dep'] > 0 else None, placeholder="0", key=f"sdep_{cid}")
-                                    s_wd = sc2.number_input("Savings Withdrawal", min_value=0.0, step=500.0, value=info['prev_wd'] if info['prev_wd'] > 0 else None, placeholder="0", key=f"swd_{cid}")
+                                    s_dep = st.number_input("Savings Deposit", min_value=0.0, step=500.0, value=info['prev_dep'] if info['prev_dep'] > 0 else None, placeholder="0", key=f"sdep_{cid}")
+                                    s_wd = 0.0
                                     sav_data[cid] = {"dep": s_dep, "wd": s_wd}
                                     st.markdown("---")
                                 
