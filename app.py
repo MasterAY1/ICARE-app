@@ -4205,49 +4205,51 @@ elif page == "Withdrawal Operations":
     # INDIVIDUAL SAVINGS
     # ════════════════════════════════════════════════════════════════════
     if savings_type == "Individual Savings":
-        # Load groups for filtering
-        if ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
-            res_grps = uow.client.table("groups").select("group_id, name").execute()
-        elif ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
-            res_grps = uow.client.table("groups").select("group_id, name").in_("branch_id", ASSIGNED_BRANCH_IDS).execute()
-        else:
-            res_grps = uow.client.table("groups").select("group_id, name").eq("branch_id", BRANCH_ID).execute()
-
-        group_names = ["All Groups"] + sorted([g["name"] for g in (res_grps.data or [])])
-        sel_group_filter = st.selectbox("📂 Filter by Group", group_names)
-
-        # Fetch clients with membership info
+        # Fetch clients with membership info (scoped by role)
         if ROLE in ["BM", ROLE_BRANCH_MANAGER]:
-            res_c = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id)").eq("branch_id", BRANCH_ID).eq("status", "Active").execute()
+            res_c = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id, groups(name))").eq("branch_id", BRANCH_ID).eq("status", "Active").execute()
         elif ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
-            res_c = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id)").in_("branch_id", ASSIGNED_BRANCH_IDS).eq("status", "Active").execute()
+            res_c = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id, groups(name))").in_("branch_id", ASSIGNED_BRANCH_IDS).eq("status", "Active").execute()
         elif ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
-            res_c = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id)").eq("status", "Active").execute()
+            res_c = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id, groups(name))").eq("status", "Active").execute()
         else:
             officer_id = uow.loans._resolve_officer_id(USER)
-            res_c = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id)").eq("officer_id", officer_id).eq("status", "Active").execute()
+            res_c = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id, groups(name))").eq("officer_id", officer_id).eq("status", "Active").execute()
 
-        # Apply group filter
+        # Build group list from the CO's own clients
+        co_groups = {}
+        all_clients = res_c.data or []
+        for c in all_clients:
+            memberships = c.get("client_memberships") or []
+            if isinstance(memberships, dict):
+                memberships = [memberships]
+            for m in memberships:
+                if m and m.get("group_id") and m.get("groups"):
+                    co_groups[m["group_id"]] = m["groups"].get("name") or "Unknown"
+
+        group_names = ["All Groups"] + sorted(co_groups.values())
+        sel_group_filter = st.selectbox("📂 Filter by Group", group_names)
+
+        # Resolve selected group ID
         selected_group_id = None
         if sel_group_filter != "All Groups":
-            grp_match = next((g for g in (res_grps.data or []) if g["name"] == sel_group_filter), None)
-            selected_group_id = grp_match["group_id"] if grp_match else None
+            selected_group_id = next((gid for gid, gname in co_groups.items() if gname == sel_group_filter), None)
 
+        # Filter clients by selected group
         client_opts = {}
-        if res_c.data:
-            for c in res_c.data:
-                if selected_group_id:
-                    memberships = c.get("client_memberships") or []
-                    if isinstance(memberships, dict):
-                        memberships = [memberships]
-                    member_group_ids = [m.get("group_id") for m in memberships if m]
-                    if selected_group_id not in member_group_ids:
-                        continue
-                label = f"{c['name']} ({c.get('client_code') or c['client_id'][:8]})"
-                client_opts[label] = c
+        for c in all_clients:
+            if selected_group_id:
+                memberships = c.get("client_memberships") or []
+                if isinstance(memberships, dict):
+                    memberships = [memberships]
+                member_group_ids = [m.get("group_id") for m in memberships if m]
+                if selected_group_id not in member_group_ids:
+                    continue
+            label = f"{c['name']} ({c.get('client_code') or c['client_id'][:8]})"
+            client_opts[label] = c
 
         if not client_opts:
-            st.info("No active clients found for the selected group/scope.")
+            st.info("No active clients found for the selected group.")
             st.stop()
 
         sel_client_label = st.selectbox("🔍 Search Client", list(client_opts.keys()), placeholder="Type client name or code...")
