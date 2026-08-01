@@ -36,7 +36,8 @@ class RBACScopeService:
             "Master Cashbook", "Audit Ledger", "Reports & Export"
         ],
         "Area Manager": [
-            "Dashboard", "Portfolio", "Audit Ledger", "Reports & Export"
+            "Dashboard", "Portfolio", "Loan Origination", "Collections", "Withdrawal Operations",
+            "Audit Ledger", "Reports & Export"
         ],
         "Admin": [
             "Dashboard", "Portfolio", "Loan Origination", "Collections", "Withdrawal Operations", "Legacy LAPS Migration", "CO Cashbook",
@@ -44,7 +45,8 @@ class RBACScopeService:
             "Reports & Export"
         ],
         "Director": [
-            "Dashboard", "Portfolio", "Audit Ledger", "Reports & Export"
+            "Dashboard", "Portfolio", "Loan Origination", "Collections", "Withdrawal Operations",
+            "Audit Ledger", "Reports & Export"
         ]
     }
 
@@ -54,16 +56,24 @@ class RBACScopeService:
         "CREDIT_OFFICER": "CO",
         "CREDIT OFFICER": "CO",
         "OFFICER": "CO",
+        "FIELD OFFICER": "CO",
         "BM": "Branch Manager",
         "BRANCH_MANAGER": "Branch Manager",
         "BRANCH MANAGER": "Branch Manager",
+        "MANAGER": "Branch Manager",
         "AM": "Area Manager",
         "AREA_MANAGER": "Area Manager",
         "AREA MANAGER": "Area Manager",
+        "REGIONAL MANAGER": "Area Manager",
         "ADMIN": "Admin",
         "ADMINISTRATOR": "Admin",
         "SUPER_ADMIN": "Admin",
+        "SUPER ADMIN": "Admin",
+        "SUPERADMIN": "Admin",
         "GLOBAL_ADMIN": "Admin",
+        "GLOBAL ADMIN": "Admin",
+        "SYSTEM ADMIN": "Admin",
+        "SYSTEM ADMINISTRATOR": "Admin",
         "DIRECTOR": "Director",
         "BOARD_DIRECTOR": "Director",
         "BOARD DIRECTOR": "Director",
@@ -74,8 +84,20 @@ class RBACScopeService:
     def normalize_role(cls, role: Optional[str]) -> str:
         if not role:
             return "CO"
-        clean = str(role).strip().upper()
-        return cls.ROLE_ALIASES.get(clean, cls.ROLE_ALIASES.get(str(role).strip(), "CO"))
+        raw_str = str(role).strip()
+        upper_str = raw_str.upper()
+        if upper_str in cls.ROLE_ALIASES:
+            return cls.ROLE_ALIASES[upper_str]
+        underscore_str = upper_str.replace(" ", "_")
+        if underscore_str in cls.ROLE_ALIASES:
+            return cls.ROLE_ALIASES[underscore_str]
+        space_str = upper_str.replace("_", " ")
+        if space_str in cls.ROLE_ALIASES:
+            return cls.ROLE_ALIASES[space_str]
+        if raw_str in cls.ROLE_ALIASES:
+            return cls.ROLE_ALIASES[raw_str]
+        return "Admin" if "ADMIN" in upper_str else ("Branch Manager" if "BRANCH" in upper_str or "MANAGER" in upper_str else "CO")
+
 
     @classmethod
     def resolve_scope(cls, current_user: Dict[str, Any]) -> RBACScope:

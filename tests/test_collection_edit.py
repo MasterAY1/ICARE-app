@@ -23,9 +23,9 @@ class TestCollectionEdit(unittest.TestCase):
             'Officer': 'Olamide',
             'Branch': 'Ogijo',
             'Amount Paid': 2000.0,
-            'Savings Amount': 2000.0,
+            'Savings Amount': 0.0,
             'Withdrawal Amount': 0.0,
-            'Loan Repayment Amount': 0.0,
+            'Loan Repayment Amount': 2000.0,
             'Transaction Type': 'Collection'
         }
         
@@ -46,9 +46,9 @@ class TestCollectionEdit(unittest.TestCase):
                 'Officer': 'Olamide',
                 'Branch': 'Ogijo',
                 'Amount Paid': 2500.0,
-                'Savings Amount': 2500.0,
+                'Savings Amount': 0.0,
                 'Withdrawal Amount': 0.0,
-                'Loan Repayment Amount': 0.0,
+                'Loan Repayment Amount': 2500.0,
                 'Transaction Type': 'Collection'
             }
 

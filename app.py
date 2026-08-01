@@ -1170,6 +1170,7 @@ def save_repayment(data):
             client_name = db_data.get('client_name', client_id)
             branch = db_data.get('branch', BRANCH)
             officer = db_data.get('credit_officer', USER)
+            rep = RepaymentMapper.to_domain(db_data)
             print(f"[SAVINGS TRACE] Resolved client/group: ID={client_id}, Name={client_name}, Branch={branch}, Officer={officer}")
             
             # Extract Savings
