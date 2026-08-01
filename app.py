@@ -4265,7 +4265,7 @@ elif page == "Withdrawal Operations":
         op_type = st.radio("Withdrawal Operation", ["💵 Cash Withdrawal", "🔄 Loan Offset", "💼 LAPS Transfer"], horizontal=True)
 
         with st.form("ind_withdrawal_form"):
-            amount_val = st.number_input("Amount (₦)", min_value=0.01, step=500.0, format="%.2f")
+            amount_val = st.number_input("Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
 
             target_loan_id = None
             if op_type == "🔄 Loan Offset":
@@ -4282,7 +4282,7 @@ elif page == "Withdrawal Operations":
             submitted = st.form_submit_button("📤 Submit for BM Approval", use_container_width=True)
 
             if submitted:
-                if amount_val <= 0:
+                if not amount_val or amount_val <= 0:
                     st.error("Amount must be greater than zero.")
                 elif amount_val > ind_bal and op_type != "🔄 Loan Offset":
                     st.error(f"Insufficient balance. Available: ₦{ind_bal:,.2f}")
@@ -4335,7 +4335,7 @@ elif page == "Withdrawal Operations":
         op_type = st.radio("Withdrawal Operation", ["💵 Cash Withdrawal", "🔄 Loan Offset (Member Debt)", "💼 LAPS Transfer (Group Closed)"], horizontal=True)
 
         with st.form("grp_withdrawal_form"):
-            amount_val = st.number_input("Amount (₦)", min_value=0.01, step=500.0, format="%.2f")
+            amount_val = st.number_input("Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
 
             target_loan_id = None
             client_name_for_offset = None
@@ -4368,7 +4368,7 @@ elif page == "Withdrawal Operations":
             submitted = st.form_submit_button("📤 Submit for BM Approval", use_container_width=True)
 
             if submitted:
-                if amount_val <= 0:
+                if not amount_val or amount_val <= 0:
                     st.error("Amount must be greater than zero.")
                 elif amount_val > grp_bal:
                     st.error(f"Insufficient group balance. Available: ₦{grp_bal:,.2f}")
@@ -4406,12 +4406,12 @@ elif page == "Withdrawal Operations":
             st.markdown("**As Branch Manager, you can submit a Misc Savings withdrawal.**")
 
             with st.form("misc_withdrawal_form"):
-                amount_val = st.number_input("Amount (₦)", min_value=0.01, step=500.0, format="%.2f")
+                amount_val = st.number_input("Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
                 remarks_input = st.text_area("Remarks", placeholder="Reason for Misc withdrawal...")
                 submitted = st.form_submit_button("📤 Submit Misc Withdrawal", use_container_width=True)
 
                 if submitted:
-                    if amount_val <= 0:
+                    if not amount_val or amount_val <= 0:
                         st.error("Amount must be greater than zero.")
                     elif amount_val > misc_bal:
                         st.error(f"Insufficient Misc balance. Available: ₦{misc_bal:,.2f}")
@@ -4462,13 +4462,13 @@ elif page == "Withdrawal Operations":
         st.metric("💰 LAPS Balance", f"₦{sel_laps['balance']:,.2f}")
 
         with st.form("laps_payout_form"):
-            amount_val = st.number_input("Payout Amount (₦)", min_value=0.01, step=500.0, format="%.2f")
+            amount_val = st.number_input("Payout Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
             payout_method = st.radio("Payout Method", ["Cash", "Bank Transfer"], horizontal=True)
             remarks_input = st.text_area("Remarks", placeholder="Client details, reason for payout...")
             submitted = st.form_submit_button("📤 Submit LAPS Payout for BM Approval", use_container_width=True)
 
             if submitted:
-                if amount_val <= 0:
+                if not amount_val or amount_val <= 0:
                     st.error("Amount must be greater than zero.")
                 elif amount_val > sel_laps["balance"]:
                     st.error(f"Insufficient LAPS balance. Available: ₦{sel_laps['balance']:,.2f}")
