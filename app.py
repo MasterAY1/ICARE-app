@@ -5343,7 +5343,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         sc1_d, sc2_d, sc3_d = st.columns(3)
                         sc1_d.markdown(f"**Date:** {s_sel['Date']}\n\n**Client Code:** {s_sel['Client Code']}")
                         sc2_d.markdown(f"**Client Name:** {s_sel['Client Name']}\n\n**Deposit:** {s_sel['Deposit']}")
-                        sc3_d.markdown(f"**Withdrawal:** {s_sel['Withdrawal']}\n\n**Balance:** {s_sel['Balance']}")
+                        sc3_d.markdown(f"**Remarks:** {s_sel['Remarks']}\n\n**Withdrawal:** {s_sel['Withdrawal']}\n\n**Balance:** {s_sel['Balance']}")
     
                         with st.expander("🛠️ Advanced Technical Details"):
                             st.json(s_sel["_raw_record"])

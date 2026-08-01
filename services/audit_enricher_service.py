@@ -258,6 +258,7 @@ class AuditEnricher:
                 "Date": self.format_date(r.get("posting_date") or r.get("created_at")),
                 "Client Code": client_info["code"],
                 "Client Name": client_info["name"],
+                "Remarks": r.get("remarks") or r.get("reference") or ("Deposit" if dep > 0 else "Withdrawal"),
                 "Officer": self.resolve_officer(r.get("officer_id")),
                 "Branch": self.resolve_branch(r.get("branch_id")),
                 "Deposit": self.format_currency(dep),
