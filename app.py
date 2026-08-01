@@ -4103,7 +4103,21 @@ elif page == "Withdrawal Operations":
     uow = SupabaseUnitOfWork()
     # 2. Client Selection
     st.markdown("### 👤 Step 1: Select Client")
-    clients_df = load_clients()
+    res_c = uow.client.table("clients").select(
+        "client_id, client_code, name, branches(name), app_users(username)"
+    ).eq("status", "Active").execute()
+    
+    clients_data = []
+    if res_c.data:
+        for c in res_c.data:
+            clients_data.append({
+                "id": c.get("client_id"),
+                "ClientCode": c.get("client_code"),
+                "Name": c.get("name"),
+                "Branch": c.get("branches", {}).get("name") if c.get("branches") else "",
+                "Officer": c.get("app_users", {}).get("username") if c.get("app_users") else ""
+            })
+    clients_df = pd.DataFrame(clients_data)
 
     if clients_df.empty:
         st.warning("No client profiles found in system.")
