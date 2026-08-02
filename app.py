@@ -4021,10 +4021,8 @@ elif page == "Collections":
                             prev_g_wd = 0.0
                             prev_laps = 0.0
                             
-                        gsc1, gsc2 = st.columns(2)
-                        global_group_savings = gsc1.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=prev_g_dep if prev_g_dep > 0 else None, placeholder="0", key="global_grp_sav")
+                        global_group_savings = st.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=prev_g_dep if prev_g_dep > 0 else None, placeholder="0", key="global_grp_sav")
                         global_group_wd = 0.0
-                        global_laps_reserved = gsc2.number_input("Laps Reserved", min_value=0.0, step=500.0, value=prev_laps if prev_laps > 0 else None, placeholder="0", key="global_laps_res")
                         st.markdown("---")
                         
                         # ---- PER-CLIENT COLLECTIONS ----
@@ -4068,7 +4066,7 @@ elif page == "Collections":
                                 elif p_status == "CUSTOM_AMOUNT":
                                     rep_col = st.number_input(f"Enter Collection Amount", min_value=0.0, step=500.0, value=float(info['prev_rep']) if info['prev_rep'] and info['prev_rep'] > 0 else None, placeholder="0", key=f"rep_{cid}")
                                 else:
-                                    rep_col = st.number_input(f"Expected Repayment Amount", min_value=0.0, step=500.0, value=float(info['prev_rep']) if info['prev_rep'] and info['prev_rep'] > 0 else expected_rep, key=f"rep_{cid}")
+                                    rep_col = st.number_input(f"Expected Repayment Amount", min_value=0.0, step=500.0, value=float(info['prev_rep']) if info['prev_rep'] and info['prev_rep'] > 0 else (expected_rep if expected_rep > 0 else None), placeholder=str(expected_rep), key=f"rep_{cid}")
                                 
                                 rep_data[cid] = {
                                     "rep": rep_col, "app": 0, "pb": 0, "misc": 0,
@@ -4154,16 +4152,15 @@ elif page == "Collections":
                             # Process Group-Level Inflows
                             global_group_savings = float(global_group_savings or 0)
                             global_group_wd = float(global_group_wd or 0)
-                            global_laps_reserved = float(global_laps_reserved or 0)
                             
-                            if global_group_savings > 0 or global_group_wd > 0 or global_laps_reserved > 0:
+                            if global_group_savings > 0 or global_group_wd > 0:
                                 g_data = {
                                     "Date": date_str, "Client ID": f"GROUP-{selected_group}", "Client Name": f"{selected_group} Meeting",
                                     "Officer": target_co, "Branch": BRANCH,
-                                    "Amount Paid": global_group_savings + global_laps_reserved,
+                                    "Amount Paid": global_group_savings,
                                     "Transaction Type": "Group Meeting", "Note": "Group Level Inputs",
                                     "Savings Amount": global_group_savings, "Withdrawal Amount": global_group_wd,
-                                    "Laps Reserved": global_laps_reserved,
+                                    "Laps Reserved": 0,
                                     "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
                                     "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0, "Bank Withdrawal": 0,
                                     "Asset Sales": 0, "App Fee": 0, "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,

@@ -54,15 +54,23 @@ class CoCashbookProjectionBuilder:
 
         for entry in entries_list:
             acc = entry.get("account_code")
-            if acc != "1000": # Only track cash account flow
-                continue
-
+            
             amount = float(entry.get("amount") or 0.0)
             side = entry.get("side")
             tx = entry.get("financial_transactions") or {}
             ev_store = tx.get("event_store") or {}
             event_type = ev_store.get("event_type")
             narr = str(tx.get("narration") or "").lower()
+
+            # Handle internal transfers that don't touch 1000 Vault Cash but need to be in Cashbook
+            if event_type == "LapsTransferred" and acc == "2030" and side == "Credit":
+                laps_reserve += amount
+                savings_withdrawal += amount
+                product_withdrawal += amount
+                continue
+
+            if acc != "1000": # Only track cash account flow
+                continue
 
             if side == "Debit":
                 # CO Inflows
