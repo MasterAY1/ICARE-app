@@ -22,6 +22,7 @@ class PortfolioService:
         selected_am: Optional[str] = None,
         selected_branch: Optional[str] = None,
         selected_officer: Optional[str] = None,
+        selected_group: Optional[str] = None,
         target_date: Optional[date] = None
     ) -> Dict[str, Any]:
         """
@@ -70,6 +71,29 @@ class PortfolioService:
         except Exception:
             clients_raw = []
 
+        # Fetch group memberships
+        group_map = {}
+        try:
+            client_ids = [c.get("client_id") or c.get("id") for c in clients_raw if (c.get("client_id") or c.get("id"))]
+            if client_ids:
+                g_query = uow.client.table("client_memberships").select("client_id, groups(name)").in_("client_id", client_ids).execute()
+                for gm in (g_query.data or []):
+                    grp = gm.get("groups") or {}
+                    group_map[str(gm.get("client_id"))] = grp.get("name") or "Individual"
+        except Exception:
+            pass
+
+        # Fetch individual savings
+        savings_map = {}
+        try:
+            if client_ids:
+                s_query = uow.client.table("individual_savings").select("client_id, balance").in_("client_id", client_ids).execute()
+                for s in (s_query.data or []):
+                    cid_str = str(s.get("client_id"))
+                    savings_map[cid_str] = savings_map.get(cid_str, 0.0) + float(s.get("balance") or 0.0)
+        except Exception:
+            pass
+
         # 2. Filter in memory by active dropdown selections (BM, AM, Admin)
         if selected_branch and selected_branch != "All":
             b_id = None
@@ -88,6 +112,11 @@ class PortfolioService:
                 pass
             loans_raw = [l for l in loans_raw if str(l.get("officer_id")).lower() == str(o_id).lower() or str(l.get("officer") or "").lower() == selected_officer.lower()]
             clients_raw = [c for c in clients_raw if str(c.get("officer_id")).lower() == str(o_id).lower() or str(c.get("officer") or "").lower() == selected_officer.lower()]
+
+
+        if selected_group and selected_group != "All":
+            loans_raw = [l for l in loans_raw if group_map.get(str(l.get("client_id")), "Individual") == selected_group]
+            clients_raw = [c for c in clients_raw if group_map.get(str(c.get("client_id") or c.get("id")), "Individual") == selected_group]
 
         # 3. Query Repayments Today for Scope
         try:
@@ -114,6 +143,9 @@ class PortfolioService:
                 repayments_today = [r for r in repayments_today if str(r.get("officer_id")).lower() == str(o_id).lower() or str(r.get("officer") or "").lower() == selected_officer.lower()]
         except Exception:
             repayments_today = []
+
+        if selected_group and selected_group != "All":
+            repayments_today = [r for r in repayments_today if group_map.get(str(r.get("client_id")), "Individual") == selected_group]
 
         # 4. Aggregations & Summary Calculations
         total_registered_clients = len(clients_raw)
@@ -161,7 +193,11 @@ class PortfolioService:
                 cid = l.get("client_id")
                 c_info = l.get("clients") or {}
                 c_name = c_info.get("name") or "N/A"
-                c_code = c_info.get("nickname") or cid or "N/A"
+                cid_str = str(cid) if cid else ""
+                c_code = c_info.get("nickname") or "N/A"
+                group_name = group_map.get(cid_str, "Individual")
+                c_savings = savings_map.get(cid_str, 0.0)
+
                 bal = float(l.get("active_credit") or 0.0)
                 repay_fixed = float(l.get("loan_repay") or 0.0)
                 disbursed = float(l.get("loan_amount") or 0.0)
@@ -195,19 +231,19 @@ class PortfolioService:
                 client_rows.append({
                     "Client Code": c_code,
                     "Client Name": c_name,
-                    "Branch": (l.get("branches") or {}).get("name") or scope.branch_name,
-                    "Officer": (l.get("app_users") or {}).get("username") or scope.username,
-                    "Group": "Individual",
-                    "Disbursed Amount": disbursed,
+                    "Group": group_name,
+                    "Savings Balance": c_savings,
+                    "Principal Loan": disbursed,
+                    "Active Loan": bal,
                     "Outstanding Balance": bal,
                     "Fixed Repayment": repay_fixed,
-                    "Today Paid": paid_today,
+                    "Total Paid": paid_today,
                     "Status": "Overdue" if (paid_today == 0 and repay_fixed > 0) else ("Part Paid" if (paid_today > 0 and paid_today < repay_fixed) else "Normal")
                 })
             except Exception:
                 pass
 
-        client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client Code", "Client Name", "Branch", "Officer", "Group", "Disbursed Amount", "Outstanding Balance", "Fixed Repayment", "Today Paid", "Status"])
+        client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client Code", "Client Name", "Group", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Status"])
 
         par_pct = round((overdue_amt / total_outstanding_balance * 100.0), 2) if total_outstanding_balance > 0 else 0.0
 

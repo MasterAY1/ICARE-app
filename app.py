@@ -6671,9 +6671,31 @@ elif page == "Portfolio":
                     pass
                 sel_officer = st.selectbox("Filter Officer", all_o, key="port_off_sel")
 
+
+        # Group Filter
+        all_grp = ["All"]
+        try:
+            g_q = uow_p.client.table("groups").select("name")
+            if sel_branch and sel_branch != "All":
+                b_res = uow_p.client.table("branches").select("branch_id").eq("name", sel_branch).execute()
+                if b_res.data:
+                    g_q = g_q.eq("branch_id", b_res.data[0]["branch_id"])
+            elif p_scope.scope_level == "BRANCH" and p_scope.branch_id:
+                g_q = g_q.eq("branch_id", p_scope.branch_id)
+            elif p_scope.scope_level == "OFFICER" and p_scope.user_id:
+                g_q = g_q.eq("officer_id", p_scope.user_id)
+            
+            g_res = g_q.execute()
+            all_grp += sorted(list(set(g["name"] for g in (g_res.data or []) if g.get("name"))))
+        except Exception:
+            pass
+        
+        sel_group = st.selectbox("Filter Group", all_grp, key="port_grp_sel")
+
         # Load Scoped Data
+
         p_data = PortfolioService.get_portfolio_data_for_scope(
-            uow_p, p_scope, selected_branch=sel_branch, selected_officer=sel_officer
+            uow_p, p_scope, selected_branch=sel_branch, selected_officer=sel_officer, selected_group=sel_group
         )
         p_sum = p_data["summary"]
 
@@ -6716,7 +6738,7 @@ elif page == "Portfolio":
             st.info("No active loan products in portfolio.")
 
         st.divider()
-        st.markdown("### Authorized Client Portfolio Table")
+        st.markdown("### Client Portfolio")
 
         client_df = p_data["client_table"]
         if not client_df.empty:
