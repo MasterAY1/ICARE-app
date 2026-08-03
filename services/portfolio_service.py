@@ -39,18 +39,18 @@ class PortfolioService:
 
         try:
             # Query active & historical loans
-            l_query = uow.client.table("loans").select("*, clients(name, client_code, status)")
+            l_query = uow.client.table("loans").select("*, clients(name, nickname), loan_products(name), app_users(username), branches(name)")
             
             # Apply scope filter
             if scope.scope_level == "OFFICER":
-                if scope.username:
-                    l_query = l_query.eq("officer", scope.username)
+                if scope.user_id:
+                    l_query = l_query.eq("officer_id", scope.user_id)
             elif scope.scope_level == "BRANCH":
-                if scope.branch_name:
-                    l_query = l_query.eq("branch", scope.branch_name)
+                if scope.branch_id:
+                    l_query = l_query.eq("branch_id", scope.branch_id)
             elif scope.scope_level == "REGION":
-                if scope.assigned_branch_names:
-                    l_query = l_query.in_("branch", scope.assigned_branch_names)
+                if scope.assigned_branch_ids:
+                    l_query = l_query.in_("branch_id", scope.assigned_branch_ids)
 
             l_res = l_query.execute()
             loans_raw = l_res.data or []
@@ -59,12 +59,12 @@ class PortfolioService:
 
         try:
             c_query = uow.client.table("clients").select("*")
-            if scope.scope_level == "OFFICER" and scope.username:
-                c_query = c_query.eq("officer", scope.username)
-            elif scope.scope_level == "BRANCH" and scope.branch_name:
-                c_query = c_query.eq("branch", scope.branch_name)
-            elif scope.scope_level == "REGION" and scope.assigned_branch_names:
-                c_query = c_query.in_("branch", scope.assigned_branch_names)
+            if scope.scope_level == "OFFICER" and scope.user_id:
+                c_query = c_query.eq("officer_id", scope.user_id)
+            elif scope.scope_level == "BRANCH" and scope.branch_id:
+                c_query = c_query.eq("branch_id", scope.branch_id)
+            elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
+                c_query = c_query.in_("branch_id", scope.assigned_branch_ids)
             c_res = c_query.execute()
             clients_raw = c_res.data or []
         except Exception:
@@ -72,29 +72,46 @@ class PortfolioService:
 
         # 2. Filter in memory by active dropdown selections (BM, AM, Admin)
         if selected_branch and selected_branch != "All":
-            loans_raw = [l for l in loans_raw if str(l.get("branch") or "").lower() == selected_branch.lower()]
-            clients_raw = [c for c in clients_raw if str(c.get("branch") or "").lower() == selected_branch.lower()]
+            b_id = None
+            try:
+                b_id = uow.loans._resolve_branch_id(selected_branch)
+            except Exception:
+                pass
+            loans_raw = [l for l in loans_raw if str(l.get("branch_id")).lower() == str(b_id).lower() or str(l.get("branch") or "").lower() == selected_branch.lower()]
+            clients_raw = [c for c in clients_raw if str(c.get("branch_id")).lower() == str(b_id).lower() or str(c.get("branch") or "").lower() == selected_branch.lower()]
 
         if selected_officer and selected_officer != "All":
-            loans_raw = [l for l in loans_raw if str(l.get("officer") or "").lower() == selected_officer.lower()]
-            clients_raw = [c for c in clients_raw if str(c.get("officer") or "").lower() == selected_officer.lower()]
+            o_id = None
+            try:
+                o_id = uow.loans._resolve_officer_id(selected_officer)
+            except Exception:
+                pass
+            loans_raw = [l for l in loans_raw if str(l.get("officer_id")).lower() == str(o_id).lower() or str(l.get("officer") or "").lower() == selected_officer.lower()]
+            clients_raw = [c for c in clients_raw if str(c.get("officer_id")).lower() == str(o_id).lower() or str(c.get("officer") or "").lower() == selected_officer.lower()]
 
         # 3. Query Repayments Today for Scope
         try:
             r_query = uow.client.table("repayments").select("*").eq("date", date_str)
-            if scope.scope_level == "OFFICER" and scope.username:
-                r_query = r_query.eq("officer", scope.username)
-            elif scope.scope_level == "BRANCH" and scope.branch_name:
-                r_query = r_query.eq("branch", scope.branch_name)
-            elif scope.scope_level == "REGION" and scope.assigned_branch_names:
-                r_query = r_query.in_("branch", scope.assigned_branch_names)
+            if scope.scope_level == "OFFICER" and scope.user_id:
+                r_query = r_query.eq("officer_id", scope.user_id)
+            elif scope.scope_level == "BRANCH" and scope.branch_id:
+                r_query = r_query.eq("branch_id", scope.branch_id)
+            elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
+                r_query = r_query.in_("branch_id", scope.assigned_branch_ids)
             r_res = r_query.execute()
             repayments_today = r_res.data or []
 
             if selected_branch and selected_branch != "All":
-                repayments_today = [r for r in repayments_today if str(r.get("branch") or "").lower() == selected_branch.lower()]
+                b_id = None
+                try: b_id = uow.loans._resolve_branch_id(selected_branch)
+                except: pass
+                repayments_today = [r for r in repayments_today if str(r.get("branch_id")).lower() == str(b_id).lower() or str(r.get("branch") or "").lower() == selected_branch.lower()]
+            
             if selected_officer and selected_officer != "All":
-                repayments_today = [r for r in repayments_today if str(r.get("officer") or "").lower() == selected_officer.lower()]
+                o_id = None
+                try: o_id = uow.loans._resolve_officer_id(selected_officer)
+                except: pass
+                repayments_today = [r for r in repayments_today if str(r.get("officer_id")).lower() == str(o_id).lower() or str(r.get("officer") or "").lower() == selected_officer.lower()]
         except Exception:
             repayments_today = []
 
@@ -143,12 +160,14 @@ class PortfolioService:
 
                 cid = l.get("client_id")
                 c_info = l.get("clients") or {}
-                c_name = c_info.get("name") or l.get("client_name") or "N/A"
-                c_code = c_info.get("client_code") or cid or "N/A"
-                bal = float(l.get("active_credit") or l.get("balance") or 0.0)
-                repay_fixed = float(l.get("fixed_repayment") or l.get("loan_repay") or 0.0)
-                disbursed = float(l.get("disbursed_amount") or l.get("principal") or 0.0)
-                prod_name = l.get("loan_product") or "Unknown"
+                c_name = c_info.get("name") or "N/A"
+                c_code = c_info.get("nickname") or cid or "N/A"
+                bal = float(l.get("active_credit") or 0.0)
+                repay_fixed = float(l.get("loan_repay") or 0.0)
+                disbursed = float(l.get("loan_amount") or 0.0)
+                
+                prod_info = l.get("loan_products") or {}
+                prod_name = prod_info.get("name") or "Unknown"
 
                 if prod_name not in product_summary:
                     product_summary[prod_name] = {"active_credit": 0.0, "loan_balance": 0.0, "count": 0}
@@ -176,9 +195,9 @@ class PortfolioService:
                 client_rows.append({
                     "Client Code": c_code,
                     "Client Name": c_name,
-                    "Branch": l.get("branch") or scope.branch_name,
-                    "Officer": l.get("officer") or scope.username,
-                    "Group": l.get("group_name") or l.get("group") or "Individual",
+                    "Branch": (l.get("branches") or {}).get("name") or scope.branch_name,
+                    "Officer": (l.get("app_users") or {}).get("username") or scope.username,
+                    "Group": "Individual",
                     "Disbursed Amount": disbursed,
                     "Outstanding Balance": bal,
                     "Fixed Repayment": repay_fixed,
