@@ -40,7 +40,7 @@ class PortfolioService:
 
         try:
             # Query active & historical loans
-            l_query = uow.client.table("loans").select("*, clients(name, nickname), loan_products(name), app_users(username), branches(name)")
+            l_query = uow.client.table("loans").select("*, clients(name, client_code), loan_products(name), app_users(username), branches(name)")
             
             # Apply scope filter
             if scope.scope_level == "OFFICER":
@@ -87,10 +87,12 @@ class PortfolioService:
         savings_map = {}
         try:
             if client_ids:
-                s_query = uow.client.table("individual_savings").select("client_id, balance").in_("client_id", client_ids).execute()
+                s_query = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount").in_("client_id", client_ids).execute()
                 for s in (s_query.data or []):
                     cid_str = str(s.get("client_id"))
-                    savings_map[cid_str] = savings_map.get(cid_str, 0.0) + float(s.get("balance") or 0.0)
+                    dep = float(s.get("deposit_amount") or 0.0)
+                    wth = float(s.get("withdrawal_amount") or 0.0)
+                    savings_map[cid_str] = savings_map.get(cid_str, 0.0) + (dep - wth)
         except Exception:
             pass
 
@@ -194,7 +196,7 @@ class PortfolioService:
                 c_info = l.get("clients") or {}
                 c_name = c_info.get("name") or "N/A"
                 cid_str = str(cid) if cid else ""
-                c_code = c_info.get("nickname") or "N/A"
+                c_code = c_info.get("client_code") or "N/A"
                 group_name = group_map.get(cid_str, "Individual")
                 c_savings = savings_map.get(cid_str, 0.0)
 
