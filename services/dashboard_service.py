@@ -71,9 +71,9 @@ class DashboardService:
         # 2. Query repayments
         reps = []
         try:
-            if officer_name:
+            if officer_id:
                 rep_res = uow.client.table("repayments").select("*, loans(loan_products(name))") \
-                    .eq("officer", officer_name).eq("date", date_str).execute()
+                    .eq("officer_id", officer_id).eq("date", date_str).execute()
                 reps = rep_res.data or []
         except Exception:
             reps = []
@@ -121,8 +121,8 @@ class DashboardService:
         # 3. Scheduled Meeting Groups & Attention List
         active_loans = []
         try:
-            if branch_name and officer_name:
-                loans_res = uow.client.table("loans").select("*, clients(name)").eq("branch", branch_name).eq("officer", officer_name).execute()
+            if branch_id and officer_id:
+                loans_res = uow.client.table("loans").select("*, clients(name)").eq("branch_id", branch_id).eq("officer_id", officer_id).execute()
                 l_data = loans_res.data or []
                 active_loans = [l for l in l_data if l.get("status") in ["ACTIVE", "Approved", "Active"]]
         except Exception:
