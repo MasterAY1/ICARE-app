@@ -52,32 +52,40 @@ class ScheduleService:
 
         # 3. Create schedule rows
         schedule_rows = []
-        current_due_date = start_date if start_date else date.today()
+        base_date = start_date if start_date else date.today()
+        current_anchor = base_date
+
+        def get_next_working_day(d: date) -> date:
+            # Skips weekends (Saturday=5, Sunday=6)
+            # (Public holiday logic can be easily injected here in the future)
+            while d.weekday() >= 5:
+                d += timedelta(days=1)
+            return d
+
+        def add_months(d: date, num_months: int) -> date:
+            import calendar
+            m = d.month - 1 + num_months
+            y = d.year + m // 12
+            m = m % 12 + 1
+            day = min(d.day, calendar.monthrange(y, m)[1])
+            return date(y, m, day)
 
         # If gap exists, the first installment might include the initial gap fee
         for i in range(1, installments + 1):
             # Calculate due date based on cycle
-            if i > 1:
-                if cycle == "Daily":
-                    current_due_date = current_due_date + timedelta(days=1)
-                    # Skip Sundays
-                    if current_due_date.weekday() == 6:
-                        current_due_date = current_due_date + timedelta(days=1)
-                elif cycle == "Weekly":
-                    current_due_date = current_due_date + timedelta(weeks=1)
-                elif cycle == "Monthly":
-                    # Add roughly a month
-                    import calendar
-                    month = current_due_date.month
-                    year = current_due_date.year
-                    day = current_due_date.day
-                    month += 1
-                    if month > 12:
-                        month = 1
-                        year += 1
-                    last_day_of_month = calendar.monthrange(year, month)[1]
-                    target_day = min(day, last_day_of_month)
-                    current_due_date = date(year, month, target_day)
+            if cycle == "Daily":
+                current_anchor += timedelta(days=1)
+                while current_anchor.weekday() >= 5:
+                    current_anchor += timedelta(days=1)
+                current_due_date = current_anchor
+            elif cycle == "Weekly":
+                current_anchor = base_date + timedelta(weeks=i)
+                current_due_date = get_next_working_day(current_anchor)
+            elif cycle == "Monthly":
+                current_anchor = add_months(base_date, i)
+                current_due_date = get_next_working_day(current_anchor)
+            else:
+                current_due_date = base_date
 
             row_id = str(uuid.uuid4())
             row_principal = inst_principal
