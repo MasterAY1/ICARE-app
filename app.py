@@ -3163,11 +3163,20 @@ elif page == "Loan Origination":
                 
                 if product_category == "Finance":
                     prods = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
-                    product_type = col_p1.selectbox("Loan Product", prods, key="loan_app_product_finance")
                 else:
                     prods = ["60-Day Asset", "120-Day Asset", "Weekly 12W Asset", "Weekly 24W Asset", "Monthly 3M Asset", "Monthly 6M Asset", "Cash and Carry"]
-                    product_type = col_p1.selectbox("Loan Product", prods, key="loan_app_product_asset")
                     
+                # Fetch allowed_products from current user
+                allowed_products = current_user.get("extra_fields", {}).get("allowed_products", []) if current_user.get("extra_fields") else []
+                if isinstance(allowed_products, list) and len(allowed_products) > 0:
+                    prods = [p for p in prods if p in allowed_products]
+                    
+                if not prods:
+                    st.error(f"You do not have permission to originate any {product_category} products. Contact your Branch Manager.")
+                    st.stop()
+                    
+                product_type = col_p1.selectbox("Loan Product", prods, key=f"loan_app_product_{product_category}")
+                
                 requested_amount = float(col_p2.number_input("Requested Amount / Asset Cost (₦)", min_value=0.0, step=10000.0, value=None, placeholder="0", key="loan_app_amount") or 0)
                 
                 # Setup parameters based on selected product type
@@ -6973,9 +6982,9 @@ elif page == "User Management":
     is_am = ROLE in ['AM', 'Area Manager']
     
     if is_admin:
-        tabs = st.tabs(["👥 Users", "➕ Create User", "🔑 Reset Password", "🔄 Officer Turnover", "🏢 AM Assignments", "🏢 Branch Closures", "📋 Audit Logs", "📊 Login History"])
+        tabs = st.tabs(["👥 Users", "➕ Create User", "🔑 Reset Password", "🔄 Officer Turnover", "🛍️ Assign Products", "🏢 AM Assignments", "🏢 Branch Closures", "📋 Audit Logs", "📊 Login History"])
     elif is_bm:
-        tabs = st.tabs(["👥 Branch Staff", "🔑 Reset Password", "🏢 Branch Closures"])
+        tabs = st.tabs(["👥 Branch Staff", "🔑 Reset Password", "🛍️ Assign Products", "🏢 Branch Closures"])
     elif is_am:
         tabs = st.tabs(["👥 Branch Staff (Read Only)"])
     else:
@@ -7111,9 +7120,68 @@ elif page == "User Management":
                     else:
                         st.error(result['message'])
     
+    # --- Tab: Assign Products (Admin & BM) ---
+    product_assign_idx = 4 if is_admin else 2
+    if is_admin or is_bm:
+        with tabs[product_assign_idx]:
+            st.subheader("🛍️ Assign Products to Credit Officers")
+            st.info("Assign specific loan products to a Credit Officer. If left completely blank, the officer will have access to ALL products.")
+            
+            # Fetch CO users
+            co_users_for_assign = [u for u in all_users if u['role'] in ['Credit Officer', 'CO', 'Officer']]
+            if co_users_for_assign:
+                assign_username = st.selectbox("Select Credit Officer", [u['username'] for u in co_users_for_assign], key="assign_product_co")
+                selected_co = next((u for u in co_users_for_assign if u['username'] == assign_username), None)
+                
+                if selected_co:
+                    st.write(f"**Name:** {selected_co.get('full_name', '')}")
+                    
+                    # Fetch all available products
+                    with SupabaseUnitOfWork() as uow:
+                        res_prods = uow.client.table("loan_products").select("name").execute()
+                        available_products = [p["name"] for p in res_prods.data] if res_prods.data else []
+                        
+                        # Fallback if DB fetch fails
+                        if not available_products:
+                            available_products = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M", "60-Day Asset", "120-Day Asset", "Weekly 12W Asset", "Weekly 24W Asset", "Monthly 3M Asset", "Monthly 6M Asset", "Cash and Carry"]
+                    
+                    # Extract current allowed products
+                    extra_fields = selected_co.get("extra_fields") or {}
+                    current_allowed = extra_fields.get("allowed_products", [])
+                    
+                    if not isinstance(current_allowed, list):
+                        current_allowed = []
+                        
+                    default_selections = [p for p in current_allowed if p in available_products]
+                    
+                    with st.form("assign_products_form"):
+                        selected_products = st.multiselect(
+                            "Allowed Products",
+                            options=available_products,
+                            default=default_selections,
+                            help="Leave empty to allow access to ALL products."
+                        )
+                        
+                        submit_assign = st.form_submit_button("Save Assignments", use_container_width=True)
+                        if submit_assign:
+                            try:
+                                # Update user extra_fields
+                                new_extra = dict(extra_fields)
+                                new_extra["allowed_products"] = selected_products
+                                
+                                with SupabaseUnitOfWork() as uow_update:
+                                    uow_update.client.table("app_users").update({"extra_fields": new_extra}).eq("id", selected_co["id"]).execute()
+                                
+                                st.session_state['user_mgmt_success'] = f"Successfully updated allowed products for {assign_username}."
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error updating products: {str(e)}")
+            else:
+                st.warning("No Credit Officers found.")
+
     # --- Tab: AM Branch Assignments (Admin Only) ---
     if is_admin:
-        with tabs[4]:
+        with tabs[5]:
             st.subheader("🏢 Area Manager Branch Assignments")
             st.info("Each Area Manager supervises 5-7 branches. Assign branches below.")
             
@@ -7162,7 +7230,7 @@ elif page == "User Management":
     
     # --- Tab: Branch Closures ---
     if is_admin or is_bm:
-        closure_tab_idx = 5 if is_admin else 2
+        closure_tab_idx = 6 if is_admin else 3
         with tabs[closure_tab_idx]:
             st.subheader("🏢 Branch Settings & Closures")
             st.write("Manage custom branch closures (e.g., operational shutdowns, end-of-year breaks). These dates will be strictly excluded when calculating loan repayment schedules.")
@@ -7203,7 +7271,7 @@ elif page == "User Management":
     
     # --- Tab: Audit Logs (Admin Only) ---
     if is_admin:
-        with tabs[6]:
+        with tabs[7]:
             st.subheader("📋 System Audit Logs")
             st.info("Immutable audit trail. Logs cannot be modified or deleted.")
             
@@ -7223,7 +7291,7 @@ elif page == "User Management":
     
     # --- Tab: Login History (Admin Only) ---
     if is_admin:
-        with tabs[7]:
+        with tabs[8]:
             st.subheader("📊 Login History")
             
             try:

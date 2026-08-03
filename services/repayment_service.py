@@ -22,21 +22,22 @@ class RepaymentService:
             new_value={"amount": repayment.amount_paid}
         )
 
-        # 3. Create Event & Post
-        event = DomainEvent(
-            event_id=str(uuid.uuid4()),
-            aggregate_id=created_rep.id,
-            aggregate_type="Repayment",
-            event_type="RepaymentReceived",
-            payload={
-                "branch": repayment.branch,
-                "officer": repayment.credit_officer,
-                "amount": repayment.amount_paid,
-                "reference": created_rep.id,
-                "narration": repayment.note or f"Loan repayment of {repayment.amount_paid} received."
-            }
-        )
-        uow.event_store.append(event)
-        FinancialPostingEngine.post_event(uow, event)
+        # 3. Create Event & Post (Only for actual loan repayment component)
+        if repayment.loan_repayment_amount > 0:
+            event = DomainEvent(
+                event_id=str(uuid.uuid4()),
+                aggregate_id=created_rep.id,
+                aggregate_type="Repayment",
+                event_type="RepaymentReceived",
+                payload={
+                    "branch": repayment.branch,
+                    "officer": repayment.credit_officer,
+                    "amount": repayment.loan_repayment_amount,
+                    "reference": created_rep.id,
+                    "narration": repayment.note or f"Loan repayment of {repayment.loan_repayment_amount} received."
+                }
+            )
+            uow.event_store.append(event)
+            FinancialPostingEngine.post_event(uow, event)
 
         return created_rep
