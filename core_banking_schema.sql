@@ -70,6 +70,7 @@ CREATE TABLE public.branches (
 -- 4. BRANCH CLOSURES
 CREATE TABLE public.branch_closures (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    branch_id UUID REFERENCES public.branches(branch_id) ON DELETE CASCADE,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     reason TEXT NOT NULL,

@@ -4,7 +4,8 @@ from datetime import date
 
 @dataclass
 class BranchClosure:
-    id: Optional[int]
+    id: Optional[str]
     start_date: date
     end_date: date
     reason: str
+    branch_id: Optional[str] = None

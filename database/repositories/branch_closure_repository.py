@@ -8,7 +8,7 @@ class SupabaseBranchClosureRepository(BaseRepository[BranchClosure], BranchClosu
     def __init__(self, client):
         super().__init__(client)
         self.table_name = "branch_closures"
-        self.columns = "id,start_date,end_date,reason"
+        self.columns = "id,start_date,end_date,reason,branch_id"
 
     def find_by_id(self, id: str) -> Optional[BranchClosure]:
         query = self.client.table(self.table_name).select(self.columns).eq("id", id)
@@ -25,7 +25,8 @@ class SupabaseBranchClosureRepository(BaseRepository[BranchClosure], BranchClosu
         data = {
             "start_date": entity.start_date.isoformat(),
             "end_date": entity.end_date.isoformat(),
-            "reason": entity.reason
+            "reason": entity.reason,
+            "branch_id": entity.branch_id
         }
         query = self.client.table(self.table_name).insert(data)
         res = self._execute(query)
@@ -36,7 +37,8 @@ class SupabaseBranchClosureRepository(BaseRepository[BranchClosure], BranchClosu
         data = {
             "start_date": entity.start_date.isoformat(),
             "end_date": entity.end_date.isoformat(),
-            "reason": entity.reason
+            "reason": entity.reason,
+            "branch_id": entity.branch_id
         }
         query = self.client.table(self.table_name).update(data).eq("id", entity.id)
         res = self._execute(query)

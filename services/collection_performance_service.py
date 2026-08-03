@@ -132,24 +132,28 @@ class CollectionPerformanceService:
         branch_id: str,
         meeting_date: date
     ) -> Dict[str, Any]:
+        m_date_str = meeting_date.isoformat() if isinstance(meeting_date, date) else meeting_date
+        
+        # Fetch all active loan IDs for the branch
+        loans_res = uow.client.table("loans").select("loan_id").eq("branch_id", branch_id).in_("status", ["Active", "Approved"]).execute()
+        loan_ids = [L["loan_id"] for L in (loans_res.data or [])]
+        
         records = []
-        cp = getattr(uow, 'collection_performance', None)
-        if cp and hasattr(cp, 'find_by_branch_and_date'):
-            try:
-                records = cp.find_by_branch_and_date(branch_id, meeting_date)
-            except Exception:
-                records = []
+        if loan_ids:
+            # Query the live schedule for these loans due on the meeting date
+            sched_res = uow.client.table("loan_schedule").select("*").in_("loan_id", loan_ids).eq("due_date", m_date_str).execute()
+            records = sched_res.data or []
 
-        paid = sum(1 for r in records if r.get("status") == "PAID")
-        part = sum(1 for r in records if r.get("status") == "PART_PAYMENT")
-        not_paid = sum(1 for r in records if r.get("status") == "NOT_PAID")
-        total_expected = sum(float(r.get("expected_amount", 0)) for r in records)
-        total_collected = sum(float(r.get("amount_paid", 0)) for r in records)
+        paid = sum(1 for r in records if r.get("status") == "Paid")
+        part = sum(1 for r in records if r.get("status") == "Partial")
+        not_paid = sum(1 for r in records if r.get("status") in ["Pending", "Overdue"])
+        total_expected = sum(float(r.get("total_due", 0)) for r in records)
+        total_collected = sum(float(r.get("paid_amount", 0)) for r in records)
         compliance_pct = (total_collected / total_expected * 100) if total_expected > 0 else 100.0
 
         return {
             "branch_id": branch_id,
-            "meeting_date": meeting_date.isoformat() if isinstance(meeting_date, date) else meeting_date,
+            "meeting_date": m_date_str,
             "total_clients": len(records),
             "paid": paid,
             "part_payment": part,

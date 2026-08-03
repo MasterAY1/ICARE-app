@@ -51,14 +51,49 @@ class ScheduleService:
             inst_total = inst_principal + inst_interest
 
         # 3. Create schedule rows
+        import holidays
+
         schedule_rows = []
         base_date = start_date if start_date else date.today()
-        current_anchor = base_date
+
+        # Fetch branch closures (system-wide and branch-specific)
+        branch_closures = []
+        try:
+            closure_res = uow.client.table("branch_closures").select("*").or_(f"branch_id.is.null,branch_id.eq.{loan.branch_id}").execute()
+            if closure_res.data:
+                for c in closure_res.data:
+                    c_start = date.fromisoformat(c["start_date"])
+                    c_end = date.fromisoformat(c["end_date"])
+                    branch_closures.append((c_start, c_end))
+        except Exception:
+            pass
+
+        # Fetch client's group meeting day
+        meeting_day_str = None
+        try:
+            mem_res = uow.client.table("client_memberships").select("groups(meeting_day)").eq("client_id", loan.client_id).execute()
+            if mem_res.data and mem_res.data[0].get("groups"):
+                meeting_day_str = mem_res.data[0]["groups"].get("meeting_day")
+        except Exception:
+            pass
+
+        day_map = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
+        target_weekday = day_map.get(meeting_day_str) if meeting_day_str else None
+
+        ng_holidays = holidays.NG(years=[base_date.year, base_date.year + 1, base_date.year + 2, base_date.year + 3])
+
+        def is_working_day(d: date) -> bool:
+            if d.weekday() >= 5:  # Weekend
+                return False
+            if d in ng_holidays:  # Public Holiday
+                return False
+            for c_start, c_end in branch_closures:  # Branch Closure
+                if c_start <= d <= c_end:
+                    return False
+            return True
 
         def get_next_working_day(d: date) -> date:
-            # Skips weekends (Saturday=5, Sunday=6)
-            # (Public holiday logic can be easily injected here in the future)
-            while d.weekday() >= 5:
+            while not is_working_day(d):
                 d += timedelta(days=1)
             return d
 
@@ -70,19 +105,32 @@ class ScheduleService:
             day = min(d.day, calendar.monthrange(y, m)[1])
             return date(y, m, day)
 
+        current_anchor = base_date
+        if cycle == "Weekly" and target_weekday is not None:
+            # Snap the starting anchor to the exact group meeting day
+            days_ahead = target_weekday - base_date.weekday()
+            if days_ahead <= 0:
+                days_ahead += 7
+            first_meeting_date = base_date + timedelta(days=days_ahead)
+            current_anchor = first_meeting_date - timedelta(weeks=1)
+
         # If gap exists, the first installment might include the initial gap fee
         for i in range(1, installments + 1):
             # Calculate due date based on cycle
             if cycle == "Daily":
                 current_anchor += timedelta(days=1)
-                while current_anchor.weekday() >= 5:
+                while not is_working_day(current_anchor):
                     current_anchor += timedelta(days=1)
                 current_due_date = current_anchor
             elif cycle == "Weekly":
-                current_anchor = base_date + timedelta(weeks=i)
-                current_due_date = get_next_working_day(current_anchor)
+                current_anchor += timedelta(weeks=1)
+                while not is_working_day(current_anchor):
+                    # For weekly group meetings, skip to the next week entirely if holiday
+                    current_anchor += timedelta(weeks=1)
+                current_due_date = current_anchor
             elif cycle == "Monthly":
                 current_anchor = add_months(base_date, i)
+                # For monthly, push forward to nearest valid working day
                 current_due_date = get_next_working_day(current_anchor)
             else:
                 current_due_date = base_date

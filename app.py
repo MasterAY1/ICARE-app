@@ -45,10 +45,9 @@ def get_custom_closures():
     try:
         with SupabaseUnitOfWork() as uow:
             closures = uow.branch_closures.find_all()
-            return [(c.start_date, c.end_date, c.reason) for c in closures]
+            return [(c.start_date, c.end_date, c.reason, c.branch_id) for c in closures]
     except Exception:
         pass
-    return []
     return []
 
 def get_next_working_day(target_date, custom_closures=None):
@@ -7243,6 +7242,24 @@ elif page == "User Management":
                 with st.form("add_closure_form"):
                     closure_dates = st.date_input("Select Date Range", [], key="closure_range")
                     closure_reason = st.text_input("Reason (e.g. End of Year Break)")
+                    
+                    # Fetch active branches for selection
+                    with SupabaseUnitOfWork() as uow:
+                        branches_res = uow.client.table("branches").select("*").eq("is_active", True).execute()
+                        branches = branches_res.data or []
+                        branch_map_id_to_name = {b["branch_id"]: b["name"] for b in branches}
+                    
+                    selected_branch_id = None
+                    if is_admin:
+                        branch_options = {"All Branches (Global)": None}
+                        for b in branches:
+                            branch_options[b["name"]] = b["branch_id"]
+                        selected_branch_name = st.selectbox("Target Branch", list(branch_options.keys()))
+                        selected_branch_id = branch_options[selected_branch_name]
+                    else:
+                        selected_branch_id = user_branch_id
+                        st.info(f"Target Branch: {user_branch_name}")
+
                     submit_closure = st.form_submit_button("Save Closure", use_container_width=True)
                     if submit_closure:
                         if not closure_reason or len(closure_dates) != 2:
@@ -7250,7 +7267,13 @@ elif page == "User Management":
                         else:
                             try:
                                 with SupabaseUnitOfWork() as uow:
-                                    closure = BranchClosure(id='', start_date=closure_dates[0], end_date=closure_dates[1], reason=closure_reason)
+                                    closure = BranchClosure(
+                                        id=None, 
+                                        start_date=closure_dates[0], 
+                                        end_date=closure_dates[1], 
+                                        reason=closure_reason,
+                                        branch_id=selected_branch_id
+                                    )
                                     uow.branch_closures.create(closure)
                                 st.success("Branch closure added successfully!")
                                 get_custom_closures.clear()
@@ -7263,8 +7286,21 @@ elif page == "User Management":
                 st.markdown("<div class='card'>", unsafe_allow_html=True)
                 st.markdown("#### 📅 Active Closures")
                 closures_list = get_custom_closures()
+                # filter closures for BM
+                if not is_admin:
+                    closures_list = [c for c in closures_list if c[3] is None or c[3] == user_branch_id]
+                
                 if closures_list:
-                    closure_data = [{"Start Date": c[0].strftime('%Y-%m-%d'), "End Date": c[1].strftime('%Y-%m-%d'), "Reason": c[2]} for c in closures_list]
+                    # branch_map_id_to_name is populated above
+                    closure_data = [
+                        {
+                            "Start Date": c[0].strftime('%Y-%m-%d'), 
+                            "End Date": c[1].strftime('%Y-%m-%d'), 
+                            "Reason": c[2],
+                            "Branch": branch_map_id_to_name.get(c[3], "Global") if c[3] else "Global"
+                        } 
+                        for c in closures_list
+                    ]
                     st.dataframe(pd.DataFrame(closure_data), use_container_width=True)
                 else:
                     st.info("No custom closures recorded.")
