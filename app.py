@@ -1134,13 +1134,23 @@ def save_new_loan(data):
         st.error(f"Error saving loan: {e}")
 
 
-def save_repayment(data):
+def save_repayment(data, override_uow=None):
     """Save repayment and route savings to respective buckets"""
     print(f"\n[SAVINGS TRACE] Collections payload received: {data}")
     try:
         from database.repositories.unit_of_work import SupabaseUnitOfWork
         from services.savings_service import SavingsService
-        with SupabaseUnitOfWork() as uow:
+        
+        class UOWContext:
+            def __enter__(self):
+                if override_uow: return override_uow
+                self.uow = SupabaseUnitOfWork()
+                return self.uow.__enter__()
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                if not override_uow:
+                    return self.uow.__exit__(exc_type, exc_val, exc_tb)
+
+        with UOWContext() as uow:
             db_data = {UI_TO_DB_REP[k]: v for k, v in data.items() if k in UI_TO_DB_REP}
             from mappers.base_mappers import RepaymentMapper
             
@@ -1335,8 +1345,47 @@ def save_repayment(data):
 
 def save_repayments(data_list):
     """Save multiple repayments to database"""
-    for data in data_list:
-        save_repayment(data)
+    if not data_list:
+        return
+        
+    from database.repositories.unit_of_work import SupabaseUnitOfWork
+    from services.posting_engine import FinancialPostingEngine
+    
+    # 1. Enable deferred projections globally for this batch
+    original_defer = getattr(FinancialPostingEngine, 'defer_projections', False)
+    FinancialPostingEngine.defer_projections = True
+    
+    branch_id_to_rebuild = None
+    date_to_rebuild = None
+    
+    try:
+        with SupabaseUnitOfWork() as uow:
+            for data in data_list:
+                save_repayment(data, override_uow=uow)
+                
+                # capture branch and date for final rebuild
+                if not branch_id_to_rebuild and 'Branch' in data:
+                    branch_name = data.get('Branch')
+                    try:
+                        res = uow.client.table("branches").select("branch_id").eq("name", branch_name).execute()
+                        if res.data: branch_id_to_rebuild = res.data[0]["branch_id"]
+                    except Exception: pass
+                    
+                if not date_to_rebuild:
+                    date_to_rebuild = data.get('Date')
+                    
+            # 2. Trigger ONE projection rebuild after all inserts are complete
+            if branch_id_to_rebuild and date_to_rebuild:
+                from datetime import date
+                try:
+                    p_date = date.fromisoformat(date_to_rebuild.split("T")[0])
+                    uow.cashbook.rebuild_projection(branch_id_to_rebuild, p_date)
+                    print(f"[SAVINGS TRACE] BATCH Cashbook projection rebuilt successfully.")
+                except Exception as e:
+                    print(f"Error in batch projection rebuild: {e}")
+                    
+    finally:
+        FinancialPostingEngine.defer_projections = original_defer
 
 def update_database_safe(edited_subset, user_role, user_name, branch):
     """Update database with edited data"""

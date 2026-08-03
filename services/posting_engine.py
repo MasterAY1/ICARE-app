@@ -127,8 +127,11 @@ class FinancialPostingEngine:
                 print(f"[SAVINGS TRACE] Event marked posted in event_store: {event.event_id}")
 
                 # 8. Trigger Projection Updates
-                uow.cashbook.rebuild_projection(branch_id, p_date)
-                print(f"[SAVINGS TRACE] Cashbook projection rebuild completed for branch_id: {branch_id}")
+                if not getattr(cls, 'defer_projections', False):
+                    uow.cashbook.rebuild_projection(branch_id, p_date)
+                    print(f"[SAVINGS TRACE] Cashbook projection rebuild completed for branch_id: {branch_id}")
+                else:
+                    print(f"[SAVINGS TRACE] Cashbook projection deferred for branch_id: {branch_id}")
             except Exception as inner_ex:
                 # Rollback transaction posting from ledger
                 try:
