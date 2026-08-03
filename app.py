@@ -6601,7 +6601,10 @@ elif page == "Master Cashbook":
 
 
 elif page == "Portfolio":
-    st.title("Enterprise Portfolio Intelligence & Management")
+    if ROLE in ["CO", "Officer", "Credit Officer"]:
+        st.title("CO Portfolio")
+    else:
+        st.title("Enterprise Portfolio Intelligence & Management")
     st.caption("Hierarchical portfolio oversight, dynamic role-scoped analytics, and 360° universal client drill-down.")
 
     from services.portfolio_service import PortfolioService
