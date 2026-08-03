@@ -366,10 +366,18 @@ class DashboardService:
         except Exception:
             pending_approvals = []
 
+        total_active_clients = 0
+        try:
+            if branch_id:
+                ac_res = uow.client.table("loans").select("client_id").eq("branch_id", branch_id).in_("status", ["ACTIVE", "Active", "Approved"]).execute()
+                total_active_clients = len(ac_res.data or [])
+        except Exception:
+            total_active_clients = 0
+
         return {
             "branch_summary": {
-                "active_clients": summary.get("total_clients", 0),
-                "active_loans": summary.get("total_clients", 0),
+                "active_clients": total_active_clients,
+                "active_loans": total_active_clients,
                 "active_savings": active_savings,
                 "collection_today": summary.get("total_collected", 0.0),
                 "par": "0.0%"
@@ -417,12 +425,6 @@ class DashboardService:
                 coll = summary.get("total_collected", 0.0)
                 exp = summary.get("total_expected", 0.0)
                 comp = summary.get("compliance_pct", 100.0)
-                clients = summary.get("total_clients", 0)
-
-                total_coll += coll
-                total_sav += b_sav
-                total_clients += clients
-
                 b_row = {
                     "Branch": b_name,
                     "Expected Collection": exp,
@@ -434,6 +436,16 @@ class DashboardService:
                     "Status": "Normal" if comp >= 80 else "Requires Attention"
                 }
                 branch_stats.append(b_row)
+                
+                total_coll += coll
+                total_sav += b_sav
+
+                try:
+                    b_id = getattr(uow, 'loans')._resolve_branch_id(b_name) if hasattr(uow, 'loans') else b_name
+                    ac_res = uow.client.table("loans").select("client_id").eq("branch_id", b_id).in_("status", ["ACTIVE", "Active", "Approved"]).execute()
+                    total_clients += len(ac_res.data or [])
+                except Exception:
+                    pass
             except Exception:
                 pass
 
