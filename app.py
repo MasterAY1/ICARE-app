@@ -3221,15 +3221,18 @@ elif page == "Loan Origination":
                 if requested_amount > 0:
                     from services.renewal_service import RenewalService
                     with SupabaseUnitOfWork() as uow:
-                        is_eligible, reasons = RenewalService.check_eligibility(uow, selected_client_id, requested_amount, product_type)
+                        is_eligible, reasons, warnings = RenewalService.check_eligibility(uow, selected_client_id, requested_amount, product_type, product_category)
                     
                     if is_eligible:
-                        st.success("✅ **ELIGIBLE FOR RENEWAL:** " + " ".join(reasons))
+                        st.success("✅ **ELIGIBLE:** " + reasons[-1])
+                        for w in warnings:
+                            st.warning(w)
                     else:
-                        st.error("❌ **NOT ELIGIBLE FOR RENEWAL:**")
+                        st.error("❌ **NOT ELIGIBLE:**")
                         for r in reasons:
                             st.write(f"- {r}")
-                
+                        for w in warnings:
+                            st.warning(w)
                 initial_downpayment = 0.0
                 gap_fee = 0.0
                 total_upfront_required = 0.0
