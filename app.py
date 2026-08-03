@@ -2189,6 +2189,10 @@ elif page == "Loan Origination":
     orig_idx = orig_options.index(st.session_state["orig_tab"])
     orig_section = st.radio("Navigate", orig_options, index=orig_idx, horizontal=True, label_visibility="collapsed", key="orig_tab_radio")
     st.session_state["orig_tab"] = orig_section
+    
+    if "flash_msg" in st.session_state:
+        st.success(st.session_state["flash_msg"])
+        del st.session_state["flash_msg"]
 
     if orig_section == "⏳ Pending Disbursements":
         st.subheader("Pending Disbursements")
@@ -3370,10 +3374,8 @@ elif page == "Loan Origination":
                                 from services.schedule_service import ScheduleService
                                 ScheduleService.generate_schedule(uow, loan_entity, date.today() + timedelta(days=7))
 
-                                st.success("Application submitted successfully! Repayment schedule generated and loan is Pending BM Approval.")
+                                st.session_state["flash_msg"] = "✅ Application submitted successfully! Repayment schedule generated and loan is Pending BM Approval."
                                 st.session_state["orig_tab"] = "⏳ Pending Disbursements"
-                                import time
-                                time.sleep(2)
                                 st.rerun()
                         except Exception as ex:
                             st.error(f"Error submitting loan application: {ex}")
