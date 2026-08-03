@@ -361,7 +361,7 @@ class DashboardService:
         pending_approvals = []
         try:
             if branch_id:
-                p_res = uow.client.table("loans").select("*, clients(name)").eq("branch_id", branch_id).eq("status", "Pending").execute()
+                p_res = uow.client.table("loans").select("*, clients(name, client_code), loan_products(name), app_users(username)").eq("branch_id", branch_id).eq("status", "Pending").execute()
                 pending_approvals = p_res.data or []
         except Exception:
             pending_approvals = []

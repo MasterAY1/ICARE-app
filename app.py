@@ -1962,13 +1962,14 @@ if page == "Dashboard":
             if p_loans:
                 st.markdown("#### ⏳ Pending Loan Approvals")
                 for pl in p_loans:
-                    c_name = pl.get("clients", {}).get("name") if pl.get("clients") else pl.get("client_name")
-                    c_code = pl.get("client_id")
+                    c_name = pl.get("clients", {}).get("name", "Unknown Client") if pl.get("clients") else pl.get("client_name", "Unknown Client")
+                    c_code = pl.get("clients", {}).get("client_code") if pl.get("clients") and pl.get("clients").get("client_code") else pl.get("client_id", "")[:8]
                     loan_amt = float(pl.get("loan_amount", 0))
-                    prod = pl.get("loan_product")
+                    prod = pl.get("loan_products", {}).get("name", "Unknown Product") if pl.get("loan_products") else pl.get("loan_product", "Unknown Product")
+                    officer = pl.get("app_users", {}).get("username", "Unknown Officer") if pl.get("app_users") else "Unknown Officer"
 
                     col_app1, col_app2, col_app3 = st.columns([3, 1, 1])
-                    col_app1.markdown(f"👤 **{c_name}** ({c_code}) applied for **₦{loan_amt:,.0f}** ({prod})")
+                    col_app1.markdown(f"👤 **{c_name}** ({c_code}) applied for **₦{loan_amt:,.0f}** ({prod}) — Officer: **{officer}**")
                     if col_app2.button("Approve", key=f"app_{pl['loan_id']}"):
                         with SupabaseUnitOfWork() as uow_app:
                             uow_app.loans.approve(pl['loan_id'])
