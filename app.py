@@ -3586,8 +3586,8 @@ elif page == "Loan Origination":
 
 
 elif page == "Collections":
-    st.title("👥 Daily Collections & Outflows")
-    st.caption("Record daily repayments, savings, and end of day outflows.")
+    st.title("👥 Daily Collections")
+    st.caption("Record daily repayments and savings.")
     
     use_late_entry = st.toggle("📅 Late Entry / Backdated Entry")
     if use_late_entry:
