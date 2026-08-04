@@ -484,7 +484,8 @@ class DashboardService:
                 "today_savings_deposit": 1200000.0,
                 "today_savings_withdrawal": 450000.0,
                 "today_disbursement": 2000000.0,
-                "full_payments": {"count": 12, "amount": 650000.0},
+                "full_payments": {"count": 1, "amount": 99000.0},
+                "normal_payments": {"count": 12, "amount": 650000.0},
                 "excess_payments": {"count": 8, "amount": 120000.0},
                 "part_payments": {"count": 15, "amount": 250000.0},
                 "not_paid": {"count": 5, "amount": 180000.0}

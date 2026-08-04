@@ -115,19 +115,74 @@ class LoanProductEngine:
         }
 
     @staticmethod
-    def generate_repayment_schedule(start_date: date, duration: int, frequency: str) -> List[date]:
-        """Generate installment due dates list"""
+    def generate_repayment_schedule(
+        start_date: date,
+        duration: int,
+        frequency: str,
+        meeting_day: Optional[str] = None,
+        closed_dates: Optional[List[date]] = None
+    ) -> List[date]:
+        """
+        Generate installment due dates list according to business rules:
+        - Daily: starts day after meeting day, skipping weekends/closed dates.
+        - Weekly: starts next meeting day.
+        - Monthly: starts next month on meeting day.
+        """
+        if closed_dates is None:
+            closed_dates = []
+
+        days_map = {
+            "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+            "friday": 4, "saturday": 5, "sunday": 6
+        }
+
         schedule = []
         curr = start_date
-        for _ in range(duration):
-            schedule.append(curr)
+
+        if meeting_day and str(meeting_day).lower() in days_map:
+            target_weekday = days_map[str(meeting_day).lower()]
+            days_ahead = target_weekday - curr.weekday()
+            if days_ahead <= 0:
+                days_ahead += 7
+            next_meeting_day = curr + timedelta(days=days_ahead)
+
+            if frequency == "Daily":
+                curr = next_meeting_day + timedelta(days=1)
+            elif frequency == "Weekly":
+                curr = next_meeting_day
+            elif frequency == "Monthly":
+                curr = next_meeting_day + timedelta(days=28)
+        else:
             if frequency == "Daily":
                 curr = curr + timedelta(days=1)
+
+        def is_working_day(d: date) -> bool:
+            if d.weekday() >= 5:
+                return False
+            if d in closed_dates:
+                return False
+            return True
+
+        while len(schedule) < duration:
+            if frequency == "Daily":
+                if is_working_day(curr):
+                    schedule.append(curr)
+                curr = curr + timedelta(days=1)
             elif frequency == "Weekly":
+                actual_date = curr
+                while not is_working_day(actual_date):
+                    actual_date += timedelta(days=1)
+                schedule.append(actual_date)
                 curr = curr + timedelta(days=7)
             elif frequency == "Monthly":
-                # Approximate 30 days for monthly cycle
+                actual_date = curr
+                while not is_working_day(actual_date):
+                    actual_date += timedelta(days=1)
+                schedule.append(actual_date)
                 curr = curr + timedelta(days=30)
             else:
+                if is_working_day(curr):
+                    schedule.append(curr)
                 curr = curr + timedelta(days=1)
+
         return schedule
