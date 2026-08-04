@@ -6823,7 +6823,7 @@ elif page == "Portfolio":
             # 360° Client Drill-down
             st.divider()
             st.markdown("### 360° Universal Client Drill-Down")
-            c_codes = sorted(list(set(client_df["Client Code"].astype(str))))
+            c_codes = p_data.get("client_codes", [])
             if c_codes:
                 selected_ccode = st.selectbox("Select Client Code for 360° Deep-Dive", c_codes, key="dd_client_select")
                 if selected_ccode:

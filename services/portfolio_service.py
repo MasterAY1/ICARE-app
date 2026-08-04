@@ -280,6 +280,7 @@ class PortfolioService:
                 pass
 
         client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client Code", "Client Name", "Group", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Status"])
+        raw_client_codes = sorted(list(set([r["Client Code"] for r in client_rows if r.get("Client Code")]))) if client_rows else []
         
         if selected_group == "All" and not client_df.empty:
             group_df = client_df.groupby("Group").agg(
@@ -317,7 +318,8 @@ class PortfolioService:
                 "par": f"{par_pct}%",
                 "product_summary": product_summary
             },
-            "client_table": client_df
+            "client_table": client_df,
+            "client_codes": raw_client_codes
         }
 
     @staticmethod
