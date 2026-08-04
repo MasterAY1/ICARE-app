@@ -172,6 +172,8 @@ class PortfolioService:
 
         total_active_credit = sum(float(l.get("disbursed_amount") or l.get("principal") or 0.0) for l in loans_raw if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"])
         total_outstanding_balance = sum(float(l.get("active_credit") or l.get("balance") or 0.0) for l in loans_raw if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"])
+        total_expected_repayment = sum(float(l.get("loan_repay") or 0.0) for l in loans_raw if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"])
+        total_savings_balance = total_savings_deposit - total_savings_withdrawal
 
         # Fetch Savings based on scope
         total_savings = 0.0
