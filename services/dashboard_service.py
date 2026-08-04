@@ -92,7 +92,7 @@ class DashboardService:
         for r in reps:
             try:
                 cid = r.get("client_id") or r.get("Client ID")
-                l_pay = float(r.get("loan_repayment_amount") or r.get("Loan Repayment Amount") or 0.0)
+                l_pay = float(r.get("amount_paid") or r.get("Loan Repayment Amount") or 0.0)
                 s_dep = float(r.get("savings_amount") or r.get("Savings Amount") or 0.0)
                 s_wd = float(r.get("withdrawal_amount") or r.get("Withdrawal Amount") or 0.0)
 
@@ -163,7 +163,7 @@ class DashboardService:
 
                 cid = l.get("client_id")
                 c_reps = [r for r in reps if r.get("client_id") == cid] if cid else []
-                c_paid = sum(float(r.get("loan_repayment_amount") or 0.0) for r in c_reps)
+                c_paid = sum(float(r.get("amount_paid") or 0.0) for r in c_reps)
                 grp_map[g_name]["Collected"] += c_paid
 
                 c_info = l.get("clients") or {}

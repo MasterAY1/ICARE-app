@@ -186,10 +186,10 @@ class PortfolioService:
         try:
             active_cids = list(set([str(l.get("client_id")) for l in loans_raw if l.get("client_id") and str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]]))
             if active_cids:
-                lt_query = uow.client.table("repayments").select("client_id, loan_repayment_amount").in_("client_id", active_cids).execute()
+                lt_query = uow.client.table("repayments").select("client_id, amount_paid").in_("client_id", active_cids).execute()
                 for r in (lt_query.data or []):
                     cid_s = str(r.get("client_id"))
-                    amt = float(r.get("loan_repayment_amount") or 0.0)
+                    amt = float(r.get("amount_paid") or 0.0)
                     lifetime_repayments_map[cid_s] = lifetime_repayments_map.get(cid_s, 0.0) + amt
         except Exception:
             lifetime_repayments_map = {}
@@ -224,7 +224,7 @@ class PortfolioService:
         except Exception:
             total_savings = 0.0
 
-        today_collection = sum(float(r.get("loan_repayment_amount") or 0.0) for r in repayments_today)
+        today_collection = sum(float(r.get("amount_paid") or 0.0) for r in repayments_today)
 
         # Weekly & Monthly Collections
         this_week_collection = today_collection * 5.0  # Projection fallback
@@ -275,7 +275,7 @@ class PortfolioService:
 
             # Matching repayment today
             c_reps = [r for r in repayments_today if str(r.get("client_id")) == cid_str]
-            paid_today = sum(float(r.get("loan_repayment_amount") or 0.0) for r in c_reps)
+            paid_today = sum(float(r.get("amount_paid") or 0.0) for r in c_reps)
 
             if paid_today >= outstanding_bal and outstanding_bal > 0:
                 full_payments_count += 1

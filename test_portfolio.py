@@ -1,18 +1,20 @@
+import os
 import sys
-sys.path.append('.')
+from dotenv import load_dotenv
+sys.path.append(os.getcwd())
+load_dotenv()
+
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from services.portfolio_service import PortfolioService
 from services.rbac_scope_service import RBACScope
-from datetime import date
 
-with SupabaseUnitOfWork() as uow:
-    scope = RBACScope(scope_level="BRANCH", branch_id="dummy", branch_name="dummy", role="BM")
-    try:
-        data = PortfolioService.get_portfolio_data_for_scope(
-            uow, scope, selected_branch="All", selected_officer="All", selected_group="All",
-            selected_product="All", start_date=date.today(), end_date=date.today()
-        )
-        print("Success")
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
+def main():
+    uow = SupabaseUnitOfWork()
+    scope = RBACScope(scope_level="SYSTEM", user_id="system", role="System Admin", username="sys")
+    
+    data = PortfolioService.get_portfolio_data_for_scope(uow, scope)
+    print("Total Active Credit:", data['summary']['total_active_credit'])
+    print("Total Outstanding Balance:", data['summary']['total_outstanding_balance'])
+
+if __name__ == "__main__":
+    main()
