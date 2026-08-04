@@ -187,9 +187,9 @@ class PortfolioService:
         closed_clients_count = sum(1 for c in clients_raw if str(c.get("status") or "").upper() in ["CLOSED", "COMPLETED"])
         dormant_clients_count = max(0, total_registered_clients - active_clients_count - closed_clients_count)
 
-        total_active_credit = sum(float(l.get("disbursed_amount") or l.get("principal") or 0.0) for l in loans_raw if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"])
-        total_outstanding_balance = sum(float(l.get("active_credit") or l.get("balance") or 0.0) for l in loans_raw if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"])
-        total_expected_repayment = sum(float(l.get("loan_repay") or 0.0) for l in loans_raw if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"])
+        total_active_credit = sum(float(l.get("loan_amount") or 0.0) for l in loans_raw if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"])
+        total_outstanding_balance = sum(float(l.get("active_credit") or 0.0) for l in loans_raw if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"])
+        total_expected_repayment = sum(float(l.get("total_due") or 0.0) for l in loans_raw if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"])
         total_savings_balance = total_savings_deposit - total_savings_withdrawal
 
         # Fetch Savings based on scope
