@@ -6707,9 +6707,23 @@ elif page == "Portfolio":
                 st.date_input("Date Range", [start_date, end_date], disabled=True, key="port_date_range_disabled")
                 
         all_prods = ["All"]
+        allowed_p = []
         try:
+            # Check if user is specific to loan products
+            target_username = sel_officer if (sel_officer and sel_officer != "All") else (p_scope.username if p_scope.role == "CO" else None)
+            if target_username:
+                u_res = uow_p.client.table("app_users").select("extra_fields").eq("username", target_username).execute()
+                if u_res.data:
+                    extra = u_res.data[0].get("extra_fields") or {}
+                    allowed_p = extra.get("allowed_products", [])
+            
             p_res = uow_p.client.table("loan_products").select("name").execute()
-            all_prods += sorted(list(set(p["name"] for p in (p_res.data or []) if p.get("name"))))
+            fetched_prods = sorted(list(set(p["name"] for p in (p_res.data or []) if p.get("name"))))
+            
+            if allowed_p:
+                fetched_prods = [p for p in fetched_prods if p in allowed_p]
+                
+            all_prods += fetched_prods
         except Exception:
             pass
             

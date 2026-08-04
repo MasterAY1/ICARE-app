@@ -74,6 +74,19 @@ class PortfolioService:
         except Exception:
             clients_raw = []
 
+        # 2.5 Filter by Loan Product
+        if selected_product and selected_product != "All":
+            filtered_loans = []
+            valid_client_ids = set()
+            for l in loans_raw:
+                p_name = (l.get("loan_products") or {}).get("name")
+                if p_name == selected_product:
+                    filtered_loans.append(l)
+                    valid_client_ids.add(str(l.get("client_id")))
+            
+            loans_raw = filtered_loans
+            clients_raw = [c for c in clients_raw if str(c.get("client_id") or c.get("id")) in valid_client_ids]
+
         # Fetch group memberships
         group_map = {}
         try:
@@ -158,6 +171,10 @@ class PortfolioService:
                 try: o_id = uow.loans._resolve_officer_id(selected_officer)
                 except: pass
                 repayments_today = [r for r in repayments_today if str(r.get("officer_id")).lower() == str(o_id).lower() or str(r.get("officer") or "").lower() == selected_officer.lower()]
+
+            if selected_product and selected_product != "All":
+                repayments_today = [r for r in repayments_today if str(r.get("client_id")) in valid_client_ids]
+                
         except Exception:
             repayments_today = []
 
