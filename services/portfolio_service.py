@@ -23,15 +23,18 @@ class PortfolioService:
         selected_branch: Optional[str] = None,
         selected_officer: Optional[str] = None,
         selected_group: Optional[str] = None,
-        target_date: Optional[date] = None
+        selected_product: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
     ) -> Dict[str, Any]:
         """
         Calculates hierarchical portfolio intelligence for CO, BM, AM, Admin, and Director views.
         """
-        if not target_date:
-            target_date = date.today()
+        if not start_date:
+            start_date = date.today()
+        if not end_date:
+            end_date = date.today()
 
-        date_str = target_date.isoformat()
 
         # 1. Fetch Loans & Clients based on scope
         loans_raw = []
@@ -83,16 +86,28 @@ class PortfolioService:
         except Exception:
             pass
 
-        # Fetch individual savings
+        # Fetch individual savings within date range
         savings_map = {}
+        total_savings_deposit = 0.0
+        total_savings_withdrawal = 0.0
         try:
             if client_ids:
-                s_query = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount").in_("client_id", client_ids).execute()
-                for s in (s_query.data or []):
+                s_query = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount, posting_date").in_("client_id", client_ids)
+                s_query = s_query.gte("posting_date", start_date.isoformat()).lte("posting_date", end_date.isoformat())
+                s_res = s_query.execute()
+                for s in (s_res.data or []):
                     cid_str = str(s.get("client_id"))
                     dep = float(s.get("deposit_amount") or 0.0)
                     wth = float(s.get("withdrawal_amount") or 0.0)
-                    savings_map[cid_str] = savings_map.get(cid_str, 0.0) + (dep - wth)
+                    
+                    total_savings_deposit += dep
+                    total_savings_withdrawal += wth
+                    
+                    if cid_str not in savings_map:
+                        savings_map[cid_str] = {'dep': 0.0, 'wth': 0.0, 'bal': 0.0}
+                    savings_map[cid_str]['dep'] += dep
+                    savings_map[cid_str]['wth'] += wth
+                    savings_map[cid_str]['bal'] += (dep - wth)
         except Exception:
             pass
 
@@ -198,7 +213,7 @@ class PortfolioService:
                 cid_str = str(cid) if cid else ""
                 c_code = c_info.get("client_code") or "N/A"
                 group_name = group_map.get(cid_str, "Individual")
-                c_savings = savings_map.get(cid_str, 0.0)
+                c_savings = savings_map.get(cid_str, {}).get('bal', 0.0)
 
                 bal = float(l.get("active_credit") or 0.0)
                 repay_fixed = float(l.get("loan_repay") or 0.0)
@@ -246,6 +261,18 @@ class PortfolioService:
                 pass
 
         client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client Code", "Client Name", "Group", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Status"])
+        
+        if selected_group == "All" and not client_df.empty:
+            group_df = client_df.groupby("Group").agg(
+                Clients=("Client Code", "count"),
+                Savings_Balance=("Savings Balance", "sum"),
+                Active_Loan=("Active Loan", "sum"),
+                Outstanding_Balance=("Outstanding Balance", "sum"),
+                Fixed_Repayment=("Fixed Repayment", "sum"),
+                Total_Paid=("Total Paid", "sum")
+            ).reset_index()
+            group_df.columns = ["Group Name", "Total Clients", "Total Savings Balance", "Total Active Loan", "Total Outstanding Balance", "Total Fixed Repayment", "Total Paid"]
+            client_df = group_df
 
         par_pct = round((overdue_amt / total_outstanding_balance * 100.0), 2) if total_outstanding_balance > 0 else 0.0
 
@@ -256,8 +283,11 @@ class PortfolioService:
                 "closed_clients": closed_clients_count,
                 "dormant_clients": dormant_clients_count,
                 "total_active_credit": total_active_credit,
+                "total_expected_repayment": total_expected_repayment,
                 "total_outstanding_balance": total_outstanding_balance,
-                "total_savings": total_savings,
+                "total_savings_deposit": total_savings_deposit,
+                "total_savings_withdrawal": total_savings_withdrawal,
+                "total_savings_balance": total_savings_balance,
                 "today_collection": today_collection,
                 "this_week_collection": this_week_collection,
                 "this_month_collection": this_month_collection,
