@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 
 @dataclass
 class DomainEvent:
@@ -43,8 +43,11 @@ class LoanOffsetFromSavingsEvent(DomainEvent):
     officer: str
     business_date: str
     reference: str
+    branch_id: Optional[str] = None
+    officer_id: Optional[str] = None
     classification: str = "LOAN_OFFSET"
     narration: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 @dataclass(kw_only=True)
 class LapsTransferredEvent(DomainEvent):
@@ -57,8 +60,11 @@ class LapsTransferredEvent(DomainEvent):
     officer: str
     business_date: str
     reference: str
+    branch_id: Optional[str] = None
+    officer_id: Optional[str] = None
     classification: str = "LAPS_TRANSFER"
     narration: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 @dataclass(kw_only=True)
 class LapsPaidOutEvent(DomainEvent):
@@ -70,6 +76,10 @@ class LapsPaidOutEvent(DomainEvent):
     business_date: str
     reference: str
     cash_paid: bool
+    branch_id: Optional[str] = None
+    officer_id: Optional[str] = None
     classification: str = "LAPS_PAYOUT"
     narration: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
 

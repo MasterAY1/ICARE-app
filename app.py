@@ -4326,6 +4326,13 @@ elif page == "Withdrawal Operations":
         # Operation type
         op_type = st.radio("Withdrawal Operation", ["💵 Cash Withdrawal", "🔄 Loan Offset", "💼 LAPS Transfer"], horizontal=True)
 
+        if op_type == "💵 Cash Withdrawal":
+            st.info("ℹ️ **Product Withdrawal Value**: Reduced | 💵 **Physical Cash Outflow**: **YES** (Vault Cash leaves CO position)")
+        elif op_type == "🔄 Loan Offset":
+            st.info("ℹ️ **Product Withdrawal Value**: Reduced | 🛡️ **Physical Cash Outflow**: **NO** (Internal non-cash offset against active loan debt)")
+        elif op_type == "💼 LAPS Transfer":
+            st.info("ℹ️ **Product Withdrawal Value**: Reduced | 🛡️ **Physical Cash Outflow**: **NO** (Internal non-cash transfer to LAPS reserve)")
+
         with st.form("ind_withdrawal_form"):
             amount_val = st.number_input("Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
 
@@ -4395,6 +4402,13 @@ elif page == "Withdrawal Operations":
         st.metric("💰 Group Savings Balance", f"₦{grp_bal:,.2f}")
 
         op_type = st.radio("Withdrawal Operation", ["💵 Cash Withdrawal", "🔄 Loan Offset (Member Debt)", "💼 LAPS Transfer (Group Closed)"], horizontal=True)
+
+        if "Cash" in op_type:
+            st.info("ℹ️ **Product Withdrawal Value**: Reduced | 💵 **Physical Cash Outflow**: **YES** (Vault Cash leaves CO position)")
+        elif "Loan Offset" in op_type:
+            st.info("ℹ️ **Product Withdrawal Value**: Reduced | 🛡️ **Physical Cash Outflow**: **NO** (Internal non-cash offset against member active loan debt)")
+        elif "LAPS Transfer" in op_type:
+            st.info("ℹ️ **Product Withdrawal Value**: Reduced | 🛡️ **Physical Cash Outflow**: **NO** (Internal non-cash transfer to LAPS reserve)")
 
         with st.form("grp_withdrawal_form"):
             amount_val = st.number_input("Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
@@ -4526,6 +4540,11 @@ elif page == "Withdrawal Operations":
         with st.form("laps_payout_form"):
             amount_val = st.number_input("Payout Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
             payout_method = st.radio("Payout Method", ["Cash", "Bank Transfer"], horizontal=True)
+
+            if payout_method == "Cash":
+                st.info("ℹ️ **Product Withdrawal Value**: Reduced | 💵 **Physical Cash Outflow**: **YES** (Vault Cash paid out to client)")
+            else:
+                st.info("ℹ️ **Product Withdrawal Value**: Reduced | 🛡️ **Physical Cash Outflow**: **NO** (Paid directly via Bank Account)")
             remarks_input = st.text_area("Remarks", placeholder="Client details, reason for payout...")
             submitted = st.form_submit_button("📤 Submit LAPS Payout for BM Approval", use_container_width=True)
 
@@ -6013,15 +6032,15 @@ elif page == "CO Cashbook":
     except Exception as e:
         st.warning(f"Could not load CO cashbook projection: {e}")
 
-    left_total = bf_cash + t_lres + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_misc
-    right_total = t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_ltrans + t_cc
+    left_total = bf_cash + t_lres + (t_sav + t_misc) + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_cc
+    right_total = t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_ltrans
     closing_bal = left_total - right_total
 
     # Build the single-row dataframe for the ledger
     ledger_data = {
         "Date": [date_str],
         "Opening balance": [bf_cash],
-        "Savings": [t_sav],
+        "Savings": [t_sav + t_misc],
         "Repayment 12 weeks": [t_r12w],
         "Repayment 24 weeks": [t_r24w],
         "Repayment 60 days": [t_r60d],
@@ -6032,7 +6051,6 @@ elif page == "CO Cashbook":
         "Asset sales": [t_asale],
         "App fee": [t_app],
         "Pass book bonus": [t_pb],
-        "Misc Fees": [t_misc],
         "Laps Reserved": [t_lres],
         "Daily 11%": [t_d11],
         "Daily 20%": [t_d20],
@@ -6455,15 +6473,15 @@ elif page == "Master Cashbook":
         t_ltrans = sum_col(daily_reps, 'Laps Transferred')
         t_cc = sum_col(daily_reps, 'Cash Carry')
 
-        left_total = bf_cash + t_lres + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_misc
-        right_total = t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_ltrans + t_cc
+        left_total = bf_cash + t_lres + (t_sav + t_misc) + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_cc
+        right_total = t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_ltrans
         closing_bal = left_total - right_total
 
         # Build the single-row dataframe for the ledger
         ledger_data = {
             "Date": [date_str],
             "Opening balance": [bf_cash],
-            "Savings": [t_sav],
+            "Savings": [t_sav + t_misc],
             "Repayment 12 weeks": [t_r12w],
             "Repayment 24 weeks": [t_r24w],
             "Repayment 60 days": [t_r60d],
@@ -6474,7 +6492,6 @@ elif page == "Master Cashbook":
             "Asset sales": [t_asale],
             "App fee": [t_app],
             "Pass book bonus": [t_pb],
-            "Misc Fees": [t_misc],
             "Laps Reserved": [t_lres],
             "Daily 11%": [t_d11],
             "Daily 20%": [t_d20],
@@ -6770,11 +6787,12 @@ elif page == "Portfolio":
         s2.metric("Total Withdrawals", f"₦{p_sum.get('total_savings_withdrawal', 0.0):,.0f}")
         s3.metric("Net Savings Balance", f"₦{p_sum.get('total_savings_balance', 0.0):,.0f}")
 
-        st.caption("Row 2: Loan Summary")
-        l1, l2, l3 = st.columns(3)
+        st.caption("Row 2: Loan & Collection Summary")
+        l1, l2, l3, l4 = st.columns(4)
         l1.metric("Total Active Credit", f"₦{p_sum.get('total_active_credit', 0.0):,.0f}")
         l2.metric("Total Expected Repayment", f"₦{p_sum.get('total_expected_repayment', 0.0):,.0f}")
-        l3.metric("Total Outstanding Balance", f"₦{p_sum.get('total_outstanding_balance', 0.0):,.0f}")
+        l3.metric("Actual Collection", f"₦{p_sum.get('total_actual_collection', p_sum.get('today_collection', 0.0)):,.0f}")
+        l4.metric("Total Outstanding Balance", f"₦{p_sum.get('total_outstanding_balance', 0.0):,.0f}")
 
         st.caption("Row 3: Repayment Status")
         r1, r2, r3, r4, r5 = st.columns(5)

@@ -1,3 +1,4 @@
+import uuid
 from datetime import date, timedelta
 from typing import Optional
 from interfaces.unit_of_work import UnitOfWork
@@ -51,6 +52,7 @@ class CoCashbookProjectionBuilder:
         bonus = misc_fees = 0.0
 
         savings_withdrawal = laps_returns = bank_deposit = bank_withdrawal = product_withdrawal = 0.0
+        processed_pwd_events = set()
 
         for entry in entries_list:
             acc = entry.get("account_code")
@@ -60,13 +62,20 @@ class CoCashbookProjectionBuilder:
             tx = entry.get("financial_transactions") or {}
             ev_store = tx.get("event_store") or {}
             event_type = ev_store.get("event_type")
+            ev_id = tx.get("event_id") or entry.get("entry_id") or str(uuid.uuid4())
             narr = str(tx.get("narration") or "").lower()
 
-            # Handle internal transfers that don't touch 1000 Vault Cash but need to be in Cashbook
+            # Handle internal transfers that don't touch 1000 Vault Cash but need to be tracked for product withdrawal metrics
             if event_type == "LapsTransferred" and acc == "2030" and side == "Credit":
-                laps_reserve += amount
-                savings_withdrawal += amount
-                product_withdrawal += amount
+                if ev_id not in processed_pwd_events:
+                    product_withdrawal += amount
+                    processed_pwd_events.add(ev_id)
+                continue
+
+            if event_type == "LoanOffsetFromSavings" and acc in ["2000", "2010", "2020"] and side == "Debit":
+                if ev_id not in processed_pwd_events:
+                    product_withdrawal += amount
+                    processed_pwd_events.add(ev_id)
                 continue
 
             if acc != "1000": # Only track cash account flow
@@ -120,12 +129,16 @@ class CoCashbookProjectionBuilder:
                 # CO Outflows (Excludes Branch Treasury Outflows)
                 if event_type in ["SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION"]:
                     savings_withdrawal += amount
-                    product_withdrawal += amount
+                    if ev_id not in processed_pwd_events:
+                        product_withdrawal += amount
+                        processed_pwd_events.add(ev_id)
                 elif event_type == "BankDeposited":
                     bank_deposit += amount
                 elif event_type == "LapsPaidOut":
                     laps_returns += amount
-                    product_withdrawal += amount
+                    if ev_id not in processed_pwd_events:
+                        product_withdrawal += amount
+                        processed_pwd_events.add(ev_id)
 
         # Corrected Cashbook Formulas (ICARE Business Rules)
         # Bank Withdrawal = Inflow (cash brought into vault)

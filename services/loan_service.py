@@ -107,7 +107,7 @@ class LoanService:
                     "date": b_date.isoformat(),
                     "reference": ref_id,
                     "classification": markup_class,
-                    "narration": f"Upfront Markup Charged ({'20%' if is_monthly else '11%'}) ({loan.product_type}) for client {loan.client_name}"
+                    "narration": f"Upfront Markup Charged ({'20%' if is_20_pct else '11%'}) ({loan.product_type}) for client {loan.client_name}"
                 }
             )
             uow.event_store.append(event_markup)

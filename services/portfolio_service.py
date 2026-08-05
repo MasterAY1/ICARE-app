@@ -148,9 +148,11 @@ class PortfolioService:
             loans_raw = [l for l in loans_raw if group_map.get(str(l.get("client_id")), "Individual") == selected_group]
             clients_raw = [c for c in clients_raw if group_map.get(str(c.get("client_id") or c.get("id")), "Individual") == selected_group]
 
-        # 3. Query Repayments Today for Scope
+        # 3. Query Repayments within Date Range for Scope
         try:
-            r_query = uow.client.table("repayments").select("*").eq("date", date_str)
+            s_d_str = start_date.strftime("%Y-%m-%d")
+            e_d_str = end_date.strftime("%Y-%m-%d") + "T23:59:59"
+            r_query = uow.client.table("repayments").select("*").gte("date", s_d_str).lte("date", e_d_str)
             if scope.scope_level == "OFFICER" and scope.user_id:
                 r_query = r_query.eq("officer_id", scope.user_id)
             elif scope.scope_level == "BRANCH" and scope.branch_id:
@@ -344,6 +346,7 @@ class PortfolioService:
                 "total_savings_deposit": total_savings_deposit,
                 "total_savings_withdrawal": total_savings_withdrawal,
                 "total_savings_balance": total_savings_balance,
+                "total_actual_collection": today_collection,
                 "today_collection": today_collection,
                 "this_week_collection": this_week_collection,
                 "this_month_collection": this_month_collection,

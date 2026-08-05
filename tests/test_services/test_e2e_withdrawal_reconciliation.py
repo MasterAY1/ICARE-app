@@ -163,6 +163,51 @@ class TestE2EWithdrawalReconciliation(unittest.TestCase):
         self.assertEqual(res_bank["laps_returns"], 0.0)
         self.assertEqual(res_bank["total_outflows"], 0.0)
 
+    def test_e2e_bank_withdrawal_cash_inflow(self):
+        """Test Bank Withdrawal: Inflow into vault cash position."""
+        entries = [{
+            "account_code": "1000",
+            "side": "Debit",
+            "amount": 50000.0,
+            "financial_transactions": {
+                "officer_id": self.officer_id,
+                "posting_date": "2026-07-31",
+                "event_store": {"event_type": "BankWithdrawn"}
+            }
+        }]
+        self.mock_uow.client.table().select().eq().eq().eq().execute().data = entries
+
+        res = CoCashbookProjectionBuilder.rebuild_co_projection(
+            self.mock_uow, self.branch_id, self.officer_id, self.date_val
+        )
+
+        self.assertEqual(res["bank_withdrawal"], 50000.0)
+        self.assertEqual(res["total_inflows"], 50000.0)
+        self.assertEqual(res["total_outflows"], 0.0)
+        self.assertEqual(res["closing_balance"], 50000.0)
+
+    def test_e2e_bank_deposit_cash_outflow(self):
+        """Test Bank Deposit: Outflow from vault cash position."""
+        entries = [{
+            "account_code": "1000",
+            "side": "Credit",
+            "amount": 30000.0,
+            "financial_transactions": {
+                "officer_id": self.officer_id,
+                "posting_date": "2026-07-31",
+                "event_store": {"event_type": "BankDeposited"}
+            }
+        }]
+        self.mock_uow.client.table().select().eq().eq().eq().execute().data = entries
+
+        res = CoCashbookProjectionBuilder.rebuild_co_projection(
+            self.mock_uow, self.branch_id, self.officer_id, self.date_val
+        )
+
+        self.assertEqual(res["bank_deposit"], 30000.0)
+        self.assertEqual(res["total_outflows"], 30000.0)
+        self.assertEqual(res["closing_balance"], -30000.0)
+
     def test_e2e_legacy_laps_migration_zero_cash(self):
         """Test Legacy LAPS Migration: ZERO physical vault cash impact."""
         entries = [{
@@ -183,6 +228,32 @@ class TestE2EWithdrawalReconciliation(unittest.TestCase):
 
         self.assertEqual(res["total_outflows"], 0.0)
         self.assertEqual(res["closing_balance"], 0.0)
+
+    def test_full_cashbook_reconciliation_math(self):
+        """Test complete mathematical reconciliation: closing = opening + total_inflows - total_outflows."""
+        entries = [
+            # Bank Withdrawal (Inflow 50k)
+            {"account_code": "1000", "side": "Debit", "amount": 50000.0, "financial_transactions": {"officer_id": self.officer_id, "posting_date": "2026-07-31", "event_store": {"event_type": "BankWithdrawn"}}},
+            # Savings Deposit (Inflow 20k)
+            {"account_code": "1000", "side": "Debit", "amount": 20000.0, "financial_transactions": {"officer_id": self.officer_id, "posting_date": "2026-07-31", "event_store": {"event_type": "SavingsDeposited"}}},
+            # Customer Cash Withdrawal (Outflow 10k)
+            {"account_code": "1000", "side": "Credit", "amount": 10000.0, "financial_transactions": {"officer_id": self.officer_id, "posting_date": "2026-07-31", "event_store": {"event_type": "SavingsWithdrawn"}}},
+            # Bank Deposit (Outflow 15k)
+            {"account_code": "1000", "side": "Credit", "amount": 15000.0, "financial_transactions": {"officer_id": self.officer_id, "posting_date": "2026-07-31", "event_store": {"event_type": "BankDeposited"}}},
+            # Loan Offset (Non-cash 30k)
+            {"account_code": "2000", "side": "Debit", "amount": 30000.0, "financial_transactions": {"officer_id": self.officer_id, "posting_date": "2026-07-31", "event_store": {"event_type": "LoanOffsetFromSavings"}}},
+            # LAPS Transfer (Non-cash 12k)
+            {"account_code": "2030", "side": "Credit", "amount": 12000.0, "financial_transactions": {"officer_id": self.officer_id, "posting_date": "2026-07-31", "event_store": {"event_type": "LapsTransferred"}}}
+        ]
+        self.mock_uow.client.table().select().eq().eq().eq().execute().data = entries
+
+        res = CoCashbookProjectionBuilder.rebuild_co_projection(
+            self.mock_uow, self.branch_id, self.officer_id, self.date_val
+        )
+
+        self.assertEqual(res["total_inflows"], 70000.0)   # 50k bank_withdrawal + 20k savings_deposit
+        self.assertEqual(res["total_outflows"], 25000.0)  # 10k savings_withdrawal + 15k bank_deposit
+        self.assertEqual(res["closing_balance"], 45000.0) # 0 opening + 70k - 25k = 45k
 
 
 if __name__ == "__main__":
