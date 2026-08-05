@@ -1,4 +1,10 @@
 import streamlit as st
+st.set_page_config(
+    page_title="ICARE Microfinance - Core Banking",
+    page_icon="🌱",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from domain.queries import LoanFilter, RepaymentFilter, CashbookFilter
@@ -19,12 +25,7 @@ from config.mappings import *
 from config.themes import *
 from config.feature_flags import *
 
-st.set_page_config(
-    page_title="ICARE Microfinance - Core Banking",
-    page_icon="🌱",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+
 
 import pandas as pd
 from datetime import date, datetime, timedelta
@@ -4605,7 +4606,7 @@ elif page == "Legacy LAPS Migration":
                         }
                         records_to_migrate.append(rec)
 
-                    with get_uow() as uow:
+                    with SupabaseUnitOfWork() as uow:
                         from services.laps_migration_service import LAPSMigrationService
                         res = LAPSMigrationService.migrate_legacy_laps(
                             uow=uow,
@@ -4631,7 +4632,7 @@ elif page == "Legacy LAPS Migration":
         st.markdown("---")
         st.subheader("📜 Historical LAPS Migration Batches")
         try:
-            with get_uow() as uow:
+            with SupabaseUnitOfWork() as uow:
                 laps_records = uow.laps_savings.get_all()
                 df_laps = pd.DataFrame([vars(r) for r in laps_records])
                 if not df_laps.empty and "migration_batch_id" in df_laps.columns:
@@ -6851,7 +6852,7 @@ elif page == "Portfolio":
             st.info("No client records found in authorized scope.")
         
         if st.button("🔄 POST TO GLOBAL LEDGER"):
-            update_database_safe(edited, ROLE, USER, BRANCH)
+            update_database_safe(client_df, ROLE, USER, BRANCH)
             st.success("✅ Cloud Database Updated Successfully!")
             st.rerun()
 
