@@ -2216,16 +2216,23 @@ elif page == "Loan Origination":
                     if submitted_activate:
                         today = datetime.now().date()
                         today_str = today.strftime("%Y-%m-%d")
+                        closures = get_custom_closures()
                         
+                        from services.business_date_service import BusinessDateService
+                        is_workday, workday_reason = BusinessDateService.is_working_day(today, closures)
+                        if not is_workday:
+                            st.error(f"⛔ **Non-Working Day Restriction**: Loans cannot be activated or disbursed on {workday_reason}. Please perform loan origination on a valid working day.")
+                            st.stop()
+
                         loan_row = pending_clients[pending_clients['Client ID'] == selected_client_id].iloc[0]
                         product = str(loan_row.get("Loan Product", ""))
+                        meeting_day = str(loan_row.get("Meeting Day", ""))
                         
-                        if "Daily" in product or "120 Days" in product:
+                        if "Daily" in product or "60" in product or "120" in product:
                             initial_start_date = today + timedelta(days=1)
                         else:
-                            meeting_day = str(loan_row.get("Meeting Day", ""))
                             days_of_week = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
-                            if meeting_day in days_of_week:
+                            if meeting_day and meeting_day in days_of_week:
                                 target_weekday = days_of_week[meeting_day]
                                 current_weekday = today.weekday()
                                 days_ahead = target_weekday - current_weekday
@@ -2235,14 +2242,19 @@ elif page == "Loan Origination":
                             else:
                                 initial_start_date = today + timedelta(days=7)
                                 
-                        closures = get_custom_closures()
-                        final_start_date, is_adjusted, shift_reason = get_next_working_day(initial_start_date, closures)
+                        final_start_date = BusinessDateService.get_next_working_day(initial_start_date, closures)
+                        is_adjusted = (final_start_date != initial_start_date)
+                        shift_reason = "a non-working day or closure"
                         
-                        setup = calculate_loan_setup(100000, product)
+                        from services.loan_product_engine import LoanProductEngine
+                        setup = LoanProductEngine.calculate_loan_setup(100000, product)
                         loan_freq = setup.get("freq", "Daily")
                         duration_in_installments = setup.get("duration", 60)
                         
-                        schedule = generate_repayment_schedule(final_start_date, duration_in_installments, loan_freq)
+                        schedule = LoanProductEngine.generate_repayment_schedule(
+                            final_start_date, duration_in_installments, loan_freq,
+                            meeting_day=meeting_day, closed_dates=[c[0] for c in closures]
+                        )
                         expected_end_date = schedule[-1] if schedule else final_start_date
                         
                         try:
@@ -6512,6 +6524,28 @@ elif page == "Master Cashbook":
         }
 
         st.dataframe(pd.DataFrame(ledger_data).T.rename(columns={0: "Amount"}).style.format(precision=0, thousands=","), height=500)
+
+        st.markdown("---")
+        st.markdown("### 🔒 Branch Manager End of Day (EOD) Controls")
+        eod_c1, eod_c2 = st.columns([3, 1])
+        with eod_c1:
+            st.info(f"**Operational Date**: `{date_str}`. Executing Day Close will freeze all entries for `{date_str}` and advance operational business date to the **Next Working Day**.")
+        with eod_c2:
+            if st.button("🔒 Execute EOD Day Close", use_container_width=True, type="primary", key="btn_exec_eod"):
+                try:
+                    from services.business_date_service import BusinessDateService
+                    with SupabaseUnitOfWork() as uow_eod:
+                        b_id = uow_eod.cashbook._resolve_branch_id(BRANCH)
+                        success = BusinessDateService.close_business_date(uow_eod, b_id, view_date, closed_by=USER)
+                        if success:
+                            st.success(f"Successfully executed Day Close for {date_str}! Operational date advanced to next working day.")
+                            import time
+                            time.sleep(1.5)
+                            st.rerun()
+                        else:
+                            st.error("Failed to execute EOD day close.")
+                except Exception as ex:
+                    st.error(f"Error during EOD close: {ex}")
 
 
     elif cashbook_section == "📊 Monthly Ledger":

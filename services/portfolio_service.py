@@ -275,34 +275,44 @@ class PortfolioService:
             product_summary[prod_name]["loan_balance"] += outstanding_bal
             product_summary[prod_name]["count"] += 1
 
-            # Matching repayment today
+            # Matching repayments today/in period
             c_reps = [r for r in repayments_today if str(r.get("client_id")) == cid_str]
             paid_today = sum(float(r.get("amount_paid") or 0.0) for r in c_reps)
 
-            if paid_today >= outstanding_bal and outstanding_bal > 0:
+            # Due date check for overdue status
+            exp_end = l.get("expected_end_date") or l.get("end_date")
+            is_past_due = False
+            if exp_end:
+                try:
+                    exp_date = date.fromisoformat(str(exp_end)[:10])
+                    if exp_date < end_date and outstanding_bal > 0:
+                        is_past_due = True
+                except Exception:
+                    pass
+
+            if tot_paid_lifetime >= act_cred and act_cred > 0:
                 full_payments_count += 1
-                full_payments_amt += paid_today
-            elif paid_today >= repay_fixed and repay_fixed > 0:
-                if paid_today == repay_fixed:
-                    normal_payments_count += 1
-                    normal_payments_amt += paid_today
-                else:
+                full_payments_amt += tot_paid_lifetime
+                status_str = "Full Paid (Closed)"
+            elif paid_today > 0:
+                if paid_today > repay_fixed and repay_fixed > 0:
                     excess_payments_count += 1
                     excess_payments_amt += (paid_today - repay_fixed)
-            elif paid_today > 0 and paid_today < repay_fixed:
-                part_payments_count += 1
-                part_payments_amt += paid_today
-            elif paid_today == 0 and repay_fixed > 0:
+                    status_str = "Excess Paid"
+                elif paid_today == repay_fixed:
+                    normal_payments_count += 1
+                    normal_payments_amt += paid_today
+                    status_str = "Normal Paid"
+                else:
+                    part_payments_count += 1
+                    part_payments_amt += paid_today
+                    status_str = "Part Paid"
+            elif is_past_due:
                 overdue_count += 1
-                overdue_amt += repay_fixed
-
-            status_str = "Full Paid" if (paid_today >= outstanding_bal and outstanding_bal > 0) else (
-                "Normal Paid" if (paid_today == repay_fixed and repay_fixed > 0) else (
-                    "Excess Paid" if paid_today > repay_fixed else (
-                        "Part Paid" if paid_today > 0 else "Overdue"
-                    )
-                )
-            )
+                overdue_amt += outstanding_bal
+                status_str = "Overdue"
+            else:
+                status_str = "Active"
 
             client_rows.append({
                 "Client Code": c_code,

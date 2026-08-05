@@ -1,5 +1,5 @@
 import math
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import date, timedelta
 
 class LoanProductEngine:
@@ -124,12 +124,31 @@ class LoanProductEngine:
     ) -> List[date]:
         """
         Generate installment due dates list according to business rules:
-        - Daily: starts day after meeting day, skipping weekends/closed dates.
-        - Weekly: starts next meeting day.
-        - Monthly: starts next month on meeting day.
+        - Daily (60d/120d): Monday to Friday installments only (skipping weekends Saturday/Sunday, Nigerian public holidays, and custom closures).
+        - Weekly (12w/24w): Weekly installments on Group Meeting Day (shifting to next working day if holiday).
+        - Monthly (3m/6m): Monthly installments starting exactly 1 month after disbursement (shifting to next working day if weekend/holiday).
         """
+        import holidays
+        from dateutil.relativedelta import relativedelta
+
+        ng_holidays = holidays.Nigeria()
         if closed_dates is None:
             closed_dates = []
+
+        def is_valid_working_day(d: date) -> bool:
+            if d.weekday() >= 5:  # Saturday or Sunday
+                return False
+            if d in ng_holidays:
+                return False
+            if d in closed_dates:
+                return False
+            return True
+
+        def get_next_valid_day(d: date) -> date:
+            curr_d = d
+            while not is_valid_working_day(curr_d):
+                curr_d += timedelta(days=1)
+            return curr_d
 
         days_map = {
             "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
@@ -137,52 +156,40 @@ class LoanProductEngine:
         }
 
         schedule = []
-        curr = start_date
 
-        if meeting_day and str(meeting_day).lower() in days_map:
-            target_weekday = days_map[str(meeting_day).lower()]
-            days_ahead = target_weekday - curr.weekday()
-            if days_ahead <= 0:
-                days_ahead += 7
-            next_meeting_day = curr + timedelta(days=days_ahead)
-
-            if frequency == "Daily":
-                curr = next_meeting_day + timedelta(days=1)
-            elif frequency == "Weekly":
-                curr = next_meeting_day
-            elif frequency == "Monthly":
-                curr = next_meeting_day + timedelta(days=28)
-        else:
-            if frequency == "Daily":
-                curr = curr + timedelta(days=1)
-
-        def is_working_day(d: date) -> bool:
-            if d.weekday() >= 5:
-                return False
-            if d in closed_dates:
-                return False
-            return True
-
-        while len(schedule) < duration:
-            if frequency == "Daily":
-                if is_working_day(curr):
+        if frequency == "Daily":
+            curr = start_date + timedelta(days=1)
+            while len(schedule) < duration:
+                if is_valid_working_day(curr):
                     schedule.append(curr)
-                curr = curr + timedelta(days=1)
-            elif frequency == "Weekly":
-                actual_date = curr
-                while not is_working_day(actual_date):
-                    actual_date += timedelta(days=1)
-                schedule.append(actual_date)
-                curr = curr + timedelta(days=7)
-            elif frequency == "Monthly":
-                actual_date = curr
-                while not is_working_day(actual_date):
-                    actual_date += timedelta(days=1)
-                schedule.append(actual_date)
-                curr = curr + timedelta(days=30)
+                curr += timedelta(days=1)
+
+        elif frequency == "Weekly":
+            curr = start_date
+            if meeting_day and str(meeting_day).lower() in days_map:
+                target_weekday = days_map[str(meeting_day).lower()]
+                days_ahead = target_weekday - curr.weekday()
+                if days_ahead <= 0:
+                    days_ahead += 7
+                curr = curr + timedelta(days=days_ahead)
             else:
-                if is_working_day(curr):
+                curr = curr + timedelta(days=7)
+
+            for _ in range(duration):
+                schedule.append(get_next_valid_day(curr))
+                curr += timedelta(days=7)
+
+        elif frequency == "Monthly":
+            curr = start_date
+            for i in range(1, duration + 1):
+                target_m_date = start_date + relativedelta(months=i)
+                schedule.append(get_next_valid_day(target_m_date))
+
+        else:  # Default / Fallback
+            curr = start_date + timedelta(days=1)
+            while len(schedule) < duration:
+                if is_valid_working_day(curr):
                     schedule.append(curr)
-                curr = curr + timedelta(days=1)
+                curr += timedelta(days=1)
 
         return schedule

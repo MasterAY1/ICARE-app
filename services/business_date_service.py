@@ -3,7 +3,45 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 from interfaces.unit_of_work import UnitOfWork
 
+import holidays
+
+ng_holidays = holidays.Nigeria()
+
 class BusinessDateService:
+    @staticmethod
+    def is_working_day(target_date: date, custom_closures: Optional[list] = None) -> tuple[bool, str]:
+        """
+        Checks if target_date is a working day (returns True if valid, False + reason if weekend/holiday/closure).
+        """
+        if custom_closures is None:
+            custom_closures = []
+
+        if target_date.weekday() >= 5:
+            day_name = "Saturday" if target_date.weekday() == 5 else "Sunday"
+            return False, f"{day_name} is a weekend (non-working day)"
+
+        if target_date in ng_holidays:
+            holiday_name = ng_holidays.get(target_date)
+            return False, f"{target_date.isoformat()} is a public holiday ({holiday_name})"
+
+        for s_date, e_date, reason in custom_closures:
+            if s_date <= target_date <= e_date:
+                return False, f"{target_date.isoformat()} falls within branch closure ({reason})"
+
+        return True, "Valid working day"
+
+    @staticmethod
+    def get_next_working_day(target_date: date, custom_closures: Optional[list] = None) -> date:
+        """
+        Advances target_date until a valid working day is reached.
+        """
+        curr = target_date
+        while True:
+            is_valid, _ = BusinessDateService.is_working_day(curr, custom_closures)
+            if is_valid:
+                return curr
+            curr += timedelta(days=1)
+
     @staticmethod
     def get_business_date(uow: UnitOfWork, branch_name_or_id: str) -> date:
         """
@@ -57,10 +95,10 @@ class BusinessDateService:
         Executes Branch Day Close:
         1. Freezes today's Master Cashbook & CO Cashbooks (status = 'CLOSED').
         2. Carries forward closing balance as tomorrow's opening balance.
-        3. Advances branch business date to tomorrow.
+        3. Advances branch business date to the next working day.
         """
         p_date_str = posting_date.isoformat()
-        next_date = posting_date + timedelta(days=1)
+        next_date = BusinessDateService.get_next_working_day(posting_date + timedelta(days=1))
         next_date_str = next_date.isoformat()
         
         user_uuid = None
@@ -70,7 +108,6 @@ class BusinessDateService:
                 if res_u.data:
                     user_uuid = res_u.data[0]["id"]
                 else:
-                    # Check if closed_by is already a valid UUID
                     uuid.UUID(closed_by)
                     user_uuid = closed_by
             except Exception:
@@ -102,7 +139,7 @@ class BusinessDateService:
                 "version": 1
             }, on_conflict="date,branch_id").execute()
 
-            # 4. Advance Branch Business Date
+            # 4. Advance Branch Business Date to next working day
             BusinessDateService.set_business_date(uow, branch_id, next_date)
             return True
         except Exception as ex:
