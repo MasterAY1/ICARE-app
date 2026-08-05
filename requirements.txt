@@ -1,5 +1,5 @@
 streamlit==1.32.0
-starlette<0.38.0
+starlette==0.36.3
 pandas==2.2.0
 numpy==1.26.4
 supabase
