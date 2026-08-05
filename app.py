@@ -246,17 +246,17 @@ st.markdown("""
     h4 { color: #1A1D23 !important; font-weight: 600; font-size: 1rem; }
     
     /* === METRICS === */
-    .stMetric {
-        background: #FFFFFF;
-        border-radius: 12px;
-        padding: 18px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-        border: 1px solid #E5E7EB;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    .stMetric, [data-testid="stMetric"], [data-testid="stMetricContainer"], [data-testid="metric-container"] {
+        background: #FFFFFF !important;
+        border-radius: 12px !important;
+        padding: 18px !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04) !important;
+        border: 1px solid #E5E7EB !important;
+        transition: transform 0.2s ease, box-shadow 0.2s ease !important;
     }
-    .stMetric:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(46,134,193,0.12); }
-    div[data-testid="stMetricValue"] { color: #1B4F72 !important; font-size: 1.7rem; font-weight: 800; }
-    div[data-testid="stMetricLabel"] { color: #6B7280 !important; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stMetric:hover, [data-testid="stMetric"]:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(46,134,193,0.12) !important; }
+    div[data-testid="stMetricValue"], [data-testid="stMetricValue"] { color: #1B4F72 !important; font-size: 1.7rem !important; font-weight: 800 !important; }
+    div[data-testid="stMetricLabel"], [data-testid="stMetricLabel"] { color: #6B7280 !important; font-size: 0.8rem !important; font-weight: 600 !important; text-transform: uppercase !important; letter-spacing: 0.5px !important; }
     
     
     /* === INPUTS === */
