@@ -7348,8 +7348,8 @@ elif page == "User Management":
                         selected_branch_name = st.selectbox("Target Branch", list(branch_options.keys()))
                         selected_branch_id = branch_options[selected_branch_name]
                     else:
-                        selected_branch_id = user_branch_id
-                        st.info(f"Target Branch: {user_branch_name}")
+                        selected_branch_id = BRANCH_ID
+                        st.info(f"Target Branch: {BRANCH}")
 
                     submit_closure = st.form_submit_button("Save Closure", use_container_width=True)
                     if submit_closure:
@@ -7379,7 +7379,7 @@ elif page == "User Management":
                 closures_list = get_custom_closures()
                 # filter closures for BM
                 if not is_admin:
-                    closures_list = [c for c in closures_list if c[3] is None or c[3] == user_branch_id]
+                    closures_list = [c for c in closures_list if c[3] is None or c[3] == BRANCH_ID]
                 
                 if closures_list:
                     # branch_map_id_to_name is populated above
