@@ -1729,8 +1729,8 @@ if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
             if user:
                 st.session_state['logged_in'] = True
                 st.session_state['user'] = user.username
-                st.session_state['role'] = user['role']
-                st.session_state['branch'] = user['branch_name']
+                st.session_state['role'] = user.role
+                st.session_state['branch'] = user.branch_name
             else:
                 st.session_state['logged_in'] = False
                 _delete_auth_token()
