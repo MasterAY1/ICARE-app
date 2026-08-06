@@ -1786,7 +1786,7 @@ with st.sidebar:
     
     st.markdown(f"""
         <div style='text-align: center; padding: 0 0 6px 0;'>
-            <p style='color: #94A3B8; font-size: 0.65rem; margin: 4px 0 0 0; letter-spacing: 1px;'>CORE BANKING v{APP_VERSION}</p>
+            <p style='color: #94A3B8; font-size: 0.65rem; margin: 4px 0 0 0; letter-spacing: 1px;'>CORE BANKING v{APP_VERSION} (st v{st.__version__})</p>
         </div>
     """, unsafe_allow_html=True)
     st.divider()
