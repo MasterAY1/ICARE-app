@@ -213,6 +213,21 @@ class PortfolioService:
                 act_cred = float(l.get("active_credit") or 0.0)
                 tot_paid = lifetime_repayments_map.get(cid_s, 0.0)
                 total_outstanding_balance += max(0.0, act_cred - tot_paid)
+                
+        # Calculate disbursement summary within the selected date range
+        s_d_str_iso = start_date.isoformat()
+        e_d_str_iso = end_date.isoformat()
+        
+        disbursed_in_period = [
+            l for l in loans_raw 
+            if l.get("start_date") and s_d_str_iso <= str(l.get("start_date"))[:10] <= e_d_str_iso
+            and str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED", "COMPLETED", "CLOSED"]
+        ]
+        
+        disbursement_summary = {
+            "count": len(disbursed_in_period),
+            "amount": sum(float(l.get("loan_amount") or 0.0) for l in disbursed_in_period)
+        }
 
         total_savings_balance = total_savings_deposit - total_savings_withdrawal
 
@@ -366,7 +381,8 @@ class PortfolioService:
                 "part_payments": {"count": part_payments_count, "amount": part_payments_amt},
                 "overdue": {"count": overdue_count, "amount": overdue_amt},
                 "par": f"{par_pct}%",
-                "product_summary": product_summary
+                "product_summary": product_summary,
+                "disbursement_summary": disbursement_summary
             },
             "client_table": client_df,
             "client_codes": raw_client_codes

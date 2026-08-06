@@ -6816,14 +6816,20 @@ elif page == "Portfolio":
         s2.metric("Total Withdrawals", f"₦{p_sum.get('total_savings_withdrawal', 0.0):,.0f}")
         s3.metric("Net Savings Balance", f"₦{p_sum.get('total_savings_balance', 0.0):,.0f}")
 
-        st.caption("Row 2: Loan & Collection Summary")
+        st.caption("Row 2: Disbursement Summary (In Selected Period)")
+        d1, d2 = st.columns(2)
+        d_sum = p_sum.get('disbursement_summary', {'count': 0, 'amount': 0.0})
+        d1.metric("Loans Disbursed", f"{d_sum['count']} Loans")
+        d2.metric("Total Amount Disbursed", f"₦{d_sum['amount']:,.0f}")
+
+        st.caption("Row 3: Loan & Collection Summary")
         l1, l2, l3, l4 = st.columns(4)
         l1.metric("Total Active Credit", f"₦{p_sum.get('total_active_credit', 0.0):,.0f}")
         l2.metric("Total Expected Repayment", f"₦{p_sum.get('total_expected_repayment', 0.0):,.0f}")
         l3.metric("Actual Collection", f"₦{p_sum.get('total_actual_collection', p_sum.get('today_collection', 0.0)):,.0f}")
         l4.metric("Total Outstanding Balance", f"₦{p_sum.get('total_outstanding_balance', 0.0):,.0f}")
 
-        st.caption("Row 3: Repayment Status")
+        st.caption("Row 4: Repayment Status")
         r1, r2, r3, r4, r5 = st.columns(5)
         r1.metric("Normal Payments", f"{p_sum.get('normal_payments', {}).get('count', 0)} (₦{p_sum.get('normal_payments', {}).get('amount', 0.0):,.0f})")
         r2.metric("Full Payments (Closed)", f"{p_sum.get('full_payments', {}).get('count', 0)} (₦{p_sum.get('full_payments', {}).get('amount', 0.0):,.0f})")
