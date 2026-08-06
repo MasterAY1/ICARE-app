@@ -6939,15 +6939,30 @@ elif page == "Portfolio":
                             st.write(f"**Name:** {g_name}")
                             st.write(f"**Phone Number:** {g_phone}")
                     with dd_t2:
-                        st.dataframe(dd["loan_history"], use_container_width=True)
+                        if dd["loan_history"].empty:
+                            st.info("No loan history found for this client.")
+                        else:
+                            st.dataframe(dd["loan_history"], use_container_width=True)
                     with dd_t3:
-                        st.dataframe(dd["repayment_history"], use_container_width=True)
+                        if dd["repayment_history"].empty:
+                            st.info("No repayment history found for this client.")
+                        else:
+                            st.dataframe(dd["repayment_history"], use_container_width=True)
                     with dd_t4:
-                        st.dataframe(dd["savings_history"], use_container_width=True)
+                        if dd["savings_history"].empty:
+                            st.info("No savings history found for this client.")
+                        else:
+                            st.dataframe(dd["savings_history"], use_container_width=True)
                     with dd_t5:
-                        st.dataframe(dd["collection_history"], use_container_width=True)
+                        if dd["collection_history"].empty:
+                            st.info("No collections history found for this client.")
+                        else:
+                            st.dataframe(dd["collection_history"], use_container_width=True)
                     with dd_t6:
-                        st.dataframe(dd["audit_history"], use_container_width=True)
+                        if dd["audit_history"].empty:
+                            st.info("No audit history found for this client.")
+                        else:
+                            st.dataframe(dd["audit_history"], use_container_width=True)
         else:
             st.info("No client records found in authorized scope.")
         
