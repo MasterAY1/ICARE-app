@@ -6942,17 +6942,55 @@ elif page == "Portfolio":
                         if dd["loan_history"].empty:
                             st.info("No loan history found for this client.")
                         else:
-                            st.dataframe(dd["loan_history"], use_container_width=True)
+                            df_l = dd["loan_history"].copy()
+                            df_l["Client ID"] = c_info.get("client_code", "N/A")
+                            df_l["Name"] = c_info.get("name", "N/A")
+                            df_l["Product"] = df_l.apply(lambda row: row.get("loan_products", {}).get("name", "N/A") if isinstance(row.get("loan_products"), dict) else "N/A", axis=1)
+                            
+                            df_l = df_l.rename(columns={
+                                "loan_amount": "Loan Amount",
+                                "active_credit": "Active Credit",
+                                "total_due": "Total Due",
+                                "status": "Status",
+                                "product_category": "Product Category",
+                                "date": "Date"
+                            })
+                            cols = ["Client ID", "Name", "Date", "Loan Amount", "Active Credit", "Total Due", "Status", "Product Category", "Product"]
+                            st.dataframe(df_l[[c for c in cols if c in df_l.columns]], use_container_width=True)
+                            
                     with dd_t3:
                         if dd["repayment_history"].empty:
                             st.info("No repayment history found for this client.")
                         else:
-                            st.dataframe(dd["repayment_history"], use_container_width=True)
+                            df_r = dd["repayment_history"].copy()
+                            df_r["Client ID"] = c_info.get("client_code", "N/A")
+                            df_r["Name"] = c_info.get("name", "N/A")
+                            df_r = df_r.rename(columns={
+                                "amount_paid": "Repayment Amount",
+                                "date": "Date",
+                                "payment_status": "Status",
+                                "transaction_type": "Type",
+                                "note": "Note"
+                            })
+                            cols = ["Client ID", "Name", "Date", "Repayment Amount", "Status", "Type", "Note"]
+                            st.dataframe(df_r[[c for c in cols if c in df_r.columns]], use_container_width=True)
+                            
                     with dd_t4:
                         if dd["savings_history"].empty:
                             st.info("No savings history found for this client.")
                         else:
-                            st.dataframe(dd["savings_history"], use_container_width=True)
+                            df_s = dd["savings_history"].copy()
+                            df_s["Client ID"] = c_info.get("client_code", "N/A")
+                            df_s["Name"] = c_info.get("name", "N/A")
+                            df_s = df_s.rename(columns={
+                                "deposit_amount": "Deposit",
+                                "withdrawal_amount": "Withdrawal",
+                                "posting_date": "Date",
+                                "remarks": "Remarks"
+                            })
+                            cols = ["Client ID", "Name", "Date", "Deposit", "Withdrawal", "Remarks"]
+                            st.dataframe(df_s[[c for c in cols if c in df_s.columns]], use_container_width=True)
+                            
                     with dd_t5:
                         if dd["collection_history"].empty:
                             st.info("No collections history found for this client.")

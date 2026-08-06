@@ -425,7 +425,7 @@ class PortfolioService:
 
         # 2. Loan History
         try:
-            res = uow.client.table("loans").select("*").eq("client_id", actual_cid).order("created_at", desc=True).execute()
+            res = uow.client.table("loans").select("*, loan_products(name)").eq("client_id", actual_cid).order("created_at", desc=True).execute()
             loans = res.data or []
         except Exception:
             loans = []
@@ -439,7 +439,7 @@ class PortfolioService:
 
         # 4. Savings History
         try:
-            res = uow.client.table("individual_savings").select("*").eq("client_id", actual_cid).order("date", desc=True).execute()
+            res = uow.client.table("individual_savings").select("*").eq("client_id", actual_cid).order("posting_date", desc=True).execute()
             savings = res.data or []
         except Exception:
             savings = []
