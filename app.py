@@ -6890,7 +6890,54 @@ elif page == "Portfolio":
                     ])
 
                     with dd_t1:
-                        st.json(dd["customer_info"])
+                        c_info = dd.get("customer_info", {})
+                        l_hist = dd.get("loan_history", pd.DataFrame())
+                        
+                        g_name = "N/A"
+                        g_phone = "N/A"
+                        g_pic = ""
+                        
+                        if not l_hist.empty:
+                            for _, l_row in l_hist.iterrows():
+                                ext = l_row.get("extra_fields") or {}
+                                if isinstance(ext, str):
+                                    import json
+                                    try: ext = json.loads(ext)
+                                    except: ext = {}
+                                if ext.get("guarantor_name"):
+                                    g_name = ext.get("guarantor_name", "N/A")
+                                    g_phone = ext.get("guarantor_phone", "N/A")
+                                    g_pic = l_row.get("guarantor_passport_url", "")
+                                    break
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown("#### Client Details")
+                            c_pic = c_info.get("passport_url")
+                            if c_pic:
+                                st.image(c_pic, width=150)
+                            else:
+                                st.info("No client photo uploaded")
+                                
+                            st.write(f"**Name:** {c_info.get('name', 'N/A')}")
+                            st.write(f"**Nickname:** {c_info.get('nickname', 'N/A')}")
+                            grp = p_data['client_table'][p_data['client_table']['Client Code'] == selected_ccode]['Group'].iloc[0] if not p_data['client_table'].empty and 'Group' in p_data['client_table'].columns and len(p_data['client_table'][p_data['client_table']['Client Code'] == selected_ccode]) > 0 else 'N/A'
+                            st.write(f"**Group:** {grp}")
+                            st.write(f"**Phone Number:** {c_info.get('phone', 'N/A')}")
+                            st.write(f"**Address:** {c_info.get('address', 'N/A')}")
+                            st.write(f"**Membership Date:** {c_info.get('registration_date', 'N/A')}")
+
+                        with col2:
+                            st.markdown("#### Guarantor Details")
+                            if g_pic:
+                                st.image(g_pic, width=150)
+                            elif g_name != "N/A":
+                                st.info("No guarantor photo uploaded")
+                            else:
+                                st.warning("No guarantor details found in recent loans.")
+                            
+                            st.write(f"**Name:** {g_name}")
+                            st.write(f"**Phone Number:** {g_phone}")
                     with dd_t2:
                         st.dataframe(dd["loan_history"], use_container_width=True)
                     with dd_t3:

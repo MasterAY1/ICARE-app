@@ -407,14 +407,21 @@ class PortfolioService:
 
         # 1. Customer Info
         try:
-            res = uow.client.table("clients").select("*").eq("client_id", client_id).execute()
+            # selected_ccode is passed here, which is 'client_code'
+            res = uow.client.table("clients").select("*").eq("client_code", client_id).execute()
             if not res.data:
-                res = uow.client.table("clients").select("*").eq("nickname", client_id).execute()
-            info = res.data[0] if res.data else {}
+                # Fallback to UUID or nickname
+                try: res = uow.client.table("clients").select("*").eq("id", client_id).execute()
+                except: res = None
+                
+                if not res or not res.data:
+                    res = uow.client.table("clients").select("*").eq("nickname", client_id).execute()
+                    
+            info = res.data[0] if (res and res.data) else {}
         except Exception:
             info = {}
 
-        actual_cid = info.get("client_id") or client_id
+        actual_cid = info.get("id") or info.get("client_id") or client_id
 
         # 2. Loan History
         try:
