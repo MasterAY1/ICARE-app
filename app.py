@@ -6921,7 +6921,7 @@ elif page == "Portfolio":
                                 
                             st.write(f"**Name:** {c_info.get('name', 'N/A')}")
                             st.write(f"**Nickname:** {c_info.get('nickname', 'N/A')}")
-                            grp = p_data['client_table'][p_data['client_table']['Client Code'] == selected_ccode]['Group'].iloc[0] if not p_data['client_table'].empty and 'Group' in p_data['client_table'].columns and len(p_data['client_table'][p_data['client_table']['Client Code'] == selected_ccode]) > 0 else 'N/A'
+                            grp = c_info.get("groups", {}).get("name", "N/A") if isinstance(c_info.get("groups"), dict) else "N/A"
                             st.write(f"**Group:** {grp}")
                             st.write(f"**Phone Number:** {c_info.get('phone', 'N/A')}")
                             st.write(f"**Address:** {c_info.get('address', 'N/A')}")

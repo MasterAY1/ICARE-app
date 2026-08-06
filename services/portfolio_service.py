@@ -408,7 +408,7 @@ class PortfolioService:
         # 1. Customer Info
         try:
             # selected_ccode is passed here, which is 'client_code'
-            res = uow.client.table("clients").select("*").eq("client_code", client_id).execute()
+            res = uow.client.table("clients").select("*, groups(name)").eq("client_code", client_id).execute()
             if not res.data:
                 # Fallback to UUID or nickname
                 try: res = uow.client.table("clients").select("*").eq("id", client_id).execute()
