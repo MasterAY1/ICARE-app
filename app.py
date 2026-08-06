@@ -5921,15 +5921,10 @@ elif page == "CO Cashbook":
     st.caption("Log your daily branch expenses, bank deposits, and withdrawals here.")
     
     with st.form("eod_form"):
-        out_0, out_1, out_2, out_3 = st.columns(4)
+        out_0, out_1, out_2 = st.columns(3)
         global_opening = out_0.number_input("Opening Balance (B/F Cash)", min_value=0.0, step=500.0, value=None, placeholder="0")
         global_expenses = out_1.number_input("Office Expenses", min_value=0.0, step=500.0, value=None, placeholder="0")
         global_bank_dep = out_2.number_input("Bank Deposited", min_value=0.0, step=500.0, value=None, placeholder="0")
-        global_bank_wd = out_3.number_input("Bank Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
-        
-        out_4, out_5 = st.columns(2)
-        global_prod_wd = out_4.number_input("Product Withdrawal", min_value=0.0, step=500.0, value=None, placeholder="0")
-        global_laps_trans = out_5.number_input("Laps Transferred", min_value=0.0, step=500.0, value=None, placeholder="0")
         
         st.markdown("---")
         st.markdown("### Additional Global Collections")
@@ -5952,9 +5947,9 @@ elif page == "CO Cashbook":
             global_opening = float(global_opening or 0)
             global_expenses = float(global_expenses or 0)
             global_bank_dep = float(global_bank_dep or 0)
-            global_bank_wd = float(global_bank_wd or 0)
-            global_prod_wd = float(global_prod_wd or 0)
-            global_laps_trans = float(global_laps_trans or 0)
+            global_bank_wd = 0.0
+            global_prod_wd = 0.0
+            global_laps_trans = 0.0
             
             global_app_fee = float(global_app_fee or 0)
             global_passbook = float(global_passbook or 0)
@@ -5964,7 +5959,7 @@ elif page == "CO Cashbook":
             global_cfd = float(global_cfd or 0)
             global_bonus = float(global_bonus or 0)
             
-            if any(x > 0 for x in [global_opening, global_expenses, global_bank_dep, global_bank_wd, global_prod_wd, global_laps_trans, 
+            if any(x > 0 for x in [global_opening, global_expenses, global_bank_dep,
                                    global_app_fee, global_passbook, global_misc_fee, global_asset_cr, global_cc, global_cfd, global_bonus]):
                 g_out = {
                     "Date": date_str, "Client ID": f"GLOBAL-{target_co}", "Client Name": f"{target_co} End of Day",
@@ -5974,10 +5969,10 @@ elif page == "CO Cashbook":
                     "Opening Balance": global_opening, "Savings Amount": 0, "Withdrawal Amount": 0, "Laps Reserved": 0,
                     "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
                     "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0,
-                    "Bank Withdrawal": global_bank_wd, "Asset Sales": 0, "App Fee": global_app_fee, "Pass Book Bonus": global_passbook,
+                    "Bank Withdrawal": 0, "Asset Sales": 0, "App Fee": global_app_fee, "Pass Book Bonus": global_passbook,
                     "Misc Fees": global_misc_fee, "Asset Credit Sales": global_asset_cr, "Cash and Carry": global_cc, "Credit Form": 0, "Credit Form Damage": global_cfd, "Bonus": global_bonus,
                     "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
-                    "Product Withdrawal": global_prod_wd, "Expenses": global_expenses, "Bank Deposited": global_bank_dep, "Laps Transferred": global_laps_trans,
+                    "Product Withdrawal": 0, "Expenses": global_expenses, "Bank Deposited": global_bank_dep, "Laps Transferred": 0,
                     "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
                 }
                 
