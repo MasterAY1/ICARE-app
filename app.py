@@ -3992,6 +3992,8 @@ elif page == "Collections":
                             # Only fetch schedule if we have a valid loan UUID
                             if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
                                 expected_rep_schedule = ScheduleService.get_expected_repayment(uow, active_loan_id, view_date)
+                                if not expected_rep_schedule:
+                                    expected_rep_schedule = float(loan_row.get('Loan Repay', 0.0))
                             else:
                                 expected_rep_schedule = 0.0
                                 
