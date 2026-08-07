@@ -77,15 +77,12 @@ class PortfolioService:
         # 2.5 Filter by Loan Product
         if selected_product and selected_product != "All":
             filtered_loans = []
-            valid_client_ids = set()
             for l in loans_raw:
                 p_name = (l.get("loan_products") or {}).get("name")
                 if p_name == selected_product:
                     filtered_loans.append(l)
-                    valid_client_ids.add(str(l.get("client_id")))
             
             loans_raw = filtered_loans
-            clients_raw = [c for c in clients_raw if str(c.get("client_id") or c.get("id")) in valid_client_ids]
 
         # Fetch group memberships
         group_map = {}
@@ -231,15 +228,26 @@ class PortfolioService:
 
         total_savings_balance = total_savings_deposit - total_savings_withdrawal
 
-        # Fetch Savings based on scope
-        total_savings = 0.0
+        # Calculate exact savings for filtered clients
         try:
-            b_target = selected_branch if (selected_branch and selected_branch != "All") else scope.branch_name
-            if b_target:
-                s_tot = SavingsService.get_branch_totals(uow, b_target)
-                total_savings = float(s_tot.get("total_active_savings", 0.0))
-        except Exception:
+            filtered_cids = [str(c.get("client_id") or c.get("id")) for c in clients_raw]
             total_savings = 0.0
+            if filtered_cids:
+                s_query = uow.client.table("individual_savings").select("deposit_amount, withdrawal_amount").in_("client_id", filtered_cids).execute()
+                total_dep = sum(float(s.get("deposit_amount") or 0.0) for s in (s_query.data or []))
+                total_wth = sum(float(s.get("withdrawal_amount") or 0.0) for s in (s_query.data or []))
+                total_savings += (total_dep - total_wth)
+                
+                # Group savings
+                g_query = uow.client.table("client_memberships").select("group_id").in_("client_id", filtered_cids).execute()
+                g_ids = list(set([str(g.get("group_id")) for g in (g_query.data or []) if g.get("group_id")]))
+                if g_ids:
+                    gs_query = uow.client.table("group_savings").select("deposit_amount, withdrawal_amount").in_("group_id", g_ids).execute()
+                    g_dep = sum(float(s.get("deposit_amount") or 0.0) for s in (gs_query.data or []))
+                    g_wth = sum(float(s.get("withdrawal_amount") or 0.0) for s in (gs_query.data or []))
+                    total_savings += (g_dep - g_wth)
+        except Exception:
+            pass
 
         today_collection = sum(float(r.get("amount_paid") or 0.0) for r in repayments_today)
 
@@ -261,73 +269,86 @@ class PortfolioService:
         product_summary = {}
         client_rows = []
 
+        active_loans_by_client = {}
         for l in loans_raw:
-            l_stat = str(l.get("status") or "").upper()
-            if l_stat not in ["ACTIVE", "APPROVED"]:
-                continue
+            if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]:
+                cid_str = str(l.get("client_id") or "")
+                active_loans_by_client[cid_str] = l
 
-            cid = l.get("client_id")
-            c_info = l.get("clients") or {}
-            c_name = c_info.get("name") or "N/A"
+        for c in clients_raw:
+            cid = c.get("client_id") or c.get("id")
             cid_str = str(cid) if cid else ""
-            c_code = c_info.get("client_code") or "N/A"
+            c_name = c.get("name") or "N/A"
+            c_code = c.get("client_code") or "N/A"
+            c_status = str(c.get("status") or "Active").capitalize()
+            
             group_name = group_map.get(cid_str, "Individual")
             c_savings = savings_map.get(cid_str, {}).get('bal', 0.0)
 
-            act_cred = float(l.get("active_credit") or 0.0)
-            repay_fixed = float(l.get("loan_repay") or 0.0)
-            disbursed = float(l.get("loan_amount") or 0.0)
+            l = active_loans_by_client.get(cid_str)
             
-            tot_paid_lifetime = lifetime_repayments_map.get(cid_str, 0.0)
-            outstanding_bal = max(0.0, act_cred - tot_paid_lifetime)
+            act_cred = 0.0
+            repay_fixed = 0.0
+            disbursed = 0.0
+            outstanding_bal = 0.0
+            tot_paid_lifetime = 0.0
+            status_str = c_status
+            
+            if l:
+                act_cred = float(l.get("active_credit") or 0.0)
+                repay_fixed = float(l.get("loan_repay") or 0.0)
+                disbursed = float(l.get("loan_amount") or 0.0)
+                
+                tot_paid_lifetime = lifetime_repayments_map.get(cid_str, 0.0)
+                outstanding_bal = max(0.0, act_cred - tot_paid_lifetime)
 
-            prod_info = l.get("loan_products") or {}
-            prod_name = prod_info.get("name") or "Unknown"
+                prod_info = l.get("loan_products") or {}
+                prod_name = prod_info.get("name") or "Unknown"
 
-            if prod_name not in product_summary:
-                product_summary[prod_name] = {"active_credit": 0.0, "loan_balance": 0.0, "count": 0}
-            product_summary[prod_name]["active_credit"] += act_cred
-            product_summary[prod_name]["loan_balance"] += outstanding_bal
-            product_summary[prod_name]["count"] += 1
+                if prod_name not in product_summary:
+                    product_summary[prod_name] = {"active_credit": 0.0, "loan_balance": 0.0, "count": 0}
+                product_summary[prod_name]["active_credit"] += act_cred
+                product_summary[prod_name]["loan_balance"] += outstanding_bal
+                product_summary[prod_name]["count"] += 1
 
-            # Matching repayments today/in period
-            c_reps = [r for r in repayments_today if str(r.get("client_id")) == cid_str]
-            paid_today = sum(float(r.get("amount_paid") or 0.0) for r in c_reps)
+                # Matching repayments today/in period
+                c_reps = [r for r in repayments_today if str(r.get("client_id")) == cid_str]
+                paid_today = sum(float(r.get("amount_paid") or 0.0) for r in c_reps)
 
-            # Due date check for overdue status
-            exp_end = l.get("expected_end_date") or l.get("end_date")
-            is_past_due = False
-            if exp_end:
-                try:
-                    exp_date = date.fromisoformat(str(exp_end)[:10])
-                    if exp_date < end_date and outstanding_bal > 0:
-                        is_past_due = True
-                except Exception:
-                    pass
+                # Due date check for overdue status
+                exp_end = l.get("expected_end_date") or l.get("end_date")
+                is_past_due = False
+                if exp_end:
+                    try:
+                        exp_date = date.fromisoformat(str(exp_end)[:10])
+                        if exp_date < end_date and outstanding_bal > 0:
+                            is_past_due = True
+                    except Exception:
+                        pass
 
-            if tot_paid_lifetime >= act_cred and act_cred > 0:
-                full_payments_count += 1
-                full_payments_amt += tot_paid_lifetime
-                status_str = "Full Paid (Closed)"
-            elif paid_today > 0:
-                if paid_today > repay_fixed and repay_fixed > 0:
-                    excess_payments_count += 1
-                    excess_payments_amt += (paid_today - repay_fixed)
-                    status_str = "Excess Paid"
-                elif paid_today == repay_fixed:
-                    normal_payments_count += 1
-                    normal_payments_amt += paid_today
-                    status_str = "Normal Paid"
+                if tot_paid_lifetime >= act_cred and act_cred > 0:
+                    full_payments_count += 1
+                    full_payments_amt += tot_paid_lifetime
+                    status_str = "Full Paid (Closed)"
+                elif paid_today > 0:
+                    if paid_today > repay_fixed and repay_fixed > 0:
+                        excess_payments_count += 1
+                        excess_payments_amt += (paid_today - repay_fixed)
+                        status_str = "Excess Paid"
+                    elif paid_today == repay_fixed:
+                        normal_payments_count += 1
+                        normal_payments_amt += paid_today
+                        status_str = "Normal Paid"
+                    else:
+                        part_payments_count += 1
+                        part_payments_amt += paid_today
+                        status_str = "Part Paid"
+                elif is_past_due:
+                    overdue_count += 1
+                    overdue_amt += outstanding_bal
+                    status_str = "Overdue"
                 else:
-                    part_payments_count += 1
-                    part_payments_amt += paid_today
-                    status_str = "Part Paid"
-            elif is_past_due:
-                overdue_count += 1
-                overdue_amt += outstanding_bal
-                status_str = "Overdue"
-            else:
-                status_str = "Active"
+                    status_str = "Active Loan"
 
             client_rows.append({
                 "Client Code": c_code,
@@ -370,7 +391,7 @@ class PortfolioService:
                 "total_outstanding_balance": total_outstanding_balance,
                 "total_savings_deposit": total_savings_deposit,
                 "total_savings_withdrawal": total_savings_withdrawal,
-                "total_savings_balance": total_savings_balance,
+                "total_savings_balance": total_savings,
                 "total_actual_collection": today_collection,
                 "today_collection": today_collection,
                 "this_week_collection": this_week_collection,

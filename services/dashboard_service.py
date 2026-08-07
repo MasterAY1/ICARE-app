@@ -122,7 +122,7 @@ class DashboardService:
         active_loans = []
         try:
             if branch_id and officer_id:
-                loans_res = uow.client.table("loans").select("*, clients(name)").eq("branch_id", branch_id).eq("officer_id", officer_id).execute()
+                loans_res = uow.client.table("loans").select("*, clients(name, client_code)").eq("branch_id", branch_id).eq("officer_id", officer_id).execute()
                 l_data = loans_res.data or []
                 active_loans = [l for l in l_data if l.get("status") in ["ACTIVE", "Approved", "Active"]]
         except Exception:
@@ -140,9 +140,21 @@ class DashboardService:
         not_paid_count = 0
         not_paid_amt = 0.0
 
+        # Build group_map for active loans
+        group_map = {}
+        try:
+            loan_client_ids = [l.get("client_id") for l in active_loans if l.get("client_id")]
+            if loan_client_ids:
+                g_query = uow.client.table("client_memberships").select("client_id, groups(name)").in_("client_id", loan_client_ids).execute()
+                for gm in (g_query.data or []):
+                    grp = gm.get("groups") or {}
+                    group_map[str(gm.get("client_id"))] = grp.get("name") or "Individual Group"
+        except Exception:
+            pass
+
         for l in active_loans:
             try:
-                g_name = l.get("group_name") or l.get("group") or "Individual Group"
+                g_name = group_map.get(str(l.get("client_id"))) or "Individual Group"
                 m_day = l.get("meeting_day") or meeting_day
                 if g_name not in grp_map:
                     grp_map[g_name] = {
@@ -185,7 +197,8 @@ class DashboardService:
                     part_paid_amt += (repay_amt - c_paid)
                     grp_map[g_name]["Clients Paid"] += 1
                     attention_rows.append({
-                        "Client Code": cid or "N/A",
+                        "ID": cid,
+                        "Client ID": c_info.get("client_code") or "N/A",
                         "Client Name": c_name,
                         "Group": g_name,
                         "Expected": repay_amt,
@@ -198,7 +211,8 @@ class DashboardService:
                     not_paid_amt += repay_amt
                     grp_map[g_name]["Clients Not Paid"] += 1
                     attention_rows.append({
-                        "Client Code": cid or "N/A",
+                        "ID": cid,
+                        "Client ID": c_info.get("client_code") or "N/A",
                         "Client Name": c_name,
                         "Group": g_name,
                         "Expected": repay_amt,

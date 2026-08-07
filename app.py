@@ -3980,7 +3980,7 @@ elif page == "Collections":
                         except Exception:
                             sav_bal = 0.0
                         # Find if there is an active loan in all_loans
-                        active_loan_rows = all_loans[(all_loans['Client ID'] == uuid_id) & (all_loans['Status'] == 'Active')]
+                        active_loan_rows = all_loans[((all_loans['Client ID'] == cid) | (all_loans['Client ID'] == uuid_id)) & (all_loans['Status'] == 'Active')]
                         if not active_loan_rows.empty:
                             loan_row = active_loan_rows.iloc[0]
                             active_loan_id = loan_row.get('loan_id') or loan_row.get('Loan ID')
@@ -4079,9 +4079,14 @@ elif page == "Collections":
                         # ---- GROUP-LEVEL SAVINGS ----
                         group_savings_balance = 0.0
                         if selected_group != "Ungrouped":
-                            g_reps = repayments[repayments['Client ID'] == f"GROUP-{selected_group}"] if not repayments.empty else pd.DataFrame()
-                            if not g_reps.empty:
-                                group_savings_balance = g_reps['Savings Amount'].sum() - g_reps['Withdrawal Amount'].sum()
+                            try:
+                                g_res = uow.client.table("groups").select("group_id").eq("name", selected_group).execute()
+                                if g_res.data:
+                                    g_id = g_res.data[0]['group_id']
+                                    gs_res = uow.client.table("group_savings").select("deposit_amount, withdrawal_amount").eq("group_id", g_id).execute()
+                                    group_savings_balance = sum(float(g.get("deposit_amount") or 0) for g in gs_res.data) - sum(float(g.get("withdrawal_amount") or 0) for g in gs_res.data)
+                            except Exception:
+                                pass
                                 
                         st.markdown(f"### 🏛️ Group-Level Savings (Available: ₦{group_savings_balance:,.0f})")
                         st.caption("Input communal group savings and withdrawal amounts.")
