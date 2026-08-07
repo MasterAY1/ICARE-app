@@ -85,8 +85,9 @@ class CoCashbookProjectionBuilder:
                 # CO Inflows
                 if event_type == "RepaymentReceived":
                     cycle = "Daily"
+                    loan_id = ev_store.get("payload", {}).get("loan_id") or entry.get("aggregate_id")
                     try:
-                        res_l = uow.client.table("loans").select("loan_products(repayment_cycle)").eq("loan_id", entry.get("aggregate_id")).execute()
+                        res_l = uow.client.table("loans").select("loan_products(repayment_cycle)").eq("loan_id", loan_id).execute()
                         if res_l.data:
                             cycle = res_l.data[0].get("loan_products", {}).get("repayment_cycle", "Daily")
                     except Exception:
@@ -96,7 +97,7 @@ class CoCashbookProjectionBuilder:
                     elif cycle == "Weekly":
                         duration = 12
                         try:
-                            res_l2 = uow.client.table("loans").select("loan_products(name)").eq("loan_id", entry.get("aggregate_id")).execute()
+                            res_l2 = uow.client.table("loans").select("loan_products(name)").eq("loan_id", loan_id).execute()
                             if res_l2.data:
                                 name = str(res_l2.data[0].get("loan_products", {}).get("name", "")).lower()
                                 if "24" in name: duration = 24
