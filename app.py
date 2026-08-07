@@ -4011,9 +4011,7 @@ elif page == "Collections":
                             # Remaining Balance (Outstanding / Credit Balance) is the Total Due value from DB.
                             # UI shouldn't calculate this dynamically via repayments.
                             total_due_val = float(loan_row.get('Total Due', loan_row.get('Loan Amount', 0.0)))
-                            
-                            total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
-                            rem_bal = max(0.0, total_due_val - total_paid)
+                            rem_bal = float(loan_row.get('Active Credit', 0.0))
                             
                             loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
                             
@@ -4119,7 +4117,11 @@ elif page == "Collections":
                                 if g_res.data:
                                     g_id = g_res.data[0]['group_id']
                                     gs_res = uow.client.table("group_savings").select("deposit_amount, withdrawal_amount").eq("group_id", g_id).execute()
-                                    group_savings_balance = sum(float(g.get("deposit_amount") or 0) for g in gs_res.data) - sum(float(g.get("withdrawal_amount") or 0) for g in gs_res.data)
+                                    
+                                    legacy_reps = repayments[repayments['Client ID'] == f"GROUP-{selected_group}"] if not repayments.empty else pd.DataFrame()
+                                    legacy_bal = (float(legacy_reps['Savings Amount'].sum()) - float(legacy_reps['Withdrawal Amount'].sum())) if not legacy_reps.empty else 0.0
+                                    
+                                    group_savings_balance = sum(float(g.get("deposit_amount") or 0) for g in gs_res.data) - sum(float(g.get("withdrawal_amount") or 0) for g in gs_res.data) + legacy_bal
                             except Exception:
                                 pass
                                 
