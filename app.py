@@ -3983,12 +3983,18 @@ elif page == "Collections":
                         active_loan_rows = all_loans[((all_loans['Client ID'] == cid) | (all_loans['Client ID'] == uuid_id)) & (all_loans['Status'] == 'Active')]
                         if not active_loan_rows.empty:
                             loan_row = active_loan_rows.iloc[0]
-                            active_loan_id = loan_row.get('loan_id') or loan_row.get('Loan ID')
+                            active_loan_id = loan_row.get('id') or loan_row.get('loan_id') or loan_row.get('Loan ID')
                             act_cred = float(loan_row.get('Active Credit', 0))
                             total_due_val = float(loan_row.get('Total Due', loan_row.get('Loan Amount', 0.0)))
                             total_paid = max(0.0, total_due_val - act_cred)
                             loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
-                            expected_rep_schedule = ScheduleService.get_expected_repayment(uow, active_loan_id, view_date)
+                            
+                            # Only fetch schedule if we have a valid loan UUID
+                            if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
+                                expected_rep_schedule = ScheduleService.get_expected_repayment(uow, active_loan_id, view_date)
+                            else:
+                                expected_rep_schedule = 0.0
+                                
                             start_date_val = str(loan_row.get('Start Date', ''))
                         else:
                             active_loan_id = None
