@@ -2128,16 +2128,17 @@ if page == "Dashboard":
                 st.dataframe(m_port, use_container_width=True, hide_index=True)
                 
                 st.markdown("##### Quick Action: Start Collection")
+                def _go_to_collections(grp_name):
+                    st.session_state["Navigation"] = "Collections"
+                    st.session_state["sel_group"] = grp_name
+                    
                 g_cols = st.columns(min(len(m_port), 4))
                 for idx, row in m_port.iterrows():
                     g_name = row["Group Name"]
                     status_badge = row.get("Status", "🟢 Completed")
                     col_idx = idx % len(g_cols)
                     with g_cols[col_idx]:
-                        if st.button(f"Start {g_name} ({status_badge})", key=f"start_grp_{idx}", use_container_width=True):
-                            st.session_state["Navigation"] = "Collections"
-                            st.session_state["sel_group"] = g_name
-                            st.rerun()
+                        st.button(f"Start {g_name} ({status_badge})", key=f"start_grp_{idx}", use_container_width=True, on_click=_go_to_collections, args=(g_name,))
             else:
                 st.info("No active groups scheduled for today.")
 
