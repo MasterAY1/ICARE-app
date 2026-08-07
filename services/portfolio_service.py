@@ -11,6 +11,7 @@ import pandas as pd
 from interfaces.unit_of_work import UnitOfWork
 from services.rbac_scope_service import RBACScope, RBACScopeService
 from services.savings_service import SavingsService
+from services.schedule_service import ScheduleService
 
 
 class PortfolioService:
@@ -295,12 +296,24 @@ class PortfolioService:
             status_str = c_status
             
             if l:
-                act_cred = float(l.get("active_credit") or 0.0)
+                # Active Loan should display the initial total due
+                tot_due = float(l.get("total_due") or l.get("active_credit") or 0.0)
                 repay_fixed = float(l.get("loan_repay") or 0.0)
                 disbursed = float(l.get("loan_amount") or 0.0)
                 
-                tot_paid_lifetime = lifetime_repayments_map.get(cid_str, 0.0)
-                outstanding_bal = max(0.0, act_cred - tot_paid_lifetime)
+                loan_id = l.get("loan_id")
+                if loan_id and len(str(loan_id)) > 10:
+                    tot_paid_loan, has_schedule = ScheduleService.get_total_paid(uow, str(loan_id))
+                    if not has_schedule:
+                        tot_paid_loan = lifetime_repayments_map.get(cid_str, 0.0)
+                else:
+                    tot_paid_loan = lifetime_repayments_map.get(cid_str, 0.0)
+                
+                # Active credit was previously incorrectly used as outstanding balance
+                outstanding_bal = max(0.0, tot_due - tot_paid_loan)
+                act_cred = tot_due # Map to UI 'Active Loan' column
+                
+                tot_paid_lifetime = tot_paid_loan # Map for logic below
 
                 prod_info = l.get("loan_products") or {}
                 prod_name = prod_info.get("name") or "Unknown"

@@ -1197,17 +1197,7 @@ def save_repayment(data, override_uow=None):
             if client_id.startswith('GROUP-'):
                 group_name = client_id.replace('GROUP-', '')
                 SavingsService.post_group_savings(uow, group_name, branch, officer, group_dep, group_wd, remarks=db_data.get('note'))
-                
-                # Also save to repayments table
-                db_data['transaction_type'] = client_id  # e.g., "GROUP-group_name"
-                db_data['client_id'] = None
-                db_data['loan_repayment_amount'] = 0.0
-                rep = RepaymentMapper.to_domain(db_data)
-                try:
-                    from services.repayment_service import RepaymentService
-                    RepaymentService.post_repayment(uow, rep)
-                except Exception as re:
-                    st.error(f"Error inserting group repayment: {re}")
+                pass
                 return # Do not insert a dummy loan or a repayment row
             
             # Route LAPS
@@ -1240,11 +1230,6 @@ def save_repayment(data, override_uow=None):
                     p_date = datetime.strptime(p_date_str, "%Y-%m-%d").date()
                     
                     ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date)
-                    
-                    # Update loan outstanding balance
-                    current_outstanding = float(res_l.data[0].get("active_credit") or 0.0)
-                    new_outstanding = max(0.0, current_outstanding - loan_repay)
-                    uow.client.table("loans").update({"active_credit": new_outstanding}).eq("loan_id", active_loan_id).execute()
 
             # Route Misc Savings if collected during collections
             if misc_fees > 0:
@@ -4011,7 +3996,16 @@ elif page == "Collections":
                             # Remaining Balance (Outstanding / Credit Balance) is the Total Due value from DB.
                             # UI shouldn't calculate this dynamically via repayments.
                             total_due_val = float(loan_row.get('Total Due', loan_row.get('Loan Amount', 0.0)))
-                            rem_bal = float(loan_row.get('Active Credit', 0.0))
+                            
+                            # Only fetch schedule if we have a valid loan UUID
+                            if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
+                                active_loan_total_paid, has_schedule = ScheduleService.get_total_paid(uow, active_loan_id)
+                                if not has_schedule:
+                                    active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
+                            else:
+                                active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
+                                
+                            rem_bal = max(0.0, total_due_val - active_loan_total_paid)
                             
                             loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
                             

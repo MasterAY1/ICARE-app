@@ -187,6 +187,17 @@ class ScheduleService:
         return max(0.0, expected)
 
     @staticmethod
+    def get_total_paid(uow: SupabaseUnitOfWork, loan_id: str) -> tuple[float, bool]:
+        """
+        Calculates the total paid amount for a specific loan from its schedule.
+        Returns a tuple (total_paid, has_schedule).
+        """
+        res = uow.client.table("loan_schedule").select("paid_amount").eq("loan_id", loan_id).execute()
+        if not res.data:
+            return (0.0, False)
+        return (sum(float(row["paid_amount"] or 0) for row in res.data), True)
+
+    @staticmethod
     def record_repayment(uow: SupabaseUnitOfWork, loan_id: str, amount: float, paid_date: date = None) -> float:
         """
         Applies a manual repayment amount to the loan schedule in chronological sequence.
