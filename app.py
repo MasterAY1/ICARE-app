@@ -3969,18 +3969,6 @@ elif page == "Collections":
                 member_info = {}
                 from services.schedule_service import ScheduleService
                 with SupabaseUnitOfWork() as uow:
-                    lifetime_paid_map = {}
-                    try:
-                        c_uuids = group_clients['ID'].tolist()
-                        if c_uuids:
-                            r_query = uow.client.table("repayments").select("client_id, loan_repayment_amount").in_("client_id", c_uuids).execute()
-                            for r in (r_query.data or []):
-                                c_str = str(r.get("client_id"))
-                                amt = float(r.get("loan_repayment_amount") or 0.0)
-                                lifetime_paid_map[c_str] = lifetime_paid_map.get(c_str, 0.0) + amt
-                    except Exception:
-                        pass
-                        
                     for _, member in group_clients.iterrows():
                         cid = member['Client ID']
                         uuid_id = member['ID']
@@ -3997,10 +3985,12 @@ elif page == "Collections":
                             loan_row = active_loan_rows.iloc[0]
                             active_loan_id = loan_row.get('id') or loan_row.get('loan_id') or loan_row.get('Loan ID')
                             act_cred = float(loan_row.get('Active Credit', 0))
-                            total_due_val = float(loan_row.get('Total Due', loan_row.get('Loan Amount', 0.0)))
                             
-                            total_paid = lifetime_paid_map.get(str(uuid_id), 0.0)
-                            rem_bal = max(0.0, total_due_val - total_paid)
+                            # As requested: Active Credit is the static value from DB (Principal - Gap).
+                            # Remaining Balance (Outstanding / Credit Balance) is the Total Due value from DB.
+                            # UI shouldn't calculate this dynamically via repayments.
+                            total_due_val = float(loan_row.get('Total Due', loan_row.get('Loan Amount', 0.0)))
+                            rem_bal = total_due_val
                             
                             loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
                             
