@@ -3182,7 +3182,13 @@ elif page == "Loan Origination":
                     prods = ["60-Day Asset", "120-Day Asset", "Weekly 12W Asset", "Weekly 24W Asset", "Monthly 3M Asset", "Monthly 6M Asset", "Cash and Carry"]
                     
                 # Fetch allowed_products from current user
-                allowed_products = current_user.get("extra_fields", {}).get("allowed_products", []) if current_user.get("extra_fields") else []
+                allowed_products = []
+                if current_user:
+                    if isinstance(current_user, dict):
+                        extra = current_user.get("extra_fields") or {}
+                    else:
+                        extra = getattr(current_user, "extra_fields", {}) or {}
+                    allowed_products = extra.get("allowed_products", []) if isinstance(extra, dict) else []
                 if isinstance(allowed_products, list) and len(allowed_products) > 0:
                     prods = [p for p in prods if p in allowed_products]
                     
