@@ -99,17 +99,17 @@ def generate_repayment_schedule(start_date, total_installments, frequency):
     closures = get_custom_closures()
     
     for _ in range(total_installments):
-        # Find the actual valid working day for this installment
-        valid_date, _, _ = get_next_working_day(theoretical_date, closures)
-        schedule.append(valid_date)
-        
-        # Step the THEORETICAL date forward for the next loop
+        # Step the THEORETICAL date forward for this installment
         if frequency.lower() == 'daily':
             theoretical_date += timedelta(days=1)
         elif frequency.lower() == 'weekly':
             theoretical_date += timedelta(days=7)
         elif frequency.lower() == 'monthly':
             theoretical_date += relativedelta(months=1)
+            
+        # Find the actual valid working day for this installment
+        valid_date, _, _ = get_next_working_day(theoretical_date, closures)
+        schedule.append(valid_date)
             
     return schedule
 
