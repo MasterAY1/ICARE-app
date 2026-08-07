@@ -1816,8 +1816,13 @@ with st.sidebar:
     if "Navigation" not in st.session_state or st.session_state["Navigation"] not in nav_options:
         st.session_state["Navigation"] = nav_options[0] if nav_options else "Dashboard"
     
-    page = st.radio("Navigation", nav_options, key="Navigation", label_visibility="collapsed")
-    
+    def _sync_nav():
+        st.session_state["Navigation"] = st.session_state["nav_radio"]
+
+    nav_index = nav_options.index(st.session_state["Navigation"]) if st.session_state["Navigation"] in nav_options else 0
+    page = st.radio("Navigation", nav_options, index=nav_index, key="nav_radio", label_visibility="collapsed", on_change=_sync_nav)
+    page = st.session_state["Navigation"]
+
     # Route Security Guard
     if not RBACScopeService.is_page_permitted(scope.role, page):
         st.error("⚠️ Access Denied: You do not have permission to access this page.")
@@ -3188,8 +3193,17 @@ elif page == "Loan Origination":
                         extra = current_user.get("extra_fields") or {}
                     else:
                         extra = getattr(current_user, "extra_fields", {}) or {}
+                        
+                    if isinstance(extra, str):
+                        import json
+                        try:
+                            extra = json.loads(extra)
+                        except:
+                            extra = {}
+                            
                     allowed_products = extra.get("allowed_products", []) if isinstance(extra, dict) else []
-                if isinstance(allowed_products, list) and len(allowed_products) > 0:
+                    
+                if isinstance(allowed_products, list):
                     prods = [p for p in prods if p in allowed_products]
                     
                 if not prods:
@@ -3997,7 +4011,9 @@ elif page == "Collections":
                             # Remaining Balance (Outstanding / Credit Balance) is the Total Due value from DB.
                             # UI shouldn't calculate this dynamically via repayments.
                             total_due_val = float(loan_row.get('Total Due', loan_row.get('Loan Amount', 0.0)))
-                            rem_bal = total_due_val
+                            
+                            total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
+                            rem_bal = max(0.0, total_due_val - total_paid)
                             
                             loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
                             

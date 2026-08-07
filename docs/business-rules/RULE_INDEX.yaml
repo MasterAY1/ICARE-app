@@ -1,0 +1,471 @@
+# ICARE Business Rule Index
+# Machine-readable cross-reference of all business rules
+# Generated from codebase analysis on 2026-08-07
+
+rules:
+  # ═══════════════════════════════════════════
+  # PRODUCT RULES
+  # ═══════════════════════════════════════════
+  - id: BR-PROD-001
+    name: "Daily 60 Days Finance Product"
+    category: PRODUCT
+    status: CONFIRMED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans, loan_products, loan_schedule]
+    affected_workflows: [Loan Origination, Collections, CO Cashbook]
+    implementation_locations:
+      - config/constants.py
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-002
+    name: "Daily 120 Days Finance Product"
+    category: PRODUCT
+    status: CONFIRMED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans, loan_products, loan_schedule]
+    affected_workflows: [Loan Origination, Collections, CO Cashbook]
+    implementation_locations:
+      - config/constants.py
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-003
+    name: "Weekly 12W Finance Product"
+    category: PRODUCT
+    status: CONFIRMED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans, loan_products, loan_schedule]
+    affected_workflows: [Loan Origination, Collections, CO Cashbook]
+    implementation_locations:
+      - config/constants.py
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-004
+    name: "Weekly 24W Finance Product"
+    category: PRODUCT
+    status: CONFIRMED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans, loan_products, loan_schedule]
+    affected_workflows: [Loan Origination, Collections, CO Cashbook]
+    implementation_locations:
+      - config/constants.py
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-005
+    name: "Monthly 3M Finance Product"
+    category: PRODUCT
+    status: CONFIRMED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans, loan_products, loan_schedule]
+    affected_workflows: [Loan Origination, Collections, CO Cashbook]
+    implementation_locations:
+      - config/constants.py
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-006
+    name: "Monthly 6M Finance Product"
+    category: PRODUCT
+    status: CONFIRMED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans, loan_products, loan_schedule]
+    affected_workflows: [Loan Origination, Collections, CO Cashbook]
+    implementation_locations:
+      - config/constants.py
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-007
+    name: "60-Day Asset Product"
+    category: PRODUCT
+    status: CONFIRMED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans, loan_products, loan_schedule]
+    affected_workflows: [Loan Origination, Collections, CO Cashbook]
+    implementation_locations:
+      - config/constants.py
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-008
+    name: "120-Day Asset Product"
+    category: PRODUCT
+    status: CONFIRMED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans, loan_products, loan_schedule]
+    affected_workflows: [Loan Origination, Collections, CO Cashbook]
+    implementation_locations:
+      - config/constants.py
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-009
+    name: "Weekly 12W Asset Product"
+    category: PRODUCT
+    status: CONFIRMED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans, loan_products, loan_schedule]
+    affected_workflows: [Loan Origination, Collections, CO Cashbook]
+    implementation_locations:
+      - config/constants.py
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-010
+    name: "Weekly 24W Asset Product"
+    category: PRODUCT
+    status: CONFIRMED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans, loan_products, loan_schedule]
+    affected_workflows: [Loan Origination, Collections, CO Cashbook]
+    implementation_locations:
+      - config/constants.py
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-011
+    name: "Monthly 3M Asset Product"
+    category: PRODUCT
+    status: CONFIRMED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans, loan_products, loan_schedule]
+    affected_workflows: [Loan Origination, Collections, CO Cashbook]
+    implementation_locations:
+      - config/constants.py
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-012
+    name: "Monthly 6M Asset Product"
+    category: PRODUCT
+    status: CONFIRMED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans, loan_products, loan_schedule]
+    affected_workflows: [Loan Origination, Collections, CO Cashbook]
+    implementation_locations:
+      - config/constants.py
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-013
+    name: "Cash and Carry Product"
+    category: PRODUCT
+    status: CONFIRMED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans, loan_products]
+    affected_workflows: [Loan Origination]
+    implementation_locations:
+      - config/constants.py
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-CALC-001
+    name: "Markup and Contingency Split"
+    category: PRODUCT
+    status: IMPLEMENTATION-VERIFIED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans]
+    affected_workflows: [Loan Origination, Fee Posting]
+    implementation_locations:
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-CALC-002
+    name: "Gap Fee / Rounding Calculation"
+    category: PRODUCT
+    status: IMPLEMENTATION-VERIFIED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans]
+    affected_workflows: [Loan Origination]
+    implementation_locations:
+      - services/loan_product_engine.py
+    tests: []
+
+  - id: BR-PROD-CALC-003
+    name: "Active Credit Calculation"
+    category: PRODUCT
+    status: IMPLEMENTATION-VERIFIED
+    source_document: PRODUCT_RULES.md
+    affected_entities: [loans]
+    affected_workflows: [Loan Origination, Collections, Portfolio]
+    implementation_locations:
+      - services/loan_product_engine.py
+      - app.py
+    tests: []
+
+  # ═══════════════════════════════════════════
+  # LOAN RULES
+  # ═══════════════════════════════════════════
+  - id: BR-LOAN-001
+    name: "Loan Application Prerequisites"
+    category: LOAN
+    status: CONFIRMED
+    source_document: LOAN_RULES.md
+    affected_entities: [clients, guarantors, loans, loan_products]
+    affected_workflows: [Loan Origination]
+    implementation_locations: [app.py]
+    tests: []
+
+  - id: BR-LOAN-002
+    name: "Product-Driven Repayment"
+    category: LOAN
+    status: CONFIRMED
+    source_document: LOAN_RULES.md
+    affected_entities: [loans, loan_products, loan_schedule]
+    affected_workflows: [Loan Origination, Collections]
+    implementation_locations:
+      - services/loan_product_engine.py
+      - services/schedule_service.py
+    tests: []
+
+  - id: BR-LOAN-003
+    name: "Concurrent Loan Block"
+    category: LOAN
+    status: CONFIRMED
+    source_document: LOAN_RULES.md
+    affected_entities: [loans]
+    affected_workflows: [Loan Origination]
+    implementation_locations: [app.py]
+    tests: []
+
+  - id: BR-LOAN-006
+    name: "Branch Manager Approval"
+    category: LOAN
+    status: CONFIRMED
+    source_document: LOAN_RULES.md
+    affected_entities: [loans]
+    affected_workflows: [Loan Origination, Disbursement]
+    implementation_locations: [app.py]
+    tests: []
+
+  - id: BR-LOAN-012
+    name: "Loan Status Lifecycle"
+    category: LOAN
+    status: CONFIRMED
+    source_document: LOAN_RULES.md
+    affected_entities: [loans]
+    affected_workflows: [Loan Origination, Collections, Completion]
+    implementation_locations:
+      - domain/enums.py
+      - config/constants.py
+    tests: []
+
+  # ═══════════════════════════════════════════
+  # SAVINGS RULES
+  # ═══════════════════════════════════════════
+  - id: BR-SAV-001
+    name: "Four Savings Categories"
+    category: SAVINGS
+    status: CONFIRMED
+    source_document: SAVINGS_RULES.md
+    affected_entities: [individual_savings, group_savings, internal_savings, laps_savings]
+    affected_workflows: [Collections, Withdrawals, LAPS]
+    implementation_locations:
+      - services/savings_service.py
+      - database/repositories/savings_repository.py
+    tests:
+      - tests/test_collections_workflow.py
+
+  - id: BR-SAV-004
+    name: "LAPS Separation"
+    category: SAVINGS
+    status: CONFIRMED
+    source_document: SAVINGS_RULES.md
+    affected_entities: [laps_savings]
+    affected_workflows: [LAPS Transfer, LAPS Payout]
+    implementation_locations:
+      - services/savings_service.py
+    tests:
+      - tests/test_domain/test_withdrawal_domain_events.py
+
+  # ═══════════════════════════════════════════
+  # COLLECTION RULES
+  # ═══════════════════════════════════════════
+  - id: BR-COL-004
+    name: "Repayment Event Must Include loan_id"
+    category: COLLECTION
+    status: IMPLEMENTATION-VERIFIED
+    source_document: COLLECTION_RULES.md
+    affected_entities: [event_store, repayments, co_cashbooks]
+    affected_workflows: [Collections, CO Cashbook]
+    implementation_locations:
+      - services/repayment_service.py
+      - services/co_cashbook_projection_builder.py
+    tests: []
+
+  - id: BR-COL-006
+    name: "Emit Events for Extra Fees"
+    category: COLLECTION
+    status: IMPLEMENTATION-VERIFIED
+    source_document: COLLECTION_RULES.md
+    affected_entities: [event_store, co_cashbooks]
+    affected_workflows: [Collections, CO Cashbook]
+    implementation_locations:
+      - services/repayment_service.py
+    tests: []
+
+  # ═══════════════════════════════════════════
+  # CASHBOOK RULES
+  # ═══════════════════════════════════════════
+  - id: BR-CASH-001
+    name: "CO Cashbook is Operational"
+    category: CASHBOOK
+    status: CONFIRMED
+    source_document: CASHBOOK_RULES.md
+    affected_entities: [co_cashbooks]
+    affected_workflows: [CO Cashbook, EOD]
+    implementation_locations:
+      - services/co_cashbook_projection_builder.py
+    tests:
+      - tests/test_projection_validation.py
+
+  - id: BR-CASH-004
+    name: "Master Cashbook Aggregates CO Cashbooks"
+    category: CASHBOOK
+    status: CONFIRMED
+    source_document: CASHBOOK_RULES.md
+    affected_entities: [master_cashbook, co_cashbooks]
+    affected_workflows: [Master Cashbook, Branch Close]
+    implementation_locations:
+      - services/master_cashbook_projection_builder.py
+    tests:
+      - tests/test_projection_validation.py
+
+  - id: BR-CASH-009
+    name: "Repayment Classification by Product"
+    category: CASHBOOK
+    status: IMPLEMENTATION-VERIFIED
+    source_document: CASHBOOK_RULES.md
+    affected_entities: [co_cashbooks, loans, loan_products]
+    affected_workflows: [CO Cashbook]
+    implementation_locations:
+      - services/co_cashbook_projection_builder.py
+    tests: []
+
+  # ═══════════════════════════════════════════
+  # FEE RULES
+  # ═══════════════════════════════════════════
+  - id: BR-FEE-001
+    name: "Fee Categories"
+    category: FEE
+    status: CONFIRMED
+    source_document: FEE_RULES.md
+    affected_entities: [fees, repayments]
+    affected_workflows: [Collections, Loan Origination]
+    implementation_locations:
+      - services/repayment_service.py
+      - database/repositories/fee_repositories.py
+    tests: []
+
+  - id: BR-FEE-004
+    name: "Markup/Contingency Split"
+    category: FEE
+    status: IMPLEMENTATION-VERIFIED
+    source_document: FEE_RULES.md
+    affected_entities: [loans, fees]
+    affected_workflows: [Loan Origination]
+    implementation_locations:
+      - services/loan_product_engine.py
+    tests: []
+
+  # ═══════════════════════════════════════════
+  # RBAC RULES
+  # ═══════════════════════════════════════════
+  - id: BR-RBAC-001
+    name: "Organizational Hierarchy"
+    category: RBAC
+    status: CONFIRMED
+    source_document: ROLE_AND_PERMISSION_RULES.md
+    affected_entities: [app_users, roles, permissions]
+    affected_workflows: [All]
+    implementation_locations:
+      - config/roles.py
+      - auth/authorization.py
+      - services/rbac_scope_service.py
+    tests:
+      - tests/test_rbac_scope_service.py
+
+  - id: BR-RBAC-005
+    name: "Only BM/AM/Admin Can Approve Loans"
+    category: RBAC
+    status: CONFIRMED
+    source_document: ROLE_AND_PERMISSION_RULES.md
+    affected_entities: [loans]
+    affected_workflows: [Loan Origination]
+    implementation_locations:
+      - auth/authorization.py
+      - app.py
+    tests: []
+
+  # ═══════════════════════════════════════════
+  # DATA INTEGRITY RULES
+  # ═══════════════════════════════════════════
+  - id: BR-DATA-004
+    name: "Ledger Entries Must Balance"
+    category: DATA_INTEGRITY
+    status: IMPLEMENTATION-VERIFIED
+    source_document: DATA_INTEGRITY_RULES.md
+    affected_entities: [financial_ledger_entries, financial_transactions]
+    affected_workflows: [Financial Posting]
+    implementation_locations:
+      - database/repositories/ledger_repository.py
+    tests:
+      - tests/test_financial_integrity.py
+
+  - id: BR-DATA-005
+    name: "Ledger Immutability"
+    category: DATA_INTEGRITY
+    status: IMPLEMENTATION-VERIFIED
+    source_document: DATA_INTEGRITY_RULES.md
+    affected_entities: [financial_ledger_entries, financial_transactions]
+    affected_workflows: [Financial Posting]
+    implementation_locations:
+      - database/repositories/ledger_repository.py
+    tests:
+      - tests/test_audit_ledgers.py
+
+  # ═══════════════════════════════════════════
+  # BUSINESS DATE RULES
+  # ═══════════════════════════════════════════
+  - id: BR-BDATE-001
+    name: "Use ICARE Business Date"
+    category: BUSINESS_DATE
+    status: CONFIRMED
+    source_document: BUSINESS_DATE_RULES.md
+    affected_entities: [branches]
+    affected_workflows: [All financial operations]
+    implementation_locations:
+      - services/business_date_service.py
+    tests:
+      - tests/test_full_chain_runtime_integrity.py
+
+  # ═══════════════════════════════════════════
+  # REPORTING RULES
+  # ═══════════════════════════════════════════
+  - id: BR-RPT-006
+    name: "6-Way Financial Verification"
+    category: REPORTING
+    status: CONFIRMED
+    source_document: REPORTING_RULES.md
+    affected_entities: [co_cashbooks, master_cashbook, financial_ledger_entries]
+    affected_workflows: [Reconciliation]
+    implementation_locations:
+      - services/financial_reconciliation_service.py
+    tests:
+      - tests/test_reconciliation.py
+
+  # ═══════════════════════════════════════════
+  # WORKFLOW RULES
+  # ═══════════════════════════════════════════
+  - id: BR-WF-001
+    name: "Canonical Loan Workflow"
+    category: WORKFLOW
+    status: CONFIRMED
+    source_document: WORKFLOW_RULES.md
+    affected_entities: [clients, guarantors, loans, loan_schedule, repayments]
+    affected_workflows: [Loan Origination]
+    implementation_locations: [app.py, services/]
+    tests: []

@@ -34,14 +34,16 @@ class CoCashbookProjectionBuilder:
         # 2. Fetch ledger entries for this branch & officer on posting_date
         try:
             res_entries = uow.client.table("financial_ledger_entries") \
-                .select("*, financial_transactions!inner(event_id, posting_date, narration, reference, officer_id, event_store(event_type))") \
+                .select("*, financial_transactions!inner(event_id, posting_date, narration, reference, officer_id, event_store(event_type, payload))") \
                 .eq("branch_id", branch_id) \
                 .eq("financial_transactions.officer_id", officer_id) \
                 .eq("financial_transactions.posting_date", p_date_str) \
                 .execute()
             entries_list = res_entries.data or []
-        except Exception:
-            entries_list = []
+        except Exception as e:
+            print(f"Error fetching ledger entries for CO Cashbook: {e}")
+            raise e
+
 
         rep_daily = rep_12_weeks = rep_24_weeks = rep_monthly = 0.0
         savings_deposit = laps_reserve = 0.0
@@ -115,6 +117,11 @@ class CoCashbookProjectionBuilder:
                     if "passbook" in narr or "pass book" in narr: passbook += amount
                     elif "processing" in narr or "application" in narr: app_fee += amount
                     elif "contingency" in narr: contingency += amount
+                    elif "credit form damage" in narr: credit_form_damage += amount
+                    elif "credit form" in narr: credit_form += amount
+                    elif "bonus" in narr: bonus += amount
+                    elif "11%" in narr and "weekly" in narr: weekly_11_pct += amount
+                    elif "20%" in narr and "weekly" in narr: risk_premium_returns += amount
                     elif "20%" in narr or "markup_20" in narr or "120" in narr or "24" in narr or "6m" in narr or "6 month" in narr:
                         risk_premium_returns += amount
                     elif "11%" in narr or "markup_11" in narr or "3m" in narr or "3 month" in narr or "60" in narr:
@@ -173,6 +180,7 @@ class CoCashbookProjectionBuilder:
             "loan_received_finance": 0.0, # Removed from CO
             "daily_11_pct": daily_11_pct, # Profit Sales 11% Daily
             "weekly_11_pct": weekly_11_pct, # Profit Sales 11% Weekly
+            "risk_premium_returns": risk_premium_returns,
             "savings_adj_no": savings_adj_no,
             "savings_adj_amount": savings_adj_amount,
             "passbook": passbook,

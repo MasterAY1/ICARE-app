@@ -178,7 +178,7 @@ class ScheduleService:
         total_paid_so_far = 0.0
 
         for row in res.data:
-            due_date = datetime.strptime(row["due_date"], "%Y-%m-%d").date()
+            due_date = datetime.strptime(row["due_date"].split("T")[0], "%Y-%m-%d").date()
             if due_date <= evaluation_date:
                 total_due_so_far += float(row["total_due"] or 0)
             total_paid_so_far += float(row["paid_amount"] or 0)
