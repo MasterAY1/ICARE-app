@@ -8,26 +8,26 @@ class TreasuryService:
     @staticmethod
     def _resolve_branch_id(uow: SupabaseUnitOfWork, branch_name: str) -> str:
         if not branch_name:
-            return "1a3b5c7d-9e0f-4a2b-8c4d-6e8f0a2b4c6d"
+            raise ValueError("Branch name is required but was not provided.")
         try:
             res = uow.client.table("branches").select("branch_id").eq("name", branch_name).execute()
             if res.data:
                 return res.data[0]["branch_id"]
-        except Exception:
-            pass
-        return "1a3b5c7d-9e0f-4a2b-8c4d-6e8f0a2b4c6d"
+        except Exception as e:
+            raise ValueError(f"Failed to resolve branch '{branch_name}': {str(e)}")
+        raise ValueError(f"Branch '{branch_name}' not found.")
 
     @staticmethod
     def _resolve_officer_id(uow: SupabaseUnitOfWork, username: str) -> str:
         if not username:
-            return "00000000-0000-0000-0000-000000000000"
+            raise ValueError("Officer username is required but was not provided.")
         try:
             res = uow.client.table("app_users").select("id").eq("username", username).execute()
             if res.data:
                 return res.data[0]["id"]
-        except Exception:
-            pass
-        return "00000000-0000-0000-0000-000000000000"
+        except Exception as e:
+            raise ValueError(f"Failed to resolve officer '{username}': {str(e)}")
+        raise ValueError(f"Officer '{username}' not found.")
 
     @classmethod
     def post_treasury_transaction(cls, uow: SupabaseUnitOfWork, tx_type: str, amount: float, branch: str, officer: str, reference: str = None, remarks: str = None) -> str:
@@ -90,7 +90,9 @@ class TreasuryService:
                 "officer": officer,
                 "amount": amount,
                 "reference": reference or record_id,
-                "narration": remarks or f"Treasury {tx_type} transaction."
+                "narration": remarks or f"Treasury {tx_type} transaction.",
+                "transaction_type": tx_type,
+                "classification": event_type
             }
         )
         uow.event_store.append(event)

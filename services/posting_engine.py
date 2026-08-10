@@ -9,14 +9,14 @@ class FinancialPostingEngine:
     @staticmethod
     def _resolve_branch_id(uow: UnitOfWork, branch_name: str) -> str:
         if not branch_name:
-            return "1a3b5c7d-9e0f-4a2b-8c4d-6e8f0a2b4c6d"
+            raise ValueError("Branch name is required but was not provided.")
         try:
             res = uow.client.table("branches").select("branch_id").eq("name", branch_name).execute()
             if res.data:
                 return res.data[0]["branch_id"]
-        except Exception:
-            pass
-        return "1a3b5c7d-9e0f-4a2b-8c4d-6e8f0a2b4c6d"
+        except Exception as e:
+            raise ValueError(f"Failed to resolve branch '{branch_name}': {str(e)}")
+        raise ValueError(f"Branch '{branch_name}' not found.")
 
     @staticmethod
     def _resolve_officer_id(uow: UnitOfWork, username: str) -> Optional[str]:
@@ -26,24 +26,25 @@ class FinancialPostingEngine:
             res = uow.client.table("app_users").select("id").eq("username", username).execute()
             if res.data:
                 return res.data[0]["id"]
-        except Exception:
-            pass
-        return None
+        except Exception as e:
+            raise ValueError(f"Failed to resolve officer '{username}': {str(e)}")
+        raise ValueError(f"Officer '{username}' not found.")
 
     @classmethod
-    def post_event(cls, uow: UnitOfWork, event: DomainEvent) -> str:
-        # 1. Check Idempotency
-        if uow.event_store.is_processed(event.event_id, "posting_engine"):
-            try:
-                res = uow.client.table("financial_transactions").select("transaction_id").eq("event_id", event.event_id).execute()
-                if res.data:
-                    return res.data[0]["transaction_id"]
-            except Exception:
-                pass
-            return "ALREADY_POSTED"
+    def post_event(cls, uow: UnitOfWork, event: DomainEvent, defer_commit: bool = False):
+        # 1. Check Idempotency (Skip if deferring, as event is not in DB yet)
+        if not defer_commit:
+            if uow.event_store.is_processed(event.event_id, "posting_engine"):
+                try:
+                    res = uow.client.table("financial_transactions").select("transaction_id").eq("event_id", event.event_id).execute()
+                    if res.data:
+                        return res.data[0]["transaction_id"]
+                except Exception:
+                    pass
+                return "ALREADY_POSTED"
 
-        # 2. Mark Processing
-        uow.event_store.mark_processing(event.event_id, "posting_engine")
+            # 2. Mark Processing
+            uow.event_store.mark_processing(event.event_id, "posting_engine")
 
         try:
             # 3. Resolve Posting Rule
@@ -117,31 +118,66 @@ class FinancialPostingEngine:
             )
 
             # 6. Post double entry to ledger
-            print(f"[SAVINGS TRACE] Posting double entry event. ID: {event.event_id}, Type: {event.event_type}, Payload: {event.payload}")
-            tx_id = uow.ledger.create_transaction(tx, [debit, credit])
-            print(f"[SAVINGS TRACE] Ledger transaction created successfully! TxID: {tx_id}")
+            if defer_commit:
+                import uuid
+                tx_id = str(uuid.uuid4())
+                tx_data = {
+                    "transaction_id": tx_id,
+                    "posting_date": tx.posting_date.isoformat() if hasattr(tx.posting_date, "isoformat") else tx.posting_date,
+                    "branch_id": tx.branch_id,
+                    "officer_id": tx.officer_id,
+                    "narration": tx.narration,
+                    "reference": tx.reference,
+                    "status": tx.status,
+                    "reversal_of": tx.reversal_of,
+                    "currency_code": tx.currency_code
+                }
+                if tx.event_id:
+                    tx_data["event_id"] = tx.event_id
 
-            try:
-                # 7. Mark Completed
-                uow.event_store.mark_posted(event.event_id, "posting_engine")
-                print(f"[SAVINGS TRACE] Event marked posted in event_store: {event.event_id}")
+                entries_data = []
+                for e in [debit, credit]:
+                    entries_data.append({
+                        "branch_id": e.branch_id or tx.branch_id,
+                        "account_code": e.account_code,
+                        "side": e.side,
+                        "amount": float(e.amount),
+                        "aggregate_type": e.aggregate_type,
+                        "aggregate_id": e.aggregate_id
+                    })
 
-                # 8. Trigger Projection Updates
-                if not getattr(cls, 'defer_projections', False):
-                    uow.cashbook.rebuild_projection(branch_id, p_date)
-                    print(f"[SAVINGS TRACE] Cashbook projection rebuild completed for branch_id: {branch_id}")
-                else:
-                    print(f"[SAVINGS TRACE] Cashbook projection deferred for branch_id: {branch_id}")
-            except Exception as inner_ex:
-                # Rollback transaction posting from ledger
+                op = {
+                    "type": "post_financial_transaction",
+                    "table": "financial_transactions",
+                    "record": {
+                        "header_payload": tx_data,
+                        "entries_payload": entries_data
+                    }
+                }
+                return tx_id, op
+            else:
+                print(f"[SAVINGS TRACE] Posting double entry event. ID: {event.event_id}, Type: {event.event_type}, Payload: {event.payload}")
+                tx_id = uow.ledger.create_transaction(tx, [debit, credit])
+                print(f"[SAVINGS TRACE] Ledger transaction created successfully! TxID: {tx_id}")
+
                 try:
-                    uow.client.table("financial_ledger_entries").delete().eq("transaction_id", tx_id).execute()
-                    uow.client.table("financial_transactions").delete().eq("transaction_id", tx_id).execute()
-                except Exception:
-                    pass
-                raise inner_ex
+                    # 7. Mark Completed
+                    uow.event_store.mark_posted(event.event_id, "posting_engine")
+                    print(f"[SAVINGS TRACE] Event marked posted in event_store: {event.event_id}")
 
-            return tx_id
+                    # 8. Trigger Projection Updates
+                    if not getattr(cls, 'defer_projections', False):
+                        uow.cashbook.rebuild_projection(uow, branch_id, p_date)
+                        print(f"[SAVINGS TRACE] Cashbook projection rebuild completed for branch_id: {branch_id}")
+                    else:
+                        print(f"[SAVINGS TRACE] Cashbook projection deferred for branch_id: {branch_id}")
+                except Exception as inner_ex:
+                    # Ledger entries are immutable and must not be deleted.
+                    # Projection failure should be handled via retries/eventual consistency.
+                    print(f"[SAVINGS TRACE] Cashbook projection failed for TxID: {tx_id}. Ledger entries are retained. Error: {inner_ex}")
+                    raise inner_ex
+
+                return tx_id
 
         except Exception as e:
             uow.event_store.mark_failed(event.event_id, "posting_engine", str(e))
@@ -195,8 +231,8 @@ class FinancialPostingEngine:
         uow.client.table("financial_transactions").update({"status": "Reversed"}).eq("transaction_id", transaction_id).execute()
 
         # 7. Rebuild Cashbook projection
-        uow.cashbook.rebuild_projection(original_tx.branch_id, original_tx.posting_date)
+        uow.cashbook.rebuild_projection(uow, original_tx.branch_id, original_tx.posting_date)
         if original_tx.posting_date != reversing_tx.posting_date:
-            uow.cashbook.rebuild_projection(original_tx.branch_id, reversing_tx.posting_date)
+            uow.cashbook.rebuild_projection(uow, original_tx.branch_id, reversing_tx.posting_date)
 
         return reversal_id

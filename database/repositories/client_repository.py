@@ -26,7 +26,8 @@ class SupabaseClientRepository(BaseRepository[Client], ClientRepository):
     def search_by_name_or_code(self, query_str: str) -> List[Client]:
         if not query_str:
             return []
-        query = self.client.table(self.table_name).select(self.columns).or_(f"name.ilike.%{query_str}%,client_code.ilike.%{query_str}%")
+        safe_query = query_str.replace(",", "").replace('"', "")
+        query = self.client.table(self.table_name).select(self.columns).or_(f"name.ilike.%{safe_query}%,client_code.ilike.%{safe_query}%")
         res = self._execute(query)
         return [ClientMapper.to_domain(d) for d in res.data]
 
@@ -36,13 +37,8 @@ class SupabaseClientRepository(BaseRepository[Client], ClientRepository):
         return [ClientMapper.to_domain(d) for d in res.data]
 
     def get_next_member_sequence(self, group_id: str) -> int:
-        res = self.client.table("groups").select("current_member_sequence").eq("group_id", group_id).execute()
-        if not res.data:
-            raise ValueError(f"Group not found: {group_id}")
-        current_seq = res.data[0].get("current_member_sequence") or 0
-        next_seq = current_seq + 1
-        self.client.table("groups").update({"current_member_sequence": next_seq}).eq("group_id", group_id).execute()
-        return next_seq
+        res = self.client.rpc("increment_group_member_sequence", {"group_uuid": group_id}).execute()
+        return int(res.data) if res.data else 1
 
     def create(self, entity: Client) -> Client:
         if not entity.id:

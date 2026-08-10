@@ -38,22 +38,59 @@ class LoanService:
             if schedule:
                 loan.expected_end_date = schedule[-1]
                 
+        operations = []
+
         if not loan.id:
-            created_loan = uow.loans.create(loan)
-            loan.id = created_loan.id
+            loan.id = str(uuid.uuid4())
+            op_type = "insert"
         else:
-            uow.loans.update(loan)
+            op_type = "update_loan"
+
+        loan_record = uow.loans._prepare_db_data(loan)
+        if "loan_id" in loan_record and not loan_record["loan_id"]:
+            del loan_record["loan_id"]
+        if op_type == "insert" and "loan_id" not in loan_record:
+            loan_record["loan_id"] = loan.id
+
+        operations.append({
+            "type": op_type,
+            "table": "loans",
+            "record": loan_record
+        })
 
         # 4. Audit Log
-        uow.audit.log_action(
-            user=loan.credit_officer,
-            role="Credit Officer",
-            action="Loan Disbursed",
-            table_name="loans",
-            record_id=loan.id,
-            old_value=None,
-            new_value={"amount": loan.amount, "status": "Active", "reference_id": ref_id}
-        )
+        from database.repositories.audit_repository import resolve_officer_id, is_valid_uuid
+        user_id = resolve_officer_id(uow.client, loan.credit_officer)
+        rec_uuid = loan.id if loan.id and is_valid_uuid(loan.id) else None
+        operations.append({
+            "type": "insert",
+            "table": "audit_logs",
+            "record": {
+                "user_id": user_id,
+                "action": "Loan Disbursed",
+                "description": f"Role: Credit Officer. Old: None. New: {{'amount': {loan.amount}, 'status': 'Active', 'reference_id': '{ref_id}'}}",
+                "table_name": "loans",
+                "record_id": rec_uuid
+            }
+        })
+
+        def add_event(evt: DomainEvent):
+            operations.append({
+                "type": "insert",
+                "table": "event_store",
+                "record": {
+                    "event_id": evt.event_id,
+                    "aggregate_id": evt.aggregate_id,
+                    "aggregate_type": evt.aggregate_type,
+                    "event_type": evt.event_type,
+                    "version": evt.version,
+                    "payload": evt.payload,
+                    "metadata": evt.metadata,
+                    "status": "Posted"
+                }
+            })
+            tx_id, post_op = FinancialPostingEngine.post_event(uow, evt, defer_commit=True)
+            operations.append(post_op)
 
         # 5. Domain Event 1: LoanDisbursed
         event_disbursed = DomainEvent(
@@ -71,8 +108,7 @@ class LoanService:
                 "narration": f"Loan disbursement of {loan.amount:,.2f} for client {loan.client_name}"
             }
         )
-        uow.event_store.append(event_disbursed)
-        FinancialPostingEngine.post_event(uow, event_disbursed)
+        add_event(event_disbursed)
 
         # 6. Domain Event 2: Upfront Revenue (Markup & Contingency)
         markup_val = setup.get("markup", 0.0)
@@ -81,19 +117,27 @@ class LoanService:
         if markup_val > 0:
             rate = setup.get("rate", 0.12)
             prod_lower = (loan.product_type or "").lower()
-            # 11% Profit Sales: 60 Days, 12 Weeks, 3 Months (rate == 0.12)
-            # 20% Profit Sales: 120 Days, 24 Weeks, 6 Months (rate == 0.21)
             is_20_pct = (rate == 0.21) or "120" in prod_lower or "24" in prod_lower or "6m" in prod_lower or "6 month" in prod_lower
-            
             markup_class = TransactionClassification.MARKUP_20.value if is_20_pct else TransactionClassification.MARKUP_11.value
             
-            # Persist to specialized fee repository
             b_id = uow.markup_11._resolve_branch_id(loan.branch)
             o_id = uow.markup_11._resolve_officer_id(loan.credit_officer)
-            if is_20_pct:
-                uow.markup_20.create_fee_entry(branch_id=b_id, officer_id=o_id, amount=markup_val, client_id=loan.client_id, loan_id=loan.id, reference=ref_id, posting_date=b_date)
-            else:
-                uow.markup_11.create_fee_entry(branch_id=b_id, officer_id=o_id, amount=markup_val, client_id=loan.client_id, loan_id=loan.id, reference=ref_id, posting_date=b_date)
+            fee_table = "markup_20_transactions" if is_20_pct else "markup_11_transactions"
+
+            operations.append({
+                "type": "insert",
+                "table": fee_table,
+                "record": {
+                    "fee_id": str(uuid.uuid4()),
+                    "branch_id": b_id,
+                    "officer_id": o_id,
+                    "client_id": loan.client_id,
+                    "loan_id": loan.id,
+                    "reference": ref_id,
+                    "amount": float(markup_val),
+                    "posting_date": b_date.isoformat()
+                }
+            })
 
             event_markup = DomainEvent(
                 event_id=str(uuid.uuid4()),
@@ -110,8 +154,7 @@ class LoanService:
                     "narration": f"Upfront Markup Charged ({'20%' if is_20_pct else '11%'}) ({loan.product_type}) for client {loan.client_name}"
                 }
             )
-            uow.event_store.append(event_markup)
-            FinancialPostingEngine.post_event(uow, event_markup)
+            add_event(event_markup)
 
         if cont_val > 0:
             event_cont = DomainEvent(
@@ -129,8 +172,7 @@ class LoanService:
                     "narration": f"Upfront Contingency Fee Charged for client {loan.client_name}"
                 }
             )
-            uow.event_store.append(event_cont)
-            FinancialPostingEngine.post_event(uow, event_cont)
+            add_event(event_cont)
 
         # 7. Domain Event 3: Upfront Savings Deduction / Base Savings
         gap_fee = setup.get("gap_fee", 0.0)
@@ -150,7 +192,16 @@ class LoanService:
                     "narration": f"Upfront Gap Fee Base Savings for client {loan.client_name}"
                 }
             )
-            uow.event_store.append(event_gap)
-            FinancialPostingEngine.post_event(uow, event_gap)
+            add_event(event_gap)
+
+        # Execute all accumulated operations atomically
+        uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
+
+        # Rebuild projection
+        try:
+            b_id = uow.loans._resolve_branch_id(loan.branch)
+            uow.cashbook.rebuild_projection(uow, b_id, b_date)
+        except Exception as ex:
+            print(f"[SAVINGS TRACE] Deferred cashbook rebuild failed: {ex}")
 
         return loan

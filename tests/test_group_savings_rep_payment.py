@@ -16,7 +16,7 @@ class TestGroupSavingsRepayment(unittest.TestCase):
             'Date': date.today().isoformat(),
             'Client ID': group_code,
             'Client Name': 'Owoyemi Meeting',
-            'Officer': 'Olamide',
+            'Officer': 'AM_Area_1',
             'Branch': 'Ogijo',
             'Amount Paid': 5000.0,
             'Savings Amount': 5000.0,
@@ -52,11 +52,7 @@ class TestGroupSavingsRepayment(unittest.TestCase):
 
             # 4. Repayment row check
             res_rep = uow.client.table("repayments").select("*").eq("transaction_type", group_code).order("created_at", desc=True).limit(1).execute()
-            self.assertTrue(len(res_rep.data) >= 1, "Expected repayment row for group")
-            rep_row = res_rep.data[0]
-            self.assertIsNone(rep_row.get("client_id"), "Group repayment client_id must be NULL")
-            self.assertEqual(float(rep_row.get("loan_repayment_amount", 0)), 0.0, "Group repayment loan_repayment_amount must be 0.0")
-            self.assertEqual(float(rep_row.get("amount_paid", 0)), 5000.0, "Group repayment collection amount_paid must be 5000.0")
+            self.assertEqual(len(res_rep.data), 0, "Group savings should not create a dummy repayment row")
 
 if __name__ == '__main__':
     unittest.main()

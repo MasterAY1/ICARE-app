@@ -59,36 +59,59 @@ class MasterCashbookProjectionBuilder:
             for field in numeric_fields:
                 totals[field] += float(row.get(field) or 0.0)
 
-        # 4. Fetch Branch Treasury Activities for the date
+        # 4. Fetch Branch Treasury Activities and Loan Disbursements from Ledger
         try:
-            res_t = uow.client.table("treasury_transactions").select("*").eq("branch_id", branch_id).execute()
-            start_ts = f"{p_date_str}T00:00:00"
-            end_ts = f"{p_date_str}T23:59:59"
-            t_rows = [r for r in (res_t.data or []) if start_ts <= str(r.get("created_at", "")) <= end_ts]
-            for t in t_rows:
-                ttype = t.get("transaction_type", "")
-                amt = float(t.get("amount") or 0.0)
-                if ttype == "HO_TRANSFER_IN": totals["funds_received_ho"] += amt
-                elif ttype == "HO_TRANSFER_OUT": totals["fund_transferred_ho"] += amt
-                elif ttype == "BRANCH_TRANSFER_IN": totals["funds_received_other_branch"] += amt
-                elif ttype == "BRANCH_TRANSFER_OUT": totals["fund_transferred_other_branch"] += amt
-                elif ttype == "OFFICE_EXPENSE": totals["office_expenses"] += amt
-                elif ttype == "STAFF_SALARY": totals["staff_salaries"] += amt
-        except Exception:
-            pass
-
-        # 5. Fetch Loan Disbursements for Asset & Finance pools on this date for the branch
-        try:
-            res_disb = uow.client.table("loans").select("amount, product_category, disbursement_date") \
-                .eq("branch_id", branch_id).eq("status", "Active").execute()
-            for d in (res_disb.data or []):
-                if str(d.get("disbursement_date") or "") == p_date_str:
-                    cat = d.get("product_category", "Finance")
-                    amt = float(d.get("amount") or 0.0)
-                    if cat == "Asset": totals["fund_to_asset_program"] += amt
-                    else: totals["fund_to_product_finance"] += amt
-        except Exception:
-            pass
+            # We fetch all ledger entries for the branch on this date that hit Account 1000 (Vault Cash)
+            # but ONLY for branch-level event types (treasury transfers, expenses, disbursements)
+            # CO-level events (repayments, fees) are already aggregated from the CO cashbooks.
+            res_ledger = uow.client.table("financial_ledger_entries") \
+                .select("*, financial_transactions!inner(event_store(event_type, payload))") \
+                .eq("branch_id", branch_id) \
+                .eq("account_code", "1000") \
+                .eq("financial_transactions.posting_date", p_date_str) \
+                .execute()
+            
+            for entry in (res_ledger.data or []):
+                amt = float(entry.get("amount") or 0.0)
+                side = entry.get("side")
+                tx = entry.get("financial_transactions") or {}
+                ev_store = tx.get("event_store") or {}
+                event_type = ev_store.get("event_type")
+                payload = ev_store.get("payload") or {}
+                
+                # Branch Inflows (Debit 1000)
+                if side == "Debit":
+                    if event_type == "CashTransferred_HO_In":
+                        # Could be inter-branch or HO, check payload classification/transaction_type
+                        tx_type = payload.get("transaction_type")
+                        if tx_type == "INTER_BRANCH_IN":
+                            totals["funds_received_other_branch"] += amt
+                        else:
+                            totals["funds_received_ho"] += amt
+                            
+                # Branch Outflows (Credit 1000)
+                elif side == "Credit":
+                    if event_type == "CashTransferred_HO_Out":
+                        tx_type = payload.get("transaction_type")
+                        if tx_type == "INTER_BRANCH_OUT":
+                            totals["fund_transferred_other_branch"] += amt
+                        else:
+                            totals["fund_transferred_ho"] += amt
+                    elif event_type == "ExpenseRecorded":
+                        totals["office_expenses"] += amt
+                    elif event_type == "SalaryPaid":
+                        totals["staff_salaries"] += amt
+                    elif event_type == "LoanDisbursed":
+                        # Deduce pool from payload (default to Finance if unspecified)
+                        prod_cat = "Finance"
+                        if "Asset" in str(payload.get("narration", "")):
+                            prod_cat = "Asset"
+                        if prod_cat == "Asset":
+                            totals["fund_to_asset_program"] += amt
+                        else:
+                            totals["fund_to_product_finance"] += amt
+        except Exception as e:
+            print(f"[SAVINGS TRACE] Master Cashbook failed to fetch branch ledger entries: {e}")
 
         # Corrected Master Cashbook Formulas (ICARE Business Rules)
         # Bank Withdrawal = Inflow (cash brought into operational position)

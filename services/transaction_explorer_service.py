@@ -12,7 +12,7 @@ from services.audit_enricher_service import AuditEnricher
 class TransactionExplorerService:
 
     @staticmethod
-    def explore_transaction(uow: UnitOfWork, search_query: str) -> Dict[str, Any]:
+    def explore_transaction(uow: UnitOfWork, search_query: str, branch_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Universal 360-degree transaction search by Client Code / Client Name / Officer / Ref / ID.
         Searches:
@@ -45,7 +45,9 @@ class TransactionExplorerService:
 
         # 1. Search Repayments
         try:
-            res_rep = uow.client.table("repayments").select("*").execute()
+            q_rep = uow.client.table("repayments").select("*")
+            if branch_id: q_rep = q_rep.eq("branch_id", branch_id)
+            res_rep = q_rep.execute()
             all_rep = enricher.enrich_repayment_records(res_rep.data or [])
             matching_rep = [
                 r for r in all_rep
@@ -62,7 +64,9 @@ class TransactionExplorerService:
 
         # 2. Search Fees
         try:
-            res_fee = uow.client.table("fees").select("*").execute()
+            q_fee = uow.client.table("fees").select("*")
+            if branch_id: q_fee = q_fee.eq("branch_id", branch_id)
+            res_fee = q_fee.execute()
             all_fees = enricher.enrich_fee_records(res_fee.data or [])
             matching_fees = [
                 f for f in all_fees
@@ -79,7 +83,9 @@ class TransactionExplorerService:
 
         # 3. Search Treasury Transactions
         try:
-            res_tr = uow.client.table("treasury_transactions").select("*").execute()
+            q_tr = uow.client.table("treasury_transactions").select("*")
+            if branch_id: q_tr = q_tr.eq("branch_id", branch_id)
+            res_tr = q_tr.execute()
             all_tr = enricher.enrich_treasury_records(res_tr.data or [])
             matching_tr = [
                 t for t in all_tr
@@ -95,7 +101,10 @@ class TransactionExplorerService:
 
         # 4. Search Savings
         try:
-            res_sav = uow.client.table("individual_savings").select("*").execute()
+            q_sav = uow.client.table("individual_savings").select("*")
+            # individual_savings might not have branch_id directly, but if it does:
+            # if branch_id: q_sav = q_sav.eq("branch_id", branch_id)
+            res_sav = q_sav.execute()
             all_sav = enricher.enrich_savings_records(res_sav.data or [])
             matching_sav = [
                 s for s in all_sav
@@ -110,7 +119,9 @@ class TransactionExplorerService:
 
         # 5. Search Loans
         try:
-            res_ln = uow.client.table("loans").select("*").execute()
+            q_ln = uow.client.table("loans").select("*")
+            if branch_id: q_ln = q_ln.eq("branch_id", branch_id)
+            res_ln = q_ln.execute()
             all_ln = enricher.enrich_loan_records(res_ln.data or [])
             matching_ln = [
                 l for l in all_ln
@@ -127,7 +138,9 @@ class TransactionExplorerService:
 
         # 6. Search Ledger Transactions
         try:
-            res_tx = uow.client.table("financial_transactions").select("*, financial_ledger_entries(*)").execute()
+            q_tx = uow.client.table("financial_transactions").select("*, financial_ledger_entries(*)")
+            if branch_id: q_tx = q_tx.eq("branch_id", branch_id)
+            res_tx = q_tx.execute()
             matching_tx = [
                 tx for tx in (res_tx.data or [])
                 if q.lower() in str(tx.get("transaction_id", "")).lower()
@@ -140,7 +153,9 @@ class TransactionExplorerService:
 
         # 7. Search User Audit Logs
         try:
-            res_al = uow.client.table("user_audit_logs").select("*").execute()
+            q_al = uow.client.table("user_audit_logs").select("*")
+            if branch_id: q_al = q_al.eq("branch_id", branch_id)
+            res_al = q_al.execute()
             matching_al = [
                 al for al in (res_al.data or [])
                 if q.lower() in str(al.get("action", "")).lower()

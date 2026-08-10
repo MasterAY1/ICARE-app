@@ -14,18 +14,18 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
 
     def _resolve_branch_id(self, branch_name: str) -> str:
         if not branch_name:
-            return "1a3b5c7d-9e0f-4a2b-8c4d-6e8f0a2b4c6d"
+            raise ValueError("Branch name cannot be empty when resolving branch_id")
         try:
             res = self.client.table("branches").select("branch_id").eq("name", branch_name).execute()
             if res.data:
                 return res.data[0]["branch_id"]
-        except Exception:
-            pass
-        return "1a3b5c7d-9e0f-4a2b-8c4d-6e8f0a2b4c6d" # Lagos fallback
+        except Exception as e:
+            raise ValueError(f"Failed to resolve branch_id for {branch_name}: {str(e)}")
+        raise ValueError(f"Branch '{branch_name}' not found")
 
     def _resolve_officer_id(self, username: str) -> str:
         if not username:
-            return "00000000-0000-0000-0000-000000000000"
+            raise ValueError("Username cannot be empty when resolving officer_id")
         try:
             res = self.client.table("app_users").select("id").eq("username", username).execute()
             if res.data:
@@ -33,9 +33,9 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
             res_full = self.client.table("app_users").select("id").eq("full_name", username).execute()
             if res_full.data:
                 return res_full.data[0]["id"]
-        except Exception:
-            pass
-        return "00000000-0000-0000-0000-000000000000" # admin fallback
+        except Exception as e:
+            raise ValueError(f"Failed to resolve officer_id for {username}: {str(e)}")
+        raise ValueError(f"Officer '{username}' not found")
 
     def _resolve_loan_id(self, client_id: str) -> Optional[str]:
         if not client_id:

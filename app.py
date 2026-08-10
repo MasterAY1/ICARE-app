@@ -1684,45 +1684,10 @@ def get_ledger_report(client_payments, fixed_repay, loan_product, meeting_day, v
     return pd.DataFrame(report_data)
 
 # --- 4. AUTHENTICATION ---
-# Session persistence via query_params (replaces flaky JS iframe cookies)
-# st.query_params survives page refreshes on Streamlit Cloud natively.
 
-def _set_auth_token(username):
-    """Persist auth token in URL query params (survives refresh)."""
-    st.query_params["auth"] = username
-
-def _delete_auth_token():
-    """Clear auth token from query params."""
-    if "auth" in st.query_params:
-        del st.query_params["auth"]
-
-def _read_auth_token():
-    """Read auth token from query params."""
-    return st.query_params.get("auth", None)
-
-# Try to restore session from persisted token
-if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
-    if st.session_state.get('logout_in_progress'):
-        auth_token = None
-    else:
-        auth_token = _read_auth_token()
-        
-    if auth_token:
-        try:
-            with SupabaseUnitOfWork() as uow:
-                user = uow.users.find_by_username(auth_token)
-            if user:
-                st.session_state['logged_in'] = True
-                st.session_state['user'] = user.username
-                st.session_state['role'] = user.role
-                st.session_state['branch'] = user.branch_name
-            else:
-                st.session_state['logged_in'] = False
-                _delete_auth_token()
-        except:
-            st.session_state['logged_in'] = False
-    else:
-        st.session_state['logged_in'] = False
+# If not logged in, ensure state is set to False
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
 
 # --- ROUTING ---
 from navigation.router import route_app
@@ -1804,9 +1769,9 @@ with st.sidebar:
     def _sync_nav():
         st.session_state["Navigation"] = st.session_state["nav_radio"]
 
-    nav_index = nav_options.index(st.session_state["Navigation"]) if st.session_state["Navigation"] in nav_options else 0
+    nav_index = nav_options.index(st.session_state.get("Navigation")) if st.session_state.get("Navigation") in nav_options else 0
     page = st.radio("Navigation", nav_options, index=nav_index, key="nav_radio", label_visibility="collapsed", on_change=_sync_nav)
-    page = st.session_state["Navigation"]
+    page = st.session_state.get("Navigation", nav_options[0])
 
     # Route Security Guard
     if not RBACScopeService.is_page_permitted(scope.role, page):
@@ -3993,9 +3958,7 @@ elif page == "Collections":
                             act_cred = float(loan_row.get('Active Credit', 0))
                             
                             # As requested: Active Credit is the static value from DB (Principal - Gap).
-                            # Remaining Balance (Outstanding / Credit Balance) is the Total Due value from DB.
-                            # UI shouldn't calculate this dynamically via repayments.
-                            total_due_val = float(loan_row.get('Total Due', loan_row.get('Loan Amount', 0.0)))
+                            # Remaining Balance (Outstanding / Credit Balance) is (Active Credit - Total Paid).
                             
                             # Only fetch schedule if we have a valid loan UUID
                             if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
@@ -4005,7 +3968,7 @@ elif page == "Collections":
                             else:
                                 active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
                                 
-                            rem_bal = max(0.0, total_due_val - active_loan_total_paid)
+                            rem_bal = max(0.0, act_cred - active_loan_total_paid)
                             
                             loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
                             
@@ -4045,7 +4008,7 @@ elif page == "Collections":
                         # Pack member details expected by UI
                         member_dict = member.to_dict()
                         member_dict.update({
-                            "Active Credit": act_cred,
+                            "Active Credit": rem_bal,
                             "Loan Repay": expected_rep_schedule,
                             "Loan Product": loan_prod_val,
                             "Start Date": start_date_val
@@ -4849,7 +4812,7 @@ elif page == "Daily Report":
                     s_amt = client_savings_map.get(cid, 0.0)
                     l_amt = pd.to_numeric(c_payments['Loan Repayment Amount'], errors='coerce').fillna(0).sum()
                     acc_savings = s_amt
-                    loan_bal = c_loan['Active Credit'] - l_amt
+                    loan_bal = max(0.0, float(c_loan.get('Active Credit', 0.0)) - l_amt)
                     
                 detailed_data.append({
                     "Client ID": cid,
@@ -5254,8 +5217,8 @@ elif page == "Dashboard":
         c_payments = all_repayments[all_repayments['Client ID'] == cid] if not all_repayments.empty else pd.DataFrame()
         s_amt = client_savings_map.get(cid, 0.0)
         
-        loan_bal = float(loan.get('Active Credit', 0.0))
-        l_amt = max(0.0, float(loan.get('Total Due', 0.0)) - loan_bal)
+        total_paid_for_loan = pd.to_numeric(c_payments['Loan Repayment Amount'], errors='coerce').fillna(0).sum() if not c_payments.empty else 0.0
+        loan_bal = max(0.0, float(loan.get('Active Credit', 0.0)) - total_paid_for_loan)
         orig_principal = float(loan.get('Loan Amount', 0.0))
         disb_date_str = str(loan.get('Disbursement Date') or loan.get('Date') or "")
 

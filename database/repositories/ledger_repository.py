@@ -19,8 +19,7 @@ class SupabaseLedgerRepository(BaseRepository[LedgerEntry], LedgerRepository):
 
         # Create financial transaction header
         tx_data = {
-            "event_id": tx.event_id,
-            "posting_date": tx.posting_date.isoformat() if isinstance(tx.posting_date, (date)) else tx.posting_date,
+            "posting_date": tx.posting_date.isoformat() if hasattr(tx.posting_date, "isoformat") else tx.posting_date,
             "branch_id": tx.branch_id,
             "officer_id": tx.officer_id,
             "narration": tx.narration,
@@ -31,33 +30,33 @@ class SupabaseLedgerRepository(BaseRepository[LedgerEntry], LedgerRepository):
         }
         if tx.transaction_id:
             tx_data["transaction_id"] = tx.transaction_id
-            
-        res_tx = self.client.table("financial_transactions").insert(tx_data).execute()
-        if not res_tx.data:
-            raise RepositoryError("Failed to insert financial transaction header")
-        
-        created_tx_id = res_tx.data[0]["transaction_id"]
+        if tx.event_id:
+            tx_data["event_id"] = tx.event_id
 
-        # Create ledger entry rows
+        # Prepare entries payload
         entries_data = []
         for e in entries:
             entries_data.append({
-                "transaction_id": created_tx_id,
                 "branch_id": e.branch_id or tx.branch_id,
                 "account_code": e.account_code,
                 "side": e.side,
-                "amount": e.amount,
+                "amount": float(e.amount),
                 "aggregate_type": e.aggregate_type,
                 "aggregate_id": e.aggregate_id
             })
-            
-        res_entries = self.client.table(self.table_name).insert(entries_data).execute()
-        if not res_entries.data:
-            # Clean up header in case entries failed
-            self.client.table("financial_transactions").delete().eq("transaction_id", created_tx_id).execute()
-            raise RepositoryError("Failed to insert financial ledger entries")
 
-        return created_tx_id
+        payload = {
+            "header_payload": tx_data,
+            "entries_payload": entries_data
+        }
+
+        try:
+            res = self.client.rpc("post_financial_transaction", payload).execute()
+            if not res.data:
+                raise RepositoryError("Failed to execute atomic financial posting RPC")
+            return res.data
+        except Exception as ex:
+            raise RepositoryError(f"Atomic financial posting failed: {str(ex)}")
 
     def get_ledger_entries(self, branch_id: Optional[str] = None, account_code: Optional[str] = None) -> List[LedgerEntry]:
         query = self.client.table(self.table_name).select("*")

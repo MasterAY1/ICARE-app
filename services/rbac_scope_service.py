@@ -29,7 +29,7 @@ class RBACScopeService:
     ROLE_NAVIGATION = {
         "CO": [
             "Dashboard", "Loan Origination", "Collections", "Withdrawal Operations", "Portfolio",
-            "Audit Ledger", "CO Cashbook"
+            "CO Cashbook"
         ],
         "Branch Manager": [
             "Dashboard", "Portfolio", "Loan Origination", "Collections", "Withdrawal Operations",

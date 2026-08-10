@@ -41,7 +41,7 @@ class TestLAPSMigrationService(unittest.TestCase):
                 "client_id": "cli-101",
                 "client_name": "Adeola Adeleke",
                 "branch": "Ogijo",
-                "officer": "Olamide",
+                "officer": "AM_Area_1",
                 "amount": 25000.0,
                 "owner_known": True,
                 "remarks": "Historical LAPS balance"
@@ -50,7 +50,7 @@ class TestLAPSMigrationService(unittest.TestCase):
                 "client_id": "cli-102",
                 "client_name": "Bisi Akande",
                 "branch": "Ogijo",
-                "officer": "Olamide",
+                "officer": "AM_Area_1",
                 "amount": 15000.0,
                 "owner_known": "Yes",
                 "remarks": "Historical LAPS balance"

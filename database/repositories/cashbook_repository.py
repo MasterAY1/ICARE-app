@@ -15,14 +15,14 @@ class SupabaseCashbookRepository(BaseRepository[CashbookEntry], CashbookReposito
 
     def _resolve_branch_id(self, branch_name: str) -> str:
         if not branch_name:
-            return "1a3b5c7d-9e0f-4a2b-8c4d-6e8f0a2b4c6d"
+            raise ValueError("Branch name cannot be empty when resolving branch_id")
         try:
             res = self.client.table("branches").select("branch_id").eq("name", branch_name).execute()
             if res.data:
                 return res.data[0]["branch_id"]
-        except Exception:
-            pass
-        return "1a3b5c7d-9e0f-4a2b-8c4d-6e8f0a2b4c6d" # Lagos fallback
+        except Exception as e:
+            raise ValueError(f"Failed to resolve branch_id for {branch_name}: {str(e)}")
+        raise ValueError(f"Branch '{branch_name}' not found")
 
     def _resolve_branch_id_by_filter(self, branch: Optional[str]) -> Optional[str]:
         if not branch:
@@ -68,34 +68,31 @@ class SupabaseCashbookRepository(BaseRepository[CashbookEntry], CashbookReposito
         res = self._execute(query)
         return [CashbookMapper.to_domain(d) for d in res.data]
 
-    def rebuild_projection(self, branch_id: str, posting_date, officer_id: str = None) -> None:
+    def rebuild_projection(self, uow, branch_id: str, posting_date, officer_id: str = None) -> None:
         if isinstance(posting_date, str):
             posting_date = date.fromisoformat(posting_date)
 
         from services.co_cashbook_projection_builder import CoCashbookProjectionBuilder
         from services.master_cashbook_projection_builder import MasterCashbookProjectionBuilder
-        from database.repositories.unit_of_work import SupabaseUnitOfWork
 
-        # Create temporary UOW wrapper for queries
-        with SupabaseUnitOfWork() as uow:
-            # 1. Resolve officer IDs for the branch
-            officers = []
-            if officer_id:
-                officers.append(officer_id)
-            else:
-                try:
-                    res_u = uow.client.table("app_users").select("id").eq("branch_id", branch_id).execute()
-                    if res_u.data:
-                        officers = [u["id"] for u in res_u.data if u.get("id")]
-                except Exception:
-                    pass
+        # 1. Resolve officer IDs for the branch
+        officers = []
+        if officer_id:
+            officers.append(officer_id)
+        else:
+            try:
+                res_u = uow.client.table("app_users").select("id").eq("branch_id", branch_id).execute()
+                if res_u.data:
+                    officers = [u["id"] for u in res_u.data if u.get("id")]
+            except Exception:
+                pass
 
-            # 2. Rebuild CO projections for each officer
-            for o_id in officers:
-                CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, o_id, posting_date)
+        # 2. Rebuild CO projections for each officer
+        for o_id in officers:
+            CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, o_id, posting_date)
 
-            # 3. Aggregate Master Cashbook projection
-            MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, posting_date)
+        # 3. Aggregate Master Cashbook projection
+        MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, posting_date)
 
     def _prepare_db_data(self, entity: CashbookEntry) -> dict:
         data = CashbookMapper.to_database(entity)

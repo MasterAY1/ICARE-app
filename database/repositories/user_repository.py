@@ -114,9 +114,9 @@ class SupabaseUserRepository(BaseRepository[User], UserRepository):
             res = self.client.table("branches").select("branch_id").eq("name", branch_name).execute()
             if res.data:
                 return res.data[0]["branch_id"]
-        except Exception:
-            pass
-        return "1a3b5c7d-9e0f-4a2b-8c4d-6e8f0a2b4c6d" # Lagos fallback
+        except Exception as e:
+            raise ValueError(f"Failed to resolve branch_id for {branch_name}: {str(e)}")
+        raise ValueError(f"Branch '{branch_name}' not found")
 
     def _upsert_user_role(self, user_id: str, role_name: str) -> None:
         role_map = {

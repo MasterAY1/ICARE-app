@@ -20,7 +20,7 @@ class TestCollectionEdit(unittest.TestCase):
             'Date': today_str,
             'Client ID': client_code,
             'Client Name': 'Alimi Fatimoh',
-            'Officer': 'Olamide',
+            'Officer': 'AM_Area_1',
             'Branch': 'Ogijo',
             'Amount Paid': 2000.0,
             'Savings Amount': 0.0,
@@ -43,7 +43,7 @@ class TestCollectionEdit(unittest.TestCase):
                 'Date': today_str,
                 'Client ID': client_code,
                 'Client Name': 'Alimi Fatimoh',
-                'Officer': 'Olamide',
+                'Officer': 'AM_Area_1',
                 'Branch': 'Ogijo',
                 'Amount Paid': 2500.0,
                 'Savings Amount': 0.0,
@@ -65,7 +65,7 @@ class TestCollectionEdit(unittest.TestCase):
                 'recovery_amount': 0.0,
                 'transaction_type': 'Collection',
                 'branch': 'Ogijo',
-                'officer': 'Olamide'
+                'officer': 'AM_Area_1'
             }
             rep_obj = RepaymentMapper.to_domain(db_data)
             uow.repayments.update(rep_obj)
