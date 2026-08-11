@@ -86,7 +86,7 @@ class LoanService:
                     "version": evt.version,
                     "payload": evt.payload,
                     "metadata": evt.metadata,
-                    "status": "Posted"
+                    "status": "Completed"
                 }
             })
             tx_id, post_op = FinancialPostingEngine.post_event(uow, evt, defer_commit=True)
