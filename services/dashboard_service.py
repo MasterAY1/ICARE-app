@@ -423,13 +423,15 @@ class DashboardService:
         except Exception:
             total_active_clients = 0
 
+        par_val = cls.calculate_par_pct(uow, branch_id)
+
         return {
             "branch_summary": {
                 "active_clients": total_active_clients,
                 "active_loans": total_active_clients,
                 "active_savings": active_savings,
                 "collection_today": summary.get("total_collected", 0.0),
-                "par": "0.0%"
+                "par": par_val
             },
             "officer_collection_status": officer_df,
             "branch_cash_position": cash_position,
@@ -440,8 +442,47 @@ class DashboardService:
             ]
         }
 
-    @staticmethod
+    @classmethod
+    def calculate_par_pct(cls, uow: UnitOfWork, branch_id: Optional[str] = None) -> str:
+        """
+        Calculates dynamic Portfolio at Risk (PAR%) per BR-DASH-004:
+        PAR% = (Total Overdue / Total Active Credit) * 100
+        """
+        try:
+            q = uow.client.table("loans").select("loan_id, active_credit").eq("status", "Active")
+            if branch_id and branch_id != "All":
+                q = q.eq("branch_id", branch_id)
+            res = q.execute()
+            loans_data = res.data or []
+            if not loans_data:
+                return "0.0%"
+            
+            total_active_credit = sum(float(l.get("active_credit") or 0.0) for l in loans_data)
+            if total_active_credit <= 0:
+                return "0.0%"
+
+            active_loan_ids = [l["loan_id"] for l in loans_data]
+            today_str = date.today().isoformat()
+            total_overdue = 0.0
+
+            # Bulk query overdue schedule items for all active loans
+            overdue_res = uow.client.table("loan_schedule").select("total_due, paid_amount") \
+                .in_("loan_id", active_loan_ids).lt("due_date", today_str).execute()
+
+            for item in (overdue_res.data or []):
+                d_amt = float(item.get("total_due") or 0.0)
+                p_amt = float(item.get("paid_amount") or 0.0)
+                if d_amt > p_amt:
+                    total_overdue += (d_amt - p_amt)
+
+            par_val = round((total_overdue / total_active_credit) * 100.0, 1)
+            return f"{par_val}%"
+        except Exception:
+            return "0.0%"
+
+    @classmethod
     def get_am_dashboard_data(
+        cls,
         uow: UnitOfWork,
         assigned_branches: List[str],
         target_date: Optional[date] = None
@@ -499,6 +540,7 @@ class DashboardService:
                 pass
 
         b_df = pd.DataFrame(branch_stats) if branch_stats else pd.DataFrame(columns=["Branch", "Expected Collection", "Collected", "Outstanding", "PAR", "Cash Difference", "Compliance %", "Status"])
+        regional_par = cls.calculate_par_pct(uow)
 
         return {
             "regional_summary": {
@@ -507,7 +549,7 @@ class DashboardService:
                 "outstanding_portfolio": sum(b["Expected Collection"] for b in branch_stats),
                 "savings": total_sav,
                 "today_collection": total_coll,
-                "par": "0.0%"
+                "par": regional_par
             },
             "branch_performance": b_df,
             "regional_alerts": [
@@ -516,28 +558,71 @@ class DashboardService:
             ]
         }
 
-    @staticmethod
+    @classmethod
     def get_admin_dashboard_data(
+        cls,
         uow: UnitOfWork,
         target_date: Optional[date] = None
     ) -> Dict[str, Any]:
         """
-        Builds operational dashboard dataset for Global Admin ("Institution Operations").
+        Builds operational dashboard dataset for Global Admin ("Institution Operations") per BR-DASH-001 & BR-DASH-003.
         """
         if not target_date:
             target_date = date.today()
 
+        p_date_str = target_date.isoformat()
+
+        today_coll = 0.0
+        today_sav_dep = 0.0
+        today_sav_wd = 0.0
+        today_disb = 0.0
+
+        full_paid_count = 0
+        full_paid_amt = 0.0
+        norm_count = 0
+        norm_amt = 0.0
+        excess_count = 0
+        excess_amt = 0.0
+        part_count = 0
+        part_amt = 0.0
+        not_paid_count = 0
+        not_paid_amt = 0.0
+
+        try:
+            res_rep = uow.client.table("repayments").select("amount_paid, savings_amount, withdrawal_amount, date").execute()
+            for r in (res_rep.data or []):
+                if str(r.get("date") or "")[:10] == p_date_str:
+                    l_pay = float(r.get("amount_paid") or 0.0)
+                    s_dep = float(r.get("savings_amount") or 0.0)
+                    s_wd = float(r.get("withdrawal_amount") or 0.0)
+
+                    today_coll += l_pay
+                    today_sav_dep += s_dep
+                    today_sav_wd += s_wd
+
+                    if l_pay > 0:
+                        norm_count += 1
+                        norm_amt += l_pay
+        except Exception:
+            pass
+
+        try:
+            res_disb = uow.client.table("loans").select("loan_amount, start_date").execute()
+            today_disb = sum(float(l.get("loan_amount") or 0.0) for l in (res_disb.data or []) if str(l.get("start_date") or "")[:10] == p_date_str)
+        except Exception:
+            pass
+
         return {
             "today_operations": {
-                "today_collection": 3500000.0,
-                "today_savings_deposit": 1200000.0,
-                "today_savings_withdrawal": 450000.0,
-                "today_disbursement": 2000000.0,
-                "full_payments": {"count": 1, "amount": 99000.0},
-                "normal_payments": {"count": 12, "amount": 650000.0},
-                "excess_payments": {"count": 8, "amount": 120000.0},
-                "part_payments": {"count": 15, "amount": 250000.0},
-                "not_paid": {"count": 5, "amount": 180000.0}
+                "today_collection": today_coll,
+                "today_savings_deposit": today_sav_dep,
+                "today_savings_withdrawal": today_sav_wd,
+                "today_disbursement": today_disb,
+                "full_payments": {"count": full_paid_count, "amount": full_paid_amt},
+                "normal_payments": {"count": norm_count, "amount": norm_amt},
+                "excess_payments": {"count": excess_count, "amount": excess_amt},
+                "part_payments": {"count": part_count, "amount": part_amt},
+                "not_paid": {"count": not_paid_count, "amount": not_paid_amt}
             },
             "system_health": {
                 "projection_status": "Healthy / Up to Date",
@@ -549,30 +634,90 @@ class DashboardService:
             }
         }
 
-    @staticmethod
+    @classmethod
     def get_director_dashboard_data(
+        cls,
         uow: UnitOfWork,
         target_date: Optional[date] = None
     ) -> Dict[str, Any]:
         """
-        Builds strategic snapshot dataset for Board Directors (Read-Only, Zero Operational/Approval Buttons).
+        Builds strategic snapshot dataset for Board Directors per BR-DASH-001, BR-DASH-003 & BR-DASH-004.
         """
         if not target_date:
             target_date = date.today()
 
+        p_date_str = target_date.isoformat()
+        month_start_str = target_date.replace(day=1).isoformat()
+
+        today_coll = 0.0
+        mtd_coll = 0.0
+        all_paid = 0.0
+
+        try:
+            res_rep = uow.client.table("repayments").select("amount_paid, date").execute()
+            for r in (res_rep.data or []):
+                amt = float(r.get("amount_paid") or 0.0)
+                d_str = str(r.get("date") or "")[:10]
+                all_paid += amt
+                if d_str == p_date_str:
+                    today_coll += amt
+                if month_start_str <= d_str <= p_date_str:
+                    mtd_coll += amt
+        except Exception:
+            pass
+
+        outstanding_portfolio = 0.0
+        try:
+            res_loans = uow.client.table("loans").select("active_credit").eq("status", "Active").execute()
+            total_ac = sum(float(l.get("active_credit") or 0.0) for l in (res_loans.data or []))
+            outstanding_portfolio = max(0.0, total_ac - all_paid)
+        except Exception:
+            pass
+
+        total_sav = 0.0
+        try:
+            res_b = uow.client.table("branches").select("name").execute()
+            for b in (res_b.data or []):
+                try:
+                    b_sav = SavingsService.get_branch_totals(uow, b["name"]).get("total_active_savings", 0.0)
+                    total_sav += b_sav
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        top_branches = []
+        bottom_branches = []
+        try:
+            branch_totals = {}
+            res_rep_b = uow.client.table("repayments").select("amount_paid, branch_id, branches(name)").execute()
+            for r in (res_rep_b.data or []):
+                b_info = r.get("branches") or {}
+                b_name_str = b_info.get("name") or "Branch"
+                branch_totals[b_name_str] = branch_totals.get(b_name_str, 0.0) + float(r.get("amount_paid") or 0.0)
+            
+            sorted_b = sorted(branch_totals.items(), key=lambda x: x[1], reverse=True)
+            top_branches = [b[0] for b in sorted_b[:5]] if sorted_b else ["Head Office"]
+            bottom_branches = [b[0] for b in sorted_b[-5:]] if len(sorted_b) > 5 else []
+        except Exception:
+            top_branches = ["Head Office"]
+            bottom_branches = []
+
+        par_val = cls.calculate_par_pct(uow)
+
         return {
             "executive_overview": {
-                "today_collections": 3500000.0,
-                "mtd_collections": 42500000.0,
-                "outstanding_portfolio": 120000000.0,
-                "total_savings": 45000000.0,
-                "par": "1.2%",
-                "recovery_rate": "98.8%"
+                "today_collections": today_coll,
+                "mtd_collections": mtd_coll,
+                "outstanding_portfolio": outstanding_portfolio,
+                "total_savings": total_sav,
+                "par": par_val,
+                "recovery_rate": "100.0%" if par_val == "0.0%" else f"{round(100.0 - float(par_val.replace('%', '')), 1)}%"
             },
-            "top_five_branches": ["Ikeja Main", "Ogijo Central", "Ikorodu Branch", "Sagamu Branch", "Abeokuta North"],
-            "bottom_five_branches": ["Epe Outlet", "Badagry Center"],
+            "top_five_branches": top_branches,
+            "bottom_five_branches": bottom_branches,
             "strategic_alerts": [
-                "Portfolio at Risk (PAR) maintained below 2.0% threshold.",
+                f"Portfolio at Risk (PAR) is dynamically calculated at {par_val}.",
                 "Liquidity coverage ratio is optimal."
             ]
         }
