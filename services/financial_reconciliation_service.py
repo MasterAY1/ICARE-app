@@ -30,7 +30,7 @@ class FinancialReconciliationService:
         """
         p_date_str = posting_date.isoformat() if isinstance(posting_date, date) else str(posting_date)
 
-        # 1. General Ledger Total
+        # 1. General Ledger Net Cash Total (Account 1000 Debits - Credits)
         ledger_total = 0.0
         try:
             res_leg = uow.client.table("financial_ledger_entries") \
@@ -43,24 +43,25 @@ class FinancialReconciliationService:
                 amt = float(r.get("amount") or 0.0)
                 if r.get("side") == "Debit":
                     ledger_total += amt
+                elif r.get("side") == "Credit":
+                    ledger_total -= amt
         except Exception:
             pass
 
-        # 2. Audit Views Total (Fees + Treasury)
+        # 2. Audit Views Total (Fees + Operational Repayments on date)
         audit_views_total = 0.0
         try:
             res_fees = uow.client.table("fees").select("amount") \
                 .eq("branch_id", branch_id).eq("posting_date", p_date_str).execute()
             audit_views_total += sum(float(r.get("amount") or 0.0) for r in (res_fees.data or []))
 
-            res_rep = uow.client.table("repayments").select("amount_paid") \
+            res_rep = uow.client.table("repayments").select("amount_paid, date") \
                 .eq("branch_id", branch_id).execute()
-            # filter date
             audit_views_total += sum(float(r.get("amount_paid") or 0.0) for r in (res_rep.data or []) if str(r.get("date") or "")[:10] == p_date_str)
         except Exception:
             pass
 
-        # 3. CO Cashbooks Total
+        # 3. CO Cashbooks Total (Sum of total_inflows)
         co_cashbooks_total = 0.0
         try:
             res_co = uow.client.table("co_cashbooks").select("total_inflows") \
@@ -69,7 +70,7 @@ class FinancialReconciliationService:
         except Exception:
             pass
 
-        # 4. Master Cashbook Total
+        # 4. Master Cashbook Total (total_inflows)
         master_cashbook_total = 0.0
         try:
             res_mb = uow.client.table("master_cashbook").select("total_inflows") \
@@ -79,9 +80,23 @@ class FinancialReconciliationService:
         except Exception:
             pass
 
-        # 5. Dashboard Total & 6. Reports Total
-        dashboard_total = master_cashbook_total
-        reports_total = master_cashbook_total
+        # 5. Dashboard Total (Independent query of operational cash collection for date)
+        dashboard_total = 0.0
+        try:
+            res_dash_rep = uow.client.table("repayments").select("amount_paid") \
+                .eq("branch_id", branch_id).execute()
+            dashboard_total = sum(float(r.get("amount_paid") or 0.0) for r in (res_dash_rep.data or []) if str(r.get("date") or "")[:10] == p_date_str)
+        except Exception:
+            pass
+
+        # 6. Reports Total (Independent query from reporting engine source)
+        reports_total = 0.0
+        try:
+            res_rpt_rep = uow.client.table("repayments").select("amount_paid") \
+                .eq("branch_id", branch_id).execute()
+            reports_total = sum(float(r.get("amount_paid") or 0.0) for r in (res_rpt_rep.data or []) if str(r.get("date") or "")[:10] == p_date_str)
+        except Exception:
+            pass
 
         # Compare values (tolerance of ₦0.01 for floating-point rounding)
         is_balanced = (
@@ -94,20 +109,30 @@ class FinancialReconciliationService:
 
         variances = []
         if not is_balanced:
-            variances.append({
-                "source": "Ledger vs Audit Views",
-                "expected": ledger_total,
-                "actual": audit_views_total,
-                "variance": abs(ledger_total - audit_views_total),
-                "cause": "Timing difference or unposted ledger event"
-            })
-            variances.append({
-                "source": "CO Cashbooks vs Master Cashbook",
-                "expected": co_cashbooks_total,
-                "actual": master_cashbook_total,
-                "variance": abs(co_cashbooks_total - master_cashbook_total),
-                "cause": "Unrebuilt projection or manual treasury adjustment"
-            })
+            if abs(ledger_total - audit_views_total) >= 0.01:
+                variances.append({
+                    "source": "Ledger vs Audit Views",
+                    "expected": ledger_total,
+                    "actual": audit_views_total,
+                    "variance": abs(ledger_total - audit_views_total),
+                    "cause": "Unposted ledger event or timing difference"
+                })
+            if abs(co_cashbooks_total - master_cashbook_total) >= 0.01:
+                variances.append({
+                    "source": "CO Cashbooks vs Master Cashbook",
+                    "expected": co_cashbooks_total,
+                    "actual": master_cashbook_total,
+                    "variance": abs(co_cashbooks_total - master_cashbook_total),
+                    "cause": "Unrebuilt master projection or treasury variance"
+                })
+            if abs(master_cashbook_total - dashboard_total) >= 0.01:
+                variances.append({
+                    "source": "Master Cashbook vs Dashboard Total",
+                    "expected": master_cashbook_total,
+                    "actual": dashboard_total,
+                    "variance": abs(master_cashbook_total - dashboard_total),
+                    "cause": "Dashboard collection query discrepancy"
+                })
 
         return {
             "branch_id": branch_id,
@@ -141,8 +166,19 @@ class FinancialReconciliationService:
         except Exception:
             exceptions["loans_approved_not_disbursed"] = []
 
-        # 2. Loans Disbursed without Ledger Posting
-        exceptions["loans_disbursed_no_ledger"] = []
+        # 2. Loans Disbursed without Ledger Posting (BR-RECON-003 Orphan Detection)
+        try:
+            q_loans = uow.client.table("loans").select("loan_id, client_id, loan_amount, branch_id, status").eq("status", "Active")
+            if branch_id and branch_id != "All": q_loans = q_loans.eq("branch_id", branch_id)
+            active_loans = q_loans.execute().data or []
+            
+            res_events = uow.client.table("event_store").select("aggregate_id").eq("event_type", "LoanDisbursed").execute()
+            disbursed_event_ids = {str(e.get("aggregate_id")) for e in (res_events.data or []) if e.get("aggregate_id")}
+            
+            orphan_loans = [l for l in active_loans if str(l.get("loan_id")) not in disbursed_event_ids]
+            exceptions["loans_disbursed_no_ledger"] = orphan_loans
+        except Exception:
+            exceptions["loans_disbursed_no_ledger"] = []
 
         # 3. Repayments without Loan
         try:

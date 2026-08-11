@@ -105,6 +105,7 @@ class LoanService:
                 "date": b_date.isoformat(),
                 "reference": ref_id,
                 "classification": TransactionClassification.LOAN_DISBURSEMENT.value,
+                "product_category": "Asset" if loan.is_asset else "Finance",
                 "narration": f"Loan disbursement of {loan.amount:,.2f} for client {loan.client_name}"
             }
         )

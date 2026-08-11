@@ -102,10 +102,8 @@ class MasterCashbookProjectionBuilder:
                     elif event_type == "SalaryPaid":
                         totals["staff_salaries"] += amt
                     elif event_type == "LoanDisbursed":
-                        # Deduce pool from payload (default to Finance if unspecified)
-                        prod_cat = "Finance"
-                        if "Asset" in str(payload.get("narration", "")):
-                            prod_cat = "Asset"
+                        # Read structured product_category from payload (BR-ACCT-005) with narration fallback
+                        prod_cat = payload.get("product_category") or ("Asset" if "Asset" in str(payload.get("narration", "")) else "Finance")
                         if prod_cat == "Asset":
                             totals["fund_to_asset_program"] += amt
                         else:
