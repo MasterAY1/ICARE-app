@@ -116,40 +116,8 @@ class AuthService:
 
     @staticmethod
     def restore_session_from_url():
-        """Attempt to restore a session from URL query parameters (deep linking)."""
-        if not is_authenticated():
-            if "auth" in st.query_params:
-                auth_user = st.query_params["auth"]
-                try:
-                    from database.repositories.unit_of_work import SupabaseUnitOfWork
-                    with SupabaseUnitOfWork() as uow:
-                        user = uow.users.find_by_username(auth_user)
-                    if user and user.is_active:
-                        role = user.role
-                        user_permissions = PERMISSIONS.get(role, set())
-
-                        current_user = CurrentUser(
-                            id=user.id,
-                            username=user.username,
-                            role=role,
-                            branch=user.branch_name or 'Unknown',
-                            branch_id=user.branch_id or '',
-                            permissions=user_permissions,
-                        )
-
-                        # Load AM assignments
-                        if role == "Area Manager":
-                            try:
-                                with SupabaseUnitOfWork() as uow2:
-                                    assignments = uow2.users.load_am_assignments(user.id)
-                                current_user.assigned_branch_ids = [a["branch_id"] for a in assignments]
-                                current_user.assigned_branches = [a["name"] for a in assignments]
-                            except Exception:
-                                pass
-
-                        create_session(current_user)
-                except Exception:
-                    pass
+        """URL parameter auto-login disabled for security (requires explicit authentication)."""
+        pass
 
     @staticmethod
     def get_user() -> CurrentUser:

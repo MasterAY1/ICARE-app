@@ -173,6 +173,32 @@ class RBACScopeService:
         return False
 
     @classmethod
+    def apply_scope_to_query(
+        cls,
+        query: Any,
+        scope: RBACScope,
+        branch_col: str = "branch_id",
+        officer_col: str = "officer_id"
+    ) -> Any:
+        """
+        Applies RBACScope constraints directly to a PostgREST query before execution.
+        """
+        if not scope:
+            return query
+
+        if scope.scope_level == "OFFICER":
+            if scope.user_id:
+                query = query.eq(officer_col, scope.user_id)
+        elif scope.scope_level == "BRANCH":
+            if scope.branch_id:
+                query = query.eq(branch_col, scope.branch_id)
+        elif scope.scope_level == "REGION":
+            if scope.assigned_branch_ids:
+                query = query.in_(branch_col, scope.assigned_branch_ids)
+
+        return query
+
+    @classmethod
     def filter_dataframe(
         cls,
         df: pd.DataFrame,
