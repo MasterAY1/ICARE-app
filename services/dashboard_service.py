@@ -140,26 +140,63 @@ class DashboardService:
         not_paid_count = 0
         not_paid_amt = 0.0
 
-        # Build group_map for active loans
+        # Build group_map for active loans including authoritative group meeting_day
         group_map = {}
+        group_mday_map = {}
         try:
             loan_client_ids = [l.get("client_id") for l in active_loans if l.get("client_id")]
             if loan_client_ids:
-                g_query = uow.client.table("client_memberships").select("client_id, groups(name)").in_("client_id", loan_client_ids).execute()
+                g_query = uow.client.table("client_memberships").select("client_id, groups(name, meeting_day)").in_("client_id", loan_client_ids).execute()
                 for gm in (g_query.data or []):
                     grp = gm.get("groups") or {}
-                    group_map[str(gm.get("client_id"))] = grp.get("name") or "Individual Group"
+                    cid_s = str(gm.get("client_id"))
+                    g_name_str = grp.get("name") or "Individual Group"
+                    group_map[cid_s] = g_name_str
+                    group_mday_map[g_name_str] = grp.get("meeting_day") or "Daily"
         except Exception:
             pass
+
+        is_weekend = target_date.weekday() >= 5
 
         for l in active_loans:
             try:
                 g_name = group_map.get(str(l.get("client_id"))) or "Individual Group"
-                m_day = l.get("meeting_day") or meeting_day
+                g_mday = group_mday_map.get(g_name) or l.get("meeting_day") or "Daily"
+                
+                # Resolve loan cycle/frequency
+                prod_info = l.get("loan_products") or {}
+                p_name_lower = str(prod_info.get("name") or l.get("product_type") or "").lower()
+                
+                if "daily" in p_name_lower or "60" in p_name_lower or "120" in p_name_lower:
+                    loan_cycle = "Daily"
+                elif "monthly" in p_name_lower or "3m" in p_name_lower or "6m" in p_name_lower:
+                    loan_cycle = "Monthly"
+                else:
+                    loan_cycle = "Weekly"
+
+                # Check if loan repayment is expected TODAY
+                if is_weekend:
+                    is_expected_today = False
+                elif loan_cycle == "Daily":
+                    is_expected_today = True  # Mon-Fri
+                elif loan_cycle == "Weekly":
+                    is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower() or str(g_mday).strip().lower() == "daily")
+                else:
+                    # Monthly fallback: expected if meeting day matches today
+                    is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower())
+
+                cid = l.get("client_id")
+                c_reps = [r for r in reps if r.get("client_id") == cid] if cid else []
+                c_paid = sum(float(r.get("amount_paid") or 0.0) for r in c_reps)
+
+                # Only include in Today's Meeting Portfolio if expected today OR if payment was received today
+                if not is_expected_today and c_paid == 0:
+                    continue
+
                 if g_name not in grp_map:
                     grp_map[g_name] = {
                         "Group Name": g_name,
-                        "Meeting Day": m_day,
+                        "Meeting Day": g_mday,
                         "Expected Collection": 0.0,
                         "Collected": 0.0,
                         "Outstanding": 0.0,
@@ -169,13 +206,11 @@ class DashboardService:
                         "Clients Not Paid": 0
                     }
 
-                repay_amt = float(l.get("fixed_repayment") or l.get("loan_repay") or 0.0)
+                repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0) if is_expected_today else 0.0
                 grp_map[g_name]["Expected Collection"] += repay_amt
-                grp_map[g_name]["Clients Expected"] += 1
+                if is_expected_today:
+                    grp_map[g_name]["Clients Expected"] += 1
 
-                cid = l.get("client_id")
-                c_reps = [r for r in reps if r.get("client_id") == cid] if cid else []
-                c_paid = sum(float(r.get("amount_paid") or 0.0) for r in c_reps)
                 grp_map[g_name]["Collected"] += c_paid
 
                 c_info = l.get("clients") or {}

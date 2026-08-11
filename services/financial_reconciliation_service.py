@@ -182,16 +182,22 @@ class FinancialReconciliationService:
 
         # 13. Clients with Overdue Repayments
         try:
-            q = uow.client.table("loans").select("loan_id, client_id, active_credit, total_due, loan_repay") \
+            q = uow.client.table("loans").select("loan_id, client_id, active_credit, loan_repay") \
                 .eq("status", "Active")
             if branch_id and branch_id != "All": q = q.eq("branch_id", branch_id)
             res = q.execute()
             overdue_loans = []
             for l in (res.data or []):
-                due = float(l.get("total_due") or 0.0)
-                repay = float(l.get("loan_repay") or 0.0)
-                if due > repay:
-                    overdue_loans.append({**l, "overdue_amount": due - repay})
+                ac_val = float(l.get("active_credit") or 0.0)
+                lid = l.get("loan_id")
+                from services.schedule_service import ScheduleService
+                tot_paid_val, has_sched = ScheduleService.get_total_paid(uow, lid)
+                if not has_sched:
+                    rep_res = uow.client.table("repayments").select("amount_paid").eq("loan_id", lid).execute()
+                    tot_paid_val = sum(float(r.get("amount_paid") or 0) for r in (rep_res.data or []))
+                rem = max(0.0, ac_val - tot_paid_val)
+                if rem > 0:
+                    overdue_loans.append({**l, "overdue_amount": rem})
             exceptions["overdue_repayments"] = overdue_loans
         except Exception:
             exceptions["overdue_repayments"] = []

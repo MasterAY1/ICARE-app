@@ -2811,38 +2811,45 @@ elif page == "Loan Origination":
                                                 from domain.enums import LoanStatus
                                                 
                                                 loan_id = str(uuid.uuid4())
+                                                duration_val = 24 if "24" in loan_type else (12 if "12" in loan_type or "week" in loan_type.lower() else 60)
+                                                true_active_credit = active_credit if active_credit > 0 else (principal_loan or remaining_bal)
+                                                true_installment = true_active_credit / duration_val if duration_val > 0 else 0.0
+                                                amount_already_paid = max(0.0, true_active_credit - remaining_bal) if remaining_bal > 0 else 0.0
+
                                                 loan_entity = Loan(
                                                     id=loan_id,
                                                     client_id=client_id,
                                                     client_name=name_val,
                                                     product_type=loan_type or "Weekly 24W",
-                                                    amount=principal_loan or active_credit,
-                                                    duration=24 if "24" in loan_type else 12,
+                                                    amount=principal_loan or true_active_credit,
+                                                    duration=duration_val,
                                                     frequency="Weekly" if "week" in loan_type.lower() else "Daily",
                                                     gap_fee=0.0,
-                                                    expected_installment=remaining_bal / 24,
-                                                    total_payable=principal_loan or active_credit,
+                                                    expected_installment=true_installment,
+                                                    total_payable=true_active_credit,
                                                     status=LoanStatus.ACTIVE,
                                                     branch=bname,
                                                     credit_officer=oname or USER,
                                                     officer_id=officer_id,
                                                     branch_id=branch_id,
                                                     start_date=date.today() - timedelta(weeks=4),
-                                                    extra_fields={"lifecycle_status": "Active"}
-                                                )
-                                                uow.loans.create(loan_entity)
-                                                
-                                                # Save guarantor details on the active loan row
-                                                uow.client.table("loans").update({
-                                                    "extra_fields": {
+                                                    extra_fields={
                                                         "lifecycle_status": "Active",
+                                                        "active_credit": true_active_credit,
+                                                        "total_due": true_active_credit,
+                                                        "loan_repay": true_installment,
                                                         "guarantor_name": g_name_val,
                                                         "guarantor_phone": g_phone_val,
                                                         "guarantor_home_address": g_address_val,
                                                         "guarantor_occupation": g_occ_val,
                                                         "guarantor_office_address": g_office_val,
                                                         "guarantor_relationship": g_rel_val
-                                                    },
+                                                    }
+                                                )
+                                                uow.loans.create(loan_entity)
+                                                
+                                                # Save guarantor details and extra fields on active loan row
+                                                uow.client.table("loans").update({
                                                     "guarantor_id_means": g_id_means_val,
                                                     "guarantor_id_number": g_id_number_val
                                                 }).eq("loan_id", loan_id).execute()
@@ -2875,7 +2882,25 @@ elif page == "Loan Origination":
                                                     ))
                                                 
                                                 from services.schedule_service import ScheduleService
-                                                ScheduleService.generate_schedule(uow, loan_entity, date.today() - timedelta(weeks=4))
+                                                start_sched_date = date.today() - timedelta(weeks=4)
+                                                ScheduleService.generate_schedule(uow, loan_entity, start_sched_date)
+
+                                                # Inject historical repayment for amount already paid and update schedule status
+                                                if amount_already_paid > 0:
+                                                    uow.client.table("repayments").insert({
+                                                        "repayment_id": str(uuid.uuid4()),
+                                                        "client_id": client_id,
+                                                        "loan_id": loan_id,
+                                                        "branch_id": branch_id,
+                                                        "officer_id": officer_id or uow.loans._resolve_officer_id(USER),
+                                                        "date": start_sched_date.isoformat(),
+                                                        "amount_paid": amount_already_paid,
+                                                        "loan_repayment_amount": amount_already_paid,
+                                                        "transaction_type": "Loan",
+                                                        "note": "Historical accumulated payments from Onboarding Import",
+                                                        "payment_status": "Completed"
+                                                    }).execute()
+                                                    ScheduleService.record_repayment(uow, loan_id, amount_already_paid, start_sched_date)
                                         else:
                                             # Create dummy Pending loan for guarantor details if no active loan was created
                                             if g_name_val:

@@ -74,13 +74,17 @@ class ClientRiskRatingService:
         # 3. Current Overdue Balance
         overdue_balance = 0.0
         try:
-            res = uow.client.table("loans").select("total_due, loan_repay") \
+            res = uow.client.table("loans").select("active_credit") \
                 .eq("loan_id", loan_id).execute()
             if res.data:
                 loan_data = res.data[0]
-                total_due = float(loan_data.get("total_due") or 0.0)
-                loan_repay = float(loan_data.get("loan_repay") or 0.0)
-                overdue_balance = max(0.0, total_due - loan_repay)
+                ac_val = float(loan_data.get("active_credit") or 0.0)
+                from services.schedule_service import ScheduleService
+                tot_paid_val, has_sched = ScheduleService.get_total_paid(uow, loan_id)
+                if not has_sched:
+                    rep_res = uow.client.table("repayments").select("amount_paid").eq("loan_id", loan_id).execute()
+                    tot_paid_val = sum(float(r.get("amount_paid") or 0) for r in (rep_res.data or []))
+                overdue_balance = max(0.0, ac_val - tot_paid_val)
         except Exception:
             pass
 

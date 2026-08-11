@@ -296,8 +296,8 @@ class PortfolioService:
             status_str = c_status
             
             if l:
-                # Active Loan should display the initial total due
-                tot_due = float(l.get("total_due") or l.get("active_credit") or 0.0)
+                # Active Credit is the static contract total due (Principal - Gap)
+                tot_due = float(l.get("active_credit") or 0.0)
                 repay_fixed = float(l.get("loan_repay") or 0.0)
                 disbursed = float(l.get("loan_amount") or 0.0)
                 
