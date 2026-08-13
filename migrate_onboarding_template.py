@@ -1,8 +1,9 @@
 import pandas as pd
 from database.repositories.unit_of_work import SupabaseUnitOfWork
-from services.savings_service import SavingsService
 import datetime
 import uuid
+import holidays
+import calendar
 
 def run_migration():
     file_path = "icare-group-member-onboarding-template.xlsx"
@@ -16,19 +17,36 @@ def run_migration():
 
     with SupabaseUnitOfWork() as uow:
         # Load maps
-        print("Loading branches, officers, and products...")
-        b_res = uow.client.table("branches").select("branch_id, name").execute()
-        branch_map = {b['name'].strip().lower(): b['branch_id'] for b in b_res.data} if b_res.data else {}
+        print("Loading branches, officers, products, and closures...")
+        b_res = uow.client.table("branches").select("branch_id, name, code").execute()
+        branch_map = {b['name'].strip().lower(): b for b in b_res.data} if b_res.data else {}
         
         o_res = uow.client.table("app_users").select("id, full_name").execute()
         officer_map = {o['full_name'].strip().lower(): o['id'] for o in o_res.data} if o_res.data else {}
         
-        p_res = uow.client.table("loan_products").select("product_id, name").execute()
-        product_map = {p['name'].strip().lower(): p['product_id'] for p in p_res.data} if p_res.data else {}
-        
+        p_res = uow.client.table("loan_products").select("product_id, name, installments, repayment_cycle").execute()
+        product_map = {p['name'].strip().lower(): p for p in p_res.data} if p_res.data else {}
+
+        # Fetch Closures
+        closures = []
+        c_res = uow.client.table("branch_closures").select("start_date, end_date").execute()
+        if c_res.data:
+            for c in c_res.data:
+                closures.append((datetime.date.fromisoformat(c['start_date']), datetime.date.fromisoformat(c['end_date'])))
+
+        base_date = datetime.date.today()
+        ng_holidays = holidays.NG(years=[base_date.year, base_date.year + 1, base_date.year + 2])
+
+        def is_working_day(d: datetime.date) -> bool:
+            if d.weekday() >= 5: return False
+            if d in ng_holidays: return False
+            for c_start, c_end in closures:
+                if c_start <= d <= c_end: return False
+            return True
+
         # 1. PROCESS GROUPS
         print("\n--- PROCESSING GROUPS ---")
-        group_ref_to_id = {}
+        group_ref_to_info = {}
         for index, row in df_groups.iterrows():
             g_ref = str(row.get('Group Reference*')).strip()
             if g_ref == 'nan' or not g_ref: continue
@@ -40,66 +58,65 @@ def run_migration():
             o_name = str(row.get('Credit Officer Name*')).strip()
             g_sav = row.get('Group Savings')
             
-            b_id = branch_map.get(b_name.lower())
+            b_info = branch_map.get(b_name.lower())
+            if not b_info:
+                print(f"Branch '{b_name}' not found. Skipping group {g_name}.")
+                continue
+                
+            b_id = b_info['branch_id']
+            b_code = b_info.get('code', b_name[:3].upper())
             o_id = officer_map.get(o_name.lower())
+            
             if leader == 'nan': leader = None
-            if m_day == 'nan' or not m_day: m_day = 'Weekly' # fallback
+            if m_day == 'nan' or not m_day: m_day = 'Weekly'
             
             g_res = uow.client.table("groups").select("*").eq("name", g_name).execute()
             if g_res.data:
                 g_id = g_res.data[0]['group_id']
-                # Update existing
-                try:
-                    uow.client.table("groups").update({
-                        "meeting_day": m_day,
-                        "branch_id": b_id,
-                        "officer_id": o_id,
-                        "leader_name": leader
-                    }).eq("group_id", g_id).execute()
-                    print(f"Updated group: {g_name}")
-                except Exception as e:
-                    print(f"Failed to update group {g_name}: {e}")
+                gn = g_res.data[0].get('group_number') or 1
+                curr_seq = g_res.data[0].get('current_member_sequence') or 0
+                uow.client.table("groups").update({
+                    "meeting_day": m_day, "branch_id": b_id, "officer_id": o_id, "leader_name": leader
+                }).eq("group_id", g_id).execute()
+                print(f"Updated group: {g_name}")
             else:
-                # Insert new
                 g_id = str(uuid.uuid4())
-                try:
-                    uow.client.table("groups").insert({
-                        "group_id": g_id,
-                        "name": g_name,
-                        "meeting_day": m_day,
-                        "branch_id": b_id,
-                        "officer_id": o_id,
-                        "leader_name": leader,
-                        "status": "Active"
-                    }).execute()
-                    print(f"Created new group: {g_name}")
-                except Exception as e:
-                    print(f"Failed to create group {g_name}: {e}")
+                max_gn_res = uow.client.table("groups").select("group_number").eq("branch_id", b_id).execute()
+                max_gn = max([r.get("group_number") or 0 for r in (max_gn_res.data or [])] or [0])
+                gn = max_gn + 1
+                curr_seq = 0
+                uow.client.table("groups").insert({
+                    "group_id": g_id, "name": g_name, "meeting_day": m_day, "branch_id": b_id, 
+                    "officer_id": o_id, "leader_name": leader, "status": "Active",
+                    "group_number": gn, "current_member_sequence": curr_seq
+                }).execute()
+                print(f"Created new group: {g_name}")
                 
-            group_ref_to_id[g_ref] = {
-                'group_id': g_id,
-                'branch_id': b_id,
-                'officer_id': o_id,
-                'branch_name': b_name,
-                'officer_name': o_name
+            group_ref_to_info[g_ref] = {
+                'group_id': g_id, 'branch_id': b_id, 'officer_id': o_id, 'branch_name': b_name, 'officer_name': o_name,
+                'meeting_day': m_day, 'branch_code': b_code, 'group_number': gn, 'current_member_sequence': curr_seq
             }
             
-            # Post Group Savings Idempotently
+            # Insert Group Savings (Directly, bypass ledger)
             if pd.notna(g_sav) and float(g_sav) > 0:
                 gs_res = uow.client.table("group_savings").select("id").eq("group_id", g_id).eq("remarks", "Initial Onboarding Group Savings").execute()
                 if not gs_res.data:
-                    print(f"Posting Group Savings: {g_sav} for {g_name}")
-                    try:
-                        SavingsService.post_group_savings(uow, g_name, b_name, o_name, float(g_sav), remarks="Initial Onboarding Group Savings")
-                    except Exception as e:
-                        print(f"  Error posting group savings: {e}")
+                    uow.client.table("group_savings").insert({
+                        "id": str(uuid.uuid4()),
+                        "group_id": g_id, "date": base_date.isoformat(), "amount": float(g_sav), "type": "Deposit",
+                        "remarks": "Initial Onboarding Group Savings"
+                    }).execute()
+                    print(f"Posted Group Savings: {g_sav} for {g_name}")
 
         # 2. PROCESS MEMBERS
         print("\n--- PROCESSING MEMBERS ---")
+        day_map = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
+        db_group_seq = {}
+        
         for index, row in df_members.iterrows():
-            m_ref = str(row.get('Member Reference*')).strip()
+            m_ref = str(row.get('Member Number')).strip() # Excel might have "Member Number" not "Member Reference*" based on earlier dump
+            if m_ref == 'nan': m_ref = ""
             g_ref = str(row.get('Group Reference*')).strip()
-            if m_ref == 'nan' or not m_ref: continue
             if g_ref == 'nan' or not g_ref: continue
             
             f_name = str(row.get('Full Name*')).strip()
@@ -114,7 +131,7 @@ def run_migration():
             if phone == 'nan': phone = ""
             if address == 'nan': address = ""
             
-            group_info = group_ref_to_id.get(g_ref)
+            group_info = group_ref_to_info.get(g_ref)
             if not group_info:
                 print(f"Skipping {f_name}, unknown group reference: {g_ref}")
                 continue
@@ -122,78 +139,127 @@ def run_migration():
             g_id = group_info['group_id']
             b_id = group_info['branch_id']
             o_id = group_info['officer_id']
-            b_name = group_info['branch_name']
-            o_name = group_info['officer_name']
+            b_code = group_info['branch_code']
+            gn = group_info['group_number']
                 
-            # Upsert client
-            c_res = uow.client.table("clients").select("*").eq("name", f_name).execute()
+            c_id = None
+            # Fetch all clients for this group and match in Python to avoid API quirks
+            c_res = uow.client.table("clients").select("*").eq("group_id", g_id).execute()
             if c_res.data:
-                c_id = c_res.data[0]['client_id']
-                uow.client.table("clients").update({
-                    "phone": phone,
-                    "address": address
-                }).eq("client_id", c_id).execute()
-                print(f"Updated client: {f_name}")
-            else:
+                for c in c_res.data:
+                    if c['name'].strip().lower() == f_name.lower():
+                        c_id = c['client_id']
+                        uow.client.table("clients").update({"phone": phone, "address": address}).eq("client_id", c_id).execute()
+                        print(f"Updated existing client matched by name: {f_name}")
+                        break
+            
+            if not c_id:
+                # Generate new code
+                db_group_seq[g_id] = db_group_seq.get(g_id, group_info['current_member_sequence']) + 1
+                seq = db_group_seq[g_id]
+                # Update group sequence in DB
+                uow.client.table("groups").update({"current_member_sequence": seq}).eq("group_id", g_id).execute()
+                
+                new_code = f"{b_code}-{str(gn).zfill(2)}-{str(seq).zfill(3)}"
                 c_id = str(uuid.uuid4())
                 uow.client.table("clients").insert({
-                    "client_id": c_id,
-                    "name": f_name,
-                    "phone": phone,
-                    "address": address,
-                    "status": "Active"
+                    "client_id": c_id, "name": f_name, "phone": phone, "address": address, "status": "Active",
+                    "client_code": new_code, "branch_id": b_id, "group_id": g_id, "officer_id": o_id
                 }).execute()
-                print(f"Created new client: {f_name}")
+                print(f"Created new client: {new_code} ({f_name})")
                 
-            # Ensure client membership
+            # Memberships
             m_res = uow.client.table("client_memberships").select("*").eq("client_id", c_id).eq("group_id", g_id).execute()
             if not m_res.data:
-                uow.client.table("client_memberships").insert({
-                    "client_id": c_id,
-                    "group_id": g_id
-                }).execute()
+                uow.client.table("client_memberships").insert({"client_id": c_id, "group_id": g_id}).execute()
                 
-            # Post Individual Savings Idempotently
+            # Individual Savings (Directly)
             if pd.notna(s_bal) and float(s_bal) > 0:
                 is_res = uow.client.table("individual_savings").select("id").eq("client_id", c_id).eq("remarks", "Initial Onboarding Savings").execute()
                 if not is_res.data:
-                    print(f"Posting Savings: {s_bal} for {f_name}")
-                    try:
-                        SavingsService.post_individual_savings(uow, c_id, f_name, b_name, o_name, float(s_bal), remarks="Initial Onboarding Savings")
-                    except Exception as e:
-                        print(f"  Error posting savings: {e}")
+                    uow.client.table("individual_savings").insert({
+                        "id": str(uuid.uuid4()), "client_id": c_id, "date": base_date.isoformat(), 
+                        "amount": float(s_bal), "type": "Deposit", "remarks": "Initial Onboarding Savings"
+                    }).execute()
+                    print(f"Posted Individual Savings: {s_bal} for {f_name}")
             
-            # Upsert Loan if applicable
+            # Loans & Schedule
             if pd.notna(a_cred) and float(a_cred) > 0:
-                print(f"Setting up Loan for {f_name}: {a_cred}")
+                prod = product_map.get(l_type.lower()) if l_type and l_type != 'nan' else None
+                if not prod:
+                    print(f"  Warning: Loan Product '{l_type}' not found for {f_name}. Skipping loan!")
+                    continue
                 
-                prod_id = None
-                if l_type and l_type != 'nan':
-                    prod_id = product_map.get(l_type.lower())
+                duration = int(prod.get('installments') or 24)
+                cycle = prod.get('repayment_cycle', 'Weekly')
+                expected_inst = float(a_cred) / duration if duration > 0 else 0
+                current_bal = float(c_bal) if pd.notna(c_bal) else float(a_cred)
+                
+                print(f"Setting up Loan for {f_name}: Active Credit={a_cred}, Bal={current_bal}, Duration={duration}")
+                
+                l_res = uow.client.table("loans").select("*").eq("client_id", c_id).eq("status", "Active").execute()
+                if l_res.data:
+                    loan_id = l_res.data[0]['loan_id']
+                    uow.client.table("loans").update({
+                        "total_due": current_bal, "active_credit": float(a_cred), "loan_amount": float(p_loan) if pd.notna(p_loan) else float(a_cred),
+                        "branch_id": b_id, "officer_id": o_id, "product_id": prod['product_id']
+                    }).eq("loan_id", loan_id).execute()
+                else:
+                    loan_id = str(uuid.uuid4())
+                    uow.client.table("loans").insert({
+                        "loan_id": loan_id, "client_id": c_id, "date": base_date.isoformat(),
+                        "loan_amount": float(p_loan) if pd.notna(p_loan) else float(a_cred), "active_credit": float(a_cred),
+                        "total_due": current_bal, "status": "Active", "branch_id": b_id, "officer_id": o_id, "product_id": prod['product_id']
+                    }).execute()
+                
+                # Check if schedule exists
+                sch_res = uow.client.table("loan_schedule").select("id").eq("loan_id", loan_id).execute()
+                if not sch_res.data and expected_inst > 0 and current_bal > 0:
+                    import math
+                    # Number of remaining installments
+                    remaining_count = math.ceil(current_bal / expected_inst)
                     
-                if pd.notna(c_bal):
-                    l_res = uow.client.table("loans").select("*").eq("client_id", c_id).eq("status", "Active").execute()
-                    if l_res.data:
-                        uow.client.table("loans").update({
-                            "total_due": float(c_bal),
-                            "active_credit": float(a_cred),
-                            "loan_amount": float(p_loan) if pd.notna(p_loan) else float(a_cred),
-                            "branch_id": b_id,
-                            "officer_id": o_id,
-                            "product_id": prod_id
-                        }).eq("loan_id", l_res.data[0]['loan_id']).execute()
-                    else:
-                        uow.client.table("loans").insert({
-                            "client_id": c_id,
-                            "date": datetime.datetime.now().strftime('%Y-%m-%d'),
-                            "loan_amount": float(p_loan) if pd.notna(p_loan) else float(a_cred),
-                            "active_credit": float(a_cred),
-                            "total_due": float(c_bal),
-                            "status": "Active",
-                            "branch_id": b_id,
-                            "officer_id": o_id,
-                            "product_id": prod_id
-                        }).execute()
+                    # Target next meeting day
+                    target_weekday = day_map.get(group_info['meeting_day'])
+                    current_anchor = base_date
+                    if cycle == "Weekly" and target_weekday is not None:
+                        days_ahead = target_weekday - current_anchor.weekday()
+                        if days_ahead <= 0: days_ahead += 7
+                        current_anchor = current_anchor + datetime.timedelta(days=days_ahead)
+                    
+                    schedule_rows = []
+                    rem_bal = current_bal
+                    for i in range(1, remaining_count + 1):
+                        # Advance according to cycle and holidays
+                        if i > 1:
+                            if cycle == "Weekly":
+                                current_anchor += datetime.timedelta(weeks=1)
+                                while not is_working_day(current_anchor):
+                                    current_anchor += datetime.timedelta(weeks=1)
+                            elif cycle == "Daily":
+                                current_anchor += datetime.timedelta(days=1)
+                                while not is_working_day(current_anchor):
+                                    current_anchor += datetime.timedelta(days=1)
+                        else:
+                            # Verify first anchor is a working day, else shift
+                            if cycle == "Weekly":
+                                while not is_working_day(current_anchor):
+                                    current_anchor += datetime.timedelta(weeks=1)
+                        
+                        inst_amount = min(expected_inst, rem_bal)
+                        rem_bal -= inst_amount
+                        
+                        schedule_rows.append({
+                            "id": str(uuid.uuid4()), "loan_id": loan_id, "installment_number": i,
+                            "due_date": current_anchor.isoformat(), "principal": inst_amount,
+                            "interest": 0.0, "fees": 0.0, "total_due": inst_amount, "status": "Pending",
+                            "paid_amount": 0.0, "paid_date": None
+                        })
+                        if rem_bal <= 0: break
+                        
+                    if schedule_rows:
+                        uow.client.table("loan_schedule").insert(schedule_rows).execute()
+                        print(f"  Generated {len(schedule_rows)} remaining schedule installments.")
 
     print("\nMigration Complete!")
 

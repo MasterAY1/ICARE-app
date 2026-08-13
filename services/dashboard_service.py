@@ -24,6 +24,130 @@ from services.savings_service import SavingsService
 
 class DashboardService:
 
+    @classmethod
+    def _calculate_payment_breakdown(
+        cls,
+        uow: UnitOfWork,
+        target_date: date,
+        branch_id: Optional[str] = None,
+        officer_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Authoritative engine for payment categorization per BR-DASH-002.
+        Calculates full, normal, excess, part, and not paid metrics.
+        """
+        date_str = target_date.isoformat()
+        meeting_day = target_date.strftime("%A")
+        is_weekend = target_date.weekday() >= 5
+
+        q = uow.client.table("loans").select("*, clients(name, client_code), loan_products(name)").in_("status", ["ACTIVE", "Approved", "Active"])
+        if branch_id:
+            q = q.eq("branch_id", branch_id)
+        if officer_id:
+            q = q.eq("officer_id", officer_id)
+        
+        try:
+            loans_res = q.execute()
+            active_loans = loans_res.data or []
+        except Exception:
+            active_loans = []
+
+        group_mday_map = {}
+        try:
+            loan_client_ids = [l.get("client_id") for l in active_loans if l.get("client_id")]
+            if loan_client_ids:
+                g_query = uow.client.table("client_memberships").select("client_id, groups(name, meeting_day)").in_("client_id", loan_client_ids).execute()
+                for gm in (g_query.data or []):
+                    grp = gm.get("groups") or {}
+                    cid_s = str(gm.get("client_id"))
+                    group_mday_map[cid_s] = grp.get("meeting_day") or "Daily"
+        except Exception:
+            pass
+
+        q_rep = uow.client.table("repayments").select("client_id, amount_paid").eq("date", date_str)
+        if branch_id:
+            # Note: repayments might not always accurately filter by branch_id if migrated, so filtering locally might be safer, but eq is fine if set.
+            # actually we don't strictly need it if we filter active_loans
+            pass
+        
+        try:
+            rep_res = q_rep.execute()
+            reps = rep_res.data or []
+        except Exception:
+            reps = []
+            
+        rep_map = {}
+        for r in reps:
+            cid = r.get("client_id")
+            if cid:
+                rep_map[str(cid)] = rep_map.get(str(cid), 0.0) + float(r.get("amount_paid") or 0.0)
+
+        full_count, full_amt = 0, 0.0
+        excess_count, excess_amt = 0, 0.0
+        norm_count, norm_amt = 0, 0.0
+        part_count, part_amt = 0, 0.0
+        not_paid_count, not_paid_amt = 0, 0.0
+
+        for l in active_loans:
+            cid = str(l.get("client_id"))
+            if not cid: continue
+            
+            c_paid = rep_map.get(cid, 0.0)
+            
+            g_mday = group_mday_map.get(cid) or l.get("meeting_day") or "Daily"
+            prod_info = l.get("loan_products") or {}
+            p_name_lower = str(prod_info.get("name") or l.get("product_type") or "").lower()
+            
+            if "daily" in p_name_lower or "60" in p_name_lower or "120" in p_name_lower:
+                loan_cycle = "Daily"
+            elif "monthly" in p_name_lower or "3m" in p_name_lower or "6m" in p_name_lower:
+                loan_cycle = "Monthly"
+            else:
+                loan_cycle = "Weekly"
+                
+            if is_weekend:
+                is_expected_today = False
+            elif loan_cycle == "Daily":
+                is_expected_today = True
+            elif loan_cycle == "Weekly":
+                is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower() or str(g_mday).strip().lower() == "daily")
+            else:
+                is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower())
+                
+            if not is_expected_today and c_paid == 0:
+                continue
+
+            repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0) if is_expected_today else 0.0
+            loan_bal = float(l.get("active_credit") or l.get("Active Credit") or 0.0)
+
+            if loan_bal <= 0 and c_paid > 0:
+                full_count += 1
+                full_amt += c_paid
+            elif c_paid > repay_amt and repay_amt > 0:
+                excess_count += 1
+                excess_amt += (c_paid - repay_amt)
+                # Keep mutually exclusive semantics
+            elif c_paid == repay_amt and repay_amt > 0:
+                norm_count += 1
+                norm_amt += c_paid
+            elif c_paid >= repay_amt and repay_amt > 0: # Catch all normal + exact
+                norm_count += 1
+                norm_amt += c_paid
+            elif c_paid > 0 and c_paid < repay_amt:
+                part_count += 1
+                part_amt += c_paid
+            elif c_paid == 0 and repay_amt > 0:
+                not_paid_count += 1
+                not_paid_amt += repay_amt
+
+        return {
+            "full_payments": {"count": full_count, "amount": full_amt},
+            "normal_payments": {"count": norm_count, "amount": norm_amt},
+            "excess_payments": {"count": excess_count, "amount": excess_amt},
+            "part_payments": {"count": part_count, "amount": part_amt},
+            "not_paid": {"count": not_paid_count, "amount": not_paid_amt}
+        }
+
     @staticmethod
     def get_co_dashboard_data(
         uow: UnitOfWork,
@@ -275,6 +399,9 @@ class DashboardService:
         attention_df = pd.DataFrame(attention_rows) if attention_rows else pd.DataFrame(columns=["Client Code", "Client Name", "Group", "Expected", "Paid", "Outstanding", "Reason"])
         meeting_portfolio_df = pd.DataFrame(list(grp_map.values())) if grp_map else pd.DataFrame(columns=["Group Name", "Meeting Day", "Expected Collection", "Collected", "Outstanding", "Compliance %", "Clients Expected", "Clients Paid", "Clients Not Paid", "Status"])
 
+        # Fetch Authoritative Payment Breakdown
+        payment_breakdown = cls._calculate_payment_breakdown(uow, target_date, branch_id, officer_id)
+
         return {
             "welcome": {
                 "officer_name": officer_name or "Credit Officer",
@@ -299,10 +426,10 @@ class DashboardService:
                 "net_savings": sav_deposited - sav_withdrawn
             },
             "repayment_status": {
-                "full_payment": {"count": full_paid_count, "amount": full_paid_amt},
-                "part_payment": {"count": part_paid_count, "amount": part_paid_amt},
-                "excess_payment": {"count": excess_paid_count, "amount": excess_amt},
-                "not_paid": {"count": not_paid_count, "amount": not_paid_amt}
+                "full_payment": payment_breakdown["full_payments"],
+                "part_payment": payment_breakdown["part_payments"],
+                "excess_payment": payment_breakdown["excess_payments"],
+                "not_paid": payment_breakdown["not_paid"]
             },
             "cash_position": cash_position,
             "attention_list": attention_df
@@ -425,6 +552,9 @@ class DashboardService:
 
         par_val = cls.calculate_par_pct(uow, branch_id)
 
+        # Fetch Authoritative Payment Breakdown for the Branch
+        payment_breakdown = cls._calculate_payment_breakdown(uow, target_date, branch_id)
+
         return {
             "branch_summary": {
                 "active_clients": total_active_clients,
@@ -432,6 +562,12 @@ class DashboardService:
                 "active_savings": active_savings,
                 "collection_today": summary.get("total_collected", 0.0),
                 "par": par_val
+            },
+            "repayment_status": {
+                "full_payment": payment_breakdown["full_payments"],
+                "part_payment": payment_breakdown["part_payments"],
+                "excess_payment": payment_breakdown["excess_payments"],
+                "not_paid": payment_breakdown["not_paid"]
             },
             "officer_collection_status": officer_df,
             "branch_cash_position": cash_position,
@@ -577,17 +713,6 @@ class DashboardService:
         today_sav_wd = 0.0
         today_disb = 0.0
 
-        full_paid_count = 0
-        full_paid_amt = 0.0
-        norm_count = 0
-        norm_amt = 0.0
-        excess_count = 0
-        excess_amt = 0.0
-        part_count = 0
-        part_amt = 0.0
-        not_paid_count = 0
-        not_paid_amt = 0.0
-
         try:
             res_rep = uow.client.table("repayments").select("amount_paid, savings_amount, withdrawal_amount, date").execute()
             for r in (res_rep.data or []):
@@ -599,10 +724,6 @@ class DashboardService:
                     today_coll += l_pay
                     today_sav_dep += s_dep
                     today_sav_wd += s_wd
-
-                    if l_pay > 0:
-                        norm_count += 1
-                        norm_amt += l_pay
         except Exception:
             pass
 
@@ -612,17 +733,20 @@ class DashboardService:
         except Exception:
             pass
 
+        # Fetch Authoritative Payment Breakdown globally
+        payment_breakdown = cls._calculate_payment_breakdown(uow, target_date)
+
         return {
             "today_operations": {
                 "today_collection": today_coll,
                 "today_savings_deposit": today_sav_dep,
                 "today_savings_withdrawal": today_sav_wd,
                 "today_disbursement": today_disb,
-                "full_payments": {"count": full_paid_count, "amount": full_paid_amt},
-                "normal_payments": {"count": norm_count, "amount": norm_amt},
-                "excess_payments": {"count": excess_count, "amount": excess_amt},
-                "part_payments": {"count": part_count, "amount": part_amt},
-                "not_paid": {"count": not_paid_count, "amount": not_paid_amt}
+                "full_payments": payment_breakdown["full_payments"],
+                "normal_payments": payment_breakdown["normal_payments"],
+                "excess_payments": payment_breakdown["excess_payments"],
+                "part_payments": payment_breakdown["part_payments"],
+                "not_paid": payment_breakdown["not_paid"]
             },
             "system_health": {
                 "projection_status": "Healthy / Up to Date",

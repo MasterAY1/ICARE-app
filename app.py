@@ -1887,6 +1887,38 @@ if page == "Dashboard":
             h1.info(f"⚙️ **Projection Status**: {health['projection_status']}")
             h2.info(f"📬 **Event Queue**: {health['event_queue_status']}")
             h3.info(f"🔄 **Database Sync**: {health['db_sync_status']}")
+            
+            # Section H: Error Correction Queue (Global)
+            res_corr = uow.client.table("correction_requests").select("*").eq("status", "Pending").order("created_at", desc=False).execute()
+            if res_corr.data:
+                st.divider()
+                st.markdown("#### 🚨 Pending Error Corrections (Global)")
+                for corr in res_corr.data:
+                    c_id = corr["id"]
+                    c_reason = corr["reason"]
+                    
+                    st.warning(f"**Reversal Request** | Record ID: {corr['record_id'][:8]} | Reason: {c_reason}")
+                    
+                    corr_col1, corr_col2, corr_col3 = st.columns([2, 1, 1])
+                    if corr_col2.button("✅ Approve Reversal", key=f"admin_app_corr_{c_id}"):
+                        try:
+                            from services.correction_service import CorrectionService
+                            with SupabaseUnitOfWork() as uow_corr:
+                                CorrectionService.approve_correction(uow_corr, c_id, approved_by=USER_ID)
+                            st.success("Reversal Approved and Executed.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Approval failed: {e}")
+                    
+                    if corr_col3.button("❌ Reject", key=f"admin_rej_corr_{c_id}", type="primary"):
+                        try:
+                            from services.correction_service import CorrectionService
+                            with SupabaseUnitOfWork() as uow_corr:
+                                CorrectionService.reject_correction(uow_corr, c_id, approved_by=USER_ID)
+                            st.success("Reversal Rejected.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Rejection failed: {e}")
 
         elif ROLE in ["AM", "Area Manager"]:
             st.markdown("### 🌐 Area Manager Dashboard")
@@ -2034,6 +2066,38 @@ if page == "Dashboard":
                             st.rerun()
 
                     st.markdown("---")
+                st.divider()
+
+            # Section H: Error Correction Queue
+            res_corr = uow.client.table("correction_requests").select("*").eq("branch_id", BRANCH_ID).eq("status", "Pending").order("created_at", desc=False).execute()
+            if res_corr.data:
+                st.markdown("#### 🚨 Pending Error Corrections (Reversals)")
+                for corr in res_corr.data:
+                    c_id = corr["id"]
+                    c_reason = corr["reason"]
+                    
+                    st.warning(f"**Reversal Request** | Record ID: {corr['record_id'][:8]} | Reason: {c_reason}")
+                    
+                    corr_col1, corr_col2, corr_col3 = st.columns([2, 1, 1])
+                    if corr_col2.button("✅ Approve Reversal", key=f"app_corr_{c_id}"):
+                        try:
+                            from services.correction_service import CorrectionService
+                            with SupabaseUnitOfWork() as uow_corr:
+                                CorrectionService.approve_correction(uow_corr, c_id, approved_by=USER_ID)
+                            st.success("Reversal Approved and Executed.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Approval failed: {e}")
+                    
+                    if corr_col3.button("❌ Reject", key=f"rej_corr_{c_id}", type="primary"):
+                        try:
+                            from services.correction_service import CorrectionService
+                            with SupabaseUnitOfWork() as uow_corr:
+                                CorrectionService.reject_correction(uow_corr, c_id, approved_by=USER_ID)
+                            st.success("Reversal Rejected.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Rejection failed: {e}")
                 st.divider()
 
             # Section A: Branch Summary
@@ -4898,6 +4962,49 @@ elif page == "Daily Report":
                                            "Passbook", "Current Loan Balance", "Total Acc. Savings", "Officer", "Note"]]
                 
             st.dataframe(df_detailed, use_container_width=True)
+            
+            # --- FLAG ERROR SECTION ---
+            if not daily_reps.empty:
+                st.markdown("### 🚩 Request Error Correction")
+                with st.expander("Flag an Error / Request Reversal"):
+                    st.info("Select a transaction from today to flag for reversal. The Branch Manager or Admin must approve the correction.")
+                    opts = {}
+                    for _, r in daily_reps.iterrows():
+                        if r.get("Reversed", False):
+                            continue
+                        tx_id = str(r.get('id', ''))
+                        if not tx_id or len(tx_id) < 10:
+                            continue
+                        amt_paid = float(r.get('Loan Repayment Amount') or 0)
+                        sav_amt = float(r.get('Savings Amount') or 0)
+                        c_name = r.get('Client Name', 'Unknown')
+                        label = f"{c_name} (Loan: ₦{amt_paid:,.0f}, Sav: ₦{sav_amt:,.0f}) | ID: {tx_id[:8]}"
+                        opts[label] = tx_id
+                    
+                    if opts:
+                        sel_tx_label = st.selectbox("Select Transaction", list(opts.keys()))
+                        req_reason = st.text_input("Reason for Correction", placeholder="e.g. Wrong amount entered. Typed 50000 instead of 5000.")
+                        
+                        if st.button("Submit Correction Request", type="primary"):
+                            if req_reason:
+                                try:
+                                    from services.correction_service import CorrectionService
+                                    with SupabaseUnitOfWork() as uow:
+                                        CorrectionService.request_correction(
+                                            uow,
+                                            record_id=opts[sel_tx_label],
+                                            record_type="Repayment",
+                                            reason=req_reason,
+                                            requested_by=USER_ID,
+                                            branch_id=BRANCH_ID
+                                        )
+                                    st.success("Correction request submitted successfully! Awaiting Manager approval.")
+                                except Exception as e:
+                                    st.error(f"Error submitting request: {e}")
+                            else:
+                                st.warning("Please provide a reason for the correction.")
+                    else:
+                        st.info("No valid transactions available to reverse.")
     else:
         st.info("No records found in database.")
 
@@ -5946,7 +6053,7 @@ elif page == "CO Cashbook":
     
     with st.form("eod_form"):
         out_0, out_1, out_2 = st.columns(3)
-        global_opening = out_0.number_input("Opening Balance (B/F Cash)", min_value=0.0, step=500.0, value=None, placeholder="0")
+        global_opening = out_0.number_input("Opening Balance (B/F Cash)", min_value=None, step=500.0, value=None, placeholder="0")
         global_expenses = out_1.number_input("Office Expenses", min_value=0.0, step=500.0, value=None, placeholder="0")
         global_bank_dep = out_2.number_input("Bank Deposited", min_value=0.0, step=500.0, value=None, placeholder="0")
         
@@ -5983,7 +6090,7 @@ elif page == "CO Cashbook":
             global_cfd = float(global_cfd or 0)
             global_bonus = float(global_bonus or 0)
             
-            if any(x > 0 for x in [global_opening, global_expenses, global_bank_dep,
+            if any(x != 0 for x in [global_opening, global_expenses, global_bank_dep,
                                    global_app_fee, global_passbook, global_misc_fee, global_asset_cr, global_cc, global_cfd, global_bonus]):
                 g_out = {
                     "Date": date_str, "Client ID": f"GLOBAL-{target_co}", "Client Name": f"{target_co} End of Day",

@@ -737,12 +737,28 @@ INSERT INTO public.posting_rules (event_type, debit_account, credit_account, ver
 ('LoanOffsetFromSavings', '2000', '1200', 1, TRUE),
 ('LapsTransferred', '2000', '2030', 1, TRUE),
 ('LapsPaidOut', '2030', '1000', 1, TRUE),
-('LapsMigrated', '3000', '2030', 1, TRUE)
+('LapsMigrated', '3000', '2030', 1, TRUE),
+('RepaymentReversed', '1200', '1000', 1, TRUE)
 ON CONFLICT (event_type, version) DO UPDATE SET
     debit_account = EXCLUDED.debit_account,
     credit_account = EXCLUDED.credit_account,
     enabled = EXCLUDED.enabled;
 
 INSERT INTO public.settings (key, value, description) VALUES
-('core_banking_version', '2.3', 'Core Banking Greenfield baseline schema status')
+('core_banking_version', '2.4', 'Core Banking Greenfield baseline schema status (with Error Correction)')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+
+-- 28. ERROR CORRECTION WORKFLOW
+CREATE TABLE public.correction_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    record_id UUID NOT NULL,
+    record_type TEXT NOT NULL,
+    requested_by UUID REFERENCES public.app_users(id),
+    branch_id UUID REFERENCES public.branches(branch_id),
+    reason TEXT NOT NULL,
+    status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Approved', 'Rejected')),
+    approved_by UUID REFERENCES public.app_users(id),
+    approval_date TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);

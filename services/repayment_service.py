@@ -138,3 +138,84 @@ class RepaymentService:
             print(f"[SAVINGS TRACE] Deferred cashbook rebuild failed: {ex}")
 
         return repayment
+
+    @staticmethod
+    def reverse_repayment(uow: SupabaseUnitOfWork, original_repayment_id: str, reason: str, reversed_by: str):
+        """
+        Executes a compensating negative repayment to reverse an error (BR-ERR-002).
+        """
+        # Fetch the original repayment
+        res = uow.client.table("repayments").select("*").eq("id", original_repayment_id).execute()
+        if not res.data:
+            raise ValueError(f"Repayment {original_repayment_id} not found.")
+        orig = res.data[0]
+
+        operations = []
+
+        # 1. Operational data: Compensating negative record
+        new_id = str(uuid.uuid4())
+        comp_record = orig.copy()
+        comp_record["id"] = new_id
+        
+        orig_amount = float(comp_record.get("amount_paid") or 0.0)
+        comp_record["amount_paid"] = -abs(orig_amount)
+        
+        if comp_record.get("savings_amount"):
+            comp_record["savings_amount"] = -abs(float(comp_record["savings_amount"]))
+        if comp_record.get("withdrawal_amount"):
+            comp_record["withdrawal_amount"] = -abs(float(comp_record["withdrawal_amount"]))
+            
+        comp_record["note"] = f"REVERSAL of {original_repayment_id}. Reason: {reason}"
+        comp_record["created_at"] = datetime.now().isoformat()
+        
+        operations.append({
+            "type": "insert",
+            "table": "repayments",
+            "record": comp_record
+        })
+
+        # 2. Reversal Domain Event
+        # Ensure we pass POSITIVE amount to posting engine because the Rule swaps Debits/Credits
+        event_payload = {
+            "branch": orig.get("branch_id"),
+            "officer": orig.get("officer_id"),
+            "amount": abs(orig_amount),
+            "reference": new_id,
+            "loan_id": orig.get("loan_id"),
+            "narration": f"Reversal of repayment {original_repayment_id}"
+        }
+        
+        ev = DomainEvent(
+            event_id=str(uuid.uuid4()),
+            aggregate_id=new_id,
+            aggregate_type="Repayment",
+            event_type="RepaymentReversed",
+            payload=event_payload
+        )
+
+        operations.append({
+            "type": "insert",
+            "table": "event_store",
+            "record": {
+                "event_id": ev.event_id,
+                "aggregate_id": ev.aggregate_id,
+                "aggregate_type": ev.aggregate_type,
+                "event_type": ev.event_type,
+                "version": ev.version,
+                "payload": ev.payload,
+                "status": "Posted"
+            }
+        })
+
+        tx_id, post_op = FinancialPostingEngine.post_event(uow, ev, defer_commit=True)
+        operations.append(post_op)
+
+        # 3. Execute all accumulated operations atomically
+        uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
+
+        # 4. Rebuild projection
+        try:
+            from datetime import date
+            uow.cashbook.rebuild_projection(uow, orig.get("branch_id"), date.today())
+        except Exception as ex:
+            print(f"Deferred cashbook rebuild failed during reversal: {ex}")
