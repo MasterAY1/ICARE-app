@@ -400,7 +400,7 @@ class DashboardService:
         meeting_portfolio_df = pd.DataFrame(list(grp_map.values())) if grp_map else pd.DataFrame(columns=["Group Name", "Meeting Day", "Expected Collection", "Collected", "Outstanding", "Compliance %", "Clients Expected", "Clients Paid", "Clients Not Paid", "Status"])
 
         # Fetch Authoritative Payment Breakdown
-        payment_breakdown = cls._calculate_payment_breakdown(uow, target_date, branch_id, officer_id)
+        payment_breakdown = DashboardService._calculate_payment_breakdown(uow, target_date, branch_id, officer_id)
 
         return {
             "welcome": {
@@ -550,10 +550,10 @@ class DashboardService:
         except Exception:
             total_active_clients = 0
 
-        par_val = cls.calculate_par_pct(uow, branch_id)
+        par_val = DashboardService.calculate_par_pct(uow, branch_id)
 
         # Fetch Authoritative Payment Breakdown for the Branch
-        payment_breakdown = cls._calculate_payment_breakdown(uow, target_date, branch_id)
+        payment_breakdown = DashboardService._calculate_payment_breakdown(uow, target_date, branch_id)
 
         return {
             "branch_summary": {
@@ -676,7 +676,7 @@ class DashboardService:
                 pass
 
         b_df = pd.DataFrame(branch_stats) if branch_stats else pd.DataFrame(columns=["Branch", "Expected Collection", "Collected", "Outstanding", "PAR", "Cash Difference", "Compliance %", "Status"])
-        regional_par = cls.calculate_par_pct(uow)
+        regional_par = DashboardService.calculate_par_pct(uow)
 
         return {
             "regional_summary": {
@@ -734,7 +734,7 @@ class DashboardService:
             pass
 
         # Fetch Authoritative Payment Breakdown globally
-        payment_breakdown = cls._calculate_payment_breakdown(uow, target_date)
+        payment_breakdown = DashboardService._calculate_payment_breakdown(uow, target_date)
 
         return {
             "today_operations": {
@@ -827,7 +827,7 @@ class DashboardService:
             top_branches = ["Head Office"]
             bottom_branches = []
 
-        par_val = cls.calculate_par_pct(uow)
+        par_val = DashboardService.calculate_par_pct(uow)
 
         return {
             "executive_overview": {
