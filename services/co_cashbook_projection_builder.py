@@ -114,29 +114,34 @@ class CoCashbookProjectionBuilder:
             if side == "Debit":
                 # CO Inflows
                 if event_type == "RepaymentReceived":
-                    cycle = "Daily"
                     loan_id = ev_store.get("payload", {}).get("loan_id") or entry.get("aggregate_id")
+                    prod_name = ""
+                    cycle = "Weekly"
                     try:
-                        res_l = uow.client.table("loans").select("loan_products(repayment_cycle)").eq("loan_id", loan_id).execute()
+                        # 1. Try querying loans by loan_id
+                        res_l = uow.client.table("loans").select("loan_products(name, repayment_cycle)").eq("loan_id", loan_id).execute()
+                        if not res_l.data:
+                            # 2. Try querying loans by client_id
+                            res_l = uow.client.table("loans").select("loan_products(name, repayment_cycle)").eq("client_id", loan_id).eq("status", "Active").execute()
                         if res_l.data:
-                            cycle = res_l.data[0].get("loan_products", {}).get("repayment_cycle", "Daily")
+                            lp = res_l.data[0].get("loan_products") or {}
+                            prod_name = str(lp.get("name") or "").lower()
+                            cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in prod_name else "Weekly")
                     except Exception:
                         pass
 
-                    if cycle == "Daily": rep_daily += amount
-                    elif cycle == "Weekly":
-                        duration = 12
-                        try:
-                            res_l2 = uow.client.table("loans").select("loan_products(name)").eq("loan_id", loan_id).execute()
-                            if res_l2.data:
-                                name = str(res_l2.data[0].get("loan_products", {}).get("name", "")).lower()
-                                if "24" in name: duration = 24
-                        except Exception:
-                            pass
-                        if duration == 12: rep_12_weeks += amount
-                        else: rep_24_weeks += amount
-                    elif cycle == "Monthly": rep_monthly += amount
-                    else: rep_daily += amount
+                    if "12 week" in prod_name or "12w" in prod_name or "12wk" in prod_name or (cycle == "Weekly" and "24" not in prod_name):
+                        rep_12_weeks += amount
+                    elif "24 week" in prod_name or "24w" in prod_name or "24wk" in prod_name:
+                        rep_24_weeks += amount
+                    elif "120" in prod_name or "120d" in prod_name:
+                        rep_120_days += amount
+                    elif "60" in prod_name or "60d" in prod_name or "daily" in prod_name or cycle == "Daily":
+                        rep_daily += amount
+                    elif "month" in prod_name or cycle == "Monthly":
+                        rep_monthly += amount
+                    else:
+                        rep_12_weeks += amount
 
                 elif event_type in ["SavingsDeposited", "INDIVIDUAL_SAVINGS_DEPOSIT", "GROUP_SAVINGS_DEPOSIT"]:
                     if entry.get("aggregate_type") == "LapsSavings":
@@ -145,13 +150,13 @@ class CoCashbookProjectionBuilder:
                         savings_deposit += amount
                         
                 elif event_type in ["FeeCharged", "MARKUP", "MARKUP_11", "MARKUP_20", "CONTINGENCY", "PROCESSING_FEE", "PASSBOOK"]:
-                    if "passbook" in narr or "pass book" in narr: passbook += amount
-                    elif "processing" in narr or "application" in narr: app_fee += amount
+                    if "passbook" in narr or "pass book" in narr or "pass_book" in narr: passbook += amount
+                    elif "processing" in narr or "application" in narr or "app fee" in narr or "app_fee" in narr: app_fee += amount
                     elif "contingency" in narr:
                         contingency += amount
                         if "upfront" in narr: product_withdrawal += amount
-                    elif "credit form damage" in narr: credit_form_damage += amount
-                    elif "credit form" in narr: credit_form += amount
+                    elif "credit form damage" in narr or "credit_form_damage" in narr: credit_form_damage += amount
+                    elif "credit form" in narr or "credit_form" in narr: credit_form += amount
                     elif "bonus" in narr: bonus += amount
                     elif "11%" in narr and "weekly" in narr:
                         weekly_11_pct += amount
@@ -180,7 +185,10 @@ class CoCashbookProjectionBuilder:
                 elif event_type == "BankWithdrawn":
                     bank_withdrawal += amount
                 elif event_type == "AssetSoldCash":
-                    cash_and_carry += amount
+                    if "credit" in narr or "credit sale" in narr:
+                        asset_credit_sales += amount
+                    else:
+                        cash_and_carry += amount
                 elif event_type == "PenaltyCharged":
                     if is_misc_officer:
                         savings_deposit += amount

@@ -25,18 +25,33 @@ class LoanService:
         ref_id = f"TXN-{b_date_str}-{uuid.uuid4().hex[:6].upper()}"
 
         # 2. Calculate loan setup pricing parameters
-        setup = LoanProductEngine.calculate_loan_setup(loan.amount, loan.product_type, loan.product_category)
+        prod_cat = getattr(loan, 'product_category', None) or loan.extra_fields.get("product_category") or ("Asset" if getattr(loan, 'is_asset', False) else "Finance")
+        setup = LoanProductEngine.calculate_loan_setup(loan.amount, loan.product_type, prod_cat)
         
         # 3. Update Loan status and dates
         loan.status = LoanStatus.ACTIVE if hasattr(LoanStatus, 'ACTIVE') else "Active"
         loan.disbursement_date = b_date
-        if not loan.start_date:
-            loan.start_date = b_date
         
-        if setup.get("duration"):
-            schedule = LoanProductEngine.generate_repayment_schedule(loan.start_date, setup["duration"], setup.get("freq", "Daily"))
-            if schedule:
-                loan.expected_end_date = schedule[-1]
+        # Calculate meeting day if weekly
+        meeting_day = None
+        try:
+            res_m = uow.client.table("client_memberships").select("groups(meeting_day)").eq("client_id", loan.client_id).execute()
+            if res_m.data and res_m.data[0].get("groups"):
+                meeting_day = res_m.data[0]["groups"].get("meeting_day")
+        except Exception:
+            pass
+
+        freq = setup.get("freq", "Daily")
+        duration = setup.get("duration", 60)
+        schedule = LoanProductEngine.generate_repayment_schedule(
+            b_date, duration, freq, meeting_day=meeting_day
+        )
+        if schedule:
+            loan.start_date = schedule[0]
+            loan.expected_end_date = schedule[-1]
+        else:
+            loan.start_date = b_date
+            loan.expected_end_date = b_date
                 
         operations = []
 
@@ -121,25 +136,6 @@ class LoanService:
             prod_lower = (loan.product_type or "").lower()
             is_20_pct = (rate == 0.21) or "120" in prod_lower or "24" in prod_lower or "6m" in prod_lower or "6 month" in prod_lower
             markup_class = TransactionClassification.MARKUP_20.value if is_20_pct else TransactionClassification.MARKUP_11.value
-            
-            b_id = uow.markup_11._resolve_branch_id(loan.branch)
-            o_id = uow.markup_11._resolve_officer_id(loan.credit_officer)
-            fee_table = "markup_20_transactions" if is_20_pct else "markup_11_transactions"
-
-            operations.append({
-                "type": "insert",
-                "table": fee_table,
-                "record": {
-                    "fee_id": str(uuid.uuid4()),
-                    "branch_id": b_id,
-                    "officer_id": o_id,
-                    "client_id": loan.client_id,
-                    "loan_id": loan.id,
-                    "reference": ref_id,
-                    "amount": float(markup_val),
-                    "posting_date": b_date.isoformat()
-                }
-            })
 
             event_markup = DomainEvent(
                 event_id=str(uuid.uuid4()),
@@ -199,10 +195,17 @@ class LoanService:
         # Execute all accumulated operations atomically
         uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
 
+        # 8. Generate Amortization Schedule in database
+        try:
+            from services.schedule_service import ScheduleService
+            ScheduleService.generate_schedule(uow, loan, loan.disbursement_date)
+        except Exception as se:
+            print(f"[ERROR] Error generating amortization schedule for loan {loan.id}: {se}")
+
         # Rebuild projection
         try:
             b_id = uow.loans._resolve_branch_id(loan.branch)
-            uow.cashbook.rebuild_projection(uow, b_id, b_date)
+            uow.cashbook.rebuild_projection(b_id, b_date)
         except Exception as ex:
             print(f"[SAVINGS TRACE] Deferred cashbook rebuild failed: {ex}")
 

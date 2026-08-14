@@ -157,8 +157,12 @@ class ScheduleService:
                 "paid_date": None
             })
 
-        # Save to database
+        # Save to database (Clean existing pending schedule rows first to avoid duplicates)
         if schedule_rows:
+            try:
+                uow.client.table("loan_schedule").delete().eq("loan_id", loan.id).eq("status", "Pending").execute()
+            except Exception:
+                pass
             uow.client.table("loan_schedule").insert(schedule_rows).execute()
 
     @staticmethod

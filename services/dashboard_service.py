@@ -131,11 +131,7 @@ class DashboardService:
             elif c_paid > repay_amt and repay_amt > 0:
                 excess_count += 1
                 excess_amt += (c_paid - repay_amt)
-                # Keep mutually exclusive semantics
             elif c_paid == repay_amt and repay_amt > 0:
-                norm_count += 1
-                norm_amt += c_paid
-            elif c_paid >= repay_amt and repay_amt > 0: # Catch all normal + exact
                 norm_count += 1
                 norm_amt += c_paid
             elif c_paid > 0 and c_paid < repay_amt:
@@ -227,17 +223,8 @@ class DashboardService:
             try:
                 cid = r.get("client_id") or r.get("Client ID")
                 l_pay = float(r.get("amount_paid") or r.get("Loan Repayment Amount") or 0.0)
-                s_dep = float(r.get("savings_amount") or r.get("Savings Amount") or 0.0)
-                s_wd = float(r.get("withdrawal_amount") or r.get("Withdrawal Amount") or 0.0)
 
                 total_collected_today += l_pay
-
-                if s_dep > 0:
-                    sav_deposited += s_dep
-                    if cid: sav_dep_clients.add(cid)
-                if s_wd > 0:
-                    sav_withdrawn += s_wd
-                    if cid: sav_wd_clients.add(cid)
 
                 p_name = ""
                 if r.get("loans") and r.get("loans").get("loan_products"):
@@ -251,6 +238,24 @@ class DashboardService:
                     if cid and l_pay > 0: rep_12w_clients.add(cid)
             except Exception:
                 pass
+
+        # 2b. Query savings from individual_savings table for today
+        try:
+            if officer_id:
+                sav_res = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount") \
+                    .eq("officer_id", officer_id).eq("posting_date", date_str).execute()
+                for s in (sav_res.data or []):
+                    cid = s.get("client_id")
+                    dep = float(s.get("deposit_amount") or 0.0)
+                    wd = float(s.get("withdrawal_amount") or 0.0)
+                    if dep > 0:
+                        sav_deposited += dep
+                        if cid: sav_dep_clients.add(cid)
+                    if wd > 0:
+                        sav_withdrawn += wd
+                        if cid: sav_wd_clients.add(cid)
+        except Exception:
+            pass
 
         # 3. Scheduled Meeting Groups & Attention List
         active_loans = []

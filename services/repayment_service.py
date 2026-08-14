@@ -64,6 +64,13 @@ class RepaymentService:
             tx_id, post_op = FinancialPostingEngine.post_event(uow, evt, defer_commit=True)
             operations.append(post_op)
 
+        # 2.5 Resolve loan_id if needed
+        resolved_loan_id = repayment.loan_id
+        if not resolved_loan_id or resolved_loan_id == repayment.client_id:
+            resolved_loan_id = uow.repayments._resolve_loan_id(repayment.client_id)
+        if resolved_loan_id:
+            repayment.loan_id = resolved_loan_id
+
         # 3. Create Event & Post (Only for actual loan repayment component)
         if repayment.loan_repayment_amount > 0:
             event = DomainEvent(
@@ -77,6 +84,7 @@ class RepaymentService:
                     "amount": repayment.loan_repayment_amount,
                     "reference": repayment.id,
                     "loan_id": repayment.loan_id,
+                    "date": repayment.payment_date.isoformat() if repayment.payment_date else None,
                     "narration": repayment.note or f"Loan repayment of {repayment.loan_repayment_amount} received."
                 }
             )
@@ -87,30 +95,57 @@ class RepaymentService:
         # Mapping of dict key -> (Event Type, Narration)
         fee_mapping = {
             "App Fee": ("FeeCharged", "Processing / Application Fee"),
+            "app_fee": ("FeeCharged", "Processing / Application Fee"),
+            "processing_fee_paid": ("FeeCharged", "Processing / Application Fee"),
             "Pass Book Bonus": ("FeeCharged", "Passbook"),
+            "passbook_bonus": ("FeeCharged", "Passbook"),
+            "pass_book_paid": ("FeeCharged", "Passbook"),
             "Misc Fees": ("FeeCharged", "Misc Fee"),
+            "misc_fees": ("FeeCharged", "Misc Fee"),
             "Asset Credit Sales": ("AssetSoldCash", "Asset Credit Sales"),
+            "asset_credit_sales": ("AssetSoldCash", "Asset Credit Sales"),
             "Cash and Carry": ("AssetSoldCash", "Cash and Carry"),
+            "cash_and_carry": ("AssetSoldCash", "Cash and Carry"),
             "Contingency": ("FeeCharged", "Contingency"),
+            "contingency_paid": ("FeeCharged", "Contingency"),
             "Daily 11%": ("FeeCharged", "11% markup"),
+            "daily_11_pct": ("FeeCharged", "11% markup"),
             "Daily 20%": ("FeeCharged", "20% markup"),
+            "daily_20_pct": ("FeeCharged", "20% markup"),
             "Weekly 11%": ("FeeCharged", "11% weekly"),
+            "weekly_11_pct": ("FeeCharged", "11% weekly"),
             "Weekly 20%": ("FeeCharged", "20% weekly"),
+            "weekly_20_pct": ("FeeCharged", "20% weekly"),
             "Bank Deposited": ("BankDeposited", "Bank Deposited"),
+            "bank_deposited": ("BankDeposited", "Bank Deposited"),
             "Bank Withdrawal": ("BankWithdrawn", "Bank Withdrawn"),
+            "bank_withdrawal": ("BankWithdrawn", "Bank Withdrawn"),
             "Product Withdrawal": ("ProductWithdrawn", "Product Withdrawal"),
+            "product_withdrawal": ("ProductWithdrawn", "Product Withdrawal"),
             "Credit Form": ("FeeCharged", "Credit Form"),
+            "credit_form": ("FeeCharged", "Credit Form"),
             "Credit Form Damage": ("FeeCharged", "Credit Form Damage"),
-            "Bonus": ("FeeCharged", "Bonus")
+            "credit_form_damage": ("FeeCharged", "Credit Form Damage"),
+            "Bonus": ("FeeCharged", "Bonus"),
+            "bonus": ("FeeCharged", "Bonus"),
+            "Expenses": ("ExpenseRecorded", "Office Expenses"),
+            "expenses": ("ExpenseRecorded", "Office Expenses")
         }
 
+        handled_keys = set()
         for k, (e_type, narr) in fee_mapping.items():
+            if k.lower() in handled_keys:
+                continue
             amt = extra.get(k)
+            if (amt is None or amt == 0) and any(x.lower() == k.lower() for x in extra.keys()):
+                matched_k = next(x for x in extra.keys() if x.lower() == k.lower())
+                amt = extra.get(matched_k)
             try:
                 amt = float(amt) if amt else 0.0
-            except ValueError:
+            except (ValueError, TypeError):
                 amt = 0.0
             if amt > 0:
+                handled_keys.add(k.lower())
                 ev = DomainEvent(
                     event_id=str(uuid.uuid4()),
                     aggregate_id=repayment.id,
@@ -122,6 +157,7 @@ class RepaymentService:
                         "amount": amt,
                         "reference": repayment.id,
                         "loan_id": repayment.loan_id,
+                        "date": repayment.payment_date.isoformat() if repayment.payment_date else None,
                         "narration": narr
                     }
                 )
@@ -134,7 +170,8 @@ class RepaymentService:
         try:
             b_id = uow.repayments._resolve_branch_id(repayment.branch)
             from datetime import date
-            uow.cashbook.rebuild_projection(uow, b_id, date.today())
+            p_rebuild_date = repayment.payment_date if repayment.payment_date else date.today()
+            uow.cashbook.rebuild_projection(b_id, p_rebuild_date)
         except Exception as ex:
             print(f"[SAVINGS TRACE] Deferred cashbook rebuild failed: {ex}")
 
