@@ -66,6 +66,7 @@ class LoanService:
             "type": "insert",
             "table": "audit_logs",
             "record": {
+                "id": str(uuid.uuid4()),
                 "user_id": user_id,
                 "action": "Loan Disbursed",
                 "description": f"Role: Credit Officer. Old: None. New: {{'amount': {loan.amount}, 'status': 'Active', 'reference_id': '{ref_id}'}}",
@@ -85,7 +86,7 @@ class LoanService:
                     "event_type": evt.event_type,
                     "version": evt.version,
                     "payload": evt.payload,
-                    "metadata": evt.metadata,
+                    "metadata": getattr(evt, "metadata", {}) or {},
                     "status": "Completed"
                 }
             })

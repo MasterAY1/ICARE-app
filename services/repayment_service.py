@@ -37,6 +37,7 @@ class RepaymentService:
             "type": "insert",
             "table": "audit_logs",
             "record": {
+                "id": str(uuid.uuid4()),
                 "user_id": user_id,
                 "action": "Loan Repayment Received",
                 "description": f"Role: Credit Officer. Old: None. New: {{'amount': {repayment.amount_paid}}}",
@@ -56,8 +57,8 @@ class RepaymentService:
                     "event_type": evt.event_type,
                     "version": evt.version,
                     "payload": evt.payload,
-                    "metadata": evt.metadata,
-                    "status": "Posted"
+                    "metadata": getattr(evt, "metadata", {}) or {},
+                    "status": "Completed"
                 }
             })
             tx_id, post_op = FinancialPostingEngine.post_event(uow, evt, defer_commit=True)

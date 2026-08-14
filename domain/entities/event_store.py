@@ -9,6 +9,7 @@ class DomainEvent:
     aggregate_type: str
     event_type: str
     payload: Dict[str, Any]
+    metadata: Dict[str, Any] = field(default_factory=dict)
     version: int = 1
     status: str = "Pending"  # Pending, Processing, Completed, Failed
     created_at: Optional[datetime] = None
