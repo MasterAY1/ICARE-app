@@ -2543,10 +2543,6 @@ elif page == "Loan Origination":
                                     "loan_repay": 0.0,
                                     "total_due": 0.0,
                                     "status": "Pending",
-                                    "nickname": client_entity.nickname,
-                                    "marital_status": client_entity.marital_status,
-                                    "average_monthly_income": client_entity.average_monthly_income,
-                                    "other_obligations": client_entity.other_obligations,
                                     "extra_fields": {
                                         "guarantor_name": st.session_state.get("reg_guarantor_name"),
                                         "guarantor_nickname": st.session_state.get("reg_guarantor_nickname"),
@@ -2555,7 +2551,11 @@ elif page == "Loan Origination":
                                         "guarantor_marital_status": st.session_state.get("reg_guarantor_marital"),
                                         "guarantor_occupation": st.session_state.get("reg_guarantor_occupation"),
                                         "guarantor_relationship": st.session_state.get("reg_guarantor_relationship"),
-                                        "guarantor_office_address": st.session_state.get("reg_guarantor_office")
+                                        "guarantor_office_address": st.session_state.get("reg_guarantor_office"),
+                                        "nickname": client_entity.nickname,
+                                        "marital_status": client_entity.marital_status,
+                                        "average_monthly_income": client_entity.average_monthly_income,
+                                        "other_obligations": client_entity.other_obligations
                                     },
                                     "guarantor_id_means": st.session_state.get("reg_guarantor_id_means"),
                                     "guarantor_id_number": st.session_state.get("reg_guarantor_id_number"),
@@ -2984,10 +2984,6 @@ elif page == "Loan Origination":
                                                     "loan_repay": 0.0,
                                                     "total_due": 0.0,
                                                     "status": "Pending",
-                                                    "nickname": str(member_row.get('Nickname', '')) if pd.notna(member_row.get('Nickname')) else "",
-                                                    "marital_status": "Married",
-                                                    "average_monthly_income": 0.0,
-                                                    "other_obligations": "",
                                                     "extra_fields": {
                                                         "guarantor_name": g_name_val,
                                                         "guarantor_phone": g_phone_val,
@@ -2995,7 +2991,11 @@ elif page == "Loan Origination":
                                                         "guarantor_marital_status": "Married",
                                                         "guarantor_occupation": g_occ_val,
                                                         "guarantor_relationship": g_rel_val,
-                                                        "guarantor_office_address": g_office_val
+                                                        "guarantor_office_address": g_office_val,
+                                                        "nickname": str(member_row.get('Nickname', '')) if pd.notna(member_row.get('Nickname')) else "",
+                                                        "marital_status": "Married",
+                                                        "average_monthly_income": 0.0,
+                                                        "other_obligations": ""
                                                     },
                                                     "guarantor_id_means": g_id_means_val,
                                                     "guarantor_id_number": g_id_number_val
