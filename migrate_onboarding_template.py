@@ -103,7 +103,13 @@ def run_migration():
                 if not gs_res.data:
                     uow.client.table("group_savings").insert({
                         "id": str(uuid.uuid4()),
-                        "group_id": g_id, "date": base_date.isoformat(), "amount": float(g_sav), "type": "Deposit",
+                        "group_id": g_id,
+                        "posting_date": "1970-01-01",
+                        "branch_id": b_id,
+                        "officer_id": o_id,
+                        "deposit_amount": float(g_sav),
+                        "withdrawal_amount": 0.0,
+                        "reference": "ONBOARDING-GROUP-OPENING",
                         "remarks": "Initial Onboarding Group Savings"
                     }).execute()
                     print(f"Posted Group Savings: {g_sav} for {g_name}")
@@ -114,7 +120,7 @@ def run_migration():
         db_group_seq = {}
         
         for index, row in df_members.iterrows():
-            m_ref = str(row.get('Member Number')).strip() # Excel might have "Member Number" not "Member Reference*" based on earlier dump
+            m_ref = str(row.get('Member Number')).strip()
             if m_ref == 'nan': m_ref = ""
             g_ref = str(row.get('Group Reference*')).strip()
             if g_ref == 'nan' or not g_ref: continue
@@ -178,14 +184,33 @@ def run_migration():
                 is_res = uow.client.table("individual_savings").select("id").eq("client_id", c_id).eq("remarks", "Initial Onboarding Savings").execute()
                 if not is_res.data:
                     uow.client.table("individual_savings").insert({
-                        "id": str(uuid.uuid4()), "client_id": c_id, "date": base_date.isoformat(), 
-                        "amount": float(s_bal), "type": "Deposit", "remarks": "Initial Onboarding Savings"
+                        "id": str(uuid.uuid4()),
+                        "client_id": c_id,
+                        "posting_date": "1970-01-01",
+                        "branch_id": b_id,
+                        "officer_id": o_id,
+                        "deposit_amount": float(s_bal),
+                        "withdrawal_amount": 0.0,
+                        "reference": "ONBOARDING-MEMBER-OPENING",
+                        "remarks": "Initial Onboarding Savings"
                     }).execute()
                     print(f"Posted Individual Savings: {s_bal} for {f_name}")
             
             # Loans & Schedule
             if pd.notna(a_cred) and float(a_cred) > 0:
-                prod = product_map.get(l_type.lower()) if l_type and l_type != 'nan' else None
+                prod = None
+                if l_type and l_type != 'nan':
+                    lt_lower = l_type.lower()
+                    prod = product_map.get(lt_lower)
+                    if not prod:
+                        if "12" in lt_lower and "asset" not in lt_lower:
+                            prod = product_map.get("weekly 12w")
+                        elif "24" in lt_lower and "asset" not in lt_lower:
+                            prod = product_map.get("weekly 24w")
+                        elif "60" in lt_lower and "asset" not in lt_lower:
+                            prod = product_map.get("daily 60 days")
+                        elif "120" in lt_lower and "asset" not in lt_lower:
+                            prod = product_map.get("daily 120 days")
                 if not prod:
                     print(f"  Warning: Loan Product '{l_type}' not found for {f_name}. Skipping loan!")
                     continue

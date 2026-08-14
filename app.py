@@ -2959,11 +2959,23 @@ elif page == "Loan Origination":
                                                 true_installment = true_active_credit / duration_val if duration_val > 0 else 0.0
                                                 amount_already_paid = max(0.0, true_active_credit - remaining_bal) if remaining_bal > 0 else 0.0
 
+                                                resolved_prod_type = loan_type
+                                                lt_l = (loan_type or "").lower()
+                                                if "asset" not in lt_l:
+                                                    if "12" in lt_l and ("week" in lt_l or "w" in lt_l):
+                                                        resolved_prod_type = "Weekly 12W"
+                                                    elif "24" in lt_l and ("week" in lt_l or "w" in lt_l):
+                                                        resolved_prod_type = "Weekly 24W"
+                                                    elif "60" in lt_l:
+                                                        resolved_prod_type = "Daily 60 Days"
+                                                    elif "120" in lt_l:
+                                                        resolved_prod_type = "Daily 120 Days"
+
                                                 loan_entity = Loan(
                                                     id=loan_id,
                                                     client_id=client_id,
                                                     client_name=name_val,
-                                                    product_type=loan_type or "Weekly 24W",
+                                                    product_type=resolved_prod_type or "Weekly 24W",
                                                     amount=principal_loan or true_active_credit,
                                                     duration=duration_val,
                                                     frequency="Weekly" if "week" in loan_type.lower() else "Daily",
@@ -4114,6 +4126,7 @@ elif page == "Collections":
                         uuid_id = member['ID']
                         mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
                         try:
+                            # Match strictly by client UUID
                             res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", uuid_id).execute()
                             res_wd = uow.client.table("individual_savings").select("withdrawal_amount").eq("client_id", uuid_id).execute()
                             sav_bal = sum(float(d.get("deposit_amount") or 0) for d in res_dep.data) - sum(float(w.get("withdrawal_amount") or 0) for w in res_wd.data)
@@ -4288,7 +4301,7 @@ elif page == "Collections":
                         for cid, info in member_info.items():
                             m = info['member']
                             prod = str(m['Loan Product'])
-                            is_asset = str(cid).endswith("-ASSET")
+                            is_asset = str(cid).endswith("-ASSET") or (prod and "asset" in prod.lower() and "non-asset" not in prod.lower())
                             
                             if is_asset:
                                 title = f"📋 {m['Client Name']} (ASSET) - Rem: ₦{info['rem_bal']:,.0f}"
@@ -4300,10 +4313,7 @@ elif page == "Collections":
                                 s_date = pd.to_datetime(s_date_str, errors='coerce') if s_date_str and str(s_date_str).strip() not in ['None', 'nan', ''] else pd.NaT
                                 view_dt = pd.to_datetime(date_str)
                                 
-                                if pd.notna(s_date) and s_date > view_dt:
-                                    st.warning(f"⚠️ **Next Repayment Due On:** {s_date.strftime('%Y-%m-%d')}")
-                                    st.caption("*Collection is locked until the start date.*")
-                                    continue
+                                is_future_loan = pd.notna(s_date) and s_date > view_dt
                                 
                                 if not is_asset:
                                     st.markdown("**🏦 Savings**")
@@ -4312,25 +4322,34 @@ elif page == "Collections":
                                     sav_data[cid] = {"dep": s_dep, "wd": s_wd}
                                     st.markdown("---")
                                 
-                                st.markdown(f"**💵 Loan ({prod})** - Active Cr: ₦{info['act_cred']:,.0f}")
-                                expected_rep = float(info['expected_rep_schedule'] or 0.0)
-                                st.markdown(f"ℹ️ *Expected repayment calculated from schedule: ₦{expected_rep:,.2f}*")
-                                
-                                p_status = st.radio("Payment Status", ["PAID", "CUSTOM_AMOUNT", "NOT_PAID"], index=0, horizontal=True, key=f"status_{cid}")
-                                
-                                if p_status == "NOT_PAID":
-                                    st.info("Amount will be saved as 0.")
-                                    rep_col = 0.0
-                                elif p_status == "CUSTOM_AMOUNT":
-                                    rep_col = st.number_input(f"Enter Collection Amount", min_value=0.0, step=500.0, value=float(info['prev_rep']) if info['prev_rep'] and info['prev_rep'] > 0 else None, placeholder="0", key=f"rep_{cid}")
+                                if is_future_loan:
+                                    st.warning(f"⚠️ **Next Loan Repayment Due On:** {s_date.strftime('%Y-%m-%d')}")
+                                    st.caption("*Loan repayment begins on the next meeting date. No loan repayment is due today.*")
+                                    rep_data[cid] = {
+                                        "rep": 0.0, "app": 0, "pb": 0, "misc": 0,
+                                        "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0,
+                                        "payment_status": "NOT_PAID", "expected_amount": 0.0
+                                    }
                                 else:
-                                    rep_col = st.number_input(f"Expected Repayment Amount", min_value=0.0, step=500.0, value=float(info['prev_rep']) if info['prev_rep'] and info['prev_rep'] > 0 else (expected_rep if expected_rep > 0 else None), placeholder=str(expected_rep), key=f"rep_{cid}")
-                                
-                                rep_data[cid] = {
-                                    "rep": rep_col, "app": 0, "pb": 0, "misc": 0,
-                                    "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0,
-                                    "payment_status": p_status, "expected_amount": expected_rep
-                                }
+                                    st.markdown(f"**💵 Loan ({prod})** - Active Cr: ₦{info['act_cred']:,.0f}")
+                                    expected_rep = float(info['expected_rep_schedule'] or 0.0)
+                                    st.markdown(f"ℹ️ *Expected repayment calculated from schedule: ₦{expected_rep:,.2f}*")
+                                    
+                                    p_status = st.radio("Payment Status", ["PAID", "CUSTOM_AMOUNT", "NOT_PAID"], index=0, horizontal=True, key=f"status_{cid}")
+                                    
+                                    if p_status == "NOT_PAID":
+                                        st.info("Amount will be saved as 0.")
+                                        rep_col = 0.0
+                                    elif p_status == "CUSTOM_AMOUNT":
+                                        rep_col = st.number_input(f"Enter Collection Amount", min_value=0.0, step=500.0, value=float(info['prev_rep']) if info['prev_rep'] and info['prev_rep'] > 0 else None, placeholder="0", key=f"rep_{cid}")
+                                    else:
+                                        rep_col = st.number_input(f"Expected Repayment Amount", min_value=0.0, step=500.0, value=float(info['prev_rep']) if info['prev_rep'] and info['prev_rep'] > 0 else (expected_rep if expected_rep > 0 else None), placeholder=str(expected_rep), key=f"rep_{cid}")
+                                    
+                                    rep_data[cid] = {
+                                        "rep": rep_col, "app": 0, "pb": 0, "misc": 0,
+                                        "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0,
+                                        "payment_status": p_status, "expected_amount": expected_rep
+                                    }
                         
                         st.markdown("---")
                         submit_btn = st.form_submit_button("Calculate Totals & Review Members", type="primary", use_container_width=True)
