@@ -259,7 +259,8 @@ def run_migration():
                     current_anchor = base_date
                     if cycle == "Weekly" and target_weekday is not None:
                         days_ahead = target_weekday - current_anchor.weekday()
-                        if days_ahead <= 0: days_ahead += 7
+                        if days_ahead < 0:
+                            days_ahead += 7
                         current_anchor = current_anchor + datetime.timedelta(days=days_ahead)
                     
                     schedule_rows = []

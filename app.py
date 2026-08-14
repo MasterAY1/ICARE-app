@@ -4137,12 +4137,11 @@ elif page == "Collections":
                         if not active_loan_rows.empty:
                             loan_row = active_loan_rows.iloc[0]
                             active_loan_id = loan_row.get('id') or loan_row.get('loan_id') or loan_row.get('Loan ID')
-                            act_cred = float(loan_row.get('Active Credit', 0))
+                            act_cred = float(loan_row.get('Active Credit', 0) or loan_row.get('active_credit', 0))
+                            total_due_base = float(loan_row.get('Total Due', 0) or loan_row.get('total_due', 0)) or act_cred
                             
-                            # As requested: Active Credit is the static value from DB (Principal - Gap).
-                            # Remaining Balance (Outstanding / Credit Balance) is (Active Credit - Total Paid).
-                            
-                            # Only fetch schedule if we have a valid loan UUID
+                            # Baseline remaining balance is Total Due from loans table (Current Credit Balance)
+                            # minus any repayments posted since onboarding
                             if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
                                 active_loan_total_paid, has_schedule = ScheduleService.get_total_paid(uow, active_loan_id)
                                 if not has_schedule:
@@ -4150,7 +4149,7 @@ elif page == "Collections":
                             else:
                                 active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
                                 
-                            rem_bal = max(0.0, act_cred - active_loan_total_paid)
+                            rem_bal = max(0.0, total_due_base - active_loan_total_paid)
                             
                             loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
                             
@@ -4297,7 +4296,11 @@ elif page == "Collections":
                         st.markdown("---")
                         
                         # ---- PER-CLIENT COLLECTIONS ----
-                        st.markdown("### 📋 Client Collections (Savings & Repayments)")
+                        col_hdr1, col_hdr2 = st.columns([3, 1])
+                        col_hdr1.markdown("### 📋 Client Collections (Savings & Repayments)")
+                        expand_all_members = col_hdr2.checkbox("Expand All Members", value=st.session_state.get('expand_all_members', True), key="chk_expand_all")
+                        st.session_state['expand_all_members'] = expand_all_members
+
                         for cid, info in member_info.items():
                             m = info['member']
                             prod = str(m['Loan Product'])
@@ -4308,7 +4311,7 @@ elif page == "Collections":
                             else:
                                 title = f"👤 {m['Client Name']} ({cid}) - Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
                                 
-                            with st.expander(title):
+                            with st.expander(title, expanded=expand_all_members):
                                 s_date_str = info.get("start_date", "")
                                 s_date = pd.to_datetime(s_date_str, errors='coerce') if s_date_str and str(s_date_str).strip() not in ['None', 'nan', ''] else pd.NaT
                                 view_dt = pd.to_datetime(date_str)
@@ -6776,18 +6779,39 @@ elif page == "Master Cashbook":
 
         # --- RBAC FILTERING ---
         st.markdown("### 🏢 Select Credit Officer")
-        daily_reps_all = repayments[repayments['DateStr'] == date_str]
-        if ROLE == "BM":
-            daily_reps_all = daily_reps_all[daily_reps_all['Branch'] == BRANCH]
+        try:
+            with SupabaseUnitOfWork() as uow_co_list:
+                b_id = uow_co_list.cashbook._resolve_branch_id(BRANCH)
+                co_users_res = uow_co_list.client.table("app_users").select("username, full_name, role, branch_id").eq("branch_id", b_id).in_("role", ["CO", "Officer"]).execute()
+                branch_cos = co_users_res.data or []
+                if not branch_cos:
+                    co_users_res = uow_co_list.client.table("app_users").select("username, full_name, role, branch_id").in_("role", ["CO", "Officer"]).execute()
+                    branch_cos = co_users_res.data or []
+        except Exception:
+            branch_cos = []
 
-        unique_officers = daily_reps_all['Officer'].dropna().unique().tolist()
-        if unique_officers:
-            display_options = [CO_DISPLAY_MAP.get(o, o) for o in unique_officers]
-            selected_display = st.selectbox("Select Credit Officer", display_options, key="wa_cashbook_co")
-            target_co = CO_NAME_MAP.get(selected_display, selected_display)
-        else:
-            st.info("No officers have records for this date.")
-            target_co = USER
+        co_options = {}
+        for u in branch_cos:
+            disp = u.get("full_name") or u.get("username")
+            uname = u.get("username")
+            co_options[disp] = uname
+
+        if not co_options:
+            # Fallback to current user or maps
+            for k, v in CO_NAME_MAP.items():
+                co_options[k] = v
+
+        if not co_options:
+            co_options = {CO_DISPLAY_MAP.get(USER, USER): USER}
+
+        display_list = list(co_options.keys())
+        default_idx = 0
+        current_disp = CO_DISPLAY_MAP.get(USER, USER)
+        if current_disp in display_list:
+            default_idx = display_list.index(current_disp)
+
+        selected_display = st.selectbox("Select Credit Officer", display_list, index=default_idx, key="wa_cashbook_co")
+        target_co = co_options.get(selected_display, selected_display)
 
         daily_reps = repayments[(repayments['DateStr'] == date_str) & (repayments['Officer'] == target_co)]
 
@@ -6797,13 +6821,13 @@ elif page == "Master Cashbook":
         bf_cash = t_sav = t_r12w = t_r24w = t_r60d = t_r120d = t_rmth = t_cont = t_bwd = t_asale = t_app = t_pb = t_misc = 0.0
         t_d11 = t_d20 = t_w11 = t_w20 = t_mm = t_pwd = t_exp = t_bdep = t_lres = t_ltrans = t_cc = 0.0
         w_act = d_act = m_act = 0.0
+        w_act_12 = w_act_24 = d_act_120 = 0.0
 
         try:
             from database.repositories.unit_of_work import SupabaseUnitOfWork
             with SupabaseUnitOfWork() as uow:
                 branch_id = uow.cashbook._resolve_branch_id(BRANCH)
-                res_u = uow.client.table("app_users").select("id").eq("username", target_co).execute()
-                o_id = res_u.data[0]["id"] if res_u.data else None
+                o_id = uow.loans._resolve_officer_id(target_co)
                 
                 if o_id:
                     uow.cashbook.rebuild_projection(branch_id, view_date, officer_id=o_id)
@@ -6834,59 +6858,93 @@ elif page == "Master Cashbook":
                         t_cc = float(c.get("cash_and_carry") or 0)
                         
                     # Also fetch today's active loan disbursements for this CO
-                    res_l = uow.client.table("loans").select("amount, active_credit, loan_products(repayment_cycle)") \
+                    res_l = uow.client.table("loans").select("amount, active_credit, loan_products(name, repayment_cycle)") \
                         .eq("officer_id", o_id).eq("branch_id", branch_id) \
                         .gte("created_at", f"{date_str}T00:00:00").lte("created_at", f"{date_str}T23:59:59") \
                         .in_("status", ["Active", "Approved", "Completed"]).execute()
                     for l in (res_l.data or []):
                         act_cr = float(l.get("active_credit") or l.get("amount") or 0.0)
-                        cycle = (l.get("loan_products") or {}).get("repayment_cycle", "Weekly")
-                        if cycle == "Daily": d_act += act_cr
-                        elif cycle == "Weekly": w_act += act_cr
-                        elif cycle == "Monthly": m_act += act_cr
-                        else: w_act += act_cr
+                        lp = l.get("loan_products") or {}
+                        p_name = str(lp.get("name") or "").lower()
+                        cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in p_name else "Weekly")
+                        if cycle == "Daily":
+                            if "120" in p_name: d_act_120 += act_cr
+                            else: d_act += act_cr
+                        elif cycle == "Weekly":
+                            if "24" in p_name: w_act_24 += act_cr
+                            else: w_act_12 += act_cr
+                            w_act += act_cr
+                        elif cycle == "Monthly":
+                            m_act += act_cr
+                        else:
+                            w_act += act_cr
         except Exception as e:
             st.warning(f"Could not load CO cashbook projection: {e}")
 
         left_total = bf_cash + t_lres + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_cc
-        right_total = t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_ltrans
+        right_total = t_pwd + w_act + d_act + d_act_120 + m_act + t_exp + t_bdep + t_ltrans
         closing_bal = left_total - right_total
 
-        # Build the single-row dataframe for the ledger
-        ledger_data = {
-            "Date": [date_str],
-            "Opening balance": [bf_cash],
-            "Savings": [t_sav],
-            "Repayment 12 weeks": [t_r12w],
-            "Repayment 24 weeks": [t_r24w],
-            "Repayment 60 days": [t_r60d],
-            "Repayment 120 days": [t_r120d],
-            "monthly": [t_rmth],
-            "Contigency": [t_cont],
-            "Bank withdrawal": [t_bwd],
-            "Asset sales": [t_asale],
-            "App fee": [t_app],
-            "Pass book bonus": [t_pb],
-            "Laps Reserved": [t_lres],
-            "Daily 11%": [t_d11],
-            "Daily 20%": [t_d20],
-            "Weekly 11%": [t_w11],
-            "Weekly 20%": [t_w20],
-            "Monthly 11%/20%": [t_mm],
-            "Cash Carry": [t_cc],
-            "Total": [left_total],
-            "Product Withdrawal": [t_pwd],
-            "Weekly Active": [w_act],
-            "Daily Active": [d_act],
-            "Monthly Active": [m_act],
-            "Expenses": [t_exp],
-            "Bank": [t_bdep],
-            "Laps Transferred": [t_ltrans],
-            "Total.1": [right_total],
-            "Closing balance": [closing_bal]
-        }
+        # Build balanced 2-column Excel T-Account layout (Inflows Left, Outflows Right)
+        st.markdown("### 📊 Credit Officer Daily Cashbook Ledger")
+        
+        inflow_items = [
+            ("Opening Balance", bf_cash),
+            ("Savings Deposit", t_sav),
+            ("Credit Rep (60 Days)", t_r60d),
+            ("Credit Rep (120 Days)", t_r120d),
+            ("Credit Rep (12 Weeks)", t_r12w),
+            ("Credit Rep (24 Weeks)", t_r24w),
+            ("Credit Rep (Monthly)", t_rmth),
+            ("Laps Reserve", t_lres),
+            ("Asset Credit Sales", t_asale),
+            ("Cash & Carry", t_cc),
+            ("Daily 11%", t_d11),
+            ("Daily 20%", t_d20),
+            ("Weekly 11%", t_w11),
+            ("Weekly 20%", t_w20),
+            ("Monthly 11%/20%", t_mm),
+            ("Contingency (1%)", t_cont),
+            ("Credit Form Damage", 0.0),
+            ("Bonus", 0.0),
+            ("Credit Form / App Fee", t_app),
+            ("Pass Book", t_pb),
+            ("Bank Withdrawal", t_bwd),
+        ]
+        
+        outflow_items = [
+            ("Active Loan (60 Days)", d_act),
+            ("Active Loan (120 Days)", d_act_120),
+            ("Active Loan (12 Weeks)", w_act_12),
+            ("Active Loan (24 Weeks)", w_act_24),
+            ("Active Loan (Monthly)", m_act),
+            ("Product/Savings Withdrawal", t_pwd),
+            ("Office Expenses", t_exp),
+            ("Laps Return / Transferred", t_ltrans),
+            ("Bank Deposit", t_bdep),
+        ]
 
-        st.dataframe(pd.DataFrame(ledger_data).T.rename(columns={0: "Amount"}).style.format(precision=0, thousands=","), height=500)
+        max_rows = max(len(inflow_items), len(outflow_items))
+        while len(inflow_items) < max_rows: inflow_items.append(("", ""))
+        while len(outflow_items) < max_rows: outflow_items.append(("", ""))
+
+        df_co_display = pd.DataFrame({
+            "📥 Inflows (Left / Debit)": [i[0] for i in inflow_items],
+            "Amount (₦) ": [f"₦{i[1]:,.0f}" if isinstance(i[1], (int, float)) and i[0] != "" else "" for i in inflow_items],
+            "📤 Outflows (Right / Credit)": [o[0] for o in outflow_items],
+            "Amount (₦)  ": [f"₦{o[1]:,.0f}" if isinstance(o[1], (int, float)) and o[0] != "" else "" for o in outflow_items]
+        })
+
+        st.dataframe(df_co_display, use_container_width=True, hide_index=True)
+
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("🏛️ Opening Balance", f"₦{bf_cash:,.0f}")
+        k2.metric("📥 Total Inflows", f"₦{left_total:,.0f}")
+        k3.metric("📤 Total Outflows", f"₦{right_total:,.0f}")
+        if closing_bal >= 0:
+            k4.success(f"### Closing: ₦{closing_bal:,.0f}")
+        else:
+            k4.error(f"### Closing: ₦{closing_bal:,.0f}")
 
         st.markdown("---")
         st.markdown("### 🔒 Branch Manager End of Day (EOD) Controls")
