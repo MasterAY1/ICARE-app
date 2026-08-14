@@ -1993,6 +1993,7 @@ if page == "Dashboard":
 
                     if wa_col2.button("✅ Approve", key=f"approve_wr_{wr_id}"):
                         try:
+                            from services.savings_service import SavingsService
                             with SupabaseUnitOfWork() as uow_wr:
                                 # Execute the actual withdrawal based on type
                                 if wr_op == "Cash Withdrawal":
@@ -2011,7 +2012,7 @@ if page == "Dashboard":
                                     elif wr_type == "Misc":
                                         SavingsService.post_misc_savings(
                                             uow=uow_wr, client_id=wr.get("client_id") or "", client_name=wr_name,
-                                            branch=BRANCH, officer=wr_by, deposit_amount=0.0,
+                                            branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
                                             reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
                                         )
                                 elif wr_op == "Loan Offset":

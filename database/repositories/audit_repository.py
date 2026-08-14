@@ -48,7 +48,9 @@ class SupabaseAuditRepository(BaseRepository[AuditEvent], AuditRepository):
 
     def create(self, entity: AuditEvent) -> AuditEvent:
         user_id = resolve_officer_id(self.client, entity.user)
+        entity_id = entity.id if (entity.id and is_valid_uuid(entity.id)) else str(uuid.uuid4())
         data = {
+            "id": entity_id,
             "user_id": user_id,
             "action": entity.action,
             "description": f"Old: {entity.old_value}. New: {entity.new_value}",
@@ -60,6 +62,8 @@ class SupabaseAuditRepository(BaseRepository[AuditEvent], AuditRepository):
         inserted = self._single_or_none(res.data)
         if inserted:
             entity.id = inserted.get("id")
+        else:
+            entity.id = entity_id
         return entity
 
     def record_event(self, event: AuditEvent) -> None:
@@ -86,6 +90,7 @@ class SupabaseAuditRepository(BaseRepository[AuditEvent], AuditRepository):
         user_id = resolve_officer_id(self.client, user)
         rec_uuid = record_id if record_id and is_valid_uuid(record_id) else None
         data = {
+            "id": str(uuid.uuid4()),
             "user_id": user_id,
             "action": action,
             "description": f"Role: {role}. Old: {old_value}. New: {new_value}",

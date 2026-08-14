@@ -137,14 +137,15 @@ class SavingsService:
         return ("60fa48a4-16a2-4ab8-b9c5-d13d72a040cc", "CO3")
 
     @staticmethod
-    def post_misc_savings(uow: SupabaseUnitOfWork, client_id: str, client_name: str, branch: str, officer: str, deposit_amount: float, reference: str = None, remarks: str = None):
-        if deposit_amount == 0:
+    @staticmethod
+    def post_misc_savings(uow: SupabaseUnitOfWork, client_id: str, client_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None):
+        if deposit_amount == 0 and withdrawal_amount == 0:
             return
             
         managing_id, managing_name = SavingsService.get_branch_misc_savings_officer(uow, branch)
         collecting_officer = officer or "Unknown Officer"
         
-        narr = remarks or f"Misc savings collected by {collecting_officer} (Managed by {managing_name})"
+        narr = remarks or (f"Misc savings collected by {collecting_officer} (Managed by {managing_name})" if deposit_amount > 0 else f"Misc savings withdrawal for {client_name}")
         
         entity = MiscSavings(
             client_id=client_id,
@@ -152,6 +153,7 @@ class SavingsService:
             branch=branch,
             officer=managing_name,
             deposit_amount=deposit_amount,
+            withdrawal_amount=withdrawal_amount,
             reference=reference,
             remarks=narr,
             date=datetime.now()
@@ -160,15 +162,18 @@ class SavingsService:
         uow.misc_savings.create(entity)
         
         # 2. Audit Trace: Capture both collecting officer and managing officer
+        action = "Misc Savings Collected" if deposit_amount > 0 else "Misc Savings Withdrawal"
+        amt = deposit_amount if deposit_amount > 0 else withdrawal_amount
         uow.audit.log_action(
             collecting_officer, 
             "Credit Officer", 
-            "Misc Savings Collected", 
+            action, 
             "internal_savings", 
             entity.id, 
             None, 
             {
                 "deposit": deposit_amount,
+                "withdrawal": withdrawal_amount,
                 "collecting_officer": collecting_officer,
                 "managing_officer": managing_name,
                 "managing_officer_id": managing_id,
@@ -177,16 +182,17 @@ class SavingsService:
         )
 
         # 3. Create Event & Post
+        event_type = "SavingsDeposited" if deposit_amount > 0 else "SavingsWithdrawn"
         event = DomainEvent(
             event_id=str(uuid.uuid4()),
             aggregate_id=entity.id,
             aggregate_type="MiscSavings",
-            event_type="SavingsDeposited",
+            event_type=event_type,
             payload={
                 "branch": branch,
                 "officer": managing_name,
                 "collecting_officer": collecting_officer,
-                "amount": deposit_amount,
+                "amount": amt,
                 "reference": reference or entity.id,
                 "narration": narr
             }
