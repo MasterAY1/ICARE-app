@@ -4097,8 +4097,9 @@ elif page == "Collections":
                         # Pack member details expected by UI
                         member_dict = member.to_dict()
                         member_dict.update({
-                            "Active Credit": rem_bal,
-                            "Loan Repay": expected_rep_schedule,
+                            "Active Credit": act_cred,
+                            "Remaining Balance": rem_bal,
+                            "Expected Repayment": expected_rep_schedule,
                             "Loan Product": loan_prod_val,
                             "Start Date": start_date_val
                         })
@@ -5012,7 +5013,7 @@ elif page == "Audit Ledger Legacy":
     st.title("📒 Audit Ledger")
     st.caption("Complete transaction history — Loans & Repayments")
     
-    audit_section = st.radio("View", ["📋 Loans Ledger", "💰 Repayments Ledger", "⚖️ Double-Entry Ledger"], horizontal=True, label_visibility="collapsed")
+    audit_section = st.radio("View", ["📋 Loans Ledger", "💰 Repayments Ledger", "🐷 Savings & Misc Fees Ledger", "⚖️ Double-Entry Ledger"], horizontal=True, label_visibility="collapsed")
     
     al1, al2, al3 = st.columns([1, 1, 2])
     audit_date_from = al1.date_input("From Date", datetime.now().date() - timedelta(days=30), key="audit_from")
@@ -5055,14 +5056,14 @@ elif page == "Audit Ledger Legacy":
             
             filtered = filtered.drop(columns=['_dstr'], errors='ignore')
             
-            display_cols = [c for c in ['Date', 'Client ID', 'Client Name', 'Officer', 'Branch', 'Loan Product', 'Loan Amount', 'Active Credit', 'Loan Repay', 'Status'] if c in filtered.columns]
+            display_cols = [c for c in ['Date', 'Client ID', 'Client Name', 'Officer', 'Branch', 'Loan Product', 'Loan Amount', 'Active Credit', 'Remaining Balance', 'Expected Repayment', 'Status'] if c in filtered.columns]
             
             st.markdown(f"**{len(filtered)} records found**")
             
             display_df = filtered[display_cols].sort_values(['Date', 'Client ID'], ascending=[False, True])
             
             # Clean up zeros for cleaner display
-            for col in ['Loan Amount', 'Active Credit', 'Loan Repay']:
+            for col in ['Loan Amount', 'Active Credit', 'Remaining Balance', 'Expected Repayment']:
                 if col in display_df.columns:
                     display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
                     display_df[col] = display_df[col].replace(0, None)
@@ -5074,7 +5075,8 @@ elif page == "Audit Ledger Legacy":
                 column_config={
                     "Loan Amount": st.column_config.NumberColumn(format="₦%d"),
                     "Active Credit": st.column_config.NumberColumn(format="₦%d"),
-                    "Loan Repay": st.column_config.NumberColumn(format="₦%d")
+                    "Remaining Balance": st.column_config.NumberColumn(format="₦%d"),
+                    "Expected Repayment": st.column_config.NumberColumn(format="₦%d")
                 }
             )
     
@@ -5200,8 +5202,125 @@ elif page == "Audit Ledger Legacy":
                                     st.rerun()
                             except ValueError:
                                 st.error("Transaction ID must be a number.")
-                            except Exception as e:
-                                st.error(f"Error reversing transaction: {e}")
+    elif audit_section == "🐷 Savings & Misc Fees Ledger":
+        try:
+            with SupabaseUnitOfWork() as uow:
+                # 1. Fetch Individual Savings
+                ind_q = uow.client.table("individual_savings").select("*, clients(name, client_code), app_users(username, full_name)") \
+                    .gte("posting_date", audit_date_from.isoformat()).lte("posting_date", audit_date_to.isoformat())
+                ind_res = ind_q.execute()
+                
+                # 2. Fetch Group Savings
+                grp_q = uow.client.table("group_savings").select("*, groups(name), app_users(username, full_name)") \
+                    .gte("posting_date", audit_date_from.isoformat()).lte("posting_date", audit_date_to.isoformat())
+                grp_res = grp_q.execute()
+                
+                # 3. Fetch Internal Savings (Misc Savings)
+                from services.savings_service import SavingsService
+                m_off_id, m_off_name = SavingsService.get_branch_misc_savings_officer(uow, BRANCH)
+                
+                misc_q = uow.client.table("internal_savings").select("*, clients(name, client_code), app_users(username, full_name)") \
+                    .gte("posting_date", audit_date_from.isoformat()).lte("posting_date", audit_date_to.isoformat())
+                misc_res = misc_q.execute()
+                
+                savings_rows = []
+                
+                for s in (ind_res.data or []):
+                    c_info = s.get("clients") or {}
+                    c_name = c_info.get("name") or "N/A"
+                    c_code = c_info.get("client_code") or ""
+                    u_info = s.get("app_users") or {}
+                    off_name = u_info.get("full_name") or u_info.get("username") or s.get("officer") or "N/A"
+                    savings_rows.append({
+                        "Date": str(s.get("posting_date") or "")[:10],
+                        "Type": "Individual",
+                        "Client / Group": f"{c_name} ({c_code})" if c_code else c_name,
+                        "Collecting Officer": off_name,
+                        "Managing Officer": off_name,
+                        "Deposit (₦)": float(s.get("deposit_amount") or 0.0),
+                        "Withdrawal (₦)": float(s.get("withdrawal_amount") or 0.0),
+                        "Reference": s.get("reference") or "",
+                        "Remarks / Note": s.get("remarks") or ""
+                    })
+                    
+                for g in (grp_res.data or []):
+                    g_info = g.get("groups") or {}
+                    g_name = g_info.get("name") or "N/A"
+                    u_info = g.get("app_users") or {}
+                    off_name = u_info.get("full_name") or u_info.get("username") or g.get("officer") or "N/A"
+                    savings_rows.append({
+                        "Date": str(g.get("posting_date") or "")[:10],
+                        "Type": "Group",
+                        "Client / Group": f"Group: {g_name}",
+                        "Collecting Officer": off_name,
+                        "Managing Officer": off_name,
+                        "Deposit (₦)": float(g.get("deposit_amount") or 0.0),
+                        "Withdrawal (₦)": float(g.get("withdrawal_amount") or 0.0),
+                        "Reference": g.get("reference") or "",
+                        "Remarks / Note": g.get("remarks") or ""
+                    })
+                    
+                for m in (misc_res.data or []):
+                    c_info = m.get("clients") or {}
+                    c_name = c_info.get("name") or "N/A"
+                    c_code = c_info.get("client_code") or ""
+                    rem = m.get("remarks") or ""
+                    
+                    # Parse collecting officer from narration if present (BR-SAV-005)
+                    coll_off = "Field CO"
+                    if "collected by" in rem.lower():
+                        try:
+                            coll_off = rem.split("collected by")[1].split("(")[0].strip()
+                        except:
+                            coll_off = "Field CO"
+                    
+                    savings_rows.append({
+                        "Date": str(m.get("posting_date") or "")[:10],
+                        "Type": "Misc Savings (Internal)",
+                        "Client / Group": f"{c_name} ({c_code})" if c_code else c_name,
+                        "Collecting Officer": coll_off,
+                        "Managing Officer": m_off_name,
+                        "Deposit (₦)": float(m.get("deposit_amount") or 0.0),
+                        "Withdrawal (₦)": float(m.get("withdrawal_amount") or 0.0),
+                        "Reference": m.get("reference") or "",
+                        "Remarks / Note": rem
+                    })
+                    
+                if not savings_rows:
+                    st.info("No savings or misc fee records found for the selected criteria.")
+                else:
+                    df_sav = pd.DataFrame(savings_rows).sort_values("Date", ascending=False)
+                    
+                    # Search filter
+                    if search_term:
+                        mask = (
+                            df_sav['Client / Group'].str.contains(search_term, case=False, na=False) |
+                            df_sav['Collecting Officer'].str.contains(search_term, case=False, na=False) |
+                            df_sav['Managing Officer'].str.contains(search_term, case=False, na=False) |
+                            df_sav['Remarks / Note'].str.contains(search_term, case=False, na=False)
+                        )
+                        df_sav = df_sav[mask]
+                        
+                    if selected_co != "All Officers":
+                        target_co_id = CO_NAME_MAP.get(selected_co, selected_co)
+                        df_sav = df_sav[(df_sav['Collecting Officer'] == selected_co) | (df_sav['Collecting Officer'] == target_co_id) | (df_sav['Managing Officer'] == selected_co)]
+                        
+                    st.markdown(f"**{len(df_sav)} records found**")
+                    st.dataframe(
+                        df_sav,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Deposit (₦)": st.column_config.NumberColumn(format="₦%d"),
+                            "Withdrawal (₦)": st.column_config.NumberColumn(format="₦%d"),
+                            "Client / Group": st.column_config.TextColumn(width="medium"),
+                            "Collecting Officer": st.column_config.TextColumn(width="medium"),
+                            "Managing Officer": st.column_config.TextColumn(width="medium"),
+                            "Remarks / Note": st.column_config.TextColumn(width="large")
+                        }
+                    )
+        except Exception as ex:
+            st.error(f"Error loading savings ledger: {ex}")
 
     elif audit_section == "⚖️ Double-Entry Ledger":
         try:
@@ -7078,15 +7197,25 @@ elif page == "Portfolio":
                             df_l["Name"] = c_info.get("name", "N/A")
                             df_l["Product"] = df_l.apply(lambda row: row.get("loan_products", {}).get("name", "N/A") if isinstance(row.get("loan_products"), dict) else "N/A", axis=1)
                             
+                            
                             df_l = df_l.rename(columns={
                                 "loan_amount": "Loan Amount",
                                 "active_credit": "Active Credit",
-                                "total_due": "Total Due",
+                                "loan_repay": "Expected Repayment",
                                 "status": "Status",
                                 "product_category": "Product Category",
                                 "date": "Date"
                             })
-                            cols = ["Client ID", "Name", "Date", "Loan Amount", "Active Credit", "Total Due", "Status", "Product Category", "Product"]
+                            
+                            # Calculate Remaining Balance dynamically
+                            rep_df = dd["repayment_history"]
+                            if not rep_df.empty and "loan_id" in rep_df.columns:
+                                paid_map = rep_df.groupby("loan_id")["amount_paid"].sum().to_dict()
+                                df_l["Remaining Balance"] = df_l.apply(lambda r: max(0.0, float(r.get("Active Credit", 0.0)) - float(paid_map.get(r.get("loan_id"), 0.0))), axis=1)
+                            else:
+                                df_l["Remaining Balance"] = df_l["Active Credit"]
+                            
+                            cols = ["Client ID", "Name", "Date", "Loan Amount", "Active Credit", "Expected Repayment", "Remaining Balance", "Status", "Product Category", "Product"]
                             st.dataframe(df_l[[c for c in cols if c in df_l.columns]], use_container_width=True)
                             
                     with dd_t3:

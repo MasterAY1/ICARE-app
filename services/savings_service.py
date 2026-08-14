@@ -107,25 +107,74 @@ class SavingsService:
             raise e
 
     @staticmethod
+    def get_branch_misc_savings_officer(uow: SupabaseUnitOfWork, branch: str) -> tuple[str, str]:
+        """
+        BR-SAV-006: Resolves the designated managing officer for Misc Savings per branch.
+        Returns tuple: (officer_id, officer_name/username)
+        """
+        # Default map for known branches
+        branch_lower = (branch or "").strip().lower()
+        if "ogijo" in branch_lower or not branch:
+            # Ogijo branch designated officer is CO3 (Miss. Olajumoke)
+            return ("60fa48a4-16a2-4ab8-b9c5-d13d72a040cc", "CO3")
+        
+        # Look up from branch extra_fields or app_users
+        try:
+            b_res = uow.client.table("branches").select("*").ilike("name", f"%{branch}%").execute()
+            if b_res.data:
+                b_info = b_res.data[0]
+                ext = b_info.get("extra_fields") or {}
+                if isinstance(ext, dict) and ext.get("misc_savings_officer_id"):
+                    return (ext["misc_savings_officer_id"], ext.get("misc_savings_officer_name", "CO3"))
+                
+                # Look up first active CO for this branch
+                u_res = uow.client.table("app_users").select("id, username").eq("branch_id", b_info["branch_id"]).execute()
+                for u in (u_res.data or []):
+                    if "co" in str(u.get("username", "")).lower():
+                        return (u["id"], u["username"])
+        except Exception:
+            pass
+        return ("60fa48a4-16a2-4ab8-b9c5-d13d72a040cc", "CO3")
+
+    @staticmethod
     def post_misc_savings(uow: SupabaseUnitOfWork, client_id: str, client_name: str, branch: str, officer: str, deposit_amount: float, reference: str = None, remarks: str = None):
         if deposit_amount == 0:
             return
             
+        managing_id, managing_name = SavingsService.get_branch_misc_savings_officer(uow, branch)
+        collecting_officer = officer or "Unknown Officer"
+        
+        narr = remarks or f"Misc savings collected by {collecting_officer} (Managed by {managing_name})"
+        
         entity = MiscSavings(
             client_id=client_id,
             client_name=client_name,
             branch=branch,
-            officer=officer,
+            officer=managing_name,
             deposit_amount=deposit_amount,
             reference=reference,
-            remarks=remarks,
+            remarks=narr,
             date=datetime.now()
         )
-        # 1. Persist operational data
+        # 1. Persist operational data (Internal savings mapped to managing officer)
         uow.misc_savings.create(entity)
         
-        # 2. Audit
-        uow.audit.log_action(officer, "Credit Officer", "Misc Savings Collected", "misc_savings", entity.id, None, {"deposit": deposit_amount})
+        # 2. Audit Trace: Capture both collecting officer and managing officer
+        uow.audit.log_action(
+            collecting_officer, 
+            "Credit Officer", 
+            "Misc Savings Collected", 
+            "internal_savings", 
+            entity.id, 
+            None, 
+            {
+                "deposit": deposit_amount,
+                "collecting_officer": collecting_officer,
+                "managing_officer": managing_name,
+                "managing_officer_id": managing_id,
+                "client_name": client_name
+            }
+        )
 
         # 3. Create Event & Post
         event = DomainEvent(
@@ -135,10 +184,11 @@ class SavingsService:
             event_type="SavingsDeposited",
             payload={
                 "branch": branch,
-                "officer": officer,
+                "officer": managing_name,
+                "collecting_officer": collecting_officer,
                 "amount": deposit_amount,
                 "reference": reference or entity.id,
-                "narration": remarks or f"Internal savings deposit for client {client_name}"
+                "narration": narr
             }
         )
         uow.event_store.append(event)
@@ -204,8 +254,16 @@ class SavingsService:
     def get_officer_totals(uow: SupabaseUnitOfWork, branch: str, officer: str) -> dict:
         ind = uow.individual_savings.get_total_balance(branch, officer)
         grp = uow.group_savings.get_total_balance(branch, officer)
-        msc = uow.misc_savings.get_total_balance(branch, officer)
         laps = uow.laps_savings.get_total_balance(branch, officer)
+        
+        managing_id, managing_name = SavingsService.get_branch_misc_savings_officer(uow, branch)
+        officer_clean = str(officer or "").strip().lower()
+        
+        # BR-SAV-002: If officer is the designated Misc Savings manager, include all branch Misc Savings
+        if officer_clean == managing_name.lower() or officer_clean == managing_id.lower() or "co3" in officer_clean:
+            msc = uow.misc_savings.get_total_balance(branch)
+        else:
+            msc = 0.0
         
         return {
             "individual_savings": ind,

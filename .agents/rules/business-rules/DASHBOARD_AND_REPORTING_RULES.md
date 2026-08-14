@@ -32,6 +32,36 @@
 - **Prohibited Behavior:** Hardcoding PAR as "0.0%" or any static value.
 - **Status:** CONFIRMED
 
+## BR-DASH-005: Repayment Status Categorization
+- **Rule ID:** BR-DASH-005
+- **Name:** Repayment Status Categorization (Normal, Excess, Part, Full/Closed, Overdue)
+- **Description:** Categorization of client repayment performance in a period:
+  1. `Full Payments (Closed)`: Total lifetime repayments equal or exceed active credit (`total_paid_lifetime >= active_credit`).
+  2. `Normal Paid`: Actual collection in the period equals the scheduled installment (`paid_in_period == loan_repay`).
+  3. `Excess Paid`: Actual collection in the period exceeds the scheduled installment (`paid_in_period > loan_repay`).
+  4. `Part Paid`: Actual collection in the period is positive but less than scheduled installment (`0 < paid_in_period < loan_repay`).
+  5. `Overdue`: Loan is past its maturity/end date with remaining outstanding balance > 0 and no payment in current cycle.
+- **Required Behavior:**
+  - Status categorization in a period must compare payments made **in that period** against the scheduled periodic installment (`loan_repay`).
+- **Prohibited Behavior:**
+  - Comparing lifetime cumulative payments to a single period's installment when categorizing period payment status.
+- **Status:** CONFIRMED
+- **Implementation Location:** `services/portfolio_service.py`, `services/dashboard_service.py`
+
+## BR-DASH-006: Historical Onboarding Repayments Exclusion from Period Metrics
+- **Rule ID:** BR-DASH-006
+- **Name:** Historical Onboarding Exclusion from Period Operations
+- **Description:** Historical opening repayments imported during migration establish opening balances and MUST NOT be counted as collections of the current operational period.
+- **Required Behavior:**
+  - Onboarded historical repayments must have a historical/pre-go-live date or be flagged (`note = 'Legacy Repayments Onboarded'`).
+  - Period collection metrics (`today_collection`, `this_week_collection`, `normal_payments`, `excess_payments`, `part_payments`) must filter out historical onboarding opening balances.
+  - Lifetime metrics (`total_outstanding_balance`, `total_paid_lifetime`) include all historical payments to compute accurate current outstanding balances.
+- **Prohibited Behavior:**
+  - Counting historical legacy payments as live collections of today.
+  - Classifying onboarding opening balance reductions as "Excess Payments".
+- **Status:** CONFIRMED
+- **Implementation Location:** `services/portfolio_service.py`, `services/dashboard_service.py`, `migrate_onboarding_template.py`
+
 ## Business Impact Map
 
 Every operation affects multiple downstream components. Before modifying any operation, consult this map:

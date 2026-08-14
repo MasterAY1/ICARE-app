@@ -72,7 +72,12 @@ class DashboardService:
         
         try:
             rep_res = q_rep.execute()
-            reps = rep_res.data or []
+            raw_reps = rep_res.data or []
+            reps = [
+                r for r in raw_reps 
+                if str(r.get("transaction_type", "")).upper() != "ONBOARDING_LEGACY" 
+                and str(r.get("note", "")).strip() != "Legacy Repayments Onboarded"
+            ]
         except Exception:
             reps = []
             
@@ -198,7 +203,12 @@ class DashboardService:
             if officer_id:
                 rep_res = uow.client.table("repayments").select("*, loans(loan_products(name))") \
                     .eq("officer_id", officer_id).eq("date", date_str).execute()
-                reps = rep_res.data or []
+                raw_reps = rep_res.data or []
+                reps = [
+                    r for r in raw_reps 
+                    if str(r.get("transaction_type", "")).upper() != "ONBOARDING_LEGACY" 
+                    and str(r.get("note", "")).strip() != "Legacy Repayments Onboarded"
+                ]
         except Exception:
             reps = []
 

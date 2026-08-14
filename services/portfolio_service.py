@@ -97,10 +97,12 @@ class PortfolioService:
         except Exception:
             pass
 
-        # Fetch individual savings within date range
+        # 1. Fetch Savings across All 3 Tiers (Individual, Group, Misc)
         savings_map = {}
         total_savings_deposit = 0.0
         total_savings_withdrawal = 0.0
+        
+        # A. Individual Savings
         try:
             if client_ids:
                 s_query = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount, posting_date").in_("client_id", client_ids)
@@ -141,12 +143,67 @@ class PortfolioService:
             loans_raw = [l for l in loans_raw if str(l.get("officer_id")).lower() == str(o_id).lower() or str(l.get("officer") or "").lower() == selected_officer.lower()]
             clients_raw = [c for c in clients_raw if str(c.get("officer_id")).lower() == str(o_id).lower() or str(c.get("officer") or "").lower() == selected_officer.lower()]
 
-
         if selected_group and selected_group != "All":
             loans_raw = [l for l in loans_raw if group_map.get(str(l.get("client_id")), "Individual") == selected_group]
             clients_raw = [c for c in clients_raw if group_map.get(str(c.get("client_id") or c.get("id")), "Individual") == selected_group]
 
-        # 3. Query Repayments within Date Range for Scope
+        # B. Group Savings & Misc Savings Period & Lifetime Aggregation
+        group_savings_bal_map = {}
+        try:
+            filtered_cids = [str(c.get("client_id") or c.get("id")) for c in clients_raw]
+            if filtered_cids:
+                gm_query = uow.client.table("client_memberships").select("client_id, group_id, groups(name)").in_("client_id", filtered_cids).execute()
+                g_id_name_map = {}
+                for gm in (gm_query.data or []):
+                    gid = str(gm.get("group_id"))
+                    gname = (gm.get("groups") or {}).get("name") if isinstance(gm.get("groups"), dict) else None
+                    if gid and gname:
+                        g_id_name_map[gid] = gname
+
+                all_gids = list(g_id_name_map.keys())
+                if all_gids:
+                    gs_all = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount, posting_date").in_("group_id", all_gids).execute()
+                    for gs in (gs_all.data or []):
+                        gid = str(gs.get("group_id"))
+                        gname = g_id_name_map.get(gid, "Individual")
+                        dep = float(gs.get("deposit_amount") or 0.0)
+                        wth = float(gs.get("withdrawal_amount") or 0.0)
+                        p_date = str(gs.get("posting_date") or "")[:10]
+                        
+                        # Lifetime group balance map
+                        group_savings_bal_map[gname] = group_savings_bal_map.get(gname, 0.0) + (dep - wth)
+                        
+                        # Period aggregation
+                        if start_date.isoformat() <= p_date <= end_date.isoformat():
+                            total_savings_deposit += dep
+                            total_savings_withdrawal += wth
+
+            # C. Misc Savings (Internal Savings) — Attributed to Designated Officer (BR-SAV-002)
+            from services.savings_service import SavingsService
+            active_branch_name = selected_branch if (selected_branch and selected_branch != "All") else (scope.branch or "Ogijo")
+            m_off_id, m_off_name = SavingsService.get_branch_misc_savings_officer(uow, active_branch_name)
+            
+            should_include_misc = True
+            if selected_officer and selected_officer != "All":
+                officer_sel_clean = str(selected_officer).strip().lower()
+                should_include_misc = (officer_sel_clean == m_off_name.lower() or officer_sel_clean == m_off_id.lower() or "co3" in officer_sel_clean)
+            elif scope.scope_level == "OFFICER" and scope.user_id:
+                should_include_misc = (str(scope.user_id) == m_off_id or str(scope.username).lower() == m_off_name.lower() or "co3" in str(scope.username).lower())
+
+            if should_include_misc:
+                misc_q = uow.client.table("internal_savings").select("deposit_amount, withdrawal_amount, posting_date")
+                misc_res = misc_q.execute()
+                for ms in (misc_res.data or []):
+                    dep = float(ms.get("deposit_amount") or 0.0)
+                    wth = float(ms.get("withdrawal_amount") or 0.0)
+                    p_date = str(ms.get("posting_date") or "")[:10]
+                    if start_date.isoformat() <= p_date <= end_date.isoformat():
+                        total_savings_deposit += dep
+                        total_savings_withdrawal += wth
+        except Exception:
+            pass
+
+        # 3. Query Repayments within Date Range for Scope (Excluding Historical Onboarding Opening Balances)
         try:
             s_d_str = start_date.strftime("%Y-%m-%d")
             e_d_str = end_date.strftime("%Y-%m-%d") + "T23:59:59"
@@ -158,7 +215,14 @@ class PortfolioService:
             elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
                 r_query = r_query.in_("branch_id", scope.assigned_branch_ids)
             r_res = r_query.execute()
-            repayments_today = r_res.data or []
+            raw_reps = r_res.data or []
+
+            # BR-DASH-006: Filter out historical onboarding opening payments from period operations
+            repayments_today = [
+                r for r in raw_reps 
+                if str(r.get("transaction_type", "")).upper() != "ONBOARDING_LEGACY" 
+                and str(r.get("note", "")).strip() != "Legacy Repayments Onboarded"
+            ]
 
             if selected_branch and selected_branch != "All":
                 b_id = None
@@ -181,16 +245,16 @@ class PortfolioService:
         if selected_group and selected_group != "All":
             repayments_today = [r for r in repayments_today if group_map.get(str(r.get("client_id")), "Individual") == selected_group]
 
-        # 4. Fetch Lifetime Repayments for Dynamic Outstanding Balance
+        # 4. Fetch Lifetime Repayments for Dynamic Outstanding Balance (Includes Historical Onboarding Payments)
         lifetime_repayments_map = {}
         try:
-            active_cids = list(set([str(l.get("client_id")) for l in loans_raw if l.get("client_id") and str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]]))
-            if active_cids:
-                lt_query = uow.client.table("repayments").select("client_id, amount_paid").in_("client_id", active_cids).execute()
+            active_loan_ids = list(set([str(l.get("loan_id")) for l in loans_raw if l.get("loan_id") and str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]]))
+            if active_loan_ids:
+                lt_query = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", active_loan_ids).execute()
                 for r in (lt_query.data or []):
-                    cid_s = str(r.get("client_id"))
+                    lid_s = str(r.get("loan_id"))
                     amt = float(r.get("amount_paid") or 0.0)
-                    lifetime_repayments_map[cid_s] = lifetime_repayments_map.get(cid_s, 0.0) + amt
+                    lifetime_repayments_map[lid_s] = lifetime_repayments_map.get(lid_s, 0.0) + amt
         except Exception:
             lifetime_repayments_map = {}
 
@@ -207,9 +271,9 @@ class PortfolioService:
         total_outstanding_balance = 0.0
         for l in loans_raw:
             if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]:
-                cid_s = str(l.get("client_id") or "")
+                lid_s = str(l.get("loan_id") or "")
                 act_cred = float(l.get("active_credit") or 0.0)
-                tot_paid = lifetime_repayments_map.get(cid_s, 0.0)
+                tot_paid = lifetime_repayments_map.get(lid_s, 0.0)
                 total_outstanding_balance += max(0.0, act_cred - tot_paid)
                 
         # Calculate disbursement summary within the selected date range
@@ -229,7 +293,7 @@ class PortfolioService:
 
         total_savings_balance = total_savings_deposit - total_savings_withdrawal
 
-        # Calculate exact savings for filtered clients
+        # Calculate exact lifetime savings for filtered clients
         try:
             filtered_cids = [str(c.get("client_id") or c.get("id")) for c in clients_raw]
             total_savings = 0.0
@@ -247,6 +311,13 @@ class PortfolioService:
                     g_dep = sum(float(s.get("deposit_amount") or 0.0) for s in (gs_query.data or []))
                     g_wth = sum(float(s.get("withdrawal_amount") or 0.0) for s in (gs_query.data or []))
                     total_savings += (g_dep - g_wth)
+
+                # Misc savings
+                if should_include_misc:
+                    ms_query = uow.client.table("internal_savings").select("deposit_amount, withdrawal_amount").execute()
+                    m_dep = sum(float(s.get("deposit_amount") or 0.0) for s in (ms_query.data or []))
+                    m_wth = sum(float(s.get("withdrawal_amount") or 0.0) for s in (ms_query.data or []))
+                    total_savings += (m_dep - m_wth)
         except Exception:
             pass
 
@@ -305,9 +376,9 @@ class PortfolioService:
                 if loan_id and len(str(loan_id)) > 10:
                     tot_paid_loan, has_schedule = ScheduleService.get_total_paid(uow, str(loan_id))
                     if not has_schedule:
-                        tot_paid_loan = lifetime_repayments_map.get(cid_str, 0.0)
+                        tot_paid_loan = lifetime_repayments_map.get(str(loan_id), 0.0)
                 else:
-                    tot_paid_loan = lifetime_repayments_map.get(cid_str, 0.0)
+                    tot_paid_loan = lifetime_repayments_map.get(str(loan_id), 0.0)
                 
                 # Active credit was previously incorrectly used as outstanding balance
                 outstanding_bal = max(0.0, tot_due - tot_paid_loan)
@@ -388,6 +459,12 @@ class PortfolioService:
                 Fixed_Repayment=("Fixed Repayment", "sum"),
                 Total_Paid=("Total Paid", "sum")
             ).reset_index()
+            # BR-SAV-003: Include communal group savings in Total Savings Balance for each group
+            group_df["Total Savings Balance"] = group_df.apply(
+                lambda row: float(row["Savings_Balance"]) + float(group_savings_bal_map.get(str(row["Group"]), 0.0)),
+                axis=1
+            )
+            group_df = group_df[["Group", "Clients", "Total Savings Balance", "Active_Loan", "Outstanding_Balance", "Fixed_Repayment", "Total_Paid"]]
             group_df.columns = ["Group Name", "Total Clients", "Total Savings Balance", "Total Active Loan", "Total Outstanding Balance", "Total Fixed Repayment", "Total Paid"]
             client_df = group_df
 
