@@ -112,10 +112,8 @@ class MasterCashbookProjectionBuilder:
             print(f"[SAVINGS TRACE] Master Cashbook failed to fetch branch ledger entries: {e}")
 
         # Corrected Master Cashbook Formulas (ICARE Business Rules)
-        # Bank Withdrawal = Inflow (cash brought into operational position)
-        # Total Outflows = Physical cash outflows (savings_withdrawal + laps_returns + bank_deposit + loan disbursements + treasury outflows)
-        # product_withdrawal = Informational value reduction column (NOT included in cash outflows to avoid double-counting)
         total_inflows = (
+            opening_bal +
             totals["rep_daily"] + totals["rep_12_weeks"] + totals["rep_24_weeks"] + totals["rep_monthly"] +
             totals["savings_deposit"] + totals["laps_reserve"] + totals["bank_withdrawal"] +
             totals["funds_received_ho"] + totals["funds_received_other_branch"] +
@@ -127,7 +125,8 @@ class MasterCashbookProjectionBuilder:
         )
 
         total_outflows = (
-            totals["bank_deposit"] + totals["savings_withdrawal"] + totals["laps_returns"] +
+            totals["product_withdrawal"] +
+            totals["bank_deposit"] + totals["laps_returns"] +
             totals["fund_to_asset_program"] + totals["fund_to_product_finance"] +
             totals["fund_transferred_other_branch"] + totals["fund_transferred_ho"] + totals["fund_to_other_area"] +
             totals["staff_salaries"] + totals["office_expenses"]
@@ -157,7 +156,7 @@ class MasterCashbookProjectionBuilder:
 
         total_inflows += adj_in
         total_outflows += adj_out
-        closing_balance = opening_bal + total_inflows - total_outflows
+        closing_balance = total_inflows - total_outflows
 
         mb_data = {
             "date": p_date_str,

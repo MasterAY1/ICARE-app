@@ -68,9 +68,22 @@ class SupabaseCashbookRepository(BaseRepository[CashbookEntry], CashbookReposito
         res = self._execute(query)
         return [CashbookMapper.to_domain(d) for d in res.data]
 
-    def rebuild_projection(self, uow, branch_id: str, posting_date, officer_id: str = None) -> None:
+    def rebuild_projection(self, arg1, arg2=None, arg3=None, officer_id: str = None) -> None:
+        if hasattr(arg1, "client"):
+            uow = arg1
+            branch_id = str(arg2)
+            posting_date = arg3
+        else:
+            uow = self
+            branch_id = str(arg1)
+            posting_date = arg2
+            if arg3 and not officer_id:
+                officer_id = str(arg3)
+
         if isinstance(posting_date, str):
             posting_date = date.fromisoformat(posting_date)
+        elif hasattr(posting_date, "date"):
+            posting_date = posting_date.date()
 
         from services.co_cashbook_projection_builder import CoCashbookProjectionBuilder
         from services.master_cashbook_projection_builder import MasterCashbookProjectionBuilder

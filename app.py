@@ -3242,12 +3242,13 @@ elif page == "Loan Origination":
                             
                     allowed_products = extra.get("allowed_products", []) if isinstance(extra, dict) else []
                     
-                if isinstance(allowed_products, list):
-                    prods = [p for p in prods if p in allowed_products]
-                    
-                if not prods:
-                    st.error(f"You do not have permission to originate any {product_category} products. Contact your Branch Manager.")
-                    st.stop()
+                if isinstance(allowed_products, list) and len(allowed_products) > 0:
+                    filtered_prods = [p for p in prods if p in allowed_products]
+                    if filtered_prods:
+                        prods = filtered_prods
+                    else:
+                        st.error(f"You do not have permission to originate any {product_category} products. Contact your Branch Manager.")
+                        st.stop()
                     
                 product_type = col_p1.selectbox("Loan Product", prods, key=f"loan_app_product_{product_category}")
                 
@@ -6289,7 +6290,7 @@ elif page == "CO Cashbook":
     except Exception as e:
         st.warning(f"Could not load CO cashbook projection: {e}")
 
-    left_total = bf_cash + t_lres + (t_sav + t_misc) + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_cc
+    left_total = bf_cash + t_lres + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_cc
     right_total = t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_ltrans
     closing_bal = left_total - right_total
 
@@ -6297,7 +6298,7 @@ elif page == "CO Cashbook":
     ledger_data = {
         "Date": [date_str],
         "Opening balance": [bf_cash],
-        "Savings": [t_sav + t_misc],
+        "Savings": [t_sav],
         "Repayment 12 weeks": [t_r12w],
         "Repayment 24 weeks": [t_r24w],
         "Repayment 60 days": [t_r60d],
@@ -6547,11 +6548,10 @@ elif page == "Master Cashbook":
             )
             
             total_outflows = (
-                auto_disb_60d + auto_disb_120d + auto_disb_12w + auto_disb_24w + auto_disb_mth +
-                xfer_branch + xfer_ho + xfer_area +
+                auto_prod_wd +
                 auto_fund_asset + auto_fund_finance +
-                auto_prod_wd + auto_savings_wd + salaries +
-                auto_expenses + auto_laps_ret + auto_bank_dep +
+                xfer_branch + xfer_ho + xfer_area +
+                salaries + auto_expenses + auto_laps_ret + auto_bank_dep +
                 adj_outflow
             )
             
@@ -6682,55 +6682,63 @@ elif page == "Master Cashbook":
         daily_reps = repayments[(repayments['DateStr'] == date_str) & (repayments['Officer'] == target_co)]
 
         # ========================================================
-        # LEDGER DISPLAY & MANUAL OUTFLOWS
+        # LEDGER DISPLAY (Loaded from co_cashbooks projection)
         # ========================================================
-        # Calculate New Active Disbursements (from loans table originated today by this CO)
-        co_loans = all_loans[all_loans['Officer'] == target_co] if not all_loans.empty else pd.DataFrame()
-        d_act = w_act = m_act = 0
-        if not co_loans.empty:
-            co_loans['DateStr'] = pd.to_datetime(co_loans['Date'], errors='coerce').dt.date.astype(str)
-            today_loans = co_loans[co_loans['DateStr'] == date_str]
-            for _, loan in today_loans.iterrows():
-                prod = str(loan.get('Loan Product', '')).lower()
-                amt = pd.to_numeric(loan.get('Active Credit', 0), errors='coerce')
-                if pd.isna(amt): amt = 0
-                if "daily" in prod or "60" in prod or "120" in prod: d_act += amt
-                elif "weekly" in prod or "12w" in prod or "24w" in prod: w_act += amt
-                elif "month" in prod or "3m" in prod or "6m" in prod: m_act += amt
+        bf_cash = t_sav = t_r12w = t_r24w = t_r60d = t_r120d = t_rmth = t_cont = t_bwd = t_asale = t_app = t_pb = t_misc = 0.0
+        t_d11 = t_d20 = t_w11 = t_w20 = t_mm = t_pwd = t_exp = t_bdep = t_lres = t_ltrans = t_cc = 0.0
+        w_act = d_act = m_act = 0.0
 
-        # Sum all the columns from daily_reps
-        def sum_col(df, col):
-            if df.empty or col not in df.columns:
-                return 0.0
-            return pd.to_numeric(df[col], errors='coerce').fillna(0).sum()
+        try:
+            from database.repositories.unit_of_work import SupabaseUnitOfWork
+            with SupabaseUnitOfWork() as uow:
+                branch_id = uow.cashbook._resolve_branch_id(BRANCH)
+                res_u = uow.client.table("app_users").select("id").eq("username", target_co).execute()
+                o_id = res_u.data[0]["id"] if res_u.data else None
+                
+                if o_id:
+                    uow.cashbook.rebuild_projection(branch_id, view_date, officer_id=o_id)
+                    res_co = uow.client.table("co_cashbooks").select("*").eq("date", date_str).eq("branch_id", branch_id).eq("officer_id", o_id).execute()
+                    if res_co.data:
+                        c = res_co.data[0]
+                        bf_cash = float(c.get("opening_balance") or 0)
+                        t_sav = float(c.get("savings_deposit") or 0)
+                        t_r12w = float(c.get("rep_12_weeks") or 0)
+                        t_r24w = float(c.get("rep_24_weeks") or 0)
+                        t_r60d = float(c.get("rep_daily") or 0)
+                        t_rmth = float(c.get("rep_monthly") or 0)
+                        t_cont = float(c.get("contingency") or 0)
+                        t_bwd = float(c.get("bank_withdrawal") or 0)
+                        t_asale = float(c.get("asset_credit_sales") or 0)
+                        t_app = float(c.get("app_fee") or 0)
+                        t_pb = float(c.get("passbook") or 0)
+                        t_lres = float(c.get("laps_reserve") or 0)
+                        
+                        t_d11 = float(c.get("daily_11_pct") or 0)
+                        t_w11 = float(c.get("weekly_11_pct") or 0)
+                        t_mm = float(c.get("risk_premium_returns") or 0)
+                        t_r120d = float(c.get("rep_120_days") or 0)
+                        t_pwd = float(c.get("product_withdrawal") or 0)
+                        t_exp = float(c.get("office_expenses") or 0)
+                        t_bdep = float(c.get("bank_deposit") or 0)
+                        t_ltrans = float(c.get("laps_returns") or 0)
+                        t_cc = float(c.get("cash_and_carry") or 0)
+                        
+                    # Also fetch today's active loan disbursements for this CO
+                    res_l = uow.client.table("loans").select("amount, active_credit, loan_products(repayment_cycle)") \
+                        .eq("officer_id", o_id).eq("branch_id", branch_id) \
+                        .gte("created_at", f"{date_str}T00:00:00").lte("created_at", f"{date_str}T23:59:59") \
+                        .in_("status", ["Active", "Approved", "Completed"]).execute()
+                    for l in (res_l.data or []):
+                        act_cr = float(l.get("active_credit") or l.get("amount") or 0.0)
+                        cycle = (l.get("loan_products") or {}).get("repayment_cycle", "Weekly")
+                        if cycle == "Daily": d_act += act_cr
+                        elif cycle == "Weekly": w_act += act_cr
+                        elif cycle == "Monthly": m_act += act_cr
+                        else: w_act += act_cr
+        except Exception as e:
+            st.warning(f"Could not load CO cashbook projection: {e}")
 
-        bf_cash = sum_col(daily_reps, 'Opening Balance')
-        t_sav = sum_col(daily_reps, 'Savings Amount')
-        t_r12w = sum_col(daily_reps, 'Repayment 12 Weeks')
-        t_r24w = sum_col(daily_reps, 'Repayment 24 Weeks')
-        t_r60d = sum_col(daily_reps, 'Repayment 60 Days')
-        t_r120d = sum_col(daily_reps, 'Repayment 120 Days')
-        t_rmth = sum_col(daily_reps, 'Monthly')
-        t_cont = sum_col(daily_reps, 'Contingency')
-        t_bwd = sum_col(daily_reps, 'Bank Withdrawal')
-        t_asale = sum_col(daily_reps, 'Asset Sales')
-        t_app = sum_col(daily_reps, 'App Fee')
-        t_pb = sum_col(daily_reps, 'Pass Book Bonus')
-        t_misc = sum_col(daily_reps, 'Misc Fees')
-
-        t_d11 = sum_col(daily_reps, 'Daily 11%')
-        t_d20 = sum_col(daily_reps, 'Daily 20%')
-        t_w11 = sum_col(daily_reps, 'Weekly 11%')
-        t_w20 = sum_col(daily_reps, 'Weekly 20%')
-        t_mm = sum_col(daily_reps, 'Monthly 11%/20%')
-        t_pwd = sum_col(daily_reps, 'Product Withdrawal')
-        t_exp = sum_col(daily_reps, 'Expenses')
-        t_bdep = sum_col(daily_reps, 'Bank Deposited')
-        t_lres = sum_col(daily_reps, 'Laps Reserved')
-        t_ltrans = sum_col(daily_reps, 'Laps Transferred')
-        t_cc = sum_col(daily_reps, 'Cash Carry')
-
-        left_total = bf_cash + t_lres + (t_sav + t_misc) + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_cc
+        left_total = bf_cash + t_lres + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_cc
         right_total = t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_ltrans
         closing_bal = left_total - right_total
 
@@ -6738,7 +6746,7 @@ elif page == "Master Cashbook":
         ledger_data = {
             "Date": [date_str],
             "Opening balance": [bf_cash],
-            "Savings": [t_sav + t_misc],
+            "Savings": [t_sav],
             "Repayment 12 weeks": [t_r12w],
             "Repayment 24 weeks": [t_r24w],
             "Repayment 60 days": [t_r60d],
@@ -6829,7 +6837,9 @@ elif page == "Master Cashbook":
                     "loan_received_asset", "loan_received_finance",
                     "daily_11_pct", "weekly_11_pct",
                     "savings_adj_no", "savings_adj_amount",
-                    "risk_premium_returns",
+                    "risk_premium_returns", "contingency", "app_fee", "passbook",
+                    "asset_credit_sales", "cash_and_carry", "credit_form_damage", "bonus", "bank_withdrawal",
+                    "product_withdrawal",
                     "fund_transferred_other_branch", "fund_transferred_ho",
                     "fund_to_other_area", "fund_to_asset_program", "fund_to_product_finance",
                     "staff_salaries", "office_expenses",
@@ -6851,7 +6861,11 @@ elif page == "Master Cashbook":
                     "loan_received_asset": "Loan Recv (Asset)", "loan_received_finance": "Loan Recv (Finance)",
                     "daily_11_pct": "Daily 11%", "weekly_11_pct": "Weekly 11%",
                     "savings_adj_no": "Sav Adj (No)", "savings_adj_amount": "Sav Adj (₦)",
-                    "risk_premium_returns": "Risk Premium",
+                    "risk_premium_returns": "Risk Premium", "contingency": "Contingency",
+                    "app_fee": "App Fee", "passbook": "Pass Book",
+                    "asset_credit_sales": "Asset Credit Sales", "cash_and_carry": "Cash & Carry",
+                    "credit_form_damage": "Cr Form Dmg", "bonus": "Bonus",
+                    "bank_withdrawal": "Bank Withdrawal", "product_withdrawal": "Product Withdrawal",
                     "fund_transferred_other_branch": "Fund Xfer (Branch)", "fund_transferred_ho": "Fund Xfer (H.O.)",
                     "fund_to_other_area": "Fund to Area", "fund_to_asset_program": "Fund to Asset",
                     "fund_to_product_finance": "Fund to Finance",

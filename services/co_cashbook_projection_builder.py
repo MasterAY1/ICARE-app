@@ -8,11 +8,12 @@ class CoCashbookProjectionBuilder:
     def rebuild_co_projection(uow: UnitOfWork, branch_id: str, officer_id: str, posting_date: date) -> Optional[dict]:
         """
         Rebuilds the officer-level daily cashbook projection row in co_cashbooks.
-        Strictly contains Credit Officer originated transactions.
-        Branch treasury activities (HO transfers, salaries, expenses, loan disbursement pools) are excluded.
+        Strictly contains Credit Officer originated transactions in accordance with ICARE Constitutional Rules (BR-CASH-001 to BR-CASH-005).
         """
         if isinstance(posting_date, str):
             posting_date = date.fromisoformat(posting_date)
+        elif hasattr(posting_date, "date"):
+            posting_date = posting_date.date()
             
         if not branch_id or not officer_id:
             return None
@@ -31,7 +32,17 @@ class CoCashbookProjectionBuilder:
         except Exception:
             pass
 
-        # 2. Fetch ledger entries for this branch & officer on posting_date
+        # 2. Determine if this officer is the designated Misc Savings officer for the branch (BR-SAV-002)
+        from services.savings_service import SavingsService
+        designated_misc_officer_id = None
+        try:
+            res_misc_off = SavingsService.get_branch_misc_savings_officer(uow, branch_id)
+            designated_misc_officer_id = res_misc_off[0] if isinstance(res_misc_off, tuple) else res_misc_off
+        except Exception:
+            pass
+        is_misc_officer = (str(officer_id) == str(designated_misc_officer_id))
+
+        # 3. Fetch ledger entries for this branch & officer on posting_date
         try:
             res_entries = uow.client.table("financial_ledger_entries") \
                 .select("*, financial_transactions!inner(event_id, posting_date, narration, reference, officer_id, event_store(event_type, payload))") \
@@ -44,21 +55,32 @@ class CoCashbookProjectionBuilder:
             print(f"Error fetching ledger entries for CO Cashbook: {e}")
             raise e
 
+        # Also fetch branch-wide internal savings if this is the designated misc officer
+        branch_misc_entries = []
+        if is_misc_officer:
+            try:
+                res_misc = uow.client.table("internal_savings").select("amount") \
+                    .eq("branch_id", branch_id).eq("posting_date", p_date_str).execute()
+                branch_misc_entries = res_misc.data or []
+            except Exception:
+                pass
 
         rep_daily = rep_12_weeks = rep_24_weeks = rep_monthly = 0.0
         savings_deposit = laps_reserve = 0.0
-        daily_11_pct = weekly_11_pct = risk_premium_returns = 0.0 # risk_premium_returns = 20% Profit Sales
+        daily_11_pct = weekly_11_pct = risk_premium_returns = 0.0
         savings_adj_no = 0
         savings_adj_amount = passbook = app_fee = 0.0
         asset_credit_sales = cash_and_carry = contingency = credit_form = credit_form_damage = 0.0
         bonus = misc_fees = 0.0
 
         savings_withdrawal = laps_returns = bank_deposit = bank_withdrawal = product_withdrawal = 0.0
+        weekly_active = daily_active = monthly_active = 0.0
+        office_expenses = 0.0
+
         processed_pwd_events = set()
 
         for entry in entries_list:
             acc = entry.get("account_code")
-            
             amount = float(entry.get("amount") or 0.0)
             side = entry.get("side")
             tx = entry.get("financial_transactions") or {}
@@ -67,10 +89,11 @@ class CoCashbookProjectionBuilder:
             ev_id = tx.get("event_id") or entry.get("entry_id") or str(uuid.uuid4())
             narr = str(tx.get("narration") or "").lower()
 
-            # Handle internal transfers that don't touch 1000 Vault Cash but need to be tracked for product withdrawal metrics
+            # Handle internal non-cash transfers for Product Withdrawal
             if event_type == "LapsTransferred" and acc == "2030" and side == "Credit":
                 if ev_id not in processed_pwd_events:
                     product_withdrawal += amount
+                    laps_reserve += amount
                     processed_pwd_events.add(ev_id)
                 continue
 
@@ -80,7 +103,12 @@ class CoCashbookProjectionBuilder:
                     processed_pwd_events.add(ev_id)
                 continue
 
-            if acc != "1000": # Only track cash account flow
+            # Account 4000 Office Expenses
+            if acc == "4000" and side == "Debit":
+                office_expenses += amount
+                continue
+
+            if acc != "1000":
                 continue
 
             if side == "Debit":
@@ -111,32 +139,59 @@ class CoCashbookProjectionBuilder:
                     else: rep_daily += amount
 
                 elif event_type in ["SavingsDeposited", "INDIVIDUAL_SAVINGS_DEPOSIT", "GROUP_SAVINGS_DEPOSIT"]:
-                    if entry.get("aggregate_type") == "LapsSavings": laps_reserve += amount
-                    else: savings_deposit += amount
+                    if entry.get("aggregate_type") == "LapsSavings":
+                        laps_reserve += amount
+                    else:
+                        savings_deposit += amount
+                        
                 elif event_type in ["FeeCharged", "MARKUP", "MARKUP_11", "MARKUP_20", "CONTINGENCY", "PROCESSING_FEE", "PASSBOOK"]:
                     if "passbook" in narr or "pass book" in narr: passbook += amount
                     elif "processing" in narr or "application" in narr: app_fee += amount
-                    elif "contingency" in narr: contingency += amount
+                    elif "contingency" in narr:
+                        contingency += amount
+                        if "upfront" in narr: product_withdrawal += amount
                     elif "credit form damage" in narr: credit_form_damage += amount
                     elif "credit form" in narr: credit_form += amount
                     elif "bonus" in narr: bonus += amount
-                    elif "11%" in narr and "weekly" in narr: weekly_11_pct += amount
-                    elif "20%" in narr and "weekly" in narr: risk_premium_returns += amount
+                    elif "11%" in narr and "weekly" in narr:
+                        weekly_11_pct += amount
+                        if "upfront" in narr: product_withdrawal += amount
+                    elif "20%" in narr and "weekly" in narr:
+                        risk_premium_returns += amount
+                        if "upfront" in narr: product_withdrawal += amount
                     elif "20%" in narr or "markup_20" in narr or "120" in narr or "24" in narr or "6m" in narr or "6 month" in narr:
                         risk_premium_returns += amount
+                        if "upfront" in narr: product_withdrawal += amount
                     elif "11%" in narr or "markup_11" in narr or "3m" in narr or "3 month" in narr or "60" in narr:
                         daily_11_pct += amount
-                    elif "weekly" in narr: weekly_11_pct += amount
-                    elif "daily" in narr: daily_11_pct += amount
-                    else: misc_fees += amount
-                elif event_type == "BankWithdrawn": bank_withdrawal += amount
-                elif event_type == "AssetSoldCash": cash_and_carry += amount
-                elif event_type == "PenaltyCharged": misc_fees += amount
+                        if "upfront" in narr: product_withdrawal += amount
+                    elif "weekly" in narr:
+                        weekly_11_pct += amount
+                        if "upfront" in narr: product_withdrawal += amount
+                    elif "daily" in narr:
+                        daily_11_pct += amount
+                        if "upfront" in narr: product_withdrawal += amount
+                    else:
+                        if is_misc_officer:
+                            savings_deposit += amount
+                        else:
+                            misc_fees += amount
+
+                elif event_type == "BankWithdrawn":
+                    bank_withdrawal += amount
+                elif event_type == "AssetSoldCash":
+                    cash_and_carry += amount
+                elif event_type == "PenaltyCharged":
+                    if is_misc_officer:
+                        savings_deposit += amount
+                    else:
+                        misc_fees += amount
 
             elif side == "Credit":
-                # CO Outflows (Excludes Branch Treasury Outflows)
+                # CO Outflows
                 if event_type in ["SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION"]:
                     savings_withdrawal += amount
+                    bank_withdrawal += amount  # Bank transfer payout from bank
                     if ev_id not in processed_pwd_events:
                         product_withdrawal += amount
                         processed_pwd_events.add(ev_id)
@@ -144,24 +199,61 @@ class CoCashbookProjectionBuilder:
                     bank_deposit += amount
                 elif event_type == "LapsPaidOut":
                     laps_returns += amount
+                    bank_withdrawal += amount  # Bank transfer payout from bank
                     if ev_id not in processed_pwd_events:
                         product_withdrawal += amount
                         processed_pwd_events.add(ev_id)
 
-        # Corrected Cashbook Formulas (ICARE Business Rules)
-        # Bank Withdrawal = Inflow (cash brought into vault)
-        # Total Outflows = Physical cash outflows only (savings_withdrawal + laps_returns + bank_deposit)
-        # product_withdrawal = Informational value reduction column (NOT included in cash outflows to avoid double-counting)
+        # Add pooled branch misc savings for designated officer
+        if is_misc_officer and branch_misc_entries:
+            misc_total = sum(float(m.get("amount") or 0.0) for m in branch_misc_entries)
+            savings_deposit += misc_total
+
+        # 4. Fetch Active Loans originated today by this CO (BR-CASH-001 & BR-CASH-003)
+        try:
+            res_loans = uow.client.table("loans").select("amount, active_credit, product_type, loan_products(repayment_cycle, product_category)") \
+                .eq("officer_id", officer_id).eq("branch_id", branch_id) \
+                .gte("created_at", f"{p_date_str}T00:00:00").lte("created_at", f"{p_date_str}T23:59:59") \
+                .in_("status", ["Active", "Approved", "Completed"]).execute()
+            for l in (res_loans.data or []):
+                act_cr = float(l.get("active_credit") or l.get("amount") or 0.0)
+                prod_data = l.get("loan_products") or {}
+                cycle = prod_data.get("repayment_cycle", "Weekly")
+                cat = prod_data.get("product_category", "Finance")
+
+                if cycle == "Daily":
+                    daily_active += act_cr
+                elif cycle == "Weekly":
+                    weekly_active += act_cr
+                elif cycle == "Monthly":
+                    monthly_active += act_cr
+                else:
+                    weekly_active += act_cr
+
+                # Asset loans enter as Asset Credit Sales on Left, Cash loans enter as Bank Withdrawal
+                if cat == "Asset" or "asset" in str(l.get("product_type", "")).lower():
+                    asset_credit_sales += act_cr
+                else:
+                    bank_withdrawal += act_cr
+        except Exception:
+            pass
+
+        # 5. Corrected Cashbook Formulas (ICARE Business Rules)
         total_inflows = (
+            opening_bal +
+            savings_deposit + laps_reserve +
             rep_daily + rep_12_weeks + rep_24_weeks + rep_monthly +
-            savings_deposit + laps_reserve + bank_withdrawal +
             daily_11_pct + weekly_11_pct + savings_adj_amount +
             risk_premium_returns + passbook + app_fee +
             asset_credit_sales + cash_and_carry + contingency +
-            credit_form + credit_form_damage + bonus + misc_fees
+            credit_form + credit_form_damage + bonus + bank_withdrawal
         )
-        total_outflows = savings_withdrawal + laps_returns + bank_deposit
-        closing_balance = opening_bal + total_inflows - total_outflows
+        total_outflows = (
+            product_withdrawal +
+            weekly_active + daily_active + monthly_active +
+            office_expenses + bank_deposit + laps_returns
+        )
+        closing_balance = total_inflows - total_outflows
 
         cb_data = {
             "date": p_date_str,
@@ -174,12 +266,12 @@ class CoCashbookProjectionBuilder:
             "rep_monthly": rep_monthly,
             "savings_deposit": savings_deposit,
             "laps_reserve": laps_reserve,
-            "funds_received_ho": 0.0, # Removed from CO
-            "funds_received_other_branch": 0.0, # Removed from CO
-            "loan_received_asset": 0.0, # Removed from CO
-            "loan_received_finance": 0.0, # Removed from CO
-            "daily_11_pct": daily_11_pct, # Profit Sales 11% Daily
-            "weekly_11_pct": weekly_11_pct, # Profit Sales 11% Weekly
+            "funds_received_ho": 0.0,
+            "funds_received_other_branch": 0.0,
+            "loan_received_asset": 0.0,
+            "loan_received_finance": 0.0,
+            "daily_11_pct": daily_11_pct,
+            "weekly_11_pct": weekly_11_pct,
             "risk_premium_returns": risk_premium_returns,
             "savings_adj_no": savings_adj_no,
             "savings_adj_amount": savings_adj_amount,
@@ -191,15 +283,14 @@ class CoCashbookProjectionBuilder:
             "credit_form": credit_form,
             "credit_form_damage": credit_form_damage,
             "bonus": bonus,
-            "misc_fees": misc_fees,
-            "fund_transferred_other_branch": 0.0, # Removed from CO
-            "fund_transferred_ho": 0.0, # Removed from CO
-            "fund_to_other_area": 0.0, # Removed from CO
-            "fund_to_asset_program": 0.0, # Removed from CO
-            "fund_to_product_finance": 0.0, # Removed from CO
+            "misc_fees": 0.0,
+            "fund_transferred_other_branch": 0.0,
+            "fund_transferred_ho": 0.0,
+            "fund_to_asset_program": 0.0,
+            "fund_to_product_finance": 0.0,
             "savings_withdrawal": savings_withdrawal,
-            "staff_salaries": 0.0, # Removed from CO
-            "office_expenses": 0.0, # Removed from CO
+            "staff_salaries": 0.0,
+            "office_expenses": office_expenses,
             "laps_returns": laps_returns,
             "bank_deposit": bank_deposit,
             "bank_withdrawal": bank_withdrawal,
