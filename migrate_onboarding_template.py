@@ -239,6 +239,7 @@ def run_migration():
                     loan_id = l_res.data[0]['loan_id']
                     uow.client.table("loans").update({
                         "total_due": current_bal, "active_credit": float(a_cred), "loan_amount": float(p_loan) if pd.notna(p_loan) else float(a_cred),
+                        "loan_repay": round(expected_inst, 2),
                         "branch_id": b_id, "officer_id": o_id, "product_id": prod['product_id']
                     }).eq("loan_id", loan_id).execute()
                 else:
@@ -246,6 +247,7 @@ def run_migration():
                     uow.client.table("loans").insert({
                         "loan_id": loan_id, "client_id": c_id, "date": base_date.isoformat(),
                         "loan_amount": float(p_loan) if pd.notna(p_loan) else float(a_cred), "active_credit": float(a_cred),
+                        "loan_repay": round(expected_inst, 2),
                         "total_due": current_bal, "status": "Active", "branch_id": b_id, "officer_id": o_id, "product_id": prod['product_id']
                     }).execute()
                     loans_created += 1

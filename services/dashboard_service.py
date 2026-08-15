@@ -123,6 +123,21 @@ class DashboardService:
                 continue
 
             repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0) if is_expected_today else 0.0
+            if is_expected_today and repay_amt <= 0:
+                lid = l.get("loan_id")
+                if lid:
+                    try:
+                        res_sch = uow.client.table("loan_schedule").select("total_due").eq("loan_id", lid).order("installment_number").limit(1).execute()
+                        if res_sch.data:
+                            repay_amt = float(res_sch.data[0].get("total_due") or 0.0)
+                    except Exception:
+                        pass
+                if repay_amt <= 0:
+                    dur = int(l.get("duration") or 0)
+                    ac = float(l.get("active_credit") or 0.0)
+                    if dur > 0 and ac > 0:
+                        repay_amt = round(ac / dur, 2)
+
             loan_bal = float(l.get("active_credit") or l.get("Active Credit") or 0.0)
 
             if loan_bal <= 0 and c_paid > 0:
@@ -346,6 +361,21 @@ class DashboardService:
                     }
 
                 repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0) if is_expected_today else 0.0
+                if is_expected_today and repay_amt <= 0:
+                    lid = l.get("loan_id")
+                    if lid:
+                        try:
+                            res_sch = uow.client.table("loan_schedule").select("total_due").eq("loan_id", lid).order("installment_number").limit(1).execute()
+                            if res_sch.data:
+                                repay_amt = float(res_sch.data[0].get("total_due") or 0.0)
+                        except Exception:
+                            pass
+                    if repay_amt <= 0:
+                        dur = int(l.get("duration") or 0)
+                        ac = float(l.get("active_credit") or 0.0)
+                        if dur > 0 and ac > 0:
+                            repay_amt = round(ac / dur, 2)
+
                 grp_map[g_name]["Expected Collection"] += repay_amt
                 if is_expected_today:
                     grp_map[g_name]["Clients Expected"] += 1
