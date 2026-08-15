@@ -146,8 +146,8 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
         amt = float(entity.amount_paid or 0.0)
         if amt <= 0 and entity.loan_repayment_amount > 0:
             amt = float(entity.loan_repayment_amount)
-        if amt <= 0:
-            amt = 1.0
+        if amt < 0:
+            amt = 0.0
 
         resolved_loan = self._resolve_loan_id(entity.loan_id)
         if not resolved_loan:

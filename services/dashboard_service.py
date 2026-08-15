@@ -729,8 +729,10 @@ class DashboardService:
         today_disb = 0.0
 
         try:
-            res_rep = uow.client.table("repayments").select("amount_paid, savings_amount, withdrawal_amount, date").execute()
+            res_rep = uow.client.table("repayments").select("amount_paid, savings_amount, withdrawal_amount, date, transaction_type, note").execute()
             for r in (res_rep.data or []):
+                if str(r.get("transaction_type", "")).upper() == "ONBOARDING_LEGACY" or str(r.get("note", "")).strip() == "Legacy Repayments Onboarded":
+                    continue
                 if str(r.get("date") or "")[:10] == p_date_str:
                     l_pay = float(r.get("amount_paid") or 0.0)
                     s_dep = float(r.get("savings_amount") or 0.0)
@@ -793,11 +795,13 @@ class DashboardService:
         all_paid = 0.0
 
         try:
-            res_rep = uow.client.table("repayments").select("amount_paid, date").execute()
+            res_rep = uow.client.table("repayments").select("amount_paid, date, transaction_type, note").execute()
             for r in (res_rep.data or []):
                 amt = float(r.get("amount_paid") or 0.0)
                 d_str = str(r.get("date") or "")[:10]
                 all_paid += amt
+                if str(r.get("transaction_type", "")).upper() == "ONBOARDING_LEGACY" or str(r.get("note", "")).strip() == "Legacy Repayments Onboarded":
+                    continue
                 if d_str == p_date_str:
                     today_coll += amt
                 if month_start_str <= d_str <= p_date_str:

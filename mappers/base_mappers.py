@@ -208,9 +208,11 @@ class RepaymentMapper:
         else:
             loan_repay = safe_float(dto.get("amount_paid"))
 
-        amt_paid = safe_float(dto.get("amount_paid"))
-        if amt_paid <= 0:
-            amt_paid = savings_dep + loan_repay + proc_fee + others_amt
+        # Strict separation: amt_paid represents ONLY loan repayment amount in domain Repayment
+        amt_paid = loan_repay if loan_repay > 0 else safe_float(dto.get("amount_paid"))
+        if tx_type in ["Savings", "Withdrawal"] or tx_type.startswith("GROUP-") or tx_type.startswith("GLOBAL-"):
+            amt_paid = 0.0
+            loan_repay = 0.0
             
         extra = {k: v for k, v in dto.items() if k not in ["id", "loan_id", "client_id", "amount_paid", "savings_amount", "loan_repayment_amount", "withdrawal_amount", "others_amount", "recovery_amount", "initial_payment", "date", "payment_date", "transaction_type", "branch", "officer", "credit_officer", "note", "created_at", "clients", "branches", "app_users"]}
         extra["client_name"] = c_name
