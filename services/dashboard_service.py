@@ -254,9 +254,10 @@ class DashboardService:
             except Exception:
                 pass
 
-        # 2b. Query savings from individual_savings table for today
+        # 2b. Query savings from individual_savings, group_savings, and internal_savings for today per BR-SAV-001 & BR-SAV-002
         try:
             if officer_id:
+                # 1. Individual Savings
                 sav_res = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount") \
                     .eq("officer_id", officer_id).eq("posting_date", date_str).execute()
                 for s in (sav_res.data or []):
@@ -269,6 +270,44 @@ class DashboardService:
                     if wd > 0:
                         sav_withdrawn += wd
                         if cid: sav_wd_clients.add(cid)
+
+                # 2. Group Savings
+                grp_res = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount") \
+                    .eq("officer_id", officer_id).eq("posting_date", date_str).execute()
+                for g in (grp_res.data or []):
+                    gid = g.get("group_id")
+                    dep = float(g.get("deposit_amount") or 0.0)
+                    wd = float(g.get("withdrawal_amount") or 0.0)
+                    if dep > 0:
+                        sav_deposited += dep
+                        if gid: sav_dep_clients.add(f"group_{gid}")
+                    if wd > 0:
+                        sav_withdrawn += wd
+                        if gid: sav_wd_clients.add(f"group_{gid}")
+
+                # 3. Misc Savings (Internal Savings) if designated managing officer per BR-SAV-002
+                is_misc_officer = False
+                if branch_id or branch_name:
+                    try:
+                        res_misc_off = SavingsService.get_branch_misc_savings_officer(uow, branch_name or branch_id)
+                        designated_misc_id = res_misc_off[0] if isinstance(res_misc_off, tuple) else res_misc_off
+                        is_misc_officer = (str(officer_id) == str(designated_misc_id))
+                    except Exception:
+                        pass
+
+                if is_misc_officer:
+                    misc_q = uow.client.table("internal_savings").select("id, deposit_amount, withdrawal_amount") \
+                        .eq("posting_date", date_str)
+                    if branch_id:
+                        misc_q = misc_q.eq("branch_id", branch_id)
+                    misc_res = misc_q.execute()
+                    for m in (misc_res.data or []):
+                        dep = float(m.get("deposit_amount") or 0.0)
+                        wd = float(m.get("withdrawal_amount") or 0.0)
+                        if dep > 0:
+                            sav_deposited += dep
+                        if wd > 0:
+                            sav_withdrawn += wd
         except Exception:
             pass
 
@@ -759,18 +798,30 @@ class DashboardService:
         today_disb = 0.0
 
         try:
-            res_rep = uow.client.table("repayments").select("amount_paid, savings_amount, withdrawal_amount, date, transaction_type, note").execute()
+            res_rep = uow.client.table("repayments").select("amount_paid, date, transaction_type, note").execute()
             for r in (res_rep.data or []):
                 if str(r.get("transaction_type", "")).upper() == "ONBOARDING_LEGACY" or str(r.get("note", "")).strip() == "Legacy Repayments Onboarded":
                     continue
                 if str(r.get("date") or "")[:10] == p_date_str:
-                    l_pay = float(r.get("amount_paid") or 0.0)
-                    s_dep = float(r.get("savings_amount") or 0.0)
-                    s_wd = float(r.get("withdrawal_amount") or 0.0)
+                    today_coll += float(r.get("amount_paid") or 0.0)
+        except Exception:
+            pass
 
-                    today_coll += l_pay
-                    today_sav_dep += s_dep
-                    today_sav_wd += s_wd
+        try:
+            res_ind = uow.client.table("individual_savings").select("deposit_amount, withdrawal_amount, posting_date").eq("posting_date", p_date_str).execute()
+            for s in (res_ind.data or []):
+                today_sav_dep += float(s.get("deposit_amount") or 0.0)
+                today_sav_wd += float(s.get("withdrawal_amount") or 0.0)
+
+            res_grp = uow.client.table("group_savings").select("deposit_amount, withdrawal_amount, posting_date").eq("posting_date", p_date_str).execute()
+            for g in (res_grp.data or []):
+                today_sav_dep += float(g.get("deposit_amount") or 0.0)
+                today_sav_wd += float(g.get("withdrawal_amount") or 0.0)
+
+            res_misc = uow.client.table("internal_savings").select("deposit_amount, withdrawal_amount, posting_date").eq("posting_date", p_date_str).execute()
+            for m in (res_misc.data or []):
+                today_sav_dep += float(m.get("deposit_amount") or 0.0)
+                today_sav_wd += float(m.get("withdrawal_amount") or 0.0)
         except Exception:
             pass
 
