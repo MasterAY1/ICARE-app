@@ -2,7 +2,7 @@
 
 > [!IMPORTANT]
 > **MANDATORY GOVERNANCE DIRECTIVE**:
-> Whenever `@rules` or any rule requirement is mentioned, or before making any architectural decisions, bug diagnoses, or code modifications, the agent MUST read and strictly adhere to all authoritative rules in `.agents/rules/` and follow the `check-rules` skill.
+> Whenever `@rules` or any rule requirement is mentioned, or before making any architectural decisions, bug diagnoses, or code modifications, the agent MUST read and strictly adhere to all authoritative rules in `.agents/rules/` and follow the `check-rules` and `business-impact-analysis` skills.
 
 ## 1. Governance Rules Directory
 - Mandatory entry point: [`.agents/rules/00-READ-FIRST.md`](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/rules/00-READ-FIRST.md)
