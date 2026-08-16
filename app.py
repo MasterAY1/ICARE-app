@@ -4120,15 +4120,22 @@ elif page == "Collections":
                         pending_list = st.session_state.get('pending_collections', [])
                         pending_tx = next((tx for tx in pending_list if tx["Client ID"] == cid), None)
                         
+                        today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
+                        
                         if pending_tx:
                             prev_dep = float(pending_tx.get("Savings Amount") or 0.0)
                             prev_wd = float(pending_tx.get("Withdrawal Amount") or 0.0)
                             prev_rep = float(pending_tx.get("Loan Repayment Amount") or 0.0)
+                            prev_status = str(pending_tx.get("Payment Status") or "PAID").upper()
                         else:
                             prev_dep = 0.0
                             prev_wd = 0.0
-                            today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
-                            prev_rep = expected_rep_schedule if today_paid.empty else 0.0
+                            if not today_paid.empty:
+                                prev_rep = float(today_paid['Loan Repayment Amount'].sum()) if 'Loan Repayment Amount' in today_paid.columns else float(today_paid['Amount Paid'].sum())
+                                prev_status = str(today_paid['Payment Status'].iloc[0] if 'Payment Status' in today_paid.columns else "PAID").upper()
+                            else:
+                                prev_rep = expected_rep_schedule
+                                prev_status = "PAID" if expected_rep_schedule > 0 else "NOT_PAID"
                             
                         # Pack member details
                         member_dict = member.to_dict()
@@ -4149,6 +4156,7 @@ elif page == "Collections":
                             "prev_dep": prev_dep,
                             "prev_wd": prev_wd,
                             "prev_rep": prev_rep,
+                            "prev_status": prev_status,
                             "start_date": start_date_val
                         }
 
@@ -4390,6 +4398,35 @@ elif page == "Collections":
                     st.success(f"**NET CASH EXPECTED FROM GROUP:** ₦{net_cash:,.0f}")
                     st.markdown(f"**Total Net Savings:** ₦{total_net_savings:,.0f} *(Includes Individual & Group Savings)*")
                     
+                    # Detailed Review Table for Officer Verification
+                    review_rows = []
+                    for tx in to_insert:
+                        c_name = tx.get("Client Name", "")
+                        c_id = tx.get("Client ID", "")
+                        s_dep = float(tx.get("Savings Amount") or 0.0)
+                        l_rep = float(tx.get("Loan Repayment Amount") or 0.0)
+                        p_stat = str(tx.get("Payment Status") or "PAID").upper()
+                        ov_amt = float(tx.get("Overdue Amount") or 0.0)
+                        exp_amt = float(tx.get("Expected Amount") or 0.0)
+                        
+                        if p_stat == "NOT_PAID":
+                            stat_badge = f"🚨 NOT PAID (₦{ov_amt:,.0f} Arrears)"
+                        elif p_stat == "PART_PAID":
+                            stat_badge = f"⚠️ PART PAID (₦{ov_amt:,.0f} Arrears)"
+                        elif p_stat == "EXCESS":
+                            stat_badge = f"🚀 EXCESS (₦{l_rep - exp_amt:,.0f} Advance)"
+                        else:
+                            stat_badge = "✅ FULL PAID" if exp_amt > 0 else "✅ RECORDED"
+                            
+                        review_rows.append({
+                            "Client": f"{c_name} ({c_id})" if not str(c_id).startswith("GROUP-") else c_name,
+                            "Savings (₦)": f"₦{s_dep:,.0f}" if s_dep > 0 else "-",
+                            "Repayment (₦)": f"₦{l_rep:,.0f}" if l_rep > 0 else "₦0",
+                            "Status": stat_badge
+                        })
+                    if review_rows:
+                        st.dataframe(pd.DataFrame(review_rows), use_container_width=True, hide_index=True)
+                    
                     def _go_back_to_edit():
                         st.session_state['edit_collections_mode'] = True
                     
@@ -4483,27 +4520,37 @@ elif page == "Collections":
                                     rep_data[cid] = {
                                         "rep": 0.0, "app": 0, "pb": 0, "misc": 0,
                                         "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0,
-                                        "payment_status": "NOT_PAID", "expected_amount": 0.0
+                                        "mark_not_paid": True, "expected_amount": 0.0
                                     }
                                 else:
                                     st.markdown(f"**💵 Loan ({prod})** - Active Cr: ₦{info['act_cred']:,.0f}")
                                     expected_rep = float(info['expected_rep_schedule'] or 0.0)
                                     st.markdown(f"ℹ️ *Expected repayment calculated from schedule: ₦{expected_rep:,.2f}*")
                                     
-                                    p_status = st.radio("Payment Status", ["PAID", "CUSTOM_AMOUNT", "NOT_PAID"], index=0, horizontal=True, key=f"status_{cid}")
+                                    # Smart Initial Status Detection
+                                    has_previous_run = (pending_tx is not None or not today_paid.empty)
+                                    is_defaulter_init = (info.get("prev_status") == "NOT_PAID") or (info.get("prev_rep") == 0.0 and has_previous_run)
                                     
-                                    if p_status == "NOT_PAID":
-                                        st.info("Amount will be saved as 0.")
-                                        rep_col = 0.0
-                                    elif p_status == "CUSTOM_AMOUNT":
-                                        rep_col = st.number_input(f"Enter Collection Amount", min_value=0.0, step=500.0, value=float(info['prev_rep']) if info['prev_rep'] and info['prev_rep'] > 0 else None, placeholder="0", key=f"rep_{cid}")
+                                    mark_not_paid = st.checkbox("🚨 Mark as NOT PAID today (₦0 Collection)", value=is_defaulter_init, key=f"not_paid_{cid}")
+                                    
+                                    if not mark_not_paid:
+                                        init_val = float(info['prev_rep']) if (info['prev_rep'] is not None and info['prev_rep'] > 0) else (expected_rep if expected_rep > 0 else 0.0)
+                                        rep_col = st.number_input(
+                                            f"Loan Repayment Collected (₦)", 
+                                            min_value=0.0, 
+                                            step=500.0, 
+                                            value=init_val if init_val > 0 else None, 
+                                            placeholder=str(expected_rep), 
+                                            key=f"rep_{cid}"
+                                        )
                                     else:
-                                        rep_col = st.number_input(f"Expected Repayment Amount", min_value=0.0, step=500.0, value=float(info['prev_rep']) if info['prev_rep'] and info['prev_rep'] > 0 else (expected_rep if expected_rep > 0 else None), placeholder=str(expected_rep), key=f"rep_{cid}")
+                                        st.caption("🔒 *Repayment set to ₦0. Arrears will be logged as overdue.*")
+                                        rep_col = 0.0
                                     
                                     rep_data[cid] = {
                                         "rep": rep_col, "app": 0, "pb": 0, "misc": 0,
                                         "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0,
-                                        "payment_status": p_status, "expected_amount": expected_rep
+                                        "mark_not_paid": mark_not_paid, "expected_amount": expected_rep
                                     }
                         
                         st.markdown("---")
@@ -4516,21 +4563,41 @@ elif page == "Collections":
                             for cid, info in member_info.items():
                                 m = info['member']
                                 s = sav_data.get(cid, {"dep": 0, "wd": 0})
-                                r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0, "payment_status": "PAID", "expected_amount": 0.0})
+                                r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0, "mark_not_paid": False, "expected_amount": 0.0})
                                 
-                                sav = float(s['dep'] or 0)
-                                sav_wd = float(s['wd'] or 0)
-                                rep = float(r['rep'] or 0)
-                                app = float(r['app'] or 0)
-                                pb = float(r['pb'] or 0)
-                                misc = float(r['misc'] or 0)
-                                asset_cr = float(r['asset_cr'] or 0)
-                                cc = float(r['cc'] or 0)
-                                cfd = float(r['cfd'] or 0)
-                                bon = float(r['bonus'] or 0)
+                                sav = float(s.get('dep') or 0)
+                                sav_wd = float(s.get('wd') or 0)
+                                rep = float(r.get('rep') or 0)
+                                app = float(r.get('app') or 0)
+                                pb = float(r.get('pb') or 0)
+                                misc = float(r.get('misc') or 0)
+                                asset_cr = float(r.get('asset_cr') or 0)
+                                cc = float(r.get('cc') or 0)
+                                cfd = float(r.get('cfd') or 0)
+                                bon = float(r.get('bonus') or 0)
+                                exp_amt = float(r.get('expected_amount') or 0.0)
+                                is_marked_not_paid = bool(r.get('mark_not_paid', False))
+                                
+                                # Determine Payment Status & Overdue Amount strictly
+                                if is_marked_not_paid or rep == 0.0:
+                                    rep = 0.0
+                                    p_status = "NOT_PAID"
+                                    overdue_val = exp_amt
+                                elif exp_amt > 0 and rep == exp_amt:
+                                    p_status = "PAID"
+                                    overdue_val = 0.0
+                                elif exp_amt > 0 and rep > exp_amt:
+                                    p_status = "EXCESS"
+                                    overdue_val = 0.0
+                                elif exp_amt > 0 and rep < exp_amt and rep > 0:
+                                    p_status = "PART_PAID"
+                                    overdue_val = max(0.0, exp_amt - rep)
+                                else:
+                                    p_status = "PAID"
+                                    overdue_val = 0.0
                                 
                                 if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
-                                    if r.get("payment_status") != "NOT_PAID":
+                                    if p_status != "NOT_PAID":
                                         continue
                                 
                                 prod_low = str(m['Loan Product']).lower()
@@ -4570,9 +4637,9 @@ elif page == "Collections":
                                     "Credit Form": 0,
                                     "Credit Form Damage": cfd,
                                     "Bonus": bon,
-                                    "Payment Status": r.get("payment_status", "PAID"),
-                                    "Expected Amount": r.get("expected_amount", 0.0),
-                                    "Overdue Amount": max(0.0, r.get("expected_amount", 0.0) - rep),
+                                    "Payment Status": p_status,
+                                    "Expected Amount": exp_amt,
+                                    "Overdue Amount": overdue_val,
                                     "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
                                     "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
                                     "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
