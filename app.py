@@ -4743,21 +4743,46 @@ elif page == "Withdrawal Operations":
                     st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
-    # GROUP SAVINGS
-    # ════════════════════════════════════════════════════════════════════
     elif savings_type == "Group Savings":
+        group_opts = {}
         if ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
             res_g = uow.client.table("groups").select("group_id, name").execute()
-        else:
+            for g in (res_g.data or []):
+                if g and g.get("name"):
+                    group_opts[g["name"]] = g
+        elif ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
+            res_g = uow.client.table("groups").select("group_id, name").in_("branch_id", ASSIGNED_BRANCH_IDS).execute()
+            for g in (res_g.data or []):
+                if g and g.get("name"):
+                    group_opts[g["name"]] = g
+        elif ROLE in ["BM", ROLE_BRANCH_MANAGER]:
             res_g = uow.client.table("groups").select("group_id, name").eq("branch_id", BRANCH_ID).execute()
-
-        group_opts = {}
-        if res_g.data:
-            for g in res_g.data:
-                group_opts[g["name"]] = g
+            for g in (res_g.data or []):
+                if g and g.get("name"):
+                    group_opts[g["name"]] = g
+        else:
+            # Credit Officer (CO): strictly scope to groups assigned to this officer
+            target_officer_id = uow.loans._resolve_officer_id(USER) or getattr(current_user, 'id', USER_ID)
+            
+            # 1. Direct groups where groups.officer_id == target_officer_id
+            res_g_direct = uow.client.table("groups").select("group_id, name").eq("branch_id", BRANCH_ID).eq("officer_id", target_officer_id).execute()
+            for g in (res_g_direct.data or []):
+                if g and g.get("name"):
+                    group_opts[g["name"]] = g
+                    
+            # 2. Groups where the officer has active clients via memberships
+            res_c_groups = uow.client.table("clients").select("client_memberships(group_id, groups(group_id, name))").eq("officer_id", target_officer_id).eq("status", "Active").execute()
+            for c in (res_c_groups.data or []):
+                m_list = c.get("client_memberships") or []
+                if isinstance(m_list, dict):
+                    m_list = [m_list]
+                for m in m_list:
+                    if m and m.get("groups") and m["groups"].get("name"):
+                        g_obj = m["groups"]
+                        group_opts[g_obj["name"]] = g_obj
 
         if not group_opts:
-            st.info("No groups found for your branch.")
+            st.info("No active groups assigned to you in your branch.")
             st.stop()
 
         sel_group_label = st.selectbox("🔍 Search Group", list(group_opts.keys()), placeholder="Type group name...")
