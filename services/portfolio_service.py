@@ -332,7 +332,7 @@ class PortfolioService:
         
         disbursed_in_period = []
         for l in loans_raw:
-            d_date = l.get("start_date") or str(l.get("created_at") or "")[:10]
+            d_date = l.get("disbursement_date") or l.get("start_date")
             if d_date and s_d_str_iso <= str(d_date)[:10] <= e_d_str_iso:
                 if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED", "COMPLETED", "CLOSED"]:
                     disbursed_in_period.append(l)
