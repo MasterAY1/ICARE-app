@@ -4195,13 +4195,20 @@ elif page == "Collections":
                         "Savings Deposit": 0.0
                     })
                 manifest_df = pd.DataFrame(manifest_rows)
-                csv_data = manifest_df.to_csv(index=False).encode('utf-8')
+                csv_data = manifest_df.to_csv(index=False)
                 col_csv1.download_button(
                     label="📥 Download Manifest CSV",
                     data=csv_data,
                     file_name=f"manifest_{selected_group}_{date_str}.csv",
                     mime="text/csv",
+                    key=f"btn_dl_manifest_{selected_group}_{date_str}",
                     use_container_width=True
+                )
+                import base64
+                b64_csv = base64.b64encode(csv_data.encode('utf-8')).decode()
+                col_csv1.markdown(
+                    f'<div style="text-align:center; margin-top:4px;"><a href="data:text/csv;base64,{b64_csv}" download="manifest_{selected_group}_{date_str}.csv" style="font-size:12px; color:#0284c7; text-decoration:none;">🔗 Direct CSV Download Link</a></div>',
+                    unsafe_allow_html=True
                 )
 
                 # 2. Upload Completed Manifest CSV
