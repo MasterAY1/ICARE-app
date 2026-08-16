@@ -1873,12 +1873,12 @@ with st.sidebar:
     st.divider()
     
     if st.button("Sign Out", use_container_width=True):
-        _delete_auth_token()
-        st.session_state['logout_in_progress'] = True
-        st.session_state['logged_in'] = False
+        AuthService.logout()
+        if "auth" in st.query_params:
+            del st.query_params["auth"]
         for key in list(st.session_state.keys()):
-            if key not in ['logout_in_progress', 'logged_in']:
-                del st.session_state[key]
+            del st.session_state[key]
+        st.session_state['logged_in'] = False
         st.rerun()
 
 # Welcome banner
