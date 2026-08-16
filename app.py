@@ -4052,62 +4052,10 @@ elif page == "Collections":
                 group_clients = co_clients_df[co_clients_df['Group Name'] == "Ungrouped"]
             else:
                 group_clients = co_clients_df[co_clients_df['Group Name'] == selected_group]
-                
-            if col_g2.button("🖨️ Print Field Manifest", use_container_width=True):
-                manifest_html = f"""
-                <html>
-                <head>
-                    <title>Collection Manifest - {selected_group}</title>
-                    <style>
-                        body {{ font-family: sans-serif; padding: 20px; }}
-                        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-                        th, td {{ border: 1px solid #000; padding: 8px; text-align: left; }}
-                        th {{ background-color: #f2f2f2; }}
-                        .print-btn {{ padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; }}
-                        @media print {{ .print-btn {{ display: none; }} }}
-                    </style>
-                </head>
-                <body>
-                    <h2>Collection Manifest - {selected_group}</h2>
-                    <p><strong>Officer:</strong> {target_co} | <strong>Date:</strong> {date_str}</p>
-                    <button class="print-btn" onclick="window.print()">Print Manifest</button>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Client Name</th>
-                                <th>ID</th>
-                                <th>Amount Collected</th>
-                                <th>Savings</th>
-                                <th>Signature</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                """
-                
-                for _, row in group_clients.iterrows():
-                    manifest_html += f"""
-                            <tr>
-                                <td>{row['Client Name']}</td>
-                                <td>{row['Client ID']}</td>
-                                <td></td>
-                                <td></td>
-                                <td></td>
-                            </tr>
-                    """
-                    
-                manifest_html += """
-                        </tbody>
-                    </table>
-                </body>
-                </html>
-                """
-                st.components.v1.html(manifest_html, height=800, scrolling=True)
-                
+
             if group_clients.empty:
                 st.info("No active members in this group.")
             else:
-                st.markdown(f"### Members in {selected_group}")
-                
                 # Fetch history for today to prefill/check
                 today_reps = repayments[(repayments['Date'] == date_str) & (repayments['Officer'] == target_co)] if not repayments.empty else pd.DataFrame()
                 
@@ -4117,7 +4065,7 @@ elif page == "Collections":
                     st.session_state['collections_group'] = selected_group
                     st.session_state['collections_date'] = date_str
                 
-                # Pre-compute member data
+                # Pre-compute member data for manifest, CSV, and form inputs
                 member_info = {}
                 from services.schedule_service import ScheduleService
                 with SupabaseUnitOfWork() as uow:
@@ -4129,7 +4077,7 @@ elif page == "Collections":
                             # Match strictly by client UUID
                             res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", uuid_id).execute()
                             res_wd = uow.client.table("individual_savings").select("withdrawal_amount").eq("client_id", uuid_id).execute()
-                            sav_bal = sum(float(d.get("deposit_amount") or 0) for d in res_dep.data) - sum(float(w.get("withdrawal_amount") or 0) for w in res_wd.data)
+                            sav_bal = sum(float(d.get("deposit_amount") or 0) for d in (res_dep.data or [])) - sum(float(w.get("withdrawal_amount") or 0) for w in (res_wd.data or []))
                         except Exception:
                             sav_bal = 0.0
                         # Find if there is an active loan in all_loans
@@ -4140,8 +4088,7 @@ elif page == "Collections":
                             act_cred = float(loan_row.get('Active Credit', 0) or loan_row.get('active_credit', 0))
                             total_due_base = float(loan_row.get('Total Due', 0) or loan_row.get('total_due', 0)) or act_cred
                             
-                            # Baseline remaining balance is Total Due from loans table (Current Credit Balance)
-                            # minus any repayments posted since onboarding
+                            # Baseline remaining balance is Total Due from loans table minus repayments posted
                             if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
                                 active_loan_total_paid, has_schedule = ScheduleService.get_total_paid(uow, active_loan_id)
                                 if not has_schedule:
@@ -4150,10 +4097,8 @@ elif page == "Collections":
                                 active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
                                 
                             rem_bal = max(0.0, total_due_base - active_loan_total_paid)
-                            
                             loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
                             
-                            # Only fetch schedule if we have a valid loan UUID
                             if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
                                 expected_rep_schedule = ScheduleService.get_expected_repayment(uow, active_loan_id, view_date)
                                 if not expected_rep_schedule:
@@ -4171,7 +4116,7 @@ elif page == "Collections":
                             expected_rep_schedule = 0.0
                             start_date_val = ""
                         
-                        # Check if user has a pending collection in session state (Edit/Go Back state)
+                        # Check if user has a pending collection in session state
                         pending_list = st.session_state.get('pending_collections', [])
                         pending_tx = next((tx for tx in pending_list if tx["Client ID"] == cid), None)
                         
@@ -4182,11 +4127,10 @@ elif page == "Collections":
                         else:
                             prev_dep = 0.0
                             prev_wd = 0.0
-                            # Default to expected repayment if no previous value in session state
                             today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
                             prev_rep = expected_rep_schedule if today_paid.empty else 0.0
                             
-                        # Pack member details expected by UI
+                        # Pack member details
                         member_dict = member.to_dict()
                         member_dict.update({
                             "Active Credit": act_cred,
@@ -4207,6 +4151,204 @@ elif page == "Collections":
                             "prev_rep": prev_rep,
                             "start_date": start_date_val
                         }
+
+                # ── FIELD MANIFEST & CSV TOOLS ──
+                st.markdown("#### 📄 Field Collection Manifest & CSV Export/Upload")
+                col_m1, col_m2 = st.columns([1, 1])
+
+                # 1. Print Field Manifest (HTML)
+                if col_m1.button("🖨️ Print Field Manifest", use_container_width=True):
+                    manifest_html = f"""
+                    <html>
+                    <head>
+                        <title>Collection Manifest - {selected_group}</title>
+                        <style>
+                            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 25px; color: #1e293b; }}
+                            h2 {{ margin-bottom: 4px; color: #0f172a; }}
+                            p {{ margin-top: 0; margin-bottom: 16px; color: #475569; font-size: 14px; }}
+                            table {{ width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }}
+                            th, td {{ border: 1px solid #cbd5e1; padding: 10px 8px; text-align: left; }}
+                            th {{ background-color: #f1f5f9; color: #334155; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }}
+                            tr:nth-child(even) {{ background-color: #f8fafc; }}
+                            .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+                            .write-col {{ width: 130px; background-color: #ffffff; }}
+                            .print-btn {{ padding: 8px 18px; background: #0284c7; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; margin-bottom: 10px; }}
+                            @media print {{ .print-btn {{ display: none; }} body {{ padding: 0; }} }}
+                        </style>
+                    </head>
+                    <body>
+                        <h2>Collection Manifest - {selected_group}</h2>
+                        <p><strong>Officer:</strong> {target_co} &nbsp;|&nbsp; <strong>Date:</strong> {date_str} &nbsp;|&nbsp; <strong>Branch:</strong> {BRANCH}</p>
+                        <button class="print-btn" onclick="window.print()">🖨️ Print Manifest</button>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width: 35px; text-align: center;">#</th>
+                                    <th>Client Name</th>
+                                    <th>Client ID</th>
+                                    <th class="num">Savings Balance</th>
+                                    <th class="num">Remaining Balance</th>
+                                    <th class="num">Expected Repayment</th>
+                                    <th class="write-col" style="text-align: center;">Amount Collected</th>
+                                    <th class="write-col" style="text-align: center;">Savings Deposit</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    """
+                    row_idx = 1
+                    for cid, info in member_info.items():
+                        m = info['member']
+                        sav_bal = info['sav_bal']
+                        rem_bal = info['rem_bal']
+                        exp_rep = info['expected_rep_schedule']
+                        manifest_html += f"""
+                                <tr>
+                                    <td style="text-align: center;">{row_idx}</td>
+                                    <td><strong>{m['Client Name']}</strong></td>
+                                    <td>{cid}</td>
+                                    <td class="num">₦{sav_bal:,.2f}</td>
+                                    <td class="num">₦{rem_bal:,.2f}</td>
+                                    <td class="num">₦{exp_rep:,.2f}</td>
+                                    <td class="write-col"></td>
+                                    <td class="write-col"></td>
+                                </tr>
+                        """
+                        row_idx += 1
+                        
+                    manifest_html += """
+                            </tbody>
+                        </table>
+                    </body>
+                    </html>
+                    """
+                    st.components.v1.html(manifest_html, height=550, scrolling=True)
+
+                # 2. Download Editable Manifest CSV
+                manifest_rows = []
+                for cid, info in member_info.items():
+                    m = info['member']
+                    manifest_rows.append({
+                        "Client ID": cid,
+                        "Client Name": m['Client Name'],
+                        "Savings Balance": round(float(info['sav_bal']), 2),
+                        "Remaining Balance": round(float(info['rem_bal']), 2),
+                        "Expected Repayment": round(float(info['expected_rep_schedule']), 2),
+                        "Amount Collected": 0.0,
+                        "Savings Deposit": 0.0
+                    })
+                manifest_df = pd.DataFrame(manifest_rows)
+                csv_data = manifest_df.to_csv(index=False).encode('utf-8')
+                col_m2.download_button(
+                    label="📥 Download Manifest CSV",
+                    data=csv_data,
+                    file_name=f"manifest_{selected_group}_{date_str}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+
+                # 3. Upload Completed Manifest CSV
+                with st.expander("📤 Upload Completed Manifest (CSV)"):
+                    st.caption("Upload the filled CSV manifest to automatically populate client repayments and savings.")
+                    uploaded_csv = st.file_uploader("Choose Manifest CSV file", type=["csv"], key=f"csv_upload_{selected_group}")
+                    if uploaded_csv is not None:
+                        try:
+                            df_up = pd.read_csv(uploaded_csv)
+                            df_up.columns = [str(c).strip() for c in df_up.columns]
+                            
+                            id_col = next((c for c in df_up.columns if c.lower() in ["client id", "id", "client_id", "code"]), None)
+                            rep_col_name = next((c for c in df_up.columns if c.lower() in ["amount collected", "loan repayment amount", "repayment", "amount_collected", "amount paid"]), None)
+                            sav_col_name = next((c for c in df_up.columns if c.lower() in ["savings deposit", "savings amount", "savings", "savings_deposit"]), None)
+                            
+                            if not id_col:
+                                st.error("Uploaded CSV must have a 'Client ID' or 'ID' column.")
+                            else:
+                                csv_entries = []
+                                matched_count = 0
+                                for _, u_row in df_up.iterrows():
+                                    raw_cid = str(u_row.get(id_col, '')).strip()
+                                    if not raw_cid or raw_cid == 'nan': continue
+                                    
+                                    info = member_info.get(raw_cid)
+                                    if not info:
+                                        c_name_val = str(u_row.get("Client Name", "")).strip().lower()
+                                        for m_cid, m_info in member_info.items():
+                                            if str(m_info['member'].get('Client Name', '')).strip().lower() == c_name_val:
+                                                info = m_info
+                                                raw_cid = m_cid
+                                                break
+                                                
+                                    if not info: continue
+                                    
+                                    m = info['member']
+                                    rep_val = 0.0
+                                    if rep_col_name and pd.notna(u_row.get(rep_col_name)):
+                                        try: rep_val = float(str(u_row.get(rep_col_name)).replace(',', '').strip() or 0.0)
+                                        except Exception: rep_val = 0.0
+                                        
+                                    sav_val = 0.0
+                                    if sav_col_name and pd.notna(u_row.get(sav_col_name)):
+                                        try: sav_val = float(str(u_row.get(sav_col_name)).replace(',', '').strip() or 0.0)
+                                        except Exception: sav_val = 0.0
+                                        
+                                    exp_rep = float(info['expected_rep_schedule'] or 0.0)
+                                    prod_low = str(m['Loan Product']).lower()
+                                    rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
+                                    if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep_val
+                                    elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep_val
+                                    elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep_val
+                                    elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep_val
+                                    elif "month" in prod_low: rep_mth = rep_val
+                                    else: rep_60d = rep_val
+                                    
+                                    p_status = "PAID" if rep_val >= exp_rep and exp_rep > 0 else ("PART_PAID" if rep_val > 0 else "NOT_PAID")
+                                    
+                                    if rep_val > 0 or sav_val > 0 or p_status == "NOT_PAID":
+                                        tx_data = {
+                                            "Date": date_str,
+                                            "Client ID": raw_cid,
+                                            "Client Name": m['Client Name'],
+                                            "Officer": target_co,
+                                            "Branch": m.get('Branch', BRANCH),
+                                            "Amount Paid": rep_val,
+                                            "Transaction Type": "Loan",
+                                            "Note": "Daily Collection (CSV Upload)",
+                                            "Savings Amount": sav_val,
+                                            "Withdrawal Amount": 0.0,
+                                            "Loan Repayment Amount": rep_val,
+                                            "Repayment 12 Weeks": rep_12w,
+                                            "Repayment 24 Weeks": rep_24w,
+                                            "Repayment 60 Days": rep_60d,
+                                            "Repayment 120 Days": rep_120d,
+                                            "Monthly": rep_mth,
+                                            "Bank Withdrawal": 0, "Asset Sales": 0, "App Fee": 0,
+                                            "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
+                                            "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
+                                            "Payment Status": p_status,
+                                            "Expected Amount": exp_rep,
+                                            "Overdue Amount": max(0.0, exp_rep - rep_val),
+                                            "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
+                                            "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                            "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
+                                            "Laps Reserved": 0, "Laps Transferred": 0,
+                                            "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
+                                        }
+                                        csv_entries.append(tx_data)
+                                        matched_count += 1
+                                        
+                                if csv_entries:
+                                    st.success(f"Found {matched_count} matching members in uploaded CSV.")
+                                    if st.button("🚀 Load Uploaded CSV into Review Queue", type="primary", use_container_width=True):
+                                        st.session_state['pending_collections'] = csv_entries
+                                        st.session_state['collections_group'] = selected_group
+                                        st.session_state['collections_date'] = date_str
+                                        st.session_state['edit_collections_mode'] = False
+                                        st.rerun()
+                                else:
+                                    st.warning("No matching member entries with valid repayment or savings found in CSV.")
+                        except Exception as e:
+                            st.error(f"Error parsing uploaded CSV: {e}")
+
+                st.markdown(f"### Members in {selected_group}")
                 
                 if st.session_state.get('pending_collections') and st.session_state.get('collections_group') == selected_group and st.session_state.get('collections_date') == date_str and not st.session_state.get('edit_collections_mode', False):
                     st.markdown("### 🔍 Review Group Collections")
