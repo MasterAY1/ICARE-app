@@ -4631,18 +4631,38 @@ elif page == "Withdrawal Operations":
     savings_type = st.selectbox("Select Savings Type", ["Individual Savings", "Group Savings", "Misc Savings", "LAPS Savings"])
 
     # ════════════════════════════════════════════════════════════════════
+    # ════════════════════════════════════════════════════════════════════
     # INDIVIDUAL SAVINGS
     # ════════════════════════════════════════════════════════════════════
     if savings_type == "Individual Savings":
         # Fetch clients with membership info (scoped by role)
-        if ROLE in ["BM", ROLE_BRANCH_MANAGER]:
-            res_c = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id, groups(name))").eq("branch_id", BRANCH_ID).eq("status", "Active").execute()
-        elif ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
-            res_c = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id, groups(name))").in_("branch_id", ASSIGNED_BRANCH_IDS).eq("status", "Active").execute()
-        elif ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
-            res_c = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id, groups(name))").eq("status", "Active").execute()
+        if ROLE in ["BM", "AM", "Branch Manager", "Area Manager", ROLE_BRANCH_MANAGER, ROLE_AREA_MANAGER, ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
+            if ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
+                res_users = uow.client.table("app_users").select("id, username, full_name").in_("branch_id", ASSIGNED_BRANCH_IDS).execute()
+            elif ROLE in ["BM", "Branch Manager", ROLE_BRANCH_MANAGER]:
+                res_users = uow.client.table("app_users").select("id, username, full_name").eq("branch_id", BRANCH_ID).execute()
+            else:
+                res_users = uow.client.table("app_users").select("id, username, full_name").execute()
+            
+            officers_map = {"All Officers": None}
+            for u in (res_users.data or []):
+                label = f"{u.get('username')} - {u.get('full_name')}" if u.get('full_name') else u.get('username')
+                officers_map[label] = u.get('id')
+                
+            co_filter = st.selectbox("👤 Filter by Credit Officer", list(officers_map.keys()), key="wth_ind_co_filter")
+            selected_officer_id = officers_map[co_filter]
+            
+            query = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id, groups(name))").eq("status", "Active")
+            if ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
+                query = query.in_("branch_id", ASSIGNED_BRANCH_IDS)
+            elif ROLE in ["BM", "Branch Manager", ROLE_BRANCH_MANAGER]:
+                query = query.eq("branch_id", BRANCH_ID)
+            
+            if selected_officer_id:
+                query = query.eq("officer_id", selected_officer_id)
+            res_c = query.execute()
         else:
-            officer_id = uow.loans._resolve_officer_id(USER)
+            officer_id = uow.loans._resolve_officer_id(USER) or getattr(current_user, 'id', USER_ID)
             res_c = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id, groups(name))").eq("officer_id", officer_id).eq("status", "Active").execute()
 
         # Build group list from the CO's own clients
@@ -4743,46 +4763,48 @@ elif page == "Withdrawal Operations":
                     st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
+    # GROUP SAVINGS
+    # ════════════════════════════════════════════════════════════════════
     elif savings_type == "Group Savings":
         group_opts = {}
-        if ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
-            res_g = uow.client.table("groups").select("group_id, name").execute()
-            for g in (res_g.data or []):
-                if g and g.get("name"):
-                    group_opts[g["name"]] = g
-        elif ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
-            res_g = uow.client.table("groups").select("group_id, name").in_("branch_id", ASSIGNED_BRANCH_IDS).execute()
-            for g in (res_g.data or []):
-                if g and g.get("name"):
-                    group_opts[g["name"]] = g
-        elif ROLE in ["BM", ROLE_BRANCH_MANAGER]:
-            res_g = uow.client.table("groups").select("group_id, name").eq("branch_id", BRANCH_ID).execute()
+        if ROLE in ["BM", "AM", "Branch Manager", "Area Manager", ROLE_BRANCH_MANAGER, ROLE_AREA_MANAGER, ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
+            if ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
+                res_users = uow.client.table("app_users").select("id, username, full_name").in_("branch_id", ASSIGNED_BRANCH_IDS).execute()
+            elif ROLE in ["BM", "Branch Manager", ROLE_BRANCH_MANAGER]:
+                res_users = uow.client.table("app_users").select("id, username, full_name").eq("branch_id", BRANCH_ID).execute()
+            else:
+                res_users = uow.client.table("app_users").select("id, username, full_name").execute()
+            
+            officers_map = {"All Officers": None}
+            for u in (res_users.data or []):
+                label = f"{u.get('username')} - {u.get('full_name')}" if u.get('full_name') else u.get('username')
+                officers_map[label] = u.get('id')
+                
+            co_filter = st.selectbox("👤 Filter by Credit Officer", list(officers_map.keys()), key="wth_grp_co_filter")
+            selected_officer_id = officers_map[co_filter]
+            
+            query = uow.client.table("groups").select("group_id, name")
+            if ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
+                query = query.in_("branch_id", ASSIGNED_BRANCH_IDS)
+            elif ROLE in ["BM", "Branch Manager", ROLE_BRANCH_MANAGER]:
+                query = query.eq("branch_id", BRANCH_ID)
+            
+            if selected_officer_id:
+                query = query.eq("officer_id", selected_officer_id)
+            res_g = query.execute()
             for g in (res_g.data or []):
                 if g and g.get("name"):
                     group_opts[g["name"]] = g
         else:
-            # Credit Officer (CO): strictly scope to groups assigned to this officer
+            # Credit Officer (CO): strictly fetch only groups where groups.officer_id == target_officer_id
             target_officer_id = uow.loans._resolve_officer_id(USER) or getattr(current_user, 'id', USER_ID)
-            
-            # 1. Direct groups where groups.officer_id == target_officer_id
-            res_g_direct = uow.client.table("groups").select("group_id, name").eq("branch_id", BRANCH_ID).eq("officer_id", target_officer_id).execute()
-            for g in (res_g_direct.data or []):
+            res_g = uow.client.table("groups").select("group_id, name").eq("branch_id", BRANCH_ID).eq("officer_id", target_officer_id).execute()
+            for g in (res_g.data or []):
                 if g and g.get("name"):
                     group_opts[g["name"]] = g
-                    
-            # 2. Groups where the officer has active clients via memberships
-            res_c_groups = uow.client.table("clients").select("client_memberships(group_id, groups(group_id, name))").eq("officer_id", target_officer_id).eq("status", "Active").execute()
-            for c in (res_c_groups.data or []):
-                m_list = c.get("client_memberships") or []
-                if isinstance(m_list, dict):
-                    m_list = [m_list]
-                for m in m_list:
-                    if m and m.get("groups") and m["groups"].get("name"):
-                        g_obj = m["groups"]
-                        group_opts[g_obj["name"]] = g_obj
 
         if not group_opts:
-            st.info("No active groups assigned to you in your branch.")
+            st.info("No active groups found for the selected officer.")
             st.stop()
 
         sel_group_label = st.selectbox("🔍 Search Group", list(group_opts.keys()), placeholder="Type group name...")
