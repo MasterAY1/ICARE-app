@@ -4152,12 +4152,27 @@ elif page == "Collections":
                             "start_date": start_date_val
                         }
 
+                    # Fetch Group-Level Savings Balance
+                    group_savings_balance = 0.0
+                    if selected_group != "Ungrouped":
+                        try:
+                            g_res = uow.client.table("groups").select("group_id").eq("name", selected_group).execute()
+                            if g_res.data:
+                                g_id = g_res.data[0]['group_id']
+                                gs_res = uow.client.table("group_savings").select("deposit_amount, withdrawal_amount").eq("group_id", g_id).execute()
+                                legacy_reps = repayments[repayments['Client ID'] == f"GROUP-{selected_group}"] if not repayments.empty else pd.DataFrame()
+                                legacy_bal = (float(legacy_reps['Savings Amount'].sum()) - float(legacy_reps['Withdrawal Amount'].sum())) if not legacy_reps.empty else 0.0
+                                group_savings_balance = sum(float(g.get("deposit_amount") or 0) for g in (gs_res.data or [])) - sum(float(g.get("withdrawal_amount") or 0) for g in (gs_res.data or [])) + legacy_bal
+                        except Exception:
+                            group_savings_balance = 0.0
+
                 # ── FIELD MANIFEST & CSV TOOLS ──
                 st.markdown("#### 📄 Field Collection Manifest & CSV Export/Upload")
                 col_m1, col_m2 = st.columns([1, 1])
 
                 # 1. Print Field Manifest (HTML)
                 if col_m1.button("🖨️ Print Field Manifest", use_container_width=True):
+                    grp_hdr_info = f" &nbsp;|&nbsp; <strong>Group Savings Balance:</strong> ₦{group_savings_balance:,.2f}" if selected_group != "Ungrouped" else ""
                     manifest_html = f"""
                     <html>
                     <head>
@@ -4172,13 +4187,14 @@ elif page == "Collections":
                             tr:nth-child(even) {{ background-color: #f8fafc; }}
                             .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
                             .write-col {{ width: 130px; background-color: #ffffff; }}
+                            .grp-row {{ background-color: #f1f5f9; font-weight: 600; }}
                             .print-btn {{ padding: 8px 18px; background: #0284c7; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; margin-bottom: 10px; }}
                             @media print {{ .print-btn {{ display: none; }} body {{ padding: 0; }} }}
                         </style>
                     </head>
                     <body>
                         <h2>Collection Manifest - {selected_group}</h2>
-                        <p><strong>Officer:</strong> {target_co} &nbsp;|&nbsp; <strong>Date:</strong> {date_str} &nbsp;|&nbsp; <strong>Branch:</strong> {BRANCH}</p>
+                        <p><strong>Officer:</strong> {target_co} &nbsp;|&nbsp; <strong>Date:</strong> {date_str} &nbsp;|&nbsp; <strong>Branch:</strong> {BRANCH}{grp_hdr_info}</p>
                         <button class="print-btn" onclick="window.print()">🖨️ Print Manifest</button>
                         <table>
                             <thead>
@@ -4195,6 +4211,19 @@ elif page == "Collections":
                             </thead>
                             <tbody>
                     """
+                    if selected_group != "Ungrouped":
+                        manifest_html += f"""
+                                <tr class="grp-row">
+                                    <td style="text-align: center;">🏛️</td>
+                                    <td><strong>{selected_group} Communal Group Savings</strong></td>
+                                    <td>GROUP-{selected_group}</td>
+                                    <td class="num">₦{group_savings_balance:,.2f}</td>
+                                    <td class="num" style="color: #94a3b8;">—</td>
+                                    <td class="num" style="color: #94a3b8;">—</td>
+                                    <td class="write-col" style="background-color: #f1f5f9; text-align: center; color: #94a3b8;">—</td>
+                                    <td class="write-col"></td>
+                                </tr>
+                        """
                     row_idx = 1
                     for cid, info in member_info.items():
                         m = info['member']
@@ -4225,6 +4254,17 @@ elif page == "Collections":
 
                 # 2. Download Editable Manifest CSV
                 manifest_rows = []
+                # Group communal savings row if grouped
+                if selected_group != "Ungrouped":
+                    manifest_rows.append({
+                        "Client ID": f"GROUP-{selected_group}",
+                        "Client Name": f"{selected_group} Communal Savings",
+                        "Savings Balance": round(float(group_savings_balance), 2),
+                        "Remaining Balance": 0.0,
+                        "Expected Repayment": 0.0,
+                        "Amount Collected": 0.0,
+                        "Savings Deposit": 0.0
+                    })
                 for cid, info in member_info.items():
                     m = info['member']
                     manifest_rows.append({
@@ -4248,7 +4288,7 @@ elif page == "Collections":
 
                 # 3. Upload Completed Manifest CSV
                 with st.expander("📤 Upload Completed Manifest (CSV)"):
-                    st.caption("Upload the filled CSV manifest to automatically populate client repayments and savings.")
+                    st.caption("Upload the filled CSV manifest to automatically populate client repayments, member savings, and group savings.")
                     uploaded_csv = st.file_uploader("Choose Manifest CSV file", type=["csv"], key=f"csv_upload_{selected_group}")
                     if uploaded_csv is not None:
                         try:
@@ -4267,6 +4307,51 @@ elif page == "Collections":
                                 for _, u_row in df_up.iterrows():
                                     raw_cid = str(u_row.get(id_col, '')).strip()
                                     if not raw_cid or raw_cid == 'nan': continue
+                                    
+                                    # Check if this row is Group Communal Savings
+                                    is_group_row = (
+                                        raw_cid.startswith("GROUP-") or
+                                        "group" in str(u_row.get("Client Name", "")).lower() or
+                                        "communal" in str(u_row.get("Client Name", "")).lower() or
+                                        raw_cid.lower() == selected_group.lower()
+                                    )
+                                    if is_group_row:
+                                        grp_sav = 0.0
+                                        if sav_col_name and pd.notna(u_row.get(sav_col_name)):
+                                            try: grp_sav = float(str(u_row.get(sav_col_name)).replace(',', '').strip() or 0.0)
+                                            except Exception: grp_sav = 0.0
+                                        if grp_sav == 0.0 and rep_col_name and pd.notna(u_row.get(rep_col_name)):
+                                            try: grp_sav = float(str(u_row.get(rep_col_name)).replace(',', '').strip() or 0.0)
+                                            except Exception: grp_sav = 0.0
+                                            
+                                        if grp_sav > 0:
+                                            g_data = {
+                                                "Date": date_str,
+                                                "Client ID": f"GROUP-{selected_group}",
+                                                "Client Name": f"{selected_group} Meeting",
+                                                "Officer": target_co,
+                                                "Branch": BRANCH,
+                                                "Amount Paid": grp_sav,
+                                                "Transaction Type": "Group Meeting",
+                                                "Note": "Daily Collection (CSV Upload)",
+                                                "Savings Amount": grp_sav,
+                                                "Withdrawal Amount": 0.0,
+                                                "Laps Reserved": 0, "Loan Repayment Amount": 0,
+                                                "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
+                                                "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0,
+                                                "Bank Withdrawal": 0, "Asset Sales": 0, "App Fee": 0,
+                                                "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
+                                                "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
+                                                "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
+                                                "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                                "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
+                                                "Laps Transferred": 0,
+                                                "Group Savings Deposit": grp_sav,
+                                                "Group Savings Withdrawal": 0
+                                            }
+                                            csv_entries.append(g_data)
+                                            matched_count += 1
+                                        continue
                                     
                                     info = member_info.get(raw_cid)
                                     if not info:
@@ -4336,7 +4421,7 @@ elif page == "Collections":
                                         matched_count += 1
                                         
                                 if csv_entries:
-                                    st.success(f"Found {matched_count} matching members in uploaded CSV.")
+                                    st.success(f"Found {matched_count} matching entries (including Group Savings) in uploaded CSV.")
                                     if st.button("🚀 Load Uploaded CSV into Review Queue", type="primary", use_container_width=True):
                                         st.session_state['pending_collections'] = csv_entries
                                         st.session_state['collections_group'] = selected_group
