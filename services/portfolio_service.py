@@ -97,33 +97,6 @@ class PortfolioService:
         except Exception:
             pass
 
-        # 1. Fetch Savings across All 3 Tiers (Individual, Group, Misc)
-        savings_map = {}
-        total_savings_deposit = 0.0
-        total_savings_withdrawal = 0.0
-        
-        # A. Individual Savings
-        try:
-            if client_ids:
-                s_query = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount, posting_date").in_("client_id", client_ids)
-                s_query = s_query.gte("posting_date", start_date.isoformat()).lte("posting_date", end_date.isoformat())
-                s_res = s_query.execute()
-                for s in (s_res.data or []):
-                    cid_str = str(s.get("client_id"))
-                    dep = float(s.get("deposit_amount") or 0.0)
-                    wth = float(s.get("withdrawal_amount") or 0.0)
-                    
-                    total_savings_deposit += dep
-                    total_savings_withdrawal += wth
-                    
-                    if cid_str not in savings_map:
-                        savings_map[cid_str] = {'dep': 0.0, 'wth': 0.0, 'bal': 0.0}
-                    savings_map[cid_str]['dep'] += dep
-                    savings_map[cid_str]['wth'] += wth
-                    savings_map[cid_str]['bal'] += (dep - wth)
-        except Exception:
-            pass
-
         # 2. Filter in memory by active dropdown selections (BM, AM, Admin)
         if selected_branch and selected_branch != "All":
             b_id = None
@@ -147,10 +120,38 @@ class PortfolioService:
             loans_raw = [l for l in loans_raw if group_map.get(str(l.get("client_id")), "Individual") == selected_group]
             clients_raw = [c for c in clients_raw if group_map.get(str(c.get("client_id") or c.get("id")), "Individual") == selected_group]
 
-        # B. Group Savings & Misc Savings Period & Lifetime Aggregation
-        group_savings_bal_map = {}
+        # 1. Fetch Savings across All 3 Tiers (Individual, Group, Misc) — Cumulative up to end_date (BR-SAV-001 & BR-SAV-002)
+        filtered_cids = [str(c.get("client_id") or c.get("id")) for c in clients_raw if (c.get("client_id") or c.get("id"))]
+        savings_map = {}
+        total_ind_dep = 0.0
+        total_ind_wth = 0.0
+        
+        # A. Individual Savings (Cumulative as-of-date position)
         try:
-            filtered_cids = [str(c.get("client_id") or c.get("id")) for c in clients_raw]
+            if filtered_cids:
+                s_query = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount, posting_date").in_("client_id", filtered_cids).lte("posting_date", end_date.isoformat())
+                s_res = s_query.execute()
+                for s in (s_res.data or []):
+                    cid_str = str(s.get("client_id"))
+                    dep = float(s.get("deposit_amount") or 0.0)
+                    wth = float(s.get("withdrawal_amount") or 0.0)
+                    
+                    total_ind_dep += dep
+                    total_ind_wth += wth
+                    
+                    if cid_str not in savings_map:
+                        savings_map[cid_str] = {'dep': 0.0, 'wth': 0.0, 'bal': 0.0}
+                    savings_map[cid_str]['dep'] += dep
+                    savings_map[cid_str]['wth'] += wth
+                    savings_map[cid_str]['bal'] += (dep - wth)
+        except Exception:
+            pass
+
+        # B. Group Savings (Cumulative as-of-date position)
+        group_savings_bal_map = {}
+        total_grp_dep = 0.0
+        total_grp_wth = 0.0
+        try:
             if filtered_cids:
                 gm_query = uow.client.table("client_memberships").select("client_id, group_id, groups(name)").in_("client_id", filtered_cids).execute()
                 g_id_name_map = {}
@@ -158,50 +159,56 @@ class PortfolioService:
                     gid = str(gm.get("group_id"))
                     gname = (gm.get("groups") or {}).get("name") if isinstance(gm.get("groups"), dict) else None
                     if gid and gname:
+                        if selected_group and selected_group != "All" and gname != selected_group:
+                            continue
                         g_id_name_map[gid] = gname
 
                 all_gids = list(g_id_name_map.keys())
                 if all_gids:
-                    gs_all = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount, posting_date").in_("group_id", all_gids).execute()
+                    gs_all = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount, posting_date").in_("group_id", all_gids).lte("posting_date", end_date.isoformat()).execute()
                     for gs in (gs_all.data or []):
                         gid = str(gs.get("group_id"))
                         gname = g_id_name_map.get(gid, "Individual")
                         dep = float(gs.get("deposit_amount") or 0.0)
                         wth = float(gs.get("withdrawal_amount") or 0.0)
-                        p_date = str(gs.get("posting_date") or "")[:10]
                         
-                        # Lifetime group balance map
+                        total_grp_dep += dep
+                        total_grp_wth += wth
                         group_savings_bal_map[gname] = group_savings_bal_map.get(gname, 0.0) + (dep - wth)
-                        
-                        # Period aggregation
-                        if start_date.isoformat() <= p_date <= end_date.isoformat():
-                            total_savings_deposit += dep
-                            total_savings_withdrawal += wth
+        except Exception:
+            pass
 
-            # C. Misc Savings (Internal Savings) — Attributed to Designated Officer (BR-SAV-002)
+        # C. Misc Savings (Internal Savings) — Attributed to Designated Officer (BR-SAV-002)
+        total_misc_dep = 0.0
+        total_misc_wth = 0.0
+        try:
             from services.savings_service import SavingsService
-            active_branch_name = selected_branch if (selected_branch and selected_branch != "All") else (scope.branch or "Ogijo")
+            active_branch_name = selected_branch if (selected_branch and selected_branch != "All") else (getattr(scope, "branch_name", None) or "Ogijo")
             m_off_id, m_off_name = SavingsService.get_branch_misc_savings_officer(uow, active_branch_name)
             
             should_include_misc = True
-            if selected_officer and selected_officer != "All":
+            if selected_group and selected_group != "All":
+                should_include_misc = False
+            elif selected_officer and selected_officer != "All":
                 officer_sel_clean = str(selected_officer).strip().lower()
-                should_include_misc = (officer_sel_clean == m_off_name.lower() or officer_sel_clean == m_off_id.lower() or "co3" in officer_sel_clean)
+                should_include_misc = (officer_sel_clean == m_off_name.lower() or officer_sel_clean == str(m_off_id).lower() or "co3" in officer_sel_clean)
             elif scope.scope_level == "OFFICER" and scope.user_id:
-                should_include_misc = (str(scope.user_id) == m_off_id or str(scope.username).lower() == m_off_name.lower() or "co3" in str(scope.username).lower())
+                should_include_misc = (str(scope.user_id) == str(m_off_id) or str(scope.username).lower() == m_off_name.lower() or "co3" in str(scope.username).lower())
 
             if should_include_misc:
-                misc_q = uow.client.table("internal_savings").select("deposit_amount, withdrawal_amount, posting_date")
+                misc_q = uow.client.table("internal_savings").select("deposit_amount, withdrawal_amount, posting_date").lte("posting_date", end_date.isoformat())
                 misc_res = misc_q.execute()
                 for ms in (misc_res.data or []):
                     dep = float(ms.get("deposit_amount") or 0.0)
                     wth = float(ms.get("withdrawal_amount") or 0.0)
-                    p_date = str(ms.get("posting_date") or "")[:10]
-                    if start_date.isoformat() <= p_date <= end_date.isoformat():
-                        total_savings_deposit += dep
-                        total_savings_withdrawal += wth
+                    total_misc_dep += dep
+                    total_misc_wth += wth
         except Exception:
             pass
+
+        total_savings_deposit = total_ind_dep + total_grp_dep + total_misc_dep
+        total_savings_withdrawal = total_ind_wth + total_grp_wth + total_misc_wth
+        total_savings_balance = total_savings_deposit - total_savings_withdrawal
 
         # 3. Query Repayments within Date Range for Scope (Excluding Historical Onboarding Opening Balances)
         try:
@@ -290,36 +297,6 @@ class PortfolioService:
             "count": len(disbursed_in_period),
             "amount": sum(float(l.get("loan_amount") or 0.0) for l in disbursed_in_period)
         }
-
-        total_savings_balance = total_savings_deposit - total_savings_withdrawal
-
-        # Calculate exact lifetime savings for filtered clients
-        try:
-            filtered_cids = [str(c.get("client_id") or c.get("id")) for c in clients_raw]
-            total_savings = 0.0
-            if filtered_cids:
-                s_query = uow.client.table("individual_savings").select("deposit_amount, withdrawal_amount").in_("client_id", filtered_cids).execute()
-                total_dep = sum(float(s.get("deposit_amount") or 0.0) for s in (s_query.data or []))
-                total_wth = sum(float(s.get("withdrawal_amount") or 0.0) for s in (s_query.data or []))
-                total_savings += (total_dep - total_wth)
-                
-                # Group savings
-                g_query = uow.client.table("client_memberships").select("group_id").in_("client_id", filtered_cids).execute()
-                g_ids = list(set([str(g.get("group_id")) for g in (g_query.data or []) if g.get("group_id")]))
-                if g_ids:
-                    gs_query = uow.client.table("group_savings").select("deposit_amount, withdrawal_amount").in_("group_id", g_ids).execute()
-                    g_dep = sum(float(s.get("deposit_amount") or 0.0) for s in (gs_query.data or []))
-                    g_wth = sum(float(s.get("withdrawal_amount") or 0.0) for s in (gs_query.data or []))
-                    total_savings += (g_dep - g_wth)
-
-                # Misc savings
-                if should_include_misc:
-                    ms_query = uow.client.table("internal_savings").select("deposit_amount, withdrawal_amount").execute()
-                    m_dep = sum(float(s.get("deposit_amount") or 0.0) for s in (ms_query.data or []))
-                    m_wth = sum(float(s.get("withdrawal_amount") or 0.0) for s in (ms_query.data or []))
-                    total_savings += (m_dep - m_wth)
-        except Exception:
-            pass
 
         today_collection = sum(float(r.get("amount_paid") or 0.0) for r in repayments_today)
 
@@ -481,7 +458,7 @@ class PortfolioService:
                 "total_outstanding_balance": total_outstanding_balance,
                 "total_savings_deposit": total_savings_deposit,
                 "total_savings_withdrawal": total_savings_withdrawal,
-                "total_savings_balance": total_savings,
+                "total_savings_balance": total_savings_balance,
                 "total_actual_collection": today_collection,
                 "today_collection": today_collection,
                 "this_week_collection": this_week_collection,
