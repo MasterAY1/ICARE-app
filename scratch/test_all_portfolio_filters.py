@@ -21,6 +21,7 @@ def test_all_portfolio_filters():
     assert s_m['disbursement_summary']['count'] == 0, "No new loans were disbursed in August (all are opening balances)"
     assert s_m['disbursement_summary']['amount'] == 0.0, "Disbursed amount in August must be 0.0"
     assert s_m['total_active_credit'] == 1509000.0, "Total active credit must remain 1,509,000"
+    assert s_m['total_outstanding_balance'] == 825875.0, f"Total outstanding balance must be 825,875, got {s_m['total_outstanding_balance']}"
 
     print("\n==================================================")
     print("2. TEST CUSTOM DATE RANGE: 2026-08-03 to 2026-08-03")

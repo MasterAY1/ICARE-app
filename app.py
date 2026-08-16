@@ -7620,14 +7620,26 @@ elif page == "Portfolio":
 
                     # Dynamic Financial Calculations for Executive Banner
                     c_active_credit = 0.0
-                    if not l_hist.empty and "active_credit" in l_hist.columns:
-                        c_active_credit = float(l_hist[l_hist["status"].isin(["Active", "Approved"])]["active_credit"].sum())
-                    
+                    c_remaining_balance = 0.0
                     c_total_paid = 0.0
-                    if not r_hist.empty and "amount_paid" in r_hist.columns:
-                        c_total_paid = float(r_hist["amount_paid"].sum())
-                    
-                    c_remaining_balance = max(0.0, c_active_credit - c_total_paid)
+                    if not l_hist.empty:
+                        for _, l_row in l_hist.iterrows():
+                            if str(l_row.get("status", "")).upper() in ["ACTIVE", "APPROVED"]:
+                                a_cred = float(l_row.get("active_credit") or 0.0)
+                                t_due = float(l_row.get("total_due") if l_row.get("total_due") is not None else a_cred)
+                                c_active_credit += a_cred
+                                
+                                # Check post-onboarding paid for this loan
+                                lid = str(l_row.get("loan_id", ""))
+                                p_paid = 0.0
+                                if not r_hist.empty and "loan_id" in r_hist.columns:
+                                    p_paid = float(r_hist[r_hist["loan_id"].astype(str) == lid]["amount_paid"].sum())
+                                elif not r_hist.empty and "amount_paid" in r_hist.columns:
+                                    p_paid = float(r_hist["amount_paid"].sum())
+                                
+                                rem = max(0.0, t_due - p_paid)
+                                c_remaining_balance += rem
+                                c_total_paid += ((a_cred - t_due) + p_paid)
                     
                     c_savings_balance = 0.0
                     if not s_hist.empty:
@@ -7740,12 +7752,18 @@ elif page == "Portfolio":
                             df_l["Name"] = c_info.get("name", "N/A")
                             df_l["Product"] = df_l.apply(lambda row: row.get("loan_products", {}).get("name", "Standard") if isinstance(row.get("loan_products"), dict) else "Standard", axis=1)
                             
-                            # Calculate Remaining Balance dynamically
+                            # Calculate Remaining Balance dynamically using total_due baseline
                             if not r_hist.empty and "loan_id" in r_hist.columns and "loan_id" in df_l.columns:
                                 paid_map = r_hist.groupby("loan_id")["amount_paid"].sum().to_dict()
-                                df_l["Remaining Balance"] = df_l.apply(lambda r: max(0.0, float(r.get("active_credit", 0.0)) - float(paid_map.get(r.get("loan_id"), 0.0))), axis=1)
+                                df_l["Remaining Balance"] = df_l.apply(
+                                    lambda r: max(0.0, float(r.get("total_due") if r.get("total_due") is not None else r.get("active_credit", 0.0)) - float(paid_map.get(r.get("loan_id"), 0.0))), 
+                                    axis=1
+                                )
                             else:
-                                df_l["Remaining Balance"] = df_l.get("active_credit", 0.0)
+                                df_l["Remaining Balance"] = df_l.apply(
+                                    lambda r: float(r.get("total_due") if r.get("total_due") is not None else r.get("active_credit", 0.0)),
+                                    axis=1
+                                )
 
                             df_l = df_l.rename(columns={
                                 "date": "Disbursement Date",

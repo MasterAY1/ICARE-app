@@ -323,8 +323,9 @@ class PortfolioService:
             if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]:
                 lid_s = str(l.get("loan_id") or "")
                 act_cred = float(l.get("active_credit") or 0.0)
+                tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
                 tot_paid = lifetime_repayments_map.get(lid_s, 0.0)
-                total_outstanding_balance += max(0.0, act_cred - tot_paid)
+                total_outstanding_balance += max(0.0, tot_due_base - tot_paid)
                 
         # Calculate disbursement summary within the selected date range
         s_d_str_iso = start_date.isoformat()
@@ -390,9 +391,11 @@ class PortfolioService:
             
             if l:
                 # Active Credit is the static contract total due (Principal - Gap)
-                tot_due = float(l.get("active_credit") or 0.0)
+                act_cred = float(l.get("active_credit") or 0.0)
                 repay_fixed = float(l.get("loan_repay") or 0.0)
                 disbursed = float(l.get("loan_amount") or 0.0)
+                tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
+                pre_paid = max(0.0, act_cred - tot_due_base)
                 
                 loan_id = l.get("loan_id")
                 if loan_id and len(str(loan_id)) > 10:
@@ -402,11 +405,8 @@ class PortfolioService:
                 else:
                     tot_paid_loan = lifetime_repayments_map.get(str(loan_id), 0.0)
                 
-                # Active credit was previously incorrectly used as outstanding balance
-                outstanding_bal = max(0.0, tot_due - tot_paid_loan)
-                act_cred = tot_due # Map to UI 'Active Loan' column
-                
-                tot_paid_lifetime = tot_paid_loan # Map for logic below
+                outstanding_bal = max(0.0, tot_due_base - tot_paid_loan)
+                tot_paid_lifetime = pre_paid + tot_paid_loan
 
                 prod_info = l.get("loan_products") or {}
                 prod_name = prod_info.get("name") or "Unknown"
