@@ -4166,93 +4166,11 @@ elif page == "Collections":
                         except Exception:
                             group_savings_balance = 0.0
 
-                # ── FIELD MANIFEST & CSV TOOLS ──
-                st.markdown("#### 📄 Field Collection Manifest & CSV Export/Upload")
-                col_m1, col_m2 = st.columns([1, 1])
+                # ── CSV MANIFEST & BULK UPLOAD ──
+                st.markdown("#### 📄 Group Collection CSV Manifest")
+                col_csv1, col_csv2 = st.columns([1, 1])
 
-                # 1. Print Field Manifest (HTML)
-                if col_m1.button("🖨️ Print Field Manifest", use_container_width=True):
-                    grp_hdr_info = f" &nbsp;|&nbsp; <strong>Group Savings Balance:</strong> ₦{group_savings_balance:,.2f}" if selected_group != "Ungrouped" else ""
-                    manifest_html = f"""
-                    <html>
-                    <head>
-                        <title>Collection Manifest - {selected_group}</title>
-                        <style>
-                            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 25px; color: #1e293b; }}
-                            h2 {{ margin-bottom: 4px; color: #0f172a; }}
-                            p {{ margin-top: 0; margin-bottom: 16px; color: #475569; font-size: 14px; }}
-                            table {{ width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }}
-                            th, td {{ border: 1px solid #cbd5e1; padding: 10px 8px; text-align: left; }}
-                            th {{ background-color: #f1f5f9; color: #334155; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }}
-                            tr:nth-child(even) {{ background-color: #f8fafc; }}
-                            .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
-                            .write-col {{ width: 130px; background-color: #ffffff; }}
-                            .grp-row {{ background-color: #f1f5f9; font-weight: 600; }}
-                            .print-btn {{ padding: 8px 18px; background: #0284c7; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; margin-bottom: 10px; }}
-                            @media print {{ .print-btn {{ display: none; }} body {{ padding: 0; }} }}
-                        </style>
-                    </head>
-                    <body>
-                        <h2>Collection Manifest - {selected_group}</h2>
-                        <p><strong>Officer:</strong> {target_co} &nbsp;|&nbsp; <strong>Date:</strong> {date_str} &nbsp;|&nbsp; <strong>Branch:</strong> {BRANCH}{grp_hdr_info}</p>
-                        <button class="print-btn" onclick="window.print()">🖨️ Print Manifest</button>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th style="width: 35px; text-align: center;">#</th>
-                                    <th>Client Name</th>
-                                    <th>Client ID</th>
-                                    <th class="num">Savings Balance</th>
-                                    <th class="num">Remaining Balance</th>
-                                    <th class="num">Expected Repayment</th>
-                                    <th class="write-col" style="text-align: center;">Amount Collected</th>
-                                    <th class="write-col" style="text-align: center;">Savings Deposit</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                    """
-                    if selected_group != "Ungrouped":
-                        manifest_html += f"""
-                                <tr class="grp-row">
-                                    <td style="text-align: center;">🏛️</td>
-                                    <td><strong>{selected_group} Communal Group Savings</strong></td>
-                                    <td>GROUP-{selected_group}</td>
-                                    <td class="num">₦{group_savings_balance:,.2f}</td>
-                                    <td class="num" style="color: #94a3b8;">—</td>
-                                    <td class="num" style="color: #94a3b8;">—</td>
-                                    <td class="write-col" style="background-color: #f1f5f9; text-align: center; color: #94a3b8;">—</td>
-                                    <td class="write-col"></td>
-                                </tr>
-                        """
-                    row_idx = 1
-                    for cid, info in member_info.items():
-                        m = info['member']
-                        sav_bal = info['sav_bal']
-                        rem_bal = info['rem_bal']
-                        exp_rep = info['expected_rep_schedule']
-                        manifest_html += f"""
-                                <tr>
-                                    <td style="text-align: center;">{row_idx}</td>
-                                    <td><strong>{m['Client Name']}</strong></td>
-                                    <td>{cid}</td>
-                                    <td class="num">₦{sav_bal:,.2f}</td>
-                                    <td class="num">₦{rem_bal:,.2f}</td>
-                                    <td class="num">₦{exp_rep:,.2f}</td>
-                                    <td class="write-col"></td>
-                                    <td class="write-col"></td>
-                                </tr>
-                        """
-                        row_idx += 1
-                        
-                    manifest_html += """
-                            </tbody>
-                        </table>
-                    </body>
-                    </html>
-                    """
-                    st.components.v1.html(manifest_html, height=550, scrolling=True)
-
-                # 2. Download Editable Manifest CSV
+                # 1. Download Editable Manifest CSV
                 manifest_rows = []
                 # Group communal savings row if grouped
                 if selected_group != "Ungrouped":
@@ -4278,7 +4196,7 @@ elif page == "Collections":
                     })
                 manifest_df = pd.DataFrame(manifest_rows)
                 csv_data = manifest_df.to_csv(index=False).encode('utf-8')
-                col_m2.download_button(
+                col_csv1.download_button(
                     label="📥 Download Manifest CSV",
                     data=csv_data,
                     file_name=f"manifest_{selected_group}_{date_str}.csv",
@@ -4286,152 +4204,153 @@ elif page == "Collections":
                     use_container_width=True
                 )
 
-                # 3. Upload Completed Manifest CSV
-                with st.expander("📤 Upload Completed Manifest (CSV)"):
-                    st.caption("Upload the filled CSV manifest to automatically populate client repayments, member savings, and group savings.")
-                    uploaded_csv = st.file_uploader("Choose Manifest CSV file", type=["csv"], key=f"csv_upload_{selected_group}")
-                    if uploaded_csv is not None:
-                        try:
-                            df_up = pd.read_csv(uploaded_csv)
-                            df_up.columns = [str(c).strip() for c in df_up.columns]
-                            
-                            id_col = next((c for c in df_up.columns if c.lower() in ["client id", "id", "client_id", "code"]), None)
-                            rep_col_name = next((c for c in df_up.columns if c.lower() in ["amount collected", "loan repayment amount", "repayment", "amount_collected", "amount paid"]), None)
-                            sav_col_name = next((c for c in df_up.columns if c.lower() in ["savings deposit", "savings amount", "savings", "savings_deposit"]), None)
-                            
-                            if not id_col:
-                                st.error("Uploaded CSV must have a 'Client ID' or 'ID' column.")
-                            else:
-                                csv_entries = []
-                                matched_count = 0
-                                for _, u_row in df_up.iterrows():
-                                    raw_cid = str(u_row.get(id_col, '')).strip()
-                                    if not raw_cid or raw_cid == 'nan': continue
-                                    
-                                    # Check if this row is Group Communal Savings
-                                    is_group_row = (
-                                        raw_cid.startswith("GROUP-") or
-                                        "group" in str(u_row.get("Client Name", "")).lower() or
-                                        "communal" in str(u_row.get("Client Name", "")).lower() or
-                                        raw_cid.lower() == selected_group.lower()
-                                    )
-                                    if is_group_row:
-                                        grp_sav = 0.0
-                                        if sav_col_name and pd.notna(u_row.get(sav_col_name)):
-                                            try: grp_sav = float(str(u_row.get(sav_col_name)).replace(',', '').strip() or 0.0)
-                                            except Exception: grp_sav = 0.0
-                                        if grp_sav == 0.0 and rep_col_name and pd.notna(u_row.get(rep_col_name)):
-                                            try: grp_sav = float(str(u_row.get(rep_col_name)).replace(',', '').strip() or 0.0)
-                                            except Exception: grp_sav = 0.0
+                # 2. Upload Completed Manifest CSV
+                with col_csv2:
+                    with st.expander("📤 Upload Completed Manifest (CSV)"):
+                        st.caption("Upload the filled CSV manifest to automatically populate client repayments, member savings, and group savings.")
+                        uploaded_csv = st.file_uploader("Choose Manifest CSV file", type=["csv"], key=f"csv_upload_{selected_group}")
+                        if uploaded_csv is not None:
+                            try:
+                                df_up = pd.read_csv(uploaded_csv)
+                                df_up.columns = [str(c).strip() for c in df_up.columns]
+                                
+                                id_col = next((c for c in df_up.columns if c.lower() in ["client id", "id", "client_id", "code"]), None)
+                                rep_col_name = next((c for c in df_up.columns if c.lower() in ["amount collected", "loan repayment amount", "repayment", "amount_collected", "amount paid"]), None)
+                                sav_col_name = next((c for c in df_up.columns if c.lower() in ["savings deposit", "savings amount", "savings", "savings_deposit"]), None)
+                                
+                                if not id_col:
+                                    st.error("Uploaded CSV must have a 'Client ID' or 'ID' column.")
+                                else:
+                                    csv_entries = []
+                                    matched_count = 0
+                                    for _, u_row in df_up.iterrows():
+                                        raw_cid = str(u_row.get(id_col, '')).strip()
+                                        if not raw_cid or raw_cid == 'nan': continue
+                                        
+                                        # Check if this row is Group Communal Savings
+                                        is_group_row = (
+                                            raw_cid.startswith("GROUP-") or
+                                            "group" in str(u_row.get("Client Name", "")).lower() or
+                                            "communal" in str(u_row.get("Client Name", "")).lower() or
+                                            raw_cid.lower() == selected_group.lower()
+                                        )
+                                        if is_group_row:
+                                            grp_sav = 0.0
+                                            if sav_col_name and pd.notna(u_row.get(sav_col_name)):
+                                                try: grp_sav = float(str(u_row.get(sav_col_name)).replace(',', '').strip() or 0.0)
+                                                except Exception: grp_sav = 0.0
+                                            if grp_sav == 0.0 and rep_col_name and pd.notna(u_row.get(rep_col_name)):
+                                                try: grp_sav = float(str(u_row.get(rep_col_name)).replace(',', '').strip() or 0.0)
+                                                except Exception: grp_sav = 0.0
+                                                
+                                            if grp_sav > 0:
+                                                g_data = {
+                                                    "Date": date_str,
+                                                    "Client ID": f"GROUP-{selected_group}",
+                                                    "Client Name": f"{selected_group} Meeting",
+                                                    "Officer": target_co,
+                                                    "Branch": BRANCH,
+                                                    "Amount Paid": grp_sav,
+                                                    "Transaction Type": "Group Meeting",
+                                                    "Note": "Daily Collection (CSV Upload)",
+                                                    "Savings Amount": grp_sav,
+                                                    "Withdrawal Amount": 0.0,
+                                                    "Laps Reserved": 0, "Loan Repayment Amount": 0,
+                                                    "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
+                                                    "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0,
+                                                    "Bank Withdrawal": 0, "Asset Sales": 0, "App Fee": 0,
+                                                    "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
+                                                    "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
+                                                    "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
+                                                    "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                                    "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
+                                                    "Laps Transferred": 0,
+                                                    "Group Savings Deposit": grp_sav,
+                                                    "Group Savings Withdrawal": 0
+                                                }
+                                                csv_entries.append(g_data)
+                                                matched_count += 1
+                                            continue
+                                        
+                                        info = member_info.get(raw_cid)
+                                        if not info:
+                                            c_name_val = str(u_row.get("Client Name", "")).strip().lower()
+                                            for m_cid, m_info in member_info.items():
+                                                if str(m_info['member'].get('Client Name', '')).strip().lower() == c_name_val:
+                                                    info = m_info
+                                                    raw_cid = m_cid
+                                                    break
+                                                    
+                                        if not info: continue
+                                        
+                                        m = info['member']
+                                        rep_val = 0.0
+                                        if rep_col_name and pd.notna(u_row.get(rep_col_name)):
+                                            try: rep_val = float(str(u_row.get(rep_col_name)).replace(',', '').strip() or 0.0)
+                                            except Exception: rep_val = 0.0
                                             
-                                        if grp_sav > 0:
-                                            g_data = {
+                                        sav_val = 0.0
+                                        if sav_col_name and pd.notna(u_row.get(sav_col_name)):
+                                            try: sav_val = float(str(u_row.get(sav_col_name)).replace(',', '').strip() or 0.0)
+                                            except Exception: sav_val = 0.0
+                                            
+                                        exp_rep = float(info['expected_rep_schedule'] or 0.0)
+                                        prod_low = str(m['Loan Product']).lower()
+                                        rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
+                                        if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep_val
+                                        elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep_val
+                                        elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep_val
+                                        elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep_val
+                                        elif "month" in prod_low: rep_mth = rep_val
+                                        else: rep_60d = rep_val
+                                        
+                                        p_status = "PAID" if rep_val >= exp_rep and exp_rep > 0 else ("PART_PAID" if rep_val > 0 else "NOT_PAID")
+                                        
+                                        if rep_val > 0 or sav_val > 0 or p_status == "NOT_PAID":
+                                            tx_data = {
                                                 "Date": date_str,
-                                                "Client ID": f"GROUP-{selected_group}",
-                                                "Client Name": f"{selected_group} Meeting",
+                                                "Client ID": raw_cid,
+                                                "Client Name": m['Client Name'],
                                                 "Officer": target_co,
-                                                "Branch": BRANCH,
-                                                "Amount Paid": grp_sav,
-                                                "Transaction Type": "Group Meeting",
+                                                "Branch": m.get('Branch', BRANCH),
+                                                "Amount Paid": rep_val,
+                                                "Transaction Type": "Loan",
                                                 "Note": "Daily Collection (CSV Upload)",
-                                                "Savings Amount": grp_sav,
+                                                "Savings Amount": sav_val,
                                                 "Withdrawal Amount": 0.0,
-                                                "Laps Reserved": 0, "Loan Repayment Amount": 0,
-                                                "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
-                                                "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0,
+                                                "Loan Repayment Amount": rep_val,
+                                                "Repayment 12 Weeks": rep_12w,
+                                                "Repayment 24 Weeks": rep_24w,
+                                                "Repayment 60 Days": rep_60d,
+                                                "Repayment 120 Days": rep_120d,
+                                                "Monthly": rep_mth,
                                                 "Bank Withdrawal": 0, "Asset Sales": 0, "App Fee": 0,
                                                 "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
                                                 "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
+                                                "Payment Status": p_status,
+                                                "Expected Amount": exp_rep,
+                                                "Overdue Amount": max(0.0, exp_rep - rep_val),
                                                 "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
                                                 "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
                                                 "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
-                                                "Laps Transferred": 0,
-                                                "Group Savings Deposit": grp_sav,
-                                                "Group Savings Withdrawal": 0
+                                                "Laps Reserved": 0, "Laps Transferred": 0,
+                                                "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
                                             }
-                                            csv_entries.append(g_data)
+                                            csv_entries.append(tx_data)
                                             matched_count += 1
-                                        continue
-                                    
-                                    info = member_info.get(raw_cid)
-                                    if not info:
-                                        c_name_val = str(u_row.get("Client Name", "")).strip().lower()
-                                        for m_cid, m_info in member_info.items():
-                                            if str(m_info['member'].get('Client Name', '')).strip().lower() == c_name_val:
-                                                info = m_info
-                                                raw_cid = m_cid
-                                                break
-                                                
-                                    if not info: continue
-                                    
-                                    m = info['member']
-                                    rep_val = 0.0
-                                    if rep_col_name and pd.notna(u_row.get(rep_col_name)):
-                                        try: rep_val = float(str(u_row.get(rep_col_name)).replace(',', '').strip() or 0.0)
-                                        except Exception: rep_val = 0.0
-                                        
-                                    sav_val = 0.0
-                                    if sav_col_name and pd.notna(u_row.get(sav_col_name)):
-                                        try: sav_val = float(str(u_row.get(sav_col_name)).replace(',', '').strip() or 0.0)
-                                        except Exception: sav_val = 0.0
-                                        
-                                    exp_rep = float(info['expected_rep_schedule'] or 0.0)
-                                    prod_low = str(m['Loan Product']).lower()
-                                    rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
-                                    if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep_val
-                                    elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep_val
-                                    elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep_val
-                                    elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep_val
-                                    elif "month" in prod_low: rep_mth = rep_val
-                                    else: rep_60d = rep_val
-                                    
-                                    p_status = "PAID" if rep_val >= exp_rep and exp_rep > 0 else ("PART_PAID" if rep_val > 0 else "NOT_PAID")
-                                    
-                                    if rep_val > 0 or sav_val > 0 or p_status == "NOT_PAID":
-                                        tx_data = {
-                                            "Date": date_str,
-                                            "Client ID": raw_cid,
-                                            "Client Name": m['Client Name'],
-                                            "Officer": target_co,
-                                            "Branch": m.get('Branch', BRANCH),
-                                            "Amount Paid": rep_val,
-                                            "Transaction Type": "Loan",
-                                            "Note": "Daily Collection (CSV Upload)",
-                                            "Savings Amount": sav_val,
-                                            "Withdrawal Amount": 0.0,
-                                            "Loan Repayment Amount": rep_val,
-                                            "Repayment 12 Weeks": rep_12w,
-                                            "Repayment 24 Weeks": rep_24w,
-                                            "Repayment 60 Days": rep_60d,
-                                            "Repayment 120 Days": rep_120d,
-                                            "Monthly": rep_mth,
-                                            "Bank Withdrawal": 0, "Asset Sales": 0, "App Fee": 0,
-                                            "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
-                                            "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
-                                            "Payment Status": p_status,
-                                            "Expected Amount": exp_rep,
-                                            "Overdue Amount": max(0.0, exp_rep - rep_val),
-                                            "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
-                                            "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
-                                            "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
-                                            "Laps Reserved": 0, "Laps Transferred": 0,
-                                            "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
-                                        }
-                                        csv_entries.append(tx_data)
-                                        matched_count += 1
-                                        
-                                if csv_entries:
-                                    st.success(f"Found {matched_count} matching entries (including Group Savings) in uploaded CSV.")
-                                    if st.button("🚀 Load Uploaded CSV into Review Queue", type="primary", use_container_width=True):
-                                        st.session_state['pending_collections'] = csv_entries
-                                        st.session_state['collections_group'] = selected_group
-                                        st.session_state['collections_date'] = date_str
-                                        st.session_state['edit_collections_mode'] = False
-                                        st.rerun()
-                                else:
-                                    st.warning("No matching member entries with valid repayment or savings found in CSV.")
-                        except Exception as e:
-                            st.error(f"Error parsing uploaded CSV: {e}")
+                                            
+                                    if csv_entries:
+                                        st.success(f"Found {matched_count} matching entries in uploaded CSV.")
+                                        if st.button("🚀 Load Uploaded CSV into Review Queue", type="primary", use_container_width=True):
+                                            st.session_state['pending_collections'] = csv_entries
+                                            st.session_state['collections_group'] = selected_group
+                                            st.session_state['collections_date'] = date_str
+                                            st.session_state['edit_collections_mode'] = False
+                                            st.rerun()
+                                    else:
+                                        st.warning("No matching member entries with valid repayment or savings found in CSV.")
+                            except Exception as e:
+                                st.error(f"Error parsing uploaded CSV: {e}")
 
                 st.markdown(f"### Members in {selected_group}")
                 
