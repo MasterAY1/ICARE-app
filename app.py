@@ -4298,8 +4298,7 @@ elif page == "Collections":
                         # ---- PER-CLIENT COLLECTIONS ----
                         col_hdr1, col_hdr2 = st.columns([3, 1])
                         col_hdr1.markdown("### 📋 Client Collections (Savings & Repayments)")
-                        expand_all_members = col_hdr2.checkbox("Expand All Members", value=st.session_state.get('expand_all_members', True), key="chk_expand_all")
-                        st.session_state['expand_all_members'] = expand_all_members
+                        expand_all_members = col_hdr2.checkbox("Expand All Members", value=st.session_state.get('chk_expand_all', False), key="chk_expand_all")
 
                         for cid, info in member_info.items():
                             m = info['member']
