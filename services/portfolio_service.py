@@ -84,6 +84,8 @@ class PortfolioService:
                     filtered_loans.append(l)
             
             loans_raw = filtered_loans
+            prod_cids = set(str(l.get("client_id")) for l in loans_raw if l.get("client_id"))
+            clients_raw = [c for c in clients_raw if str(c.get("client_id") or c.get("id")) in prod_cids]
 
         # Fetch group memberships
         group_map = {}
@@ -120,24 +122,34 @@ class PortfolioService:
             loans_raw = [l for l in loans_raw if group_map.get(str(l.get("client_id")), "Individual") == selected_group]
             clients_raw = [c for c in clients_raw if group_map.get(str(c.get("client_id") or c.get("id")), "Individual") == selected_group]
 
-        # 1. Fetch Savings across All 3 Tiers (Individual, Group, Misc) — Cumulative up to end_date (BR-SAV-001 & BR-SAV-002)
+        # 1. Fetch Savings across All 3 Tiers (Individual, Group, Misc) — Cumulative up to end_date & Period within [start_date, end_date] (BR-SAV-001 & BR-SAV-002)
         filtered_cids = [str(c.get("client_id") or c.get("id")) for c in clients_raw if (c.get("client_id") or c.get("id"))]
         savings_map = {}
         total_ind_dep = 0.0
         total_ind_wth = 0.0
+        period_ind_dep = 0.0
+        period_ind_wth = 0.0
         
-        # A. Individual Savings (Cumulative as-of-date position)
+        start_date_str = start_date.isoformat()
+        end_date_str = end_date.isoformat()
+
+        # A. Individual Savings (Cumulative as-of-date position + Period flows)
         try:
             if filtered_cids:
-                s_query = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount, posting_date").in_("client_id", filtered_cids).lte("posting_date", end_date.isoformat())
+                s_query = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount, posting_date").in_("client_id", filtered_cids).lte("posting_date", end_date_str)
                 s_res = s_query.execute()
                 for s in (s_res.data or []):
                     cid_str = str(s.get("client_id"))
                     dep = float(s.get("deposit_amount") or 0.0)
                     wth = float(s.get("withdrawal_amount") or 0.0)
+                    p_date = str(s.get("posting_date") or "")[:10]
                     
                     total_ind_dep += dep
                     total_ind_wth += wth
+                    
+                    if start_date_str <= p_date <= end_date_str:
+                        period_ind_dep += dep
+                        period_ind_wth += wth
                     
                     if cid_str not in savings_map:
                         savings_map[cid_str] = {'dep': 0.0, 'wth': 0.0, 'bal': 0.0}
@@ -147,10 +159,12 @@ class PortfolioService:
         except Exception:
             pass
 
-        # B. Group Savings (Cumulative as-of-date position)
+        # B. Group Savings (Cumulative as-of-date position + Period flows)
         group_savings_bal_map = {}
         total_grp_dep = 0.0
         total_grp_wth = 0.0
+        period_grp_dep = 0.0
+        period_grp_wth = 0.0
         try:
             if filtered_cids:
                 gm_query = uow.client.table("client_memberships").select("client_id, group_id, groups(name)").in_("client_id", filtered_cids).execute()
@@ -165,15 +179,19 @@ class PortfolioService:
 
                 all_gids = list(g_id_name_map.keys())
                 if all_gids:
-                    gs_all = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount, posting_date").in_("group_id", all_gids).lte("posting_date", end_date.isoformat()).execute()
+                    gs_all = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount, posting_date").in_("group_id", all_gids).lte("posting_date", end_date_str).execute()
                     for gs in (gs_all.data or []):
                         gid = str(gs.get("group_id"))
                         gname = g_id_name_map.get(gid, "Individual")
                         dep = float(gs.get("deposit_amount") or 0.0)
                         wth = float(gs.get("withdrawal_amount") or 0.0)
+                        p_date = str(gs.get("posting_date") or "")[:10]
                         
                         total_grp_dep += dep
                         total_grp_wth += wth
+                        if start_date_str <= p_date <= end_date_str:
+                            period_grp_dep += dep
+                            period_grp_wth += wth
                         group_savings_bal_map[gname] = group_savings_bal_map.get(gname, 0.0) + (dep - wth)
         except Exception:
             pass
@@ -181,6 +199,8 @@ class PortfolioService:
         # C. Misc Savings (Internal Savings) — Attributed to Designated Officer (BR-SAV-002)
         total_misc_dep = 0.0
         total_misc_wth = 0.0
+        period_misc_dep = 0.0
+        period_misc_wth = 0.0
         try:
             from services.savings_service import SavingsService
             active_branch_name = selected_branch if (selected_branch and selected_branch != "All") else (getattr(scope, "branch_name", None) or "Ogijo")
@@ -196,19 +216,26 @@ class PortfolioService:
                 should_include_misc = (str(scope.user_id) == str(m_off_id) or str(scope.username).lower() == m_off_name.lower() or "co3" in str(scope.username).lower())
 
             if should_include_misc:
-                misc_q = uow.client.table("internal_savings").select("deposit_amount, withdrawal_amount, posting_date").lte("posting_date", end_date.isoformat())
+                misc_q = uow.client.table("internal_savings").select("deposit_amount, withdrawal_amount, posting_date").lte("posting_date", end_date_str)
                 misc_res = misc_q.execute()
                 for ms in (misc_res.data or []):
                     dep = float(ms.get("deposit_amount") or 0.0)
                     wth = float(ms.get("withdrawal_amount") or 0.0)
+                    p_date = str(ms.get("posting_date") or "")[:10]
                     total_misc_dep += dep
                     total_misc_wth += wth
+                    if start_date_str <= p_date <= end_date_str:
+                        period_misc_dep += dep
+                        period_misc_wth += wth
         except Exception:
             pass
 
         total_savings_deposit = total_ind_dep + total_grp_dep + total_misc_dep
         total_savings_withdrawal = total_ind_wth + total_grp_wth + total_misc_wth
         total_savings_balance = total_savings_deposit - total_savings_withdrawal
+
+        period_savings_deposit = period_ind_dep + period_grp_dep + period_misc_dep
+        period_savings_withdrawal = period_ind_wth + period_grp_wth + period_misc_wth
 
         # 3. Query Repayments within Date Range for Scope (Excluding Historical Onboarding Opening Balances)
         try:
@@ -244,7 +271,7 @@ class PortfolioService:
                 repayments_today = [r for r in repayments_today if str(r.get("officer_id")).lower() == str(o_id).lower() or str(r.get("officer") or "").lower() == selected_officer.lower()]
 
             if selected_product and selected_product != "All":
-                repayments_today = [r for r in repayments_today if str(r.get("client_id")) in valid_client_ids]
+                repayments_today = [r for r in repayments_today if str(r.get("client_id")) in prod_cids]
                 
         except Exception:
             repayments_today = []
@@ -287,11 +314,12 @@ class PortfolioService:
         s_d_str_iso = start_date.isoformat()
         e_d_str_iso = end_date.isoformat()
         
-        disbursed_in_period = [
-            l for l in loans_raw 
-            if l.get("start_date") and s_d_str_iso <= str(l.get("start_date"))[:10] <= e_d_str_iso
-            and str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED", "COMPLETED", "CLOSED"]
-        ]
+        disbursed_in_period = []
+        for l in loans_raw:
+            d_date = l.get("start_date") or str(l.get("created_at") or "")[:10]
+            if d_date and s_d_str_iso <= str(d_date)[:10] <= e_d_str_iso:
+                if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED", "COMPLETED", "CLOSED"]:
+                    disbursed_in_period.append(l)
         
         disbursement_summary = {
             "count": len(disbursed_in_period),
@@ -459,6 +487,8 @@ class PortfolioService:
                 "total_savings_deposit": total_savings_deposit,
                 "total_savings_withdrawal": total_savings_withdrawal,
                 "total_savings_balance": total_savings_balance,
+                "period_savings_deposit": period_savings_deposit,
+                "period_savings_withdrawal": period_savings_withdrawal,
                 "total_actual_collection": today_collection,
                 "today_collection": today_collection,
                 "this_week_collection": this_week_collection,

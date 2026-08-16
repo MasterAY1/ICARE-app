@@ -7336,8 +7336,8 @@ elif page == "Portfolio":
             with f_col1:
                 all_b = ["All"]
                 try:
-                    res_b = uow_p.client.table("app_users").select("branch").execute()
-                    all_b += sorted(list(set(b["branch"] for b in (res_b.data or []) if b.get("branch"))))
+                    res_b = uow_p.client.table("branches").select("name").execute()
+                    all_b += sorted(list(set(b["name"] for b in (res_b.data or []) if b.get("name"))))
                 except Exception:
                     pass
                 sel_branch = st.selectbox("Filter Branch", all_b, key="port_br_sel")
@@ -7443,9 +7443,9 @@ elif page == "Portfolio":
 
         st.caption("Row 1: Savings Summary")
         s1, s2, s3 = st.columns(3)
-        s1.metric("Total Deposits", f"₦{p_sum.get('total_savings_deposit', 0.0):,.0f}")
-        s2.metric("Total Withdrawals", f"₦{p_sum.get('total_savings_withdrawal', 0.0):,.0f}")
-        s3.metric("Net Savings Balance", f"₦{p_sum.get('total_savings_balance', 0.0):,.0f}")
+        s1.metric("Deposits (In Period)", f"₦{p_sum.get('period_savings_deposit', 0.0):,.0f}")
+        s2.metric("Withdrawals (In Period)", f"₦{p_sum.get('period_savings_withdrawal', 0.0):,.0f}")
+        s3.metric("Total Savings Balance", f"₦{p_sum.get('total_savings_balance', 0.0):,.0f}")
 
         st.caption("Row 2: Disbursement Summary (In Selected Period)")
         d1, d2 = st.columns(2)
@@ -7457,7 +7457,7 @@ elif page == "Portfolio":
         l1, l2, l3, l4 = st.columns(4)
         l1.metric("Total Active Credit", f"₦{p_sum.get('total_active_credit', 0.0):,.0f}")
         l2.metric("Total Expected Repayment", f"₦{p_sum.get('total_expected_repayment', 0.0):,.0f}")
-        l3.metric("Actual Collection", f"₦{p_sum.get('total_actual_collection', p_sum.get('today_collection', 0.0)):,.0f}")
+        l3.metric("Actual Collection (In Period)", f"₦{p_sum.get('total_actual_collection', p_sum.get('today_collection', 0.0)):,.0f}")
         l4.metric("Total Outstanding Balance", f"₦{p_sum.get('total_outstanding_balance', 0.0):,.0f}")
 
         st.caption("Row 4: Repayment Status")
