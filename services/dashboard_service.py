@@ -192,18 +192,25 @@ class DashboardService:
             "difference": 0.0
         }
 
-        # 1. Cash Position
+        # 1. Cash Position (CO Cashbook Projection)
         if branch_id and officer_id:
             try:
                 cb = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, officer_id, target_date)
                 if cb:
+                    op_bal = float(cb.get("opening_balance") or 0.0)
+                    tot_left = float(cb.get("total_inflows") or 0.0)
+                    today_in = max(0.0, round(tot_left - op_bal, 2))
+                    c_out = float(cb.get("total_outflows") or 0.0)
+                    cl_bal = float(cb.get("closing_balance") or 0.0)
+                    diff = abs(round(op_bal + today_in - c_out - cl_bal, 2))
+
                     cash_position = {
-                        "opening_balance": float(cb.get("opening_balance") or 0.0),
-                        "cash_in": float(cb.get("total_inflows") or 0.0),
-                        "cash_out": float(cb.get("total_outflows") or 0.0),
-                        "closing_balance": float(cb.get("closing_balance") or 0.0),
-                        "status": "Balanced",
-                        "difference": 0.0
+                        "opening_balance": op_bal,
+                        "cash_in": today_in,
+                        "cash_out": c_out,
+                        "closing_balance": cl_bal,
+                        "status": "Balanced" if diff == 0.0 else "Unbalanced",
+                        "difference": diff
                     }
             except Exception:
                 pass
@@ -546,15 +553,22 @@ class DashboardService:
             try:
                 mb = MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, target_date)
                 if mb:
+                    op_bal = float(mb.get("opening_balance") or 0.0)
+                    tot_left = float(mb.get("total_inflows") or 0.0)
+                    today_in = max(0.0, round(tot_left - op_bal, 2))
+                    c_out = float(mb.get("total_outflows") or 0.0)
+                    cl_bal = float(mb.get("closing_balance") or 0.0)
+                    diff = abs(round(op_bal + today_in - c_out - cl_bal, 2))
+
                     cash_position = {
-                        "opening_balance": float(mb.get("opening_balance") or 0.0),
-                        "cash_in": float(mb.get("total_inflows") or 0.0),
-                        "cash_out": float(mb.get("total_outflows") or 0.0),
+                        "opening_balance": op_bal,
+                        "cash_in": today_in,
+                        "cash_out": c_out,
                         "bank_deposit": float(mb.get("bank_deposit") or 0.0),
                         "bank_withdrawal": float(mb.get("bank_withdrawal") or 0.0),
-                        "closing_balance": float(mb.get("closing_balance") or 0.0),
-                        "status": "Balanced",
-                        "difference": 0.0
+                        "closing_balance": cl_bal,
+                        "status": "Balanced" if diff == 0.0 else "Unbalanced",
+                        "difference": diff
                     }
             except Exception:
                 pass
