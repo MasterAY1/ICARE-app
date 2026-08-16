@@ -470,7 +470,7 @@ class PortfolioService:
             })
 
         client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client Code", "Client Name", "Group", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Status"])
-        raw_client_codes = sorted(list(set([r["Client Code"] for r in client_rows if r.get("Client Code")]))) if client_rows else []
+        raw_client_codes = sorted(list(set([r["Client Code"] for r in client_rows if r.get("Client Code") and str(r.get("Client Code")).strip() not in ["", "N/A", "None"]]))) if client_rows else []
         
         if selected_group == "All" and not client_df.empty:
             group_df = client_df.groupby("Group").agg(
@@ -531,7 +531,8 @@ class PortfolioService:
                 "disbursement_summary": disbursement_summary
             },
             "client_table": client_df,
-            "client_codes": raw_client_codes
+            "client_codes": raw_client_codes,
+            "client_lookup": {r["Client Code"]: f"{r['Client Code']} — {r.get('Client Name', '')} ({r.get('Group', 'Individual')})" for r in client_rows if r.get("Client Code")}
         }
 
     @staticmethod

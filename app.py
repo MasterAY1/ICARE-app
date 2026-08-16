@@ -7595,25 +7595,64 @@ elif page == "Portfolio":
                     key="btn_dl_port_csv"
                 )
 
-            # 360° Client Drill-down
+            # -------------------------------------------------------------
+            # Comprehensive Client Dossier & Financial Inquiry
+            # -------------------------------------------------------------
             st.divider()
-            st.markdown("### 360° Universal Client Drill-Down")
+            st.markdown("### 📋 Comprehensive Client Dossier & Financial Inquiry")
+            st.caption("Deep-dive inquiry into individual client biographical data, loan contracts, repayment ledger, savings history, and compliance audit trail.")
+
             c_codes = p_data.get("client_codes", [])
+            client_lookup = p_data.get("client_lookup", {})
             if c_codes:
-                selected_ccode = st.selectbox("Select Client Code for 360° Deep-Dive", c_codes, key="dd_client_select")
+                selected_ccode = st.selectbox(
+                    "🔍 Search & Select Client Account:",
+                    c_codes,
+                    format_func=lambda code: client_lookup.get(code, code),
+                    key="dd_client_select"
+                )
                 if selected_ccode:
                     dd = PortfolioService.get_client_360_drilldown(uow_p, selected_ccode, p_scope)
+                    c_info = dd.get("customer_info", {})
+                    l_hist = dd.get("loan_history", pd.DataFrame())
+                    r_hist = dd.get("repayment_history", pd.DataFrame())
+                    s_hist = dd.get("savings_history", pd.DataFrame())
+
+                    # Dynamic Financial Calculations for Executive Banner
+                    c_active_credit = 0.0
+                    if not l_hist.empty and "active_credit" in l_hist.columns:
+                        c_active_credit = float(l_hist[l_hist["status"].isin(["Active", "Approved"])]["active_credit"].sum())
                     
+                    c_total_paid = 0.0
+                    if not r_hist.empty and "amount_paid" in r_hist.columns:
+                        c_total_paid = float(r_hist["amount_paid"].sum())
+                    
+                    c_remaining_balance = max(0.0, c_active_credit - c_total_paid)
+                    
+                    c_savings_balance = 0.0
+                    if not s_hist.empty:
+                        dep_tot = float(s_hist.get("deposit_amount", pd.Series([0.0])).sum())
+                        wth_tot = float(s_hist.get("withdrawal_amount", pd.Series([0.0])).sum())
+                        c_savings_balance = dep_tot - wth_tot
+
+                    c_status_label = "🟢 Active Loan" if c_remaining_balance > 0 else ("✔ Fully Settled" if not l_hist.empty else "⚪ No Active Loans")
+
+                    # Executive Metric Header Banner
+                    st.markdown(f"#### 👤 {c_info.get('name', 'Client Profile')} (`{selected_ccode}`)")
+                    sb1, sb2, sb3, sb4 = st.columns(4)
+                    sb1.metric("💵 Total Active Credit", f"₦{c_active_credit:,.0f}")
+                    sb2.metric("💳 Outstanding Balance", f"₦{c_remaining_balance:,.0f}")
+                    sb3.metric("🐷 Savings Balance", f"₦{c_savings_balance:,.0f}")
+                    sb4.metric("📊 Account Status", c_status_label)
+
                     dd_t1, dd_t2, dd_t3, dd_t4, dd_t5, dd_t6 = st.tabs([
-                        "Customer Info", "Loan History", "Repayments", "Savings", "Collections", "Audit History"
+                        "📋 Customer Dossier", "💵 Loan History", "💰 Repayments", "🐷 Savings", "📊 Collections", "⚖️ Audit History"
                     ])
 
                     with dd_t1:
-                        c_info = dd.get("customer_info", {})
-                        l_hist = dd.get("loan_history", pd.DataFrame())
-                        
                         g_name = "N/A"
                         g_phone = "N/A"
+                        g_rel = "N/A"
                         g_pic = ""
                         
                         if not l_hist.empty:
@@ -7626,117 +7665,172 @@ elif page == "Portfolio":
                                 if ext.get("guarantor_name"):
                                     g_name = ext.get("guarantor_name", "N/A")
                                     g_phone = ext.get("guarantor_phone", "N/A")
+                                    g_rel = ext.get("guarantor_relationship", "Guarantor")
                                     g_pic = l_row.get("guarantor_passport_url", "")
                                     break
 
                         col1, col2 = st.columns(2)
                         with col1:
-                            st.markdown("#### Client Details")
-                            c_pic = c_info.get("passport_url")
-                            if c_pic:
-                                st.image(c_pic, width=150)
-                            else:
-                                st.info("No client photo uploaded")
-                                
-                            st.write(f"**Name:** {c_info.get('name', 'N/A')}")
-                            st.write(f"**Nickname:** {c_info.get('nickname', 'N/A')}")
-                            grp = c_info.get("groups", {}).get("name", "N/A") if isinstance(c_info.get("groups"), dict) else "N/A"
-                            st.write(f"**Group:** {grp}")
-                            st.write(f"**Phone Number:** {c_info.get('phone', 'N/A')}")
-                            st.write(f"**Address:** {c_info.get('address', 'N/A')}")
-                            st.write(f"**Membership Date:** {c_info.get('registration_date', 'N/A')}")
+                            with st.container(border=True):
+                                st.markdown("##### 👤 Client Profile & Bio")
+                                c_pic = c_info.get("passport_url")
+                                c_name_str = c_info.get("name", "N/A")
+                                initials = "".join([part[0].upper() for part in c_name_str.split()[:2]]) if c_name_str != "N/A" else "CL"
+
+                                img_col, bio_col = st.columns([1, 2])
+                                with img_col:
+                                    if c_pic:
+                                        st.image(c_pic, width=120)
+                                    else:
+                                        st.markdown(
+                                            f"""
+                                            <div style="width: 80px; height: 80px; border-radius: 50%; background: #e0f2fe; color: #0284c7; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 700; margin: 10px 0;">
+                                                {initials}
+                                            </div>
+                                            """,
+                                            unsafe_allow_html=True
+                                        )
+                                with bio_col:
+                                    st.markdown(f"**Full Name:** {c_name_str}")
+                                    st.markdown(f"**Client Code:** `{c_info.get('client_code', selected_ccode)}`")
+                                    st.markdown(f"**Nickname:** {c_info.get('nickname') or 'None'}")
+
+                                st.divider()
+                                grp = c_info.get("groups", {}).get("name", "Individual") if isinstance(c_info.get("groups"), dict) else (c_info.get("group_name") or "Individual")
+                                st.markdown(f"**👥 Group / Center:** {grp}")
+                                st.markdown(f"**📞 Phone Number:** {c_info.get('phone', 'N/A')}")
+                                st.markdown(f"**📍 Residential Address:** {c_info.get('address', 'N/A')}")
+                                st.markdown(f"**📅 Registration Date:** {c_info.get('registration_date', 'N/A')}")
 
                         with col2:
-                            st.markdown("#### Guarantor Details")
-                            if g_pic:
-                                st.image(g_pic, width=150)
-                            elif g_name != "N/A":
-                                st.info("No guarantor photo uploaded")
-                            else:
-                                st.warning("No guarantor details found in recent loans.")
-                            
-                            st.write(f"**Name:** {g_name}")
-                            st.write(f"**Phone Number:** {g_phone}")
+                            with st.container(border=True):
+                                st.markdown("##### 🛡️ Guarantor Verification Details")
+                                g_initials = "".join([part[0].upper() for part in g_name.split()[:2]]) if g_name != "N/A" else "GT"
+
+                                g_img_col, g_bio_col = st.columns([1, 2])
+                                with g_img_col:
+                                    if g_pic:
+                                        st.image(g_pic, width=120)
+                                    else:
+                                        st.markdown(
+                                            f"""
+                                            <div style="width: 80px; height: 80px; border-radius: 50%; background: #fef3c7; color: #b45309; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 700; margin: 10px 0;">
+                                                {g_initials}
+                                            </div>
+                                            """,
+                                            unsafe_allow_html=True
+                                        )
+                                with g_bio_col:
+                                    st.markdown(f"**Guarantor Name:** {g_name}")
+                                    st.markdown(f"**Relationship:** {g_rel}")
+                                    st.markdown(f"**📞 Phone Number:** {g_phone}")
+
+                                st.divider()
+                                if g_name != "N/A":
+                                    st.success("✔ Verified Guarantor details attached to active loan file.")
+                                else:
+                                    st.info("ℹ No guarantor attached to current loan records.")
+
                     with dd_t2:
-                        if dd["loan_history"].empty:
-                            st.info("No loan history found for this client.")
+                        if l_hist.empty:
+                            st.info("No loan records found for this client.")
                         else:
-                            df_l = dd["loan_history"].copy()
-                            df_l["Client ID"] = c_info.get("client_code", "N/A")
+                            df_l = l_hist.copy()
+                            df_l["Client ID"] = c_info.get("client_code", selected_ccode)
                             df_l["Name"] = c_info.get("name", "N/A")
-                            df_l["Product"] = df_l.apply(lambda row: row.get("loan_products", {}).get("name", "N/A") if isinstance(row.get("loan_products"), dict) else "N/A", axis=1)
-                            
-                            
-                            df_l = df_l.rename(columns={
-                                "loan_amount": "Loan Amount",
-                                "active_credit": "Active Credit",
-                                "loan_repay": "Expected Repayment",
-                                "status": "Status",
-                                "product_category": "Product Category",
-                                "date": "Date"
-                            })
+                            df_l["Product"] = df_l.apply(lambda row: row.get("loan_products", {}).get("name", "Standard") if isinstance(row.get("loan_products"), dict) else "Standard", axis=1)
                             
                             # Calculate Remaining Balance dynamically
-                            rep_df = dd["repayment_history"]
-                            if not rep_df.empty and "loan_id" in rep_df.columns:
-                                paid_map = rep_df.groupby("loan_id")["amount_paid"].sum().to_dict()
-                                df_l["Remaining Balance"] = df_l.apply(lambda r: max(0.0, float(r.get("Active Credit", 0.0)) - float(paid_map.get(r.get("loan_id"), 0.0))), axis=1)
+                            if not r_hist.empty and "loan_id" in r_hist.columns and "loan_id" in df_l.columns:
+                                paid_map = r_hist.groupby("loan_id")["amount_paid"].sum().to_dict()
+                                df_l["Remaining Balance"] = df_l.apply(lambda r: max(0.0, float(r.get("active_credit", 0.0)) - float(paid_map.get(r.get("loan_id"), 0.0))), axis=1)
                             else:
-                                df_l["Remaining Balance"] = df_l["Active Credit"]
+                                df_l["Remaining Balance"] = df_l.get("active_credit", 0.0)
+
+                            df_l = df_l.rename(columns={
+                                "date": "Disbursement Date",
+                                "loan_amount": "Loan Principal",
+                                "active_credit": "Active Credit",
+                                "loan_repay": "Expected Installment",
+                                "status": "Status",
+                                "product_category": "Category"
+                            })
                             
-                            cols = ["Client ID", "Name", "Date", "Loan Amount", "Active Credit", "Expected Repayment", "Remaining Balance", "Status", "Product Category", "Product"]
-                            st.dataframe(df_l[[c for c in cols if c in df_l.columns]], use_container_width=True)
+                            disp_cols = ["Disbursement Date", "Product", "Category", "Loan Principal", "Active Credit", "Expected Installment", "Remaining Balance", "Status"]
+                            valid_cols = [c for c in disp_cols if c in df_l.columns]
+                            
+                            st.dataframe(
+                                df_l[valid_cols].style.format({
+                                    "Loan Principal": "₦{:,.0f}",
+                                    "Active Credit": "₦{:,.0f}",
+                                    "Expected Installment": "₦{:,.0f}",
+                                    "Remaining Balance": "₦{:,.0f}"
+                                }),
+                                use_container_width=True
+                            )
                             
                     with dd_t3:
-                        if dd["repayment_history"].empty:
-                            st.info("No repayment history found for this client.")
+                        if r_hist.empty:
+                            st.info("No repayment collections logged for this client.")
                         else:
-                            df_r = dd["repayment_history"].copy()
-                            df_r["Client ID"] = c_info.get("client_code", "N/A")
-                            df_r["Name"] = c_info.get("name", "N/A")
+                            df_r = r_hist.copy()
                             df_r = df_r.rename(columns={
-                                "amount_paid": "Repayment Amount",
                                 "date": "Date",
+                                "amount_paid": "Amount Collected",
                                 "payment_status": "Status",
-                                "transaction_type": "Type",
-                                "note": "Note"
+                                "transaction_type": "Transaction Type",
+                                "note": "Notes"
                             })
-                            cols = ["Client ID", "Name", "Date", "Repayment Amount", "Status", "Type", "Note"]
-                            st.dataframe(df_r[[c for c in cols if c in df_r.columns]], use_container_width=True)
+                            r_cols = ["Date", "Amount Collected", "Status", "Transaction Type", "Notes"]
+                            st.dataframe(
+                                df_r[[c for c in r_cols if c in df_r.columns]].style.format({
+                                    "Amount Collected": "₦{:,.0f}"
+                                }),
+                                use_container_width=True
+                            )
                             
                     with dd_t4:
-                        if dd["savings_history"].empty:
-                            st.info("No savings history found for this client.")
+                        if s_hist.empty:
+                            st.info("No savings ledger entries found for this client.")
                         else:
-                            df_s = dd["savings_history"].copy()
-                            df_s["Client ID"] = c_info.get("client_code", "N/A")
-                            df_s["Name"] = c_info.get("name", "N/A")
+                            df_s = s_hist.copy()
                             df_s = df_s.rename(columns={
-                                "deposit_amount": "Deposit",
-                                "withdrawal_amount": "Withdrawal",
                                 "posting_date": "Date",
+                                "deposit_amount": "Deposit (₦)",
+                                "withdrawal_amount": "Withdrawal (₦)",
                                 "remarks": "Remarks"
                             })
-                            cols = ["Client ID", "Name", "Date", "Deposit", "Withdrawal", "Remarks"]
-                            st.dataframe(df_s[[c for c in cols if c in df_s.columns]], use_container_width=True)
+                            
+                            # Running balance calculation
+                            dep = df_s.get("Deposit (₦)", pd.Series([0.0]))
+                            wth = df_s.get("Withdrawal (₦)", pd.Series([0.0]))
+                            df_s["Net Balance (₦)"] = (dep - wth).cumsum()
+
+                            s_cols = ["Date", "Deposit (₦)", "Withdrawal (₦)", "Net Balance (₦)", "Remarks"]
+                            st.dataframe(
+                                df_s[[c for c in s_cols if c in df_s.columns]].style.format({
+                                    "Deposit (₦)": "₦{:,.0f}",
+                                    "Withdrawal (₦)": "₦{:,.0f}",
+                                    "Net Balance (₦)": "₦{:,.0f}"
+                                }),
+                                use_container_width=True
+                            )
                             
                     with dd_t5:
-                        if dd["collection_history"].empty:
-                            st.info("No collections history found for this client.")
+                        c_perf = dd.get("collection_history", pd.DataFrame())
+                        if c_perf.empty:
+                            st.info("No collection performance anomalies logged for this client.")
                         else:
-                            st.dataframe(dd["collection_history"], use_container_width=True)
+                            st.dataframe(c_perf, use_container_width=True)
+
                     with dd_t6:
-                        if dd["audit_history"].empty:
-                            st.info("No audit history found for this client.")
+                        a_hist = dd.get("audit_history", pd.DataFrame())
+                        if a_hist.empty:
+                            st.info("Zero audit compliance events logged.")
                         else:
-                            st.dataframe(dd["audit_history"], use_container_width=True)
+                            st.dataframe(a_hist, use_container_width=True)
         else:
             st.info("No client records found in authorized scope.")
-        
-        if st.button("🔄 POST TO GLOBAL LEDGER"):
-            update_database_safe(client_df, ROLE, USER, BRANCH)
-            st.success("✅ Cloud Database Updated Successfully!")
-            st.rerun()
 
 elif page == "Calculator":
     st.title("Loan Simulator")
