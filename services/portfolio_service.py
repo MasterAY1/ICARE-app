@@ -129,6 +129,8 @@ class PortfolioService:
         total_ind_wth = 0.0
         period_ind_dep = 0.0
         period_ind_wth = 0.0
+        period_ind_dep_cids = set()
+        period_ind_wd_cids = set()
         
         start_date_str = start_date.isoformat()
         end_date_str = end_date.isoformat()
@@ -148,8 +150,12 @@ class PortfolioService:
                     total_ind_wth += wth
                     
                     if start_date_str <= p_date <= end_date_str:
-                        period_ind_dep += dep
-                        period_ind_wth += wth
+                        if dep > 0:
+                            period_ind_dep += dep
+                            period_ind_dep_cids.add(cid_str)
+                        if wth > 0:
+                            period_ind_wth += wth
+                            period_ind_wd_cids.add(cid_str)
                     
                     if cid_str not in savings_map:
                         savings_map[cid_str] = {'dep': 0.0, 'wth': 0.0, 'bal': 0.0}
@@ -165,6 +171,8 @@ class PortfolioService:
         total_grp_wth = 0.0
         period_grp_dep = 0.0
         period_grp_wth = 0.0
+        period_grp_dep_gids = set()
+        period_grp_wd_gids = set()
         try:
             if filtered_cids:
                 gm_query = uow.client.table("client_memberships").select("client_id, group_id, groups(name)").in_("client_id", filtered_cids).execute()
@@ -190,8 +198,12 @@ class PortfolioService:
                         total_grp_dep += dep
                         total_grp_wth += wth
                         if start_date_str <= p_date <= end_date_str:
-                            period_grp_dep += dep
-                            period_grp_wth += wth
+                            if dep > 0:
+                                period_grp_dep += dep
+                                period_grp_dep_gids.add(gid)
+                            if wth > 0:
+                                period_grp_wth += wth
+                                period_grp_wd_gids.add(gid)
                         group_savings_bal_map[gname] = group_savings_bal_map.get(gname, 0.0) + (dep - wth)
         except Exception:
             pass
@@ -236,6 +248,10 @@ class PortfolioService:
 
         period_savings_deposit = period_ind_dep + period_grp_dep + period_misc_dep
         period_savings_withdrawal = period_ind_wth + period_grp_wth + period_misc_wth
+        
+        period_savings_dep_clients = len(period_ind_dep_cids) + len(period_grp_dep_gids) + (1 if period_misc_dep > 0 else 0)
+        period_savings_wd_clients = len(period_ind_wd_cids) + len(period_grp_wd_gids) + (1 if period_misc_wth > 0 else 0)
+        total_savings_clients = sum(1 for v in savings_map.values() if v.get("bal", 0.0) > 0)
 
         # 3. Query Repayments within Date Range for Scope (Excluding Historical Onboarding Opening Balances)
         try:
@@ -323,7 +339,8 @@ class PortfolioService:
         
         disbursement_summary = {
             "count": len(disbursed_in_period),
-            "amount": sum(float(l.get("loan_amount") or 0.0) for l in disbursed_in_period)
+            "amount": sum(float(l.get("loan_amount") or 0.0) for l in disbursed_in_period),
+            "client_count": len(set(str(l.get("client_id")) for l in disbursed_in_period if l.get("client_id")))
         }
 
         today_collection = sum(float(r.get("amount_paid") or 0.0) for r in repayments_today)
@@ -473,6 +490,10 @@ class PortfolioService:
             group_df.columns = ["Group Name", "Total Clients", "Total Savings Balance", "Total Active Loan", "Total Outstanding Balance", "Total Fixed Repayment", "Total Paid"]
             client_df = group_df
 
+        active_loans_count = len(active_loans_by_client)
+        expected_repay_clients = sum(1 for l in active_loans_by_client.values() if float(l.get("loan_repay") or 0.0) > 0)
+        paying_clients_count = len(set(str(r.get("client_id")) for r in repayments_today if float(r.get("amount_paid") or 0.0) > 0))
+        outstanding_clients_count = sum(1 for r in client_rows if float(r.get("Outstanding Balance", 0.0)) > 0)
         par_pct = round((overdue_amt / total_outstanding_balance * 100.0), 2) if total_outstanding_balance > 0 else 0.0
 
         return {
@@ -489,6 +510,13 @@ class PortfolioService:
                 "total_savings_balance": total_savings_balance,
                 "period_savings_deposit": period_savings_deposit,
                 "period_savings_withdrawal": period_savings_withdrawal,
+                "period_savings_dep_clients": period_savings_dep_clients,
+                "period_savings_wd_clients": period_savings_wd_clients,
+                "total_savings_clients": total_savings_clients,
+                "active_loans_count": active_loans_count,
+                "expected_repay_clients": expected_repay_clients,
+                "paying_clients_count": paying_clients_count,
+                "outstanding_clients_count": outstanding_clients_count,
                 "total_actual_collection": today_collection,
                 "today_collection": today_collection,
                 "this_week_collection": this_week_collection,
