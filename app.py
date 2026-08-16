@@ -1244,15 +1244,26 @@ def save_repayment(data, override_uow=None):
             from domain.entities.event_store import DomainEvent
             from services.posting_engine import FinancialPostingEngine
 
+            def _is_valid_uuid(val):
+                try:
+                    uuid.UUID(str(val))
+                    return True
+                except (ValueError, AttributeError, TypeError):
+                    return False
+
+            officer_uuid = uow.loans._resolve_officer_id(officer)
+            branch_uuid = uow.cashbook._resolve_branch_id(branch)
+            valid_aggregate_id = str(client_id) if _is_valid_uuid(client_id) else (officer_uuid or branch_uuid or str(uuid.uuid4()))
+
             # Bank Deposited (Field Cash to Bank)
             bdep_amt = float(db_data.get('bank_deposited', 0))
             if bdep_amt > 0:
                 ev_bdep = DomainEvent(
                     event_id=str(uuid.uuid4()),
-                    aggregate_id=str(client_id),
+                    aggregate_id=valid_aggregate_id,
                     aggregate_type="Bank",
                     event_type="BankDeposited",
-                    payload={"branch": branch, "officer": officer, "amount": bdep_amt, "date": p_date_str, "narration": f"End of Day cash deposit to bank by {officer}"}
+                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": bdep_amt, "date": p_date_str, "narration": f"End of Day cash deposit to bank by {officer}"}
                 )
                 uow.event_store.append(ev_bdep)
                 FinancialPostingEngine.post_event(uow, ev_bdep)
@@ -1262,10 +1273,10 @@ def save_repayment(data, override_uow=None):
             if bwd_amt > 0:
                 ev_bwd = DomainEvent(
                     event_id=str(uuid.uuid4()),
-                    aggregate_id=str(client_id),
+                    aggregate_id=valid_aggregate_id,
                     aggregate_type="Bank",
                     event_type="BankWithdrawn",
-                    payload={"branch": branch, "officer": officer, "amount": bwd_amt, "date": p_date_str, "narration": f"Bank withdrawal by {officer}"}
+                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": bwd_amt, "date": p_date_str, "narration": f"Bank withdrawal by {officer}"}
                 )
                 uow.event_store.append(ev_bwd)
                 FinancialPostingEngine.post_event(uow, ev_bwd)
@@ -1275,23 +1286,23 @@ def save_repayment(data, override_uow=None):
             if exp_amt > 0:
                 ev_exp = DomainEvent(
                     event_id=str(uuid.uuid4()),
-                    aggregate_id=str(client_id),
+                    aggregate_id=valid_aggregate_id,
                     aggregate_type="Expense",
                     event_type="ExpenseRecorded",
-                    payload={"branch": branch, "officer": officer, "amount": exp_amt, "date": p_date_str, "narration": f"Office expenses paid by {officer}"}
+                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": exp_amt, "date": p_date_str, "narration": f"Office expenses paid by {officer}"}
                 )
                 uow.event_store.append(ev_exp)
                 FinancialPostingEngine.post_event(uow, ev_exp)
 
             # Passbook Fee / Bonus
-            pb_amt = float(db_data.get('passbook_bonus') or db_data.get('pass_book_paid') or 0.0)
+            pb_amt = float(db_data.get('passbook_bonus') or db_data.get('pass_book_paid') or db_data.get('passbook') or 0.0)
             if pb_amt > 0:
                 ev_pb = DomainEvent(
                     event_id=str(uuid.uuid4()),
-                    aggregate_id=str(client_id),
+                    aggregate_id=valid_aggregate_id,
                     aggregate_type="Fee",
                     event_type="FeeCharged",
-                    payload={"branch": branch, "officer": officer, "amount": pb_amt, "date": p_date_str, "narration": f"Passbook fee from {client_name}"}
+                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": pb_amt, "date": p_date_str, "narration": f"Passbook fee from {client_name}"}
                 )
                 uow.event_store.append(ev_pb)
                 FinancialPostingEngine.post_event(uow, ev_pb)
@@ -1301,10 +1312,10 @@ def save_repayment(data, override_uow=None):
             if bon_amt > 0:
                 ev_bon = DomainEvent(
                     event_id=str(uuid.uuid4()),
-                    aggregate_id=str(client_id),
+                    aggregate_id=valid_aggregate_id,
                     aggregate_type="Fee",
                     event_type="FeeCharged",
-                    payload={"branch": branch, "officer": officer, "amount": bon_amt, "date": p_date_str, "narration": f"Bonus fee from {client_name}"}
+                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": bon_amt, "date": p_date_str, "narration": f"Bonus fee from {client_name}"}
                 )
                 uow.event_store.append(ev_bon)
                 FinancialPostingEngine.post_event(uow, ev_bon)
@@ -1314,10 +1325,10 @@ def save_repayment(data, override_uow=None):
             if app_fee_amt > 0:
                 ev_app = DomainEvent(
                     event_id=str(uuid.uuid4()),
-                    aggregate_id=str(client_id),
+                    aggregate_id=valid_aggregate_id,
                     aggregate_type="Fee",
                     event_type="FeeCharged",
-                    payload={"branch": branch, "officer": officer, "amount": app_fee_amt, "date": p_date_str, "narration": f"Processing Fee from {client_name}"}
+                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": app_fee_amt, "date": p_date_str, "narration": f"Processing Fee from {client_name}"}
                 )
                 uow.event_store.append(ev_app)
                 FinancialPostingEngine.post_event(uow, ev_app)
@@ -1327,10 +1338,10 @@ def save_repayment(data, override_uow=None):
             if cc_amount > 0:
                 ev_cc = DomainEvent(
                     event_id=str(uuid.uuid4()),
-                    aggregate_id=str(client_id),
+                    aggregate_id=valid_aggregate_id,
                     aggregate_type="Asset",
                     event_type="AssetSoldCash",
-                    payload={"branch": branch, "officer": officer, "amount": cc_amount, "date": p_date_str, "narration": f"Cash & Carry asset sale to {client_name}"}
+                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": cc_amount, "date": p_date_str, "narration": f"Cash & Carry asset sale to {client_name}"}
                 )
                 uow.event_store.append(ev_cc)
                 FinancialPostingEngine.post_event(uow, ev_cc)
@@ -1340,10 +1351,10 @@ def save_repayment(data, override_uow=None):
             if cfd_amount > 0:
                 ev_cfd = DomainEvent(
                     event_id=str(uuid.uuid4()),
-                    aggregate_id=str(client_id),
+                    aggregate_id=valid_aggregate_id,
                     aggregate_type="Fee",
                     event_type="FeeCharged",
-                    payload={"branch": branch, "officer": officer, "amount": cfd_amount, "date": p_date_str, "narration": f"Credit Form Damage fee from {client_name}"}
+                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": cfd_amount, "date": p_date_str, "narration": f"Credit Form Damage fee from {client_name}"}
                 )
                 uow.event_store.append(ev_cfd)
                 FinancialPostingEngine.post_event(uow, ev_cfd)
@@ -1353,10 +1364,10 @@ def save_repayment(data, override_uow=None):
             if cf_amount > 0:
                 ev_cf = DomainEvent(
                     event_id=str(uuid.uuid4()),
-                    aggregate_id=str(client_id),
+                    aggregate_id=valid_aggregate_id,
                     aggregate_type="Fee",
                     event_type="FeeCharged",
-                    payload={"branch": branch, "officer": officer, "amount": cf_amount, "date": p_date_str, "narration": f"Credit Form fee from {client_name}"}
+                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": cf_amount, "date": p_date_str, "narration": f"Credit Form fee from {client_name}"}
                 )
                 uow.event_store.append(ev_cf)
                 FinancialPostingEngine.post_event(uow, ev_cf)
@@ -1366,10 +1377,10 @@ def save_repayment(data, override_uow=None):
             if asset_cr_amount > 0:
                 ev_as = DomainEvent(
                     event_id=str(uuid.uuid4()),
-                    aggregate_id=str(client_id),
+                    aggregate_id=valid_aggregate_id,
                     aggregate_type="Asset",
                     event_type="AssetSoldCash",
-                    payload={"branch": branch, "officer": officer, "amount": asset_cr_amount, "date": p_date_str, "narration": f"Asset Credit Sales for {client_name}"}
+                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": asset_cr_amount, "date": p_date_str, "narration": f"Asset Credit Sales for {client_name}"}
                 )
                 uow.event_store.append(ev_as)
                 FinancialPostingEngine.post_event(uow, ev_as)
@@ -1387,10 +1398,10 @@ def save_repayment(data, override_uow=None):
                     return
                 event_fee = DomainEvent(
                     event_id=str(uuid.uuid4()),
-                    aggregate_id=str(client_id),
+                    aggregate_id=valid_aggregate_id,
                     aggregate_type="Fee",
                     event_type="FeeCharged",
-                    payload={"branch": branch, "officer": officer, "amount": amount_val, "date": p_date_str, "narration": narration_str}
+                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": amount_val, "date": p_date_str, "narration": narration_str}
                 )
                 uow.event_store.append(event_fee)
                 FinancialPostingEngine.post_event(uow, event_fee)
@@ -1404,6 +1415,7 @@ def save_repayment(data, override_uow=None):
     except Exception as e:
         print(f"[ERROR] Error in save_repayment logic: {e}")
         st.error(f"Error in save_repayment logic: {e}")
+        raise e
 
 
 def save_repayments(data_list):
@@ -6564,9 +6576,9 @@ elif page == "CO Cashbook":
         global_misc_fee = fee_3.number_input("Misc Fee", min_value=0.0, step=500.0, value=None, placeholder="0")
         
         fee_4, fee_5, fee_6 = st.columns(3)
-        global_asset_cr = fee_4.number_input("Asset Cr Sale", min_value=0.0, step=500.0, value=None, placeholder="0")
-        global_cc = fee_5.number_input("Cash & Carry", min_value=0.0, step=500.0, value=None, placeholder="0")
-        global_cfd = fee_6.number_input("Cr Form Dmg", min_value=0.0, step=500.0, value=None, placeholder="0")
+        global_credit_form = fee_4.number_input("Credit Form", min_value=0.0, step=100.0, value=None, placeholder="0")
+        global_cfd = fee_5.number_input("Cr Form Dmg", min_value=0.0, step=100.0, value=None, placeholder="0")
+        global_cc = fee_6.number_input("Cash & Carry", min_value=0.0, step=500.0, value=None, placeholder="0")
         
         global_bonus = st.number_input("Bonus", min_value=0.0, step=500.0, value=None, placeholder="0")
         
@@ -6584,23 +6596,23 @@ elif page == "CO Cashbook":
             global_app_fee = float(global_app_fee or 0)
             global_passbook = float(global_passbook or 0)
             global_misc_fee = float(global_misc_fee or 0)
-            global_asset_cr = float(global_asset_cr or 0)
+            global_credit_form = float(global_credit_form or 0)
             global_cc = float(global_cc or 0)
             global_cfd = float(global_cfd or 0)
             global_bonus = float(global_bonus or 0)
             
             if any(x != 0 for x in [global_opening, global_expenses, global_bank_dep,
-                                   global_app_fee, global_passbook, global_misc_fee, global_asset_cr, global_cc, global_cfd, global_bonus]):
+                                   global_app_fee, global_passbook, global_misc_fee, global_credit_form, global_cc, global_cfd, global_bonus]):
                 g_out = {
                     "Date": date_str, "Client ID": f"GLOBAL-{target_co}", "Client Name": f"{target_co} End of Day",
                     "Officer": target_co, "Branch": BRANCH,
-                    "Amount Paid": sum([global_app_fee, global_passbook, global_misc_fee, global_asset_cr, global_cc, global_cfd, global_bonus]),
+                    "Amount Paid": sum([global_app_fee, global_passbook, global_misc_fee, global_credit_form, global_cc, global_cfd, global_bonus]),
                     "Transaction Type": "End of Day", "Note": "Branch/Officer Global Inputs",
                     "Opening Balance": global_opening, "Savings Amount": 0, "Withdrawal Amount": 0, "Laps Reserved": 0,
                     "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
                     "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0,
                     "Bank Withdrawal": 0, "Asset Sales": 0, "App Fee": global_app_fee, "Pass Book Bonus": global_passbook,
-                    "Misc Fees": global_misc_fee, "Asset Credit Sales": global_asset_cr, "Cash and Carry": global_cc, "Credit Form": 0, "Credit Form Damage": global_cfd, "Bonus": global_bonus,
+                    "Misc Fees": global_misc_fee, "Asset Credit Sales": 0, "Cash and Carry": global_cc, "Credit Form": global_credit_form, "Credit Form Damage": global_cfd, "Bonus": global_bonus,
                     "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
                     "Product Withdrawal": 0, "Expenses": global_expenses, "Bank Deposited": global_bank_dep, "Laps Transferred": 0,
                     "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
@@ -6627,7 +6639,7 @@ elif page == "CO Cashbook":
             elif "month" in prod or "3m" in prod or "6m" in prod: m_act += amt
 
     # Load from cashbook projection table instead of summing repayments
-    bf_cash = t_sav = t_r12w = t_r24w = t_r60d = t_r120d = t_rmth = t_cont = t_bwd = t_asale = t_app = t_pb = t_misc = 0.0
+    bf_cash = t_sav = t_r12w = t_r24w = t_r60d = t_r120d = t_rmth = t_cont = t_bwd = t_asale = t_app = t_pb = t_bon = t_cf = t_cfd = 0.0
     t_d11 = t_d20 = t_w11 = t_w20 = t_mm = t_pwd = t_exp = t_bdep = t_lres = t_ltrans = t_cc = 0.0
     
     try:
@@ -6654,7 +6666,9 @@ elif page == "CO Cashbook":
                     t_asale = float(c.get("asset_credit_sales") or 0)
                     t_app = float(c.get("app_fee") or 0)
                     t_pb = float(c.get("passbook") or 0)
-                    t_misc = float(c.get("misc_fees") or 0)
+                    t_bon = float(c.get("bonus") or 0)
+                    t_cf = float(c.get("credit_form") or 0)
+                    t_cfd = float(c.get("credit_form_damage") or 0)
                     t_lres = float(c.get("laps_reserve") or 0)
                     
                     t_d11 = float(c.get("daily_11_pct") or 0)
@@ -6669,7 +6683,11 @@ elif page == "CO Cashbook":
     except Exception as e:
         st.warning(f"Could not load CO cashbook projection: {e}")
 
-    left_total = bf_cash + t_lres + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth + t_cont + t_bwd + t_asale + t_app + t_pb + t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_cc
+    left_total = (
+        bf_cash + t_lres + t_sav + t_r12w + t_r24w + t_r60d + t_r120d + t_rmth +
+        t_cont + t_bwd + t_asale + t_app + t_pb + t_bon + t_cf + t_cfd +
+        t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_cc
+    )
     right_total = t_pwd + w_act + d_act + m_act + t_exp + t_bdep + t_ltrans
     closing_bal = left_total - right_total
 
@@ -6687,7 +6705,10 @@ elif page == "CO Cashbook":
         "Bank withdrawal": [t_bwd],
         "Asset sales": [t_asale],
         "App fee": [t_app],
-        "Pass book bonus": [t_pb],
+        "Pass book": [t_pb],
+        "Bonus": [t_bon],
+        "Credit Form": [t_cf],
+        "Credit Form Damage": [t_cfd],
         "Laps Reserved": [t_lres],
         "Daily 11%": [t_d11],
         "Daily 20%": [t_d20],
