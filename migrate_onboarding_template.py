@@ -4,6 +4,17 @@ import datetime
 import uuid
 import holidays
 import math
+import time
+
+def retry_call(fn, max_retries=5, delay=2):
+    for attempt in range(max_retries):
+        try:
+            return fn()
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise e
+            print(f"Network glitch, retrying ({attempt + 1}/{max_retries})... {e}")
+            time.sleep(delay)
 
 def run_migration():
     file_path = "icare-group-member-onboarding-template.xlsx"
@@ -18,18 +29,18 @@ def run_migration():
     with SupabaseUnitOfWork() as uow:
         # 1. Load Reference Maps
         print("Loading branches, officers, products, and closures...")
-        b_res = uow.client.table("branches").select("branch_id, name, code").execute()
+        b_res = retry_call(lambda: uow.client.table("branches").select("branch_id, name, code").execute())
         branch_map = {b['name'].strip().lower(): b for b in (b_res.data or [])}
         
-        o_res = uow.client.table("app_users").select("id, full_name").execute()
+        o_res = retry_call(lambda: uow.client.table("app_users").select("id, full_name").execute())
         officer_map = {o['full_name'].strip().lower(): o['id'] for o in (o_res.data or [])}
         
-        p_res = uow.client.table("loan_products").select("product_id, name, installments, repayment_cycle").execute()
+        p_res = retry_call(lambda: uow.client.table("loan_products").select("product_id, name, installments, repayment_cycle").execute())
         product_map = {p['name'].strip().lower(): p for p in (p_res.data or [])}
 
         # Fetch Closures & Holidays
         closures = []
-        c_res = uow.client.table("branch_closures").select("start_date, end_date").execute()
+        c_res = retry_call(lambda: uow.client.table("branch_closures").select("start_date, end_date").execute())
         if c_res.data:
             for c in c_res.data:
                 closures.append((datetime.date.fromisoformat(c['start_date']), datetime.date.fromisoformat(c['end_date'])))
@@ -45,13 +56,20 @@ def run_migration():
             return True
 
         # Pre-load all existing groups & clients in memory
-        existing_groups_res = uow.client.table("groups").select("*").execute()
+        existing_groups_res = retry_call(lambda: uow.client.table("groups").select("*").execute())
         existing_groups_by_name = {g["name"].strip().lower(): g for g in (existing_groups_res.data or [])}
 
-        existing_clients_res = uow.client.table("clients").select("*").execute()
-        existing_clients_by_name = {c["name"].strip().lower(): c for c in (existing_clients_res.data or [])}
+        existing_clients_res = retry_call(lambda: uow.client.table("clients").select("*").execute())
+        existing_clients_by_name_and_group = {
+            (c["name"].strip().lower(), str(c.get("group_id"))): c 
+            for c in (existing_clients_res.data or []) if c.get("group_id") and c.get("name")
+        }
+        existing_clients_by_code = {
+            c["client_code"].strip().upper(): c 
+            for c in (existing_clients_res.data or []) if c.get("client_code")
+        }
 
-        existing_memberships_res = uow.client.table("client_memberships").select("client_id, group_id").execute()
+        existing_memberships_res = retry_call(lambda: uow.client.table("client_memberships").select("client_id, group_id").execute())
         existing_memberships_set = {(m["client_id"], m["group_id"]) for m in (existing_memberships_res.data or [])}
 
         day_map = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
@@ -82,39 +100,41 @@ def run_migration():
             if leader == 'nan': leader = None
             if m_day == 'nan' or not m_day: m_day = 'Weekly'
             
+            try:
+                gn = int(g_ref.upper().replace("GRP-", "").strip())
+            except Exception:
+                gn = index + 1
+            
             existing_g = existing_groups_by_name.get(g_name.lower())
             if existing_g:
                 g_id = existing_g['group_id']
-                gn = existing_g.get('group_number') or 1
                 curr_seq = existing_g.get('current_member_sequence') or 0
-                uow.client.table("groups").update({
-                    "meeting_day": m_day, "branch_id": b_id, "officer_id": o_id, "leader_name": leader
-                }).eq("group_id", g_id).execute()
+                retry_call(lambda: uow.client.table("groups").update({
+                    "meeting_day": m_day, "branch_id": b_id, "officer_id": o_id, "leader_name": leader,
+                    "group_number": gn
+                }).eq("group_id", g_id).execute())
             else:
                 g_id = str(uuid.uuid4())
-                max_gn_res = uow.client.table("groups").select("group_number").eq("branch_id", b_id).execute()
-                max_gn = max([r.get("group_number") or 0 for r in (max_gn_res.data or [])] or [0])
-                gn = max_gn + 1
                 curr_seq = 0
                 new_g_data = {
                     "group_id": g_id, "name": g_name, "meeting_day": m_day, "branch_id": b_id, 
                     "officer_id": o_id, "leader_name": leader, "status": "Active",
                     "group_number": gn, "current_member_sequence": curr_seq
                 }
-                uow.client.table("groups").insert(new_g_data).execute()
+                retry_call(lambda: uow.client.table("groups").insert(new_g_data).execute())
                 existing_groups_by_name[g_name.lower()] = new_g_data
-                print(f"Created new group: {g_name}")
+                print(f"Created new group: {g_name} (Group #{gn})")
                 
             group_ref_to_info[g_ref] = {
                 'group_id': g_id, 'branch_id': b_id, 'officer_id': o_id, 'branch_name': b_name, 'officer_name': o_name,
                 'meeting_day': m_day, 'branch_code': b_code, 'group_number': gn, 'current_member_sequence': curr_seq
             }
             
-            # Insert Group Opening Savings (Directly to group_savings table)
+            # Insert Group Opening Savings
             if pd.notna(g_sav) and float(g_sav) > 0:
-                gs_res = uow.client.table("group_savings").select("id").eq("group_id", g_id).eq("remarks", "Initial Onboarding Group Savings").execute()
+                gs_res = retry_call(lambda: uow.client.table("group_savings").select("id").eq("group_id", g_id).eq("remarks", "Initial Onboarding Group Savings").execute())
                 if not gs_res.data:
-                    uow.client.table("group_savings").insert({
+                    retry_call(lambda: uow.client.table("group_savings").insert({
                         "id": str(uuid.uuid4()),
                         "group_id": g_id,
                         "posting_date": "1970-01-01",
@@ -124,19 +144,17 @@ def run_migration():
                         "withdrawal_amount": 0.0,
                         "reference": "ONBOARDING-GROUP-OPENING",
                         "remarks": "Initial Onboarding Group Savings"
-                    }).execute()
+                    }).execute())
                     print(f"Posted Group Savings: NGN {float(g_sav):,.2f} for {g_name}")
 
         # 3. PROCESS MEMBERS
         print("\n--- PROCESSING MEMBERS ---")
         db_group_seq = {}
-        savings_to_insert = []
         loans_created = 0
         schedules_created = 0
         
         for index, row in df_members.iterrows():
-            m_ref = str(row.get('Member Number')).strip()
-            if m_ref == 'nan': m_ref = ""
+            m_ref = row.get('Member Number')
             g_ref = str(row.get('Group Reference*')).strip()
             if g_ref == 'nan' or not g_ref: continue
             
@@ -162,40 +180,49 @@ def run_migration():
             o_id = group_info['officer_id']
             b_code = group_info['branch_code']
             gn = group_info['group_number']
-                
-            # Match existing client by name
-            existing_c = existing_clients_by_name.get(f_name.lower())
-            if existing_c:
-                c_id = existing_c['client_id']
-                uow.client.table("clients").update({
-                    "phone": phone, "address": address, "branch_id": b_id, "officer_id": o_id, "group_id": g_id, "status": "Active"
-                }).eq("client_id", c_id).execute()
+            
+            if pd.notna(m_ref) and str(m_ref).strip() != '' and str(m_ref).strip() != 'nan':
+                try:
+                    seq = int(float(str(m_ref).strip()))
+                except Exception:
+                    db_group_seq[g_id] = db_group_seq.get(g_id, group_info['current_member_sequence']) + 1
+                    seq = db_group_seq[g_id]
             else:
-                # Generate sequential code
                 db_group_seq[g_id] = db_group_seq.get(g_id, group_info['current_member_sequence']) + 1
                 seq = db_group_seq[g_id]
-                uow.client.table("groups").update({"current_member_sequence": seq}).eq("group_id", g_id).execute()
                 
-                new_code = f"{b_code}-{str(gn).zfill(2)}-{str(seq).zfill(3)}"
+            expected_code = f"{b_code}-{str(gn).zfill(2)}-{str(seq).zfill(3)}"
+                
+            # Match existing client by exact code OR by (name, group_id)
+            existing_c = existing_clients_by_code.get(expected_code) or existing_clients_by_name_and_group.get((f_name.lower(), str(g_id)))
+            
+            if existing_c:
+                c_id = existing_c['client_id']
+                retry_call(lambda: uow.client.table("clients").update({
+                    "name": f_name, "phone": phone, "address": address, "branch_id": b_id, 
+                    "officer_id": o_id, "group_id": g_id, "client_code": expected_code, "status": "Active"
+                }).eq("client_id", c_id).execute())
+            else:
                 c_id = str(uuid.uuid4())
                 new_c_data = {
                     "client_id": c_id, "name": f_name, "phone": phone, "address": address, "status": "Active",
-                    "client_code": new_code, "branch_id": b_id, "group_id": g_id, "officer_id": o_id
+                    "client_code": expected_code, "branch_id": b_id, "group_id": g_id, "officer_id": o_id
                 }
-                uow.client.table("clients").insert(new_c_data).execute()
-                existing_clients_by_name[f_name.lower()] = new_c_data
-                print(f"Created new client: {new_code} ({f_name})")
+                retry_call(lambda: uow.client.table("clients").insert(new_c_data).execute())
+                existing_clients_by_code[expected_code] = new_c_data
+                existing_clients_by_name_and_group[(f_name.lower(), str(g_id))] = new_c_data
+                print(f"Created new client: {expected_code} ({f_name}) in Group #{gn}")
                 
             # Client Memberships
             if (c_id, g_id) not in existing_memberships_set:
-                uow.client.table("client_memberships").insert({"client_id": c_id, "group_id": g_id}).execute()
+                retry_call(lambda: uow.client.table("client_memberships").insert({"client_id": c_id, "group_id": g_id}).execute())
                 existing_memberships_set.add((c_id, g_id))
                 
             # Member Opening Savings
             if pd.notna(s_bal) and float(s_bal) > 0:
-                is_res = uow.client.table("individual_savings").select("id").eq("client_id", c_id).eq("remarks", "Initial Onboarding Savings").execute()
+                is_res = retry_call(lambda: uow.client.table("individual_savings").select("id").eq("client_id", c_id).eq("remarks", "Initial Onboarding Savings").execute())
                 if not is_res.data:
-                    uow.client.table("individual_savings").insert({
+                    retry_call(lambda: uow.client.table("individual_savings").insert({
                         "id": str(uuid.uuid4()),
                         "client_id": c_id,
                         "posting_date": "1970-01-01",
@@ -205,8 +232,8 @@ def run_migration():
                         "withdrawal_amount": 0.0,
                         "reference": "ONBOARDING-MEMBER-OPENING",
                         "remarks": "Initial Onboarding Savings"
-                    }).execute()
-                    print(f"Posted Individual Savings: NGN {float(s_bal):,.2f} for {f_name}")
+                    }).execute())
+                    print(f"Posted Individual Savings: NGN {float(s_bal):,.2f} for {f_name} ({expected_code})")
             
             # Loans & Schedule
             if pd.notna(a_cred) and float(a_cred) > 0:
@@ -232,28 +259,28 @@ def run_migration():
                 expected_inst = float(a_cred) / duration if duration > 0 else 0
                 current_bal = float(c_bal) if pd.notna(c_bal) else float(a_cred)
                 
-                print(f"Setting up Loan for {f_name}: Product={prod.get('name')}, Active Credit={a_cred}, Bal={current_bal}, Duration={duration}")
+                print(f"Setting up Loan for {f_name} ({expected_code}): Product={prod.get('name')}, Active Credit={a_cred}, Bal={current_bal}, Duration={duration}")
                 
-                l_res = uow.client.table("loans").select("*").eq("client_id", c_id).eq("status", "Active").execute()
+                l_res = retry_call(lambda: uow.client.table("loans").select("*").eq("client_id", c_id).eq("status", "Active").execute())
                 if l_res.data:
                     loan_id = l_res.data[0]['loan_id']
-                    uow.client.table("loans").update({
+                    retry_call(lambda: uow.client.table("loans").update({
                         "total_due": current_bal, "active_credit": float(a_cred), "loan_amount": float(p_loan) if pd.notna(p_loan) else float(a_cred),
                         "loan_repay": round(expected_inst, 2),
                         "branch_id": b_id, "officer_id": o_id, "product_id": prod['product_id']
-                    }).eq("loan_id", loan_id).execute()
+                    }).eq("loan_id", loan_id).execute())
                 else:
                     loan_id = str(uuid.uuid4())
-                    uow.client.table("loans").insert({
+                    retry_call(lambda: uow.client.table("loans").insert({
                         "loan_id": loan_id, "client_id": c_id, "date": base_date.isoformat(),
                         "loan_amount": float(p_loan) if pd.notna(p_loan) else float(a_cred), "active_credit": float(a_cred),
                         "loan_repay": round(expected_inst, 2),
                         "total_due": current_bal, "status": "Active", "branch_id": b_id, "officer_id": o_id, "product_id": prod['product_id']
-                    }).execute()
+                    }).execute())
                     loans_created += 1
                 
                 # Generate repayment schedule starting NEXT meeting day (FP-008)
-                sch_res = uow.client.table("loan_schedule").select("id").eq("loan_id", loan_id).execute()
+                sch_res = retry_call(lambda: uow.client.table("loan_schedule").select("id").eq("loan_id", loan_id).execute())
                 if not sch_res.data and expected_inst > 0 and current_bal > 0:
                     remaining_count = math.ceil(current_bal / expected_inst)
                     
@@ -294,7 +321,7 @@ def run_migration():
                         if rem_bal <= 0: break
                         
                     if schedule_rows:
-                        uow.client.table("loan_schedule").insert(schedule_rows).execute()
+                        retry_call(lambda: uow.client.table("loan_schedule").insert(schedule_rows).execute())
                         schedules_created += len(schedule_rows)
                         print(f"  Generated {len(schedule_rows)} remaining schedule installments starting {schedule_rows[0]['due_date']}.")
 
