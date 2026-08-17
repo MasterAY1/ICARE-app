@@ -279,12 +279,40 @@ $$\text{ROLE} \longrightarrow \text{PAGE} \longrightarrow \text{METRIC} \longrig
 
 ---
 
-## 15. Cross-Page Root Cause Detection
+## 15. Cross-Page Root Cause Detection & Common Root Cause Status
 
 If a bug is discovered in one view:
 1. Search if the same source query/field is used in other views.
 2. If `loans.active_credit` or `ScheduleService.get_total_paid` is used in both CO Portfolio and BM Dashboard, report a **COMMON ROOT CAUSE**.
 3. Fix the underlying service/projection once, and verify all consuming views simultaneously.
+
+### Common Root Cause Status Taxonomy
+
+Every root cause identified during investigation must be classified using one of these statuses:
+
+```text
+NEW                    First time this root cause has been identified in any role/page.
+ALREADY_IDENTIFIED     Root cause was previously identified in another role's audit
+                       but has not yet been fixed.
+ALREADY_FIXED          Root cause was already fixed during a previous role/page audit.
+                       Current issue may be a different symptom of a related problem,
+                       or the current page may need to adopt the existing fix.
+REGRESSION_DETECTED    A previously fixed root cause has reappeared, indicating the
+                       fix was reverted, bypassed, or invalidated by a later change.
+SHARED_FIX_REQUIRED    Root cause affects multiple roles/pages and requires a single
+                       coordinated fix at the shared service/repository/projection
+                       layer rather than per-page patches.
+```
+
+### Cross-Role Root Cause Lookup Protocol
+
+Before classifying any root cause as `NEW`:
+1. Check the Fix History Records (Section 20) for prior fixes involving the same function, table, column, or service method.
+2. Check the System-Wide Verified Metric Registry (Section 21) for verified definitions that already govern this data source.
+3. If a match is found, classify as `ALREADY_IDENTIFIED`, `ALREADY_FIXED`, or `REGRESSION_DETECTED` accordingly.
+4. If the root cause spans multiple pages/roles that have not all been audited, classify as `SHARED_FIX_REQUIRED` and document every known consumer.
+
+**Rule**: Never apply a page-local patch to a root cause classified as `SHARED_FIX_REQUIRED`. Fix the authoritative shared source once.
 
 ---
 
@@ -371,13 +399,75 @@ STATUS:                 [FIXED]
 
 ---
 
-## 21. Metric Registry Lifecycle
+## 21. System-Wide Verified Metric Registry
+
+### Metric Lifecycle States
 
 Metrics progress through explicit lifecycle states:
 
 $$\text{UNKNOWN} \longrightarrow \text{UNDER\_INVESTIGATION} \longrightarrow \text{FIX\_PROPOSED} \longrightarrow \text{FIX\_APPROVED} \longrightarrow \text{FIXED} \longrightarrow \text{REGRESSION\_VERIFIED} \longrightarrow \mathbf{VERIFIED}$$
 
 *Rule*: Never mark a metric `VERIFIED` without verified test script execution.
+
+### Cross-Role Verified Metric Contract
+
+Once a metric's source, definition, and calculation have been **verified and fixed** during one role's audit, that verified contract becomes the **system-wide authoritative definition**.
+
+All subsequent role audits must **compare against the existing verified contract** rather than re-deriving the definition from scratch.
+
+#### Verified Metric Entry Format
+
+```text
+METRIC ID:              [e.g., COLLECTION_TODAY, OUTSTANDING_BALANCE, TOTAL_SAVINGS]
+DISPLAY NAME:           [e.g., "Collection Today", "Outstanding Balance"]
+BUSINESS DEFINITION:    [Exact ICARE business meaning]
+AUTHORITATIVE SOURCE:   [e.g., repayments table filtered by date, financial_ledger_entries Account 1000]
+AUTHORITATIVE SERVICE:  [e.g., PortfolioService.get_portfolio_data_for_scope]
+CALCULATION:            [Exact formula]
+DATE RULE:              [e.g., operational business date, period filter]
+SCOPE RULE:             [e.g., branch_id filter, officer_id filter]
+VERIFIED BY:            [Role and page where verification occurred]
+VERIFICATION DATE:      [YYYY-MM-DD]
+TEST SCRIPT:            [e.g., scratch/test_collection_today.py]
+
+ROLE STATUS:
+  CO:       [✅ VERIFIED | 🔎 UNDER_INVESTIGATION | ⬜ NOT_AUDITED]
+  BM:       [✅ VERIFIED | 🔎 UNDER_INVESTIGATION | ⬜ NOT_AUDITED]
+  AM:       [⬜ NOT_AUDITED]
+  Admin:    [⬜ NOT_AUDITED]
+  Director: [⬜ NOT_AUDITED]
+```
+
+#### Cross-Role Comparison Protocol
+
+When auditing a metric on a new role (e.g., BM) that has already been verified on a previous role (e.g., CO):
+
+1. **Retrieve the verified contract** from the registry.
+2. **Trace the new role's implementation** through its own UI → Service → Repository pipeline.
+3. **Compare**:
+   - Does the BM implementation use the **same authoritative source**?
+   - Does it use the **same calculation formula**?
+   - Is the only difference the **RBAC scope** (branch-level vs officer-level)?
+4. **If the BM implementation matches** the verified contract (with appropriate scope differences): mark BM as `✅ VERIFIED`.
+5. **If the BM implementation diverges**: flag as a `METRIC DEFINITION CONFLICT` and classify the root cause:
+   - `NEW` — BM has a genuinely different bug not seen before.
+   - `ALREADY_FIXED` — The fix applied during CO audit should also apply to BM but was not propagated.
+   - `SHARED_FIX_REQUIRED` — Both roles consume a shared service that needs a single coordinated fix.
+   - `REGRESSION_DETECTED` — A previous fix was undone or bypassed.
+
+#### Definition Lock Rule
+
+Once a metric reaches `✅ VERIFIED` status on **any** role:
+- Its `BUSINESS DEFINITION`, `AUTHORITATIVE SOURCE`, and `CALCULATION` are **locked**.
+- No subsequent role audit may introduce a conflicting definition without explicit user approval.
+- If a legitimate business reason exists for role-specific variations (e.g., different aggregation granularity), document it as a **ROLE-SPECIFIC VARIANT** with a distinct `METRIC ID` (e.g., `COLLECTION_TODAY_BRANCH` vs `COLLECTION_TODAY_OFFICER`).
+
+#### Preventing Duplicate Definitions
+
+The registry serves as a **single source of truth for metric definitions**:
+- Before writing any new calculation for a metric, search the registry.
+- If a verified entry exists, adopt it.
+- If the verified entry is wrong, escalate — do not silently create a second definition.
 
 ---
 
@@ -480,6 +570,10 @@ For every metric audit, return this exact structure:
 ## 7. ROOT CAUSE
 [Precise technical and business root cause]
 
+## 7b. COMMON ROOT CAUSE STATUS
+[NEW | ALREADY_IDENTIFIED | ALREADY_FIXED | REGRESSION_DETECTED | SHARED_FIX_REQUIRED]
+[If not NEW: reference the prior Fix ID, role, page, and date where this was first identified/fixed]
+
 ## 8. AUTHORITATIVE SOURCE
 [The true source of truth for this metric]
 
@@ -512,6 +606,18 @@ For every metric audit, return this exact structure:
 
 ## 18. CROSS-ROLE IMPACT
 [Impact on CO, BM, AM, Admin, and Director views]
+
+## 18b. VERIFIED METRIC COMPARISON
+[If this metric has a verified contract from a previous role audit, compare here:]
+- Verified Contract METRIC ID: [e.g., OUTSTANDING_BALANCE]
+- Verified on: [e.g., CO Portfolio, 2026-08-16]
+- Same authoritative source? [YES / NO — explain divergence]
+- Same calculation formula? [YES / NO — explain divergence]
+- RBAC scope difference only? [YES / NO]
+- Verdict: [MATCHES_VERIFIED_CONTRACT | DEFINITION_CONFLICT | NOT_YET_VERIFIED]
+
+## 18c. METRIC REGISTRY UPDATE
+[After fix is applied and verified, provide the updated registry entry for this metric per Section 21]
 
 ## 19. APPROVAL STATUS
 **WAITING FOR APPROVAL**
