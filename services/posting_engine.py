@@ -22,10 +22,22 @@ class FinancialPostingEngine:
     def _resolve_officer_id(uow: UnitOfWork, username: str) -> Optional[str]:
         if not username:
             return None
+        import uuid
+        try:
+            uuid.UUID(str(username))
+            return str(username)
+        except ValueError:
+            pass
         try:
             res = uow.client.table("app_users").select("id").eq("username", username).execute()
             if res.data:
                 return res.data[0]["id"]
+            res_f = uow.client.table("app_users").select("id").eq("full_name", username).execute()
+            if res_f.data:
+                return res_f.data[0]["id"]
+            res_il = uow.client.table("app_users").select("id").ilike("full_name", f"%{username}%").execute()
+            if res_il.data:
+                return res_il.data[0]["id"]
         except Exception as e:
             raise ValueError(f"Failed to resolve officer '{username}': {str(e)}")
         raise ValueError(f"Officer '{username}' not found.")

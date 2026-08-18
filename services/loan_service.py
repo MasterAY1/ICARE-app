@@ -244,3 +244,46 @@ class LoanService:
             print(f"[SAVINGS TRACE] Deferred cashbook rebuild failed: {ex}")
 
         return loan
+
+    @staticmethod
+    def approve_and_disburse_loan(uow: SupabaseUnitOfWork, loan_id: str, approved_by: str) -> Loan:
+        """
+        BM approves and disburses a pending loan application:
+        1. Loads the pending Loan domain entity.
+        2. Executes atomic disbursement via disburse_loan(uow, loan).
+        """
+        loan = uow.loans.get_by_id(loan_id)
+        if not loan:
+            res = uow.client.table("loans").select("*, clients(name, client_code), loan_products(name), branches(name), app_users(username)").eq("loan_id", loan_id).execute()
+            if res.data:
+                from mappers.base_mappers import LoanMapper
+                loan = LoanMapper.to_domain(res.data[0])
+            else:
+                raise ValueError(f"Loan application with ID {loan_id} not found.")
+
+        return LoanService.disburse_loan(uow, loan)
+
+    @staticmethod
+    def reject_loan(uow: SupabaseUnitOfWork, loan_id: str, rejected_by: str, reason: str = "") -> None:
+        """
+        BM rejects a pending loan application:
+        1. Updates loans table status to 'Rejected'.
+        2. Transitions client lifecycle status back to 'Registered'.
+        """
+        uow.loans.reject(loan_id)
+
+        res = uow.client.table("loans").select("client_id").eq("loan_id", loan_id).execute()
+        if res.data and res.data[0].get("client_id"):
+            cid = res.data[0]["client_id"]
+            try:
+                from services.client_status_service import ClientStatusService
+                ClientStatusService.transition_status(
+                    uow=uow,
+                    client_id=cid,
+                    new_status_name="Registered",
+                    changed_by=rejected_by,
+                    reason=f"Loan application rejected by BM: {reason or 'Not approved'}",
+                    trigger_type="MANUAL"
+                )
+            except Exception as st_err:
+                print(f"[LOAN TRACE] Failed to update client status on rejection: {st_err}")

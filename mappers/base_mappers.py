@@ -88,7 +88,7 @@ class LoanMapper:
             extra.update(dto.get("extra_fields"))
 
         loan_id = str(dto.get("loan_id", dto.get("id") or ""))
-        client_id = c_dto.get("client_code") or str(dto.get("client_id", ""))
+        client_id = str(dto.get("client_id") or c_dto.get("client_id") or "")
         client_name = c_dto.get("name") or dto.get("client_name", "")
 
         return Loan(

@@ -2035,30 +2035,49 @@ if page == "Dashboard":
             st.caption("Branch Daily Operations, Officer Status, & Approvals")
             bm_data = DashboardService.get_bm_dashboard_data(uow, BRANCH, branch_id=BRANCH_ID)
 
-            # Section F: Approval Queue
-            p_loans = bm_data["approval_queue"]
+            # Section F: Approval Queue (Pending Loan Approvals)
+            p_loans = bm_data.get("approval_queue", [])
             if p_loans:
                 st.markdown("#### ⏳ Pending Loan Approvals")
                 for pl in p_loans:
                     c_name = pl.get("clients", {}).get("name", "Unknown Client") if pl.get("clients") else pl.get("client_name", "Unknown Client")
                     c_code = pl.get("clients", {}).get("client_code") if pl.get("clients") and pl.get("clients").get("client_code") else pl.get("client_id", "")[:8]
                     loan_amt = float(pl.get("loan_amount", 0))
-                    prod = pl.get("loan_products", {}).get("name", "Unknown Product") if pl.get("loan_products") else pl.get("loan_product", "Unknown Product")
+                    prod = pl.get("loan_products", {}).get("name", "Standard") if pl.get("loan_products") else pl.get("loan_product", "Standard")
                     officer = pl.get("app_users", {}).get("username", "Unknown Officer") if pl.get("app_users") else "Unknown Officer"
+                    pl_id = pl["loan_id"]
 
-                    col_app1, col_app2, col_app3 = st.columns([3, 1, 1])
-                    col_app1.markdown(f"👤 **{c_name}** ({c_code}) applied for **₦{loan_amt:,.0f}** ({prod}) — Officer: **{officer}**")
-                    if col_app2.button("Approve", key=f"app_{pl['loan_id']}"):
-                        with SupabaseUnitOfWork() as uow_app:
-                            uow_app.loans.approve(pl['loan_id'])
-                        st.success(f"Loan approved for {c_name}!")
-                        st.rerun()
-                    if col_app3.button("Reject", key=f"rej_{pl['loan_id']}", type="primary"):
-                        with SupabaseUnitOfWork() as uow_app:
-                            uow_app.loans.reject(pl['loan_id'])
-                        st.success(f"Loan rejected for {c_name}!")
-                        st.rerun()
-                st.divider()
+                    with st.container(border=True):
+                        col_info, col_amt, col_acts = st.columns([3, 2, 2])
+                        with col_info:
+                            st.markdown(f"**👤 {c_name}** `{c_code}`")
+                            st.caption(f"🏷️ Product: **{prod}** &nbsp;|&nbsp; 🧑‍💼 Officer: **{officer}**")
+                        with col_amt:
+                            st.markdown(f"<div style='font-size: 1.15rem; font-weight: 700; color: #0f172a;'>₦{loan_amt:,.2f}</div>", unsafe_allow_html=True)
+                            st.caption("Requested Principal")
+                        with col_acts:
+                            act_col1, act_col2 = st.columns(2)
+                            with act_col1:
+                                if st.button("✅ Approve", key=f"app_{pl_id}", type="primary", use_container_width=True):
+                                    try:
+                                        from services.loan_service import LoanService
+                                        with SupabaseUnitOfWork() as uow_app:
+                                            LoanService.approve_and_disburse_loan(uow_app, pl_id, USER)
+                                        st.success(f"✅ Loan approved & disbursed for {c_name}!")
+                                        st.rerun()
+                                    except Exception as ex:
+                                        st.error(f"❌ Disbursement failed: {str(ex)}")
+                            with act_col2:
+                                if st.button("❌ Reject", key=f"rej_{pl_id}", type="secondary", use_container_width=True):
+                                    try:
+                                        from services.loan_service import LoanService
+                                        with SupabaseUnitOfWork() as uow_app:
+                                            LoanService.reject_loan(uow_app, pl_id, USER, "Rejected by BM")
+                                        st.success(f"Loan rejected for {c_name}.")
+                                        st.rerun()
+                                    except Exception as ex:
+                                        st.error(f"❌ Rejection failed: {str(ex)}")
+                st.markdown("<br>", unsafe_allow_html=True)
 
             # Section G: Withdrawal Approval Queue
             res_wr = uow.client.table("withdrawal_requests").select("*").eq("branch_id", BRANCH_ID).eq("status", "PENDING").order("created_at", desc=False).execute()
@@ -2073,91 +2092,95 @@ if page == "Dashboard":
                     wr_name = wr["client_name"]
                     wr_by = wr["requested_by"]
                     wr_remarks = wr.get("remarks") or ""
-                    wr_date = wr["created_at"][:10]
+                    wr_date = str(wr.get("created_at", ""))[:10]
 
-                    st.markdown(f"**{wr_type} — {wr_op}** | ₦{wr_amt:,.2f} | {wr_name} | Requested by: {wr_by} | {wr_date}")
-                    if wr_remarks:
-                        st.caption(f"  ↳ {wr_remarks}")
+                    with st.container(border=True):
+                        wcol_info, wcol_amt, wcol_acts = st.columns([3, 2, 2])
+                        with wcol_info:
+                            st.markdown(f"**🐷 {wr_name}** — `{wr_type}`")
+                            st.caption(f"⚙️ Op: **{wr_op}** &nbsp;|&nbsp; 🧑‍💼 Req By: **{wr_by}** &nbsp;|&nbsp; 📅 **{wr_date}**")
+                            if wr_remarks:
+                                st.caption(f"📝 *{wr_remarks}*")
+                        with wcol_amt:
+                            st.markdown(f"<div style='font-size: 1.15rem; font-weight: 700; color: #b91c1c;'>₦{wr_amt:,.2f}</div>", unsafe_allow_html=True)
+                            st.caption("Withdrawal Amount")
+                        with wcol_acts:
+                            wact_col1, wact_col2 = st.columns(2)
+                            with wact_col1:
+                                if st.button("✅ Approve", key=f"approve_wr_{wr_id}", type="primary", use_container_width=True):
+                                    try:
+                                        from services.savings_service import SavingsService
+                                        with SupabaseUnitOfWork() as uow_wr:
+                                            if wr_op == "Cash Withdrawal":
+                                                if wr_type == "Individual":
+                                                    SavingsService.post_individual_savings(
+                                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                        branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                                    )
+                                                elif wr_type == "Group":
+                                                    SavingsService.post_group_savings(
+                                                        uow=uow_wr, group_name=wr.get("group_name") or wr_name, branch=BRANCH,
+                                                        officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                                    )
+                                                elif wr_type == "Misc":
+                                                    SavingsService.post_misc_savings(
+                                                        uow=uow_wr, client_id=wr.get("client_id") or "", client_name=wr_name,
+                                                        branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                                    )
+                                            elif wr_op == "Loan Offset":
+                                                source_type = "IndividualSavings" if wr_type == "Individual" else "GroupSavings"
+                                                SavingsService.post_loan_offset_from_savings(
+                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                    loan_id=wr.get("loan_id"), source_savings_type=source_type,
+                                                    branch=BRANCH, officer=wr_by, amount=wr_amt,
+                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                                )
+                                            elif wr_op == "LAPS Transfer":
+                                                source_type = "IndividualSavings" if wr_type == "Individual" else "GroupSavings"
+                                                SavingsService.transfer_to_laps(
+                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                    source_savings_type=source_type, branch=BRANCH, officer=wr_by, amount=wr_amt,
+                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                                )
+                                            elif wr_op == "LAPS Payout":
+                                                cash_paid = (wr.get("payout_method") or "Cash") == "Cash"
+                                                SavingsService.pay_laps(
+                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                    branch=BRANCH, officer=wr_by, amount=wr_amt, cash_paid=cash_paid,
+                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                                )
 
-                    wa_col1, wa_col2, wa_col3 = st.columns([2, 1, 1])
+                                            uow_wr.client.table("withdrawal_requests").update({
+                                                "status": "APPROVED",
+                                                "approved_by": USER,
+                                                "approved_at": datetime.now().isoformat()
+                                            }).eq("id", wr_id).execute()
 
-                    if wa_col2.button("✅ Approve", key=f"approve_wr_{wr_id}"):
-                        try:
-                            from services.savings_service import SavingsService
-                            with SupabaseUnitOfWork() as uow_wr:
-                                # Execute the actual withdrawal based on type
-                                if wr_op == "Cash Withdrawal":
-                                    if wr_type == "Individual":
-                                        SavingsService.post_individual_savings(
-                                            uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                            branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
-                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
-                                        )
-                                    elif wr_type == "Group":
-                                        SavingsService.post_group_savings(
-                                            uow=uow_wr, group_name=wr.get("group_name") or wr_name, branch=BRANCH,
-                                            officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
-                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
-                                        )
-                                    elif wr_type == "Misc":
-                                        SavingsService.post_misc_savings(
-                                            uow=uow_wr, client_id=wr.get("client_id") or "", client_name=wr_name,
-                                            branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
-                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
-                                        )
-                                elif wr_op == "Loan Offset":
-                                    source_type = "IndividualSavings" if wr_type == "Individual" else "GroupSavings"
-                                    SavingsService.post_loan_offset_from_savings(
-                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                        loan_id=wr.get("loan_id"), source_savings_type=source_type,
-                                        branch=BRANCH, officer=wr_by, amount=wr_amt,
-                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
-                                    )
-                                elif wr_op == "LAPS Transfer":
-                                    source_type = "IndividualSavings" if wr_type == "Individual" else "GroupSavings"
-                                    SavingsService.transfer_to_laps(
-                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                        source_savings_type=source_type, branch=BRANCH, officer=wr_by, amount=wr_amt,
-                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
-                                    )
-                                elif wr_op == "LAPS Payout":
-                                    cash_paid = (wr.get("payout_method") or "Cash") == "Cash"
-                                    SavingsService.pay_laps(
-                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                        branch=BRANCH, officer=wr_by, amount=wr_amt, cash_paid=cash_paid,
-                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
-                                    )
+                                        st.success(f"✅ Withdrawal approved and executed! (₦{wr_amt:,.2f} — {wr_name})")
+                                        st.rerun()
+                                    except Exception as ex:
+                                        st.error(f"❌ Approval failed: {str(ex)}")
+                            with wact_col2:
+                                if st.button("❌ Reject", key=f"reject_wr_{wr_id}", type="secondary", use_container_width=True):
+                                    st.session_state[f"rejecting_{wr_id}"] = True
 
-                                # Mark as approved
-                                uow_wr.client.table("withdrawal_requests").update({
-                                    "status": "APPROVED",
+                        if st.session_state.get(f"rejecting_{wr_id}"):
+                            st.divider()
+                            reject_reason = st.text_input("Rejection Reason", key=f"rej_reason_{wr_id}", placeholder="Why is this being rejected?")
+                            if st.button("Confirm Rejection", key=f"confirm_rej_{wr_id}", type="primary"):
+                                uow.client.table("withdrawal_requests").update({
+                                    "status": "REJECTED",
                                     "approved_by": USER,
-                                    "approved_at": datetime.now().isoformat()
+                                    "approved_at": datetime.now().isoformat(),
+                                    "rejection_reason": reject_reason or "Rejected by BM"
                                 }).eq("id", wr_id).execute()
-
-                            st.success(f"✅ Withdrawal approved and executed! (₦{wr_amt:,.2f} — {wr_name})")
-                            st.rerun()
-                        except Exception as ex:
-                            st.error(f"❌ Approval failed: {str(ex)}")
-
-                    if wa_col3.button("❌ Reject", key=f"reject_wr_{wr_id}"):
-                        st.session_state[f"rejecting_{wr_id}"] = True
-
-                    if st.session_state.get(f"rejecting_{wr_id}"):
-                        reject_reason = wa_col1.text_input("Rejection Reason", key=f"rej_reason_{wr_id}", placeholder="Why is this being rejected?")
-                        if wa_col1.button("Confirm Rejection", key=f"confirm_rej_{wr_id}"):
-                            uow.client.table("withdrawal_requests").update({
-                                "status": "REJECTED",
-                                "approved_by": USER,
-                                "approved_at": datetime.now().isoformat(),
-                                "rejection_reason": reject_reason or "Rejected by BM"
-                            }).eq("id", wr_id).execute()
-                            st.session_state[f"rejecting_{wr_id}"] = False
-                            st.success(f"Withdrawal request rejected for {wr_name}.")
-                            st.rerun()
-
-                    st.markdown("---")
-                st.divider()
+                                st.session_state[f"rejecting_{wr_id}"] = False
+                                st.success(f"Withdrawal request rejected for {wr_name}.")
+                                st.rerun()
+                st.markdown("<br>", unsafe_allow_html=True)
 
             # Section H: Error Correction Queue
             res_corr = uow.client.table("correction_requests").select("*").eq("branch_id", BRANCH_ID).eq("status", "Pending").order("created_at", desc=False).execute()
@@ -5997,25 +6020,47 @@ elif page == "Dashboard":
     if ROLE in ['BM', ROLE_BRANCH_MANAGER] and ROLE not in ["Director", "Executive"]:
         try:
             with SupabaseUnitOfWork() as uow_bm_app:
-                p_loans = uow_bm_app.client.table("loans").select("*, clients(name)").eq("branch_id", BRANCH_ID).eq("status", "Pending").execute()
+                p_loans = uow_bm_app.client.table("loans").select("*, clients(name, client_code), loan_products(name), app_users(username)").eq("branch_id", BRANCH_ID).eq("status", "Pending").execute()
                 if p_loans and p_loans.data:
                     st.markdown("#### ⏳ Pending Loan Approvals Queue")
                     for pl in p_loans.data:
-                        c_name = pl.get("clients", {}).get("name") if pl.get("clients") else pl.get("client_name")
+                        c_name = pl.get("clients", {}).get("name") if pl.get("clients") else pl.get("client_name", "Unknown Client")
+                        c_code = pl.get("clients", {}).get("client_code") if pl.get("clients") and pl.get("clients").get("client_code") else pl.get("client_id", "")[:8]
                         loan_amt = float(pl.get("loan_amount", 0))
-                        prod = pl.get("loan_product")
-                        col_app1, col_app2, col_app3 = st.columns([3, 1, 1])
-                        col_app1.markdown(f"👤 **{c_name}** applied for **₦{loan_amt:,.2f}** ({prod})")
-                        if col_app2.button("Approve", key=f"app_{pl['loan_id']}"):
-                            with SupabaseUnitOfWork() as uow_app:
-                                uow_app.loans.approve(pl['loan_id'])
-                            st.success(f"Loan approved for {c_name}!")
-                            st.rerun()
-                        if col_app3.button("Reject", key=f"rej_{pl['loan_id']}", type="primary"):
-                            with SupabaseUnitOfWork() as uow_app:
-                                uow_app.loans.reject(pl['loan_id'])
-                            st.success(f"Loan rejected for {c_name}!")
-                            st.rerun()
+                        prod = pl.get("loan_products", {}).get("name", "Standard") if pl.get("loan_products") else pl.get("loan_product", "Standard")
+                        officer = pl.get("app_users", {}).get("username", "Unknown Officer") if pl.get("app_users") else "Unknown Officer"
+                        pl_id = pl["loan_id"]
+
+                        with st.container(border=True):
+                            col_info, col_amt, col_acts = st.columns([3, 2, 2])
+                            with col_info:
+                                st.markdown(f"**👤 {c_name}** `{c_code}`")
+                                st.caption(f"🏷️ Product: **{prod}** &nbsp;|&nbsp; 🧑‍💼 Officer: **{officer}**")
+                            with col_amt:
+                                st.markdown(f"<div style='font-size: 1.15rem; font-weight: 700; color: #0f172a;'>₦{loan_amt:,.2f}</div>", unsafe_allow_html=True)
+                                st.caption("Requested Principal")
+                            with col_acts:
+                                act_col1, act_col2 = st.columns(2)
+                                with act_col1:
+                                    if st.button("✅ Approve", key=f"app_leg_{pl_id}", type="primary", use_container_width=True):
+                                        try:
+                                            from services.loan_service import LoanService
+                                            with SupabaseUnitOfWork() as uow_app:
+                                                LoanService.approve_and_disburse_loan(uow_app, pl_id, USER)
+                                            st.success(f"✅ Loan approved & disbursed for {c_name}!")
+                                            st.rerun()
+                                        except Exception as ex:
+                                            st.error(f"❌ Disbursement failed: {str(ex)}")
+                                with act_col2:
+                                    if st.button("❌ Reject", key=f"rej_leg_{pl_id}", type="secondary", use_container_width=True):
+                                        try:
+                                            from services.loan_service import LoanService
+                                            with SupabaseUnitOfWork() as uow_app:
+                                                LoanService.reject_loan(uow_app, pl_id, USER, "Rejected by BM")
+                                            st.success(f"Loan rejected for {c_name}.")
+                                            st.rerun()
+                                        except Exception as ex:
+                                            st.error(f"❌ Rejection failed: {str(ex)}")
         except Exception:
             pass
 

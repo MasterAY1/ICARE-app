@@ -177,6 +177,16 @@ class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
         res = self._execute(query)
         return [LoanMapper.to_domain(d) for d in res.data]
 
+    def get_by_id(self, id: str) -> Optional[Loan]:
+        query = self.client.table(self.table_name).select(self.columns).eq("loan_id", id)
+        res = self._execute(query)
+        record = self._single_or_none(res.data)
+        if not record:
+            query_c = self.client.table(self.table_name).select(self.columns).eq("client_id", id)
+            res_c = self._execute(query_c)
+            record = self._single_or_none(res_c.data)
+        return LoanMapper.to_domain(record) if record else None
+
     def create(self, entity: Loan) -> Loan:
         data = self._prepare_db_data(entity)
         if "loan_id" in data and not data["loan_id"]:
