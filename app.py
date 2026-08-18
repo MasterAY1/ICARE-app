@@ -2602,7 +2602,8 @@ elif page == "Loan Origination":
                                     branch_id=branch_id,
                                     group_id=final_group_id,
                                     officer_id=uow.loans._resolve_officer_id(USER),
-                                    status="Active",
+                                    status="11111111-1111-1111-1111-111111110001",
+                                    status_id="11111111-1111-1111-1111-111111110001",
                                     average_monthly_income=float(raw_inc or 0.0),
                                     other_obligations=st.session_state.get("reg_client_obligations")
                                 )
@@ -4022,17 +4023,20 @@ elif page == "Collections":
         with SupabaseUnitOfWork() as uow:
             target_officer_id = uow.loans._resolve_officer_id(target_co)
             if ROLE in ["BM", ROLE_BRANCH_MANAGER]:
-                res_c = uow.client.table("clients").select("client_id, client_code, name, status, group_id, groups(name), client_memberships(groups(name))").eq("branch_id", BRANCH_ID).eq("status", "Active").execute()
+                res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").eq("branch_id", BRANCH_ID).execute()
             elif ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
-                res_c = uow.client.table("clients").select("client_id, client_code, name, status, group_id, groups(name), client_memberships(groups(name))").in_("branch_id", ASSIGNED_BRANCH_IDS).eq("status", "Active").execute()
+                res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").in_("branch_id", ASSIGNED_BRANCH_IDS).execute()
             elif ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
-                res_c = uow.client.table("clients").select("client_id, client_code, name, status, group_id, groups(name), client_memberships(groups(name))").eq("status", "Active").execute()
+                res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").execute()
             else:
-                res_c = uow.client.table("clients").select("client_id, client_code, name, status, group_id, groups(name), client_memberships(groups(name))").eq("officer_id", target_officer_id).eq("status", "Active").execute()
+                res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").eq("officer_id", target_officer_id).execute()
                 
         clients_data = []
         if res_c.data:
             for c in res_c.data:
+                c_stat = (c.get("client_statuses") or {}).get("name") if isinstance(c.get("client_statuses"), dict) else c.get("status")
+                if c_stat in ["Closed", "Suspended"]:
+                    continue
                 g_name = (c.get("groups") or {}).get("name") if isinstance(c.get("groups"), dict) else None
                 if not g_name:
                     m_list = c.get("client_memberships") or []
@@ -4742,7 +4746,7 @@ elif page == "Withdrawal Operations":
             co_filter = st.selectbox("👤 Filter by Credit Officer", list(officers_map.keys()), key="wth_ind_co_filter")
             selected_officer_id = officers_map[co_filter]
             
-            query = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id, groups(name))").eq("status", "Active")
+            query = uow.client.table("clients").select("client_id, client_code, name, status, status_id, client_memberships(group_id, groups(name)), client_statuses(name)")
             if ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
                 query = query.in_("branch_id", ASSIGNED_BRANCH_IDS)
             elif ROLE in ["BM", "Branch Manager", ROLE_BRANCH_MANAGER]:
@@ -4753,11 +4757,14 @@ elif page == "Withdrawal Operations":
             res_c = query.execute()
         else:
             officer_id = uow.loans._resolve_officer_id(USER) or getattr(current_user, 'id', USER_ID)
-            res_c = uow.client.table("clients").select("client_id, client_code, name, client_memberships(group_id, groups(name))").eq("officer_id", officer_id).eq("status", "Active").execute()
+            res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, client_memberships(group_id, groups(name)), client_statuses(name)").eq("officer_id", officer_id).execute()
 
-        # Build group list from the CO's own clients
+        # Build group list from the CO's own active relationship clients
         co_groups = {}
-        all_clients = res_c.data or []
+        all_clients = [
+            c for c in (res_c.data or []) 
+            if ((c.get("client_statuses") or {}).get("name") if isinstance(c.get("client_statuses"), dict) else c.get("status")) not in ["Closed", "Suspended"]
+        ]
         for c in all_clients:
             memberships = c.get("client_memberships") or []
             if isinstance(memberships, dict):
