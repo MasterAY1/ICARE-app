@@ -453,6 +453,8 @@ class DashboardService:
                 grp_map[g_name]["Collected"] += c_paid
 
                 c_info = l.get("clients") or {}
+                c_name = c_info.get("name") or l.get("client_name") or "Unknown Client"
+                c_code = c_info.get("client_code") or l.get("client_code") or "N/A"
                 act_cred = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
                 tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
                 tot_paid_loan = co_lifetime_reps_map.get(str(l.get("loan_id") or ""), 0.0)
@@ -473,8 +475,7 @@ class DashboardService:
                     part_paid_amt += (repay_amt - c_paid)
                     grp_map[g_name]["Clients Paid"] += 1
                     attention_rows.append({
-                        "ID": cid,
-                        "Client ID": c_info.get("client_code") or "N/A",
+                        "Client Code": c_code,
                         "Client Name": c_name,
                         "Group": g_name,
                         "Expected": repay_amt,
@@ -487,8 +488,7 @@ class DashboardService:
                     not_paid_amt += repay_amt
                     grp_map[g_name]["Clients Not Paid"] += 1
                     attention_rows.append({
-                        "ID": cid,
-                        "Client ID": c_info.get("client_code") or "N/A",
+                        "Client Code": c_code,
                         "Client Name": c_name,
                         "Group": g_name,
                         "Expected": repay_amt,
@@ -496,8 +496,8 @@ class DashboardService:
                         "Outstanding": repay_amt,
                         "Reason": "Not Paid"
                     })
-            except Exception:
-                pass
+            except Exception as ex:
+                print(f"[CO DASHBOARD TRACE] Error processing loan for attention list: {ex}")
 
         for g in grp_map.values():
             exp = g["Expected Collection"]
