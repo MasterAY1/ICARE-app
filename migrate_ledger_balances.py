@@ -8,7 +8,6 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from database.repositories.unit_of_work import SupabaseUnitOfWork
-from services.cashbook_service import CashbookService
 
 def map_excel_to_cashbook_columns(amount_dict):
     """Maps the human-readable Excel labels to master_cashbook columns."""
@@ -88,7 +87,7 @@ def migrate_ledger_balances(excel_path):
     # 3. Post to Database
     with SupabaseUnitOfWork() as uow:
         # Resolve Branch ID
-        b_res = uow.client.table("branches").select("branch_id").eq("branch_name", branch_name).execute()
+        b_res = uow.client.table("branches").select("branch_id").eq("name", branch_name).execute()
         if not b_res.data:
             print(f"Error: Branch '{branch_name}' not found in database.")
             return

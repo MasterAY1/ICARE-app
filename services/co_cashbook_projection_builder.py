@@ -27,8 +27,14 @@ class CoCashbookProjectionBuilder:
         try:
             res_prev = uow.client.table("co_cashbooks").select("closing_balance") \
                 .eq("branch_id", branch_id).eq("officer_id", officer_id).eq("date", prev_date_str).execute()
-            if res_prev.data:
+            if res_prev.data and res_prev.data[0].get("closing_balance") is not None:
                 opening_bal = float(res_prev.data[0]["closing_balance"] or 0.0)
+            else:
+                # If no previous day closing balance exists (day 1 / fresh bootstrap / test data), preserve existing opening balance in co_cashbooks
+                res_curr = uow.client.table("co_cashbooks").select("opening_balance") \
+                    .eq("branch_id", branch_id).eq("officer_id", officer_id).eq("date", p_date_str).execute()
+                if res_curr.data and res_curr.data[0].get("opening_balance") is not None:
+                    opening_bal = float(res_curr.data[0]["opening_balance"] or 0.0)
         except Exception:
             pass
 
@@ -223,30 +229,45 @@ class CoCashbookProjectionBuilder:
 
         # 4. Fetch Active Loans originated today by this CO (BR-CASH-001 & BR-CASH-003)
         try:
-            res_loans = uow.client.table("loans").select("loan_amount, active_credit, product_category, loan_products(repayment_cycle, product_category)") \
+            res_loans = uow.client.table("loans").select("loan_amount, active_credit, product_type, product_category, loan_products(name, repayment_cycle, product_category)") \
                 .eq("officer_id", officer_id).eq("branch_id", branch_id) \
                 .gte("created_at", f"{p_date_str}T00:00:00").lte("created_at", f"{p_date_str}T23:59:59") \
                 .in_("status", ["Active", "Approved", "Completed"]).execute()
             for l in (res_loans.data or []):
                 act_cr = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
+                orig_amt = float(l.get("loan_amount") or act_cr)
                 prod_data = l.get("loan_products") or {}
-                cycle = prod_data.get("repayment_cycle", "Weekly")
+                p_name = str(prod_data.get("name") or l.get("product_type") or "").lower()
+                cycle = prod_data.get("repayment_cycle") or ("Daily" if "daily" in p_name else "Weekly")
                 cat = prod_data.get("product_category") or l.get("product_category", "Finance")
 
-                if cycle == "Daily":
-                    daily_active += act_cr
-                elif cycle == "Weekly":
-                    weekly_active += act_cr
-                elif cycle == "Monthly":
-                    monthly_active += act_cr
-                else:
-                    weekly_active += act_cr
+                is_cc = "cash and carry" in p_name or "cash & carry" in p_name
 
-                # Asset loans enter as Asset Credit Sales on Left, Cash loans enter as Bank Withdrawal
-                if cat == "Asset" or "asset" in str(l.get("product_category", "")).lower():
-                    asset_credit_sales += act_cr
+                if is_cc:
+                    # Cash and Carry is an outright asset sale, not a term active credit loan
+                    cash_and_carry += orig_amt
+                elif cat == "Asset" or "asset" in str(l.get("product_category", "")).lower():
+                    # Asset credit sales enters on Left with the original asset value
+                    asset_credit_sales += orig_amt
+                    if cycle == "Daily":
+                        daily_active += act_cr
+                    elif cycle == "Weekly":
+                        weekly_active += act_cr
+                    elif cycle == "Monthly":
+                        monthly_active += act_cr
+                    else:
+                        weekly_active += act_cr
                 else:
-                    bank_withdrawal += act_cr
+                    # Finance cash loans enter on Left under Bank Withdrawal
+                    bank_withdrawal += orig_amt
+                    if cycle == "Daily":
+                        daily_active += act_cr
+                    elif cycle == "Weekly":
+                        weekly_active += act_cr
+                    elif cycle == "Monthly":
+                        monthly_active += act_cr
+                    else:
+                        weekly_active += act_cr
         except Exception:
             pass
 

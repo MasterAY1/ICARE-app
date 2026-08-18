@@ -6661,6 +6661,93 @@ elif page == "CO Cashbook":
         closing_bal = left_total - right_total
 
     # ========================================================
+    # END OF DAY & GLOBAL COLLECTIONS INPUT FORM
+    # ========================================================
+    st.markdown("### 📤 End of Day / Global Outflows & Additional Collections")
+    st.caption("Log your daily branch expenses, bank deposits, passbook fees, credit form fees, and cash adjustments.")
+    
+    with st.form("eod_form"):
+        out_0, out_1, out_2 = st.columns(3)
+        global_opening = out_0.number_input("Opening Balance (B/F Cash)", min_value=0.0, step=500.0, value=bf_cash if bf_cash > 0 else None, placeholder="0", key="co_eod_opening")
+        global_expenses = out_1.number_input("Office Expenses", min_value=0.0, step=500.0, value=t_exp if t_exp > 0 else None, placeholder="0", key="co_eod_expenses")
+        global_bank_dep = out_2.number_input("Bank Deposited", min_value=0.0, step=500.0, value=t_bdep if t_bdep > 0 else None, placeholder="0", key="co_eod_bank_dep")
+        
+        st.markdown("---")
+        st.markdown("##### 💳 Additional Collections & Fees")
+        fee_1, fee_2, fee_3 = st.columns(3)
+        global_app_fee = fee_1.number_input("Credit Form / App Fee", min_value=0.0, step=500.0, value=t_app if t_app > 0 else None, placeholder="0", key="co_eod_app_fee", help="Unified Processing Fee and Credit Form fee")
+        global_passbook = fee_2.number_input("Pass Book", min_value=0.0, step=500.0, value=t_pb if t_pb > 0 else None, placeholder="0", key="co_eod_passbook")
+        global_misc_fee = fee_3.number_input("Misc Fee", min_value=0.0, step=500.0, value=None, placeholder="0", key="co_eod_misc_fee", help="Routed directly to Misc Savings pool")
+        
+        fee_4, fee_5 = st.columns(2)
+        global_cfd = fee_4.number_input("Cr Form Dmg", min_value=0.0, step=100.0, value=t_cfd if t_cfd > 0 else None, placeholder="0", key="co_eod_cfd", help="Fee for damaged credit forms")
+        global_bonus = fee_5.number_input("Bonus", min_value=0.0, step=500.0, value=t_bon if t_bon > 0 else None, placeholder="0", key="co_eod_bonus")
+        
+        st.markdown("---")
+        submit_eod = st.form_submit_button("💾 Save End of Day Outflows & Fees", type="primary", use_container_width=True)
+        
+        if submit_eod:
+            global_opening_val = float(global_opening or 0)
+            global_expenses_val = float(global_expenses or 0)
+            global_bank_dep_val = float(global_bank_dep or 0)
+            global_app_fee_val = float(global_app_fee or 0)
+            global_passbook_val = float(global_passbook or 0)
+            global_misc_fee_val = float(global_misc_fee or 0)
+            global_cfd_val = float(global_cfd or 0)
+            global_bonus_val = float(global_bonus or 0)
+            
+            if any(x != 0 for x in [global_opening_val, global_expenses_val, global_bank_dep_val,
+                                   global_app_fee_val, global_passbook_val, global_misc_fee_val,
+                                   global_cfd_val, global_bonus_val]):
+                g_out = {
+                    "Date": date_str, "Client ID": f"GLOBAL-{target_co}", "Client Name": f"{target_co} End of Day",
+                    "Officer": target_co, "Branch": BRANCH,
+                    "Amount Paid": sum([global_app_fee_val, global_passbook_val, global_misc_fee_val, global_cfd_val, global_bonus_val]),
+                    "Transaction Type": "End of Day", "Note": "Branch/Officer Global Inputs",
+                    "Opening Balance": global_opening_val, "Savings Amount": 0, "Withdrawal Amount": 0, "Laps Reserved": 0,
+                    "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
+                    "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0,
+                    "Bank Withdrawal": 0, "Asset Sales": 0, "App Fee": global_app_fee_val, "Pass Book Bonus": global_passbook_val,
+                    "Misc Fees": global_misc_fee_val, "Asset Credit Sales": 0, "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": global_cfd_val, "Bonus": global_bonus_val,
+                    "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                    "Product Withdrawal": 0, "Expenses": global_expenses_val, "Bank Deposited": global_bank_dep_val, "Laps Transferred": 0,
+                    "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
+                }
+                
+                try:
+                    # Update manual opening balance if provided for bootstrap/initial setup
+                    if global_opening_val > 0:
+                        with SupabaseUnitOfWork() as uow_op:
+                            b_uuid = uow_op.cashbook._resolve_branch_id(BRANCH)
+                            u_res = uow_op.client.table("app_users").select("id").eq("username", target_co).execute()
+                            if u_res.data:
+                                officer_uuid = u_res.data[0]["id"]
+                                uow_op.client.table("co_cashbooks").upsert({
+                                    "date": date_str,
+                                    "branch_id": b_uuid,
+                                    "officer_id": officer_uuid,
+                                    "opening_balance": global_opening_val
+                                }, on_conflict="date,branch_id,officer_id").execute()
+                    
+                    save_repayment(g_out)
+                    
+                    with SupabaseUnitOfWork() as uow_rebuild:
+                        b_uuid = uow_rebuild.cashbook._resolve_branch_id(BRANCH)
+                        u_res = uow_rebuild.client.table("app_users").select("id").eq("username", target_co).execute()
+                        off_uuid = u_res.data[0]["id"] if u_res.data else None
+                        if off_uuid:
+                            uow_rebuild.cashbook.rebuild_projection(b_uuid, view_date, officer_id=off_uuid)
+                    
+                    st.success("✅ End of Day Outflows & Fees Submitted Successfully!")
+                    import time
+                    time.sleep(1.5)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error saving End of Day inputs: {e}")
+            else:
+                st.warning("Please enter at least one non-zero outflow, fee, or opening balance.")
+
+    # ========================================================
     # BALANCED 2-COLUMN T-ACCOUNT LEDGER DISPLAY
     # ========================================================
     st.markdown("---")
