@@ -5185,10 +5185,12 @@ elif page == "Daily Report":
     all_loans = load_loans()
     repayments = load_repayments()
     
-    # Filter for the selected date for new active loans
+    # Filter for the selected date for new active loans (excluding legacy onboarding loans)
     if not all_loans.empty:
         all_loans['DateStr'] = pd.to_datetime(all_loans['Date'], errors='coerce').dt.date.astype(str)
         daily_loans = all_loans[(all_loans['DateStr'] == date_str) & (all_loans['Status'].isin([STATUS_ACTIVE, STATUS_COMPLETED, STATUS_APPROVED]))]
+        if not daily_loans.empty and 'extra_fields' in daily_loans.columns:
+            daily_loans = daily_loans[~daily_loans['extra_fields'].apply(lambda x: isinstance(x, dict) and x.get('is_legacy') is True)]
         if ROLE == "BM":
             daily_loans = daily_loans[daily_loans['Branch'] == BRANCH]
         elif ROLE == "Officer":
@@ -6868,7 +6870,7 @@ elif page == "Master Cashbook":
         except Exception as e:
             st.warning(f"Could not load cashbook projection: {e}")
         
-        # Auto-sum VAULT FUNDING from loans disbursed today
+        # Auto-sum VAULT FUNDING from live loans disbursed today (excluding legacy onboarding loans)
         if not all_loans.empty:
             all_loans['_dt'] = pd.to_datetime(all_loans['Date'], errors='coerce')
             today_loans = all_loans[
@@ -6876,6 +6878,8 @@ elif page == "Master Cashbook":
                 (all_loans['Branch'] == BRANCH) &
                 (all_loans['Status'].isin([STATUS_ACTIVE, STATUS_APPROVED, STATUS_COMPLETED]))
             ]
+            if not today_loans.empty and 'extra_fields' in today_loans.columns:
+                today_loans = today_loans[~today_loans['extra_fields'].apply(lambda x: isinstance(x, dict) and x.get('is_legacy') is True)]
         else:
             today_loans = pd.DataFrame()
         

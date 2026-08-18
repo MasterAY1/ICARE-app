@@ -282,23 +282,42 @@ def run_migration():
             expected_inst = float(a_cred) / duration if duration > 0 else 0
             current_bal = float(c_bal) if pd.notna(c_bal) else float(a_cred)
             
-            print(f"Setting up Loan for {f_name} ({expected_code}): Product={prod.get('name')}, Active Credit={a_cred}, Bal={current_bal}, Duration={duration}")
+            # Calculate historical origination date from elapsed cycle periods
+            rem_installments = math.ceil(current_bal / expected_inst) if expected_inst > 0 else duration
+            elapsed_installments = max(1, duration - rem_installments)
+            if cycle == "Weekly":
+                hist_date = base_date - datetime.timedelta(weeks=elapsed_installments)
+            elif cycle == "Daily":
+                hist_date = base_date - datetime.timedelta(days=elapsed_installments)
+            else:
+                hist_date = base_date - datetime.timedelta(days=30 * elapsed_installments)
+            
+            legacy_extra = {
+                "is_legacy": True,
+                "onboarded_at": base_date.isoformat(),
+                "initial_active_credit": float(a_cred),
+                "initial_balance": current_bal,
+                "elapsed_cycles": elapsed_installments
+            }
+
+            print(f"Setting up Loan for {f_name} ({expected_code}): Product={prod.get('name')}, Active Credit={a_cred}, Bal={current_bal}, Duration={duration}, Disbursed={hist_date.isoformat()}")
             
             l_res = retry_call(lambda u, c_id=c_id: u.client.table("loans").select("*").eq("client_id", c_id).eq("status", "Active").execute())
             if l_res.data:
                 loan_id = l_res.data[0]['loan_id']
-                retry_call(lambda u, current_bal=current_bal, a_cred=a_cred, p_loan=p_loan, expected_inst=expected_inst, b_id=b_id, o_id=o_id, prod=prod, loan_id=loan_id: u.client.table("loans").update({
+                retry_call(lambda u, current_bal=current_bal, a_cred=a_cred, p_loan=p_loan, expected_inst=expected_inst, b_id=b_id, o_id=o_id, prod=prod, loan_id=loan_id, hist_date=hist_date, legacy_extra=legacy_extra: u.client.table("loans").update({
                     "total_due": current_bal, "active_credit": float(a_cred), "loan_amount": float(p_loan) if pd.notna(p_loan) else float(a_cred),
-                    "loan_repay": round(expected_inst, 2),
-                    "branch_id": b_id, "officer_id": o_id, "product_id": prod['product_id']
+                    "loan_repay": round(expected_inst, 2), "date": hist_date.isoformat(), "disbursement_date": hist_date.isoformat(), "start_date": hist_date.isoformat(),
+                    "branch_id": b_id, "officer_id": o_id, "product_id": prod['product_id'], "extra_fields": legacy_extra
                 }).eq("loan_id", loan_id).execute())
             else:
                 loan_id = str(uuid.uuid4())
-                retry_call(lambda u, loan_id=loan_id, c_id=c_id, base_date=base_date, p_loan=p_loan, a_cred=a_cred, expected_inst=expected_inst, current_bal=current_bal, b_id=b_id, o_id=o_id, prod=prod: u.client.table("loans").insert({
-                    "loan_id": loan_id, "client_id": c_id, "date": base_date.isoformat(),
+                retry_call(lambda u, loan_id=loan_id, c_id=c_id, hist_date=hist_date, p_loan=p_loan, a_cred=a_cred, expected_inst=expected_inst, current_bal=current_bal, b_id=b_id, o_id=o_id, prod=prod, legacy_extra=legacy_extra: u.client.table("loans").insert({
+                    "loan_id": loan_id, "client_id": c_id, "date": hist_date.isoformat(), "disbursement_date": hist_date.isoformat(), "start_date": hist_date.isoformat(),
                     "loan_amount": float(p_loan) if pd.notna(p_loan) else float(a_cred), "active_credit": float(a_cred),
                     "loan_repay": round(expected_inst, 2),
-                    "total_due": current_bal, "status": "Active", "branch_id": b_id, "officer_id": o_id, "product_id": prod['product_id']
+                    "total_due": current_bal, "status": "Active", "branch_id": b_id, "officer_id": o_id, "product_id": prod['product_id'],
+                    "extra_fields": legacy_extra
                 }).execute())
                 loans_created += 1
             

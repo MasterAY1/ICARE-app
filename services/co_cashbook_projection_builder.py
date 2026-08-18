@@ -205,6 +205,34 @@ class CoCashbookProjectionBuilder:
                     else:
                         misc_fees += amount
 
+                elif event_type == "LoanDisbursed":
+                    payload = ev_store.get("payload") or {}
+                    prod_cat = payload.get("product_category") or ("Asset" if "asset" in str(payload.get("narration", "")).lower() else "Finance")
+                    act_cr = float(payload.get("active_credit") or payload.get("amount") or amount)
+                    orig_amt = float(payload.get("amount") or act_cr)
+                    prod_name = str(payload.get("product_type") or payload.get("narration") or "").lower()
+
+                    if "daily" in prod_name or "60" in prod_name or "120" in prod_name:
+                        cycle = "Daily"
+                    elif "month" in prod_name or "3m" in prod_name or "6m" in prod_name:
+                        cycle = "Monthly"
+                    else:
+                        cycle = "Weekly"
+
+                    if prod_cat == "Asset":
+                        asset_credit_sales += orig_amt
+                    else:
+                        bank_withdrawal += orig_amt
+
+                    if cycle == "Daily":
+                        daily_active += act_cr
+                    elif cycle == "Weekly":
+                        weekly_active += act_cr
+                    elif cycle == "Monthly":
+                        monthly_active += act_cr
+                    else:
+                        weekly_active += act_cr
+
             elif side == "Credit":
                 # CO Outflows
                 if event_type in ["SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION"]:
@@ -221,55 +249,39 @@ class CoCashbookProjectionBuilder:
                     if ev_id not in processed_pwd_events:
                         product_withdrawal += amount
                         processed_pwd_events.add(ev_id)
+                elif event_type == "LoanDisbursed":
+                    # For cash loans disbursed from vault/bank, record product active credit outflow
+                    payload = ev_store.get("payload") or {}
+                    prod_cat = payload.get("product_category") or ("Asset" if "asset" in str(payload.get("narration", "")).lower() else "Finance")
+                    act_cr = float(payload.get("active_credit") or payload.get("amount") or amount)
+                    orig_amt = float(payload.get("amount") or act_cr)
+                    prod_name = str(payload.get("product_type") or payload.get("narration") or "").lower()
+
+                    if "daily" in prod_name or "60" in prod_name or "120" in prod_name:
+                        cycle = "Daily"
+                    elif "month" in prod_name or "3m" in prod_name or "6m" in prod_name:
+                        cycle = "Monthly"
+                    else:
+                        cycle = "Weekly"
+
+                    if prod_cat == "Asset":
+                        asset_credit_sales += orig_amt
+                    else:
+                        bank_withdrawal += orig_amt
+
+                    if cycle == "Daily":
+                        daily_active += act_cr
+                    elif cycle == "Weekly":
+                        weekly_active += act_cr
+                    elif cycle == "Monthly":
+                        monthly_active += act_cr
+                    else:
+                        weekly_active += act_cr
 
         # Add pooled branch misc savings for designated officer
         if is_misc_officer and branch_misc_entries:
             misc_total = sum(float(m.get("amount") or 0.0) for m in branch_misc_entries)
             savings_deposit += misc_total
-
-        # 4. Fetch Active Loans originated today by this CO (BR-CASH-001 & BR-CASH-003)
-        try:
-            res_loans = uow.client.table("loans").select("loan_amount, active_credit, product_type, product_category, loan_products(name, repayment_cycle, product_category)") \
-                .eq("officer_id", officer_id).eq("branch_id", branch_id) \
-                .gte("created_at", f"{p_date_str}T00:00:00").lte("created_at", f"{p_date_str}T23:59:59") \
-                .in_("status", ["Active", "Approved", "Completed"]).execute()
-            for l in (res_loans.data or []):
-                act_cr = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
-                orig_amt = float(l.get("loan_amount") or act_cr)
-                prod_data = l.get("loan_products") or {}
-                p_name = str(prod_data.get("name") or l.get("product_type") or "").lower()
-                cycle = prod_data.get("repayment_cycle") or ("Daily" if "daily" in p_name else "Weekly")
-                cat = prod_data.get("product_category") or l.get("product_category", "Finance")
-
-                is_cc = "cash and carry" in p_name or "cash & carry" in p_name
-
-                if is_cc:
-                    # Cash and Carry is an outright asset sale, not a term active credit loan
-                    cash_and_carry += orig_amt
-                elif cat == "Asset" or "asset" in str(l.get("product_category", "")).lower():
-                    # Asset credit sales enters on Left with the original asset value
-                    asset_credit_sales += orig_amt
-                    if cycle == "Daily":
-                        daily_active += act_cr
-                    elif cycle == "Weekly":
-                        weekly_active += act_cr
-                    elif cycle == "Monthly":
-                        monthly_active += act_cr
-                    else:
-                        weekly_active += act_cr
-                else:
-                    # Finance cash loans enter on Left under Bank Withdrawal
-                    bank_withdrawal += orig_amt
-                    if cycle == "Daily":
-                        daily_active += act_cr
-                    elif cycle == "Weekly":
-                        weekly_active += act_cr
-                    elif cycle == "Monthly":
-                        monthly_active += act_cr
-                    else:
-                        weekly_active += act_cr
-        except Exception:
-            pass
 
         # 5. Corrected Cashbook Formulas (ICARE Business Rules)
         total_inflows = (
