@@ -213,9 +213,12 @@ def run_migration():
                 existing_clients_by_name_and_group[(f_name.lower(), str(g_id))] = new_c_data
                 print(f"Created new client: {expected_code} ({f_name}) in Group #{gn}")
                 
-            # Client Memberships
+            # Client Memberships (Guarantee exact 1-to-1 sync with primary group)
             if (c_id, g_id) not in existing_memberships_set:
+                # Remove any existing memberships for this client with other groups
+                retry_call(lambda: uow.client.table("client_memberships").delete().eq("client_id", c_id).execute())
                 retry_call(lambda: uow.client.table("client_memberships").insert({"client_id": c_id, "group_id": g_id}).execute())
+                existing_memberships_set = {m for m in existing_memberships_set if m[0] != c_id}
                 existing_memberships_set.add((c_id, g_id))
                 
             # Member Opening Savings

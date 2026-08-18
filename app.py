@@ -4015,27 +4015,31 @@ elif page == "Collections":
         with SupabaseUnitOfWork() as uow:
             target_officer_id = uow.loans._resolve_officer_id(target_co)
             if ROLE in ["BM", ROLE_BRANCH_MANAGER]:
-                res_c = uow.client.table("clients").select("client_id, client_code, name, status, client_memberships(groups(name))").eq("branch_id", BRANCH_ID).eq("status", "Active").execute()
+                res_c = uow.client.table("clients").select("client_id, client_code, name, status, group_id, groups(name), client_memberships(groups(name))").eq("branch_id", BRANCH_ID).eq("status", "Active").execute()
             elif ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
-                res_c = uow.client.table("clients").select("client_id, client_code, name, status, client_memberships(groups(name))").in_("branch_id", ASSIGNED_BRANCH_IDS).eq("status", "Active").execute()
+                res_c = uow.client.table("clients").select("client_id, client_code, name, status, group_id, groups(name), client_memberships(groups(name))").in_("branch_id", ASSIGNED_BRANCH_IDS).eq("status", "Active").execute()
             elif ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
-                res_c = uow.client.table("clients").select("client_id, client_code, name, status, client_memberships(groups(name))").eq("status", "Active").execute()
+                res_c = uow.client.table("clients").select("client_id, client_code, name, status, group_id, groups(name), client_memberships(groups(name))").eq("status", "Active").execute()
             else:
-                res_c = uow.client.table("clients").select("client_id, client_code, name, status, client_memberships(groups(name))").eq("officer_id", target_officer_id).eq("status", "Active").execute()
+                res_c = uow.client.table("clients").select("client_id, client_code, name, status, group_id, groups(name), client_memberships(groups(name))").eq("officer_id", target_officer_id).eq("status", "Active").execute()
                 
         clients_data = []
         if res_c.data:
             for c in res_c.data:
-                g_name = "Ungrouped"
-                m_list = c.get("client_memberships") or []
-                if isinstance(m_list, list):
-                    for m in m_list:
-                        if m.get("groups") and m["groups"].get("name"):
-                            g_name = m["groups"]["name"]
-                            break
-                elif isinstance(m_list, dict):
-                    if m_list.get("groups") and m_list["groups"].get("name"):
-                        g_name = m_list["groups"]["name"]
+                g_name = (c.get("groups") or {}).get("name") if isinstance(c.get("groups"), dict) else None
+                if not g_name:
+                    m_list = c.get("client_memberships") or []
+                    if isinstance(m_list, list):
+                        for m in m_list:
+                            if m.get("groups") and m["groups"].get("name"):
+                                g_name = m["groups"]["name"]
+                                break
+                    elif isinstance(m_list, dict):
+                        if m_list.get("groups") and m_list["groups"].get("name"):
+                            g_name = m_list["groups"]["name"]
+                
+                if not g_name:
+                    g_name = "Ungrouped"
                 
                 clients_data.append({
                     "Client ID": c["client_code"] or c["client_id"],

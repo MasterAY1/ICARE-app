@@ -87,15 +87,15 @@ class PortfolioService:
             prod_cids = set(str(l.get("client_id")) for l in loans_raw if l.get("client_id"))
             clients_raw = [c for c in clients_raw if str(c.get("client_id") or c.get("id")) in prod_cids]
 
-        # Fetch group memberships
+        # Authoritative group name lookup from clients.group_id -> groups.name
         group_map = {}
         try:
-            client_ids = [c.get("client_id") or c.get("id") for c in clients_raw if (c.get("client_id") or c.get("id"))]
-            if client_ids:
-                g_query = uow.client.table("client_memberships").select("client_id, groups(name)").in_("client_id", client_ids).execute()
-                for gm in (g_query.data or []):
-                    grp = gm.get("groups") or {}
-                    group_map[str(gm.get("client_id"))] = grp.get("name") or "Individual"
+            g_res = uow.client.table("groups").select("group_id, name").execute()
+            group_name_by_id = {str(g["group_id"]): g["name"] for g in (g_res.data or [])}
+            for c in clients_raw:
+                cid_str = str(c.get("client_id") or c.get("id"))
+                gid_str = str(c.get("group_id") or "")
+                group_map[cid_str] = group_name_by_id.get(gid_str, "Individual")
         except Exception:
             pass
 
