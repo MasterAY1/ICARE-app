@@ -119,14 +119,15 @@ class CoCashbookProjectionBuilder:
                     cycle = "Weekly"
                     try:
                         # 1. Try querying loans by loan_id
-                        res_l = uow.client.table("loans").select("loan_products(name, repayment_cycle)").eq("loan_id", loan_id).execute()
+                        res_l = uow.client.table("loans").select("frequency, duration, loan_products(name, repayment_cycle)").eq("loan_id", loan_id).execute()
                         if not res_l.data:
                             # 2. Try querying loans by client_id
-                            res_l = uow.client.table("loans").select("loan_products(name, repayment_cycle)").eq("client_id", loan_id).eq("status", "Active").execute()
+                            res_l = uow.client.table("loans").select("frequency, duration, loan_products(name, repayment_cycle)").eq("client_id", loan_id).eq("status", "Active").execute()
                         if res_l.data:
-                            lp = res_l.data[0].get("loan_products") or {}
+                            row_l = res_l.data[0]
+                            lp = row_l.get("loan_products") or {}
                             prod_name = str(lp.get("name") or "").lower()
-                            cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in prod_name else "Weekly")
+                            cycle = lp.get("repayment_cycle") or row_l.get("frequency") or ("Daily" if "daily" in prod_name else "Weekly")
                     except Exception:
                         pass
 
@@ -134,14 +135,17 @@ class CoCashbookProjectionBuilder:
                         rep_12_weeks += amount
                     elif "24 week" in prod_name or "24w" in prod_name or "24wk" in prod_name:
                         rep_24_weeks += amount
-                    elif "120" in prod_name or "120d" in prod_name:
-                        rep_120_days += amount
-                    elif "60" in prod_name or "60d" in prod_name or "daily" in prod_name or cycle == "Daily":
+                    elif "120" in prod_name or "120d" in prod_name or "60" in prod_name or "60d" in prod_name or "daily" in prod_name or cycle == "Daily":
                         rep_daily += amount
                     elif "month" in prod_name or cycle == "Monthly":
                         rep_monthly += amount
                     else:
-                        rep_12_weeks += amount
+                        if cycle == "Daily":
+                            rep_daily += amount
+                        elif cycle == "Monthly":
+                            rep_monthly += amount
+                        else:
+                            rep_12_weeks += amount
 
                 elif event_type in ["SavingsDeposited", "INDIVIDUAL_SAVINGS_DEPOSIT", "GROUP_SAVINGS_DEPOSIT"]:
                     if entry.get("aggregate_type") == "LapsSavings":
