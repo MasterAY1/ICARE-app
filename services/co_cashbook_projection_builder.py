@@ -223,15 +223,15 @@ class CoCashbookProjectionBuilder:
 
         # 4. Fetch Active Loans originated today by this CO (BR-CASH-001 & BR-CASH-003)
         try:
-            res_loans = uow.client.table("loans").select("amount, active_credit, product_type, loan_products(repayment_cycle, product_category)") \
+            res_loans = uow.client.table("loans").select("loan_amount, active_credit, product_category, loan_products(repayment_cycle, product_category)") \
                 .eq("officer_id", officer_id).eq("branch_id", branch_id) \
                 .gte("created_at", f"{p_date_str}T00:00:00").lte("created_at", f"{p_date_str}T23:59:59") \
                 .in_("status", ["Active", "Approved", "Completed"]).execute()
             for l in (res_loans.data or []):
-                act_cr = float(l.get("active_credit") or l.get("amount") or 0.0)
+                act_cr = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
                 prod_data = l.get("loan_products") or {}
                 cycle = prod_data.get("repayment_cycle", "Weekly")
-                cat = prod_data.get("product_category", "Finance")
+                cat = prod_data.get("product_category") or l.get("product_category", "Finance")
 
                 if cycle == "Daily":
                     daily_active += act_cr
@@ -243,7 +243,7 @@ class CoCashbookProjectionBuilder:
                     weekly_active += act_cr
 
                 # Asset loans enter as Asset Credit Sales on Left, Cash loans enter as Bank Withdrawal
-                if cat == "Asset" or "asset" in str(l.get("product_type", "")).lower():
+                if cat == "Asset" or "asset" in str(l.get("product_category", "")).lower():
                     asset_credit_sales += act_cr
                 else:
                     bank_withdrawal += act_cr

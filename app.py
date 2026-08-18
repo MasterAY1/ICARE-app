@@ -6626,12 +6626,12 @@ elif page == "CO Cashbook":
                     closing_bal = float(c.get("closing_balance") or 0)
 
                 # Fetch active disbursements originated today for breakdown
-                res_l = uow.client.table("loans").select("amount, active_credit, loan_products(name, repayment_cycle)") \
+                res_l = uow.client.table("loans").select("loan_amount, active_credit, loan_products(name, repayment_cycle)") \
                     .eq("officer_id", o_id).eq("branch_id", branch_id) \
                     .gte("created_at", f"{date_str}T00:00:00").lte("created_at", f"{date_str}T23:59:59") \
                     .in_("status", ["Active", "Approved", "Completed"]).execute()
                 for l in (res_l.data or []):
-                    act_cr = float(l.get("active_credit") or l.get("amount") or 0.0)
+                    act_cr = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
                     lp = l.get("loan_products") or {}
                     p_name = str(lp.get("name") or "").lower()
                     cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in p_name else "Weekly")
@@ -7126,12 +7126,12 @@ elif page == "Master Cashbook":
                         closing_bal = float(c.get("closing_balance") or 0)
                         
                     # Also fetch today's active loan disbursements for this CO breakdown
-                    res_l = uow.client.table("loans").select("amount, active_credit, loan_products(name, repayment_cycle)") \
+                    res_l = uow.client.table("loans").select("loan_amount, active_credit, loan_products(name, repayment_cycle)") \
                         .eq("officer_id", o_id).eq("branch_id", branch_id) \
                         .gte("created_at", f"{date_str}T00:00:00").lte("created_at", f"{date_str}T23:59:59") \
                         .in_("status", ["Active", "Approved", "Completed"]).execute()
                     for l in (res_l.data or []):
-                        act_cr = float(l.get("active_credit") or l.get("amount") or 0.0)
+                        act_cr = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
                         lp = l.get("loan_products") or {}
                         p_name = str(lp.get("name") or "").lower()
                         cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in p_name else "Weekly")

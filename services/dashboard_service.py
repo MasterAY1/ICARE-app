@@ -80,6 +80,12 @@ class DashboardService:
             ]
         except Exception:
             reps = []
+
+        rep_map = {}
+        for r in reps:
+            cid_s = str(r.get("client_id") or "")
+            if cid_s:
+                rep_map[cid_s] = rep_map.get(cid_s, 0.0) + float(r.get("amount_paid") or 0.0)
             
         # Fetch lifetime repayments for these active loans to determine dynamic remaining balance
         lifetime_reps_map = {}
