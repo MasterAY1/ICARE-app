@@ -81,11 +81,17 @@ class DashboardService:
         except Exception:
             reps = []
             
-        rep_map = {}
-        for r in reps:
-            cid = r.get("client_id")
-            if cid:
-                rep_map[str(cid)] = rep_map.get(str(cid), 0.0) + float(r.get("amount_paid") or 0.0)
+        # Fetch lifetime repayments for these active loans to determine dynamic remaining balance
+        lifetime_reps_map = {}
+        try:
+            loan_ids = [str(l.get("loan_id")) for l in active_loans if l.get("loan_id")]
+            if loan_ids:
+                all_rep_res = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", loan_ids).execute()
+                for r in (all_rep_res.data or []):
+                    lid_s = str(r.get("loan_id"))
+                    lifetime_reps_map[lid_s] = lifetime_reps_map.get(lid_s, 0.0) + float(r.get("amount_paid") or 0.0)
+        except Exception:
+            pass
 
         full_count, full_amt = 0, 0.0
         excess_count, excess_amt = 0, 0.0
@@ -98,6 +104,7 @@ class DashboardService:
             if not cid: continue
             
             c_paid = rep_map.get(cid, 0.0)
+            lid_s = str(l.get("loan_id") or "")
             
             g_mday = group_mday_map.get(cid) or l.get("meeting_day") or "Daily"
             prod_info = l.get("loan_products") or {}
@@ -138,9 +145,12 @@ class DashboardService:
                     if dur > 0 and ac > 0:
                         repay_amt = round(ac / dur, 2)
 
-            loan_bal = float(l.get("active_credit") or l.get("Active Credit") or 0.0)
+            act_cred = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
+            tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
+            tot_paid_loan = lifetime_reps_map.get(lid_s, 0.0)
+            remaining_bal = max(0.0, tot_due_base - tot_paid_loan)
 
-            if loan_bal <= 0 and c_paid > 0:
+            if (remaining_bal <= 0.0 or tot_paid_loan >= act_cred) and c_paid > 0:
                 full_count += 1
                 full_amt += c_paid
             elif c_paid > repay_amt and repay_amt > 0:
@@ -343,6 +353,7 @@ class DashboardService:
         # Build group_map for active loans including authoritative group meeting_day
         group_map = {}
         group_mday_map = {}
+        co_lifetime_reps_map = {}
         try:
             loan_client_ids = [l.get("client_id") for l in active_loans if l.get("client_id")]
             if loan_client_ids:
@@ -353,6 +364,13 @@ class DashboardService:
                     g_name_str = grp.get("name") or "Individual Group"
                     group_map[cid_s] = g_name_str
                     group_mday_map[g_name_str] = grp.get("meeting_day") or "Daily"
+            
+            loan_ids = [str(l.get("loan_id")) for l in active_loans if l.get("loan_id")]
+            if loan_ids:
+                all_rep_res = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", loan_ids).execute()
+                for r in (all_rep_res.data or []):
+                    lid_s = str(r.get("loan_id"))
+                    co_lifetime_reps_map[lid_s] = co_lifetime_reps_map.get(lid_s, 0.0) + float(r.get("amount_paid") or 0.0)
         except Exception:
             pass
 
@@ -429,10 +447,12 @@ class DashboardService:
                 grp_map[g_name]["Collected"] += c_paid
 
                 c_info = l.get("clients") or {}
-                c_name = c_info.get("name") or l.get("client_name") or "N/A"
-                loan_bal = float(l.get("active_credit") or l.get("Active Credit") or 0.0)
+                act_cred = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
+                tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
+                tot_paid_loan = co_lifetime_reps_map.get(str(l.get("loan_id") or ""), 0.0)
+                remaining_bal = max(0.0, tot_due_base - tot_paid_loan)
 
-                if loan_bal <= 0 and c_paid > 0:
+                if (remaining_bal <= 0.0 or tot_paid_loan >= act_cred) and c_paid > 0:
                     full_paid_count += 1
                     full_paid_amt += c_paid
                     grp_map[g_name]["Clients Paid"] += 1

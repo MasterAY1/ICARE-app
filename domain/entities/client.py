@@ -27,6 +27,10 @@ class Client:
     group_id: Optional[str] = None
     officer_id: Optional[str] = None
     status: str = "Active"
+    status_id: Optional[str] = None
+    status_changed_at: Optional[datetime] = None
+    status_changed_by: Optional[str] = None
+    status_note: Optional[str] = None
     average_monthly_income: float = 0.0
     other_obligations: Optional[str] = None
     created_at: Optional[datetime] = None

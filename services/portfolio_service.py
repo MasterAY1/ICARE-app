@@ -63,7 +63,7 @@ class PortfolioService:
             loans_raw = []
 
         try:
-            c_query = uow.client.table("clients").select("*")
+            c_query = uow.client.table("clients").select("*, client_statuses(name, color_code, icon)")
             if scope.scope_level == "OFFICER" and scope.user_id:
                 c_query = c_query.eq("officer_id", scope.user_id)
             elif scope.scope_level == "BRANCH" and scope.branch_id:
@@ -308,24 +308,40 @@ class PortfolioService:
         except Exception:
             lifetime_repayments_map = {}
 
-        # 5. Aggregations & Summary Calculations
+        # 5. Aggregations & Summary Calculations from Authoritative Client Statuses & Dynamic Balances (BR-CLI-006)
         total_registered_clients = len(clients_raw)
-        active_clients_count = sum(1 for c in clients_raw if str(c.get("status") or "").upper() in ["ACTIVE", "APPROVED"])
-        closed_clients_count = sum(1 for c in clients_raw if str(c.get("status") or "").upper() in ["CLOSED", "COMPLETED"])
-        dormant_clients_count = max(0, total_registered_clients - active_clients_count - closed_clients_count)
+        status_map = {}
+        for c in clients_raw:
+            cs = c.get("client_statuses")
+            s_name = cs.get("name") if isinstance(cs, dict) else (c.get("status") or "Registered")
+            status_map[s_name] = status_map.get(s_name, 0) + 1
 
-        total_active_credit = sum(float(l.get("active_credit") or 0.0) for l in loans_raw if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"])
-        total_expected_repayment = sum(float(l.get("loan_repay") or 0.0) for l in loans_raw if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"])
-        
-        # Calculate overall dynamic outstanding balance
+        active_clients_count = status_map.get("On Loan", 0)
+        completed_clients_count = status_map.get("Completed", 0)
+        pending_loan_clients_count = status_map.get("Pending Loan", 0)
+        dormant_clients_count = status_map.get("Dormant", 0)
+        closed_clients_count = status_map.get("Closed", 0)
+        savings_only_clients_count = status_map.get("Inactive (Savings Only)", 0)
+        defaulters_count = status_map.get("Defaulter", 0)
+
+        # Calculate overall dynamic outstanding balance and active credit only for loans with balance > 0
         total_outstanding_balance = 0.0
+        total_active_credit = 0.0
+        total_expected_repayment = 0.0
+        active_loans_count = 0
+
         for l in loans_raw:
             if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]:
                 lid_s = str(l.get("loan_id") or "")
                 act_cred = float(l.get("active_credit") or 0.0)
                 tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
                 tot_paid = lifetime_repayments_map.get(lid_s, 0.0)
-                total_outstanding_balance += max(0.0, tot_due_base - tot_paid)
+                out_bal = max(0.0, tot_due_base - tot_paid)
+                if out_bal > 0:
+                    active_loans_count += 1
+                    total_active_credit += act_cred
+                    total_expected_repayment += float(l.get("loan_repay") or 0.0)
+                    total_outstanding_balance += out_bal
                 
         # Calculate disbursement summary within the selected date range
         s_d_str_iso = start_date.isoformat()
@@ -375,7 +391,8 @@ class PortfolioService:
             cid_str = str(cid) if cid else ""
             c_name = c.get("name") or "N/A"
             c_code = c.get("client_code") or "N/A"
-            c_status = str(c.get("status") or "Active").capitalize()
+            cs_obj = c.get("client_statuses") or {}
+            c_lifecycle_status = cs_obj.get("name") if isinstance(cs_obj, dict) else (c.get("status") or "Registered")
             
             group_name = group_map.get(cid_str, "Individual")
             c_savings = savings_map.get(cid_str, {}).get('bal', 0.0)
@@ -387,7 +404,7 @@ class PortfolioService:
             disbursed = 0.0
             outstanding_bal = 0.0
             tot_paid_lifetime = 0.0
-            status_str = c_status
+            status_str = c_lifecycle_status
             
             if l:
                 # Active Credit is the static contract total due (Principal - Gap)
@@ -432,9 +449,9 @@ class PortfolioService:
                     except Exception:
                         pass
 
-                if tot_paid_lifetime >= act_cred and act_cred > 0:
+                if (outstanding_bal <= 0.0 and (tot_paid_lifetime > 0 or act_cred > 0)) or (tot_paid_lifetime >= act_cred and act_cred > 0):
                     full_payments_count += 1
-                    full_payments_amt += tot_paid_lifetime
+                    full_payments_amt += (paid_today if paid_today > 0 else tot_paid_lifetime)
                     status_str = "Full Paid (Closed)"
                 elif paid_today > 0:
                     if paid_today > repay_fixed and repay_fixed > 0:
@@ -457,6 +474,7 @@ class PortfolioService:
                     status_str = "Active Loan"
 
             client_rows.append({
+                "Client ID": cid_str,
                 "Client Code": c_code,
                 "Client Name": c_name,
                 "Group": group_name,
@@ -466,10 +484,11 @@ class PortfolioService:
                 "Outstanding Balance": outstanding_bal,
                 "Fixed Repayment": repay_fixed,
                 "Total Paid": tot_paid_lifetime,
-                "Status": status_str
+                "Status": status_str,
+                "Lifecycle Status": c_lifecycle_status
             })
 
-        client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client Code", "Client Name", "Group", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Status"])
+        client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client ID", "Client Code", "Client Name", "Group", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Status", "Lifecycle Status"])
         raw_client_codes = sorted(list(set([r["Client Code"] for r in client_rows if r.get("Client Code") and str(r.get("Client Code")).strip() not in ["", "N/A", "None"]]))) if client_rows else []
         
         if selected_group == "All" and not client_df.empty:
@@ -490,7 +509,6 @@ class PortfolioService:
             group_df.columns = ["Group Name", "Total Clients", "Total Savings Balance", "Total Active Loan", "Total Outstanding Balance", "Total Fixed Repayment", "Total Paid"]
             client_df = group_df
 
-        active_loans_count = len(active_loans_by_client)
         expected_repay_clients = sum(1 for l in active_loans_by_client.values() if float(l.get("loan_repay") or 0.0) > 0)
         paying_clients_count = len(set(str(r.get("client_id")) for r in repayments_today if float(r.get("amount_paid") or 0.0) > 0))
         outstanding_clients_count = sum(1 for r in client_rows if float(r.get("Outstanding Balance", 0.0)) > 0)
@@ -500,8 +518,12 @@ class PortfolioService:
             "summary": {
                 "total_registered_clients": total_registered_clients,
                 "active_clients": active_clients_count,
-                "closed_clients": closed_clients_count,
+                "completed_clients": completed_clients_count,
+                "pending_loan_clients": pending_loan_clients_count,
                 "dormant_clients": dormant_clients_count,
+                "closed_clients": closed_clients_count,
+                "savings_only_clients": savings_only_clients_count,
+                "defaulters": defaulters_count,
                 "total_active_credit": total_active_credit,
                 "total_expected_repayment": total_expected_repayment,
                 "total_outstanding_balance": total_outstanding_balance,

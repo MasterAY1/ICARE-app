@@ -25,6 +25,7 @@
 │   ├── DASHBOARD_AND_REPORTING_RULES.md <-- Dashboard source authority & impact map
 │   ├── SAVINGS_RULES.md                <-- Savings, LAPS & withdrawal classifications
 │   ├── FEE_RULES.md                    <-- Fee categories & splits
+│   ├── CLIENT_STATUS_RULES.md          <-- Client lifecycle status invariants (BR-CLI-001 to BR-CLI-007)
 │   ├── WORKFLOW_RULES.md               <-- Lifecycle workflows
 │   ├── BUSINESS_DATE_RULES.md          <-- Business date advancing & EOD
 │   └── ROLE_AND_PERMISSION_RULES.md    <-- RBAC scopes & authorization

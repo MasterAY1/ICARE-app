@@ -15,10 +15,18 @@ class LoanStatus(str, Enum):
     INTERNAL_ACCOUNT = "Internal Account"
 
 class ClientStatus(str, Enum):
+    REGISTERED = "Registered"
+    PENDING_LOAN = "Pending Loan"
+    ON_LOAN = "On Loan"
+    COMPLETED = "Completed"
+    DORMANT = "Dormant"
+    INACTIVE_SAVINGS = "Inactive (Savings Only)"
+    CLOSED = "Closed"
+    SUSPENDED = "Suspended"
+    DEFAULTER = "Defaulter"
+    # Legacy aliases
     ACTIVE = "Active"
     INACTIVE = "Inactive"
-    DORMANT = "Dormant"
-    CLOSED = "Closed"
 
 class SavingsStatus(str, Enum):
     NORMAL = "Normal"

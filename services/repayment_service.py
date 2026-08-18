@@ -166,6 +166,14 @@ class RepaymentService:
         # Execute all accumulated operations atomically
         uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
 
+        # Check for loan full payment completion and transition client lifecycle status (BR-CLI-003.3 & BR-CLI-005)
+        try:
+            if repayment.client_id and repayment.loan_id:
+                from services.client_status_service import ClientStatusService
+                ClientStatusService.on_loan_repayment_check(uow, repayment.client_id, repayment.loan_id)
+        except Exception as ex:
+            print(f"[REPAYMENT TRACE] Client status lifecycle check failed: {ex}")
+
         # Rebuild projection
         try:
             b_id = uow.repayments._resolve_branch_id(repayment.branch)

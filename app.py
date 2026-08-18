@@ -3561,6 +3561,13 @@ elif page == "Loan Origination":
                                 )
                                 uow.loans.create(loan_entity)
 
+                                # Update client lifecycle status to 'Pending Loan' (BR-CLI-003.1)
+                                try:
+                                    from services.client_status_service import ClientStatusService
+                                    ClientStatusService.on_loan_submitted(uow, selected_client_id, loan_id, getattr(selected_client, "officer_id", None))
+                                except Exception as st_err:
+                                    print(f"[STATUS TRACE] Failed to update client status to Pending Loan: {st_err}")
+
                                 from services.schedule_service import ScheduleService
                                 ScheduleService.generate_schedule(uow, loan_entity, date.today() + timedelta(days=7))
 
@@ -7533,26 +7540,35 @@ elif page == "Portfolio":
         st.divider()
         st.markdown("### Portfolio Summary & Metrics")
 
-        st.caption("Row 1: Savings Summary")
+        st.caption("Row 1: Client Lifecycle Status Breakdown (BR-CLI-006)")
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        c1.metric("👥 Total Registered", f"{p_sum.get('total_registered_clients', 0)} Clients")
+        c2.metric("🟢 Active On Loan", f"{p_sum.get('active_clients', 0)} Clients")
+        c3.metric("🏆 Recently Completed", f"{p_sum.get('completed_clients', 0)} Clients")
+        c4.metric("⏳ Pending Loans", f"{p_sum.get('pending_loan_clients', 0)} Clients")
+        c5.metric("🐷 Savings Only", f"{p_sum.get('savings_only_clients', 0)} Clients")
+        c6.metric("🟡 Dormant", f"{p_sum.get('dormant_clients', 0)} Clients")
+
+        st.caption("Row 2: Savings Summary")
         s1, s2, s3 = st.columns(3)
         s1.metric("Savings Deposited (In Period)", f"₦{p_sum.get('period_savings_deposit', 0.0):,.0f}", f"{p_sum.get('period_savings_dep_clients', 0)} Clients")
         s2.metric("Savings Withdrawn (In Period)", f"₦{p_sum.get('period_savings_withdrawal', 0.0):,.0f}", f"{p_sum.get('period_savings_wd_clients', 0)} Clients", delta_color="normal")
         s3.metric("Total Savings Balance", f"₦{p_sum.get('total_savings_balance', 0.0):,.0f}", f"{p_sum.get('total_savings_clients', 0)} Active Savers")
 
-        st.caption("Row 2: Disbursement Summary (In Selected Period)")
+        st.caption("Row 3: Disbursement Summary (In Selected Period)")
         d1, d2 = st.columns(2)
         d_sum = p_sum.get('disbursement_summary', {'count': 0, 'amount': 0.0, 'client_count': 0})
         d1.metric("Loans Disbursed", f"{d_sum['count']} Loans", f"{d_sum.get('client_count', d_sum['count'])} Clients")
         d2.metric("Total Amount Disbursed", f"₦{d_sum['amount']:,.0f}", f"{d_sum['count']} Loans")
 
-        st.caption("Row 3: Loan & Collection Summary")
+        st.caption("Row 4: Loan & Collection Summary")
         l1, l2, l3, l4 = st.columns(4)
         l1.metric("Total Active Credit", f"₦{p_sum.get('total_active_credit', 0.0):,.0f}", f"{p_sum.get('active_loans_count', 0)} Active Loans")
         l2.metric("Total Expected Repayment", f"₦{p_sum.get('total_expected_repayment', 0.0):,.0f}", f"{p_sum.get('expected_repay_clients', 0)} Clients")
         l3.metric("Actual Collection (In Period)", f"₦{p_sum.get('total_actual_collection', p_sum.get('today_collection', 0.0)):,.0f}", f"{p_sum.get('paying_clients_count', 0)} Clients")
         l4.metric("Total Outstanding Balance", f"₦{p_sum.get('total_outstanding_balance', 0.0):,.0f}", f"{p_sum.get('outstanding_clients_count', 0)} Clients")
 
-        st.caption("Row 4: Repayment Status")
+        st.caption("Row 5: Repayment Status")
         r1, r2, r3, r4, r5 = st.columns(5)
         r1.metric("🎯 Normal Payments", f"₦{p_sum.get('normal_payments', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('normal_payments', {}).get('count', 0)} Clients")
         r2.metric("🏆 Full Payments", f"₦{p_sum.get('full_payments', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('full_payments', {}).get('count', 0)} Clients")
@@ -7661,8 +7677,8 @@ elif page == "Portfolio":
                     sb3.metric("🐷 Savings Balance", f"₦{c_savings_balance:,.0f}")
                     sb4.metric("📊 Account Status", c_status_label)
 
-                    dd_t1, dd_t2, dd_t3, dd_t4, dd_t5, dd_t6 = st.tabs([
-                        "📋 Customer Dossier", "💵 Loan History", "💰 Repayments", "🐷 Savings", "📊 Collections", "⚖️ Audit History"
+                    dd_t1, dd_t2, dd_t3, dd_t4, dd_t5, dd_t6, dd_t7 = st.tabs([
+                        "📋 Customer Dossier", "💵 Loan History", "💰 Repayments", "🐷 Savings", "📊 Collections", "🔄 Lifecycle Status", "⚖️ Audit History"
                     ])
 
                     with dd_t1:
@@ -7846,6 +7862,93 @@ elif page == "Portfolio":
                             st.dataframe(c_perf, use_container_width=True)
 
                     with dd_t6:
+                        st.markdown("##### 🔄 Client Lifecycle Status & Direct Officer Control")
+                        st.caption("Credit Officers have direct authoritative control to manage client lifecycle states (BR-CLI-004).")
+
+                        from services.client_status_service import ClientStatusService
+                        cur_cid = c_info.get("client_id") or c_info.get("id")
+
+                        # Current Status Banner
+                        curr_status_res = uow_p.client.table("clients").select("status_id, status_changed_at, status_note, client_statuses(name, color_code, icon)").eq("client_id", cur_cid).execute()
+                        curr_rec = curr_status_res.data[0] if curr_status_res.data else {}
+                        cs_dict = curr_rec.get("client_statuses") or {}
+                        current_status_name = cs_dict.get("name", "Registered")
+                        current_color = cs_dict.get("color_code", "#9CA3AF")
+                        last_changed = str(curr_rec.get("status_changed_at") or "Initial Onboarding")[:19]
+                        status_note = curr_rec.get("status_note") or "None"
+
+                        st.markdown(
+                            f"""
+                            <div style="background: {current_color}15; border-left: 5px solid {current_color}; padding: 12px 18px; border-radius: 6px; margin-bottom: 15px;">
+                                <h4 style="margin: 0; color: {current_color};">Status: {current_status_name}</h4>
+                                <p style="margin: 4px 0 0 0; font-size: 13px; color: #4B5563;">Last Changed: <b>{last_changed}</b> | Note: <i>{status_note}</i></p>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+
+                        # Manual Status Change Form for CO / Authorized Officers
+                        st.markdown("###### ⚙️ Change Client Lifecycle Status")
+                        manual_options = [
+                            "Registered",
+                            "Inactive (Savings Only)",
+                            "Closed",
+                            "Suspended",
+                            "Dormant"
+                        ]
+
+                        ch_col1, ch_col2 = st.columns([1, 2])
+                        with ch_col1:
+                            target_status = st.selectbox(
+                                "Select New Status:",
+                                manual_options,
+                                index=manual_options.index(current_status_name) if current_status_name in manual_options else 0,
+                                key=f"sel_status_{selected_ccode}"
+                            )
+                        with ch_col2:
+                            change_reason = st.text_input(
+                                "Reason for Status Change (Required for Audit Trail):",
+                                placeholder="e.g. Client relocated, temporary suspension, or requested savings-only status",
+                                key=f"reason_status_{selected_ccode}"
+                            )
+
+                        if st.button("💾 Apply Status Change", key=f"btn_apply_status_{selected_ccode}", type="primary"):
+                            if not change_reason.strip():
+                                st.warning("Please provide a reason/note for this status change to maintain audit compliance.")
+                            else:
+                                success = ClientStatusService.transition_status(
+                                    uow=uow_p,
+                                    client_id=str(cur_cid),
+                                    new_status_name=target_status,
+                                    changed_by=getattr(p_scope, "user_id", None),
+                                    reason=change_reason.strip(),
+                                    trigger_type="MANUAL"
+                                )
+                                if success:
+                                    st.success(f"✅ Client lifecycle status updated to **{target_status}** successfully!")
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to update status. Please try again.")
+
+                        st.divider()
+                        st.markdown("###### 📜 Lifecycle Status Audit Trail")
+                        history_records = ClientStatusService.get_client_history(uow_p, str(cur_cid))
+                        if history_records:
+                            h_rows = []
+                            for h in history_records:
+                                h_rows.append({
+                                    "Date & Time": str(h.get("changed_at", ""))[:19].replace("T", " "),
+                                    "Previous Status": h.get("old_status_name") or (h.get("old_status") or {}).get("name", "Initial"),
+                                    "New Status": h.get("new_status_name") or (h.get("new_status") or {}).get("name", "N/A"),
+                                    "Trigger": h.get("trigger_type", "MANUAL"),
+                                    "Reason": h.get("reason", "N/A"),
+                                    "Changed By": (h.get("changer") or {}).get("full_name") or "System / Officer"
+                                })
+                            st.dataframe(pd.DataFrame(h_rows), use_container_width=True, hide_index=True)
+                        else:
+                            st.info("No historical status changes recorded for this client.")
+
+                    with dd_t7:
                         a_hist = dd.get("audit_history", pd.DataFrame())
                         if a_hist.empty:
                             st.info("Zero audit compliance events logged.")

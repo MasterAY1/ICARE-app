@@ -14,13 +14,35 @@ class RenewalService:
         
         is_requested_asset = (product_category == "Asset")
 
-        # 1. Fetch all loans for the client
+        # 1. Fetch all loans and client status
         res_loans = uow.client.table("loans").select("*").eq("client_id", client_id).execute()
         all_loans = res_loans.data if res_loans.data else []
         
-        active_loans = [L for L in all_loans if L.get("status") == "Active"]
-        past_loans = [L for L in all_loans if L.get("status") not in ["Active", "Pending"]]
-        pending_loans = [L for L in all_loans if L.get("status") == "Pending"]
+        # Check dynamic remaining balance for active loans (BR-CLI-005)
+        active_loans = []
+        for L in all_loans:
+            if L.get("status") in ["Active", "ACTIVE", "Approved"]:
+                lid = str(L.get("loan_id") or L.get("id") or "")
+                act_c = float(L.get("active_credit") or L.get("loan_amount") or 0.0)
+                tot_due = float(L.get("total_due") if L.get("total_due") is not None else act_c)
+                rep_res = uow.client.table("repayments").select("amount_paid").eq("loan_id", lid).execute()
+                tot_p = sum(float(r.get("amount_paid") or 0.0) for r in (rep_res.data or []))
+                if max(0.0, tot_due - tot_p) > 0:
+                    active_loans.append(L)
+
+        past_loans = [L for L in all_loans if L not in active_loans and L.get("status") != "Pending"]
+        pending_loans = [L for L in all_loans if L.get("status") == "Pending" and float(L.get("loan_amount") or 0.0) > 0]
+
+        # Check client lifecycle status for Defaulter warning (BR-CLI-009)
+        try:
+            c_status_res = uow.client.table("clients").select("status_id, client_statuses(name)").eq("client_id", client_id).execute()
+            if c_status_res.data:
+                cs_obj = c_status_res.data[0].get("client_statuses") or {}
+                cs_name = cs_obj.get("name") if isinstance(cs_obj, dict) else ""
+                if cs_name == "Defaulter":
+                    warnings.append("⚠️ DEFAULTER WARNING: Client has past default history. BM must make final approval decision.")
+        except Exception:
+            pass
 
         has_any_loan = len(all_loans) > 0
 
@@ -39,7 +61,7 @@ class RenewalService:
                 
                 if loan_is_asset == is_requested_asset:
                     is_eligible = False
-                    reasons.append(f"Client currently has an active {product_category} loan.")
+                    reasons.append(f"Client currently has an active {product_category} loan with outstanding balance.")
                     break
             
             for loan in pending_loans:
@@ -48,15 +70,14 @@ class RenewalService:
                     loan_is_asset = str(loan_is_asset).lower() == "true"
                 if loan_is_asset == is_requested_asset:
                     is_eligible = False
-                    reasons.append(f"Client already has a pending {product_category} loan application.")
+                    reasons.append(f"Client already has a pending {product_category} loan application awaiting BM approval.")
                     break
             
-            # Check past loans for 'Defaulter' or bad standing
+            # Check past loans for bad standing (Warning only per BR-CLI-009)
             for loan in past_loans:
                 loan_status = loan.get("status", "")
-                if loan_status in ["Defaulter", "Written Off", "Closed"]:
-                    if loan_status != "Closed":
-                        warnings.append(f"⚠️ PAST LOAN WARNING: Client has a previous loan with status '{loan_status}'.")
+                if loan_status in ["Defaulter", "Written Off"]:
+                    warnings.append(f"⚠️ PAST LOAN WARNING: Client has a previous loan with status '{loan_status}'.")
                         
         # 2. Fetch client savings balance (to ensure they meet required percentage)
         res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", client_id).execute()

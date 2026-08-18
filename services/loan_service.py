@@ -195,6 +195,13 @@ class LoanService:
         # Execute all accumulated operations atomically
         uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
 
+        # 7b. Update client lifecycle status to 'On Loan' (BR-CLI-003.2)
+        try:
+            from services.client_status_service import ClientStatusService
+            ClientStatusService.on_loan_disbursed(uow, loan.client_id, loan.id, getattr(loan, "officer_id", None))
+        except Exception as st_err:
+            print(f"[LOAN TRACE] Failed to transition client status on disbursement: {st_err}")
+
         # 8. Generate Amortization Schedule in database
         try:
             from services.schedule_service import ScheduleService

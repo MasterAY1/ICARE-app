@@ -437,13 +437,17 @@ class ClientMapper:
             group_id=dto.get("group_id"),
             officer_id=dto.get("officer_id"),
             status=str(dto.get("status", "Active")),
+            status_id=dto.get("status_id"),
+            status_changed_at=_parse_datetime(dto.get("status_changed_at")) if "_parse_datetime" in globals() else None,
+            status_changed_by=dto.get("status_changed_by"),
+            status_note=dto.get("status_note"),
             average_monthly_income=float(dto.get("average_monthly_income") or 0.0),
             other_obligations=dto.get("other_obligations")
         )
 
     @staticmethod
     def to_database(entity: Client) -> dict:
-        return {
+        db_dict = {
             "client_id": entity.id,
             "name": entity.name,
             "client_code": entity.client_code,
@@ -470,6 +474,15 @@ class ClientMapper:
             "average_monthly_income": entity.average_monthly_income,
             "other_obligations": entity.other_obligations
         }
+        if entity.status_id:
+            db_dict["status_id"] = entity.status_id
+        if entity.status_changed_at:
+            db_dict["status_changed_at"] = entity.status_changed_at.isoformat()
+        if entity.status_changed_by:
+            db_dict["status_changed_by"] = entity.status_changed_by
+        if entity.status_note:
+            db_dict["status_note"] = entity.status_note
+        return db_dict
 
 class GuarantorMapper:
     @staticmethod

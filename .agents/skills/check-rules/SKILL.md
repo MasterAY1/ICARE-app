@@ -33,6 +33,7 @@ All authoritative rules are stored under `.agents/rules/`. Before modifying any 
 - **[FEE_RULES.md](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/rules/business-rules/FEE_RULES.md)**: Fee structures (Markup 11%/20%, Contingency, Processing Fee, Passbook, Credit Form Damage, Bonus, etc.).
 - **[RECONCILIATION_RULES.md](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/rules/business-rules/RECONCILIATION_RULES.md)**: 6-way independent reconciliation, orphan detection, and balance integrity verification.
 - **[ERROR_CORRECTION_RULES.md](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/rules/business-rules/ERROR_CORRECTION_RULES.md)**: Reversal transactions, non-destructive error corrections, and audit trailing.
+- **[CLIENT_STATUS_RULES.md](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/rules/business-rules/CLIENT_STATUS_RULES.md)**: Client lifecycle status invariants (BR-CLI-001 to BR-CLI-007): statuses, transitions, audit trail, and dashboard metrics.
 
 ### D. Development & Verification Protocols (`.agents/rules/development/`)
 - **[change-protocol.md](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/rules/development/change-protocol.md)**: The mandatory 12-step pre-implementation analysis and flow tracing.

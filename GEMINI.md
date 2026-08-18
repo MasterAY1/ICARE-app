@@ -18,3 +18,4 @@
 5. **Repayment Schedule Start Date**: The first loan repayment date starts on the NEXT valid collection/meeting day after disbursement (`FP-008`).
 6. **Savings & Repayments Separation**: Savings deposits and loan repayments must be handled independently. Never merge savings into `repayments.amount_paid`.
 7. **Projections**: Cashbooks must derive 100% of physical cash movements from Account 1000 journal entries.
+8. **Client Lifecycle Status**: Every client must have exactly one authoritative lifecycle status (`Registered`, `On Loan`, `Completed`, `Dormant`, `Inactive (Savings Only)`, `Closed`, `Suspended`, `Defaulter`) stored via UUID FK to `client_statuses`. Loan completion (outstanding balance = ₦0) must auto-transition both `loans.status → Completed` and `clients.status → Completed`. See [CLIENT_STATUS_RULES.md](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/rules/business-rules/CLIENT_STATUS_RULES.md).
