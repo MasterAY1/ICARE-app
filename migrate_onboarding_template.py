@@ -68,7 +68,10 @@ def run_migration():
 
     # Pre-load all existing groups & clients in memory
     existing_groups_res = retry_call(lambda u: u.client.table("groups").select("*").execute())
-    existing_groups_by_name = {g["name"].strip().lower(): g for g in (existing_groups_res.data or [])}
+    existing_groups_by_number = {
+        (str(g.get("group_number")), str(g.get("branch_id"))): g 
+        for g in (existing_groups_res.data or []) if g.get("group_number")
+    }
 
     existing_clients_res = retry_call(lambda u: u.client.table("clients").select("*").execute())
     existing_clients_by_name_and_group = {
@@ -116,13 +119,13 @@ def run_migration():
         except Exception:
             gn = index + 1
         
-        existing_g = existing_groups_by_name.get(g_name.lower())
+        existing_g = existing_groups_by_number.get((str(gn), str(b_id)))
         if existing_g:
             g_id = existing_g['group_id']
             curr_seq = existing_g.get('current_member_sequence') or 0
-            retry_call(lambda u, g_id=g_id, m_day=m_day, b_id=b_id, o_id=o_id, leader=leader, gn=gn: u.client.table("groups").update({
-                "meeting_day": m_day, "branch_id": b_id, "officer_id": o_id, "leader_name": leader,
-                "group_number": gn
+            retry_call(lambda u, g_id=g_id, m_day=m_day, b_id=b_id, o_id=o_id, leader=leader, gn=gn, g_name=g_name: u.client.table("groups").update({
+                "name": g_name, "meeting_day": m_day, "branch_id": b_id, "officer_id": o_id, "leader_name": leader,
+                "group_number": str(gn)
             }).eq("group_id", g_id).execute())
         else:
             g_id = str(uuid.uuid4())
@@ -130,10 +133,10 @@ def run_migration():
             new_g_data = {
                 "group_id": g_id, "name": g_name, "meeting_day": m_day, "branch_id": b_id, 
                 "officer_id": o_id, "leader_name": leader, "status": "Active",
-                "group_number": gn, "current_member_sequence": curr_seq
+                "group_number": str(gn), "current_member_sequence": curr_seq
             }
             retry_call(lambda u, new_g_data=new_g_data: u.client.table("groups").insert(new_g_data).execute())
-            existing_groups_by_name[g_name.lower()] = new_g_data
+            existing_groups_by_number[(str(gn), str(b_id))] = new_g_data
             print(f"Created new group: {g_name} (Group #{gn})")
             
         group_ref_to_info[g_ref] = {

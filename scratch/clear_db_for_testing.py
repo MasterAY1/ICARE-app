@@ -10,9 +10,9 @@ from database.repositories.unit_of_work import SupabaseUnitOfWork
 
 def clear_transactional_data():
     print("========================================")
-    print("🧹 CLEARING TRANSACTIONAL DATA FOR TESTING")
-    print("Preserving: Users, Branches, Groups, Products, Client Records")
-    print("Clearing: CO/Master Cashbooks, Loans, Savings, Repayments, Schedules, Ledger, Events, Audit Logs")
+    print("🧹 CLEARING ALL DATA FOR FRESH TESTING")
+    print("Preserving: Users, Branches, Products, Posting Rules")
+    print("Clearing: Groups, Clients, Memberships, CO/Master Cashbooks, Loans, Savings, Repayments, Schedules, Ledger, Events, Audit Logs")
     print("========================================")
 
     try:
@@ -66,12 +66,16 @@ def clear_transactional_data():
             print("[9] Deleting Fees...")
             uow.client.table("fees").delete().neq("id", dummy_uuid).execute()
 
-            print("[10] Resetting Client Lifecycle Statuses to 'Registered'...")
-            reg_id = "11111111-1111-1111-1111-111111110001"
-            uow.client.table("clients").update({"status": reg_id}).neq("client_id", dummy_uuid).execute()
+            print("[10] Deleting Client Memberships, Clients & Groups...")
+            try:
+                uow.client.table("client_memberships").delete().neq("client_id", dummy_uuid).execute()
+            except Exception:
+                pass
+            uow.client.table("clients").delete().neq("client_id", dummy_uuid).execute()
+            uow.client.table("groups").delete().neq("group_id", dummy_uuid).execute()
 
-            print("\n🎉 Database successfully reset for fresh testing!")
-            print("All transactional history cleared. System ready for Day 1 testing.")
+            print("\n🎉 Database successfully wiped clean!")
+            print("Ready for fresh onboarding of all 50 groups and 362 members.")
 
     except Exception as e:
         print(f"\n❌ Error during database reset: {e}")
