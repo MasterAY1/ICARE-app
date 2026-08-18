@@ -1,14 +1,188 @@
 ---
 name: business-impact-analysis
-description: Performs forensic page-by-page business-rule, data-flow, root-cause, dependency, and regression-impact analysis for ICARE before code changes. Use when auditing any role (CO, BM, AM, Admin, Director), page, section, or metric, resolving data-source mismatches, column mapping discrepancies, reconciliation issues, or evaluating blast radius.
+description: Performs forensic page-by-page business-rule, data-flow, root-cause, dependency, and regression-impact analysis for ICARE before code changes. Use when auditing any role (CO, BM, AM, Admin, Director), page, section, or metric, resolving data-source mismatches, column mapping discrepancies, reconciliation issues, or evaluating blast radius. Operates as an enforced Analysis-Only state machine by default.
 ---
 
 # ICARE Business Impact Analysis Skill
-## Page-by-Page Data Integrity, Metric Verification, Root-Cause, Dependency & Regression Control
+## Enforced Forensic Analysis, Business-Rule Verification, Root-Cause, Dependency & Regression Control
 
 ---
 
-## 1. Core Purpose of This Skill
+## 0. IMMUTABLE SAFETY RULE & STATE MACHINE
+
+```
+                    ┌─────────────────────────────────────────┐
+                    │      NEW SESSION / SKILL INVOCATION     │
+                    └────────────────────┬────────────────────┘
+                                         │ (Automatic Mode Reset)
+                                         ▼
+                    ┌─────────────────────────────────────────┐
+                    │             MODE: ANALYSIS              │
+                    │         (Strict Read-Only Lock)         │
+                    │   • All write / edit tools BLOCKED      │
+                    │   • All DB mutations / scripts BLOCKED  │
+                    │   • All git mutations / push BLOCKED    │
+                    └────────────────────┬────────────────────┘
+                                         │
+                                         ▼
+                    ┌─────────────────────────────────────────┐
+                    │          FORENSIC INVESTIGATION         │
+                    │   • Read files & trace data pipeline    │
+                    │   • Match codified ICARE rules          │
+                    │   • Identify first point of divergence  │
+                    │   • Calculate blast radius & risks      │
+                    └────────────────────┬────────────────────┘
+                                         │
+                                         ▼
+                    ┌─────────────────────────────────────────┐
+                    │     REPORT WITH UNIQUE ANALYSIS ID      │
+                    │   • Format: BIA-[ROLE]-[PAGE]-[SEQ]     │
+                    │   • Append mandatory Hard-Stop Footer   │
+                    └────────────────────┬────────────────────┘
+                                         │
+                                         ▼
+                    ┌─────────────────────────────────────────┐
+                    │      STATE: WAITING_FOR_APPROVAL        │
+                    │      (Explicit Approval Required)       │
+                    └────────────────────┬────────────────────┘
+                                         │
+                   User says: "Approve BIA-..." / "Implement BIA-..."
+                                         │
+                                         ▼
+                    ┌─────────────────────────────────────────┐
+                    │          MODE: IMPLEMENTATION           │
+                    │        (Scope-Locked Execution)         │
+                    │   • Implement ONLY approved fix         │
+                    │   • Modify ONLY approved files/methods  │
+                    │   • Run verification tests              │
+                    │   • Record Fix History                  │
+                    └────────────────────┬────────────────────┘
+                                         │
+                                         │ (Execution Complete)
+                                         ▼
+                    ┌─────────────────────────────────────────┐
+                    │       AUTOMATIC RETURN TO ANALYSIS      │
+                    └─────────────────────────────────────────┘
+```
+
+> [!CAUTION]
+> **GOVERNING INVARIANT: ANALYSIS MODE NEVER WRITES.**
+> When in `ANALYSIS` mode, the agent is strictly prohibited from modifying source files, executing database writes/migrations, committing/pushing git changes, or executing state-mutating test scripts. There are **ZERO EXCEPTIONS** for "obvious fixes", "one-line changes", "failing tests", or "simple bugs".
+
+---
+
+## 1. Analysis Mode as Default & Bug Report Disambiguation
+
+### Rule 1.1: Default Mode is Always ANALYSIS
+Every new invocation of this skill starts in `MODE: ANALYSIS`. Previous implementation approvals from earlier conversation turns **NEVER** persist into a new investigation.
+
+### Rule 1.2: User Bug Report $\neq$ Implementation Approval
+A user reporting a bug, anomaly, or discrepancy is an instruction to **INVESTIGATE**, never an authorization to modify code.
+
+| User Statement | Meaning | Allowed Action | Prohibited Action |
+|---|:---:|---|---|
+| *"The BM dashboard collection figure is wrong"* | **INVESTIGATE** | Forensic trace & data contract audit. | Editing `app.py` or service files. |
+| *"Why is this value negative?"* | **INVESTIGATE** | Query schema & calculate root cause. | Applying quick fix or patch. |
+| *"Check the Cashbook for CO2"* | **INVESTIGATE** | Rebuild trace & compare with Ledger. | Mutating cashbook rows or code. |
+| *"Audit this page"* | **INVESTIGATE** | Full 10-point page audit. | Modifying queries or formatting. |
+| *"Find the bug in loan schedule"* | **INVESTIGATE** | Trace `loan_schedule` generation. | Modifying schedule algorithms. |
+| *"Fix this now"* (No prior approved BIA) | **INVESTIGATE FIRST** | Perform analysis, output BIA report, request approval. | Writing code before approval. |
+| *"Approve BIA-BM-DASH-001. Implement the fix."* | **IMPLEMENT** | Execute ONLY approved scope for `BIA-BM-DASH-001`. | Modifying unrelated files/metrics. |
+
+---
+
+## 2. Hard Pre-Flight Execution Check
+
+Before executing ANY tool call that can modify project state (files, database, git, configs), the agent MUST verify this internal execution check:
+
+```text
+================ PRE-FLIGHT CHECK ================
+CURRENT MODE:      [ANALYSIS | IMPLEMENTATION]
+APPROVAL STATUS:   [APPROVED (with exact Analysis ID) | NOT GRANTED]
+APPROVED SCOPE:    [Exact Analysis ID, Issue, Files, Functions]
+TARGET TOOL:       [Tool Name]
+IS TOOL MUTATING:  [YES / NO]
+DECISION:          [PROCEED / BLOCK]
+==================================================
+```
+
+### If `CURRENT MODE == ANALYSIS`:
+**ALL WRITE AND MUTATING TOOLS ARE HARD BLOCKED.**
+
+- 🚫 **Forbidden Actions**:
+  - `replace_file_content` / `multi_replace_file_content` / `write_to_file` on source code, tests, configs, migrations, SQL.
+  - Database mutations (`INSERT`, `UPDATE`, `DELETE`, `UPSERT`, `ALTER`, `DROP`, running migration scripts).
+  - Git mutations (`git add`, `git commit`, `git push`, `git reset`, `git checkout` modifying files, `git merge`).
+  - Executing scripts that mutate the database or file system.
+- ✅ **Allowed Read-Only Actions**:
+  - `view_file`, `grep_search`, `list_dir`.
+  - Read-only database queries (`SELECT`, schema inspection, metadata queries, `EXPLAIN`).
+  - Read-only git commands (`git status`, `git diff`, `git log`, `git show`).
+  - Running purely read-only diagnostic scripts that make zero database/file writes.
+
+---
+
+## 3. Explicit Implementation Command & Analysis ID Requirement
+
+### Rule 3.1: Unique Analysis ID Generation
+Every investigation report generated by this skill must assign and display a unique **Analysis ID** formatted as:
+$$\text{BIA-}[\text{ROLE}]-[\text{PAGE/AREA}]-[\text{SEQ}]$$
+*(e.g., `BIA-BM-DASH-001`, `BIA-CO-OPS-002`, `BIA-AM-RECON-001`)*
+
+### Rule 3.2: Approval Linked to Analysis ID
+Implementation is permitted **ONLY** when the user explicitly approves the specific Analysis ID (e.g., *"Approve BIA-BM-DASH-001"*, *"Proceed with implementation for BIA-BM-DASH-001"*).
+
+### Rule 3.3: Ambiguity Stop Protocol
+If the user provides an ambiguous command (e.g., *"Okay fix it"*) when multiple analyses are pending or when no specific Analysis ID is mentioned:
+> **STOP AND ASK**: Prompt the user to confirm the exact Analysis ID and scope before taking any action.
+
+---
+
+## 4. Implementation Scope Lock
+
+When explicit approval is granted for an Analysis ID, an **Implementation Scope Lock** is established:
+
+```text
+================ IMPLEMENTATION SCOPE LOCK ================
+APPROVED ANALYSIS:   BIA-BM-DASH-001
+APPROVED METRIC:     Collection Today
+APPROVED FIX:        [Exact summary of proposed surgical fix]
+APPROVED FILES:      [services/dashboard_service.py]
+APPROVED FUNCTIONS:  [get_bm_dashboard_data()]
+UNAPPROVED:          ALL OTHER FILES, FUNCTIONS, AND PAGES
+===========================================================
+```
+
+### Rules During Implementation:
+1. **Zero Scope Creep**: The agent MUST NOT modify any file or function outside the approved scope.
+2. **Discovered Issues Protocol**: If another bug or divergence is discovered while implementing the approved fix:
+   - **DO NOT** silently fix it.
+   - **DO NOT** expand the current implementation scope.
+   - **STOP** and document the new issue as a separate `BIA-[ROLE]-[PAGE]-[SEQ]` analysis for subsequent user review.
+3. **Automatic Return to Analysis Mode**: Immediately upon completing implementation, running verification tests, and recording Fix History, the agent MUST automatically reset its state to `MODE: ANALYSIS`.
+
+---
+
+## 5. Mandatory Analysis Hard-Stop Footer
+
+Every investigation report produced in `ANALYSIS` mode MUST terminate with this exact, verbatim block. **No implementation code, file edits, or patch executions are permitted after this block:**
+
+```markdown
+---
+
+### 🛑 ANALYSIS COMPLETE
+
+- **ANALYSIS ID**: [e.g., BIA-BM-DASH-001]
+- **CODE CHANGES**: NONE
+- **DATABASE CHANGES**: NONE
+- **FILES MODIFIED**: NONE
+- **APPROVAL STATUS**: WAITING FOR APPROVAL
+- **NEXT ACTION**: User must explicitly approve this Analysis ID (e.g. `Approve BIA-...`) before implementation can proceed.
+```
+
+---
+
+## 6. Core Purpose & Operational Roles of This Skill
 
 This skill is the authoritative operational protocol for ensuring absolute data integrity, business-rule compliance, and regression safety across the ICARE Banking System.
 
@@ -28,7 +202,7 @@ It operates as a:
 
 ---
 
-## 2. ICARE Business Rule Authority
+## 7. ICARE Business Rule Authority
 
 Always read and strictly adhere to:
 1. Mandatory entry point: [`.agents/rules/00-READ-FIRST.md`](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/rules/00-READ-FIRST.md)
@@ -38,59 +212,28 @@ Always read and strictly adhere to:
 
 ### Non-Negotiable Governance Invariants:
 - **Business Rules ALWAYS outrank current UI implementations.**
-- **Never infer ICARE behavior from generic banking software.** Do not replace ICARE logic with Mambu, Temenos, LAPO, FINCA, Oradian, or any other external banking model.
+- **Never infer ICARE behavior from generic banking software.** Do not replace ICARE logic with external banking models.
 - Generic banking concepts may be used for UI/UX inspiration **ONLY** when they do not conflict with ICARE business rules.
 
 ---
 
-## 3. Page-by-Page Audit Mode
-
-Audits proceed methodically through single-focus units. Every investigation must declare its explicit context:
-
-```text
-ROLE:            [CO | BM | AM | Admin | Director | Auditor]
-PAGE:            [Dashboard | Portfolio | Field Operations | Cashbook | Audit | Reports | Settings]
-SECTION:         [e.g., Executive KPI Banner, Today's Collections Table, Loan Product Summary]
-METRIC / FIELD:  [e.g., Collection Today, Outstanding Balance, Active Credit, 12-Week Repayment]
-STATUS:          [UNDER_INVESTIGATION | VERIFIED | FIX_PROPOSED | FIX_APPROVED | FIXED | REGRESSION_VERIFIED]
-```
-
-**Scope Constraint**: Do not expand the investigation unnecessarily into unrelated features unless blast-radius analysis proves a shared dependency is affected.
-
----
-
-## 4. Role-Aware Analysis (RBAC Scope Verification)
+## 8. Role-Aware Analysis (RBAC Scope Verification)
 
 Every metric investigation must verify that the calculation respects the authenticated user's Role-Based Access Control (RBAC) boundary:
 
-- **Credit Officer (CO)**:
-  - Own assigned client portfolio only.
-  - Own officer scope (`officer_id` / `credit_officer`).
-  - Own daily collections and physical vault custody.
-  - Own CO Cashbook projection.
-- **Branch Manager (BM)**:
-  - Assigned branch boundary (`branch_id`).
-  - All credit officers within that branch.
-  - Branch-wide portfolio aggregation.
-  - Branch Master Cashbook and treasury transactions.
-  - Operational approval authority.
-- **Area Manager (AM)**:
-  - Assigned multi-branch coverage (`assigned_branch_ids`).
-  - Regional cross-branch filtering and comparative summaries.
-  - Regional portfolio exposure and aggregated cash positions.
-- **System Administrator (ADMIN)**:
-  - Institution-wide read/write scope across all branches and zones.
-  - Global user management, product configuration, chart of accounts.
-- **Executive Director (DIRECTOR)**:
-  - Institution-wide executive read-only analytics, financial statements, and PAR reports.
+- **Credit Officer (CO)**: Own assigned client portfolio and vault custody (`officer_id`).
+- **Branch Manager (BM)**: Assigned branch boundary (`branch_id`) across all branch officers.
+- **Area Manager (AM)**: Assigned multi-branch coverage (`assigned_branch_ids`).
+- **System Administrator (ADMIN)**: Institution-wide administrative scope.
+- **Executive Director (DIRECTOR)**: Institution-wide executive read-only analytics.
 
 **Rule**: A metric can be mathematically accurate but still be **CRITICALLY WRONG** if calculated across the wrong RBAC scope.
 
 ---
 
-## 5. Page Data Contract
+## 9. Page Data Contract Specification
 
-Every audited metric must produce a structured **Data Contract** before modifying code:
+Every audited metric must produce a structured **Data Contract** as part of its investigation report:
 
 ```text
 METRIC:                           [Name of Metric]
@@ -118,31 +261,22 @@ KNOWN RISKS:                      [Potential regression vectors]
 
 ---
 
-## 6. Source-of-Truth Identification
+## 10. Source-of-Truth Classification
 
 For every metric, classify its architectural nature:
 
-1. **Financial Metric (Physical Cash / Vault Liability)**:
-   - **Authoritative Source**: `financial_ledger_entries` (`Account 1000` for physical vault cash, `Account 1050` for bank).
-   - *Rule*: Never derive physical cash balances from operational tables (`loans`, `repayments`, `treasury_transactions`).
-2. **CO Cashbook Projection**:
-   - **Authoritative Source**: `co_cashbooks` built strictly from `financial_ledger_entries` (Account 1000) and `event_store`.
-3. **Master Cashbook Projection**:
-   - **Authoritative Source**: `master_cashbook` aggregating all branch CO cashbooks plus branch treasury events.
-4. **Operational Entity State (Lifecycle & Ownership)**:
-   - **Authoritative Source**: Operational tables (`loans`, `clients`, `groups`, `loan_products`).
-5. **Scheduled Amortization**:
-   - **Authoritative Source**: `loan_schedule` generated using business meeting days.
-6. **Outstanding / Remaining Loan Balance**:
-   - **Authoritative Source**: $\max(0.0, \text{loans.total\_due (baseline)} - \sum \text{post-migration repayments})$.
-7. **Savings Balance**:
-   - **Authoritative Source**: $\sum(\text{deposits}) - \sum(\text{withdrawals})$ per category (`individual_savings`, `group_savings`, `internal_savings`).
-8. **Reporting & Dashboard Aggregation**:
-   - **Authoritative Source**: Dedicated service methods respecting RBAC scope and business date filters.
+1. **Financial Metric (Physical Cash / Vault Liability)**: `financial_ledger_entries` (`Account 1000` for physical vault cash, `Account 1050` for bank). Never derive cash balances from operational tables (`loans`, `repayments`, `treasury_transactions`).
+2. **CO Cashbook Projection**: `co_cashbooks` built strictly from `financial_ledger_entries` (Account 1000) and `event_store`.
+3. **Master Cashbook Projection**: `master_cashbook` aggregating all branch CO cashbooks plus branch treasury events.
+4. **Operational Entity State (Lifecycle & Ownership)**: Operational tables (`loans`, `clients`, `groups`, `loan_products`).
+5. **Scheduled Amortization**: `loan_schedule` generated using business meeting days.
+6. **Outstanding / Remaining Loan Balance**: $\max(0.0, \text{loans.total\_due (baseline)} - \sum \text{post-migration repayments})$.
+7. **Savings Balance**: $\sum(\text{deposits}) - \sum(\text{withdrawals})$ per category (`individual_savings`, `group_savings`, `internal_savings`).
+8. **Reporting & Dashboard Aggregation**: Dedicated service methods respecting RBAC scope and business date filters.
 
 ---
 
-## 7. UI → Data Pipeline Trace
+## 11. UI → Data Pipeline Trace & Point of Divergence
 
 Trace every metric through all architectural tiers:
 
@@ -160,17 +294,7 @@ DATABASE / PROJECTION TABLE
 RAW DATA / POSTED EVENTS
 ```
 
-**Audit Checks**:
-- Flag if the UI bypasses the service layer and queries the database/DataFrame directly.
-- Flag if the UI performs ad-hoc mathematical transformations on unrelated merged DataFrames.
-- Flag if column names are renamed inconsistently across layers.
-
----
-
-## 8. First Point of Divergence
-
-Identify the earliest stage where **EXPECTED ICARE VALUE** becomes **ACTUAL IMPLEMENTED VALUE**:
-
+### First Point of Divergence Checks:
 - **Wrong Filter**: Branch, officer, date range, or status filter missing or misconfigured.
 - **Wrong Column**: Using `active_credit` instead of `total_due` as the remaining balance baseline.
 - **Wrong Aggregation**: `COUNT` instead of `SUM`, or lifetime cumulative instead of period-filtered.
@@ -180,45 +304,9 @@ Identify the earliest stage where **EXPECTED ICARE VALUE** becomes **ACTUAL IMPL
 - **Duplicate / Missing Rows**: Cartesian join or improper group-by aggregation.
 - **Hardcoded Value**: Static fallback values embedded in UI or service logic.
 
-*Rule*: Do not identify the UI as the root cause merely because the UI displays the wrong result. Find the first point of divergence in the data pipeline.
-
 ---
 
-## 9. Database Column Mapping Audit
-
-When data is correct in the database but appears in the wrong column or fails to render:
-
-```text
-SOURCE DB FIELD:       [e.g., loans.total_due]
-EXPECTED UI FIELD:     [e.g., Remaining Balance]
-ACTUAL UI FIELD:       [e.g., Active Credit / Loan Principal]
-MAPPING FILE:          [File where mapping occurs]
-MAPPING FUNCTION:      [Function / Transformer name]
-ROOT CAUSE:            [Why the field was misrouted]
-AFFECTED PAGES:        [All UI pages displaying this mapping]
-AFFECTED REPORTS:      [All exports / CSVs containing this field]
-```
-
-**Rule**: Never fix a column mapping bug by renaming a UI label unless the mapping logic is correct and only presentation styling was wrong.
-
----
-
-## 10. Shared Metric Detection & Conflict Flagging
-
-When a metric name (e.g., *"Collection Today"*, *"Active Credit"*, *"Total Savings"*) appears on multiple screens:
-1. Search all implementations across CO, BM, AM, Admin, Director, Portfolio, Cashbook, and Audit views.
-2. Verify:
-   - Do they share the same business definition?
-   - Do they read from the same authoritative source?
-   - Are their RBAC scopes appropriate for each role?
-   - Are their date definitions identical?
-3. If two pages use conflicting formulas for the same business metric:
-   - **FLAG**: `METRIC DEFINITION CONFLICT`.
-   - Resolve to the single authoritative ICARE rule rather than applying quick patches to individual pages.
-
----
-
-## 11. Blast-Radius Analysis
+## 12. Blast-Radius Analysis & Shared Protection Protocol
 
 Every proposed modification must include a complete blast-radius assessment:
 
@@ -235,10 +323,7 @@ TEST IMPACT:        [Which unit/regression test suites must be updated or added]
 REGRESSION RISK:    [LOW / MEDIUM / HIGH / CRITICAL]
 ```
 
----
-
-## 12. Shared Function Protection Protocol
-
+### Shared Function Protection Protocol:
 Before modifying any shared method in `services/`, `database/`, or `mappers/`:
 1. Search all callers across the repository: `grep_search` across `*.py`.
 2. Inspect every consumer page, role, and test file.
@@ -249,133 +334,25 @@ Before modifying any shared method in `services/`, `database/`, or `mappers/`:
 
 ---
 
-## 13. Page-Local vs System-Wide Classification
+## 13. Cross-Role Root Cause Status Taxonomy
 
-Classify the issue into one of 10 structural tiers:
+Classify every identified root cause:
 
-- **A. UI Rendering Bug**: Presentation, styling, HTML/CSS container, or badge formatting.
-- **B. UI Mapping Bug**: Correct data fetched, but assigned to the wrong DataFrame column.
-- **C. Page Calculation Bug**: Page-specific ad-hoc formula error in presentation script.
-- **D. Shared Service Bug**: Error inside a core service method in `services/`.
-- **E. Repository / Query Bug**: Malformed SQL query, missing join, or incorrect WHERE clause.
-- **F. Projection Bug**: Error in projection builders (`co_cashbooks`, `master_cashbook`).
-- **G. Database Data Problem**: Missing seed, corrupt foreign key, or legacy data artifact.
-- **H. Domain / Business-Rule Problem**: Implementation conflicts with codified ICARE rule.
-- **I. Accounting / Ledger Problem**: Imbalance between debits/credits or wrong account code.
-- **J. Cross-Page Metric Conflict**: Two views use contradictory definitions for the same metric.
+- **`NEW`**: First time this root cause has been identified in any role/page.
+- **`ALREADY_IDENTIFIED`**: Root cause was previously identified in another role's audit but has not yet been fixed.
+- **`ALREADY_FIXED`**: Root cause was already fixed during a previous role/page audit.
+- **`REGRESSION_DETECTED`**: A previously fixed root cause has reappeared.
+- **`SHARED_FIX_REQUIRED`**: Root cause affects multiple roles/pages and requires a single coordinated fix at the shared service/repository/projection layer rather than per-page patches.
 
 ---
 
-## 14. Cumulative Knowledge Management
+## 14. Fix History Record Schema (Post-Implementation Only)
 
-Findings from earlier audits must be preserved and cross-referenced when moving across roles:
-
-$$\text{Phase A: CO Audit} \longrightarrow \text{Phase B: BM Audit} \longrightarrow \text{Phase C: AM Audit} \longrightarrow \text{Phase D: Admin} \longrightarrow \text{Phase E: Director}$$
-
-### Audit Knowledge Trace Matrix:
-$$\text{ROLE} \longrightarrow \text{PAGE} \longrightarrow \text{METRIC} \longrightarrow \text{ROOT CAUSE} \longrightarrow \text{STATUS} \longrightarrow \text{FIX} \longrightarrow \text{IMPACT}$$
-
-*Rule*: When investigating a BM issue, cross-check whether the service, repository, projection, or column mapping was already audited in the CO audit. Fix the root cause at the authoritative source once.
-
----
-
-## 15. Cross-Page Root Cause Detection & Common Root Cause Status
-
-If a bug is discovered in one view:
-1. Search if the same source query/field is used in other views.
-2. If `loans.active_credit` or `ScheduleService.get_total_paid` is used in both CO Portfolio and BM Dashboard, report a **COMMON ROOT CAUSE**.
-3. Fix the underlying service/projection once, and verify all consuming views simultaneously.
-
-### Common Root Cause Status Taxonomy
-
-Every root cause identified during investigation must be classified using one of these statuses:
-
-```text
-NEW                    First time this root cause has been identified in any role/page.
-ALREADY_IDENTIFIED     Root cause was previously identified in another role's audit
-                       but has not yet been fixed.
-ALREADY_FIXED          Root cause was already fixed during a previous role/page audit.
-                       Current issue may be a different symptom of a related problem,
-                       or the current page may need to adopt the existing fix.
-REGRESSION_DETECTED    A previously fixed root cause has reappeared, indicating the
-                       fix was reverted, bypassed, or invalidated by a later change.
-SHARED_FIX_REQUIRED    Root cause affects multiple roles/pages and requires a single
-                       coordinated fix at the shared service/repository/projection
-                       layer rather than per-page patches.
-```
-
-### Cross-Role Root Cause Lookup Protocol
-
-Before classifying any root cause as `NEW`:
-1. Check the Fix History Records (Section 20) for prior fixes involving the same function, table, column, or service method.
-2. Check the System-Wide Verified Metric Registry (Section 21) for verified definitions that already govern this data source.
-3. If a match is found, classify as `ALREADY_IDENTIFIED`, `ALREADY_FIXED`, or `REGRESSION_DETECTED` accordingly.
-4. If the root cause spans multiple pages/roles that have not all been audited, classify as `SHARED_FIX_REQUIRED` and document every known consumer.
-
-**Rule**: Never apply a page-local patch to a root cause classified as `SHARED_FIX_REQUIRED`. Fix the authoritative shared source once.
-
----
-
-## 16. Page Completion Rule (10-Point Checklist)
-
-A page is **NOT** complete merely because visible cards display values. A page is verified only when:
-1. [ ] Every major metric has a defined Data Contract.
-2. [ ] Every metric reads from its Authoritative Source of Truth.
-3. [ ] Every underlying query and filter is verified against database records.
-4. [ ] RBAC scope filtering is enforced for all roles accessing the page.
-5. [ ] Operational Business Date semantics are respected.
-6. [ ] Column mappings between DB $\rightarrow$ Service $\rightarrow$ UI are 100% verified.
-7. [ ] Shared consumers across other pages are identified and protected.
-8. [ ] Blast radius is documented with risk level.
-9. [ ] Automated regression test script is written, executed, and passing.
-10. [ ] Zero unexplained metric discrepancies remain.
-
----
-
-## 17. Role Completion Rule
-
-A role is complete only when its full operational lifecycle is verified:
-
-$$\text{Sidebar Navigation} \longrightarrow \text{Dashboard} \longrightarrow \text{Portfolio} \longrightarrow \text{Operations} \longrightarrow \text{Cashbook} \longrightarrow \text{Audit} \longrightarrow \text{Reports}$$
-
----
-
-## 18. Production Safety & Data Invariants
-
-During analysis and stabilization:
-- **DO NOT** modify live transactional data without explicit user instruction.
-- **DO NOT** alter historical financial ledger entries (`FP-002`).
-- **DO NOT** invent fallback values or bypass missing metadata (`FP-001`).
-- **DO NOT** change an ICARE business rule to match dirty or incomplete test data.
-- If data corruption or legacy migration anomalies are found, report them separately in the investigation report.
-
----
-
-## 19. Two-Mode Execution Protocol
-
-### Mode A: ANALYSIS (Default)
-- **Zero code modifications.**
-- Perform forensic tracing, query live schema, verify business rules.
-- Output the complete **Metric Investigation Report**.
-- Set approval status to `WAITING FOR APPROVAL`.
-
-### Mode B: IMPLEMENTATION (Post-Approval Only)
-1. Re-read the approved analysis and confirmed Data Contract.
-2. Implement **ONLY** the approved fix at the correct architectural layer.
-3. Avoid unrelated refactorings or cosmetic changes.
-4. Run targeted regression test scripts (`scratch/test_*.py`).
-5. Run tests for all identified downstream consumers.
-6. Verify cross-role compatibility.
-7. Record the fix in the Fix History Record.
-
----
-
-## 20. Fix History Record Schema
-
-Every applied fix must document:
+When an approved fix is implemented during `MODE: IMPLEMENTATION`, document:
 
 ```text
 FIX ID:                 [e.g., FIX-BM-DASH-001]
+ANALYSIS ID:            [e.g., BIA-BM-DASH-001]
 DATE:                   [YYYY-MM-DD]
 ROLE:                   [e.g., BM]
 PAGE:                   [e.g., Dashboard]
@@ -399,151 +376,23 @@ STATUS:                 [FIXED]
 
 ---
 
-## 21. System-Wide Verified Metric Registry
+## 15. System-Wide Verified Metric Registry
 
-### Metric Lifecycle States
-
-Metrics progress through explicit lifecycle states:
-
+### Metric Lifecycle States:
 $$\text{UNKNOWN} \longrightarrow \text{UNDER\_INVESTIGATION} \longrightarrow \text{FIX\_PROPOSED} \longrightarrow \text{FIX\_APPROVED} \longrightarrow \text{FIXED} \longrightarrow \text{REGRESSION\_VERIFIED} \longrightarrow \mathbf{VERIFIED}$$
 
-*Rule*: Never mark a metric `VERIFIED` without verified test script execution.
-
-### Cross-Role Verified Metric Contract
-
-Once a metric's source, definition, and calculation have been **verified and fixed** during one role's audit, that verified contract becomes the **system-wide authoritative definition**.
-
-All subsequent role audits must **compare against the existing verified contract** rather than re-deriving the definition from scratch.
-
-#### Verified Metric Entry Format
-
-```text
-METRIC ID:              [e.g., COLLECTION_TODAY, OUTSTANDING_BALANCE, TOTAL_SAVINGS]
-DISPLAY NAME:           [e.g., "Collection Today", "Outstanding Balance"]
-BUSINESS DEFINITION:    [Exact ICARE business meaning]
-AUTHORITATIVE SOURCE:   [e.g., repayments table filtered by date, financial_ledger_entries Account 1000]
-AUTHORITATIVE SERVICE:  [e.g., PortfolioService.get_portfolio_data_for_scope]
-CALCULATION:            [Exact formula]
-DATE RULE:              [e.g., operational business date, period filter]
-SCOPE RULE:             [e.g., branch_id filter, officer_id filter]
-VERIFIED BY:            [Role and page where verification occurred]
-VERIFICATION DATE:      [YYYY-MM-DD]
-TEST SCRIPT:            [e.g., scratch/test_collection_today.py]
-
-ROLE STATUS:
-  CO:       [✅ VERIFIED | 🔎 UNDER_INVESTIGATION | ⬜ NOT_AUDITED]
-  BM:       [✅ VERIFIED | 🔎 UNDER_INVESTIGATION | ⬜ NOT_AUDITED]
-  AM:       [⬜ NOT_AUDITED]
-  Admin:    [⬜ NOT_AUDITED]
-  Director: [⬜ NOT_AUDITED]
-```
-
-#### Cross-Role Comparison Protocol
-
-When auditing a metric on a new role (e.g., BM) that has already been verified on a previous role (e.g., CO):
-
-1. **Retrieve the verified contract** from the registry.
-2. **Trace the new role's implementation** through its own UI → Service → Repository pipeline.
-3. **Compare**:
-   - Does the BM implementation use the **same authoritative source**?
-   - Does it use the **same calculation formula**?
-   - Is the only difference the **RBAC scope** (branch-level vs officer-level)?
-4. **If the BM implementation matches** the verified contract (with appropriate scope differences): mark BM as `✅ VERIFIED`.
-5. **If the BM implementation diverges**: flag as a `METRIC DEFINITION CONFLICT` and classify the root cause:
-   - `NEW` — BM has a genuinely different bug not seen before.
-   - `ALREADY_FIXED` — The fix applied during CO audit should also apply to BM but was not propagated.
-   - `SHARED_FIX_REQUIRED` — Both roles consume a shared service that needs a single coordinated fix.
-   - `REGRESSION_DETECTED` — A previous fix was undone or bypassed.
-
-#### Definition Lock Rule
-
-Once a metric reaches `✅ VERIFIED` status on **any** role:
-- Its `BUSINESS DEFINITION`, `AUTHORITATIVE SOURCE`, and `CALCULATION` are **locked**.
-- No subsequent role audit may introduce a conflicting definition without explicit user approval.
-- If a legitimate business reason exists for role-specific variations (e.g., different aggregation granularity), document it as a **ROLE-SPECIFIC VARIANT** with a distinct `METRIC ID` (e.g., `COLLECTION_TODAY_BRANCH` vs `COLLECTION_TODAY_OFFICER`).
-
-#### Preventing Duplicate Definitions
-
-The registry serves as a **single source of truth for metric definitions**:
-- Before writing any new calculation for a metric, search the registry.
-- If a verified entry exists, adopt it.
-- If the verified entry is wrong, escalate — do not silently create a second definition.
+*Rule*: Never mark a metric `VERIFIED` without verified test script execution. Once verified, the contract is locked across all roles.
 
 ---
 
-## 22. Current Working Strategy & Phase Progression
+## 16. Required Metric Investigation Output Format
 
- stabilization proceeds sequentially:
-
-```
-PHASE A: Credit Officer (CO)
-  ├── Dashboard Metrics
-  ├── Portfolio & Loan History
-  ├── Daily Collections / Operations
-  └── CO Cashbook Projections
-
-PHASE B: Branch Manager (BM) [CURRENT FOCUS]
-  ├── Branch Performance Dashboard
-  ├── Branch Portfolio & Risk Analytics
-  ├── End of Day Operations & Approval Queue
-  ├── Master Cashbook & Vault Reconciliation
-  └── Branch Audit & Exports
-
-PHASE C: Area Manager (AM)
-  ├── Multi-Branch Regional Dashboard
-  ├── Cross-Branch Comparative Portfolio
-  └── Regional Cash & Treasury Overview
-
-PHASE D: System Administrator (Admin)
-  ├── System-Wide Financial Aggregation
-  ├── User Management & RBAC Hierarchy
-  └── Chart of Accounts & Posting Rules
-
-PHASE E: Executive Director
-  ├── Institutional KPI Dashboard
-  └── Audited Financial Statements & PAR Analytics
-```
-
----
-
-## 23. Streamlit & Future Frontend Migration Readiness
-
-When investigating and fixing bugs:
-- **Cleanly decouple Business Logic from Presentation Logic.**
-- Business rules, financial calculations, and metric formulas belong in `services/`, `domain/`, or `projections/`.
-- UI files (`app.py` or future React/Next.js components) must only consume verified service/API outputs.
-- Never embed financial or double-entry calculations directly inside Streamlit or React components.
-
----
-
-## 24. Streamlit-Specific Legacy Code Rule
-
-- `app.py` is a large presentation layer.
-- **DO NOT** rewrite or refactor `app.py` simply because of its size during a metric audit.
-- Make targeted, surgical modifications at the smallest correct layer (Presentation $\rightarrow$ Service $\rightarrow$ Projection $\rightarrow$ Repository).
-
----
-
-## 25. Stop Conditions
-
-Immediately **STOP** and request clarification when:
-1. Documented business rules conflict with each other.
-2. Two authoritative sources exist for the same metric without clear precedence.
-3. Historical data prevents safe calculation.
-4. Shared consumers require mutually exclusive business definitions.
-5. A proposed fix carries high financial or ledger risk.
-6. A database migration appears necessary.
-7. A fix would alter posted financial history.
-
----
-
-## 26. Required Metric Investigation Output Format
-
-For every metric audit, return this exact structure:
+For every investigation, return this exact structure:
 
 ```markdown
 # METRIC INVESTIGATION
 
+**ANALYSIS ID:** [e.g., BIA-BM-DASH-001]  
 **ROLE:** [CO | BM | AM | Admin | Director]  
 **PAGE:** [Page Name]  
 **SECTION:** [Section Name]  
@@ -559,10 +408,10 @@ For every metric audit, return this exact structure:
 [Current incorrect value/behavior displayed in UI]
 
 ## 4. DATA CONTRACT
-[Full Data Contract specification per Section 5]
+[Full Data Contract specification per Section 9]
 
 ## 5. COMPLETE DATA TRACE
-[End-to-end tier-by-tier pipeline trace per Section 7]
+[End-to-end tier-by-tier pipeline trace per Section 11]
 
 ## 6. FIRST POINT OF DIVERGENCE
 [Exact location where expected logic diverges]
@@ -572,7 +421,6 @@ For every metric audit, return this exact structure:
 
 ## 7b. COMMON ROOT CAUSE STATUS
 [NEW | ALREADY_IDENTIFIED | ALREADY_FIXED | REGRESSION_DETECTED | SHARED_FIX_REQUIRED]
-[If not NEW: reference the prior Fix ID, role, page, and date where this was first identified/fixed]
 
 ## 8. AUTHORITATIVE SOURCE
 [The true source of truth for this metric]
@@ -581,7 +429,7 @@ For every metric audit, return this exact structure:
 [The current faulty source used]
 
 ## 10. COLUMN / FIELD MAPPING
-[Database to UI column mapping audit per Section 9]
+[Database to UI column mapping audit]
 
 ## 11. SHARED CONSUMERS
 [List of all other pages, roles, and reports consuming this logic]
@@ -604,33 +452,17 @@ For every metric audit, return this exact structure:
 ## 17. TESTS REQUIRED
 [Specific test scripts to write and run]
 
-## 18. CROSS-ROLE IMPACT
+## 18. CROSS-ROLE IMPACT & VERIFIED METRIC COMPARISON
 [Impact on CO, BM, AM, Admin, and Director views]
-
-## 18b. VERIFIED METRIC COMPARISON
-[If this metric has a verified contract from a previous role audit, compare here:]
-- Verified Contract METRIC ID: [e.g., OUTSTANDING_BALANCE]
-- Verified on: [e.g., CO Portfolio, 2026-08-16]
-- Same authoritative source? [YES / NO — explain divergence]
-- Same calculation formula? [YES / NO — explain divergence]
-- RBAC scope difference only? [YES / NO]
-- Verdict: [MATCHES_VERIFIED_CONTRACT | DEFINITION_CONFLICT | NOT_YET_VERIFIED]
-
-## 18c. METRIC REGISTRY UPDATE
-[After fix is applied and verified, provide the updated registry entry for this metric per Section 21]
-
-## 19. APPROVAL STATUS
-**WAITING FOR APPROVAL**
-```
 
 ---
 
-## 27. Final Governing Principle
+### 🛑 ANALYSIS COMPLETE
 
-### Anti-Pattern to Prevent:
-$$\text{Bug A} \longrightarrow \text{Quick Patch} \longrightarrow \text{Bug B} \longrightarrow \text{Quick Patch} \longrightarrow \text{System Drift \& Ledger Inconsistency}$$
-
-### Enforced Standard:
-$$\mathbf{Business\ Rule} \longrightarrow \mathbf{Metric\ Contract} \longrightarrow \mathbf{Source\ of\ Truth} \longrightarrow \mathbf{Trace} \longrightarrow \mathbf{Root\ Cause} \longrightarrow \mathbf{Blast\ Radius} \longrightarrow \mathbf{Approved\ Fix} \longrightarrow \mathbf{Regression\ Verification}$$
-
-The goal is a permanently consistent ICARE Core Banking System where every business fact has exactly **one unambiguous, verified truth** across all roles, pages, cashbooks, audit logs, and future frontends.
+- **ANALYSIS ID**: [e.g., BIA-BM-DASH-001]
+- **CODE CHANGES**: NONE
+- **DATABASE CHANGES**: NONE
+- **FILES MODIFIED**: NONE
+- **APPROVAL STATUS**: WAITING FOR APPROVAL
+- **NEXT ACTION**: User must explicitly approve this Analysis ID (e.g. `Approve BIA-...`) before implementation can proceed.
+```
