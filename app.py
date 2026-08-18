@@ -6679,12 +6679,13 @@ elif page == "CO Cashbook":
                     right_total = float(c.get("total_outflows") or 0)
                     closing_bal = float(c.get("closing_balance") or 0)
 
-                # Fetch active disbursements originated today for breakdown
-                res_l = uow.client.table("loans").select("loan_amount, active_credit, loan_products(name, repayment_cycle)") \
-                    .eq("officer_id", o_id).eq("branch_id", branch_id) \
-                    .gte("created_at", f"{date_str}T00:00:00").lte("created_at", f"{date_str}T23:59:59") \
+                # Fetch active disbursements originated today for breakdown (excluding legacy onboarding)
+                res_l = uow.client.table("loans").select("loan_amount, active_credit, extra_fields, loan_products(name, repayment_cycle)") \
+                    .eq("officer_id", o_id).eq("branch_id", branch_id).eq("disbursement_date", date_str) \
                     .in_("status", ["Active", "Approved", "Completed"]).execute()
                 for l in (res_l.data or []):
+                    if isinstance(l.get("extra_fields"), dict) and l["extra_fields"].get("is_legacy") is True:
+                        continue
                     act_cr = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
                     lp = l.get("loan_products") or {}
                     p_name = str(lp.get("name") or "").lower()
@@ -7268,12 +7269,13 @@ elif page == "Master Cashbook":
                         right_total = float(c.get("total_outflows") or 0)
                         closing_bal = float(c.get("closing_balance") or 0)
                         
-                    # Also fetch today's active loan disbursements for this CO breakdown
-                    res_l = uow.client.table("loans").select("loan_amount, active_credit, loan_products(name, repayment_cycle)") \
-                        .eq("officer_id", o_id).eq("branch_id", branch_id) \
-                        .gte("created_at", f"{date_str}T00:00:00").lte("created_at", f"{date_str}T23:59:59") \
+                    # Also fetch today's active loan disbursements for this CO breakdown (excluding legacy onboarding)
+                    res_l = uow.client.table("loans").select("loan_amount, active_credit, extra_fields, loan_products(name, repayment_cycle)") \
+                        .eq("officer_id", o_id).eq("branch_id", branch_id).eq("disbursement_date", date_str) \
                         .in_("status", ["Active", "Approved", "Completed"]).execute()
                     for l in (res_l.data or []):
+                        if isinstance(l.get("extra_fields"), dict) and l["extra_fields"].get("is_legacy") is True:
+                            continue
                         act_cr = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
                         lp = l.get("loan_products") or {}
                         p_name = str(lp.get("name") or "").lower()
