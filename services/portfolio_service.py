@@ -309,13 +309,14 @@ class PortfolioService:
             lifetime_repayments_map = {}
 
         # 5. Aggregations & Summary Calculations from Authoritative Client Statuses & Dynamic Balances (BR-CLI-006)
-        total_registered_clients = len(clients_raw)
+        total_clients_count = len(clients_raw)
         status_map = {}
         for c in clients_raw:
             cs = c.get("client_statuses")
             s_name = cs.get("name") if isinstance(cs, dict) else (c.get("status") or "Registered")
             status_map[s_name] = status_map.get(s_name, 0) + 1
 
+        registered_clients_count = status_map.get("Registered", 0)
         active_clients_count = status_map.get("On Loan", 0)
         completed_clients_count = status_map.get("Completed", 0)
         pending_loan_clients_count = status_map.get("Pending Loan", 0)
@@ -516,7 +517,9 @@ class PortfolioService:
 
         return {
             "summary": {
-                "total_registered_clients": total_registered_clients,
+                "total_clients": total_clients_count,
+                "total_registered_clients": total_clients_count,
+                "registered_clients": registered_clients_count,
                 "active_clients": active_clients_count,
                 "completed_clients": completed_clients_count,
                 "pending_loan_clients": pending_loan_clients_count,

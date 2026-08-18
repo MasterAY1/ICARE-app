@@ -7613,7 +7613,7 @@ elif page == "Portfolio":
 
         st.caption("Row 1: Client Lifecycle Status Breakdown (BR-CLI-006)")
         c1, c2, c3, c4, c5, c6 = st.columns(6)
-        c1.metric("👥 Total Registered", f"{p_sum.get('total_registered_clients', 0)} Clients")
+        c1.metric("👥 Registered", f"{p_sum.get('registered_clients', p_sum.get('total_registered_clients', 0))} Clients", f"Total: {p_sum.get('total_clients', 0)}")
         c2.metric("🟢 Active On Loan", f"{p_sum.get('active_clients', 0)} Clients")
         c3.metric("🏆 Recently Completed", f"{p_sum.get('completed_clients', 0)} Clients")
         c4.metric("⏳ Pending Loans", f"{p_sum.get('pending_loan_clients', 0)} Clients")

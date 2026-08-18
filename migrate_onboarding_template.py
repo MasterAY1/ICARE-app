@@ -209,8 +209,18 @@ def run_migration():
             
         # Canonical status UUIDs
         REG_STATUS_ID = "11111111-1111-1111-1111-111111110001"
+        ON_LOAN_STATUS_ID = "11111111-1111-1111-1111-111111110003"
+        SAVINGS_ONLY_STATUS_ID = "11111111-1111-1111-1111-111111110006"
+
         has_active_loan = bool(pd.notna(a_cred) and float(a_cred) > 0)
-        initial_status = "11111111-1111-1111-1111-111111110003" if has_active_loan else REG_STATUS_ID
+        has_savings_only = bool(pd.notna(s_bal) and float(s_bal) > 0 and not has_active_loan)
+
+        if has_active_loan:
+            initial_status = ON_LOAN_STATUS_ID
+        elif has_savings_only:
+            initial_status = SAVINGS_ONLY_STATUS_ID
+        else:
+            initial_status = REG_STATUS_ID
 
         # Match existing client by exact code (preserves separate member numbers even if same name)
         existing_c = existing_clients_by_code.get(expected_code)
