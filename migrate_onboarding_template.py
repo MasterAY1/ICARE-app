@@ -212,8 +212,8 @@ def run_migration():
         has_active_loan = bool(pd.notna(a_cred) and float(a_cred) > 0)
         initial_status = "11111111-1111-1111-1111-111111110003" if has_active_loan else REG_STATUS_ID
 
-        # Match existing client by exact code OR by (name, group_id)
-        existing_c = existing_clients_by_code.get(expected_code) or existing_clients_by_name_and_group.get((f_name.lower(), str(g_id)))
+        # Match existing client by exact code (preserves separate member numbers even if same name)
+        existing_c = existing_clients_by_code.get(expected_code)
         
         if existing_c:
             c_id = existing_c['client_id']
@@ -231,7 +231,6 @@ def run_migration():
             }
             retry_call(lambda u, new_c_data=new_c_data: u.client.table("clients").insert(new_c_data).execute())
             existing_clients_by_code[expected_code] = new_c_data
-            existing_clients_by_name_and_group[(f_name.lower(), str(g_id))] = new_c_data
             print(f"Created new client: {expected_code} ({f_name}) in Group #{gn}")
             
         # Client Memberships (Guarantee exact 1-to-1 sync with primary group)
