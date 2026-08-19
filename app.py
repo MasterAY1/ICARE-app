@@ -6605,7 +6605,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
 
 elif page == "CO Cashbook":
     st.title("📖 Credit Officer Daily Cashbook")
-    st.caption("Daily T-Account Ledger — Reconciled against Account 1000 General Ledger (BR-CASH-001 to BR-CASH-005)")
+    st.caption("Daily T-Account Ledger — Reconciled against Account 1000 Vault Cash")
     
     col_d1, col_d2 = st.columns([1, 2])
     with col_d1:
@@ -7658,16 +7658,17 @@ elif page == "Portfolio":
         st.divider()
         st.markdown("### Portfolio Summary & Metrics")
 
-        st.caption("Row 1: Client Lifecycle Status Breakdown (BR-CLI-006)")
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        st.caption("Row 1: Client Lifecycle Status Breakdown")
+        c1, c2, c3, c4, c5, c6, c7, c8 = st.columns(8)
         reg_count = p_sum.get('registered_clients', p_sum.get('total_registered_clients', 0))
-        tot_count = p_sum.get('total_clients', 0)
-        c1.metric("Registered", f"{reg_count} Clients", f"Total: {tot_count}")
-        c2.metric("On Loan", f"{p_sum.get('active_clients', 0)} Clients", f"{p_sum.get('active_loans_count', 0)} Active Loans")
-        c3.metric("Completed", f"{p_sum.get('completed_clients', 0)} Clients", "Past Cycle")
-        c4.metric("Pending Loans", f"{p_sum.get('pending_loan_clients', 0)} Clients", "Queue")
-        c5.metric("Savings Only", f"{p_sum.get('savings_only_clients', 0)} Clients", "No Active Loan")
-        c6.metric("Dormant", f"{p_sum.get('dormant_clients', 0)} Clients", "Inactive")
+        c1.metric("Registered", f"{reg_count}", f"{reg_count} Clients")
+        c2.metric("On Loan", f"{p_sum.get('active_clients', 0)}", f"{p_sum.get('active_clients', 0)} Clients")
+        c3.metric("Completed", f"{p_sum.get('completed_clients', 0)}", f"{p_sum.get('completed_clients', 0)} Clients")
+        c4.metric("Pending Loans", f"{p_sum.get('pending_loan_clients', 0)}", f"{p_sum.get('pending_loan_clients', 0)} Clients")
+        c5.metric("Savings Only", f"{p_sum.get('savings_only_clients', 0)}", f"{p_sum.get('savings_only_clients', 0)} Clients")
+        c6.metric("Dormant", f"{p_sum.get('dormant_clients', 0)}", f"{p_sum.get('dormant_clients', 0)} Clients")
+        c7.metric("Suspended", f"{p_sum.get('suspended_clients', 0)}", f"{p_sum.get('suspended_clients', 0)} Clients")
+        c8.metric("Closed", f"{p_sum.get('closed_clients', 0)}", f"{p_sum.get('closed_clients', 0)} Clients")
 
         st.caption("Row 2: Savings Summary")
         s1, s2, s3 = st.columns(3)
@@ -7984,7 +7985,7 @@ elif page == "Portfolio":
 
                     with dd_t6:
                         st.markdown("##### 🔄 Client Lifecycle Status & Direct Officer Control")
-                        st.caption("Credit Officers have direct authoritative control to manage client lifecycle states (BR-CLI-004).")
+                        st.caption("Credit Officers have direct authoritative control to manage client lifecycle states.")
 
                         from services.client_status_service import ClientStatusService
                         cur_cid = c_info.get("client_id") or c_info.get("id")

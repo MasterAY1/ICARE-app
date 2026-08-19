@@ -322,6 +322,7 @@ class PortfolioService:
         pending_loan_clients_count = status_map.get("Pending Loan", 0)
         dormant_clients_count = status_map.get("Dormant", 0)
         closed_clients_count = status_map.get("Closed", 0)
+        suspended_clients_count = status_map.get("Suspended", 0)
         savings_only_clients_count = status_map.get("Inactive (Savings Only)", 0)
         defaulters_count = status_map.get("Defaulter", 0)
 
@@ -528,6 +529,7 @@ class PortfolioService:
                 "pending_loan_clients": pending_loan_clients_count,
                 "dormant_clients": dormant_clients_count,
                 "closed_clients": closed_clients_count,
+                "suspended_clients": suspended_clients_count,
                 "savings_only_clients": savings_only_clients_count,
                 "defaulters": defaulters_count,
                 "total_active_credit": total_active_credit,
