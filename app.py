@@ -2356,11 +2356,11 @@ if page == "Dashboard":
 elif page == "Loan Origination":
     st.title("Origination & Registration")
     
-    orig_options = ["👤 Client Registration", "📝 Loan Application", "⏳ Pending Disbursements", "✏️ Edit Client/Guarantor"]
+    orig_options = ["Client Registration", "Loan Application", "Pending Disbursements", "Edit Client & Guarantor"]
     if "orig_tab" not in st.session_state:
-        st.session_state["orig_tab"] = "👤 Client Registration"
+        st.session_state["orig_tab"] = "Client Registration"
     if st.session_state["orig_tab"] not in orig_options:
-        st.session_state["orig_tab"] = "👤 Client Registration"
+        st.session_state["orig_tab"] = "Client Registration"
         
     orig_idx = orig_options.index(st.session_state["orig_tab"])
     orig_section = st.radio("Navigate", orig_options, index=orig_idx, horizontal=True, label_visibility="collapsed", key="orig_tab_radio")
@@ -2370,7 +2370,7 @@ elif page == "Loan Origination":
         st.success(st.session_state["flash_msg"])
         del st.session_state["flash_msg"]
 
-    if orig_section == "⏳ Pending Disbursements":
+    if orig_section == "Pending Disbursements":
         st.subheader("Pending Disbursements")
         all_loans = load_loans()
         my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
@@ -2454,8 +2454,8 @@ elif page == "Loan Origination":
             else:
                 st.info("🔒 Note: You are a Credit Officer. Only Branch Managers or Area Managers can authorize and activate disbursements.")
 
-    elif orig_section == "👤 Client Registration":
-        st.subheader("👤 Client Registration")
+    elif orig_section == "Client Registration":
+        st.subheader("Client Registration")
         # Only Admins and Super Admins can see the Bulk Onboarding method
         if ROLE in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
             reg_type = st.radio("Registration Method", ["Single Client", "📦 Bulk Onboarding"], horizontal=True)
@@ -3304,8 +3304,8 @@ elif page == "Loan Origination":
                     st.error(f"Error reading file: {e}")
             st.markdown("</div>", unsafe_allow_html=True)
 
-    elif orig_section == "📝 Loan Application":
-        st.subheader("📝 Loan Application")
+    elif orig_section == "Loan Application":
+        st.subheader("Loan Application")
         
         # 1. Search Client
         search_query = st.text_input("🔍 Search Client by Name or Client ID", key="loan_app_search_query")
@@ -3641,8 +3641,8 @@ elif page == "Loan Origination":
                         except Exception as ex:
                             st.error(f"Error submitting loan application: {ex}")
                             
-    elif orig_section == "✏️ Edit Client/Guarantor":
-        st.subheader("✏️ Edit Client/Guarantor Details")
+    elif orig_section == "Edit Client & Guarantor":
+        st.subheader("Edit Client & Guarantor Details")
         st.info("Search for a registered client to update their personal details and their guarantor information.")
         
         # 1. Search Client
@@ -3898,15 +3898,15 @@ elif page == "Loan Origination":
 
 
 elif page == "Collections":
-    st.title("👥 Daily Collections")
+    st.title("Daily Collections")
     st.caption("Record daily repayments and savings.")
     
-    use_late_entry = st.toggle("📅 Late Entry / Backdated Entry")
+    use_late_entry = st.toggle("Late Entry / Backdated Entry")
     if use_late_entry:
         view_date = st.date_input("Select Date", datetime.now().date(), key="col_date")
     else:
         view_date = datetime.now().date()
-        st.info(f"📅 Collections for {view_date.strftime('%d %B %Y')}")
+        st.info(f"Collections for {view_date.strftime('%d %B %Y')}")
     
     date_str = view_date.strftime("%Y-%m-%d")
     
@@ -3938,15 +3938,15 @@ elif page == "Collections":
             
         # Only Admins and Super Admins can see the Bulk Upload (Excel) option
         if ROLE in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
-            col_mode = st.radio("Collection Mode", ["👤 Individual / Group Entry", "📥 Bulk Upload (Excel)"], horizontal=True, label_visibility="collapsed")
+            col_mode = st.radio("Collection Mode", ["Individual & Group Entry", "Bulk Upload (Excel Template)"], horizontal=True, label_visibility="collapsed")
         else:
-            col_mode = "👤 Individual / Group Entry"
+            col_mode = "Individual & Group Entry"
         
-        if col_mode == "📥 Bulk Upload (Excel)":
-            st.markdown("### 📥 Bulk Upload (Excel Template)")
+        if col_mode == "Bulk Upload (Excel Template)":
+            st.markdown("### Bulk Upload (Excel Template)")
             with open("Master_Balancing_Template_V2.xlsx", "rb") as template_file:
                 st.download_button(
-                    label="⬇️ Download Master Balancing Template",
+                    label="Download Master Balancing Template",
                     data=template_file,
                     file_name="Master_Balancing_Template.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -4770,7 +4770,7 @@ elif page == "Collections":
                                 st.warning("No data entered to save.")
 
 elif page == "Withdrawal Operations":
-    st.title("💸 Withdrawal Operations")
+    st.title("Withdrawal Operations")
     st.caption("Submit withdrawal requests for BM approval. All withdrawals require Branch Manager authorization before execution.")
 
     user_dict = current_user.to_dict() if hasattr(current_user, 'to_dict') else {
@@ -4779,19 +4779,24 @@ elif page == "Withdrawal Operations":
     user_scope = RBACScopeService.resolve_scope(user_dict)
 
     if user_scope.is_read_only():
-        st.warning("🔒 Read-Only Access: Your role does not permit withdrawal operations.")
+        st.warning("Read-Only Access: Your role does not permit withdrawal operations.")
         st.stop()
 
     uow = SupabaseUnitOfWork()
 
     # ── Savings Type Selector ──
-    savings_type = st.selectbox("Select Savings Type", ["Individual Savings", "Group Savings", "Misc Savings", "LAPS Savings"])
+    wth_tab1, wth_tab2, wth_tab3, wth_tab4 = st.tabs([
+        "Individual Savings", 
+        "Group Savings", 
+        "Misc Savings", 
+        "LAPS Savings"
+    ])
 
     # ════════════════════════════════════════════════════════════════════
     # ════════════════════════════════════════════════════════════════════
     # INDIVIDUAL SAVINGS
     # ════════════════════════════════════════════════════════════════════
-    if savings_type == "Individual Savings":
+    with wth_tab1:
         # Fetch clients with membership info (scoped by role)
         if ROLE in ["BM", "AM", "Branch Manager", "Area Manager", ROLE_BRANCH_MANAGER, ROLE_AREA_MANAGER, ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
             if ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
@@ -4925,7 +4930,7 @@ elif page == "Withdrawal Operations":
     # ════════════════════════════════════════════════════════════════════
     # GROUP SAVINGS
     # ════════════════════════════════════════════════════════════════════
-    elif savings_type == "Group Savings":
+    with wth_tab2:
         group_opts = {}
         if ROLE in ["BM", "AM", "Branch Manager", "Area Manager", ROLE_BRANCH_MANAGER, ROLE_AREA_MANAGER, ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
             if ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
@@ -5029,7 +5034,7 @@ elif page == "Withdrawal Operations":
                     uow.client.table("withdrawal_requests").insert({
                         "savings_type": "Group",
                         "operation_type": op_clean,
-                        "client_id": sel_member["client_id"] if "Loan Offset" in op_type and 'sel_member' in dir() else None,
+                        "client_id": sel_member["client_id"] if "Loan Offset" in op_type and 'sel_member' in locals() else None,
                         "client_name": client_name_for_offset or g_name,
                         "group_name": g_name,
                         "loan_id": target_loan_id,
@@ -5046,7 +5051,7 @@ elif page == "Withdrawal Operations":
     # ════════════════════════════════════════════════════════════════════
     # MISC SAVINGS (Read-only for CO, BM can withdraw)
     # ════════════════════════════════════════════════════════════════════
-    elif savings_type == "Misc Savings":
+    with wth_tab3:
         misc_bal = uow.misc_savings.get_total_balance(branch=BRANCH)
         st.metric("💰 Branch Misc Savings Balance", f"₦{misc_bal:,.2f}")
 
@@ -5083,7 +5088,7 @@ elif page == "Withdrawal Operations":
     # ════════════════════════════════════════════════════════════════════
     # LAPS SAVINGS (Closed client/group payouts)
     # ════════════════════════════════════════════════════════════════════
-    elif savings_type == "LAPS Savings":
+    with wth_tab4:
         st.caption("LAPS records for closed clients and groups. Submit a payout request when a closed client returns to collect their savings.")
 
         # Search LAPS records
@@ -6143,25 +6148,25 @@ elif page == "Dashboard":
 elif page in ["Audit Center", "Audit Ledger"]:
 
     if ROLE == ROLE_CREDIT_OFFICER:
-        st.title("💼 Credit Officer Audit Ledger")
+        st.title("Credit Officer Audit Ledger")
         st.caption("Personalized audit trail of your client savings, loans, and collections.")
-        audit_tab4, audit_tab5, audit_tab6 = st.tabs(["🐷 Savings Audit", "💵 Loan Audit", "🎯 Collection Perf"])
+        audit_tab4, audit_tab5, audit_tab6 = st.tabs(["Savings Ledger", "Loan Portfolio", "Collection Performance"])
         audit_tab1 = audit_tab2 = audit_tab3 = audit_tab7 = audit_tab8 = audit_tab9 = audit_tab10 = None
     else:
-        st.title("🏛️ Enterprise Audit & Reconciliation Center")
+        st.title("Enterprise Audit & Reconciliation Center")
         st.caption("Read-only executive ledgers, 6-way financial integrity verification, 360° universal explorer, and 15 automated exception reports.")
         audit_tab1, audit_tab2, audit_tab3, audit_tab4, audit_tab5, audit_tab6, audit_tab7, audit_tab8, audit_tab9, audit_tab10 = st.tabs([
-        "⚖️ Integrity & 6-Way Match",
-        "📊 Fee Audit",
-        "🏦 Treasury Audit",
-        "🐷 Savings Audit",
-        "💵 Loan Audit",
-        "🎯 Collection Perf",
-        "🚨 15 Exception Reports",
-        "🔎 360° Explorer & Timeline",
-        "📈 Performance Insights",
-        "🧙 Reconciliation Wizard"
-    ])
+            "6-Way Integrity Match",
+            "Fees Audit",
+            "Treasury Audit",
+            "Savings Ledger",
+            "Loan Portfolio",
+            "Collection Performance",
+            "Exception Reports",
+            "360° Explorer & Timeline",
+            "Performance Insights",
+            "Reconciliation Wizard"
+        ])
 
     with SupabaseUnitOfWork() as uow_ac:
         from database.repositories.audit_view_repository import SupabaseAuditViewRepository
@@ -6175,11 +6180,11 @@ elif page in ["Audit Center", "Audit Ledger"]:
 
 
         # ---------------------------------------------------------------------
-        # TAB 1: ⚖️ Financial Integrity & 6-Way Match
+        # TAB 1: Financial Integrity & 6-Way Match
         # ---------------------------------------------------------------------
         if audit_tab1:
             with audit_tab1:
-                st.subheader("⚖️ Live 6-Way Financial Integrity Verification")
+                st.subheader("Live 6-Way Financial Integrity Verification")
                 st.caption("Automated mathematical balance verification across General Ledger, Audit Views, Cashbooks, Dashboards, and Reports.")
     
                 b_filter = BRANCH_ID if ROLE not in [ROLE_ADMIN, 'Super Admin', 'Admin'] else None
@@ -6904,15 +6909,19 @@ elif page == "CO Cashbook":
 
 
 elif page == "Master Cashbook":
-    st.title("🏦 Branch Manager Master Cashbook")
+    st.title("Branch Manager Master Cashbook")
     st.caption("INITIATIVE FOR COMMUNITY ADVANCEMENT, RELIEF AND EMPOWERMENT — Credit Cash Book Ledger")
     
-    cashbook_section = st.radio("Navigate", ["📝 Daily Entry", "📱 CO Cashbook (CO View)", "📊 Monthly Ledger"], horizontal=True, label_visibility="collapsed")
+    mc_tab1, mc_tab2, mc_tab3 = st.tabs([
+        "Daily Cashbook Entry", 
+        "CO Cashbooks Aggregation", 
+        "Monthly Ledger"
+    ])
     
     all_loans = load_loans()
     all_repayments = load_repayments()
     
-    if cashbook_section == "📝 Daily Entry":
+    with mc_tab1:
         view_date = st.date_input("Select Date", datetime.now().date(), key="mc_date")
         date_str = view_date.strftime("%Y-%m-%d")
         
@@ -7219,7 +7228,7 @@ elif page == "Master Cashbook":
                 except Exception as e:
                     st.error(f"Failed to save and post cashbook manual entries: {e}")
     
-    elif cashbook_section == "📱 CO Cashbook (CO View)":
+    with mc_tab2:
         view_date = st.date_input("Select Date", datetime.now().date(), key="wa_mc_date")
         date_str = view_date.strftime("%Y-%m-%d")
         
@@ -7425,8 +7434,8 @@ elif page == "Master Cashbook":
                     st.error(f"Error during EOD close: {ex}")
 
 
-    elif cashbook_section == "📊 Monthly Ledger":
-        st.markdown("### 📅 Monthly Ledger View")
+    with mc_tab3:
+        st.markdown("### Monthly Ledger View")
         
         ctl1, ctl2 = st.columns(2)
         cb_month = ctl1.selectbox("Month", list(range(1, 13)), index=datetime.now().month - 1,
@@ -8343,18 +8352,33 @@ elif page == "User Management":
     is_am = ROLE in ['AM', 'Area Manager']
     
     if is_admin:
-        tabs = st.tabs(["👥 Users", "➕ Create User", "🔑 Reset Password", "🔄 Officer Turnover", "🛍️ Assign Products", "🏢 AM Assignments", "🏢 Branch Closures", "📋 Audit Logs", "📊 Login History"])
+        tabs = st.tabs([
+            "Users Directory", 
+            "Create User", 
+            "Password Reset", 
+            "Officer Turnover", 
+            "Product Assignment", 
+            "AM Assignments", 
+            "Branch Closures", 
+            "Audit Logs", 
+            "Login History"
+        ])
     elif is_bm:
-        tabs = st.tabs(["👥 Branch Staff", "🔑 Reset Password", "🛍️ Assign Products", "🏢 Branch Closures"])
+        tabs = st.tabs([
+            "Branch Staff", 
+            "Password Reset", 
+            "Product Assignment", 
+            "Branch Closures"
+        ])
     elif is_am:
-        tabs = st.tabs(["👥 Branch Staff (Read Only)"])
+        tabs = st.tabs(["Branch Staff (Read Only)"])
     else:
         st.error("You do not have permission to access User Management.")
         st.stop()
     
     # --- Tab: Users List ---
     with tabs[0]:
-        st.subheader("👥 Current Users")
+        st.subheader("Current Users")
         if all_users:
             df_users = pd.DataFrame(all_users)
             display_cols = ['username', 'full_name', 'role', 'branch_name', 'is_active', 'last_login', 'created_at']
