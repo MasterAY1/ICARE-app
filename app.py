@@ -2171,13 +2171,13 @@ if page == "Dashboard":
                                                         branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
                                                         reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
                                                     )
-                                            elif wr_op == "Loan Offset":
+                                            elif wr_op in ["Loan Offset", "Asset Downpayment"]:
                                                 source_type = "IndividualSavings" if wr_type == "Individual" else "GroupSavings"
                                                 SavingsService.post_loan_offset_from_savings(
                                                     uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
                                                     loan_id=wr.get("loan_id"), source_savings_type=source_type,
                                                     branch=BRANCH, officer=wr_by, amount=wr_amt,
-                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED {wr_op.upper()}] {wr_remarks}"
                                                 )
                                             elif wr_op == "LAPS Transfer":
                                                 source_type = "IndividualSavings" if wr_type == "Individual" else "GroupSavings"
@@ -3491,18 +3491,42 @@ elif page == "Loan Origination":
                 total_upfront_required = 0.0
                 
                 if product_category == "Asset":
-                    initial_downpayment_input = st.number_input("Initial Cash Downpayment (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0", key="loan_app_downpayment")
-                    initial_downpayment = float(initial_downpayment_input or 0)
+                    dp_mode = st.radio("Downpayment Source", ["Cash (Physical Payment)", "Savings (Deduct from Pooled Savings)", "Split (Part Cash, Part Savings)"], horizontal=True, key="loan_app_dp_mode")
+                    
+                    cash_dp = 0.0
+                    sav_dp = 0.0
+                    
+                    if dp_mode == "Cash (Physical Payment)":
+                        cash_dp_input = st.number_input("Initial Cash Downpayment (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0", key="loan_app_downpayment")
+                        cash_dp = float(cash_dp_input or 0)
+                    elif dp_mode == "Savings (Deduct from Pooled Savings)":
+                        sav_dp_input = st.number_input("Downpayment to Deduct from Savings (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0", key="loan_app_sav_downpayment")
+                        sav_dp = float(sav_dp_input or 0)
+                    else: # Split
+                        c_dp1, c_dp2 = st.columns(2)
+                        cash_dp_input = c_dp1.number_input("Cash Downpayment (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0", key="loan_app_downpayment")
+                        cash_dp = float(cash_dp_input or 0)
+                        sav_dp_input = c_dp2.number_input("Savings Downpayment (₦)", min_value=0.0, step=5000.0, value=None, placeholder="0", key="loan_app_sav_downpayment")
+                        sav_dp = float(sav_dp_input or 0)
+                        
+                    initial_downpayment = cash_dp + sav_dp
                     total_cost = requested_amount + interest
                     active_credit = total_cost - initial_downpayment
                     expected_installment = active_credit / duration if duration > 0 else 0.0
                     
                     st.markdown("---")
                     st.markdown(f"**Asset Cost:** ₦{requested_amount:,.0f} | **Interest:** ₦{interest:,.0f} | **Total Cost:** ₦{total_cost:,.0f}")
+                    st.markdown(f"**Total Downpayment:** ₦{initial_downpayment:,.0f} *(Cash: ₦{cash_dp:,.0f} | Savings: ₦{sav_dp:,.0f})*")
                     st.markdown(f"**Active Loan (Total Cost - Downpayment):** ₦{active_credit:,.0f}")
                     st.markdown(f"**Expected Installment:** ₦{expected_installment:,.0f} x {duration} {cycle}")
-                    if initial_downpayment > 0:
-                        st.info(f"Ensure the ₦{initial_downpayment:,.0f} downpayment is collected physically. It will be banked as part of total cash.")
+                    
+                    if sav_dp > 0:
+                        if savings_bal < sav_dp:
+                            st.error(f"**INSUFFICIENT SAVINGS:** Client has ₦{savings_bal:,.2f} but needs ₦{sav_dp:,.0f} from savings for downpayment.")
+                        else:
+                            st.success(f"**SUFFICIENT SAVINGS:** ₦{sav_dp:,.0f} will be deducted from client's savings upon loan creation as a Product Withdrawal.")
+                    if cash_dp > 0:
+                        st.info(f"Ensure the ₦{cash_dp:,.0f} cash downpayment is collected physically.")
                 else:
                     # Finance default gap calculation
                     default_gap = 0.0
@@ -3569,6 +3593,10 @@ elif page == "Loan Origination":
                                 if product_category == "Finance" and savings_bal < total_upfront_required:
                                     st.error("Cannot submit! Insufficient savings.")
                                     st.stop()
+                                    
+                                if product_category == "Asset" and sav_dp > 0 and savings_bal < sav_dp:
+                                    st.error("Cannot submit! Insufficient savings for Asset Downpayment.")
+                                    st.stop()
 
                                 # For Finance: auto-deduct upfront fees from savings
                                 if product_category == "Finance" and total_upfront_required > 0:
@@ -3597,6 +3625,21 @@ elif page == "Loan Origination":
                                     final_total_payable = final_active_credit
                                     final_expected_installment = final_active_credit / duration if duration > 0 else 0.0
 
+                                # For Asset with Savings Downpayment: register non-cash downpayment offset from savings
+                                if product_category == "Asset" and sav_dp > 0:
+                                    from services.savings_service import SavingsService
+                                    SavingsService.post_loan_offset_from_savings(
+                                        uow,
+                                        client_id=selected_client_id,
+                                        client_name=selected_client.name,
+                                        loan_id=loan_id,
+                                        source_savings_type="IndividualSavings",
+                                        branch=branch_name,
+                                        officer=USER,
+                                        amount=sav_dp,
+                                        remarks=f"Asset Downpayment deducted from Savings for loan {loan_id}"
+                                    )
+
                                 loan_entity = Loan(
                                     id=loan_id,
                                     client_id=selected_client_id,
@@ -3619,6 +3662,9 @@ elif page == "Loan Origination":
                                         "lifecycle_status": "Submitted",
                                         "notes": notes,
                                         "product_category": product_category,
+                                        "downpayment_source": dp_mode if product_category == "Asset" else None,
+                                        "downpayment_cash": cash_dp if product_category == "Asset" else 0.0,
+                                        "downpayment_savings": sav_dp if product_category == "Asset" else 0.0,
                                         "initial_downpayment": initial_downpayment,
                                         "active_credit": final_active_credit,
                                         "loan_repay": final_expected_installment,
@@ -4846,7 +4892,6 @@ elif page == "Withdrawal Operations":
     ])
 
     # ════════════════════════════════════════════════════════════════════
-    # ════════════════════════════════════════════════════════════════════
     # INDIVIDUAL SAVINGS
     # ════════════════════════════════════════════════════════════════════
     with wth_tab1:
@@ -4864,7 +4909,7 @@ elif page == "Withdrawal Operations":
                 label = f"{u.get('username')} - {u.get('full_name')}" if u.get('full_name') else u.get('username')
                 officers_map[label] = u.get('id')
                 
-            co_filter = st.selectbox("👤 Filter by Credit Officer", list(officers_map.keys()), key="wth_ind_co_filter")
+            co_filter = st.selectbox("Filter by Credit Officer", list(officers_map.keys()), key="wth_ind_co_filter")
             selected_officer_id = officers_map[co_filter]
             
             query = uow.client.table("clients").select("client_id, client_code, name, status, status_id, client_memberships(group_id, groups(name)), client_statuses(name)")
@@ -4895,7 +4940,7 @@ elif page == "Withdrawal Operations":
                     co_groups[m["group_id"]] = m["groups"].get("name") or "Unknown"
 
         group_names = ["All Groups"] + sorted(co_groups.values())
-        sel_group_filter = st.selectbox("📂 Filter by Group", group_names)
+        sel_group_filter = st.selectbox("Filter by Group", group_names)
 
         # Resolve selected group ID
         selected_group_id = None
@@ -4919,30 +4964,32 @@ elif page == "Withdrawal Operations":
             st.info("No active clients found for the selected group.")
             st.stop()
 
-        sel_client_label = st.selectbox("🔍 Search Client", list(client_opts.keys()), placeholder="Type client name or code...")
+        sel_client_label = st.selectbox("Search Client", list(client_opts.keys()), placeholder="Type client name or code...")
         sel_client = client_opts[sel_client_label]
         c_id = sel_client["client_id"]
         c_name = sel_client["name"]
 
         # Show balance
         ind_bal = uow.individual_savings.get_total_balance(client_id=c_id)
-        st.metric("💰 Individual Savings Balance", f"₦{ind_bal:,.2f}")
+        st.metric("Individual Savings Balance", f"₦{ind_bal:,.2f}")
 
         # Operation type
-        op_type = st.radio("Withdrawal Operation", ["💵 Cash Withdrawal", "🔄 Loan Offset", "💼 LAPS Transfer"], horizontal=True)
+        op_type = st.radio("Withdrawal Operation", ["Cash Withdrawal", "Loan Offset", "Asset Downpayment", "LAPS Transfer"], horizontal=True)
 
-        if op_type == "💵 Cash Withdrawal":
-            st.info("ℹ️ **Product Withdrawal Value**: Reduced | 💵 **Physical Cash Outflow**: **YES** (Vault Cash leaves CO position)")
-        elif op_type == "🔄 Loan Offset":
-            st.info("ℹ️ **Product Withdrawal Value**: Reduced | 🛡️ **Physical Cash Outflow**: **NO** (Internal non-cash offset against active loan debt)")
-        elif op_type == "💼 LAPS Transfer":
-            st.info("ℹ️ **Product Withdrawal Value**: Reduced | 🛡️ **Physical Cash Outflow**: **NO** (Internal non-cash transfer to LAPS reserve)")
+        if op_type == "Cash Withdrawal":
+            st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: YES (Vault Cash leaves CO position)")
+        elif op_type == "Loan Offset":
+            st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: NO (Internal non-cash offset against active loan debt)")
+        elif op_type == "Asset Downpayment":
+            st.info("Product Withdrawal Value: Increased | Physical Cash Outflow: NO (Internal non-cash deduction from savings to fund Asset Downpayment)")
+        elif op_type == "LAPS Transfer":
+            st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: NO (Internal non-cash transfer to LAPS reserve)")
 
         with st.form("ind_withdrawal_form"):
             amount_val = st.number_input("Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
 
             target_loan_id = None
-            if op_type == "🔄 Loan Offset":
+            if op_type == "Loan Offset":
                 res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit").eq("client_id", c_id).eq("status", "Active").execute()
                 active_loans = res_l.data or []
                 if active_loans:
@@ -4951,22 +4998,32 @@ elif page == "Withdrawal Operations":
                     target_loan_id = loan_opts[sel_loan]
                 else:
                     st.warning("No active loans found for this client.")
+            elif op_type == "Asset Downpayment":
+                res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, loan_product, is_asset").eq("client_id", c_id).in_("status", ["Active", "Pending"]).execute()
+                asset_loans = [l for l in (res_l.data or []) if l.get("is_asset") or "asset" in str(l.get("loan_product", "")).lower()]
+                if asset_loans:
+                    loan_opts = {f"Asset Loan {l['loan_id'][:8]} ({l.get('loan_product', 'Asset')}) — Active Credit: ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in asset_loans}
+                    sel_loan = st.selectbox("Select Asset Loan for Downpayment", list(loan_opts.keys()))
+                    target_loan_id = loan_opts[sel_loan]
+                else:
+                    st.warning("No active or pending asset loans found for this client.")
 
             remarks_input = st.text_area("Remarks", placeholder="Reason for withdrawal...")
-            submitted = st.form_submit_button("📤 Submit for BM Approval", use_container_width=True)
+            submitted = st.form_submit_button("Submit for BM Approval", use_container_width=True)
 
             if submitted:
                 if not amount_val or amount_val <= 0:
                     st.error("Amount must be greater than zero.")
-                elif amount_val > ind_bal and op_type != "🔄 Loan Offset":
+                elif amount_val > ind_bal and op_type not in ["Loan Offset", "Asset Downpayment"]:
                     st.error(f"Insufficient balance. Available: ₦{ind_bal:,.2f}")
-                elif op_type == "🔄 Loan Offset" and not target_loan_id:
-                    st.error("Select an active loan to offset.")
+                elif amount_val > ind_bal and op_type == "Asset Downpayment":
+                    st.error(f"Insufficient savings balance for downpayment. Available: ₦{ind_bal:,.2f}")
+                elif op_type in ["Loan Offset", "Asset Downpayment"] and not target_loan_id:
+                    st.error("Select an eligible loan.")
                 else:
-                    op_map = {"💵 Cash Withdrawal": "Cash Withdrawal", "🔄 Loan Offset": "Loan Offset", "💼 LAPS Transfer": "LAPS Transfer"}
                     uow.client.table("withdrawal_requests").insert({
                         "savings_type": "Individual",
-                        "operation_type": op_map[op_type],
+                        "operation_type": op_type,
                         "client_id": c_id,
                         "client_name": c_name,
                         "loan_id": target_loan_id,
@@ -4974,10 +5031,10 @@ elif page == "Withdrawal Operations":
                         "requested_by": USER,
                         "amount": float(amount_val),
                         "reference": f"REF-WTH-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                        "remarks": remarks_input or f"{op_map[op_type]} request for {c_name}",
+                        "remarks": remarks_input or f"{op_type} request for {c_name}",
                         "status": "PENDING"
                     }).execute()
-                    st.success(f"✅ Withdrawal request submitted for BM approval! (₦{amount_val:,.2f})")
+                    st.success(f"Withdrawal request submitted for BM approval! (₦{amount_val:,.2f})")
                     st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
@@ -4998,7 +5055,7 @@ elif page == "Withdrawal Operations":
                 label = f"{u.get('username')} - {u.get('full_name')}" if u.get('full_name') else u.get('username')
                 officers_map[label] = u.get('id')
                 
-            co_filter = st.selectbox("👤 Filter by Credit Officer", list(officers_map.keys()), key="wth_grp_co_filter")
+            co_filter = st.selectbox("Filter by Credit Officer", list(officers_map.keys()), key="wth_grp_co_filter")
             selected_officer_id = officers_map[co_filter]
             
             query = uow.client.table("groups").select("group_id, name")
@@ -5025,29 +5082,31 @@ elif page == "Withdrawal Operations":
             st.info("No active groups found for the selected officer.")
             st.stop()
 
-        sel_group_label = st.selectbox("🔍 Search Group", list(group_opts.keys()), placeholder="Type group name...")
+        sel_group_label = st.selectbox("Search Group", list(group_opts.keys()), placeholder="Type group name...")
         sel_group = group_opts[sel_group_label]
         g_name = sel_group["name"]
 
         # Show balance
         grp_bal = uow.group_savings.get_total_balance(group_name=g_name)
-        st.metric("💰 Group Savings Balance", f"₦{grp_bal:,.2f}")
+        st.metric("Group Savings Balance", f"₦{grp_bal:,.2f}")
 
-        op_type = st.radio("Withdrawal Operation", ["💵 Cash Withdrawal", "🔄 Loan Offset (Member Debt)", "💼 LAPS Transfer (Group Closed)"], horizontal=True)
+        op_type = st.radio("Withdrawal Operation", ["Cash Withdrawal", "Loan Offset (Member Debt)", "Asset Downpayment (Member Loan)", "LAPS Transfer (Group Closed)"], horizontal=True)
 
         if "Cash" in op_type:
-            st.info("ℹ️ **Product Withdrawal Value**: Reduced | 💵 **Physical Cash Outflow**: **YES** (Vault Cash leaves CO position)")
+            st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: YES (Vault Cash leaves CO position)")
         elif "Loan Offset" in op_type:
-            st.info("ℹ️ **Product Withdrawal Value**: Reduced | 🛡️ **Physical Cash Outflow**: **NO** (Internal non-cash offset against member active loan debt)")
+            st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: NO (Internal non-cash offset against member active loan debt)")
+        elif "Asset Downpayment" in op_type:
+            st.info("Product Withdrawal Value: Increased | Physical Cash Outflow: NO (Internal non-cash deduction from group savings to fund member Asset Downpayment)")
         elif "LAPS Transfer" in op_type:
-            st.info("ℹ️ **Product Withdrawal Value**: Reduced | 🛡️ **Physical Cash Outflow**: **NO** (Internal non-cash transfer to LAPS reserve)")
+            st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: NO (Internal non-cash transfer to LAPS reserve)")
 
         with st.form("grp_withdrawal_form"):
             amount_val = st.number_input("Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
 
             target_loan_id = None
             client_name_for_offset = None
-            if "Loan Offset" in op_type:
+            if "Loan Offset" in op_type or "Asset Downpayment" in op_type:
                 # Select which member's loan to offset from group savings
                 res_members = uow.client.table("client_memberships").select("clients(client_id, client_code, name)").eq("group_id", sel_group["group_id"]).execute()
                 members = []
@@ -5062,32 +5121,38 @@ elif page == "Withdrawal Operations":
                     sel_member = member_opts[sel_member_label]
                     client_name_for_offset = sel_member["name"]
 
-                    res_l = uow.client.table("loans").select("loan_id, active_credit").eq("client_id", sel_member["client_id"]).eq("status", "Active").execute()
-                    if res_l.data:
-                        loan_opts = {f"Loan {l['loan_id'][:8]} — ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in res_l.data}
+                    if "Asset Downpayment" in op_type:
+                        res_l = uow.client.table("loans").select("loan_id, active_credit, loan_product, is_asset").eq("client_id", sel_member["client_id"]).in_("status", ["Active", "Pending"]).execute()
+                        loans_to_show = [l for l in (res_l.data or []) if l.get("is_asset") or "asset" in str(l.get("loan_product", "")).lower()]
+                    else:
+                        res_l = uow.client.table("loans").select("loan_id, active_credit, loan_product").eq("client_id", sel_member["client_id"]).eq("status", "Active").execute()
+                        loans_to_show = res_l.data or []
+
+                    if loans_to_show:
+                        loan_opts = {f"Loan {l['loan_id'][:8]} — ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in loans_to_show}
                         sel_loan = st.selectbox("Select Loan", list(loan_opts.keys()))
                         target_loan_id = loan_opts[sel_loan]
                     else:
-                        st.warning("No active loans for this member.")
+                        st.warning("No eligible loans found for this member.")
                 else:
                     st.warning("No members found in this group.")
 
             remarks_input = st.text_area("Remarks", placeholder="Reason for withdrawal...")
-            submitted = st.form_submit_button("📤 Submit for BM Approval", use_container_width=True)
+            submitted = st.form_submit_button("Submit for BM Approval", use_container_width=True)
 
             if submitted:
                 if not amount_val or amount_val <= 0:
                     st.error("Amount must be greater than zero.")
                 elif amount_val > grp_bal:
                     st.error(f"Insufficient group balance. Available: ₦{grp_bal:,.2f}")
-                elif "Loan Offset" in op_type and not target_loan_id:
-                    st.error("Select a member and loan to offset.")
+                elif ("Loan Offset" in op_type or "Asset Downpayment" in op_type) and not target_loan_id:
+                    st.error("Select a member and loan.")
                 else:
-                    op_clean = "Cash Withdrawal" if "Cash" in op_type else ("Loan Offset" if "Loan Offset" in op_type else "LAPS Transfer")
+                    op_clean = "Cash Withdrawal" if "Cash" in op_type else ("Asset Downpayment" if "Asset Downpayment" in op_type else ("Loan Offset" if "Loan Offset" in op_type else "LAPS Transfer"))
                     uow.client.table("withdrawal_requests").insert({
                         "savings_type": "Group",
                         "operation_type": op_clean,
-                        "client_id": sel_member["client_id"] if "Loan Offset" in op_type and 'sel_member' in locals() else None,
+                        "client_id": sel_member["client_id"] if ("Loan Offset" in op_type or "Asset Downpayment" in op_type) and 'sel_member' in locals() else None,
                         "client_name": client_name_for_offset or g_name,
                         "group_name": g_name,
                         "loan_id": target_loan_id,
@@ -5098,7 +5163,7 @@ elif page == "Withdrawal Operations":
                         "remarks": remarks_input or f"Group {op_clean} from {g_name}",
                         "status": "PENDING"
                     }).execute()
-                    st.success(f"✅ Group withdrawal request submitted for BM approval! (₦{amount_val:,.2f})")
+                    st.success(f"Group withdrawal request submitted for BM approval! (₦{amount_val:,.2f})")
                     st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
@@ -5106,17 +5171,17 @@ elif page == "Withdrawal Operations":
     # ════════════════════════════════════════════════════════════════════
     with wth_tab3:
         misc_bal = uow.misc_savings.get_total_balance(branch=BRANCH)
-        st.metric("💰 Branch Misc Savings Balance", f"₦{misc_bal:,.2f}")
+        st.metric("Branch Misc Savings Balance", f"₦{misc_bal:,.2f}")
 
         if ROLE not in ["BM", ROLE_BRANCH_MANAGER, ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
-            st.info("🔒 Misc Savings is managed by the Branch Manager. You can view the balance but cannot submit withdrawals.")
+            st.info("Misc Savings is managed by the Branch Manager. You can view the balance but cannot submit withdrawals.")
         else:
             st.markdown("**As Branch Manager, you can submit a Misc Savings withdrawal.**")
 
             with st.form("misc_withdrawal_form"):
                 amount_val = st.number_input("Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
                 remarks_input = st.text_area("Remarks", placeholder="Reason for Misc withdrawal...")
-                submitted = st.form_submit_button("📤 Submit Misc Withdrawal", use_container_width=True)
+                submitted = st.form_submit_button("Submit Misc Withdrawal", use_container_width=True)
 
                 if submitted:
                     if not amount_val or amount_val <= 0:
@@ -5135,7 +5200,7 @@ elif page == "Withdrawal Operations":
                             "remarks": remarks_input or f"Misc Savings withdrawal by {USER}",
                             "status": "PENDING"
                         }).execute()
-                        st.success(f"✅ Misc withdrawal request submitted! (₦{amount_val:,.2f})")
+                        st.success(f"Misc withdrawal request submitted! (₦{amount_val:,.2f})")
                         st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
@@ -5164,21 +5229,21 @@ elif page == "Withdrawal Operations":
             st.stop()
 
         laps_opts = {f"{l['client_id'][:12]}... — Balance: ₦{l['balance']:,.2f}": l for l in laps_list}
-        sel_laps_label = st.selectbox("🔍 Select LAPS Record", list(laps_opts.keys()))
+        sel_laps_label = st.selectbox("Select LAPS Record", list(laps_opts.keys()))
         sel_laps = laps_opts[sel_laps_label]
 
-        st.metric("💰 LAPS Balance", f"₦{sel_laps['balance']:,.2f}")
+        st.metric("LAPS Balance", f"₦{sel_laps['balance']:,.2f}")
 
         with st.form("laps_payout_form"):
             amount_val = st.number_input("Payout Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
             payout_method = st.radio("Payout Method", ["Cash", "Bank Transfer"], horizontal=True)
 
             if payout_method == "Cash":
-                st.info("ℹ️ **Product Withdrawal Value**: Reduced | 💵 **Physical Cash Outflow**: **YES** (Vault Cash paid out to client)")
+                st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: YES (Vault Cash paid out to client)")
             else:
-                st.info("ℹ️ **Product Withdrawal Value**: Reduced | 🛡️ **Physical Cash Outflow**: **NO** (Paid directly via Bank Account)")
+                st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: NO (Paid directly via Bank Account)")
             remarks_input = st.text_area("Remarks", placeholder="Client details, reason for payout...")
-            submitted = st.form_submit_button("📤 Submit LAPS Payout for BM Approval", use_container_width=True)
+            submitted = st.form_submit_button("Submit LAPS Payout for BM Approval", use_container_width=True)
 
             if submitted:
                 if not amount_val or amount_val <= 0:
@@ -5199,19 +5264,18 @@ elif page == "Withdrawal Operations":
                         "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
                         "status": "PENDING"
                     }).execute()
-                    st.success(f"✅ LAPS payout request submitted for BM approval! (₦{amount_val:,.2f})")
+                    st.success(f"LAPS payout request submitted for BM approval! (₦{amount_val:,.2f})")
                     st.rerun()
 
     # ── My Pending Requests ──
     st.markdown("---")
-    st.markdown("### 📋 My Pending Withdrawal Requests")
+    st.markdown("### My Pending Withdrawal Requests")
     res_pending = uow.client.table("withdrawal_requests").select("*").eq("requested_by", USER).order("created_at", desc=True).limit(20).execute()
 
     if res_pending.data:
         for req in res_pending.data:
-            status_icon = {"PENDING": "⏳", "APPROVED": "✅", "REJECTED": "❌"}.get(req["status"], "❓")
             st.markdown(
-                f"{status_icon} **{req['savings_type']} — {req['operation_type']}** | "
+                f"**{req['savings_type']} — {req['operation_type']}** | "
                 f"₦{float(req['amount']):,.2f} | {req['client_name']} | "
                 f"Status: **{req['status']}** | {req['created_at'][:10]}"
             )
