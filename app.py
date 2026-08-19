@@ -7656,91 +7656,97 @@ elif page == "Portfolio":
         p_sum = p_data["summary"]
 
         st.divider()
-        st.markdown("### Portfolio Summary & Metrics")
 
-        st.caption("Row 1: Client Lifecycle Status Breakdown")
-        c1, c2, c3, c4, c5, c6, c7, c8 = st.columns(8)
-        tot_count = p_sum.get('total_clients', 0)
-        c1.metric("Registered", "", f"{tot_count} Clients")
-        c2.metric("On Loan", "", f"{p_sum.get('active_clients', 0)} Clients")
-        c3.metric("Completed", "", f"{p_sum.get('completed_clients', 0)} Clients")
-        c4.metric("Pending Loans", "", f"{p_sum.get('pending_loan_clients', 0)} Clients")
-        c5.metric("Savings Only", "", f"{p_sum.get('savings_only_clients', 0)} Clients")
-        c6.metric("Dormant", "", f"{p_sum.get('dormant_clients', 0)} Clients")
-        c7.metric("Suspended", "", f"{p_sum.get('suspended_clients', 0)} Clients")
-        c8.metric("Closed", "", f"{p_sum.get('closed_clients', 0)} Clients")
+        port_tab1, port_tab2 = st.tabs([
+            "📊 Portfolio Summary & Analytics",
+            "👤 Comprehensive Client Dossier & Financial Inquiry"
+        ])
 
-        st.caption("Row 2: Savings Summary")
-        s1, s2, s3 = st.columns(3)
-        s1.metric("Savings Deposited (Period)", f"₦{p_sum.get('period_savings_deposit', 0.0):,.0f}", f"{p_sum.get('period_savings_dep_clients', 0)} Clients")
-        s2.metric("Savings Withdrawn (Period)", f"₦{p_sum.get('period_savings_withdrawal', 0.0):,.0f}", f"{p_sum.get('period_savings_wd_clients', 0)} Clients", delta_color="normal")
-        s3.metric("Total Savings Balance", f"₦{p_sum.get('total_savings_balance', 0.0):,.0f}", f"{p_sum.get('total_savings_clients', 0)} Active Savers")
+        with port_tab1:
+            st.markdown("### Portfolio Summary & Metrics")
 
-        st.caption("Row 3: Disbursement Summary (In Selected Period)")
-        d1, d2 = st.columns(2)
-        d_sum = p_sum.get('disbursement_summary', {'count': 0, 'amount': 0.0, 'client_count': 0})
-        d1.metric("Loans Disbursed", f"{d_sum['count']} Loans", f"{d_sum.get('client_count', d_sum['count'])} Clients")
-        d2.metric("Total Amount Disbursed", f"₦{d_sum['amount']:,.0f}", f"{d_sum['count']} Loans")
+            st.caption("Row 1: Client Lifecycle Status Breakdown")
+            c1, c2, c3, c4, c5, c6, c7, c8 = st.columns(8)
+            tot_count = p_sum.get('total_clients', 0)
+            c1.metric("Registered", "", f"{tot_count} Clients")
+            c2.metric("On Loan", "", f"{p_sum.get('active_clients', 0)} Clients")
+            c3.metric("Completed", "", f"{p_sum.get('completed_clients', 0)} Clients")
+            c4.metric("Pending Loans", "", f"{p_sum.get('pending_loan_clients', 0)} Clients")
+            c5.metric("Savings Only", "", f"{p_sum.get('savings_only_clients', 0)} Clients")
+            c6.metric("Dormant", "", f"{p_sum.get('dormant_clients', 0)} Clients")
+            c7.metric("Suspended", "", f"{p_sum.get('suspended_clients', 0)} Clients")
+            c8.metric("Closed", "", f"{p_sum.get('closed_clients', 0)} Clients")
 
-        st.caption("Row 4: Loan & Collection Summary")
-        l1, l2, l3, l4 = st.columns(4)
-        l1.metric("Total Active Credit", f"₦{p_sum.get('total_active_credit', 0.0):,.0f}", f"{p_sum.get('active_loans_count', 0)} Active Loans")
-        l2.metric("Expected Repayment", f"₦{p_sum.get('total_expected_repayment', 0.0):,.0f}", f"{p_sum.get('expected_repay_clients', 0)} Clients")
-        l3.metric("Actual Collections (Period)", f"₦{p_sum.get('total_actual_collection', p_sum.get('today_collection', 0.0)):,.0f}", f"{p_sum.get('paying_clients_count', 0)} Clients Paid")
-        l4.metric("Total Outstanding Balance", f"₦{p_sum.get('total_outstanding_balance', 0.0):,.0f}", f"{p_sum.get('outstanding_clients_count', 0)} Clients")
+            st.caption("Row 2: Savings Summary")
+            s1, s2, s3 = st.columns(3)
+            s1.metric("Savings Deposited (Period)", f"₦{p_sum.get('period_savings_deposit', 0.0):,.0f}", f"{p_sum.get('period_savings_dep_clients', 0)} Clients")
+            s2.metric("Savings Withdrawn (Period)", f"₦{p_sum.get('period_savings_withdrawal', 0.0):,.0f}", f"{p_sum.get('period_savings_wd_clients', 0)} Clients", delta_color="normal")
+            s3.metric("Total Savings Balance", f"₦{p_sum.get('total_savings_balance', 0.0):,.0f}", f"{p_sum.get('total_savings_clients', 0)} Active Savers")
 
-        st.caption("Row 5: Repayment Status & Risk")
-        r1, r2, r3, r4, r5 = st.columns(5)
-        r1.metric("Normal Payments", f"₦{p_sum.get('normal_payments', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('normal_payments', {}).get('count', 0)} Clients")
-        r2.metric("Full Payments", f"₦{p_sum.get('full_payments', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('full_payments', {}).get('count', 0)} Clients")
-        r3.metric("Excess Payments", f"₦{p_sum.get('excess_payments', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('excess_payments', {}).get('count', 0)} Clients")
-        r4.metric("Overdue Portfolio", f"₦{p_sum.get('overdue', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('overdue', {}).get('count', 0)} Clients", delta_color="inverse")
-        par_val = float(str(p_sum.get('par', '0.00%')).replace('%', '') or 0.0)
-        r5.metric("Portfolio at Risk (PAR)", f"{par_val:.2f}%", f"{p_sum.get('overdue', {}).get('count', 0)} Overdue", delta_color="inverse")
+            st.caption("Row 3: Disbursement Summary (In Selected Period)")
+            d1, d2 = st.columns(2)
+            d_sum = p_sum.get('disbursement_summary', {'count': 0, 'amount': 0.0, 'client_count': 0})
+            d1.metric("Loans Disbursed", f"{d_sum['count']} Loans", f"{d_sum.get('client_count', d_sum['count'])} Clients")
+            d2.metric("Total Amount Disbursed", f"₦{d_sum['amount']:,.0f}", f"{d_sum['count']} Loans")
 
-        st.divider()
-        st.markdown("### Loan Products Summary")
-        prod_sum = p_sum.get("product_summary", {})
-        if prod_sum:
-            prod_rows = []
-            for prod, metrics in prod_sum.items():
-                prod_rows.append({
-                    "Loan Product": prod,
-                    "Active Credit": f"₦{metrics['active_credit']:,.0f}",
-                    "Outstanding Balance": f"₦{metrics['loan_balance']:,.0f}",
-                    "Active Loans": metrics['count']
-                })
-            st.dataframe(pd.DataFrame(prod_rows), use_container_width=True, hide_index=True)
-        else:
-            st.info("No active loan products in portfolio.")
+            st.caption("Row 4: Loan & Collection Summary")
+            l1, l2, l3, l4 = st.columns(4)
+            l1.metric("Total Active Credit", f"₦{p_sum.get('total_active_credit', 0.0):,.0f}", f"{p_sum.get('active_loans_count', 0)} Active Loans")
+            l2.metric("Expected Repayment", f"₦{p_sum.get('total_expected_repayment', 0.0):,.0f}", f"{p_sum.get('expected_repay_clients', 0)} Clients")
+            l3.metric("Actual Collections (Period)", f"₦{p_sum.get('total_actual_collection', p_sum.get('today_collection', 0.0)):,.0f}", f"{p_sum.get('paying_clients_count', 0)} Clients Paid")
+            l4.metric("Total Outstanding Balance", f"₦{p_sum.get('total_outstanding_balance', 0.0):,.0f}", f"{p_sum.get('outstanding_clients_count', 0)} Clients")
 
-        st.divider()
-        if sel_group == "All":
-            st.markdown("### Group Portfolio Summary")
-            st.caption("Showing aggregate totals per group. Select a specific group above to drill down to individual clients.")
-        else:
-            st.markdown(f"### Client Portfolio ({sel_group})")
+            st.caption("Row 5: Repayment Status & Risk")
+            r1, r2, r3, r4, r5 = st.columns(5)
+            r1.metric("Normal Payments", f"₦{p_sum.get('normal_payments', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('normal_payments', {}).get('count', 0)} Clients")
+            r2.metric("Full Payments", f"₦{p_sum.get('full_payments', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('full_payments', {}).get('count', 0)} Clients")
+            r3.metric("Excess Payments", f"₦{p_sum.get('excess_payments', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('excess_payments', {}).get('count', 0)} Clients")
+            r4.metric("Overdue Portfolio", f"₦{p_sum.get('overdue', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('overdue', {}).get('count', 0)} Clients", delta_color="inverse")
+            par_val = float(str(p_sum.get('par', '0.00%')).replace('%', '') or 0.0)
+            r5.metric("Portfolio at Risk (PAR)", f"{par_val:.2f}%", f"{p_sum.get('overdue', {}).get('count', 0)} Overdue", delta_color="inverse")
 
-        client_df = p_data["client_table"]
-        if not client_df.empty:
-            st.dataframe(client_df, use_container_width=True)
-
-            # Export Controls (Obeying RBAC Scope)
-            e_col1, e_col2 = st.columns(2)
-            with e_col1:
-                csv_data = client_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    "Export Scoped Portfolio (CSV)",
-                    data=csv_data,
-                    file_name=f"portfolio_{p_scope.role}_{date.today().isoformat()}.csv",
-                    mime="text/csv",
-                    key="btn_dl_port_csv"
-                )
-
-            # -------------------------------------------------------------
-            # Comprehensive Client Dossier & Financial Inquiry
-            # -------------------------------------------------------------
             st.divider()
+            st.markdown("### Loan Products Summary")
+            prod_sum = p_sum.get("product_summary", {})
+            if prod_sum:
+                prod_rows = []
+                for prod, metrics in prod_sum.items():
+                    prod_rows.append({
+                        "Loan Product": prod,
+                        "Active Credit": f"₦{metrics['active_credit']:,.0f}",
+                        "Outstanding Balance": f"₦{metrics['loan_balance']:,.0f}",
+                        "Active Loans": metrics['count']
+                    })
+                st.dataframe(pd.DataFrame(prod_rows), use_container_width=True, hide_index=True)
+            else:
+                st.info("No active loan products in portfolio.")
+
+            st.divider()
+            if sel_group == "All":
+                st.markdown("### Group Portfolio Summary")
+                st.caption("Showing aggregate totals per group. Select a specific group above to drill down to individual clients.")
+            else:
+                st.markdown(f"### Client Portfolio ({sel_group})")
+
+            client_df = p_data["client_table"]
+            if not client_df.empty:
+                st.dataframe(client_df, use_container_width=True)
+
+                # Export Controls (Obeying RBAC Scope)
+                e_col1, e_col2 = st.columns(2)
+                with e_col1:
+                    csv_data = client_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        "Export Scoped Portfolio (CSV)",
+                        data=csv_data,
+                        file_name=f"portfolio_{p_scope.role}_{date.today().isoformat()}.csv",
+                        mime="text/csv",
+                        key="btn_dl_port_csv"
+                    )
+            else:
+                st.info("No client records found in authorized scope.")
+
+        with port_tab2:
             st.markdown("### 📋 Comprehensive Client Dossier & Financial Inquiry")
             st.caption("Deep-dive inquiry into individual client biographical data, loan contracts, repayment ledger, savings history, and compliance audit trail.")
 
@@ -8076,8 +8082,8 @@ elif page == "Portfolio":
                             st.info("Zero audit compliance events logged.")
                         else:
                             st.dataframe(a_hist, use_container_width=True)
-        else:
-            st.info("No client records found in authorized scope.")
+            else:
+                st.info("No client records found in authorized scope.")
 
 elif page == "Calculator":
     st.title("Loan Simulator")
