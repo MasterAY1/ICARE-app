@@ -386,10 +386,17 @@ class PortfolioService:
         client_rows = []
 
         active_loans_by_client = {}
+        completed_loans_today_by_client = {}
         for l in loans_raw:
-            if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]:
-                cid_str = str(l.get("client_id") or "")
+            st = str(l.get("status") or "").upper()
+            cid_str = str(l.get("client_id") or "")
+            if st in ["ACTIVE", "APPROVED"]:
                 active_loans_by_client[cid_str] = l
+            elif st in ["COMPLETED", "CLOSED"]:
+                # Check if repayment was received in the selected period
+                c_reps = [r for r in repayments_today if str(r.get("client_id")) == cid_str or str(r.get("loan_id")) == str(l.get("loan_id"))]
+                if c_reps:
+                    completed_loans_today_by_client[cid_str] = l
 
         for c in clients_raw:
             cid = c.get("client_id") or c.get("id")
@@ -403,6 +410,7 @@ class PortfolioService:
             c_savings = savings_map.get(cid_str, {}).get('bal', 0.0)
 
             l = active_loans_by_client.get(cid_str)
+            comp_l = completed_loans_today_by_client.get(cid_str)
             
             act_cred = 0.0
             repay_fixed = 0.0
@@ -410,6 +418,20 @@ class PortfolioService:
             outstanding_bal = 0.0
             tot_paid_lifetime = 0.0
             status_str = c_lifecycle_status
+
+            # Matching repayments today/in period
+            c_reps = [r for r in repayments_today if str(r.get("client_id")) == cid_str]
+            paid_today = sum(float(r.get("amount_paid") or 0.0) for r in c_reps)
+
+            # 1. Full Payment: Client who completed their active loan in period (BR-DASH-005)
+            if comp_l and paid_today > 0:
+                full_payments_count += 1
+                # Display active credit of the completed cycle (e.g. 198,000 for Olaide)
+                disp_act = float(l.get("active_credit") or comp_l.get("active_credit") or comp_l.get("loan_amount") or 0.0) if l else float(comp_l.get("active_credit") or comp_l.get("loan_amount") or 0.0)
+                full_payments_amt += disp_act
+                status_str = "Full Paid (Closed)"
+                if not l:
+                    l = comp_l
             
             if l:
                 # Active Credit is the static contract total due (Principal - Gap)
@@ -439,10 +461,6 @@ class PortfolioService:
                 product_summary[prod_name]["loan_balance"] += outstanding_bal
                 product_summary[prod_name]["count"] += 1
 
-                # Matching repayments today/in period
-                c_reps = [r for r in repayments_today if str(r.get("client_id")) == cid_str]
-                paid_today = sum(float(r.get("amount_paid") or 0.0) for r in c_reps)
-
                 # Due date check for overdue status
                 exp_end = l.get("expected_end_date") or l.get("end_date")
                 is_past_due = False
@@ -454,10 +472,22 @@ class PortfolioService:
                     except Exception:
                         pass
 
-                if (outstanding_bal <= 0.0 and (tot_paid_lifetime > 0 or act_cred > 0)) or (tot_paid_lifetime >= act_cred and act_cred > 0):
-                    full_payments_count += 1
-                    full_payments_amt += (paid_today if paid_today > 0 else tot_paid_lifetime)
-                    status_str = "Full Paid (Closed)"
+                disb_dt_str = str(l.get("disbursement_date") or l.get("date") or "")[:10]
+                start_dt_str = str(l.get("start_date") or "")[:10]
+                target_dt_str = end_date.isoformat()
+                is_disbursed_today = (disb_dt_str == target_dt_str)
+                is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
+
+                if comp_l and paid_today > 0:
+                    # Already handled under Full Payment
+                    pass
+                elif (outstanding_bal <= 0.0 and (tot_paid_lifetime > 0 or act_cred > 0)) or (tot_paid_lifetime >= act_cred and act_cred > 0):
+                    if not comp_l:
+                        full_payments_count += 1
+                        full_payments_amt += act_cred
+                        status_str = "Full Paid (Closed)"
+                elif is_disbursed_today or is_future_start:
+                    status_str = "Active Loan (New)"
                 elif paid_today > 0:
                     if paid_today > repay_fixed and repay_fixed > 0:
                         excess_payments_count += 1
