@@ -350,6 +350,9 @@ class PortfolioService:
         
         disbursed_in_period = []
         for l in loans_raw:
+            # Option B: Exclude legacy onboarding loans from live period disbursement production
+            if isinstance(l.get("extra_fields"), dict) and l["extra_fields"].get("is_legacy") is True:
+                continue
             d_date = l.get("disbursement_date") or l.get("start_date")
             if d_date and s_d_str_iso <= str(d_date)[:10] <= e_d_str_iso:
                 if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED", "COMPLETED", "CLOSED"]:
