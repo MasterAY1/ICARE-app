@@ -4082,8 +4082,8 @@ elif page == "Collections":
                 except Exception as e:
                     st.error(f"Error parsing file: {e}")
                     
-        elif col_mode == "👤 Individual / Group Entry":
-            st.markdown("### 👥 Member Collections")
+        if col_mode == "Individual & Group Entry":
+            st.markdown("### Member Collections")
         # Load all active clients for the target officer
         with SupabaseUnitOfWork() as uow:
             target_officer_id = uow.loans._resolve_officer_id(target_co)
@@ -4139,6 +4139,7 @@ elif page == "Collections":
                 
             col_g1, col_g2 = st.columns([3, 1])
             selected_group = col_g1.selectbox("Select Group", groups, index=default_idx)
+            expand_all_members = col_g2.checkbox("Expand All Members", value=st.session_state.get('chk_expand_all', False), key="chk_expand_all")
             
             if selected_group == "Ungrouped":
                 group_clients = co_clients_df[co_clients_df['Group Name'] == "Ungrouped"]
@@ -4267,7 +4268,7 @@ elif page == "Collections":
                             group_savings_balance = 0.0
 
                 # ── CSV MANIFEST & BULK UPLOAD ──
-                st.markdown("#### 📄 Group Collection CSV Manifest")
+                st.markdown("#### Group Collection CSV Manifest")
                 col_csv1, col_csv2 = st.columns([1, 1])
 
                 # 1. Download Editable Manifest CSV
@@ -4297,7 +4298,7 @@ elif page == "Collections":
                 manifest_df = pd.DataFrame(manifest_rows)
                 csv_data = manifest_df.to_csv(index=False)
                 col_csv1.download_button(
-                    label="📥 Download Manifest CSV",
+                    label="Download Manifest CSV",
                     data=csv_data,
                     file_name=f"manifest_{selected_group}_{date_str}.csv",
                     mime="text/csv",
@@ -4307,13 +4308,13 @@ elif page == "Collections":
                 import base64
                 b64_csv = base64.b64encode(csv_data.encode('utf-8')).decode()
                 col_csv1.markdown(
-                    f'<div style="text-align:center; margin-top:4px;"><a href="data:text/csv;base64,{b64_csv}" download="manifest_{selected_group}_{date_str}.csv" style="font-size:12px; color:#0284c7; text-decoration:none;">🔗 Direct CSV Download Link</a></div>',
+                    f'<div style="text-align:center; margin-top:4px;"><a href="data:text/csv;base64,{b64_csv}" download="manifest_{selected_group}_{date_str}.csv" style="font-size:12px; color:#0284c7; text-decoration:none;">Direct CSV Download Link</a></div>',
                     unsafe_allow_html=True
                 )
 
                 # 2. Upload Completed Manifest CSV
                 with col_csv2:
-                    with st.expander("📤 Upload Completed Manifest (CSV)"):
+                    with st.expander("Upload Completed Manifest (CSV)"):
                         st.caption("Upload the filled CSV manifest to automatically populate client repayments, member savings, and group savings.")
                         uploaded_csv = st.file_uploader("Choose Manifest CSV file", type=["csv"], key=f"csv_upload_{selected_group}")
                         if uploaded_csv is not None:
@@ -4448,7 +4449,7 @@ elif page == "Collections":
                                             
                                     if csv_entries:
                                         st.success(f"Found {matched_count} matching entries in uploaded CSV.")
-                                        if st.button("🚀 Load Uploaded CSV into Review Queue", type="primary", use_container_width=True):
+                                        if st.button("Load Uploaded CSV into Review Queue", type="primary", use_container_width=True):
                                             st.session_state['pending_collections'] = csv_entries
                                             st.session_state['collections_group'] = selected_group
                                             st.session_state['collections_date'] = date_str
@@ -4462,7 +4463,7 @@ elif page == "Collections":
                 st.markdown(f"### Members in {selected_group}")
                 
                 if st.session_state.get('pending_collections') and st.session_state.get('collections_group') == selected_group and st.session_state.get('collections_date') == date_str and not st.session_state.get('edit_collections_mode', False):
-                    st.markdown("### 🔍 Review Group Collections")
+                    st.markdown("### Review Group Collections")
                     to_insert = st.session_state['pending_collections']
                     
                     total_in = sum(
@@ -4502,13 +4503,13 @@ elif page == "Collections":
                         exp_amt = float(tx.get("Expected Amount") or 0.0)
                         
                         if p_stat == "NOT_PAID":
-                            stat_badge = f"🚨 NOT PAID (₦{ov_amt:,.0f} Arrears)"
+                            stat_badge = f"NOT PAID (₦{ov_amt:,.0f} Arrears)"
                         elif p_stat == "PART_PAID":
-                            stat_badge = f"⚠️ PART PAID (₦{ov_amt:,.0f} Arrears)"
+                            stat_badge = f"PART PAID (₦{ov_amt:,.0f} Arrears)"
                         elif p_stat == "EXCESS":
-                            stat_badge = f"🚀 EXCESS (₦{l_rep - exp_amt:,.0f} Advance)"
+                            stat_badge = f"EXCESS (₦{l_rep - exp_amt:,.0f} Advance)"
                         else:
-                            stat_badge = "✅ FULL PAID" if exp_amt > 0 else "✅ RECORDED"
+                            stat_badge = "FULL PAID" if exp_amt > 0 else "RECORDED"
                             
                         review_rows.append({
                             "Client": f"{c_name} ({c_id})" if not str(c_id).startswith("GROUP-") else c_name,
@@ -4523,9 +4524,9 @@ elif page == "Collections":
                         st.session_state['edit_collections_mode'] = True
                     
                     c1, c2 = st.columns(2)
-                    c1.button("🔙 Edit / Go Back", on_click=_go_back_to_edit)
+                    c1.button("Edit / Go Back", on_click=_go_back_to_edit)
                     
-                    if c2.button("✅ Confirm & Save to Database", type="primary", use_container_width=True):
+                    if c2.button("Confirm & Save Collections", type="primary", use_container_width=True):
                         try:
                             save_repayments(to_insert)
                             st.success("Group Collections Submitted Successfully!")
@@ -4558,7 +4559,7 @@ elif page == "Collections":
                             except Exception:
                                 pass
                                 
-                        st.markdown(f"### 🏛️ Group-Level Savings (Available: ₦{group_savings_balance:,.0f})")
+                        st.markdown(f"### Group-Level Savings (Available: ₦{group_savings_balance:,.0f})")
                         st.caption("Input communal group savings and withdrawal amounts.")
                         
                         # Load previous group values if any
@@ -4578,9 +4579,7 @@ elif page == "Collections":
                         st.markdown("---")
                         
                         # ---- PER-CLIENT COLLECTIONS ----
-                        col_hdr1, col_hdr2 = st.columns([3, 1])
-                        col_hdr1.markdown("### 📋 Client Collections (Savings & Repayments)")
-                        expand_all_members = col_hdr2.checkbox("Expand All Members", value=st.session_state.get('chk_expand_all', False), key="chk_expand_all")
+                        st.markdown("### Client Collections (Savings & Repayments)")
 
                         for cid, info in member_info.items():
                             m = info['member']
@@ -4588,9 +4587,9 @@ elif page == "Collections":
                             is_asset = str(cid).endswith("-ASSET") or (prod and "asset" in prod.lower() and "non-asset" not in prod.lower())
                             
                             if is_asset:
-                                title = f"📋 {m['Client Name']} (ASSET) - Rem: ₦{info['rem_bal']:,.0f}"
+                                title = f"📋 {m['Client Name']} (ASSET) — Rem: ₦{info['rem_bal']:,.0f}"
                             else:
-                                title = f"👤 {m['Client Name']} ({cid}) - Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
+                                title = f"👤 {m['Client Name']} ({cid}) — Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
                                 
                             with st.expander(title, expanded=expand_all_members):
                                 s_date_str = info.get("start_date", "")
@@ -4600,14 +4599,14 @@ elif page == "Collections":
                                 is_future_loan = pd.notna(s_date) and s_date > view_dt
                                 
                                 if not is_asset:
-                                    st.markdown("**🏦 Savings**")
+                                    st.markdown("**Savings**")
                                     s_dep = st.number_input("Savings Deposit", min_value=0.0, step=500.0, value=info['prev_dep'] if info['prev_dep'] > 0 else None, placeholder="0", key=f"sdep_{cid}")
                                     s_wd = 0.0
                                     sav_data[cid] = {"dep": s_dep, "wd": s_wd}
                                     st.markdown("---")
                                 
                                 if is_future_loan:
-                                    st.warning(f"⚠️ **Next Loan Repayment Due On:** {s_date.strftime('%Y-%m-%d')}")
+                                    st.warning(f"**Next Loan Repayment Due On:** {s_date.strftime('%Y-%m-%d')}")
                                     st.caption("*Loan repayment begins on the next meeting date. No loan repayment is due today.*")
                                     rep_data[cid] = {
                                         "rep": 0.0, "app": 0, "pb": 0, "misc": 0,
@@ -4615,15 +4614,15 @@ elif page == "Collections":
                                         "mark_not_paid": True, "expected_amount": 0.0
                                     }
                                 else:
-                                    st.markdown(f"**💵 Loan ({prod})** - Active Cr: ₦{info['act_cred']:,.0f}")
+                                    st.markdown(f"**Loan ({prod})** — Active Credit: ₦{info['act_cred']:,.0f}")
                                     expected_rep = float(info['expected_rep_schedule'] or 0.0)
-                                    st.markdown(f"ℹ️ *Expected repayment calculated from schedule: ₦{expected_rep:,.2f}*")
+                                    st.caption(f"Expected repayment calculated from schedule: ₦{expected_rep:,.2f}")
                                     
                                     # Smart Initial Status Detection
                                     has_previous_run = (pending_tx is not None or not today_paid.empty)
                                     is_defaulter_init = (info.get("prev_status") == "NOT_PAID") or (info.get("prev_rep") == 0.0 and has_previous_run)
                                     
-                                    mark_not_paid = st.checkbox("🚨 Mark as NOT PAID today (₦0 Collection)", value=is_defaulter_init, key=f"not_paid_{cid}")
+                                    mark_not_paid = st.checkbox("Mark as NOT PAID today (₦0 Collection)", value=is_defaulter_init, key=f"not_paid_{cid}")
                                     
                                     if not mark_not_paid:
                                         init_val = float(info['prev_rep']) if (info['prev_rep'] is not None and info['prev_rep'] > 0) else (expected_rep if expected_rep > 0 else 0.0)
