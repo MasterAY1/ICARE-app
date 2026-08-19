@@ -32,8 +32,7 @@ class RBACScopeService:
             "CO Cashbook"
         ],
         "Branch Manager": [
-            "Dashboard", "Portfolio", "Loan Origination", "Collections", "Withdrawal Operations",
-            "Master Cashbook", "Audit Ledger", "Reports & Export"
+            "Dashboard", "Portfolio", "Master Cashbook", "Audit Ledger", "Reports & Export"
         ],
         "Area Manager": [
             "Dashboard", "Portfolio", "Loan Origination", "Collections", "Withdrawal Operations",

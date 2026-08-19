@@ -2078,7 +2078,7 @@ if page == "Dashboard":
             # Section F: Approval Queue (Pending Loan Approvals)
             p_loans = bm_data.get("approval_queue", [])
             if p_loans:
-                st.markdown("#### ⏳ Pending Loan Approvals")
+                st.markdown("#### Pending Loan Approvals")
                 for pl in p_loans:
                     c_name = pl.get("clients", {}).get("name", "Unknown Client") if pl.get("clients") else pl.get("client_name", "Unknown Client")
                     c_code = pl.get("clients", {}).get("client_code") if pl.get("clients") and pl.get("clients").get("client_code") else pl.get("client_id", "")[:8]
@@ -2088,27 +2088,28 @@ if page == "Dashboard":
                     pl_id = pl["loan_id"]
 
                     with st.container(border=True):
-                        col_info, col_amt, col_acts = st.columns([3, 2, 2])
+                        col_info, col_amt, col_acts = st.columns([3, 2, 3])
                         with col_info:
-                            st.markdown(f"**👤 {c_name}** `{c_code}`")
-                            st.caption(f"🏷️ Product: **{prod}** &nbsp;|&nbsp; 🧑‍💼 Officer: **{officer}**")
+                            st.markdown(f"**{c_name}** (`{c_code}`)")
+                            st.caption(f"Product: **{prod}** | Officer: **{officer}**")
                         with col_amt:
                             st.markdown(f"<div style='font-size: 1.15rem; font-weight: 700; color: #0f172a;'>₦{loan_amt:,.2f}</div>", unsafe_allow_html=True)
                             st.caption("Requested Principal")
                         with col_acts:
+                            disb_date = st.date_input("Disbursement Date", value=datetime.now().date(), key=f"disb_date_{pl_id}")
                             act_col1, act_col2 = st.columns(2)
                             with act_col1:
-                                if st.button("✅ Approve", key=f"app_{pl_id}", type="primary", use_container_width=True):
+                                if st.button("Approve & Disburse", key=f"app_{pl_id}", type="primary", use_container_width=True):
                                     try:
                                         from services.loan_service import LoanService
                                         with SupabaseUnitOfWork() as uow_app:
-                                            LoanService.approve_and_disburse_loan(uow_app, pl_id, USER)
-                                        st.success(f"✅ Loan approved & disbursed for {c_name}!")
+                                            LoanService.approve_and_disburse_loan(uow_app, pl_id, USER, disbursement_date=disb_date)
+                                        st.success(f"Loan approved & disbursed for {c_name} on {disb_date.strftime('%d %B %Y')}!")
                                         st.rerun()
                                     except Exception as ex:
-                                        st.error(f"❌ Disbursement failed: {str(ex)}")
+                                        st.error(f"Disbursement failed: {str(ex)}")
                             with act_col2:
-                                if st.button("❌ Reject", key=f"rej_{pl_id}", type="secondary", use_container_width=True):
+                                if st.button("Reject", key=f"rej_{pl_id}", type="secondary", use_container_width=True):
                                     try:
                                         from services.loan_service import LoanService
                                         with SupabaseUnitOfWork() as uow_app:
@@ -2116,14 +2117,14 @@ if page == "Dashboard":
                                         st.success(f"Loan rejected for {c_name}.")
                                         st.rerun()
                                     except Exception as ex:
-                                        st.error(f"❌ Rejection failed: {str(ex)}")
+                                        st.error(f"Rejection failed: {str(ex)}")
                 st.markdown("<br>", unsafe_allow_html=True)
 
             # Section G: Withdrawal Approval Queue
             res_wr = uow.client.table("withdrawal_requests").select("*").eq("branch_id", BRANCH_ID).eq("status", "PENDING").order("created_at", desc=False).execute()
             pending_withdrawals = res_wr.data or []
             if pending_withdrawals:
-                st.markdown("#### 💸 Pending Withdrawal Approvals")
+                st.markdown("#### Pending Withdrawal Approvals")
                 for wr in pending_withdrawals:
                     wr_id = wr["id"]
                     wr_type = wr["savings_type"]
@@ -2137,17 +2138,17 @@ if page == "Dashboard":
                     with st.container(border=True):
                         wcol_info, wcol_amt, wcol_acts = st.columns([3, 2, 2])
                         with wcol_info:
-                            st.markdown(f"**🐷 {wr_name}** — `{wr_type}`")
-                            st.caption(f"⚙️ Op: **{wr_op}** &nbsp;|&nbsp; 🧑‍💼 Req By: **{wr_by}** &nbsp;|&nbsp; 📅 **{wr_date}**")
+                            st.markdown(f"**{wr_name}** — `{wr_type}`")
+                            st.caption(f"Op: **{wr_op}** | Req By: **{wr_by}** | Date: **{wr_date}**")
                             if wr_remarks:
-                                st.caption(f"📝 *{wr_remarks}*")
+                                st.caption(f"*{wr_remarks}*")
                         with wcol_amt:
                             st.markdown(f"<div style='font-size: 1.15rem; font-weight: 700; color: #b91c1c;'>₦{wr_amt:,.2f}</div>", unsafe_allow_html=True)
                             st.caption("Withdrawal Amount")
                         with wcol_acts:
                             wact_col1, wact_col2 = st.columns(2)
                             with wact_col1:
-                                if st.button("✅ Approve", key=f"approve_wr_{wr_id}", type="primary", use_container_width=True):
+                                if st.button("Approve", key=f"approve_wr_{wr_id}", type="primary", use_container_width=True):
                                     try:
                                         from services.savings_service import SavingsService
                                         with SupabaseUnitOfWork() as uow_wr:
@@ -2199,12 +2200,12 @@ if page == "Dashboard":
                                                 "approved_at": datetime.now().isoformat()
                                             }).eq("id", wr_id).execute()
 
-                                        st.success(f"✅ Withdrawal approved and executed! (₦{wr_amt:,.2f} — {wr_name})")
+                                        st.success(f"Withdrawal of ₦{wr_amt:,.2f} approved!")
                                         st.rerun()
                                     except Exception as ex:
-                                        st.error(f"❌ Approval failed: {str(ex)}")
+                                        st.error(f"Approval failed: {str(ex)}")
                             with wact_col2:
-                                if st.button("❌ Reject", key=f"reject_wr_{wr_id}", type="secondary", use_container_width=True):
+                                if st.button("Reject", key=f"reject_wr_{wr_id}", type="secondary", use_container_width=True):
                                     st.session_state[f"rejecting_{wr_id}"] = True
 
                         if st.session_state.get(f"rejecting_{wr_id}"):
@@ -2380,22 +2381,23 @@ elif page == "Loan Origination":
         else:
             st.dataframe(pending_clients[['Client ID', 'Client Name', 'Date', 'Officer', 'Loan Amount', 'Loan Product']], use_container_width=True)
             if ROLE in ["AM", "BM", ROLE_ADMIN]:
-                st.markdown("### 🔑 Checker Action: Activate Loan")
+                st.markdown("### Checker Action: Activate Loan")
                 with st.form("activate_loan_form"):
                     opts = pending_clients['Client ID'].tolist()
                     def format_func(x):
                         return f"{x} - {pending_clients[pending_clients['Client ID'] == x].iloc[0]['Client Name']}"
                     selected_client_id = st.selectbox("Select Client to Activate", opts, format_func=format_func)
-                    submitted_activate = st.form_submit_button("✅ Authorize & Activate Disbursement", use_container_width=True)
+                    disbursement_date = st.date_input("Actual Disbursement Date", value=datetime.now().date(), help="Select the planned date cash was disbursed.")
+                    submitted_activate = st.form_submit_button("Authorize & Activate Disbursement", use_container_width=True)
                     if submitted_activate:
-                        today = datetime.now().date()
+                        today = disbursement_date
                         today_str = today.strftime("%Y-%m-%d")
                         closures = get_custom_closures()
                         
                         from services.business_date_service import BusinessDateService
                         is_workday, workday_reason = BusinessDateService.is_working_day(today, closures)
                         if not is_workday:
-                            st.error(f"⛔ **Non-Working Day Restriction**: Loans cannot be activated or disbursed on {workday_reason}. Please perform loan origination on a valid working day.")
+                            st.error(f"⛔ **Non-Working Day Restriction**: Loans cannot be activated or disbursed on {workday_reason}. Please select a valid working day.")
                             st.stop()
 
                         loan_row = pending_clients[pending_clients['Client ID'] == selected_client_id].iloc[0]
@@ -2439,7 +2441,7 @@ elif page == "Loan Origination":
                                 for L in pending_loans:
                                     L.start_date = final_start_date
                                     L.expected_end_date = expected_end_date
-                                    LoanService.disburse_loan(uow, L)
+                                    LoanService.disburse_loan(uow, L, disbursement_date=disbursement_date)
                             
                             st.success(f"Successfully activated and disbursed loan! Disbursement Date set to {today_str}.")
                             

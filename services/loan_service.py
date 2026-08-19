@@ -10,17 +10,17 @@ from services.loan_product_engine import LoanProductEngine
 
 class LoanService:
     @staticmethod
-    def disburse_loan(uow: SupabaseUnitOfWork, loan: Loan) -> Loan:
+    def disburse_loan(uow: SupabaseUnitOfWork, loan: Loan, disbursement_date: Optional[date] = None) -> Loan:
         """
         Executes atomic loan disbursement:
         1. Generates correlation reference ID (e.g. TXN-YYYYMMDD-XXXXXX).
-        2. Resolves active Business Date.
+        2. Resolves active Business Date or custom disbursement_date.
         3. Updates loan status to Active, start date, expected end date.
         4. Emits LoanDisbursed event to event store & financial posting engine.
         5. Emits upfront deduction & revenue events (MarkupCharged, ContingencyCharged, FeeCharged, GapFeeTransferred).
         """
         # 1. Business Date & Reference ID
-        b_date = BusinessDateService.get_business_date(uow, loan.branch)
+        b_date = disbursement_date or BusinessDateService.get_business_date(uow, loan.branch)
         b_date_str = b_date.strftime("%Y%m%d")
         ref_id = f"TXN-{b_date_str}-{uuid.uuid4().hex[:6].upper()}"
 
@@ -246,11 +246,11 @@ class LoanService:
         return loan
 
     @staticmethod
-    def approve_and_disburse_loan(uow: SupabaseUnitOfWork, loan_id: str, approved_by: str) -> Loan:
+    def approve_and_disburse_loan(uow: SupabaseUnitOfWork, loan_id: str, approved_by: str, disbursement_date: Optional[date] = None) -> Loan:
         """
         BM approves and disburses a pending loan application:
         1. Loads the pending Loan domain entity.
-        2. Executes atomic disbursement via disburse_loan(uow, loan).
+        2. Executes atomic disbursement via disburse_loan(uow, loan, disbursement_date=disbursement_date).
         """
         loan = uow.loans.get_by_id(loan_id)
         if not loan:
@@ -261,7 +261,7 @@ class LoanService:
             else:
                 raise ValueError(f"Loan application with ID {loan_id} not found.")
 
-        return LoanService.disburse_loan(uow, loan)
+        return LoanService.disburse_loan(uow, loan, disbursement_date=disbursement_date)
 
     @staticmethod
     def reject_loan(uow: SupabaseUnitOfWork, loan_id: str, rejected_by: str, reason: str = "") -> None:
