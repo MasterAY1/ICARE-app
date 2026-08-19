@@ -40,7 +40,7 @@ class DashboardService:
         meeting_day = target_date.strftime("%A")
         is_weekend = target_date.weekday() >= 5
 
-        q = uow.client.table("loans").select("*, clients(name, client_code), loan_products(name)").in_("status", ["ACTIVE", "Approved", "Active"])
+        q = uow.client.table("loans").select("*, clients(name, client_code), loan_products(name)").in_("status", ["ACTIVE", "Approved", "Active", "Completed"])
         if branch_id:
             q = q.eq("branch_id", branch_id)
         if officer_id:
@@ -48,13 +48,13 @@ class DashboardService:
         
         try:
             loans_res = q.execute()
-            active_loans = loans_res.data or []
+            all_loans = loans_res.data or []
         except Exception:
-            active_loans = []
+            all_loans = []
 
         group_mday_map = {}
         try:
-            loan_client_ids = [l.get("client_id") for l in active_loans if l.get("client_id")]
+            loan_client_ids = [l.get("client_id") for l in all_loans if l.get("client_id")]
             if loan_client_ids:
                 g_query = uow.client.table("client_memberships").select("client_id, groups(name, meeting_day)").in_("client_id", loan_client_ids).execute()
                 for gm in (g_query.data or []):
@@ -64,10 +64,8 @@ class DashboardService:
         except Exception:
             pass
 
-        q_rep = uow.client.table("repayments").select("client_id, amount_paid").eq("date", date_str)
+        q_rep = uow.client.table("repayments").select("loan_id, client_id, amount_paid").eq("date", date_str)
         if branch_id:
-            # Note: repayments might not always accurately filter by branch_id if migrated, so filtering locally might be safer, but eq is fine if set.
-            # actually we don't strictly need it if we filter active_loans
             pass
         
         try:
@@ -82,15 +80,20 @@ class DashboardService:
             reps = []
 
         rep_map = {}
+        rep_by_loan = {}
         for r in reps:
             cid_s = str(r.get("client_id") or "")
+            lid_s = str(r.get("loan_id") or "")
+            amt = float(r.get("amount_paid") or 0.0)
             if cid_s:
-                rep_map[cid_s] = rep_map.get(cid_s, 0.0) + float(r.get("amount_paid") or 0.0)
+                rep_map[cid_s] = rep_map.get(cid_s, 0.0) + amt
+            if lid_s:
+                rep_by_loan[lid_s] = rep_by_loan.get(lid_s, 0.0) + amt
             
-        # Fetch lifetime repayments for these active loans to determine dynamic remaining balance
+        # Fetch lifetime repayments for these loans to determine dynamic remaining balance
         lifetime_reps_map = {}
         try:
-            loan_ids = [str(l.get("loan_id")) for l in active_loans if l.get("loan_id")]
+            loan_ids = [str(l.get("loan_id")) for l in all_loans if l.get("loan_id")]
             if loan_ids:
                 all_rep_res = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", loan_ids).execute()
                 for r in (all_rep_res.data or []):
@@ -105,13 +108,25 @@ class DashboardService:
         part_count, part_amt = 0, 0.0
         not_paid_count, not_paid_amt = 0, 0.0
 
-        for l in active_loans:
-            cid = str(l.get("client_id"))
+        full_paid_clients = set()
+
+        for l in all_loans:
+            cid = str(l.get("client_id") or "")
             if not cid: continue
             
-            c_paid = rep_map.get(cid, 0.0)
             lid_s = str(l.get("loan_id") or "")
-            
+            c_paid_today = rep_by_loan.get(lid_s, 0.0)
+            tot_paid_loan = lifetime_reps_map.get(lid_s, 0.0)
+            act_cred = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
+            tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
+            remaining_bal = max(0.0, tot_due_base - tot_paid_loan)
+
+            disb_dt_str = str(l.get("disbursement_date") or l.get("date") or "")[:10]
+            start_dt_str = str(l.get("start_date") or "")[:10]
+            target_dt_str = target_date.isoformat()
+            is_disbursed_today = (disb_dt_str == target_dt_str)
+            is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
+
             g_mday = group_mday_map.get(cid) or l.get("meeting_day") or "Daily"
             prod_info = l.get("loan_products") or {}
             p_name_lower = str(prod_info.get("name") or l.get("product_type") or "").lower()
@@ -123,7 +138,7 @@ class DashboardService:
             else:
                 loan_cycle = "Weekly"
                 
-            if is_weekend:
+            if is_weekend or is_disbursed_today or is_future_start:
                 is_expected_today = False
             elif loan_cycle == "Daily":
                 is_expected_today = True
@@ -131,46 +146,42 @@ class DashboardService:
                 is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower() or str(g_mday).strip().lower() == "daily")
             else:
                 is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower())
-                
-            if not is_expected_today and c_paid == 0:
-                continue
 
-            repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0) if is_expected_today else 0.0
-            if is_expected_today and repay_amt <= 0:
-                lid = l.get("loan_id")
-                if lid:
-                    try:
-                        res_sch = uow.client.table("loan_schedule").select("total_due").eq("loan_id", lid).order("installment_number").limit(1).execute()
-                        if res_sch.data:
-                            repay_amt = float(res_sch.data[0].get("total_due") or 0.0)
-                    except Exception:
-                        pass
-                if repay_amt <= 0:
+            # 1. Full Payment: Represents exclusively clients who completely paid off their active loan today (BR-DASH-005)
+            if (l.get("status") == "Completed" or remaining_bal <= 0.0 or tot_paid_loan >= act_cred) and c_paid_today > 0:
+                if cid not in full_paid_clients:
+                    full_count += 1
+                    # Display active credit for the full payoff cycle (e.g. 198,000)
+                    client_active_loans = [al for al in all_loans if str(al.get("client_id")) == cid and al.get("status") in ["Active", "Approved", "ACTIVE"]]
+                    if client_active_loans:
+                        disp_act = float(client_active_loans[0].get("active_credit") or client_active_loans[0].get("loan_amount") or act_cred)
+                    else:
+                        disp_act = act_cred
+                    full_amt += disp_act
+                    full_paid_clients.add(cid)
+
+            elif l.get("status") in ["Active", "Approved", "ACTIVE"]:
+                if not is_expected_today and c_paid_today == 0:
+                    continue
+
+                repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0) if is_expected_today else 0.0
+                if is_expected_today and repay_amt <= 0:
                     dur = int(l.get("duration") or 0)
-                    ac = float(l.get("active_credit") or 0.0)
-                    if dur > 0 and ac > 0:
-                        repay_amt = round(ac / dur, 2)
+                    if dur > 0 and act_cred > 0:
+                        repay_amt = round(act_cred / dur, 2)
 
-            act_cred = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
-            tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
-            tot_paid_loan = lifetime_reps_map.get(lid_s, 0.0)
-            remaining_bal = max(0.0, tot_due_base - tot_paid_loan)
-
-            if (remaining_bal <= 0.0 or tot_paid_loan >= act_cred) and c_paid > 0:
-                full_count += 1
-                full_amt += c_paid
-            elif c_paid > repay_amt and repay_amt > 0:
-                excess_count += 1
-                excess_amt += (c_paid - repay_amt)
-            elif c_paid == repay_amt and repay_amt > 0:
-                norm_count += 1
-                norm_amt += c_paid
-            elif c_paid > 0 and c_paid < repay_amt:
-                part_count += 1
-                part_amt += c_paid
-            elif c_paid == 0 and repay_amt > 0:
-                not_paid_count += 1
-                not_paid_amt += repay_amt
+                if c_paid_today > repay_amt and repay_amt > 0:
+                    excess_count += 1
+                    excess_amt += (c_paid_today - repay_amt)
+                elif c_paid_today == repay_amt and repay_amt > 0:
+                    norm_count += 1
+                    norm_amt += c_paid_today
+                elif c_paid_today > 0 and c_paid_today < repay_amt:
+                    part_count += 1
+                    part_amt += c_paid_today
+                elif c_paid_today == 0 and is_expected_today and repay_amt > 0:
+                    not_paid_count += 1
+                    not_paid_amt += repay_amt
 
         return {
             "full_payments": {"count": full_count, "amount": full_amt},
@@ -490,18 +501,19 @@ class DashboardService:
                         "Reason": "Part Payment"
                     })
                 else:
-                    not_paid_count += 1
-                    not_paid_amt += repay_amt
-                    grp_map[g_name]["Clients Not Paid"] += 1
-                    attention_rows.append({
-                        "Client Code": c_code,
-                        "Client Name": c_name,
-                        "Group": g_name,
-                        "Expected": repay_amt,
-                        "Paid": 0.0,
-                        "Outstanding": repay_amt,
-                        "Reason": "Not Paid"
-                    })
+                    if is_expected_today and c_paid == 0 and repay_amt > 0:
+                        not_paid_count += 1
+                        not_paid_amt += repay_amt
+                        grp_map[g_name]["Clients Not Paid"] += 1
+                        attention_rows.append({
+                            "Client Code": c_code,
+                            "Client Name": c_name,
+                            "Group": g_name,
+                            "Expected": repay_amt,
+                            "Paid": 0.0,
+                            "Outstanding": repay_amt,
+                            "Reason": "Not Paid"
+                        })
             except Exception as ex:
                 print(f"[CO DASHBOARD TRACE] Error processing loan for attention list: {ex}")
 
@@ -510,6 +522,7 @@ class DashboardService:
             col = g["Collected"]
             g["Outstanding"] = max(0.0, exp - col)
             g["Compliance %"] = round((col / exp * 100.0), 1) if exp > 0 else 100.0
+            g["Clients Not Paid"] = max(0, g["Clients Expected"] - g["Clients Paid"])
             if col >= exp and exp > 0:
                 g["Status"] = "🟢 Completed"
             elif col > 0 and col < exp:

@@ -32,21 +32,31 @@
 - **Prohibited Behavior:** Hardcoding PAR as "0.0%" or any static value.
 - **Status:** CONFIRMED
 
-## BR-DASH-005: Repayment Status Categorization
+## BR-DASH-005: Repayment Status Categorization (Full, Part, Excess, Not Paid)
 - **Rule ID:** BR-DASH-005
-- **Name:** Repayment Status Categorization (Normal, Excess, Part, Full/Closed, Overdue)
-- **Description:** Categorization of client repayment performance in a period:
-  1. `Full Payments (Closed)`: Total lifetime repayments equal or exceed active credit (`total_paid_lifetime >= active_credit`).
-  2. `Normal Paid`: Actual collection in the period equals the scheduled installment (`paid_in_period == loan_repay`).
-  3. `Excess Paid`: Actual collection in the period exceeds the scheduled installment (`paid_in_period > loan_repay`).
-  4. `Part Paid`: Actual collection in the period is positive but less than scheduled installment (`0 < paid_in_period < loan_repay`).
-  5. `Overdue`: Loan is past its maturity/end date with remaining outstanding balance > 0 and no payment in current cycle.
+- **Name:** Repayment Status Categorization (Full, Part, Excess, Not Paid)
+- **Description:** Categorization of daily client repayment performance on the Credit Officer and Branch Manager Dashboards:
+  1. `Full Payment`: Represents exclusively clients who have **completely paid off their active loan** today (i.e. `total_paid_lifetime >= active_credit` / `remaining_bal == 0` / `status == 'Completed'`).
+     - **Count**: Number of clients who completed their loan today.
+     - **Amount**: The active credit amount of the completed loan / client cycle (e.g. ₦198,000).
+  2. `Part Payment`: Borrowers scheduled for today's collection who paid positive cash less than their scheduled installment (`0 < paid_in_period < loan_repay`).
+     - **Count**: Number of underpaying clients.
+     - **Amount**: Sum of partial collections.
+  3. `Excess Payment`: Borrowers with ongoing active loans scheduled for today who paid strictly more than their scheduled installment (`paid_in_period > loan_repay` and loan is NOT a full payoff).
+     - **Count**: Number of excess-paying clients.
+     - **Amount**: Sum of unbudgeted surplus (`paid_in_period - loan_repay`).
+  4. `Not Paid`: Borrowers with active ongoing loans whose meeting day is today who made zero payment (`paid_in_period == 0` and `is_expected_today == True`). Loans disbursed today or starting in the future are strictly excluded.
+     - **Count**: Number of non-paying clients.
+     - **Amount**: Sum of missed installments.
 - **Required Behavior:**
-  - Status categorization in a period must compare payments made **in that period** against the scheduled periodic installment (`loan_repay`).
+  - `Full Payment` card MUST ONLY count clients who achieved complete loan payoff today, displaying their active credit amount.
+  - Normal recurring installment collections on ongoing loans that match `loan_repay` are standard operational collections, reflected in `meeting_portfolio` (100% compliance) and `repayment_summary`, without triggering "Excess" or "Not Paid" flags.
 - **Prohibited Behavior:**
-  - Comparing lifetime cumulative payments to a single period's installment when categorizing period payment status.
-- **Status:** CONFIRMED
-- **Implementation Location:** `services/portfolio_service.py`, `services/dashboard_service.py`
+  - Displaying normal ongoing installment payers as "Part" or "Excess" payments.
+  - Displaying a loan completion as an "Excess Payment".
+  - Marking clients whose loans were disbursed today as "Not Paid".
+- **Status:** CONFIRMED & ALIGNED
+- **Implementation Location:** `services/dashboard_service.py` (`_calculate_payment_breakdown`)
 
 ## BR-DASH-006: Historical Onboarding Repayments Exclusion from Period Metrics
 - **Rule ID:** BR-DASH-006
