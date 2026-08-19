@@ -93,11 +93,11 @@ def run_migration():
     group_ref_to_info = {}
     for index, row in df_groups.iterrows():
         g_ref = str(row.get('Group Reference*')).strip()
-        if g_ref == 'nan' or not g_ref: continue
+        if g_ref in ('nan', '', 'None'): continue
         
         b_name = str(row.get('Branch Name*')).strip()
         g_name = str(row.get('Group Name*')).strip()
-        leader = str(row.get('Group Leader Name*'))
+        leader = str(row.get('Group Leader Name*')).strip() if pd.notna(row.get('Group Leader Name*')) else None
         m_day = str(row.get('Meeting Day*')).strip()
         o_name = str(row.get('Credit Officer Name*')).strip()
         g_sav = row.get('Group Savings')
@@ -111,8 +111,8 @@ def run_migration():
         b_code = b_info.get('code', b_name[:3].upper())
         o_id = officer_map.get(o_name.lower())
         
-        if leader == 'nan': leader = None
-        if m_day == 'nan' or not m_day: m_day = 'Weekly'
+        if leader in ('nan', 'None', ''): leader = None
+        if m_day in ('nan', 'None', ''): m_day = 'Weekly'
         
         try:
             gn = int(g_ref.upper().replace("GRP-", "").strip())
@@ -144,10 +144,16 @@ def run_migration():
             'meeting_day': m_day, 'branch_code': b_code, 'group_number': gn, 'current_member_sequence': curr_seq
         }
         
-        # Insert Group Opening Savings
+        # Insert or Update Group Opening Savings (Upsert)
         if pd.notna(g_sav) and float(g_sav) > 0:
             gs_res = retry_call(lambda u, g_id=g_id: u.client.table("group_savings").select("id").eq("group_id", g_id).eq("remarks", "Initial Onboarding Group Savings").execute())
-            if not gs_res.data:
+            if gs_res.data:
+                gs_id = gs_res.data[0]['id']
+                retry_call(lambda u, gs_id=gs_id, b_id=b_id, o_id=o_id, g_sav=g_sav: u.client.table("group_savings").update({
+                    "deposit_amount": float(g_sav), "branch_id": b_id, "officer_id": o_id
+                }).eq("id", gs_id).execute())
+                print(f"Updated Group Savings: NGN {float(g_sav):,.2f} for {g_name}")
+            else:
                 retry_call(lambda u, g_id=g_id, b_id=b_id, o_id=o_id, g_sav=g_sav: u.client.table("group_savings").insert({
                     "id": str(uuid.uuid4()),
                     "group_id": g_id,
@@ -251,10 +257,15 @@ def run_migration():
             existing_memberships_set = {m for m in existing_memberships_set if m[0] != c_id}
             existing_memberships_set.add((c_id, g_id))
             
-        # Member Opening Savings
+        # Member Opening Savings (Upsert)
         if pd.notna(s_bal) and float(s_bal) > 0:
             is_res = retry_call(lambda u, c_id=c_id: u.client.table("individual_savings").select("id").eq("client_id", c_id).eq("remarks", "Initial Onboarding Savings").execute())
-            if not is_res.data:
+            if is_res.data:
+                is_id = is_res.data[0]['id']
+                retry_call(lambda u, is_id=is_id, b_id=b_id, o_id=o_id, s_bal=s_bal: u.client.table("individual_savings").update({
+                    "deposit_amount": float(s_bal), "branch_id": b_id, "officer_id": o_id
+                }).eq("id", is_id).execute())
+            else:
                 retry_call(lambda u, c_id=c_id, b_id=b_id, o_id=o_id, s_bal=s_bal: u.client.table("individual_savings").insert({
                     "id": str(uuid.uuid4()),
                     "client_id": c_id,
@@ -279,6 +290,10 @@ def run_migration():
                         prod = product_map.get("weekly 12w")
                     elif "24" in lt_lower and "asset" not in lt_lower:
                         prod = product_map.get("weekly 24w")
+                    elif "12" in lt_lower and "asset" in lt_lower:
+                        prod = product_map.get("weekly 12w asset")
+                    elif "24" in lt_lower and "asset" in lt_lower:
+                        prod = product_map.get("weekly 24w asset")
                     elif "60" in lt_lower and "asset" not in lt_lower:
                         prod = product_map.get("daily 60 days")
                     elif "120" in lt_lower and "asset" not in lt_lower:
@@ -291,6 +306,7 @@ def run_migration():
             cycle = prod.get('repayment_cycle', 'Weekly')
             expected_inst = float(a_cred) / duration if duration > 0 else 0
             current_bal = float(c_bal) if pd.notna(c_bal) else float(a_cred)
+            prod_cat = "Asset" if "asset" in prod.get('name', '').lower() else "Finance"
             
             # Calculate historical origination date from elapsed cycle periods
             rem_installments = math.ceil(current_bal / expected_inst) if expected_inst > 0 else duration
@@ -307,7 +323,8 @@ def run_migration():
                 "onboarded_at": base_date.isoformat(),
                 "initial_active_credit": float(a_cred),
                 "initial_balance": current_bal,
-                "elapsed_cycles": elapsed_installments
+                "elapsed_cycles": elapsed_installments,
+                "product_category": prod_cat
             }
 
             print(f"Setting up Loan for {f_name} ({expected_code}): Product={prod.get('name')}, Active Credit={a_cred}, Bal={current_bal}, Duration={duration}, Disbursed={hist_date.isoformat()}")
@@ -315,18 +332,19 @@ def run_migration():
             l_res = retry_call(lambda u, c_id=c_id: u.client.table("loans").select("*").eq("client_id", c_id).eq("status", "Active").execute())
             if l_res.data:
                 loan_id = l_res.data[0]['loan_id']
-                retry_call(lambda u, current_bal=current_bal, a_cred=a_cred, p_loan=p_loan, expected_inst=expected_inst, b_id=b_id, o_id=o_id, prod=prod, loan_id=loan_id, hist_date=hist_date, legacy_extra=legacy_extra: u.client.table("loans").update({
+                retry_call(lambda u, current_bal=current_bal, a_cred=a_cred, p_loan=p_loan, expected_inst=expected_inst, b_id=b_id, o_id=o_id, prod=prod, prod_cat=prod_cat, loan_id=loan_id, hist_date=hist_date, legacy_extra=legacy_extra: u.client.table("loans").update({
                     "total_due": current_bal, "active_credit": float(a_cred), "loan_amount": float(p_loan) if pd.notna(p_loan) else float(a_cred),
                     "loan_repay": round(expected_inst, 2), "date": hist_date.isoformat(), "disbursement_date": hist_date.isoformat(), "start_date": hist_date.isoformat(),
-                    "branch_id": b_id, "officer_id": o_id, "product_id": prod['product_id'], "extra_fields": legacy_extra
+                    "branch_id": b_id, "officer_id": o_id, "product_id": prod['product_id'], "product_category": prod_cat, "extra_fields": legacy_extra
                 }).eq("loan_id", loan_id).execute())
             else:
                 loan_id = str(uuid.uuid4())
-                retry_call(lambda u, loan_id=loan_id, c_id=c_id, hist_date=hist_date, p_loan=p_loan, a_cred=a_cred, expected_inst=expected_inst, current_bal=current_bal, b_id=b_id, o_id=o_id, prod=prod, legacy_extra=legacy_extra: u.client.table("loans").insert({
+                retry_call(lambda u, loan_id=loan_id, c_id=c_id, hist_date=hist_date, p_loan=p_loan, a_cred=a_cred, expected_inst=expected_inst, current_bal=current_bal, b_id=b_id, o_id=o_id, prod=prod, prod_cat=prod_cat, legacy_extra=legacy_extra: u.client.table("loans").insert({
                     "loan_id": loan_id, "client_id": c_id, "date": hist_date.isoformat(), "disbursement_date": hist_date.isoformat(), "start_date": hist_date.isoformat(),
                     "loan_amount": float(p_loan) if pd.notna(p_loan) else float(a_cred), "active_credit": float(a_cred),
                     "loan_repay": round(expected_inst, 2),
                     "total_due": current_bal, "status": "Active", "branch_id": b_id, "officer_id": o_id, "product_id": prod['product_id'],
+                    "product_category": prod_cat,
                     "extra_fields": legacy_extra
                 }).execute())
                 loans_created += 1
