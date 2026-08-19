@@ -7658,8 +7658,8 @@ elif page == "Portfolio":
         st.divider()
 
         port_tab1, port_tab2 = st.tabs([
-            "📊 Portfolio Summary & Analytics",
-            "👤 Comprehensive Client Dossier & Financial Inquiry"
+            "Portfolio Summary & Analytics",
+            "Client Dossier & Inquiry"
         ])
 
         with port_tab1:
@@ -7747,14 +7747,14 @@ elif page == "Portfolio":
                 st.info("No client records found in authorized scope.")
 
         with port_tab2:
-            st.markdown("### 📋 Comprehensive Client Dossier & Financial Inquiry")
-            st.caption("Deep-dive inquiry into individual client biographical data, loan contracts, repayment ledger, savings history, and compliance audit trail.")
+            st.markdown("### Client Dossier & Financial Inquiry")
+            st.caption("Comprehensive individual client profile, contractual terms, repayment history, savings ledger, and audit log.")
 
             c_codes = p_data.get("client_codes", [])
             client_lookup = p_data.get("client_lookup", {})
             if c_codes:
                 selected_ccode = st.selectbox(
-                    "🔍 Search & Select Client Account:",
+                    "Search & Select Client Account:",
                     c_codes,
                     format_func=lambda code: client_lookup.get(code, code),
                     key="dd_client_select"
@@ -7795,18 +7795,18 @@ elif page == "Portfolio":
                         wth_tot = float(s_hist.get("withdrawal_amount", pd.Series([0.0])).sum())
                         c_savings_balance = dep_tot - wth_tot
 
-                    c_status_label = "🟢 Active Loan" if c_remaining_balance > 0 else ("✔ Fully Settled" if not l_hist.empty else "⚪ No Active Loans")
+                    c_status_label = "Active Loan" if c_remaining_balance > 0 else ("Fully Settled" if not l_hist.empty else "No Active Loans")
 
                     # Executive Metric Header Banner
-                    st.markdown(f"#### 👤 {c_info.get('name', 'Client Profile')} (`{selected_ccode}`)")
+                    st.markdown(f"#### {c_info.get('name', 'Client Profile')} (`{selected_ccode}`)")
                     sb1, sb2, sb3, sb4 = st.columns(4)
-                    sb1.metric("💵 Total Active Credit", f"₦{c_active_credit:,.0f}")
-                    sb2.metric("💳 Outstanding Balance", f"₦{c_remaining_balance:,.0f}")
-                    sb3.metric("🐷 Savings Balance", f"₦{c_savings_balance:,.0f}")
-                    sb4.metric("📊 Account Status", c_status_label)
+                    sb1.metric("Total Active Credit", f"₦{c_active_credit:,.0f}")
+                    sb2.metric("Outstanding Balance", f"₦{c_remaining_balance:,.0f}")
+                    sb3.metric("Savings Balance", f"₦{c_savings_balance:,.0f}")
+                    sb4.metric("Account Status", c_status_label)
 
                     dd_t1, dd_t2, dd_t3, dd_t4, dd_t5, dd_t6, dd_t7 = st.tabs([
-                        "📋 Customer Dossier", "💵 Loan History", "💰 Repayments", "🐷 Savings", "📊 Collections", "🔄 Lifecycle Status", "⚖️ Audit History"
+                        "Customer Profile", "Loan History", "Repayment Ledger", "Savings Ledger", "Collection History", "Lifecycle Status", "Audit Trail"
                     ])
 
                     with dd_t1:
@@ -7832,7 +7832,7 @@ elif page == "Portfolio":
                         col1, col2 = st.columns(2)
                         with col1:
                             with st.container(border=True):
-                                st.markdown("##### 👤 Client Profile & Bio")
+                                st.markdown("##### Client Profile & Bio")
                                 c_pic = c_info.get("passport_url")
                                 c_name_str = c_info.get("name", "N/A")
                                 initials = "".join([part[0].upper() for part in c_name_str.split()[:2]]) if c_name_str != "N/A" else "CL"
@@ -7857,14 +7857,14 @@ elif page == "Portfolio":
 
                                 st.divider()
                                 grp = c_info.get("groups", {}).get("name", "Individual") if isinstance(c_info.get("groups"), dict) else (c_info.get("group_name") or "Individual")
-                                st.markdown(f"**👥 Group / Center:** {grp}")
-                                st.markdown(f"**📞 Phone Number:** {c_info.get('phone', 'N/A')}")
-                                st.markdown(f"**📍 Residential Address:** {c_info.get('address', 'N/A')}")
-                                st.markdown(f"**📅 Registration Date:** {c_info.get('registration_date', 'N/A')}")
+                                st.markdown(f"**Group / Center:** {grp}")
+                                st.markdown(f"**Phone Number:** {c_info.get('phone', 'N/A')}")
+                                st.markdown(f"**Residential Address:** {c_info.get('address', 'N/A')}")
+                                st.markdown(f"**Registration Date:** {c_info.get('registration_date', 'N/A')}")
 
                         with col2:
                             with st.container(border=True):
-                                st.markdown("##### 🛡️ Guarantor Verification Details")
+                                st.markdown("##### Guarantor Details")
                                 g_initials = "".join([part[0].upper() for part in g_name.split()[:2]]) if g_name != "N/A" else "GT"
 
                                 g_img_col, g_bio_col = st.columns([1, 2])
@@ -7883,13 +7883,13 @@ elif page == "Portfolio":
                                 with g_bio_col:
                                     st.markdown(f"**Guarantor Name:** {g_name}")
                                     st.markdown(f"**Relationship:** {g_rel}")
-                                    st.markdown(f"**📞 Phone Number:** {g_phone}")
+                                    st.markdown(f"**Phone Number:** {g_phone}")
 
                                 st.divider()
                                 if g_name != "N/A":
-                                    st.success("✔ Verified Guarantor details attached to active loan file.")
+                                    st.success("Verified Guarantor details attached to active loan file.")
                                 else:
-                                    st.info("ℹ No guarantor attached to current loan records.")
+                                    st.info("No guarantor attached to current loan records.")
 
                     with dd_t2:
                         if l_hist.empty:
@@ -7990,7 +7990,7 @@ elif page == "Portfolio":
                             st.dataframe(c_perf, use_container_width=True)
 
                     with dd_t6:
-                        st.markdown("##### 🔄 Client Lifecycle Status & Direct Officer Control")
+                        st.markdown("##### Client Lifecycle Status & Management")
                         st.caption("Credit Officers have direct authoritative control to manage client lifecycle states.")
 
                         from services.client_status_service import ClientStatusService
@@ -8016,7 +8016,7 @@ elif page == "Portfolio":
                         )
 
                         # Manual Status Change Form for CO / Authorized Officers
-                        st.markdown("###### ⚙️ Change Client Lifecycle Status")
+                        st.markdown("###### Update Client Lifecycle Status")
                         manual_options = [
                             "Registered",
                             "Inactive (Savings Only)",
@@ -8040,7 +8040,7 @@ elif page == "Portfolio":
                                 key=f"reason_status_{selected_ccode}"
                             )
 
-                        if st.button("💾 Apply Status Change", key=f"btn_apply_status_{selected_ccode}", type="primary"):
+                        if st.button("Apply Status Change", key=f"btn_apply_status_{selected_ccode}", type="primary"):
                             if not change_reason.strip():
                                 st.warning("Please provide a reason/note for this status change to maintain audit compliance.")
                             else:
@@ -8053,13 +8053,13 @@ elif page == "Portfolio":
                                     trigger_type="MANUAL"
                                 )
                                 if success:
-                                    st.success(f"✅ Client lifecycle status updated to **{target_status}** successfully!")
+                                    st.success(f"Client lifecycle status updated to **{target_status}** successfully.")
                                     st.rerun()
                                 else:
                                     st.error("Failed to update status. Please try again.")
 
                         st.divider()
-                        st.markdown("###### 📜 Lifecycle Status Audit Trail")
+                        st.markdown("###### Status Change History")
                         history_records = ClientStatusService.get_client_history(uow_p, str(cur_cid))
                         if history_records:
                             h_rows = []
