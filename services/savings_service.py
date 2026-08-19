@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Optional, Any
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from domain.entities.savings import IndividualSavings, GroupSavings, MiscSavings, LapsSavings
 from domain.entities.repayment import Repayment
@@ -10,10 +11,11 @@ from services.posting_engine import FinancialPostingEngine
 
 class SavingsService:
     @staticmethod
-    def post_individual_savings(uow: SupabaseUnitOfWork, client_id: str, client_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None):
+    def post_individual_savings(uow: SupabaseUnitOfWork, client_id: str, client_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None, posting_date: Optional[Any] = None):
         if deposit_amount == 0 and withdrawal_amount == 0:
             return
             
+        p_dt = posting_date if posting_date else datetime.now()
         entity = IndividualSavings(
             client_id=client_id,
             client_name=client_name,
@@ -23,7 +25,7 @@ class SavingsService:
             withdrawal_amount=withdrawal_amount,
             reference=reference,
             remarks=remarks,
-            date=datetime.now()
+            date=p_dt
         )
         # 1. Persist operational data
         uow.individual_savings.create(entity)
@@ -46,6 +48,7 @@ class SavingsService:
                     "officer": officer,
                     "amount": amt,
                     "reference": reference or entity.id,
+                    "date": p_dt.isoformat() if hasattr(p_dt, 'isoformat') else str(p_dt),
                     "narration": remarks or f"Individual savings transaction for client {client_name}"
                 }
             )
@@ -59,10 +62,11 @@ class SavingsService:
             raise e
 
     @staticmethod
-    def post_group_savings(uow: SupabaseUnitOfWork, group_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None):
+    def post_group_savings(uow: SupabaseUnitOfWork, group_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None, posting_date: Optional[Any] = None):
         if deposit_amount == 0 and withdrawal_amount == 0:
             return
             
+        p_dt = posting_date if posting_date else datetime.now()
         entity = GroupSavings(
             group_name=group_name,
             branch=branch,
@@ -71,7 +75,7 @@ class SavingsService:
             withdrawal_amount=withdrawal_amount,
             reference=reference,
             remarks=remarks,
-            date=datetime.now()
+            date=p_dt
         )
         # 1. Persist operational data
         uow.group_savings.create(entity)
@@ -94,6 +98,7 @@ class SavingsService:
                     "officer": officer,
                     "amount": amt,
                     "reference": reference or entity.id,
+                    "date": p_dt.isoformat() if hasattr(p_dt, 'isoformat') else str(p_dt),
                     "narration": remarks or f"Group savings transaction for group {group_name}"
                 }
             )
@@ -138,7 +143,7 @@ class SavingsService:
 
     @staticmethod
     @staticmethod
-    def post_misc_savings(uow: SupabaseUnitOfWork, client_id: str, client_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None):
+    def post_misc_savings(uow: SupabaseUnitOfWork, client_id: str, client_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None, posting_date: Optional[Any] = None):
         if deposit_amount == 0 and withdrawal_amount == 0:
             return
             
@@ -147,6 +152,7 @@ class SavingsService:
         
         narr = remarks or (f"Misc savings collected by {collecting_officer} (Managed by {managing_name})" if deposit_amount > 0 else f"Misc savings withdrawal for {client_name}")
         
+        p_dt = posting_date if posting_date else datetime.now()
         entity = MiscSavings(
             client_id=client_id,
             client_name=client_name,
@@ -156,7 +162,7 @@ class SavingsService:
             withdrawal_amount=withdrawal_amount,
             reference=reference,
             remarks=narr,
-            date=datetime.now()
+            date=p_dt
         )
         # 1. Persist operational data (Internal savings mapped to managing officer)
         uow.misc_savings.create(entity)

@@ -4771,6 +4771,58 @@ elif page == "Collections":
                             else:
                                 st.warning("No data entered to save.")
 
+        # ---------------------------------------------------------
+        # ERROR CORRECTION & REVERSAL REQUEST HUB (FOUR-EYES BR-ERR-001)
+        # ---------------------------------------------------------
+        st.divider()
+        st.markdown("### Error Correction & Reversal Request")
+        st.caption("Flag a wrong collection or repayment for Branch Manager reversal approval.")
+        with st.expander("Flag a Transaction for Reversal", expanded=False):
+            st.info("Select a transaction to flag for reversal. The Branch Manager or Admin must approve the correction.")
+            with SupabaseUnitOfWork() as uow_corr:
+                query = uow_corr.client.table("repayments").select("id, client_id, client_name, amount_paid, savings_amount, date, note, officer_id")
+                if scope.scope_level == "OFFICER":
+                    query = query.eq("officer_id", USER_ID)
+                elif scope.scope_level == "BRANCH" and BRANCH_ID:
+                    query = query.eq("branch_id", BRANCH_ID)
+                
+                res_reps = query.order("created_at", desc=True).limit(50).execute()
+                recent_reps = res_reps.data or []
+                
+                opts = {}
+                for r in recent_reps:
+                    tx_id = str(r.get("id", ""))
+                    c_name = r.get("client_name") or r.get("client_id") or "Unknown"
+                    l_rep = float(r.get("amount_paid") or 0.0)
+                    s_dep = float(r.get("savings_amount") or 0.0)
+                    tx_date = str(r.get("date", ""))[:10]
+                    label = f"{tx_date} | {c_name} — Loan: ₦{l_rep:,.2f} | Sav: ₦{s_dep:,.2f} | Ref: {tx_id[:8]}"
+                    opts[label] = tx_id
+                
+                if opts:
+                    sel_tx_label = st.selectbox("Select Transaction to Flag", list(opts.keys()), key="col_rev_tx_select")
+                    req_reason = st.text_input("Reason for Reversal", placeholder="e.g., Wrong payment entered. Typed 50000 instead of 5000.", key="col_rev_reason")
+                    if st.button("Submit Reversal Request to BM", type="primary", key="col_submit_rev_btn"):
+                        if req_reason.strip():
+                            try:
+                                from services.correction_service import CorrectionService
+                                req_id = CorrectionService.request_correction(
+                                    uow=uow_corr,
+                                    record_id=opts[sel_tx_label],
+                                    record_type="Repayment",
+                                    reason=req_reason.strip(),
+                                    requested_by=USER,
+                                    branch_id=BRANCH_ID
+                                )
+                                st.success(f"Reversal request submitted to Branch Manager for approval! (Ref: #{req_id[:8]})")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to submit correction request: {e}")
+                        else:
+                            st.warning("Please provide a valid reason for the reversal.")
+                else:
+                    st.info("No recent transactions available to flag.")
+
 elif page == "Withdrawal Operations":
     st.title("Withdrawal Operations")
     st.caption("Submit withdrawal requests for BM approval. All withdrawals require Branch Manager authorization before execution.")
@@ -8005,6 +8057,41 @@ elif page == "Portfolio":
                                 }),
                                 use_container_width=True
                             )
+
+                            # Reversal Request Expander
+                            with st.expander("Flag a Repayment for Reversal", expanded=False):
+                                r_opts = {}
+                                for _, rx in r_hist.iterrows():
+                                    rx_id = str(rx.get("id") or rx.get("repayment_id", ""))
+                                    rx_amt = float(rx.get("amount_paid") or 0.0)
+                                    rx_dt = str(rx.get("date", ""))[:10]
+                                    if rx_id and rx_amt > 0:
+                                        r_opts[f"{rx_dt} — ₦{rx_amt:,.2f} (Ref: {rx_id[:8]})"] = rx_id
+                                
+                                if r_opts:
+                                    sel_rx_label = st.selectbox("Select Repayment to Reverse", list(r_opts.keys()), key=f"dossier_rev_{cur_cid}")
+                                    dos_reason = st.text_input("Reason for Reversal", placeholder="e.g. Wrong repayment posted", key=f"dossier_rev_reason_{cur_cid}")
+                                    if st.button("Submit Reversal Request", type="primary", key=f"dossier_rev_btn_{cur_cid}"):
+                                        if dos_reason.strip():
+                                            try:
+                                                from services.correction_service import CorrectionService
+                                                with SupabaseUnitOfWork() as uow_dos_corr:
+                                                    req_id = CorrectionService.request_correction(
+                                                        uow=uow_dos_corr,
+                                                        record_id=r_opts[sel_rx_label],
+                                                        record_type="Repayment",
+                                                        reason=dos_reason.strip(),
+                                                        requested_by=USER,
+                                                        branch_id=BRANCH_ID
+                                                    )
+                                                st.success(f"Reversal request #{req_id[:8]} submitted to Branch Manager!")
+                                                st.rerun()
+                                            except Exception as e:
+                                                st.error(f"Error submitting reversal: {e}")
+                                        else:
+                                            st.warning("Please provide a reason for the reversal.")
+                                else:
+                                    st.info("No active repayment records available to reverse.")
                             
                     with dd_t4:
                         if s_hist.empty:
