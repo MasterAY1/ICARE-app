@@ -4825,7 +4825,7 @@ elif page == "Collections":
         with st.expander("Flag a Transaction for Reversal", expanded=False):
             st.info("Select a transaction to flag for reversal. The Branch Manager or Admin must approve the correction.")
             with SupabaseUnitOfWork() as uow_corr:
-                query = uow_corr.client.table("repayments").select("id, client_id, client_name, amount_paid, savings_amount, date, note, officer_id")
+                query = uow_corr.client.table("repayments").select("id, client_id, amount_paid, date, note, officer_id, clients(name)")
                 if scope.scope_level == "OFFICER":
                     query = query.eq("officer_id", USER_ID)
                 elif scope.scope_level == "BRANCH" and BRANCH_ID:
@@ -4837,11 +4837,10 @@ elif page == "Collections":
                 opts = {}
                 for r in recent_reps:
                     tx_id = str(r.get("id", ""))
-                    c_name = r.get("client_name") or r.get("client_id") or "Unknown"
+                    c_name = (r.get("clients") or {}).get("name") if isinstance(r.get("clients"), dict) else (r.get("client_id") or "Unknown")
                     l_rep = float(r.get("amount_paid") or 0.0)
-                    s_dep = float(r.get("savings_amount") or 0.0)
                     tx_date = str(r.get("date", ""))[:10]
-                    label = f"{tx_date} | {c_name} — Loan: ₦{l_rep:,.2f} | Sav: ₦{s_dep:,.2f} | Ref: {tx_id[:8]}"
+                    label = f"{tx_date} | {c_name} — Loan Repayment: ₦{l_rep:,.2f} | Ref: {tx_id[:8]}"
                     opts[label] = tx_id
                 
                 if opts:
@@ -4999,10 +4998,15 @@ elif page == "Withdrawal Operations":
                 else:
                     st.warning("No active loans found for this client.")
             elif op_type == "Asset Downpayment":
-                res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, loan_product, is_asset").eq("client_id", c_id).in_("status", ["Active", "Pending"]).execute()
-                asset_loans = [l for l in (res_l.data or []) if l.get("is_asset") or "asset" in str(l.get("loan_product", "")).lower()]
+                res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, product_category, extra_fields, loan_products(name)").eq("client_id", c_id).in_("status", ["Active", "Pending"]).execute()
+                asset_loans = [
+                    l for l in (res_l.data or []) 
+                    if l.get("product_category") == "Asset" 
+                    or (l.get("extra_fields") or {}).get("product_category") == "Asset" 
+                    or "asset" in str((l.get("loan_products") or {}).get("name", "")).lower()
+                ]
                 if asset_loans:
-                    loan_opts = {f"Asset Loan {l['loan_id'][:8]} ({l.get('loan_product', 'Asset')}) — Active Credit: ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in asset_loans}
+                    loan_opts = {f"Asset Loan {l['loan_id'][:8]} — Active Credit: ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in asset_loans}
                     sel_loan = st.selectbox("Select Asset Loan for Downpayment", list(loan_opts.keys()))
                     target_loan_id = loan_opts[sel_loan]
                 else:
@@ -5122,10 +5126,15 @@ elif page == "Withdrawal Operations":
                     client_name_for_offset = sel_member["name"]
 
                     if "Asset Downpayment" in op_type:
-                        res_l = uow.client.table("loans").select("loan_id, active_credit, loan_product, is_asset").eq("client_id", sel_member["client_id"]).in_("status", ["Active", "Pending"]).execute()
-                        loans_to_show = [l for l in (res_l.data or []) if l.get("is_asset") or "asset" in str(l.get("loan_product", "")).lower()]
+                        res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, product_category, extra_fields, loan_products(name)").eq("client_id", sel_member["client_id"]).in_("status", ["Active", "Pending"]).execute()
+                        loans_to_show = [
+                            l for l in (res_l.data or []) 
+                            if l.get("product_category") == "Asset" 
+                            or (l.get("extra_fields") or {}).get("product_category") == "Asset" 
+                            or "asset" in str((l.get("loan_products") or {}).get("name", "")).lower()
+                        ]
                     else:
-                        res_l = uow.client.table("loans").select("loan_id, active_credit, loan_product").eq("client_id", sel_member["client_id"]).eq("status", "Active").execute()
+                        res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, product_category, extra_fields, loan_products(name)").eq("client_id", sel_member["client_id"]).eq("status", "Active").execute()
                         loans_to_show = res_l.data or []
 
                     if loans_to_show:
