@@ -2460,7 +2460,7 @@ elif page == "Loan Origination":
         st.subheader("Client Registration")
         # Only Admins and Super Admins can see the Bulk Onboarding method
         if ROLE in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
-            reg_type = st.radio("Registration Method", ["Single Client", "📦 Bulk Onboarding"], horizontal=True)
+            reg_type = st.radio("Registration Method", ["Single Client", "Bulk Onboarding"], horizontal=True)
         else:
             reg_type = "Single Client"
         
@@ -2506,7 +2506,7 @@ elif page == "Loan Origination":
                     final_group_id = group_data["group_id"]
                     final_group_name = group_data["name"]
                     final_group_number = group_data.get("group_number") or ""
-                    st.info(f"✅ Selected group '{final_group_name}' (Code: {final_group_number}) meets on {group_data.get('meeting_day')}")
+                    st.info(f"Selected group '{final_group_name}' (Code: {final_group_number}) meets on {group_data.get('meeting_day')}")
             
             st.markdown("---")
             
@@ -2526,14 +2526,14 @@ elif page == "Loan Origination":
                 other_obs = st.text_input("Other Financial Obligations (if any)", key="reg_client_obligations")
                 
                 # Means of ID Section
-                st.markdown("##### 🆔 Means of Identification")
+                st.markdown("##### Means of Identification")
                 id_col1, id_col2, id_col3 = st.columns(3)
                 id_means = id_col1.selectbox("Means of ID", ["National ID (NIN)", "Voter's Card", "Driver's License", "International Passport", "None"], key="reg_client_id_means")
                 id_number = id_col2.text_input("ID Number", placeholder="Enter identification number", key="reg_client_id_number")
                 id_file = id_col3.file_uploader("Upload ID Document", type=["jpg", "jpeg", "png", "pdf"], key="reg_client_id_file")
                 
                 # Passport Photograph Section
-                st.markdown("##### 📸 Passport Photograph")
+                st.markdown("##### Passport Photograph")
                 pass_file = st.file_uploader("Upload Passport Photograph", type=["jpg", "jpeg", "png"], key="reg_client_passport")
                 
                 st.markdown("#### 2. Guarantor Info")
@@ -2549,7 +2549,7 @@ elif page == "Loan Origination":
                 g_rel = g6.text_input("Relationship with Client", key="reg_guarantor_relationship")
                 g_office = st.text_input("Guarantor Office Address", key="reg_guarantor_office")
 
-                st.markdown("##### 🆔 Guarantor Identification & Passport")
+                st.markdown("##### Guarantor Identification & Passport")
                 g_id_col1, g_id_col2, g_id_col3 = st.columns(3)
                 g_id_means = g_id_col1.selectbox("Guarantor Means of ID", ["National ID (NIN)", "Voter's Card", "Driver's License", "International Passport", "None"], key="reg_guarantor_id_means")
                 g_id_number = g_id_col2.text_input("Guarantor ID Number", placeholder="Enter ID number", key="reg_guarantor_id_number")
@@ -2558,7 +2558,7 @@ elif page == "Loan Origination":
                 g_pass_col1, g_pass_col2 = st.columns(2)
                 g_pass_file = g_pass_col1.file_uploader("Upload Guarantor Passport Photograph", type=["jpg", "jpeg", "png"], key="reg_guarantor_passport")
                 
-                submitted_reg = st.form_submit_button("💾 Register Client", type="primary", use_container_width=True)
+                submitted_reg = st.form_submit_button("Register Client", type="primary", use_container_width=True)
                 
                 if submitted_reg:
                     name_val = st.session_state.get("reg_client_name", "").strip()
@@ -2632,7 +2632,7 @@ elif page == "Loan Origination":
                                         # Get public URL
                                         return uow.client.storage.from_("client-ids").get_public_url(storage_path)
                                     except Exception as upload_err:
-                                        st.warning(f"⚠️ File upload failed for '{file_name}' (Make sure 'client-ids' bucket is created in Supabase): {upload_err}")
+                                        st.warning(f"File upload failed for '{file_name}': {upload_err}")
                                         return ""
                                 
                                 # Upload Client ID and Passport
@@ -3310,7 +3310,7 @@ elif page == "Loan Origination":
         st.subheader("Loan Application")
         
         # 1. Search Client
-        search_query = st.text_input("🔍 Search Client by Name or Client ID", key="loan_app_search_query")
+        search_query = st.text_input("Search Client by Name or Client ID", key="loan_app_search_query")
         
         selected_client_id = None
         selected_client = None
@@ -3367,7 +3367,7 @@ elif page == "Loan Origination":
             col6.markdown(f"**Credit Officer:** {officer_name}")
 
             if g_name_val or g_phone_val:
-                st.markdown("##### 🤝 Guarantor Details")
+                st.markdown("##### Guarantor Details")
                 g_col1, g_col2, g_col3 = st.columns(3)
                 g_col1.markdown(f"**Name:** {g_name_val or 'N/A'}")
                 g_col2.markdown(f"**Phone:** {g_phone_val or 'N/A'}")
@@ -3379,10 +3379,10 @@ elif page == "Loan Origination":
                 res_wd = uow.client.table("individual_savings").select("withdrawal_amount").eq("client_id", selected_client.id).execute()
                 savings_bal = sum(float(d.get("deposit_amount") or 0) for d in res_dep.data) - sum(float(w.get("withdrawal_amount") or 0) for w in res_wd.data)
             
-            st.info(f"💰 **Current Pooled Savings Balance:** ₦{savings_bal:,.2f}")
+            st.info(f"**Current Pooled Savings Balance:** ₦{savings_bal:,.2f}")
 
             # 4. Loan Specific fields
-            st.markdown("### 📝 Apply for a New Loan")
+            st.markdown("### Apply for a New Loan")
             st.markdown("#### 1. Loan Product Parameters")
             product_category = st.selectbox("Product Category", ["Finance", "Asset"], key="loan_app_category")
             
@@ -3477,11 +3477,11 @@ elif page == "Loan Origination":
                         is_eligible, reasons, warnings = RenewalService.check_eligibility(uow, selected_client_id, requested_amount, product_type, product_category)
                     
                     if is_eligible:
-                        st.success("✅ **ELIGIBLE:** " + reasons[-1])
+                        st.success("**ELIGIBLE:** " + reasons[-1])
                         for w in warnings:
                             st.warning(w)
                     else:
-                        st.error("❌ **NOT ELIGIBLE:**")
+                        st.error("**NOT ELIGIBLE:**")
                         for r in reasons:
                             st.write(f"- {r}")
                         for w in warnings:
@@ -3502,7 +3502,7 @@ elif page == "Loan Origination":
                     st.markdown(f"**Active Loan (Total Cost - Downpayment):** ₦{active_credit:,.0f}")
                     st.markdown(f"**Expected Installment:** ₦{expected_installment:,.0f} x {duration} {cycle}")
                     if initial_downpayment > 0:
-                        st.info(f"💵 Ensure the ₦{initial_downpayment:,.0f} downpayment is collected physically. It will be banked as part of total cash.")
+                        st.info(f"Ensure the ₦{initial_downpayment:,.0f} downpayment is collected physically. It will be banked as part of total cash.")
                 else:
                     # Finance default gap calculation
                     default_gap = 0.0
@@ -3536,9 +3536,9 @@ elif page == "Loan Origination":
                     
                     if total_upfront_required > 0:
                         if savings_bal < total_upfront_required:
-                            st.error(f"❌ **INSUFFICIENT SAVINGS:** Client has ₦{savings_bal:,.2f} but needs ₦{total_upfront_required:,.0f}. Please collect additional savings first.")
+                            st.error(f"**INSUFFICIENT SAVINGS:** Client has ₦{savings_bal:,.2f} but needs ₦{total_upfront_required:,.0f}. Please collect additional savings first.")
                         else:
-                            st.success(f"✅ **SUFFICIENT SAVINGS:** Client has enough to cover the upfront fees.")
+                            st.success("SUFFICIENT SAVINGS: Client has enough to cover the upfront fees.")
 
                 st.markdown("#### 2. Loan Notes")
                 notes = st.text_area("Remarks / Notes", key="loan_app_notes")
@@ -3563,7 +3563,7 @@ elif page == "Loan Origination":
                                         is_blocked = True
                                         
                                 if is_blocked:
-                                    st.error(f"❌ Cannot submit: This client already has an Active or Pending {product_category} loan!")
+                                    st.error(f"Cannot submit: This client already has an Active or Pending {product_category} loan!")
                                     st.stop()
                                     
                                 if product_category == "Finance" and savings_bal < total_upfront_required:
@@ -3637,8 +3637,8 @@ elif page == "Loan Origination":
                                 from services.schedule_service import ScheduleService
                                 ScheduleService.generate_schedule(uow, loan_entity, date.today() + timedelta(days=7))
 
-                                st.session_state["flash_msg"] = "✅ Application submitted successfully! Repayment schedule generated and loan is Pending BM Approval."
-                                st.session_state["orig_tab"] = "⏳ Pending Disbursements"
+                                st.session_state["flash_msg"] = "Application submitted successfully! Repayment schedule generated and loan is Pending BM Approval."
+                                st.session_state["orig_tab"] = "Pending Disbursements"
                                 st.rerun()
                         except Exception as ex:
                             st.error(f"Error submitting loan application: {ex}")
@@ -3648,7 +3648,7 @@ elif page == "Loan Origination":
         st.info("Search for a registered client to update their personal details and their guarantor information.")
         
         # 1. Search Client
-        search_query = st.text_input("🔍 Search Client by Name or Client ID to Edit", key="edit_client_search_query")
+        search_query = st.text_input("Search Client by Name or Client ID to Edit", key="edit_client_search_query")
         
         selected_client = None
         if search_query:
@@ -3679,7 +3679,7 @@ elif page == "Loan Origination":
                 res_l = uow.client.table("loans").select("*").eq("client_id", selected_client.id).order("created_at", desc=True).limit(1).execute()
                 latest_loan = res_l.data[0] if res_l.data else {}
 
-            st.markdown("### 👤 Update Client Profile & 🤝 Guarantor Details")
+            st.markdown("### 👤 Update Client Profile & Guarantor Details")
             
             with st.form("edit_client_details_form"):
                 st.markdown("#### 1. Personal Details")
@@ -3702,7 +3702,7 @@ elif page == "Loan Origination":
                 
                 c_obligations = st.text_input("Other Obligations", value=selected_client.other_obligations or "")
                 
-                st.markdown("##### 🆔 Identification Section")
+                st.markdown("##### Identification Section")
                 id_col1, id_col2, id_col3 = st.columns(3)
                 
                 id_means_options = ["National ID (NIN)", "Voter's Card", "Driver's License", "International Passport", "None"]
@@ -3711,7 +3711,7 @@ elif page == "Loan Origination":
                 c_id_number = id_col2.text_input("ID Number", value=selected_client.id_number or "", key="edit_client_id_number")
                 
                 st.write("---")
-                st.write("⚠️ *Optional: Upload new files only if you want to replace the existing ones.*")
+                st.caption("Optional: Upload new files only if you want to replace the existing ones.")
                 
                 c_id_file = id_col3.file_uploader("Upload ID Document (replaces current)", type=["jpg", "jpeg", "png", "pdf"], key="edit_client_id_file")
                 
@@ -3738,7 +3738,7 @@ elif page == "Loan Origination":
                 
                 g_office = st.text_input("Guarantor Office Address", value=loan_extra.get("guarantor_office_address") or "")
                 
-                st.markdown("##### 🆔 Guarantor Identification & Passport")
+                st.markdown("##### Guarantor Identification & Passport")
                 g_id_col1, g_id_col2, g_id_col3 = st.columns(3)
                 
                 g_id_means_options = ["National ID (NIN)", "Voter's Card", "Driver's License", "International Passport", "None"]
@@ -3752,7 +3752,7 @@ elif page == "Loan Origination":
                 g_pass_col1, g_pass_col2 = st.columns(2)
                 g_pass_file = g_pass_col1.file_uploader("Upload Guarantor Passport Photograph (replaces current)", type=["jpg", "jpeg", "png"], key="edit_guarantor_passport")
                 
-                submitted_edit = st.form_submit_button("💾 Save Client & Guarantor Updates", type="primary", use_container_width=True)
+                submitted_edit = st.form_submit_button("Save Client & Guarantor Updates", type="primary", use_container_width=True)
                 
                 if submitted_edit:
                     if not c_name.strip():
