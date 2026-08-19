@@ -399,7 +399,13 @@ class DashboardService:
                     loan_cycle = "Weekly"
 
                 # Check if loan repayment is expected TODAY
-                if is_weekend:
+                disb_dt_str = str(l.get("disbursement_date") or l.get("date") or "")[:10]
+                start_dt_str = str(l.get("start_date") or "")[:10]
+                target_dt_str = target_date.isoformat()
+                is_disbursed_today = (disb_dt_str == target_dt_str)
+                is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
+
+                if is_weekend or is_disbursed_today or is_future_start:
                     is_expected_today = False
                 elif loan_cycle == "Daily":
                     is_expected_today = True  # Mon-Fri
