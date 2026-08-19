@@ -30,6 +30,13 @@ After every code change, the agent MUST verify:
 - [ ] PAR is calculated from actual portfolio data, not hardcoded
 - [ ] No hardcoded financial metric values
 
+### UI & Interactive Invariants
+- [ ] Tab routing and programmatic state transitions redirect to exact valid option strings (no fallbacks to index 0).
+- [ ] Input fields and numbers render appropriate placeholders, min/max limits, and standard currency formatting (`₦{:,.2f}`).
+- [ ] Form submit buttons, action dialogs, and external triggers (e.g. Expand All) update reactively without latency or session crashes.
+- [ ] Visual indicators adhere to rules: profile indicator `👤` and document/asset indicator `📋` preserved; action buttons and form clutter stripped of emojis.
+- [ ] RBAC boundaries strictly enforced: restricted tabs/actions hidden or disabled based on user role.
+
 ## REG-002: Adjacent Scenario Testing
 
 When fixing a bug in one product type or flow, always test at least:

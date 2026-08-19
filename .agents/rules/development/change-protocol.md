@@ -79,9 +79,15 @@ Only after approval, implement the approved changes.
    - [ ] Master Cashbook totals match Account 1000 branch-level entries
    - [ ] Master Cashbook == sum(CO Cashbooks) + branch-level treasury/disbursement
 4. Check affected dashboard metrics.
-5. Test the ORIGINAL reported scenario.
-6. Test at least TWO adjacent scenarios (e.g., different product types, different branches).
-7. Report any remaining discrepancy.
+5. **Mandatory UI & Interactive State Verification**:
+   - [ ] Verify tab routing and session state keys match exact string literals.
+   - [ ] Verify form controls, inputs, validation error alerts, and submit buttons.
+   - [ ] Verify dropdowns, filters, and dynamic selections update reactively.
+   - [ ] Verify typography, formatting (`₦{:,.2f}`), and emoji compliance (`👤` preserved, buttons clean).
+   - [ ] Verify cross-role UI visibility (CO vs BM vs AM vs Admin).
+6. Test the ORIGINAL reported scenario.
+7. Test at least TWO adjacent scenarios (e.g., different product types, different branches).
+8. Report any remaining discrepancy.
 
 ### Success Criteria
 
@@ -89,6 +95,7 @@ Only after approval, implement the approved changes.
 
 A fix is successful ONLY when:
 - The original error is resolved.
+- All UI components, tab routings, and form controls are confirmed working and cleanly formatted.
 - All downstream business invariants are preserved.
 - No new orphaned records exist.
 - Ledger balance remains balanced.

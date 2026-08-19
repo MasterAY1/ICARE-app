@@ -385,7 +385,28 @@ $$\text{UNKNOWN} \longrightarrow \text{UNDER\_INVESTIGATION} \longrightarrow \te
 
 ---
 
-## 16. Required Metric Investigation Output Format
+## 16. Mandatory UI & Interactive State Verification Protocol
+
+Whenever a bug fix, metric correction, or feature implementation is executed, the agent MUST explicitly verify the user interface (UI) layers in addition to database and backend verification:
+
+1. **Component & Tab Routing**:
+   - Confirm that programmatic updates to session state (e.g. `st.session_state["orig_tab"]`) match the exact string literals in tab/radio options (including whitespace and absence of emoji prefixes).
+   - Ensure form submissions and redirections do not bounce or fallback to unintended tabs or pages.
+2. **Form Controls & Inputs**:
+   - Inspect all input fields, number inputs, placeholders, validation alerts, and form submit buttons.
+   - Confirm proper default states, disabled/enabled states, and currency formatters (`₦{:,.2f}`).
+3. **Reactive & Interactive State**:
+   - Verify that dynamic selectboxes (officer filters, group selectors, client dropdowns, loan pickers) update reactively without requiring multiple clicks or causing session state resets.
+   - Ensure external interactive controls (e.g., "Expand All") operate outside form barriers to preserve instant reactivity.
+4. **Typography & Corporate Styling**:
+   - Enforce clean corporate typography across headers, buttons, and badges.
+   - Strictly adhere to the emoji governance: keep `👤` (Client/Officer profile) and `📋` (Asset/Documentation) indicators where specified, while eliminating informal emoji clutter from action buttons and operational forms.
+5. **Cross-Role UI Confirmation**:
+   - Verify that the rendered UI aligns strictly with the role's RBAC scope (e.g. Credit Officer sees field collection views; Branch Manager sees branch approvals and oversight; Area Manager and Admin see multi-branch aggregation).
+
+---
+
+## 17. Required Metric Investigation Output Format
 
 For every investigation, return this exact structure:
 
