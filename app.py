@@ -8704,6 +8704,7 @@ elif page == "User Management":
                                     st.rerun()
                                 else:
                                     st.error(result['message'])
+        else:
             st.info("No users found.")
     
     # --- Tab: Create User (Admin Only) ---

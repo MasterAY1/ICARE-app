@@ -646,35 +646,35 @@ class DashboardService:
 
         officer_stats = []
         try:
-            if branch_name:
-                users_res = uow.client.table("app_users").select("id, username, role").eq("branch", branch_name).execute()
-                officers = [u for u in (users_res.data or []) if u.get("role") in ["CO", "Officer", "Credit Officer"]]
+            if branch_id:
+                branch_users = uow.users.find_by_branch_id(branch_id)
+                officers = [u for u in branch_users if u.role in ["CO", "Officer", "Credit Officer"]]
                 for off in officers:
-                    oname = off.get("username")
-                    oid = off.get("id")
-                    o_sum = {}
-                    if oid:
-                        try:
-                            o_sum = CollectionPerformanceService.get_officer_meeting_summary(uow, oid, target_date)
-                        except Exception:
-                            o_sum = {}
+                    oname = off.username
+                    oid = off.id
 
+                    # CO Cashbook Closing Balance
                     o_cb_close = 0.0
-                    if branch_id and oid:
-                        try:
-                            cb_data = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, oid, target_date)
-                            if cb_data:
-                                o_cb_close = float(cb_data.get("closing_balance") or 0.0)
-                        except Exception:
-                            pass
+                    try:
+                        cb_res = uow.client.table("co_cashbooks").select("closing_balance").eq("branch_id", branch_id).eq("officer_id", oid).eq("date", target_date.isoformat()).execute()
+                        if cb_res.data:
+                            o_cb_close = float(cb_res.data[0].get("closing_balance") or 0.0)
+                    except Exception:
+                        pass
 
-                    exp = o_sum.get("total_expected", 0.0)
-                    col = o_sum.get("total_collected", 0.0)
-                    comp = o_sum.get("compliance_pct", 100.0)
+                    # CO Dashboard expected and collected from meeting portfolio
+                    co_dash = DashboardService.get_co_dashboard_data(uow, branch_name, oname, officer_id=oid, branch_id=branch_id, target_date=target_date)
+                    mp = co_dash.get("meeting_portfolio")
+
+                    exp = float(mp["Expected Collection"].sum()) if mp is not None and not mp.empty else 0.0
+                    col = float(mp["Collected"].sum()) if mp is not None and not mp.empty else 0.0
+                    grps_count = len(mp) if mp is not None and not mp.empty else 0
+                    comp = round((col / exp * 100), 1) if exp > 0 else (100.0 if col > 0 else 0.0)
 
                     officer_stats.append({
                         "Officer": oname,
-                        "Groups Scheduled": 3,
+                        "Officer Name": off.full_name or oname,
+                        "Groups Scheduled": grps_count,
                         "Expected": exp,
                         "Collected": col,
                         "Outstanding": max(0.0, exp - col),
@@ -685,7 +685,7 @@ class DashboardService:
         except Exception:
             pass
 
-        officer_df = pd.DataFrame(officer_stats) if officer_stats else pd.DataFrame(columns=["Officer", "Groups Scheduled", "Expected", "Collected", "Outstanding", "Compliance %", "Closing Balance", "Status"])
+        officer_df = pd.DataFrame(officer_stats) if officer_stats else pd.DataFrame(columns=["Officer", "Officer Name", "Groups Scheduled", "Expected", "Collected", "Outstanding", "Compliance %", "Closing Balance", "Status"])
 
         pending_approvals = []
         try:
@@ -786,9 +786,14 @@ class DashboardService:
         total_coll = 0.0
         total_sav = 0.0
         total_clients = 0
+        total_outstanding_portfolio = 0.0
 
         for b_name in (assigned_branches or []):
             try:
+                b_id = getattr(uow, 'loans')._resolve_branch_id(b_name) if hasattr(uow, 'loans') else None
+                if not b_id:
+                    continue
+
                 b_sav = 0.0
                 try:
                     b_sav = SavingsService.get_branch_totals(uow, b_name).get("total_active_savings", 0.0)
@@ -797,19 +802,21 @@ class DashboardService:
 
                 summary = {}
                 try:
-                    summary = CollectionPerformanceService.get_branch_meeting_summary(uow, b_name, target_date)
+                    summary = CollectionPerformanceService.get_branch_meeting_summary(uow, b_id, target_date)
                 except Exception:
                     summary = {}
 
-                coll = summary.get("total_collected", 0.0)
-                exp = summary.get("total_expected", 0.0)
-                comp = summary.get("compliance_pct", 100.0)
+                coll = float(summary.get("total_collected", 0.0))
+                exp = float(summary.get("total_expected", 0.0))
+                comp = float(summary.get("compliance_pct", 100.0))
+                b_par = DashboardService.calculate_par_pct(uow, b_id)
+
                 b_row = {
                     "Branch": b_name,
                     "Expected Collection": exp,
                     "Collected": coll,
                     "Outstanding": max(0.0, exp - coll),
-                    "PAR": "0.0%",
+                    "PAR": b_par,
                     "Cash Difference": "₦0.00",
                     "Compliance %": comp,
                     "Status": "Normal" if comp >= 80 else "Requires Attention"
@@ -820,9 +827,10 @@ class DashboardService:
                 total_sav += b_sav
 
                 try:
-                    b_id = getattr(uow, 'loans')._resolve_branch_id(b_name) if hasattr(uow, 'loans') else b_name
-                    ac_res = uow.client.table("loans").select("client_id").eq("branch_id", b_id).in_("status", ["ACTIVE", "Active", "Approved"]).execute()
-                    total_clients += len(ac_res.data or [])
+                    ac_res = uow.client.table("loans").select("active_credit, client_id").eq("branch_id", b_id).in_("status", ["ACTIVE", "Active", "Approved"]).execute()
+                    l_rows = ac_res.data or []
+                    total_clients += len(set(l.get("client_id") for l in l_rows if l.get("client_id")))
+                    total_outstanding_portfolio += sum(float(l.get("active_credit") or 0.0) for l in l_rows)
                 except Exception:
                     pass
             except Exception:
@@ -833,9 +841,9 @@ class DashboardService:
 
         return {
             "regional_summary": {
-                "branches_count": len(assigned_branches or []),
+                "branches_count": len(branch_stats),
                 "active_clients": total_clients,
-                "outstanding_portfolio": sum(b["Expected Collection"] for b in branch_stats),
+                "outstanding_portfolio": total_outstanding_portfolio,
                 "savings": total_sav,
                 "today_collection": total_coll,
                 "par": regional_par
