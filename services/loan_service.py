@@ -60,6 +60,9 @@ class LoanService:
                 loan.expected_end_date = b_date
                 
         loan.disbursement_date = b_date
+        if not isinstance(loan.extra_fields, dict):
+            loan.extra_fields = {}
+        loan.extra_fields["disbursement_date"] = b_date.isoformat()
                 
         operations = []
 
@@ -145,6 +148,8 @@ class LoanService:
                     "branch": loan.branch,
                     "officer": loan.credit_officer,
                     "amount": loan.amount,
+                    "active_credit": loan.extra_fields.get("active_credit", loan.amount),
+                    "product_type": loan.product_type,
                     "date": b_date.isoformat(),
                     "reference": ref_id,
                     "classification": TransactionClassification.LOAN_DISBURSEMENT.value,
@@ -198,27 +203,6 @@ class LoanService:
                     }
                 )
                 add_event(event_cont)
-
-            # 7. Domain Event 3: Upfront Savings Deduction / Base Savings (Finance loans only)
-            if not loan.is_asset:
-                gap_fee = setup.get("gap_fee", 0.0)
-                if gap_fee > 0:
-                    event_gap = DomainEvent(
-                        event_id=str(uuid.uuid4()),
-                        aggregate_id=loan.id,
-                        aggregate_type="Loan",
-                        event_type="SavingsDeposited",
-                        payload={
-                            "branch": loan.branch,
-                            "officer": loan.credit_officer,
-                            "amount": gap_fee,
-                            "date": b_date.isoformat(),
-                            "reference": ref_id,
-                            "classification": TransactionClassification.AUTOMATIC_DEDUCTION.value,
-                            "narration": f"Upfront Gap Fee Base Savings for client {loan.client_name}"
-                        }
-                    )
-                    add_event(event_gap)
 
         # Execute all accumulated operations atomically
         uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()

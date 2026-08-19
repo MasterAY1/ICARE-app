@@ -6852,7 +6852,7 @@ elif page == "CO Cashbook":
 
                 # Fetch active disbursements originated today for breakdown (excluding legacy onboarding)
                 res_l = uow.client.table("loans").select("loan_amount, active_credit, extra_fields, loan_products(name, repayment_cycle)") \
-                    .eq("officer_id", o_id).eq("branch_id", branch_id).eq("disbursement_date", date_str) \
+                    .eq("officer_id", o_id).eq("branch_id", branch_id).or_(f"disbursement_date.eq.{date_str},date.eq.{date_str}") \
                     .in_("status", ["Active", "Approved", "Completed"]).execute()
                 for l in (res_l.data or []):
                     if isinstance(l.get("extra_fields"), dict) and l["extra_fields"].get("is_legacy") is True:

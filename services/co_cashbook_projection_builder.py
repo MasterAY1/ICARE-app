@@ -80,7 +80,7 @@ class CoCashbookProjectionBuilder:
         bonus = misc_fees = 0.0
 
         savings_withdrawal = laps_returns = bank_deposit = bank_withdrawal = product_withdrawal = 0.0
-        weekly_active = daily_active = monthly_active = 0.0
+        weekly_active = weekly_24_active = daily_active = monthly_active = 0.0
         office_expenses = 0.0
 
         processed_pwd_events = set()
@@ -125,37 +125,42 @@ class CoCashbookProjectionBuilder:
                     cycle = "Weekly"
                     try:
                         # 1. Try querying loans by loan_id
-                        res_l = uow.client.table("loans").select("frequency, duration, loan_products(name, repayment_cycle)").eq("loan_id", loan_id).execute()
+                        res_l = uow.client.table("loans").select("loan_id, product_id, loan_products(name, repayment_cycle, installments)").eq("loan_id", loan_id).execute()
                         if not res_l.data:
                             # 2. Try querying loans by client_id
-                            res_l = uow.client.table("loans").select("frequency, duration, loan_products(name, repayment_cycle)").eq("client_id", loan_id).eq("status", "Active").execute()
+                            res_l = uow.client.table("loans").select("loan_id, product_id, loan_products(name, repayment_cycle, installments)").eq("client_id", loan_id).eq("status", "Active").execute()
                         if res_l.data:
                             row_l = res_l.data[0]
                             lp = row_l.get("loan_products") or {}
                             prod_name = str(lp.get("name") or "").lower()
-                            cycle = lp.get("repayment_cycle") or row_l.get("frequency") or ("Daily" if "daily" in prod_name else "Weekly")
+                            cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in prod_name else ("Weekly" if "weekly" in prod_name else "Monthly"))
                     except Exception:
                         pass
 
-                    if "12 week" in prod_name or "12w" in prod_name or "12wk" in prod_name or (cycle == "Weekly" and "24" not in prod_name):
-                        rep_12_weeks += amount
-                    elif "24 week" in prod_name or "24w" in prod_name or "24wk" in prod_name:
+                    if "24" in prod_name or "24w" in prod_name or "24wk" in prod_name:
                         rep_24_weeks += amount
+                    elif "12" in prod_name or "12w" in prod_name or "12wk" in prod_name:
+                        rep_12_weeks += amount
                     elif "120" in prod_name or "120d" in prod_name or "60" in prod_name or "60d" in prod_name or "daily" in prod_name or cycle == "Daily":
                         rep_daily += amount
                     elif "month" in prod_name or cycle == "Monthly":
                         rep_monthly += amount
                     else:
-                        if cycle == "Daily":
-                            rep_daily += amount
-                        elif cycle == "Monthly":
-                            rep_monthly += amount
-                        else:
-                            rep_12_weeks += amount
+                        rep_12_weeks += amount
 
                 elif event_type in ["SavingsDeposited", "INDIVIDUAL_SAVINGS_DEPOSIT", "GROUP_SAVINGS_DEPOSIT"]:
-                    if entry.get("aggregate_type") == "LapsSavings":
+                    agg_type = entry.get("aggregate_type") or ev_store.get("aggregate_type")
+                    classification = ev_store.get("payload", {}).get("classification")
+                    if agg_type == "LapsSavings":
                         laps_reserve += amount
+                    elif agg_type == "MiscSavings" or classification == "MISC_FEE":
+                        if is_misc_officer:
+                            savings_deposit += amount
+                        else:
+                            misc_fees += amount
+                    elif classification == "AUTOMATIC_DEDUCTION" or "gap fee" in narr:
+                        # Gap fee is non-cash and does not inflate field collections
+                        pass
                     else:
                         savings_deposit += amount
                         
@@ -164,28 +169,21 @@ class CoCashbookProjectionBuilder:
                     elif "processing" in narr or "application" in narr or "app fee" in narr or "app_fee" in narr: app_fee += amount
                     elif "contingency" in narr:
                         contingency += amount
-                        if "upfront" in narr: product_withdrawal += amount
                     elif "credit form damage" in narr or "credit_form_damage" in narr: credit_form_damage += amount
                     elif "credit form" in narr or "credit_form" in narr: credit_form += amount
                     elif "bonus" in narr: bonus += amount
                     elif "11%" in narr and "weekly" in narr:
                         weekly_11_pct += amount
-                        if "upfront" in narr: product_withdrawal += amount
                     elif "20%" in narr and "weekly" in narr:
                         risk_premium_returns += amount
-                        if "upfront" in narr: product_withdrawal += amount
                     elif "20%" in narr or "markup_20" in narr or "120" in narr or "24" in narr or "6m" in narr or "6 month" in narr:
                         risk_premium_returns += amount
-                        if "upfront" in narr: product_withdrawal += amount
                     elif "11%" in narr or "markup_11" in narr or "3m" in narr or "3 month" in narr or "60" in narr:
                         daily_11_pct += amount
-                        if "upfront" in narr: product_withdrawal += amount
                     elif "weekly" in narr:
                         weekly_11_pct += amount
-                        if "upfront" in narr: product_withdrawal += amount
                     elif "daily" in narr:
                         daily_11_pct += amount
-                        if "upfront" in narr: product_withdrawal += amount
                     else:
                         if is_misc_officer:
                             savings_deposit += amount
@@ -205,42 +203,27 @@ class CoCashbookProjectionBuilder:
                     else:
                         misc_fees += amount
 
-                elif event_type == "LoanDisbursed":
-                    payload = ev_store.get("payload") or {}
-                    prod_cat = payload.get("product_category") or ("Asset" if "asset" in str(payload.get("narration", "")).lower() else "Finance")
-                    act_cr = float(payload.get("active_credit") or payload.get("amount") or amount)
-                    orig_amt = float(payload.get("amount") or act_cr)
-                    prod_name = str(payload.get("product_type") or payload.get("narration") or "").lower()
-
-                    if "daily" in prod_name or "60" in prod_name or "120" in prod_name:
-                        cycle = "Daily"
-                    elif "month" in prod_name or "3m" in prod_name or "6m" in prod_name:
-                        cycle = "Monthly"
-                    else:
-                        cycle = "Weekly"
-
-                    if prod_cat == "Asset":
-                        asset_credit_sales += orig_amt
-                    else:
-                        bank_withdrawal += orig_amt
-
-                    if cycle == "Daily":
-                        daily_active += act_cr
-                    elif cycle == "Weekly":
-                        weekly_active += act_cr
-                    elif cycle == "Monthly":
-                        monthly_active += act_cr
-                    else:
-                        weekly_active += act_cr
-
             elif side == "Credit":
                 # CO Outflows
                 if event_type in ["SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION"]:
-                    savings_withdrawal += amount
-                    bank_withdrawal += amount  # Bank transfer payout from bank
-                    if ev_id not in processed_pwd_events:
-                        product_withdrawal += amount
-                        processed_pwd_events.add(ev_id)
+                    is_auto_deduction = (
+                        "auto-deducted" in narr or
+                        "upfront" in narr or
+                        event_type == "AUTOMATIC_DEDUCTION" or
+                        ev_store.get("payload", {}).get("classification") == "AUTOMATIC_DEDUCTION"
+                    )
+                    if is_auto_deduction:
+                        # Non-cash upfront deduction from savings
+                        if ev_id not in processed_pwd_events:
+                            product_withdrawal += amount
+                            processed_pwd_events.add(ev_id)
+                    else:
+                        # Physical cash savings withdrawal paid to client
+                        savings_withdrawal += amount
+                        bank_withdrawal += amount
+                        if ev_id not in processed_pwd_events:
+                            product_withdrawal += amount
+                            processed_pwd_events.add(ev_id)
                 elif event_type == "BankDeposited":
                     bank_deposit += amount
                 elif event_type == "LapsPaidOut":
@@ -272,7 +255,10 @@ class CoCashbookProjectionBuilder:
                     if cycle == "Daily":
                         daily_active += act_cr
                     elif cycle == "Weekly":
-                        weekly_active += act_cr
+                        if "24" in prod_name:
+                            weekly_24_active += act_cr
+                        else:
+                            weekly_active += act_cr
                     elif cycle == "Monthly":
                         monthly_active += act_cr
                     else:
@@ -295,7 +281,7 @@ class CoCashbookProjectionBuilder:
         )
         total_outflows = (
             product_withdrawal +
-            weekly_active + daily_active + monthly_active +
+            weekly_active + weekly_24_active + daily_active + monthly_active +
             office_expenses + bank_deposit + laps_returns
         )
         closing_balance = total_inflows - total_outflows
@@ -328,11 +314,11 @@ class CoCashbookProjectionBuilder:
             "credit_form": credit_form,
             "credit_form_damage": credit_form_damage,
             "bonus": bonus,
-            "misc_fees": 0.0,
+            "misc_fees": misc_fees,
             "fund_transferred_other_branch": 0.0,
             "fund_transferred_ho": 0.0,
             "fund_to_asset_program": 0.0,
-            "fund_to_product_finance": 0.0,
+            "fund_to_product_finance": (weekly_active + weekly_24_active + daily_active + monthly_active),
             "savings_withdrawal": savings_withdrawal,
             "staff_salaries": 0.0,
             "office_expenses": office_expenses,

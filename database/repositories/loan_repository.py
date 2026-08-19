@@ -134,7 +134,7 @@ class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
             "total_due": entity.extra_fields.get("total_due", entity.total_payable),
             "status": entity.status.value if hasattr(entity.status, 'value') else entity.status,
             "product_category": entity.extra_fields.get("product_category", "Finance"),
-            "disbursement_date": entity.extra_fields.get("disbursement_date"),
+            "disbursement_date": (entity.disbursement_date.isoformat() if hasattr(entity, 'disbursement_date') and entity.disbursement_date else (entity.extra_fields.get("disbursement_date") or (entity.start_date.isoformat() if entity.start_date else date.today().isoformat()))),
             "start_date": entity.start_date.isoformat() if entity.start_date else None,
             "expected_end_date": entity.end_date.isoformat() if entity.end_date else None,
             "extra_fields": entity.extra_fields
