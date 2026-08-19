@@ -258,6 +258,46 @@ st.markdown("""
     div[data-testid="stMetricValue"], [data-testid="stMetricValue"] { color: #1B4F72 !important; font-size: 1.7rem !important; font-weight: 800 !important; }
     div[data-testid="stMetricLabel"], [data-testid="stMetricLabel"] { color: #6B7280 !important; font-size: 0.8rem !important; font-weight: 600 !important; text-transform: uppercase !important; letter-spacing: 0.5px !important; }
     
+    /* === ENTERPRISE PILL TABS === */
+    div[data-baseweb="tab-list"] {
+        gap: 10px !important;
+        background: transparent !important;
+        border-bottom: 2px solid #E2E8F0 !important;
+        padding-bottom: 8px !important;
+        margin-bottom: 18px !important;
+    }
+    button[data-baseweb="tab"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 8px !important;
+        padding: 8px 18px !important;
+        font-weight: 600 !important;
+        font-size: 0.88rem !important;
+        color: #475569 !important;
+        transition: all 0.2s ease-in-out !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+    }
+    button[data-baseweb="tab"]:hover {
+        background-color: #F8FAFC !important;
+        border-color: #94A3B8 !important;
+        color: #1E293B !important;
+    }
+    button[data-baseweb="tab"][aria-selected="true"] {
+        background-color: #1B4F72 !important;
+        border-color: #1B4F72 !important;
+        color: #FFFFFF !important;
+        box-shadow: 0 2px 6px rgba(27, 79, 114, 0.25) !important;
+    }
+    button[data-baseweb="tab"][aria-selected="true"] p,
+    button[data-baseweb="tab"][aria-selected="true"] span,
+    button[data-baseweb="tab"][aria-selected="true"] div {
+        color: #FFFFFF !important;
+    }
+    div[data-baseweb="tab-highlight"],
+    div[data-baseweb="tab-border"] {
+        display: none !important;
+    }
+    
     
     /* === INPUTS === */
     [data-testid="stTextInput"] input,
