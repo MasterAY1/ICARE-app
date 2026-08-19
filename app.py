@@ -6922,56 +6922,121 @@ elif page == "CO Cashbook":
             global_cfd_val = float(global_cfd or 0)
             global_bonus_val = float(global_bonus or 0)
             
-            if any(x != 0 for x in [global_opening_val, global_expenses_val, global_bank_dep_val,
-                                   global_app_fee_val, global_passbook_val, global_misc_fee_val,
-                                   global_cfd_val, global_bonus_val]):
-                g_out = {
-                    "Date": date_str, "Client ID": f"GLOBAL-{target_co}", "Client Name": f"{target_co} End of Day",
-                    "Officer": target_co, "Branch": BRANCH,
-                    "Amount Paid": sum([global_app_fee_val, global_passbook_val, global_misc_fee_val, global_cfd_val, global_bonus_val]),
-                    "Transaction Type": "End of Day", "Note": "Branch/Officer Global Inputs",
-                    "Opening Balance": global_opening_val, "Savings Amount": 0, "Withdrawal Amount": 0, "Laps Reserved": 0,
-                    "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
-                    "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0,
-                    "Bank Withdrawal": 0, "Asset Sales": 0, "App Fee": global_app_fee_val, "Pass Book Bonus": global_passbook_val,
-                    "Misc Fees": global_misc_fee_val, "Asset Credit Sales": 0, "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": global_cfd_val, "Bonus": global_bonus_val,
-                    "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
-                    "Product Withdrawal": 0, "Expenses": global_expenses_val, "Bank Deposited": global_bank_dep_val, "Laps Transferred": 0,
-                    "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
-                }
-                
-                try:
-                    # Update manual opening balance if provided for bootstrap/initial setup
+            try:
+                with SupabaseUnitOfWork() as uow_eod:
+                    b_uuid = uow_eod.cashbook._resolve_branch_id(BRANCH)
+                    u_res = uow_eod.client.table("app_users").select("id").eq("username", target_co).execute()
+                    off_uuid = u_res.data[0]["id"] if u_res.data else None
+                    
+                    # 1. Update manual opening balance if provided
                     if global_opening_val > 0:
-                        with SupabaseUnitOfWork() as uow_op:
-                            b_uuid = uow_op.cashbook._resolve_branch_id(BRANCH)
-                            u_res = uow_op.client.table("app_users").select("id").eq("username", target_co).execute()
-                            if u_res.data:
-                                officer_uuid = u_res.data[0]["id"]
-                                uow_op.client.table("co_cashbooks").upsert({
-                                    "date": date_str,
-                                    "branch_id": b_uuid,
-                                    "officer_id": officer_uuid,
-                                    "opening_balance": global_opening_val
-                                }, on_conflict="date,branch_id,officer_id").execute()
+                        uow_eod.client.table("co_cashbooks").upsert({
+                            "date": date_str,
+                            "branch_id": b_uuid,
+                            "officer_id": off_uuid,
+                            "opening_balance": global_opening_val
+                        }, on_conflict="date,branch_id,officer_id").execute()
+
+                    # 2. Fetch current projection to compute deltas
+                    cb_res = uow_eod.client.table("co_cashbooks").select("*").eq("branch_id", b_uuid).eq("officer_id", off_uuid).eq("date", date_str).execute()
+                    cur_cb = cb_res.data[0] if cb_res.data else {}
                     
-                    save_repayment(g_out)
-                    
-                    with SupabaseUnitOfWork() as uow_rebuild:
-                        b_uuid = uow_rebuild.cashbook._resolve_branch_id(BRANCH)
-                        u_res = uow_rebuild.client.table("app_users").select("id").eq("username", target_co).execute()
-                        off_uuid = u_res.data[0]["id"] if u_res.data else None
-                        if off_uuid:
-                            uow_rebuild.cashbook.rebuild_projection(b_uuid, view_date, officer_id=off_uuid)
-                    
-                    st.success("✅ End of Day Outflows & Fees Submitted Successfully!")
-                    import time
-                    time.sleep(1.5)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error saving End of Day inputs: {e}")
-            else:
-                st.warning("Please enter at least one non-zero outflow, fee, or opening balance.")
+                    cur_app_fee = float(cur_cb.get("app_fee") or 0.0)
+                    cur_pb = float(cur_cb.get("passbook") or 0.0)
+                    cur_cfd = float(cur_cb.get("credit_form_damage") or 0.0)
+                    cur_bon = float(cur_cb.get("bonus") or 0.0)
+                    cur_exp = float(cur_cb.get("office_expenses") or 0.0)
+                    cur_bdep = float(cur_cb.get("bank_deposit") or 0.0)
+
+                    # 3. Post Delta Adjustments for each fee/expense/deposit:
+                    # App Fee Delta
+                    d_app = global_app_fee_val - cur_app_fee
+                    if d_app != 0:
+                        ev_app = DomainEvent(
+                            event_id=str(uuid.uuid4()),
+                            aggregate_id=off_uuid or str(uuid.uuid4()),
+                            aggregate_type="Fee",
+                            event_type="FeeCharged",
+                            payload={"branch": BRANCH, "branch_id": b_uuid, "officer": target_co, "officer_id": off_uuid, "amount": d_app, "date": date_str, "narration": f"EOD App Fee Update (Adjusted from ₦{cur_app_fee:,.2f} to ₦{global_app_fee_val:,.2f})"}
+                        )
+                        uow_eod.event_store.append(ev_app)
+                        FinancialPostingEngine.post_event(uow_eod, ev_app)
+
+                    # Passbook Delta
+                    d_pb = global_passbook_val - cur_pb
+                    if d_pb != 0:
+                        ev_pb = DomainEvent(
+                            event_id=str(uuid.uuid4()),
+                            aggregate_id=off_uuid or str(uuid.uuid4()),
+                            aggregate_type="Fee",
+                            event_type="FeeCharged",
+                            payload={"branch": BRANCH, "branch_id": b_uuid, "officer": target_co, "officer_id": off_uuid, "amount": d_pb, "date": date_str, "narration": f"EOD Passbook Update (Adjusted from ₦{cur_pb:,.2f} to ₦{global_passbook_val:,.2f})"}
+                        )
+                        uow_eod.event_store.append(ev_pb)
+                        FinancialPostingEngine.post_event(uow_eod, ev_pb)
+
+                    # CFD Delta
+                    d_cfd = global_cfd_val - cur_cfd
+                    if d_cfd != 0:
+                        ev_cfd = DomainEvent(
+                            event_id=str(uuid.uuid4()),
+                            aggregate_id=off_uuid or str(uuid.uuid4()),
+                            aggregate_type="Fee",
+                            event_type="FeeCharged",
+                            payload={"branch": BRANCH, "branch_id": b_uuid, "officer": target_co, "officer_id": off_uuid, "amount": d_cfd, "date": date_str, "narration": f"EOD Cr Form Damage Update (Adjusted from ₦{cur_cfd:,.2f} to ₦{global_cfd_val:,.2f})"}
+                        )
+                        uow_eod.event_store.append(ev_cfd)
+                        FinancialPostingEngine.post_event(uow_eod, ev_cfd)
+
+                    # Bonus Delta
+                    d_bon = global_bonus_val - cur_bon
+                    if d_bon != 0:
+                        ev_bon = DomainEvent(
+                            event_id=str(uuid.uuid4()),
+                            aggregate_id=off_uuid or str(uuid.uuid4()),
+                            aggregate_type="Fee",
+                            event_type="FeeCharged",
+                            payload={"branch": BRANCH, "branch_id": b_uuid, "officer": target_co, "officer_id": off_uuid, "amount": d_bon, "date": date_str, "narration": f"EOD Bonus Update (Adjusted from ₦{cur_bon:,.2f} to ₦{global_bonus_val:,.2f})"}
+                        )
+                        uow_eod.event_store.append(ev_bon)
+                        FinancialPostingEngine.post_event(uow_eod, ev_bon)
+
+                    # Expenses Delta
+                    d_exp = global_expenses_val - cur_exp
+                    if d_exp != 0:
+                        ev_exp = DomainEvent(
+                            event_id=str(uuid.uuid4()),
+                            aggregate_id=off_uuid or str(uuid.uuid4()),
+                            aggregate_type="Expense",
+                            event_type="ExpenseRecorded",
+                            payload={"branch": BRANCH, "branch_id": b_uuid, "officer": target_co, "officer_id": off_uuid, "amount": d_exp, "date": date_str, "narration": f"EOD Expense Update (Adjusted from ₦{cur_exp:,.2f} to ₦{global_expenses_val:,.2f})"}
+                        )
+                        uow_eod.event_store.append(ev_exp)
+                        FinancialPostingEngine.post_event(uow_eod, ev_exp)
+
+                    # Bank Deposit Delta
+                    d_bdep = global_bank_dep_val - cur_bdep
+                    if d_bdep != 0:
+                        ev_bdep = DomainEvent(
+                            event_id=str(uuid.uuid4()),
+                            aggregate_id=off_uuid or str(uuid.uuid4()),
+                            aggregate_type="Treasury",
+                            event_type="BankDeposited",
+                            payload={"branch": BRANCH, "branch_id": b_uuid, "officer": target_co, "officer_id": off_uuid, "amount": d_bdep, "date": date_str, "narration": f"EOD Bank Deposit Update (Adjusted from ₦{cur_bdep:,.2f} to ₦{global_bank_dep_val:,.2f})"}
+                        )
+                        uow_eod.event_store.append(ev_bdep)
+                        FinancialPostingEngine.post_event(uow_eod, ev_bdep)
+
+                    # Rebuild projection
+                    if off_uuid:
+                        uow_eod.cashbook.rebuild_projection(b_uuid, view_date, officer_id=off_uuid)
+                
+                st.success("✅ End of Day Outflows & Fees Updated Successfully!")
+                import time
+                time.sleep(1.2)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error updating End of Day inputs: {e}")
 
     # ========================================================
     # BALANCED 2-COLUMN T-ACCOUNT LEDGER DISPLAY
@@ -7032,6 +7097,58 @@ elif page == "CO Cashbook":
         k4.success(f"### Closing: ₦{closing_bal:,.0f}")
     else:
         k4.error(f"### Closing: ₦{closing_bal:,.0f}")
+
+    # ========================================================
+    # ERROR CORRECTION & REVERSAL REQUEST HUB (FOUR-EYES BR-ERR-001)
+    # ========================================================
+    st.markdown("---")
+    st.markdown("### 🚩 Transaction Error Correction & Reversal Hub")
+    st.caption("Flag an erroneous collection, payment, or EOD input for Branch Manager approval (Rule BR-ERR-001).")
+    
+    with st.expander("Flag a Transaction / Input for BM Reversal", expanded=False):
+        st.info("Select a transaction from today to flag for reversal. The Branch Manager or Admin must review and approve the reversal before it takes effect on the ledger.")
+        try:
+            with SupabaseUnitOfWork() as uow_corr:
+                query = uow_corr.client.table("repayments").select("id, client_id, amount_paid, date, note, officer_id, clients(name)")
+                if scope.scope_level == "OFFICER":
+                    query = query.eq("officer_id", USER_ID)
+                elif scope.scope_level == "BRANCH" and BRANCH_ID:
+                    query = query.eq("branch_id", BRANCH_ID)
+                
+                res_reps = query.order("created_at", desc=True).limit(50).execute()
+                recent_reps = res_reps.data or []
+                
+                opts = {}
+                for r in recent_reps:
+                    tx_id = str(r.get("id", ""))
+                    c_name = (r.get("clients") or {}).get("name") if isinstance(r.get("clients"), dict) else (r.get("client_id") or "Unknown")
+                    l_rep = float(r.get("amount_paid") or 0.0)
+                    tx_date = str(r.get("date", ""))[:10]
+                    label = f"{tx_date} | {c_name} — Amount: ₦{l_rep:,.2f} | Ref: {tx_id[:8]}"
+                    opts[label] = tx_id
+                
+                if opts:
+                    sel_tx_label = st.selectbox("Select Transaction to Flag", list(opts.keys()), key="co_cb_rev_tx_select")
+                    req_reason = st.text_input("Reason for Reversal", placeholder="e.g., Wrong amount entered. Typed 50000 instead of 5000.", key="co_cb_rev_reason")
+                    if st.button("Submit Reversal Request to BM", type="primary", key="co_cb_submit_rev_btn"):
+                        if req_reason.strip():
+                            from services.correction_service import CorrectionService
+                            req_id = CorrectionService.request_correction(
+                                uow=uow_corr,
+                                record_id=opts[sel_tx_label],
+                                record_type="Repayment",
+                                reason=req_reason.strip(),
+                                requested_by=USER,
+                                branch_id=BRANCH_ID
+                            )
+                            st.success(f"✅ Reversal request submitted to Branch Manager! (Ref: #{req_id[:8]})")
+                            st.rerun()
+                        else:
+                            st.warning("Please provide a valid reason for the reversal.")
+                else:
+                    st.info("No recent transactions available to flag.")
+        except Exception as ex_corr:
+            st.warning(f"Could not load correction hub: {ex_corr}")
 
 
 elif page == "Master Cashbook":

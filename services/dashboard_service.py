@@ -351,7 +351,11 @@ class DashboardService:
             if branch_id and officer_id:
                 loans_res = uow.client.table("loans").select("*, clients(name, client_code)").eq("branch_id", branch_id).eq("officer_id", officer_id).execute()
                 l_data = loans_res.data or []
-                active_loans = [l for l in l_data if l.get("status") in ["ACTIVE", "Approved", "Active"]]
+                active_loans = [
+                    l for l in l_data 
+                    if l.get("status") in ["ACTIVE", "Approved", "Active"] 
+                    or (l.get("status") in ["Completed", "Closed"] and any(r.get("client_id") == l.get("client_id") or r.get("loan_id") == l.get("loan_id") for r in reps))
+                ]
         except Exception:
             active_loans = []
 
@@ -416,7 +420,9 @@ class DashboardService:
                 is_disbursed_today = (disb_dt_str == target_dt_str)
                 is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
 
-                if is_weekend or is_disbursed_today or is_future_start:
+                if l.get("status") in ["Completed", "Closed"]:
+                    is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower() or str(g_mday).strip().lower() == "daily")
+                elif is_weekend or is_disbursed_today or is_future_start:
                     is_expected_today = False
                 elif loan_cycle == "Daily":
                     is_expected_today = True  # Mon-Fri
@@ -427,7 +433,11 @@ class DashboardService:
                     is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower())
 
                 cid = l.get("client_id")
-                c_reps = [r for r in reps if r.get("client_id") == cid] if cid else []
+                lid = l.get("loan_id")
+                if lid:
+                    c_reps = [r for r in reps if str(r.get("loan_id")) == str(lid)]
+                else:
+                    c_reps = [r for r in reps if r.get("client_id") == cid] if cid else []
                 c_paid = sum(float(r.get("amount_paid") or 0.0) for r in c_reps)
 
                 # Only include in Today's Meeting Portfolio if expected today OR if payment was received today
