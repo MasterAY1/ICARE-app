@@ -247,3 +247,135 @@ class ScheduleService:
         # The user requested: excess goes to reduce principal/outstanding balance, do NOT skip meetings,
         # but next Expected Repayments are reduced.
         return remaining_repayment
+
+    @staticmethod
+    def reschedule_branch_loans_on_closure(
+        uow: SupabaseUnitOfWork,
+        branch_id: str,
+        start_date: date,
+        end_date: date
+    ) -> int:
+        """
+        Reschedules active loan schedules when a branch closure / public holiday is logged.
+        - Daily loans: installments falling on closure shift to the next working day (tomorrow), subsequent installments shift forward.
+        - Weekly loans: installments falling on closure shift to the next weekly meeting day (+1 week), subsequent installments shift forward.
+        - Monthly loans: installments falling on closure shift to the next working day (tomorrow).
+        Returns the number of loans rescheduled.
+        """
+        import holidays
+        from datetime import timedelta
+
+        # Fetch all active closures for the branch
+        closure_res = uow.client.table("branch_closures").select("*").or_(f"branch_id.is.null,branch_id.eq.{branch_id}").execute()
+        branch_closures = []
+        for c in (closure_res.data or []):
+            try:
+                c_start = date.fromisoformat(str(c["start_date"])[:10])
+                c_end = date.fromisoformat(str(c["end_date"])[:10])
+                branch_closures.append((c_start, c_end))
+            except Exception:
+                pass
+
+        ng_holidays = holidays.NG(years=[start_date.year, start_date.year + 1, start_date.year + 2])
+
+        def is_working_day(d: date) -> bool:
+            if d.weekday() >= 5:
+                return False
+            if d in ng_holidays:
+                return False
+            for c_start, c_end in branch_closures:
+                if c_start <= d <= c_end:
+                    return False
+            return True
+
+        def get_next_working_day(d: date) -> date:
+            while not is_working_day(d):
+                d += timedelta(days=1)
+            return d
+
+        # Query all active loans in the branch
+        q = uow.client.table("loans").select("loan_id, client_id, loan_products(name, repayment_cycle)").in_("status", ["ACTIVE", "Active", "Approved"])
+        if branch_id:
+            q = q.eq("branch_id", branch_id)
+        loans_res = q.execute()
+        active_loans = loans_res.data or []
+
+        rescheduled_count = 0
+        for l in active_loans:
+            lid = l.get("loan_id")
+            if not lid:
+                continue
+
+            sched_res = uow.client.table("loan_schedule").select("*").eq("loan_id", lid).order("installment_number").execute()
+            rows = sched_res.data or []
+            if not rows:
+                continue
+
+            prod_info = l.get("loan_products") or {}
+            p_name = str(prod_info.get("name") or "").lower()
+            p_cycle = str(prod_info.get("repayment_cycle") or "").lower()
+
+            if "daily" in p_name or "daily" in p_cycle or "60" in p_name or "120" in p_name:
+                cycle_type = "Daily"
+            elif "monthly" in p_name or "monthly" in p_cycle or "3m" in p_name or "6m" in p_name:
+                cycle_type = "Monthly"
+            else:
+                cycle_type = "Weekly"
+
+            # Check if any pending installment falls in the closure window
+            needs_reschedule = False
+            for r in rows:
+                if r.get("status") != "Paid":
+                    try:
+                        d_due = date.fromisoformat(str(r["due_date"])[:10])
+                        if start_date <= d_due <= end_date:
+                            needs_reschedule = True
+                            break
+                    except Exception:
+                        pass
+
+            if not needs_reschedule:
+                continue
+
+            # Reschedule pending installments
+            last_due_date = None
+            for r in rows:
+                if r.get("status") == "Paid":
+                    try:
+                        last_due_date = date.fromisoformat(str(r["due_date"])[:10])
+                    except Exception:
+                        pass
+                    continue
+
+                old_due = date.fromisoformat(str(r["due_date"])[:10])
+                new_due = old_due
+
+                if cycle_type == "Daily":
+                    if last_due_date:
+                        cand = last_due_date + timedelta(days=1)
+                    else:
+                        cand = old_due
+                    new_due = get_next_working_day(cand)
+                    last_due_date = new_due
+                elif cycle_type == "Weekly":
+                    if last_due_date:
+                        cand = last_due_date + timedelta(weeks=1)
+                    else:
+                        cand = old_due
+                    while not is_working_day(cand):
+                        cand += timedelta(weeks=1)
+                    new_due = cand
+                    last_due_date = new_due
+                elif cycle_type == "Monthly":
+                    if not is_working_day(old_due):
+                        new_due = get_next_working_day(old_due)
+                    last_due_date = new_due
+
+                if new_due.isoformat() != old_due.isoformat():
+                    uow.client.table("loan_schedule").update({
+                        "due_date": new_due.isoformat()
+                    }).eq("id", r["id"]).execute()
+
+            rescheduled_count += 1
+
+        return rescheduled_count

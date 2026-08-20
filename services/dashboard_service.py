@@ -397,6 +397,28 @@ class DashboardService:
 
         is_weekend = target_date.weekday() >= 5
 
+        # Dynamic Closure & Holiday Check
+        is_branch_closed = False
+        closure_reason = ""
+        try:
+            import holidays
+            ng_holidays = holidays.NG(years=[target_date.year])
+            if target_date in ng_holidays:
+                is_branch_closed = True
+                closure_reason = ng_holidays.get(target_date) or "Public Holiday"
+
+            q_cl = uow.client.table("branch_closures").select("*") \
+                .lte("start_date", target_date.isoformat()) \
+                .gte("end_date", target_date.isoformat())
+            if branch_id:
+                q_cl = q_cl.or_(f"branch_id.is.null,branch_id.eq.{branch_id}")
+            res_cl = q_cl.execute()
+            if res_cl.data:
+                is_branch_closed = True
+                closure_reason = res_cl.data[0].get("reason") or closure_reason or "Branch Closure / Holiday"
+        except Exception:
+            is_branch_closed = False
+
         for l in active_loans:
             try:
                 g_name = group_map.get(str(l.get("client_id"))) or "Individual Group"
@@ -421,8 +443,8 @@ class DashboardService:
                 is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
 
                 if l.get("status") in ["Completed", "Closed"]:
-                    is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower() or str(g_mday).strip().lower() == "daily")
-                elif is_weekend or is_disbursed_today or is_future_start:
+                    is_expected_today = False if is_branch_closed else (str(g_mday).strip().lower() == str(meeting_day).strip().lower() or str(g_mday).strip().lower() == "daily")
+                elif is_weekend or is_branch_closed or is_disbursed_today or is_future_start:
                     is_expected_today = False
                 elif loan_cycle == "Daily":
                     is_expected_today = True  # Mon-Fri
@@ -487,81 +509,162 @@ class DashboardService:
                 tot_paid_loan = co_lifetime_reps_map.get(str(l.get("loan_id") or ""), 0.0)
                 remaining_bal = max(0.0, tot_due_base - tot_paid_loan)
 
-                if (remaining_bal <= 0.0 or tot_paid_loan >= act_cred) and c_paid > 0:
-                    full_paid_count += 1
-                    full_paid_amt += c_paid
+                # Classify repayment status for Today's Repayment Summary (BR-DASH-005)
+                if c_paid > 0:
                     grp_map[g_name]["Clients Paid"] += 1
-                elif c_paid > repay_amt and repay_amt > 0:
-                    excess_paid_count += 1
-                    excess_amt += (c_paid - repay_amt)
-                    grp_map[g_name]["Clients Paid"] += 1
-                elif c_paid >= repay_amt and repay_amt > 0:
-                    grp_map[g_name]["Clients Paid"] += 1
-                elif c_paid > 0 and c_paid < repay_amt:
-                    part_paid_count += 1
-                    part_paid_amt += (repay_amt - c_paid)
-                    grp_map[g_name]["Clients Paid"] += 1
-                    attention_rows.append({
-                        "Client Code": c_code,
-                        "Client Name": c_name,
-                        "Group": g_name,
-                        "Expected": repay_amt,
-                        "Paid": c_paid,
-                        "Outstanding": max(0.0, repay_amt - c_paid),
-                        "Reason": "Part Payment"
-                    })
+                    # Check if client fully paid off their lifetime active credit
+                    lifetime_reps = co_lifetime_reps_map.get(str(lid), 0.0)
+                    is_loan_fully_cleared = (act_cred > 0 and (act_cred - lifetime_reps) <= 0.0) or (l.get("status") in ["Completed", "Closed"])
+
+                    if is_loan_fully_cleared:
+                        full_paid_count += 1
+                        full_paid_amt += act_cred
+                    elif repay_amt > 0 and abs(c_paid - repay_amt) <= 1.0:
+                        pass
+                    elif repay_amt > 0 and c_paid < repay_amt:
+                        part_paid_count += 1
+                        part_paid_amt += c_paid
+                        attention_rows.append({
+                            "Client Name": c_name, "Client Code": c_code, "Group": g_name,
+                            "Expected (₦)": repay_amt, "Paid (₦)": c_paid, "Shortfall (₦)": repay_amt - c_paid,
+                            "Issue Type": "Part Payment", "Risk Level": "🟡 Medium Risk",
+                            "Action": "Follow Up with Client / Center Leader"
+                        })
+                    elif repay_amt > 0 and c_paid > repay_amt:
+                        excess_paid_count += 1
+                        excess_amt += (c_paid - repay_amt)
+                    else:
+                        pass
                 else:
-                    if is_expected_today and c_paid == 0 and repay_amt > 0:
+                    if is_expected_today:
+                        grp_map[g_name]["Clients Not Paid"] += 1
                         not_paid_count += 1
                         not_paid_amt += repay_amt
-                        grp_map[g_name]["Clients Not Paid"] += 1
                         attention_rows.append({
-                            "Client Code": c_code,
-                            "Client Name": c_name,
-                            "Group": g_name,
-                            "Expected": repay_amt,
-                            "Paid": 0.0,
-                            "Outstanding": repay_amt,
-                            "Reason": "Not Paid"
+                            "Client Name": c_name, "Client Code": c_code, "Group": g_name,
+                            "Expected (₦)": repay_amt, "Paid (₦)": 0.0, "Shortfall (₦)": repay_amt,
+                            "Issue Type": "Not Paid", "Risk Level": "🔴 High Risk",
+                            "Action": "Issue Arrears Reminder / Visit Center"
                         })
-            except Exception as ex:
-                print(f"[CO DASHBOARD TRACE] Error processing loan for attention list: {ex}")
+            except Exception:
+                continue
 
-        for g in grp_map.values():
-            exp = g["Expected Collection"]
-            col = g["Collected"]
-            g["Outstanding"] = max(0.0, exp - col)
-            g["Compliance %"] = round((col / exp * 100.0), 1) if exp > 0 else 100.0
-            g["Clients Not Paid"] = max(0, g["Clients Expected"] - g["Clients Paid"])
-            if col >= exp and exp > 0:
-                g["Status"] = "🟢 Completed"
-            elif col > 0 and col < exp:
-                g["Status"] = "🟡 In Progress"
-            elif exp > 0 and col == 0:
-                g["Status"] = "🔴 Pending"
+        # Format Meeting Portfolio rows and calculate compliance
+        meeting_portfolio_rows = []
+        for g_name, g_data in grp_map.items():
+            exp_c = g_data["Expected Collection"]
+            col_c = g_data["Collected"]
+            out_c = max(0.0, exp_c - col_c)
+            g_data["Outstanding"] = out_c
+            
+            if is_branch_closed:
+                g_data["Compliance %"] = 100.0
+                g_data["Status"] = f"🏖️ Closed ({closure_reason})"
+            elif exp_c > 0:
+                comp = round((col_c / exp_c) * 100.0, 1)
+                g_data["Compliance %"] = min(100.0, comp)
+                g_data["Status"] = "🟢 Completed" if col_c >= exp_c else ("🟡 In Progress" if col_c > 0 else "🔴 Pending")
             else:
-                g["Status"] = "🟢 Completed"
+                g_data["Compliance %"] = 100.0 if col_c > 0 else 100.0
+                g_data["Status"] = "🟢 Completed" if col_c > 0 else "⚪ Scheduled"
+            
+            meeting_portfolio_rows.append(g_data)
 
-        attention_df = pd.DataFrame(attention_rows) if attention_rows else pd.DataFrame(columns=["Client Code", "Client Name", "Group", "Expected", "Paid", "Outstanding", "Reason"])
-        meeting_portfolio_df = pd.DataFrame(list(grp_map.values())) if grp_map else pd.DataFrame(columns=["Group Name", "Meeting Day", "Expected Collection", "Collected", "Outstanding", "Compliance %", "Clients Expected", "Clients Paid", "Clients Not Paid", "Status"])
+        meeting_portfolio_df = pd.DataFrame(meeting_portfolio_rows) if meeting_portfolio_rows else pd.DataFrame(
+            columns=["Group Name", "Meeting Day", "Expected Collection", "Collected", "Outstanding", "Compliance %", "Clients Expected", "Clients Paid", "Clients Not Paid", "Status"]
+        )
 
-        # Fetch Authoritative Payment Breakdown
+        attention_df = pd.DataFrame(attention_rows) if attention_rows else pd.DataFrame(
+            columns=["Client Name", "Client Code", "Group", "Expected (₦)", "Paid (₦)", "Shortfall (₦)", "Issue Type", "Risk Level", "Action"]
+        )
+
+        # Repayment Summary: aggregate collections made today
+        rep_12w_reps = [r for r in reps if r.get("rep_12_weeks") or r.get("rep_daily") or r.get("repayment_12_weeks") or r.get("repayment_60_days")]
+        rep_24w_reps = [r for r in reps if r.get("rep_24_weeks") or r.get("rep_monthly") or r.get("repayment_24_weeks") or r.get("repayment_120_days") or r.get("monthly")]
+        
+        rep_12w_amt = sum(float(r.get("amount_paid", 0)) for r in rep_12w_reps) if rep_12w_reps else sum(float(r.get("amount_paid", 0)) for r in reps)
+        rep_24w_amt = sum(float(r.get("amount_paid", 0)) for r in rep_24w_reps) if rep_24w_reps else 0.0
+
+        total_rep_collected_today = sum(float(r.get("amount_paid", 0)) for r in reps)
+
+        # Savings Metrics
+        sav_dep_clients = set()
+        sav_wd_clients = set()
+        sav_deposited = 0.0
+        sav_withdrawn = 0.0
+
+        try:
+            from database.repositories.unit_of_work import SupabaseUnitOfWork
+            # Query savings_accounts transactions for today
+            today_str = target_date.isoformat()
+            if branch_id and officer_id:
+                s_res = uow.client.table("savings_transactions").select("*, savings_accounts!inner(branch_id, officer_id)").eq("savings_accounts.branch_id", branch_id).eq("savings_accounts.officer_id", officer_id).eq("date", today_str).execute()
+                for st_row in (s_res.data or []):
+                    amt = float(st_row.get("amount") or 0.0)
+                    tx_type = st_row.get("transaction_type", "")
+                    cid = st_row.get("savings_accounts", {}).get("client_id")
+                    if tx_type in ["Deposit", "DEPOSIT"]:
+                        sav_deposited += amt
+                        if cid:
+                            sav_dep_clients.add(cid)
+                    elif tx_type in ["Withdrawal", "WITHDRAWAL"]:
+                        sav_withdrawn += amt
+                        if cid:
+                            sav_wd_clients.add(cid)
+        except Exception:
+            pass
+
+        # Fetch Cashbook Projection
+        cash_position = {
+            "opening_balance": 0.0,
+            "cash_in": 0.0,
+            "cash_out": 0.0,
+            "closing_balance": 0.0,
+            "status": "Balanced",
+            "difference": 0.0
+        }
+        if branch_id and officer_id:
+            try:
+                cb = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, officer_id, target_date)
+                if cb:
+                    op_bal = float(cb.get("opening_balance") or 0.0)
+                    tot_in = float(cb.get("total_inflows") or 0.0)
+                    tot_out = float(cb.get("total_outflows") or 0.0)
+                    cl_bal = float(cb.get("closing_balance") or 0.0)
+                    diff = abs(round(op_bal + tot_in - tot_out - cl_bal, 2))
+                    
+                    cash_position = {
+                        "opening_balance": op_bal,
+                        "cash_in": tot_in,
+                        "cash_out": tot_out,
+                        "closing_balance": cl_bal,
+                        "status": "Balanced" if diff == 0.0 else "Unbalanced",
+                        "difference": diff
+                    }
+            except Exception:
+                pass
+
+        # Fetch Authoritative Payment Breakdown from RepaymentStatusEngine
         payment_breakdown = DashboardService._calculate_payment_breakdown(uow, target_date, branch_id, officer_id)
 
         return {
             "welcome": {
-                "officer_name": officer_name or "Credit Officer",
-                "branch_name": branch_name or "Branch",
-                "date_str": date_str,
-                "time_str": datetime.now().strftime("%I:%M %p"),
-                "meeting_day": meeting_day
+                "officer_name": officer_name,
+                "branch_name": branch_name,
+                "date_str": target_date.strftime("%d %B %Y"),
+                "meeting_day": target_date.strftime("%A"),
+                "time_str": datetime.now().strftime("%I:%M %p")
+            },
+            "branch_closure": {
+                "is_closed": is_branch_closed,
+                "reason": closure_reason
             },
             "repayment_summary": {
                 "rep_12_weeks_amt": rep_12w_amt,
-                "rep_12_weeks_clients": len(rep_12w_clients),
+                "rep_12_weeks_clients": len(rep_12w_reps),
                 "rep_24_weeks_amt": rep_24w_amt,
-                "rep_24_weeks_clients": len(rep_24w_clients),
-                "total_collected_today": total_collected_today
+                "rep_24_weeks_clients": len(rep_24w_reps),
+                "total_collected_today": total_rep_collected_today
             },
             "meeting_portfolio": meeting_portfolio_df,
             "savings": {
@@ -593,6 +696,28 @@ class DashboardService:
         """
         if not target_date:
             target_date = date.today()
+
+        # Dynamic Closure & Holiday Check
+        is_branch_closed = False
+        closure_reason = ""
+        try:
+            import holidays
+            ng_holidays = holidays.NG(years=[target_date.year])
+            if target_date in ng_holidays:
+                is_branch_closed = True
+                closure_reason = ng_holidays.get(target_date) or "Public Holiday"
+
+            q_cl = uow.client.table("branch_closures").select("*") \
+                .lte("start_date", target_date.isoformat()) \
+                .gte("end_date", target_date.isoformat())
+            if branch_id:
+                q_cl = q_cl.or_(f"branch_id.is.null,branch_id.eq.{branch_id}")
+            res_cl = q_cl.execute()
+            if res_cl.data:
+                is_branch_closed = True
+                closure_reason = res_cl.data[0].get("reason") or closure_reason or "Branch Closure / Holiday"
+        except Exception:
+            is_branch_closed = False
 
         cash_position = {
             "opening_balance": 0.0,
@@ -629,7 +754,7 @@ class DashboardService:
                 pass
 
         summary = {}
-        if branch_id:
+        if branch_id and not is_branch_closed:
             try:
                 summary = CollectionPerformanceService.get_branch_meeting_summary(
                     uow, branch_id, target_date
@@ -669,7 +794,9 @@ class DashboardService:
                     exp = float(mp["Expected Collection"].sum()) if mp is not None and not mp.empty else 0.0
                     col = float(mp["Collected"].sum()) if mp is not None and not mp.empty else 0.0
                     grps_count = len(mp) if mp is not None and not mp.empty else 0
-                    comp = round((col / exp * 100), 1) if exp > 0 else (100.0 if col > 0 else 0.0)
+                    comp = round((col / exp * 100), 1) if exp > 0 else (100.0 if col > 0 else 100.0 if is_branch_closed else 0.0)
+
+                    status_str = f"🏖️ Closed ({closure_reason})" if is_branch_closed else ("Normal" if comp >= 80 else "Requires Attention")
 
                     officer_stats.append({
                         "Officer": oname,
@@ -680,7 +807,7 @@ class DashboardService:
                         "Outstanding": max(0.0, exp - col),
                         "Compliance %": comp,
                         "Closing Balance": o_cb_close,
-                        "Status": "Normal" if comp >= 80 else "Requires Attention"
+                        "Status": status_str
                     })
         except Exception:
             pass
@@ -713,8 +840,12 @@ class DashboardService:
                 "active_clients": total_active_clients,
                 "active_loans": total_active_clients,
                 "active_savings": active_savings,
-                "collection_today": summary.get("total_collected", 0.0),
+                "collection_today": summary.get("total_collected", 0.0) if not is_branch_closed else 0.0,
                 "par": par_val
+            },
+            "branch_closure": {
+                "is_closed": is_branch_closed,
+                "reason": closure_reason
             },
             "repayment_status": {
                 "full_payment": payment_breakdown["full_payments"],
@@ -726,7 +857,7 @@ class DashboardService:
             "branch_cash_position": cash_position,
             "approval_queue": pending_approvals,
             "branch_alerts": [
-                "All officer cashbooks balanced for today.",
+                f"🏖️ Branch is closed today for {closure_reason}." if is_branch_closed else "All officer cashbooks balanced for today.",
                 "Zero projection mismatches detected."
             ]
         }
@@ -782,6 +913,9 @@ class DashboardService:
         if not target_date:
             target_date = date.today()
 
+        import holidays
+        ng_holidays = holidays.NG(years=[target_date.year])
+
         branch_stats = []
         total_coll = 0.0
         total_sav = 0.0
@@ -794,6 +928,21 @@ class DashboardService:
                 if not b_id:
                     continue
 
+                # Check closure for this branch
+                is_b_closed = (target_date in ng_holidays)
+                b_closure_reason = ng_holidays.get(target_date) if is_b_closed else ""
+                try:
+                    q_cl = uow.client.table("branch_closures").select("*") \
+                        .lte("start_date", target_date.isoformat()) \
+                        .gte("end_date", target_date.isoformat()) \
+                        .or_(f"branch_id.is.null,branch_id.eq.{b_id}") \
+                        .execute()
+                    if q_cl.data:
+                        is_b_closed = True
+                        b_closure_reason = q_cl.data[0].get("reason") or b_closure_reason or "Branch Closure"
+                except Exception:
+                    pass
+
                 b_sav = 0.0
                 try:
                     b_sav = SavingsService.get_branch_totals(uow, b_name).get("total_active_savings", 0.0)
@@ -801,15 +950,18 @@ class DashboardService:
                     b_sav = 0.0
 
                 summary = {}
-                try:
-                    summary = CollectionPerformanceService.get_branch_meeting_summary(uow, b_id, target_date)
-                except Exception:
-                    summary = {}
+                if not is_b_closed:
+                    try:
+                        summary = CollectionPerformanceService.get_branch_meeting_summary(uow, b_id, target_date)
+                    except Exception:
+                        summary = {}
 
                 coll = float(summary.get("total_collected", 0.0))
-                exp = float(summary.get("total_expected", 0.0))
-                comp = float(summary.get("compliance_pct", 100.0))
+                exp = float(summary.get("total_expected", 0.0)) if not is_b_closed else 0.0
+                comp = float(summary.get("compliance_pct", 100.0)) if not is_b_closed else 100.0
                 b_par = DashboardService.calculate_par_pct(uow, b_id)
+
+                status_str = f"🏖️ Closed ({b_closure_reason})" if is_b_closed else ("Normal" if comp >= 80 else "Requires Attention")
 
                 b_row = {
                     "Branch": b_name,
@@ -819,7 +971,7 @@ class DashboardService:
                     "PAR": b_par,
                     "Cash Difference": "₦0.00",
                     "Compliance %": comp,
-                    "Status": "Normal" if comp >= 80 else "Requires Attention"
+                    "Status": status_str
                 }
                 branch_stats.append(b_row)
                 

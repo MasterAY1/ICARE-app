@@ -2287,6 +2287,9 @@ if page == "Dashboard":
             wel = co_data["welcome"]
             st.info(f"Welcome **{wel['officer_name']}** | {wel['branch_name']} Branch | Business Date: **{wel['date_str']}** ({wel['meeting_day']}) | System Time: {wel['time_str']}")
 
+            if co_data.get("branch_closure", {}).get("is_closed"):
+                st.warning(f"🏖️ **Branch Closed / Holiday ({co_data['branch_closure']['reason']})**: All field collections, group meetings, and daily/weekly/monthly repayments are suspended for {wel['branch_name']} Branch today.")
+
             # Today's Repayment Summary Cards (UI-02: Clean Titles, Emoji Reduction)
             st.markdown("#### Today's Repayment Summary")
             rep_s = co_data["repayment_summary"]
@@ -8939,7 +8942,16 @@ elif page == "User Management":
                                         branch_id=selected_branch_id
                                     )
                                     uow.branch_closures.create(closure)
-                                st.success("Branch closure added successfully!")
+                                    
+                                    # Auto-reschedule pending loan installments for the branch
+                                    from services.schedule_service import ScheduleService
+                                    ScheduleService.reschedule_branch_loans_on_closure(
+                                        uow=uow,
+                                        branch_id=selected_branch_id,
+                                        start_date=closure_dates[0],
+                                        end_date=closure_dates[1]
+                                    )
+                                st.success("Branch closure added and loan schedules rescheduled successfully!")
                                 get_custom_closures.clear()
                                 st.rerun()
                             except Exception as e:
