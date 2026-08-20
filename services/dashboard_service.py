@@ -40,6 +40,25 @@ class DashboardService:
         meeting_day = target_date.strftime("%A")
         is_weekend = target_date.weekday() >= 5
 
+        # Dynamic Closure & Holiday Check
+        is_branch_closed = False
+        try:
+            import holidays
+            ng_holidays = holidays.NG(years=[target_date.year])
+            if target_date in ng_holidays:
+                is_branch_closed = True
+
+            q_cl = uow.client.table("branch_closures").select("*") \
+                .lte("start_date", target_date.isoformat()) \
+                .gte("end_date", target_date.isoformat())
+            if branch_id:
+                q_cl = q_cl.or_(f"branch_id.is.null,branch_id.eq.{branch_id}")
+            res_cl = q_cl.execute()
+            if res_cl.data:
+                is_branch_closed = True
+        except Exception:
+            is_branch_closed = False
+
         q = uow.client.table("loans").select("*, clients(name, client_code), loan_products(name)").in_("status", ["ACTIVE", "Approved", "Active", "Completed"])
         if branch_id:
             q = q.eq("branch_id", branch_id)
@@ -138,7 +157,7 @@ class DashboardService:
             else:
                 loan_cycle = "Weekly"
                 
-            if is_weekend or is_disbursed_today or is_future_start:
+            if is_weekend or is_branch_closed or is_disbursed_today or is_future_start:
                 is_expected_today = False
             elif loan_cycle == "Daily":
                 is_expected_today = True
