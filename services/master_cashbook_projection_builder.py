@@ -20,22 +20,33 @@ class MasterCashbookProjectionBuilder:
         prev_date = posting_date - timedelta(days=1)
         prev_date_str = prev_date.isoformat()
 
-        # 1. Previous day opening balance
-        opening_bal = 0.0
-        try:
-            res_prev = uow.client.table("master_cashbook").select("closing_balance") \
-                .eq("branch_id", branch_id).eq("date", prev_date_str).execute()
-            if res_prev.data:
-                opening_bal = float(res_prev.data[0]["closing_balance"] or 0.0)
-        except Exception:
-            pass
-
-        # 2. Fetch all co_cashbooks for this branch on date
+        # 1. Fetch all co_cashbooks for this branch on date first
         co_rows = []
         try:
             res_co = uow.client.table("co_cashbooks").select("*") \
                 .eq("branch_id", branch_id).eq("date", p_date_str).execute()
             co_rows = res_co.data or []
+        except Exception:
+            pass
+
+        # 2. Previous day opening balance resolution
+        opening_bal = 0.0
+        try:
+            res_prev = uow.client.table("master_cashbook").select("closing_balance") \
+                .eq("branch_id", branch_id).eq("date", prev_date_str).execute()
+            if res_prev.data and res_prev.data[0].get("closing_balance") is not None:
+                opening_bal = float(res_prev.data[0]["closing_balance"] or 0.0)
+            else:
+                # If no previous day master cashbook exists (Day 1 / fresh bootstrap),
+                # derive initial opening balance from the sum of CO opening balances
+                sum_co_open = sum(float(r.get("opening_balance") or 0.0) for r in co_rows)
+                if sum_co_open > 0:
+                    opening_bal = sum_co_open
+                else:
+                    res_curr = uow.client.table("master_cashbook").select("opening_balance") \
+                        .eq("branch_id", branch_id).eq("date", p_date_str).execute()
+                    if res_curr.data and res_curr.data[0].get("opening_balance") is not None:
+                        opening_bal = float(res_curr.data[0]["opening_balance"] or 0.0)
         except Exception:
             pass
 
@@ -59,18 +70,19 @@ class MasterCashbookProjectionBuilder:
             for field in numeric_fields:
                 totals[field] += float(row.get(field) or 0.0)
 
-        # 4. Fetch Branch Treasury Activities and Loan Disbursements from Ledger
+        # 4. Fetch Branch Treasury Activities and Direct Branch Disbursements from Ledger
         try:
             # We fetch all ledger entries for the branch on this date that hit Account 1000 (Vault Cash)
-            # but ONLY for branch-level event types (treasury transfers, expenses, disbursements)
-            # CO-level events (repayments, fees) are already aggregated from the CO cashbooks.
+            # but ONLY for branch-level events that are NOT already captured within CO cashbooks.
             res_ledger = uow.client.table("financial_ledger_entries") \
-                .select("*, financial_transactions!inner(event_store(event_type, payload))") \
+                .select("*, financial_transactions!inner(officer_id, event_store(event_type, payload))") \
                 .eq("branch_id", branch_id) \
                 .eq("account_code", "1000") \
                 .eq("financial_transactions.posting_date", p_date_str) \
                 .execute()
             
+            co_officer_ids = set(str(r.get("officer_id")) for r in co_rows if r.get("officer_id"))
+
             for entry in (res_ledger.data or []):
                 amt = float(entry.get("amount") or 0.0)
                 side = entry.get("side")
@@ -78,16 +90,19 @@ class MasterCashbookProjectionBuilder:
                 ev_store = tx.get("event_store") or {}
                 event_type = ev_store.get("event_type")
                 payload = ev_store.get("payload") or {}
+                tx_officer_id = str(tx.get("officer_id") or "")
                 
                 # Branch Inflows (Debit 1000)
                 if side == "Debit":
                     if event_type == "CashTransferred_HO_In":
-                        # Could be inter-branch or HO, check payload classification/transaction_type
                         tx_type = payload.get("transaction_type")
                         if tx_type == "INTER_BRANCH_IN":
                             totals["funds_received_other_branch"] += amt
                         else:
                             totals["funds_received_ho"] += amt
+                    elif event_type == "BankWithdrawn":
+                        if tx_officer_id not in co_officer_ids:
+                            totals["bank_withdrawal"] += amt
                             
                 # Branch Outflows (Credit 1000)
                 elif side == "Credit":
@@ -101,13 +116,17 @@ class MasterCashbookProjectionBuilder:
                         totals["office_expenses"] += amt
                     elif event_type == "SalaryPaid":
                         totals["staff_salaries"] += amt
+                    elif event_type == "BankDeposited":
+                        if tx_officer_id not in co_officer_ids:
+                            totals["bank_deposit"] += amt
                     elif event_type == "LoanDisbursed":
-                        # Read structured product_category from payload (BR-ACCT-005) with narration fallback
-                        prod_cat = payload.get("product_category") or ("Asset" if "Asset" in str(payload.get("narration", "")) else "Finance")
-                        if prod_cat == "Asset":
-                            totals["fund_to_asset_program"] += amt
-                        else:
-                            totals["fund_to_product_finance"] += amt
+                        # Only add branch-level disbursements if NOT already included in CO cashbooks
+                        if tx_officer_id not in co_officer_ids:
+                            prod_cat = payload.get("product_category") or ("Asset" if "Asset" in str(payload.get("narration", "")) else "Finance")
+                            if prod_cat == "Asset":
+                                totals["fund_to_asset_program"] += amt
+                            else:
+                                totals["fund_to_product_finance"] += amt
         except Exception as e:
             print(f"[SAVINGS TRACE] Master Cashbook failed to fetch branch ledger entries: {e}")
 
