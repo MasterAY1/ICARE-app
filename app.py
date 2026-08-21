@@ -8096,7 +8096,7 @@ elif page == "Portfolio":
             s1.metric("Savings Deposited (Period)", f"₦{p_sum.get('period_savings_deposit', 0.0):,.0f}", f"{p_sum.get('period_savings_dep_clients', 0)} Clients")
             s2.metric("Savings Withdrawn (Period)", f"₦{p_sum.get('period_savings_withdrawal', 0.0):,.0f}", f"{p_sum.get('period_savings_wd_clients', 0)} Clients")
             p_net = float(p_sum.get('period_net_savings', p_sum.get('period_savings_deposit', 0.0) - p_sum.get('period_savings_withdrawal', 0.0)))
-            s3.metric("Net Savings (Period)", f"₦{p_net:,.0f}", "Net Flow", delta=f"₦{p_net:,.0f}" if p_net != 0 else None, delta_color="normal")
+            s3.metric("Net Savings (Period)", f"₦{p_net:,.0f}", f"₦{p_net:,.0f} (Net)" if p_net != 0 else "₦0 (Balanced)", delta_color="normal")
             s4.metric("Total Savings Balance", f"₦{p_sum.get('total_savings_balance', 0.0):,.0f}", f"{p_sum.get('total_savings_clients', 0)} Active Savers")
 
             st.caption("Row 3: Disbursement Summary (In Selected Period)")
