@@ -7792,11 +7792,17 @@ elif page == "Master Cashbook":
 
 
 elif page == "Portfolio":
-    if ROLE in ["CO", "Officer", "Credit Officer"]:
-        st.title("CO Portfolio")
-    else:
-        st.title("Enterprise Portfolio Intelligence & Management")
-    st.caption("Hierarchical portfolio oversight, dynamic role-scoped analytics, and 360° universal client drill-down.")
+    title_map = {
+        "CO": "CO Portfolio",
+        "Officer": "CO Portfolio",
+        "Credit Officer": "CO Portfolio",
+        "Branch Manager": "Branch Portfolio",
+        "BM": "Branch Portfolio",
+        "Area Manager": "Regional Portfolio",
+        "AM": "Regional Portfolio",
+    }
+    st.title(title_map.get(ROLE, "Enterprise Portfolio"))
+    st.caption("Comprehensive portfolio oversight, role-scoped performance analytics, and 360° client dossier.")
 
     from services.portfolio_service import PortfolioService
     from database.repositories.unit_of_work import SupabaseUnitOfWork
@@ -7810,140 +7816,192 @@ elif page == "Portfolio":
         if p_scope.is_read_only():
             st.info("**Executive Read-Only Mode**: Strategic view active. Operation and edit actions are disabled.")
 
-        # Hierarchical Scope Toolbar
+        # Hierarchical Scope Resolution
         sel_branch = None
         sel_officer = None
+        selected_officer_id = None
 
-        if p_scope.scope_level == "OFFICER":
-            st.markdown(f"**Scope**: Credit Officer Portfolio (`{p_scope.username}`) &middot; **Branch**: {p_scope.branch_name}")
-        elif p_scope.scope_level == "BRANCH":
-            f_col1, f_col2 = st.columns(2)
-            with f_col1:
-                st.markdown(f"**Branch Scope**: `{p_scope.branch_name}`")
+        with st.container(border=True):
+            # Row 1: Scope & Officer Selection
+            if p_scope.scope_level == "OFFICER":
+                st.markdown(f"**Scope**: Credit Officer Portfolio (`{p_scope.username}`) &middot; **Branch**: `{p_scope.branch_name}`")
                 sel_branch = p_scope.branch_name
-            with f_col2:
-                off_opts = ["All"]
-                try:
-                    res_off = uow_p.client.table("app_users").select("username").eq("branch", p_scope.branch_name).execute()
-                    off_opts += [o["username"] for o in (res_off.data or []) if o.get("username")]
-                except Exception:
-                    pass
-                sel_officer = st.selectbox("Filter Officer", off_opts, key="port_off_sel")
-        elif p_scope.scope_level == "REGION":
-            f_col1, f_col2 = st.columns(2)
-            with f_col1:
-                b_opts = ["All"] + p_scope.assigned_branch_names
-                sel_branch = st.selectbox("Filter Branch", b_opts, key="port_br_sel")
-            with f_col2:
-                off_opts = ["All"]
-                try:
-                    b_tgt = sel_branch if sel_branch != "All" else p_scope.assigned_branch_names[0]
-                    res_off = uow_p.client.table("app_users").select("username").eq("branch", b_tgt).execute()
-                    off_opts += [o["username"] for o in (res_off.data or []) if o.get("username")]
-                except Exception:
-                    pass
-                sel_officer = st.selectbox("Filter Officer", off_opts, key="port_off_sel")
-        else: # INSTITUTION
-            f_col1, f_col2 = st.columns(2)
-            with f_col1:
-                all_b = ["All"]
-                try:
-                    res_b = uow_p.client.table("branches").select("name").execute()
-                    all_b += sorted(list(set(b["name"] for b in (res_b.data or []) if b.get("name"))))
-                except Exception:
-                    pass
-                sel_branch = st.selectbox("Filter Branch", all_b, key="port_br_sel")
-            with f_col2:
-                all_o = ["All"]
-                try:
-                    res_o = uow_p.client.table("app_users").select("username").execute()
-                    all_o += sorted(list(set(o["username"] for o in (res_o.data or []) if o.get("username"))))
-                except Exception:
-                    pass
-                sel_officer = st.selectbox("Filter Officer", all_o, key="port_off_sel")
+                sel_officer = p_scope.username
+                selected_officer_id = p_scope.user_id
+            elif p_scope.scope_level == "BRANCH":
+                sc1, sc2 = st.columns([1, 2])
+                with sc1:
+                    st.markdown(f"**Branch Scope**: `{p_scope.branch_name}`")
+                    sel_branch = p_scope.branch_name
+                with sc2:
+                    off_map = {"All": None}
+                    try:
+                        res_off = uow_p.client.table("app_users").select("id, username, full_name, is_active").eq("branch_id", p_scope.branch_id).eq("is_active", True).execute()
+                        for o in (res_off.data or []):
+                            u_name = o.get("username")
+                            f_name = o.get("full_name")
+                            lbl = f"{u_name} — {f_name}" if f_name else u_name
+                            off_map[lbl] = o
+                    except Exception:
+                        pass
+                    sel_off_lbl = st.selectbox("Credit Officer Filter", list(off_map.keys()), key="port_off_sel")
+                    if sel_off_lbl != "All":
+                        sel_officer = off_map[sel_off_lbl].get("username")
+                        selected_officer_id = off_map[sel_off_lbl].get("id")
+            elif p_scope.scope_level == "REGION":
+                sc1, sc2 = st.columns(2)
+                with sc1:
+                    b_opts = ["All"] + (p_scope.assigned_branch_names or [])
+                    sel_branch = st.selectbox("Branch Filter", b_opts, key="port_br_sel")
+                with sc2:
+                    off_map = {"All": None}
+                    try:
+                        b_tgt_id = None
+                        if sel_branch and sel_branch != "All":
+                            b_res = uow_p.client.table("branches").select("branch_id").eq("name", sel_branch).execute()
+                            if b_res.data:
+                                b_tgt_id = b_res.data[0]["branch_id"]
+                        
+                        q_off = uow_p.client.table("app_users").select("id, username, full_name, is_active").eq("is_active", True)
+                        if b_tgt_id:
+                            q_off = q_off.eq("branch_id", b_tgt_id)
+                        elif p_scope.assigned_branch_ids:
+                            q_off = q_off.in_("branch_id", p_scope.assigned_branch_ids)
+                        res_off = q_off.execute()
+                        for o in (res_off.data or []):
+                            u_name = o.get("username")
+                            f_name = o.get("full_name")
+                            lbl = f"{u_name} — {f_name}" if f_name else u_name
+                            off_map[lbl] = o
+                    except Exception:
+                        pass
+                    sel_off_lbl = st.selectbox("Credit Officer Filter", list(off_map.keys()), key="port_off_sel")
+                    if sel_off_lbl != "All":
+                        sel_officer = off_map[sel_off_lbl].get("username")
+                        selected_officer_id = off_map[sel_off_lbl].get("id")
+            else: # INSTITUTION
+                sc1, sc2 = st.columns(2)
+                with sc1:
+                    all_b = ["All"]
+                    try:
+                        res_b = uow_p.client.table("branches").select("name").execute()
+                        all_b += sorted(list(set(b["name"] for b in (res_b.data or []) if b.get("name"))))
+                    except Exception:
+                        pass
+                    sel_branch = st.selectbox("Branch Filter", all_b, key="port_br_sel")
+                with sc2:
+                    off_map = {"All": None}
+                    try:
+                        b_tgt_id = None
+                        if sel_branch and sel_branch != "All":
+                            b_res = uow_p.client.table("branches").select("branch_id").eq("name", sel_branch).execute()
+                            if b_res.data:
+                                b_tgt_id = b_res.data[0]["branch_id"]
+                        q_off = uow_p.client.table("app_users").select("id, username, full_name, is_active").eq("is_active", True)
+                        if b_tgt_id:
+                            q_off = q_off.eq("branch_id", b_tgt_id)
+                        res_off = q_off.execute()
+                        for o in (res_off.data or []):
+                            u_name = o.get("username")
+                            f_name = o.get("full_name")
+                            lbl = f"{u_name} — {f_name}" if f_name else u_name
+                            off_map[lbl] = o
+                    except Exception:
+                        pass
+                    sel_off_lbl = st.selectbox("Credit Officer Filter", list(off_map.keys()), key="port_off_sel")
+                    if sel_off_lbl != "All":
+                        sel_officer = off_map[sel_off_lbl].get("username")
+                        selected_officer_id = off_map[sel_off_lbl].get("id")
 
-
-        # Date and Product Filters
-        import calendar
-        from datetime import date, timedelta
-        
-        tf1, tf2, tf3, tf4 = st.columns(4)
-        
-        with tf1:
-            time_period = st.selectbox("Time Period", ["Current Month", "Last Month", "Custom Date Range"], key="port_time_period")
-        
-        today = date.today()
-        start_date = today
-        end_date = today
-        
-        if time_period == "Current Month":
-            start_date = today.replace(day=1)
-            end_date = today.replace(day=calendar.monthrange(today.year, today.month)[1])
-        elif time_period == "Last Month":
-            first = today.replace(day=1)
-            last_month = first - timedelta(days=1)
-            start_date = last_month.replace(day=1)
-            end_date = last_month
+            # Row 2: Date, Product & Dynamic Cascading Group Filters
+            import calendar
+            from datetime import date, timedelta
             
-        with tf2:
-            if time_period == "Custom Date Range":
-                date_range = st.date_input("Date Range", [start_date, end_date], key="port_date_range")
-                if isinstance(date_range, tuple) and len(date_range) == 2:
-                    start_date = date_range[0]
-                    end_date = date_range[1]
-                elif isinstance(date_range, tuple) and len(date_range) == 1:
-                    start_date = date_range[0]
-                    end_date = date_range[0]
-            else:
-                st.date_input("Date Range", [start_date, end_date], disabled=True, key="port_date_range_disabled")
+            tf1, tf2, tf3, tf4 = st.columns(4)
+            
+            with tf1:
+                time_period = st.selectbox("Time Period", ["Today", "Yesterday", "Current Month", "Last Month", "Custom Date Range"], index=2, key="port_time_period")
+            
+            today = date.today()
+            start_date = today
+            end_date = today
+            
+            if time_period == "Today":
+                start_date = today
+                end_date = today
+            elif time_period == "Yesterday":
+                yesterday = today - timedelta(days=1)
+                start_date = yesterday
+                end_date = yesterday
+            elif time_period == "Current Month":
+                start_date = today.replace(day=1)
+                end_date = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+            elif time_period == "Last Month":
+                first = today.replace(day=1)
+                last_month = first - timedelta(days=1)
+                start_date = last_month.replace(day=1)
+                end_date = last_month
                 
-        all_prods = ["All"]
-        allowed_p = []
-        try:
-            # Check if user is specific to loan products
-            target_username = sel_officer if (sel_officer and sel_officer != "All") else (p_scope.username if p_scope.role == "CO" else None)
-            if target_username:
-                u_res = uow_p.client.table("app_users").select("extra_fields").eq("username", target_username).execute()
-                if u_res.data:
-                    extra = u_res.data[0].get("extra_fields") or {}
-                    allowed_p = extra.get("allowed_products", [])
-            
-            p_res = uow_p.client.table("loan_products").select("name").execute()
-            fetched_prods = sorted(list(set(p["name"] for p in (p_res.data or []) if p.get("name"))))
-            
-            if allowed_p:
-                fetched_prods = [p for p in fetched_prods if p in allowed_p]
+            with tf2:
+                if time_period == "Custom Date Range":
+                    date_range = st.date_input("Date Range", [start_date, end_date], key="port_date_range")
+                    if isinstance(date_range, tuple) and len(date_range) == 2:
+                        start_date = date_range[0]
+                        end_date = date_range[1]
+                    elif isinstance(date_range, tuple) and len(date_range) == 1:
+                        start_date = date_range[0]
+                        end_date = date_range[0]
+                else:
+                    st.date_input("Date Range", [start_date, end_date], disabled=True, key="port_date_range_disabled")
+                    
+            # Loan Product Options
+            all_prods = ["All"]
+            allowed_p = []
+            try:
+                target_username = sel_officer if (sel_officer and sel_officer != "All") else (p_scope.username if p_scope.role == "CO" else None)
+                if target_username:
+                    u_res = uow_p.client.table("app_users").select("extra_fields").eq("username", target_username).execute()
+                    if u_res.data:
+                        extra = u_res.data[0].get("extra_fields") or {}
+                        allowed_p = extra.get("allowed_products", [])
                 
-            all_prods += fetched_prods
-        except Exception:
-            pass
-            
-        with tf3:
-            sel_product = st.selectbox("Filter Loan Product", all_prods, key="port_prod_sel")
+                p_res = uow_p.client.table("loan_products").select("name").execute()
+                fetched_prods = sorted(list(set(p["name"] for p in (p_res.data or []) if p.get("name"))))
+                
+                if allowed_p:
+                    fetched_prods = [p for p in fetched_prods if p in allowed_p]
+                    
+                all_prods += fetched_prods
+            except Exception:
+                pass
+                
+            with tf3:
+                sel_product = st.selectbox("Loan Product Filter", all_prods, key="port_prod_sel")
 
-        # Group Filter
-        all_grp = ["All"]
-        try:
-            g_q = uow_p.client.table("groups").select("name")
-            if sel_branch and sel_branch != "All":
-                b_res = uow_p.client.table("branches").select("branch_id").eq("name", sel_branch).execute()
-                if b_res.data:
-                    g_q = g_q.eq("branch_id", b_res.data[0]["branch_id"])
-            elif p_scope.scope_level == "BRANCH" and p_scope.branch_id:
-                g_q = g_q.eq("branch_id", p_scope.branch_id)
-            elif p_scope.scope_level == "OFFICER" and p_scope.user_id:
-                g_q = g_q.eq("officer_id", p_scope.user_id)
+            # Dynamic Cascading Group Filter
+            all_grp = ["All"]
+            try:
+                g_q = uow_p.client.table("groups").select("name, officer_id, branch_id")
+                if selected_officer_id:
+                    g_q = g_q.eq("officer_id", selected_officer_id)
+                elif sel_branch and sel_branch != "All":
+                    b_res = uow_p.client.table("branches").select("branch_id").eq("name", sel_branch).execute()
+                    if b_res.data:
+                        g_q = g_q.eq("branch_id", b_res.data[0]["branch_id"])
+                elif p_scope.scope_level == "BRANCH" and p_scope.branch_id:
+                    g_q = g_q.eq("branch_id", p_scope.branch_id)
+                elif p_scope.scope_level == "OFFICER" and p_scope.user_id:
+                    g_q = g_q.eq("officer_id", p_scope.user_id)
+                
+                g_res = g_q.execute()
+                all_grp += sorted(list(set(g["name"] for g in (g_res.data or []) if g.get("name"))))
+            except Exception:
+                pass
             
-            g_res = g_q.execute()
-            all_grp += sorted(list(set(g["name"] for g in (g_res.data or []) if g.get("name"))))
-        except Exception:
-            pass
-        
-        with tf4:
-            sel_group = st.selectbox("Filter Group", all_grp, key="port_grp_sel")
+            with tf4:
+                sel_group = st.selectbox("Group Filter", all_grp, key="port_grp_sel")
 
         # Load Scoped Data
-
         p_data = PortfolioService.get_portfolio_data_for_scope(
             uow_p, p_scope, selected_branch=sel_branch, selected_officer=sel_officer, selected_group=sel_group,
             selected_product=sel_product, start_date=start_date, end_date=end_date
@@ -8057,6 +8115,7 @@ elif page == "Portfolio":
                 if selected_ccode:
                     dd = PortfolioService.get_client_360_drilldown(uow_p, selected_ccode, p_scope)
                     c_info = dd.get("customer_info", {})
+                    cur_cid = c_info.get("client_id") or c_info.get("id") or selected_ccode
                     l_hist = dd.get("loan_history", pd.DataFrame())
                     r_hist = dd.get("repayment_history", pd.DataFrame())
                     s_hist = dd.get("savings_history", pd.DataFrame())
