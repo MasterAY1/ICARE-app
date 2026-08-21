@@ -83,10 +83,7 @@ class PortfolioService:
                 p_name = (l.get("loan_products") or {}).get("name")
                 if p_name == selected_product:
                     filtered_loans.append(l)
-            
             loans_raw = filtered_loans
-            prod_cids = set(str(l.get("client_id")) for l in loans_raw if l.get("client_id"))
-            clients_raw = [c for c in clients_raw if str(c.get("client_id") or c.get("id")) in prod_cids]
 
         # Authoritative group name lookup from clients.group_id -> groups.name
         group_map = {}
