@@ -83,7 +83,9 @@ class DashboardService:
         except Exception:
             pass
 
-        q_rep = uow.client.table("repayments").select("loan_id, client_id, amount_paid").eq("date", date_str)
+        s_d_str = f"{date_str}T00:00:00"
+        e_d_str = f"{date_str}T23:59:59"
+        q_rep = uow.client.table("repayments").select("loan_id, client_id, amount_paid").gte("date", s_d_str).lte("date", e_d_str)
         if branch_id:
             pass
         
@@ -265,8 +267,10 @@ class DashboardService:
         reps = []
         try:
             if officer_id:
+                s_d_str = f"{date_str}T00:00:00"
+                e_d_str = f"{date_str}T23:59:59"
                 rep_res = uow.client.table("repayments").select("*, loans(loan_products(name))") \
-                    .eq("officer_id", officer_id).eq("date", date_str).execute()
+                    .eq("officer_id", officer_id).gte("date", s_d_str).lte("date", e_d_str).execute()
                 raw_reps = rep_res.data or []
                 reps = [
                     r for r in raw_reps 
@@ -597,72 +601,6 @@ class DashboardService:
             columns=["Client Name", "Client Code", "Group", "Expected (₦)", "Paid (₦)", "Shortfall (₦)", "Issue Type", "Risk Level", "Action"]
         )
 
-        # Repayment Summary: aggregate collections made today
-        rep_12w_reps = [r for r in reps if r.get("rep_12_weeks") or r.get("rep_daily") or r.get("repayment_12_weeks") or r.get("repayment_60_days")]
-        rep_24w_reps = [r for r in reps if r.get("rep_24_weeks") or r.get("rep_monthly") or r.get("repayment_24_weeks") or r.get("repayment_120_days") or r.get("monthly")]
-        
-        rep_12w_amt = sum(float(r.get("amount_paid", 0)) for r in rep_12w_reps) if rep_12w_reps else sum(float(r.get("amount_paid", 0)) for r in reps)
-        rep_24w_amt = sum(float(r.get("amount_paid", 0)) for r in rep_24w_reps) if rep_24w_reps else 0.0
-
-        total_rep_collected_today = sum(float(r.get("amount_paid", 0)) for r in reps)
-
-        # Savings Metrics
-        sav_dep_clients = set()
-        sav_wd_clients = set()
-        sav_deposited = 0.0
-        sav_withdrawn = 0.0
-
-        try:
-            from database.repositories.unit_of_work import SupabaseUnitOfWork
-            # Query savings_accounts transactions for today
-            today_str = target_date.isoformat()
-            if branch_id and officer_id:
-                s_res = uow.client.table("savings_transactions").select("*, savings_accounts!inner(branch_id, officer_id)").eq("savings_accounts.branch_id", branch_id).eq("savings_accounts.officer_id", officer_id).eq("date", today_str).execute()
-                for st_row in (s_res.data or []):
-                    amt = float(st_row.get("amount") or 0.0)
-                    tx_type = st_row.get("transaction_type", "")
-                    cid = st_row.get("savings_accounts", {}).get("client_id")
-                    if tx_type in ["Deposit", "DEPOSIT"]:
-                        sav_deposited += amt
-                        if cid:
-                            sav_dep_clients.add(cid)
-                    elif tx_type in ["Withdrawal", "WITHDRAWAL"]:
-                        sav_withdrawn += amt
-                        if cid:
-                            sav_wd_clients.add(cid)
-        except Exception:
-            pass
-
-        # Fetch Cashbook Projection
-        cash_position = {
-            "opening_balance": 0.0,
-            "cash_in": 0.0,
-            "cash_out": 0.0,
-            "closing_balance": 0.0,
-            "status": "Balanced",
-            "difference": 0.0
-        }
-        if branch_id and officer_id:
-            try:
-                cb = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, officer_id, target_date)
-                if cb:
-                    op_bal = float(cb.get("opening_balance") or 0.0)
-                    tot_in = float(cb.get("total_inflows") or 0.0)
-                    tot_out = float(cb.get("total_outflows") or 0.0)
-                    cl_bal = float(cb.get("closing_balance") or 0.0)
-                    diff = abs(round(op_bal + tot_in - tot_out - cl_bal, 2))
-                    
-                    cash_position = {
-                        "opening_balance": op_bal,
-                        "cash_in": tot_in,
-                        "cash_out": tot_out,
-                        "closing_balance": cl_bal,
-                        "status": "Balanced" if diff == 0.0 else "Unbalanced",
-                        "difference": diff
-                    }
-            except Exception:
-                pass
-
         # Fetch Authoritative Payment Breakdown from RepaymentStatusEngine
         payment_breakdown = DashboardService._calculate_payment_breakdown(uow, target_date, branch_id, officer_id)
 
@@ -680,10 +618,10 @@ class DashboardService:
             },
             "repayment_summary": {
                 "rep_12_weeks_amt": rep_12w_amt,
-                "rep_12_weeks_clients": len(rep_12w_reps),
+                "rep_12_weeks_clients": len(rep_12w_clients),
                 "rep_24_weeks_amt": rep_24w_amt,
-                "rep_24_weeks_clients": len(rep_24w_reps),
-                "total_collected_today": total_rep_collected_today
+                "rep_24_weeks_clients": len(rep_24w_clients),
+                "total_collected_today": total_collected_today
             },
             "meeting_portfolio": meeting_portfolio_df,
             "savings": {
