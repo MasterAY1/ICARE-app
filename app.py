@@ -6950,7 +6950,7 @@ elif page == "CO Cashbook":
         fee_1, fee_2, fee_3 = st.columns(3)
         global_app_fee = fee_1.number_input("Credit Form / App Fee", min_value=0.0, step=500.0, value=t_app if t_app > 0 else None, placeholder="0", key="co_eod_app_fee", help="Unified Processing Fee and Credit Form fee")
         global_passbook = fee_2.number_input("Pass Book", min_value=0.0, step=500.0, value=t_pb if t_pb > 0 else None, placeholder="0", key="co_eod_passbook")
-        global_misc_fee = fee_3.number_input("Misc Fee", min_value=0.0, step=500.0, value=None, placeholder="0", key="co_eod_misc_fee", help="Routed directly to Misc Savings pool")
+        global_misc_fee = fee_3.number_input("Misc Fee", min_value=0.0, step=500.0, value=t_mm if t_mm > 0 else None, placeholder="0", key="co_eod_misc_fee", help="Routed directly to Misc Savings pool")
         
         fee_4, fee_5 = st.columns(2)
         global_cfd = fee_4.number_input("Cr Form Dmg", min_value=0.0, step=100.0, value=t_cfd if t_cfd > 0 else None, placeholder="0", key="co_eod_cfd", help="Fee for damaged credit forms")
@@ -6960,6 +6960,9 @@ elif page == "CO Cashbook":
         submit_eod = st.form_submit_button("💾 Save End of Day Outflows & Fees", type="primary", use_container_width=True)
         
         if submit_eod:
+            from domain.entities.event_store import DomainEvent
+            from services.posting_engine import FinancialPostingEngine
+
             global_opening_val = float(global_opening or 0)
             global_expenses_val = float(global_expenses or 0)
             global_bank_dep_val = float(global_bank_dep or 0)
@@ -6992,6 +6995,7 @@ elif page == "CO Cashbook":
                     cur_pb = float(cur_cb.get("passbook") or 0.0)
                     cur_cfd = float(cur_cb.get("credit_form_damage") or 0.0)
                     cur_bon = float(cur_cb.get("bonus") or 0.0)
+                    cur_misc = float(cur_cb.get("misc_fees") or 0.0)
                     cur_exp = float(cur_cb.get("office_expenses") or 0.0)
                     cur_bdep = float(cur_cb.get("bank_deposit") or 0.0)
 
@@ -7047,6 +7051,19 @@ elif page == "CO Cashbook":
                         )
                         uow_eod.event_store.append(ev_bon)
                         FinancialPostingEngine.post_event(uow_eod, ev_bon)
+
+                    # Misc Fees Delta
+                    d_misc = global_misc_fee_val - cur_misc
+                    if d_misc != 0:
+                        ev_misc = DomainEvent(
+                            event_id=str(uuid.uuid4()),
+                            aggregate_id=off_uuid or str(uuid.uuid4()),
+                            aggregate_type="Fee",
+                            event_type="FeeCharged",
+                            payload={"branch": BRANCH, "branch_id": b_uuid, "officer": target_co, "officer_id": off_uuid, "amount": d_misc, "date": date_str, "narration": f"EOD Misc Fee Update (Adjusted from ₦{cur_misc:,.2f} to ₦{global_misc_fee_val:,.2f})"}
+                        )
+                        uow_eod.event_store.append(ev_misc)
+                        FinancialPostingEngine.post_event(uow_eod, ev_misc)
 
                     # Expenses Delta
                     d_exp = global_expenses_val - cur_exp
