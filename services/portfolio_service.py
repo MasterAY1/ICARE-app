@@ -286,7 +286,12 @@ class PortfolioService:
                 repayments_today = [r for r in repayments_today if str(r.get("officer_id")).lower() == str(o_id).lower() or str(r.get("officer") or "").lower() == selected_officer.lower()]
 
             if selected_product and selected_product != "All":
-                repayments_today = [r for r in repayments_today if str(r.get("client_id")) in prod_cids]
+                prod_loan_ids = set(str(l.get("loan_id")) for l in loans_raw if l.get("loan_id"))
+                prod_cids = set(str(l.get("client_id")) for l in loans_raw if l.get("client_id"))
+                repayments_today = [
+                    r for r in repayments_today 
+                    if (r.get("loan_id") and str(r.get("loan_id")) in prod_loan_ids) or (str(r.get("client_id")) in prod_cids)
+                ]
                 
         except Exception:
             repayments_today = []
