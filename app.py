@@ -249,14 +249,58 @@ st.markdown("""
     .stMetric, [data-testid="stMetric"], [data-testid="stMetricContainer"], [data-testid="metric-container"] {
         background: #FFFFFF !important;
         border-radius: 12px !important;
-        padding: 18px !important;
+        padding: 16px !important;
         box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04) !important;
         border: 1px solid #E5E7EB !important;
         transition: transform 0.2s ease, box-shadow 0.2s ease !important;
     }
     .stMetric:hover, [data-testid="stMetric"]:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(46,134,193,0.12) !important; }
-    div[data-testid="stMetricValue"], [data-testid="stMetricValue"] { color: #1B4F72 !important; font-size: 1.7rem !important; font-weight: 800 !important; }
-    div[data-testid="stMetricLabel"], [data-testid="stMetricLabel"] { color: #6B7280 !important; font-size: 0.8rem !important; font-weight: 600 !important; text-transform: uppercase !important; letter-spacing: 0.5px !important; }
+    div[data-testid="stMetricValue"], [data-testid="stMetricValue"] { 
+        color: #1B4F72 !important; 
+        font-size: clamp(1.15rem, 3.2vw, 1.65rem) !important; 
+        font-weight: 800 !important; 
+        white-space: normal !important;
+        word-break: break-word !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        line-height: 1.25 !important;
+    }
+    div[data-testid="stMetricLabel"], [data-testid="stMetricLabel"] { 
+        color: #6B7280 !important; 
+        font-size: clamp(0.68rem, 1.8vw, 0.78rem) !important; 
+        font-weight: 600 !important; 
+        text-transform: uppercase !important; 
+        letter-spacing: 0.4px !important;
+        white-space: normal !important;
+        line-height: 1.25 !important;
+    }
+    div[data-testid="stMetricDelta"], [data-testid="stMetricDelta"] {
+        font-size: clamp(0.7rem, 1.8vw, 0.8rem) !important;
+    }
+
+    /* === RESPONSIVE MOBILE 2-IN-A-ROW METRIC GRID === */
+    @media (max-width: 768px) {
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: wrap !important;
+            gap: 8px !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) > div[data-testid="column"] {
+            flex: 1 1 calc(50% - 8px) !important;
+            min-width: calc(50% - 8px) !important;
+            max-width: calc(50% - 8px) !important;
+            padding: 0 !important;
+            margin-bottom: 4px !important;
+        }
+        .stMetric, [data-testid="stMetric"], [data-testid="stMetricContainer"], [data-testid="metric-container"] {
+            padding: 10px 12px !important;
+            border-radius: 8px !important;
+        }
+        div[data-testid="stMetricValue"], [data-testid="stMetricValue"] {
+            font-size: clamp(1.05rem, 4.2vw, 1.35rem) !important;
+        }
+    }
     
     /* === ENTERPRISE PILL TABS === */
     div[data-baseweb="tab-list"] {
@@ -7836,12 +7880,19 @@ elif page == "Portfolio":
                 with sc2:
                     off_map = {"All": None}
                     try:
-                        res_off = uow_p.client.table("app_users").select("id, username, full_name, is_active").eq("branch_id", p_scope.branch_id).eq("is_active", True).execute()
-                        for o in (res_off.data or []):
+                        res_off = uow_p.client.table("user_roles") \
+                            .select("user_id, roles!inner(name), app_users!inner(id, username, full_name, is_active, branch_id)") \
+                            .eq("roles.name", "Credit Officer") \
+                            .eq("app_users.branch_id", p_scope.branch_id) \
+                            .eq("app_users.is_active", True) \
+                            .execute()
+                        for r in (res_off.data or []):
+                            o = r.get("app_users") or {}
                             u_name = o.get("username")
                             f_name = o.get("full_name")
-                            lbl = f"{u_name} — {f_name}" if f_name else u_name
-                            off_map[lbl] = o
+                            if u_name:
+                                lbl = f"{u_name} — {f_name}" if f_name else u_name
+                                off_map[lbl] = o
                     except Exception:
                         pass
                     sel_off_lbl = st.selectbox("Credit Officer Filter", list(off_map.keys()), key="port_off_sel")
@@ -7862,17 +7913,22 @@ elif page == "Portfolio":
                             if b_res.data:
                                 b_tgt_id = b_res.data[0]["branch_id"]
                         
-                        q_off = uow_p.client.table("app_users").select("id, username, full_name, is_active").eq("is_active", True)
+                        q_off = uow_p.client.table("user_roles") \
+                            .select("user_id, roles!inner(name), app_users!inner(id, username, full_name, is_active, branch_id)") \
+                            .eq("roles.name", "Credit Officer") \
+                            .eq("app_users.is_active", True)
                         if b_tgt_id:
-                            q_off = q_off.eq("branch_id", b_tgt_id)
+                            q_off = q_off.eq("app_users.branch_id", b_tgt_id)
                         elif p_scope.assigned_branch_ids:
-                            q_off = q_off.in_("branch_id", p_scope.assigned_branch_ids)
+                            q_off = q_off.in_("app_users.branch_id", p_scope.assigned_branch_ids)
                         res_off = q_off.execute()
-                        for o in (res_off.data or []):
+                        for r in (res_off.data or []):
+                            o = r.get("app_users") or {}
                             u_name = o.get("username")
                             f_name = o.get("full_name")
-                            lbl = f"{u_name} — {f_name}" if f_name else u_name
-                            off_map[lbl] = o
+                            if u_name:
+                                lbl = f"{u_name} — {f_name}" if f_name else u_name
+                                off_map[lbl] = o
                     except Exception:
                         pass
                     sel_off_lbl = st.selectbox("Credit Officer Filter", list(off_map.keys()), key="port_off_sel")
@@ -7897,15 +7953,20 @@ elif page == "Portfolio":
                             b_res = uow_p.client.table("branches").select("branch_id").eq("name", sel_branch).execute()
                             if b_res.data:
                                 b_tgt_id = b_res.data[0]["branch_id"]
-                        q_off = uow_p.client.table("app_users").select("id, username, full_name, is_active").eq("is_active", True)
+                        q_off = uow_p.client.table("user_roles") \
+                            .select("user_id, roles!inner(name), app_users!inner(id, username, full_name, is_active, branch_id)") \
+                            .eq("roles.name", "Credit Officer") \
+                            .eq("app_users.is_active", True)
                         if b_tgt_id:
-                            q_off = q_off.eq("branch_id", b_tgt_id)
+                            q_off = q_off.eq("app_users.branch_id", b_tgt_id)
                         res_off = q_off.execute()
-                        for o in (res_off.data or []):
+                        for r in (res_off.data or []):
+                            o = r.get("app_users") or {}
                             u_name = o.get("username")
                             f_name = o.get("full_name")
-                            lbl = f"{u_name} — {f_name}" if f_name else u_name
-                            off_map[lbl] = o
+                            if u_name:
+                                lbl = f"{u_name} — {f_name}" if f_name else u_name
+                                off_map[lbl] = o
                     except Exception:
                         pass
                     sel_off_lbl = st.selectbox("Credit Officer Filter", list(off_map.keys()), key="port_off_sel")
@@ -8030,11 +8091,13 @@ elif page == "Portfolio":
             c7.metric("Suspended", "", f"{p_sum.get('suspended_clients', 0)} Clients")
             c8.metric("Closed", "", f"{p_sum.get('closed_clients', 0)} Clients")
 
-            st.caption("Row 2: Savings Summary")
-            s1, s2, s3 = st.columns(3)
+            st.caption("Row 2: Savings Summary (Period Flows & Vault Position)")
+            s1, s2, s3, s4 = st.columns(4)
             s1.metric("Savings Deposited (Period)", f"₦{p_sum.get('period_savings_deposit', 0.0):,.0f}", f"{p_sum.get('period_savings_dep_clients', 0)} Clients")
-            s2.metric("Savings Withdrawn (Period)", f"₦{p_sum.get('period_savings_withdrawal', 0.0):,.0f}", f"{p_sum.get('period_savings_wd_clients', 0)} Clients", delta_color="normal")
-            s3.metric("Total Savings Balance", f"₦{p_sum.get('total_savings_balance', 0.0):,.0f}", f"{p_sum.get('total_savings_clients', 0)} Active Savers")
+            s2.metric("Savings Withdrawn (Period)", f"₦{p_sum.get('period_savings_withdrawal', 0.0):,.0f}", f"{p_sum.get('period_savings_wd_clients', 0)} Clients")
+            p_net = float(p_sum.get('period_net_savings', p_sum.get('period_savings_deposit', 0.0) - p_sum.get('period_savings_withdrawal', 0.0)))
+            s3.metric("Net Savings (Period)", f"₦{p_net:,.0f}", "Net Flow", delta=f"₦{p_net:,.0f}" if p_net != 0 else None, delta_color="normal")
+            s4.metric("Total Savings Balance", f"₦{p_sum.get('total_savings_balance', 0.0):,.0f}", f"{p_sum.get('total_savings_clients', 0)} Active Savers")
 
             st.caption("Row 3: Disbursement Summary (In Selected Period)")
             d1, d2 = st.columns(2)

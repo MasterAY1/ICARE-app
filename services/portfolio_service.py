@@ -248,6 +248,7 @@ class PortfolioService:
 
         period_savings_deposit = period_ind_dep + period_grp_dep + period_misc_dep
         period_savings_withdrawal = period_ind_wth + period_grp_wth + period_misc_wth
+        period_net_savings = period_savings_deposit - period_savings_withdrawal
         
         period_savings_dep_clients = len(period_ind_dep_cids) + len(period_grp_dep_gids) + (1 if period_misc_dep > 0 else 0)
         period_savings_wd_clients = len(period_ind_wd_cids) + len(period_grp_wd_gids) + (1 if period_misc_wth > 0 else 0)
@@ -570,6 +571,7 @@ class PortfolioService:
                 "total_savings_balance": total_savings_balance,
                 "period_savings_deposit": period_savings_deposit,
                 "period_savings_withdrawal": period_savings_withdrawal,
+                "period_net_savings": period_net_savings,
                 "period_savings_dep_clients": period_savings_dep_clients,
                 "period_savings_wd_clients": period_savings_wd_clients,
                 "total_savings_clients": total_savings_clients,
