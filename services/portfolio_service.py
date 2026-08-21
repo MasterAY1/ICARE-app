@@ -76,6 +76,7 @@ class PortfolioService:
             clients_raw = []
 
         # 2.5 Filter by Loan Product
+        is_asset_product = bool(selected_product and ("asset" in str(selected_product).lower()))
         if selected_product and selected_product != "All":
             filtered_loans = []
             for l in loans_raw:
@@ -166,6 +167,7 @@ class PortfolioService:
             pass
 
         # B. Group Savings (Cumulative as-of-date position + Period flows)
+        # Note: Asset financing products do not carry communal group savings pools
         group_savings_bal_map = {}
         total_grp_dep = 0.0
         total_grp_wth = 0.0
@@ -173,8 +175,8 @@ class PortfolioService:
         period_grp_wth = 0.0
         period_grp_dep_gids = set()
         period_grp_wd_gids = set()
-        try:
-            if filtered_cids:
+        if filtered_cids and not is_asset_product:
+            try:
                 gm_query = uow.client.table("client_memberships").select("client_id, group_id, groups(name)").in_("client_id", filtered_cids).execute()
                 g_id_name_map = {}
                 for gm in (gm_query.data or []):
@@ -205,10 +207,11 @@ class PortfolioService:
                                 period_grp_wth += wth
                                 period_grp_wd_gids.add(gid)
                         group_savings_bal_map[gname] = group_savings_bal_map.get(gname, 0.0) + (dep - wth)
-        except Exception:
-            pass
+            except Exception:
+                pass
 
         # C. Misc Savings (Internal Savings) — Attributed to Designated Officer (BR-SAV-002)
+        # Note: Asset financing products do not carry misc savings
         total_misc_dep = 0.0
         total_misc_wth = 0.0
         period_misc_dep = 0.0
@@ -219,7 +222,9 @@ class PortfolioService:
             m_off_id, m_off_name = SavingsService.get_branch_misc_savings_officer(uow, active_branch_name)
             
             should_include_misc = True
-            if selected_group and selected_group != "All":
+            if is_asset_product:
+                should_include_misc = False
+            elif selected_group and selected_group != "All":
                 should_include_misc = False
             elif selected_officer and selected_officer != "All":
                 officer_sel_clean = str(selected_officer).strip().lower()
@@ -399,6 +404,20 @@ class PortfolioService:
                 if c_reps:
                     completed_loans_today_by_client[cid_str] = l
 
+        # Pre-fetch loan schedules in batch to prevent sequential HTTP request bottlenecks
+        all_loan_ids = [str(l.get("loan_id")) for l in loans_raw if l.get("loan_id")]
+        sched_paid_map = {}
+        sched_has_map = set()
+        if all_loan_ids:
+            try:
+                sched_res = uow.client.table("loan_schedule").select("loan_id, paid_amount").in_("loan_id", all_loan_ids).execute()
+                for s_row in (sched_res.data or []):
+                    lid = str(s_row.get("loan_id"))
+                    sched_has_map.add(lid)
+                    sched_paid_map[lid] = sched_paid_map.get(lid, 0.0) + float(s_row.get("paid_amount") or 0.0)
+            except Exception:
+                pass
+
         for c in clients_raw:
             cid = c.get("client_id") or c.get("id")
             cid_str = str(cid) if cid else ""
@@ -442,13 +461,11 @@ class PortfolioService:
                 tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
                 pre_paid = max(0.0, act_cred - tot_due_base)
                 
-                loan_id = l.get("loan_id")
-                if loan_id and len(str(loan_id)) > 10:
-                    tot_paid_loan, has_schedule = ScheduleService.get_total_paid(uow, str(loan_id))
-                    if not has_schedule:
-                        tot_paid_loan = lifetime_repayments_map.get(str(loan_id), 0.0)
+                loan_id = str(l.get("loan_id")) if l.get("loan_id") else None
+                if loan_id and loan_id in sched_has_map:
+                    tot_paid_loan = sched_paid_map.get(loan_id, 0.0)
                 else:
-                    tot_paid_loan = lifetime_repayments_map.get(str(loan_id), 0.0)
+                    tot_paid_loan = lifetime_repayments_map.get(loan_id, 0.0)
                 
                 outstanding_bal = max(0.0, tot_due_base - tot_paid_loan)
                 tot_paid_lifetime = pre_paid + tot_paid_loan
