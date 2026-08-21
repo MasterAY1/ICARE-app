@@ -164,7 +164,6 @@ class PortfolioService:
             pass
 
         # B. Group Savings (Cumulative as-of-date position + Period flows)
-        # Note: Asset financing products do not carry communal group savings pools
         group_savings_bal_map = {}
         total_grp_dep = 0.0
         total_grp_wth = 0.0
@@ -172,7 +171,7 @@ class PortfolioService:
         period_grp_wth = 0.0
         period_grp_dep_gids = set()
         period_grp_wd_gids = set()
-        if filtered_cids and not is_asset_product:
+        if filtered_cids:
             try:
                 gm_query = uow.client.table("client_memberships").select("client_id, group_id, groups(name)").in_("client_id", filtered_cids).execute()
                 g_id_name_map = {}
@@ -208,7 +207,6 @@ class PortfolioService:
                 pass
 
         # C. Misc Savings (Internal Savings) — Attributed to Designated Officer (BR-SAV-002)
-        # Note: Asset financing products do not carry misc savings
         total_misc_dep = 0.0
         total_misc_wth = 0.0
         period_misc_dep = 0.0
@@ -219,9 +217,7 @@ class PortfolioService:
             m_off_id, m_off_name = SavingsService.get_branch_misc_savings_officer(uow, active_branch_name)
             
             should_include_misc = True
-            if is_asset_product:
-                should_include_misc = False
-            elif selected_group and selected_group != "All":
+            if selected_group and selected_group != "All":
                 should_include_misc = False
             elif selected_officer and selected_officer != "All":
                 officer_sel_clean = str(selected_officer).strip().lower()
