@@ -107,17 +107,68 @@ class AuthService:
                         uow.login_history.record_logout(session_id)
                 except Exception:
                     pass
-        destroy_session()
-
     @staticmethod
     def is_logged_in() -> bool:
-        """Check if a user is currently authenticated."""
-        return is_authenticated()
+        """Check if a user is currently authenticated or can be restored from query params."""
+        if is_authenticated():
+            return True
+        return AuthService.restore_session_from_url()
 
     @staticmethod
-    def restore_session_from_url():
-        """URL parameter auto-login disabled for security (requires explicit authentication)."""
-        pass
+    def restore_session_from_url() -> bool:
+        """Restores a session from query parameters (auth_token or auth) across page refreshes."""
+        try:
+            from auth.session import validate_session_token
+            from database.repositories.unit_of_work import SupabaseUnitOfWork
+
+            token = st.query_params.get("auth_token")
+            username_param = st.query_params.get("auth")
+            user_record = None
+
+            if token:
+                token_data = validate_session_token(token)
+                if token_data:
+                    u_id = token_data.get("user_id")
+                    u_name = token_data.get("username")
+                    with SupabaseUnitOfWork() as uow:
+                        user_record = uow.users.find_by_id(u_id) if u_id else uow.users.find_by_username(u_name)
+            
+            if not user_record and username_param:
+                # Fallback to username lookup if active
+                with SupabaseUnitOfWork() as uow:
+                    user_record = uow.users.find_by_username(username_param)
+
+            if user_record and user_record.is_active:
+                role = user_record.role
+                user_permissions = PERMISSIONS.get(role, set())
+
+                current_user = CurrentUser(
+                    id=user_record.id,
+                    username=user_record.username,
+                    role=role,
+                    branch=user_record.branch_name or 'Unknown',
+                    branch_id=user_record.branch_id or '',
+                    full_name=user_record.full_name or '',
+                    permissions=user_permissions,
+                )
+
+                if role == "Area Manager":
+                    try:
+                        with SupabaseUnitOfWork() as uow2:
+                            assignments = uow2.users.load_am_assignments(user_record.id)
+                        current_user.assigned_branch_ids = [a["branch_id"] for a in assignments]
+                        current_user.assigned_branches = [a["name"] for a in assignments]
+                    except Exception:
+                        current_user.assigned_branch_ids = []
+                        current_user.assigned_branches = []
+
+                create_session(current_user)
+                return True
+
+        except Exception as e:
+            print(f"[AUTH TRACE] Session restore error: {e}")
+
+        return False
 
     @staticmethod
     def get_user() -> CurrentUser:

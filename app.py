@@ -1958,6 +1958,8 @@ with st.sidebar:
     
     if st.button("Sign Out", use_container_width=True):
         AuthService.logout()
+        if "auth_token" in st.query_params:
+            del st.query_params["auth_token"]
         if "auth" in st.query_params:
             del st.query_params["auth"]
         for key in list(st.session_state.keys()):
