@@ -1988,12 +1988,21 @@ def _nav_to_audit_center():
     st.session_state["Navigation"] = target
 
 if page == "Dashboard":
-    d_col1, d_col2 = st.columns([3, 1])
-    with d_col1:
+    from services.rbac_scope_service import RBACScopeService
+    u_obj = st.session_state.get("user") or {}
+    r_role = u_obj.get("role") or u_obj.get("user_role") if isinstance(u_obj, dict) else getattr(u_obj, 'role', ROLE)
+    permitted = RBACScopeService.get_permitted_menu_items(str(r_role))
+    has_audit_access = "Audit Ledger" in permitted or "Audit Center" in permitted
+
+    if has_audit_access:
+        d_col1, d_col2 = st.columns([3, 1])
+        with d_col1:
+            st.title("Performance & Risk Dashboard")
+        with d_col2:
+            st.write("")
+            st.button("🏛️ Audit Center", key="btn_dash_audit_center", on_click=_nav_to_audit_center, use_container_width=True)
+    else:
         st.title("Performance & Risk Dashboard")
-    with d_col2:
-        st.write("")
-        st.button("🏛️ Audit Center", key="btn_dash_audit_center", on_click=_nav_to_audit_center, use_container_width=True)
 
     from services.dashboard_service import DashboardService
     from database.repositories.unit_of_work import SupabaseUnitOfWork
@@ -6223,12 +6232,21 @@ elif page == "Audit Ledger Legacy":
             st.error(f"Error loading double-entry ledger: {ex}")
 
 elif page == "Dashboard":
-    d_head1, d_head2 = st.columns([3, 1])
-    with d_head1:
+    from services.rbac_scope_service import RBACScopeService
+    u_obj2 = st.session_state.get("user") or {}
+    r_role2 = u_obj2.get("role") or u_obj2.get("user_role") if isinstance(u_obj2, dict) else getattr(u_obj2, 'role', ROLE)
+    permitted2 = RBACScopeService.get_permitted_menu_items(str(r_role2))
+    has_audit_access2 = "Audit Ledger" in permitted2 or "Audit Center" in permitted2
+
+    if has_audit_access2:
+        d_head1, d_head2 = st.columns([3, 1])
+        with d_head1:
+            st.title("Performance & Risk Dashboard")
+        with d_head2:
+            st.write("")
+            st.button("🏛️ Audit Center", key="btn_dash_audit_center", on_click=_nav_to_audit_center, use_container_width=True)
+    else:
         st.title("Performance & Risk Dashboard")
-    with d_head2:
-        st.write("")
-        st.button("🏛️ Audit Center", key="btn_dash_audit_center", on_click=_nav_to_audit_center, use_container_width=True)
 
     today = datetime.now()
     today_str = today.strftime("%Y-%m-%d")
