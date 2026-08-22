@@ -54,7 +54,7 @@ class MasterCashbookProjectionBuilder:
         numeric_fields = [
             "rep_daily", "rep_12_weeks", "rep_24_weeks", "rep_monthly",
             "savings_deposit", "laps_reserve", "loan_received_asset", "loan_received_finance",
-            "daily_11_pct", "weekly_11_pct", "savings_adj_amount", "risk_premium_returns",
+            "daily_11_pct", "daily_20_pct", "weekly_11_pct", "weekly_20_pct", "savings_adj_amount", "risk_premium_returns",
             "passbook", "app_fee", "asset_credit_sales", "cash_and_carry", "contingency",
             "credit_form", "credit_form_damage", "bonus", "misc_fees",
             "funds_received_ho", "funds_received_other_branch",
@@ -137,7 +137,7 @@ class MasterCashbookProjectionBuilder:
             totals["savings_deposit"] + totals["laps_reserve"] + totals["bank_withdrawal"] +
             totals["funds_received_ho"] + totals["funds_received_other_branch"] +
             totals["loan_received_asset"] + totals["loan_received_finance"] +
-            totals["daily_11_pct"] + totals["weekly_11_pct"] + totals["savings_adj_amount"] +
+            totals["daily_11_pct"] + totals["daily_20_pct"] + totals["weekly_11_pct"] + totals["weekly_20_pct"] + totals["savings_adj_amount"] +
             totals["risk_premium_returns"] + totals["passbook"] + totals["app_fee"] +
             totals["asset_credit_sales"] + totals["cash_and_carry"] + totals["contingency"] +
             totals["credit_form"] + totals["credit_form_damage"] + totals["bonus"] + totals["misc_fees"]

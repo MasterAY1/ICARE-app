@@ -73,7 +73,7 @@ class CoCashbookProjectionBuilder:
 
         rep_daily = rep_12_weeks = rep_24_weeks = rep_monthly = 0.0
         savings_deposit = laps_reserve = 0.0
-        daily_11_pct = weekly_11_pct = risk_premium_returns = 0.0
+        daily_11_pct = daily_20_pct = weekly_11_pct = weekly_20_pct = risk_premium_returns = 0.0
         savings_adj_no = 0
         savings_adj_amount = passbook = app_fee = 0.0
         asset_credit_sales = cash_and_carry = contingency = credit_form = credit_form_damage = 0.0
@@ -172,14 +172,16 @@ class CoCashbookProjectionBuilder:
                     elif "credit form damage" in narr or "credit_form_damage" in narr: credit_form_damage += amount
                     elif "credit form" in narr or "credit_form" in narr: credit_form += amount
                     elif "bonus" in narr: bonus += amount
-                    elif "11%" in narr and "weekly" in narr:
+                    elif "11%" in narr and ("weekly" in narr or "12w" in narr):
                         weekly_11_pct += amount
-                    elif "20%" in narr and "weekly" in narr:
-                        risk_premium_returns += amount
-                    elif "20%" in narr or "markup_20" in narr or "120" in narr or "24" in narr or "6m" in narr or "6 month" in narr:
-                        risk_premium_returns += amount
-                    elif "11%" in narr or "markup_11" in narr or "3m" in narr or "3 month" in narr or "60" in narr:
+                    elif "20%" in narr and ("weekly" in narr or "24w" in narr or "24" in narr):
+                        weekly_20_pct += amount
+                    elif "11%" in narr and ("daily" in narr or "60" in narr):
                         daily_11_pct += amount
+                    elif "20%" in narr and ("daily" in narr or "120" in narr):
+                        daily_20_pct += amount
+                    elif "month" in narr or "3m" in narr or "6m" in narr or "monthly" in narr:
+                        risk_premium_returns += amount
                     elif "weekly" in narr:
                         weekly_11_pct += amount
                     elif "daily" in narr:
@@ -274,7 +276,7 @@ class CoCashbookProjectionBuilder:
             opening_bal +
             savings_deposit + laps_reserve +
             rep_daily + rep_12_weeks + rep_24_weeks + rep_monthly +
-            daily_11_pct + weekly_11_pct + savings_adj_amount +
+            daily_11_pct + daily_20_pct + weekly_11_pct + weekly_20_pct + savings_adj_amount +
             risk_premium_returns + passbook + app_fee +
             asset_credit_sales + cash_and_carry + contingency +
             credit_form + credit_form_damage + bonus + bank_withdrawal
@@ -302,7 +304,9 @@ class CoCashbookProjectionBuilder:
             "loan_received_asset": 0.0,
             "loan_received_finance": 0.0,
             "daily_11_pct": daily_11_pct,
+            "daily_20_pct": daily_20_pct,
             "weekly_11_pct": weekly_11_pct,
+            "weekly_20_pct": weekly_20_pct,
             "risk_premium_returns": risk_premium_returns,
             "savings_adj_no": savings_adj_no,
             "savings_adj_amount": savings_adj_amount,

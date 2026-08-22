@@ -7252,7 +7252,9 @@ elif page == "Master Cashbook":
                     auto_savings = cb_entry.savings_deposit
                     auto_laps_res = cb_entry.laps_reserve
                     auto_daily_11 = cb_entry.daily_11_pct
+                    auto_daily_20 = getattr(cb_entry, "daily_20_pct", 0.0)
                     auto_weekly_11 = cb_entry.weekly_11_pct
+                    auto_weekly_20 = getattr(cb_entry, "weekly_20_pct", 0.0)
                     auto_monthly_markup = cb_entry.risk_premium_returns
                     auto_passbook = cb_entry.passbook
                     auto_app_fee = cb_entry.app_fee

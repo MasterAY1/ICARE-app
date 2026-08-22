@@ -19,7 +19,9 @@ class CashbookEntry:
     loan_received_asset: float = 0.0
     loan_received_finance: float = 0.0
     daily_11_pct: float = 0.0
+    daily_20_pct: float = 0.0
     weekly_11_pct: float = 0.0
+    weekly_20_pct: float = 0.0
     savings_adj_no: float = 0.0
     savings_adj_amount: float = 0.0
     risk_premium_returns: float = 0.0
