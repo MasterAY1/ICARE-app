@@ -5042,7 +5042,7 @@ elif page == "Collections":
                                     record_id=rec_id,
                                     record_type=rec_type,
                                     reason=req_reason.strip(),
-                                    requested_by=USER,
+                                    requested_by=USER_ID if USER_ID else USER,
                                     branch_id=BRANCH_ID
                                 )
                                 st.success(f"✅ Reversal request submitted to Branch Manager for approval! (Ref: #{req_id[:8]})")
@@ -5057,8 +5057,17 @@ elif page == "Collections":
                 # Display Submitted Requests History for this user
                 st.markdown("---")
                 st.markdown("#### 📋 Submitted Reversal Requests")
-                res_my_reqs = uow_corr.client.table("correction_requests").select("*").eq("requested_by", USER).order("created_at", desc=True).limit(10).execute()
-                my_reqs = res_my_reqs.data or []
+                try:
+                    req_query = uow_corr.client.table("correction_requests").select("*")
+                    if USER_ID:
+                        req_query = req_query.eq("requested_by", USER_ID)
+                    elif BRANCH_ID:
+                        req_query = req_query.eq("branch_id", BRANCH_ID)
+                    res_my_reqs = req_query.order("created_at", desc=True).limit(10).execute()
+                    my_reqs = res_my_reqs.data or []
+                except Exception:
+                    my_reqs = []
+                
                 if my_reqs:
                     req_display = []
                     for mr in my_reqs:
