@@ -7796,9 +7796,12 @@ elif page == "Master Cashbook":
                     "total_outflows", "closing_balance"
                 ]
                 
-                # Filter to available columns only
-                available_cols = [c for c in display_cols if c in ledger_df.columns]
-                display_df = ledger_df[available_cols].copy()
+                # Ensure all 45 columns exist in DataFrame with 0.0 default
+                for c in display_cols:
+                    if c not in ledger_df.columns:
+                        ledger_df[c] = 0.0
+                
+                display_df = ledger_df[display_cols].copy()
                 
                 # Rename for display matching official Excel subheaders
                 col_rename = {
