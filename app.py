@@ -7327,15 +7327,19 @@ elif page == "Master Cashbook":
         # Build LEFT (Inflows) matching Excel columns A–AA
         inflow_items = [
             ("Opening Balance", auto_opening),
-            ("Savings Deposit", auto_savings),
-            ("Credit Rep (60 Days)", auto_rep_60d),
-            ("Credit Rep (120 Days)", auto_rep_120d),
-            ("Credit Rep (12 Weeks)", auto_rep_12w),
-            ("Credit Rep (24 Weeks)", auto_rep_24w),
-            ("Credit Rep (Monthly)", auto_rep_mth),
+            ("Savings Deposit (Amount)", auto_savings),
+            ("Credit Repayment (60 days)", auto_rep_60d),
+            ("Credit Repayment (120 days)", auto_rep_120d),
+            ("Credit Repayment (12 weeks)", auto_rep_12w),
+            ("Credit Repayment (24 weeks)", auto_rep_24w),
+            ("Credit Repayment (Monthly)", auto_rep_mth),
             ("Laps Reserve", auto_laps_res),
+            ("Funds Received from Head Office", getattr(cb_entry, "funds_received_ho", 0.0) if 'cb_entry' in locals() and cb_entry else 0.0),
+            ("Funds Received from Branch Office", getattr(cb_entry, "funds_received_other_branch", 0.0) if 'cb_entry' in locals() and cb_entry else 0.0),
+            ("Funds Received from Other Areas", 0.0),
             ("Asset Credit Sales", auto_asset_cr_sales),
             ("Cash & Carry", auto_cash_carry),
+            ("Funds from Finance", getattr(cb_entry, "loan_received_finance", 0.0) if 'cb_entry' in locals() and cb_entry else 0.0),
             ("Daily 11%", auto_daily_11),
             ("Daily 20%", auto_daily_20),
             ("Weekly 11%", auto_weekly_11),
@@ -7356,9 +7360,13 @@ elif page == "Master Cashbook":
             ("Active Loan (12 Weeks)", auto_disb_12w),
             ("Active Loan (24 Weeks)", auto_disb_24w),
             ("Active Loan (Monthly)", auto_disb_mth),
+            ("Fund Transferred to Branch Office", getattr(cb_entry, "fund_transferred_other_branch", 0.0) if 'cb_entry' in locals() and cb_entry else 0.0),
+            ("Fund Transferred to Head Office", getattr(cb_entry, "fund_transferred_ho", 0.0) if 'cb_entry' in locals() and cb_entry else 0.0),
+            ("Fund Transferred to Other Areas", getattr(cb_entry, "fund_to_other_area", 0.0) if 'cb_entry' in locals() and cb_entry else 0.0),
             ("Fund To Assets", auto_fund_asset),
             ("Fund to Finance", auto_fund_finance),
             ("Product/Savings Withdrawal", auto_prod_wd + auto_savings_wd),
+            ("Staff Salaries", getattr(cb_entry, "staff_salaries", 0.0) if 'cb_entry' in locals() and cb_entry else 0.0),
             ("Office Expenses", auto_expenses),
             ("Laps Return", auto_laps_ret),
             ("Bank Deposit", auto_bank_dep),
@@ -7768,50 +7776,75 @@ elif page == "Master Cashbook":
             if result.data:
                 ledger_df = pd.DataFrame(result.data)
                 
-                # Reorder columns to match the Excel layout
+                # Reorder columns to strictly match Credit_Cash_Book_Ledger.xlsx layout (Columns A–AS)
                 display_cols = [
-                    "date", "opening_balance",
-                    "rep_daily", "rep_12_weeks", "rep_24_weeks", "rep_monthly",
-                    "savings_deposit", "laps_reserve",
-                    "funds_received_ho", "funds_received_other_branch",
-                    "loan_received_asset", "loan_received_finance",
-                    "daily_11_pct", "weekly_11_pct",
-                    "savings_adj_no", "savings_adj_amount",
-                    "risk_premium_returns", "contingency", "app_fee", "passbook",
-                    "asset_credit_sales", "cash_and_carry", "credit_form_damage", "bonus", "bank_withdrawal",
-                    "product_withdrawal",
-                    "fund_transferred_other_branch", "fund_transferred_ho",
-                    "fund_to_other_area", "fund_to_asset_program", "fund_to_product_finance",
-                    "staff_salaries", "office_expenses",
+                    # Left Side (Inflows: Cols A–AA)
+                    "date", "opening_balance", "savings_deposit",
+                    "rep_daily", "rep_120_days", "rep_12_weeks", "rep_24_weeks", "rep_monthly",
+                    "laps_reserve",
+                    "funds_received_ho", "funds_received_other_branch", "funds_received_other_area",
+                    "asset_credit_sales", "cash_and_carry", "loan_received_finance",
+                    "daily_11_pct", "daily_20_pct", "weekly_11_pct", "weekly_20_pct", "risk_premium_returns",
+                    "contingency", "credit_form_damage", "bonus", "app_fee", "passbook", "bank_withdrawal",
+                    "total_inflows",
+                    # Right Side (Outflows: Cols AC–AS)
+                    "disb_60d", "disb_120d", "disb_12w", "disb_24w", "disb_mth",
+                    "fund_transferred_other_branch", "fund_transferred_ho", "fund_to_other_area",
+                    "fund_to_asset_program", "fund_to_product_finance",
+                    "product_withdrawal", "staff_salaries", "office_expenses",
                     "laps_returns", "bank_deposit",
-                    "total_inflows", "total_outflows", "closing_balance"
+                    "total_outflows", "closing_balance"
                 ]
                 
                 # Filter to available columns only
                 available_cols = [c for c in display_cols if c in ledger_df.columns]
                 display_df = ledger_df[available_cols].copy()
                 
-                # Rename for display
+                # Rename for display matching official Excel subheaders
                 col_rename = {
-                    "date": "Date", "opening_balance": "Opening Balance",
-                    "rep_daily": "Credit Rep (Daily)", "rep_12_weeks": "Credit Rep (12 Wks)",
-                    "rep_24_weeks": "Credit Rep (24 Wks)", "rep_monthly": "Credit Rep (Monthly)",
-                    "savings_deposit": "Savings Deposit", "laps_reserve": "Laps Reserve",
-                    "funds_received_ho": "Funds Recv (H.O.)", "funds_received_other_branch": "Funds Recv (Branch)",
-                    "loan_received_asset": "Loan Recv (Asset)", "loan_received_finance": "Loan Recv (Finance)",
-                    "daily_11_pct": "Daily 11%", "weekly_11_pct": "Weekly 11%",
-                    "savings_adj_no": "Sav Adj (No)", "savings_adj_amount": "Sav Adj (₦)",
-                    "risk_premium_returns": "Risk Premium", "contingency": "Contingency",
-                    "app_fee": "App Fee", "passbook": "Pass Book",
-                    "asset_credit_sales": "Asset Credit Sales", "cash_and_carry": "Cash & Carry",
-                    "credit_form_damage": "Cr Form Dmg", "bonus": "Bonus",
-                    "bank_withdrawal": "Bank Withdrawal", "product_withdrawal": "Product Withdrawal",
-                    "fund_transferred_other_branch": "Fund Xfer (Branch)", "fund_transferred_ho": "Fund Xfer (H.O.)",
-                    "fund_to_other_area": "Fund to Area", "fund_to_asset_program": "Fund to Asset",
+                    "date": "Date",
+                    "opening_balance": "Opening Balance",
+                    "savings_deposit": "Savings Deposit (Amount)",
+                    "rep_daily": "Credit Repayment (60 days)",
+                    "rep_120_days": "Credit Repayment (120 days)",
+                    "rep_12_weeks": "Credit Repayment (12 weeks)",
+                    "rep_24_weeks": "Credit Repayment (24 weeks)",
+                    "rep_monthly": "Credit Repayment (Monthly)",
+                    "laps_reserve": "Laps Reserve",
+                    "funds_received_ho": "Funds Received from Head Office",
+                    "funds_received_other_branch": "Funds Received from Branch Office",
+                    "funds_received_other_area": "Funds Received from Other Areas",
+                    "asset_credit_sales": "Asset Credit Sales",
+                    "cash_and_carry": "Cash & Carry",
+                    "loan_received_finance": "Funds from Finance",
+                    "daily_11_pct": "Daily 11%",
+                    "daily_20_pct": "Daily 20%",
+                    "weekly_11_pct": "Weekly 11%",
+                    "weekly_20_pct": "Weekly 20%",
+                    "risk_premium_returns": "Monthly 11%/20%",
+                    "contingency": "Contigency (1%)",
+                    "credit_form_damage": "Credit form damage",
+                    "bonus": "Bonus",
+                    "app_fee": "Credit form/App fee",
+                    "passbook": "Pass book",
+                    "bank_withdrawal": "Bank withdrawal",
+                    "total_inflows": "Total Inflows",
+                    "disb_60d": "60 days",
+                    "disb_120d": "120 days",
+                    "disb_12w": "12 weeks",
+                    "disb_24w": "24 weeks",
+                    "disb_mth": "Monthly",
+                    "fund_transferred_other_branch": "Branch Office",
+                    "fund_transferred_ho": "Head office",
+                    "fund_to_other_area": "Other Areas",
+                    "fund_to_asset_program": "Fund To Assets",
                     "fund_to_product_finance": "Fund to Finance",
-                    "staff_salaries": "Staff Salaries", "office_expenses": "Office Expenses",
-                    "laps_returns": "Laps Returns", "bank_deposit": "Bank Deposit",
-                    "total_inflows": "Total Inflows", "total_outflows": "Total Outflows",
+                    "product_withdrawal": "Product/Savings withdrawals",
+                    "staff_salaries": "Staff Salaries",
+                    "office_expenses": "Office Expenses",
+                    "laps_returns": "Laps Return",
+                    "bank_deposit": "Bank Deposit",
+                    "total_outflows": "Total Outflows",
                     "closing_balance": "Closing Balance"
                 }
                 display_df.rename(columns=col_rename, inplace=True)
@@ -7838,7 +7871,7 @@ elif page == "Master Cashbook":
                     import io
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        display_df.to_excel(writer, sheet_name='Master Cashbook', index=False)
+                        display_df.to_excel(writer, sheet_name='Ledger Data', index=False)
                     st.download_button(
                         label="📄 Click to Download",
                         data=output.getvalue(),
