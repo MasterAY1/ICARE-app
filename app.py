@@ -4030,14 +4030,24 @@ elif page == "Collections":
     st.title("Daily Collections")
     st.caption("Record daily repayments and savings.")
     
+    from services.business_date_service import BusinessDateService
+    with SupabaseUnitOfWork() as uow_date:
+        active_b_date = BusinessDateService.get_business_date(uow_date, BRANCH)
+
     use_late_entry = st.toggle("Late Entry / Backdated Entry")
     if use_late_entry:
-        view_date = st.date_input("Select Date", datetime.now().date(), key="col_date")
+        view_date = st.date_input("Select Date", active_b_date, key="col_date")
     else:
-        view_date = datetime.now().date()
-        st.info(f"Collections for {view_date.strftime('%d %B %Y')}")
+        view_date = active_b_date
+        st.info(f"Operational Business Date: **{view_date.strftime('%d %B %Y')}** ({view_date.strftime('%A')})")
     
     date_str = view_date.strftime("%Y-%m-%d")
+
+    with SupabaseUnitOfWork() as uow_chk:
+        is_day_closed = BusinessDateService.is_date_closed(uow_chk, BRANCH_ID, view_date)
+
+    if is_day_closed and not use_late_entry:
+        st.warning(f"🔒 **Business Date Closed**: Operations for **{view_date.strftime('%d %B %Y')}** have already been closed and finalized by the Branch Manager. All new collection entries for this date are frozen in Read-Only mode. (To record historical entries, toggle 'Late Entry / Backdated Entry' above).")
     
     all_loans = load_loans()
     repayments = load_repayments()
@@ -4656,7 +4666,9 @@ elif page == "Collections":
                         c1, c2 = st.columns(2)
                         c1.button("Edit / Go Back", on_click=_go_back_to_edit)
                     
-                        if c2.button("Confirm & Save Collections", type="primary", use_container_width=True):
+                        if is_day_closed and not use_late_entry:
+                            c2.error("🔒 Day is closed. Entries are locked.")
+                        elif c2.button("Confirm & Save Collections", type="primary", use_container_width=True):
                             try:
                                 save_repayments(to_insert)
                                 st.success("Group Collections Submitted Successfully!")
@@ -4775,10 +4787,12 @@ elif page == "Collections":
                                         }
                         
                             st.markdown("---")
-                            submit_btn = st.form_submit_button("Calculate Totals & Review Members", type="primary", use_container_width=True)
-                        
-                            if submit_btn:
-                                to_insert = []
+                            if is_day_closed and not use_late_entry:
+                                st.warning("🔒 Cannot submit new collections for a closed business date. Switch to the active business date or enable Late Entry.")
+                            else:
+                                submit_btn = st.form_submit_button("Calculate Totals & Review Members", type="primary", use_container_width=True)
+                                if submit_btn:
+                                    to_insert = []
                             
                                 # Process per-client data
                                 for cid, info in member_info.items():
@@ -7038,10 +7052,20 @@ elif page == "CO Cashbook":
     st.title("📖 Credit Officer Daily Cashbook")
     st.caption("Daily T-Account Ledger — Reconciled against Account 1000 Vault Cash")
     
+    from services.business_date_service import BusinessDateService
+    with SupabaseUnitOfWork() as uow_cb_date:
+        active_b_date = BusinessDateService.get_business_date(uow_cb_date, BRANCH)
+
     col_d1, col_d2 = st.columns([1, 2])
     with col_d1:
-        view_date = st.date_input("Select Date", datetime.now().date(), key="co_cb_date")
+        view_date = st.date_input("Select Date", active_b_date, key="co_cb_date")
         date_str = view_date.strftime("%Y-%m-%d")
+
+    with SupabaseUnitOfWork() as uow_cb_chk:
+        is_co_cb_closed = BusinessDateService.is_date_closed(uow_cb_chk, BRANCH_ID, view_date)
+
+    if is_co_cb_closed:
+        st.warning(f"🔒 **Business Date Closed**: Operations for **{view_date.strftime('%d %B %Y')}** have already been finalized and closed by the Branch Manager. Entries are in **Read-Only** mode.")
     
     # Officer Selection based on RBAC
     target_co = USER
@@ -7173,8 +7197,11 @@ elif page == "CO Cashbook":
         submit_eod = st.form_submit_button("💾 Save End of Day Outflows & Fees", type="primary", use_container_width=True)
         
         if submit_eod:
-            from domain.entities.event_store import DomainEvent
-            from services.posting_engine import FinancialPostingEngine
+            if is_co_cb_closed:
+                st.error("🔒 Cannot update End of Day inputs on a closed business date.")
+            else:
+                from domain.entities.event_store import DomainEvent
+                from services.posting_engine import FinancialPostingEngine
 
             global_opening_val = float(global_opening or 0)
             global_expenses_val = float(global_expenses or 0)
@@ -7482,8 +7509,17 @@ elif page == "Master Cashbook":
     all_repayments = load_repayments()
     
     with mc_tab1:
-        view_date = st.date_input("Select Date", datetime.now().date(), key="mc_date")
+        from services.business_date_service import BusinessDateService
+        with SupabaseUnitOfWork() as uow_mc_date:
+            active_b_date = BusinessDateService.get_business_date(uow_mc_date, BRANCH)
+        view_date = st.date_input("Select Date", active_b_date, key="mc_date")
         date_str = view_date.strftime("%Y-%m-%d")
+
+        with SupabaseUnitOfWork() as uow_mc_chk:
+            is_mc_closed = BusinessDateService.is_date_closed(uow_mc_chk, BRANCH_ID, view_date)
+
+        if is_mc_closed:
+            st.success(f"🔒 **Master Cashbook Closed & Verified**: Operations for **{view_date.strftime('%d %B %Y')}** have been finalized. Closing balance has been rolled forward to next working day.")
         
         # ---- AUTO-SUM: Load from cashbook projection table instead of legacy summing ----
         auto_rep_60d = auto_rep_120d = auto_rep_12w = auto_rep_24w = auto_rep_mth = auto_savings = auto_laps_res = 0.0
@@ -8068,26 +8104,30 @@ elif page == "Master Cashbook":
             k4.error(f"### Closing: ₦{closing_bal:,.0f}")
 
         st.markdown("---")
+        st.markdown("---")
         st.markdown("### 🔒 Branch Manager End of Day (EOD) Controls")
-        eod_c1, eod_c2 = st.columns([3, 1])
-        with eod_c1:
-            st.info(f"**Operational Date**: `{date_str}`. Executing Day Close will freeze all entries for `{date_str}` and advance operational business date to the **Next Working Day**.")
-        with eod_c2:
-            if st.button("🔒 Execute EOD Day Close", use_container_width=True, type="primary", key="btn_exec_eod"):
-                try:
-                    from services.business_date_service import BusinessDateService
-                    with SupabaseUnitOfWork() as uow_eod:
-                        b_id = uow_eod.cashbook._resolve_branch_id(BRANCH)
-                        success = BusinessDateService.close_business_date(uow_eod, b_id, view_date, closed_by=USER)
-                        if success:
-                            st.success(f"Successfully executed Day Close for {date_str}! Operational date advanced to next working day.")
-                            import time
-                            time.sleep(1.5)
-                            st.rerun()
-                        else:
-                            st.error("Failed to execute EOD day close.")
-                except Exception as ex:
-                    st.error(f"Error during EOD close: {ex}")
+        if is_mc_closed:
+            st.info(f"✅ **EOD Day Close Already Executed for {date_str}**. Branch operational date has advanced to next working day.")
+        else:
+            eod_c1, eod_c2 = st.columns([3, 1])
+            with eod_c1:
+                st.info(f"**Operational Date**: `{date_str}`. Executing Day Close will freeze all entries for `{date_str}` and advance operational business date to the **Next Working Day**.")
+            with eod_c2:
+                if st.button("🔒 Execute EOD Day Close", use_container_width=True, type="primary", key="btn_exec_eod"):
+                    try:
+                        from services.business_date_service import BusinessDateService
+                        with SupabaseUnitOfWork() as uow_eod:
+                            b_id = uow_eod.cashbook._resolve_branch_id(BRANCH)
+                            success = BusinessDateService.close_business_date(uow_eod, b_id, view_date, closed_by=USER)
+                            if success:
+                                st.success(f"Successfully executed Day Close for {date_str}! Operational date advanced to next working day.")
+                                import time
+                                time.sleep(1.5)
+                                st.rerun()
+                            else:
+                                st.error("Failed to execute EOD day close.")
+                    except Exception as ex:
+                        st.error(f"Error during EOD close: {ex}")
 
 
     with mc_tab3:

@@ -46,6 +46,11 @@ class TreasuryService:
         today_date = date.today()
         p_date_str = today_date.isoformat()
 
+        # Check Business Date Freeze (BR-DATE-002)
+        from services.business_date_service import BusinessDateService
+        if BusinessDateService.is_date_closed(uow, branch_id, today_date):
+            raise ValueError(f"Cannot post treasury transaction. Business date {today_date} is already Closed for {branch} branch.")
+
         # Resolve event type
         mapping = {
             "HO_TRANSFER_IN": "CashTransferred_HO_In",

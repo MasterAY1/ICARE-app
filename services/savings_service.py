@@ -16,6 +16,12 @@ class SavingsService:
             return
             
         p_dt = posting_date if posting_date else datetime.now()
+        # Check Business Date Freeze (BR-DATE-002)
+        from services.business_date_service import BusinessDateService
+        p_check_date = p_dt.date() if hasattr(p_dt, 'date') else p_dt
+        if BusinessDateService.is_date_closed(uow, branch, p_check_date):
+            raise ValueError(f"Cannot post savings. Business date {p_check_date} is already Closed for {branch} branch.")
+
         entity = IndividualSavings(
             client_id=client_id,
             client_name=client_name,
@@ -67,6 +73,12 @@ class SavingsService:
             return
             
         p_dt = posting_date if posting_date else datetime.now()
+        # Check Business Date Freeze (BR-DATE-002)
+        from services.business_date_service import BusinessDateService
+        p_check_date = p_dt.date() if hasattr(p_dt, 'date') else p_dt
+        if BusinessDateService.is_date_closed(uow, branch, p_check_date):
+            raise ValueError(f"Cannot post group savings. Business date {p_check_date} is already Closed for {branch} branch.")
+
         entity = GroupSavings(
             group_name=group_name,
             branch=branch,

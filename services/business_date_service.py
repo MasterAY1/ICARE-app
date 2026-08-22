@@ -31,6 +31,28 @@ class BusinessDateService:
         return True, "Valid working day"
 
     @staticmethod
+    def is_date_closed(uow: UnitOfWork, branch_name_or_id: str, target_date: date) -> bool:
+        """
+        Checks if a given date is marked as Closed/Verified for the specified branch.
+        """
+        if not branch_name_or_id or not target_date:
+            return False
+        try:
+            p_date_str = target_date.isoformat() if hasattr(target_date, 'isoformat') else str(target_date)
+            b_id = branch_name_or_id
+            if len(str(branch_name_or_id)) < 36 or not str(branch_name_or_id).count("-") == 4:
+                res_b = uow.client.table("branches").select("branch_id").eq("name", branch_name_or_id).execute()
+                if res_b.data:
+                    b_id = res_b.data[0]["branch_id"]
+            
+            res = uow.client.table("master_cashbook").select("status").eq("branch_id", b_id).eq("date", p_date_str).execute()
+            if res.data and res.data[0].get("status") in ["Closed", "Verified"]:
+                return True
+        except Exception:
+            pass
+        return False
+
+    @staticmethod
     def get_next_working_day(target_date: date, custom_closures: Optional[list] = None) -> date:
         """
         Advances target_date until a valid working day is reached.

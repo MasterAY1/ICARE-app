@@ -22,6 +22,11 @@ class LoanService:
         """
         # 1. Business Date & Reference ID
         b_date = disbursement_date or BusinessDateService.get_business_date(uow, loan.branch)
+        
+        # Check Business Date Freeze (BR-DATE-002)
+        if BusinessDateService.is_date_closed(uow, loan.branch, b_date):
+            raise ValueError(f"Cannot disburse loan. Business date {b_date} is already Closed for {loan.branch} branch.")
+
         b_date_str = b_date.strftime("%Y%m%d")
         ref_id = f"TXN-{b_date_str}-{uuid.uuid4().hex[:6].upper()}"
 
