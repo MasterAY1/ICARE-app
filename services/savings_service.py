@@ -667,3 +667,96 @@ class SavingsService:
                     pass
             raise e
 
+    @staticmethod
+    def reverse_savings(uow: SupabaseUnitOfWork, original_savings_id: str, reason: str, reversed_by: str):
+        """
+        Executes a compensating negative savings record to reverse an error (BR-ERR-002).
+        Handles both individual_savings and group_savings atomically with Ledger reversal.
+        """
+        # 1. Look in individual_savings
+        table_name = "individual_savings"
+        res = uow.client.table("individual_savings").select("*").eq("id", original_savings_id).execute()
+        if not res.data:
+            # 2. Look in group_savings
+            table_name = "group_savings"
+            res = uow.client.table("group_savings").select("*").eq("id", original_savings_id).execute()
+            if not res.data:
+                raise ValueError(f"Savings record {original_savings_id} not found in individual or group savings.")
+
+        orig = res.data[0]
+        operations = []
+
+        # 1. Operational data: Compensating negative record
+        new_id = str(uuid.uuid4())
+        comp_record = orig.copy()
+        comp_record["id"] = new_id
+
+        dep_amt = float(comp_record.get("deposit_amount") or 0.0)
+        wd_amt = float(comp_record.get("withdrawal_amount") or 0.0)
+
+        if dep_amt > 0:
+            comp_record["deposit_amount"] = -abs(dep_amt)
+            comp_record["withdrawal_amount"] = 0.0
+            reversal_amount = abs(dep_amt)
+            event_type = "SavingsReversed"
+        else:
+            comp_record["withdrawal_amount"] = -abs(wd_amt)
+            comp_record["deposit_amount"] = 0.0
+            reversal_amount = abs(wd_amt)
+            event_type = "SavingsDeposited"
+
+        comp_record["remarks"] = f"REVERSAL of {original_savings_id}. Reason: {reason} (by {reversed_by})"
+        comp_record["created_at"] = datetime.now().isoformat()
+
+        operations.append({
+            "type": "insert",
+            "table": table_name,
+            "record": comp_record
+        })
+
+        # 2. Reversal Domain Event
+        event_payload = {
+            "branch": orig.get("branch_id") or orig.get("branch"),
+            "officer": orig.get("officer_id") or orig.get("officer"),
+            "amount": reversal_amount,
+            "reference": new_id,
+            "narration": f"Reversal of savings {original_savings_id}. Reason: {reason}"
+        }
+
+        agg_type = "IndividualSavings" if table_name == "individual_savings" else "GroupSavings"
+        ev = DomainEvent(
+            event_id=str(uuid.uuid4()),
+            aggregate_id=new_id,
+            aggregate_type=agg_type,
+            event_type=event_type,
+            payload=event_payload
+        )
+
+        operations.append({
+            "type": "insert",
+            "table": "event_store",
+            "record": {
+                "event_id": ev.event_id,
+                "aggregate_id": ev.aggregate_id,
+                "aggregate_type": ev.aggregate_type,
+                "event_type": ev.event_type,
+                "version": ev.version,
+                "payload": ev.payload,
+                "status": "Posted"
+            }
+        })
+
+        tx_id, post_op = FinancialPostingEngine.post_event(uow, ev, defer_commit=True)
+        operations.append(post_op)
+
+        # 3. Execute all accumulated operations atomically
+        uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
+
+        # 4. Rebuild projection
+        try:
+            from datetime import date
+            branch_val = orig.get("branch_id") or orig.get("branch")
+            uow.cashbook.rebuild_projection(uow, branch_val, date.today())
+        except Exception:
+            pass
+

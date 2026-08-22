@@ -4031,94 +4031,124 @@ elif page == "Collections":
         else:
             target_co = USER
             
-        # Only Admins and Super Admins can see the Bulk Upload (Excel) option
-        if ROLE in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
-            col_mode = st.radio("Collection Mode", ["Individual & Group Entry", "Bulk Upload (Excel Template)"], horizontal=True, label_visibility="collapsed")
-        else:
-            col_mode = "Individual & Group Entry"
+        col_tab1, col_tab2, col_tab3 = st.tabs(["📝 Record Collections", "📜 Collection History & Audit", "🔄 Error Correction & Reversals"])
         
-        if col_mode == "Bulk Upload (Excel Template)":
-            st.markdown("### Bulk Upload (Excel Template)")
-            with open("Master_Balancing_Template_V2.xlsx", "rb") as template_file:
-                st.download_button(
-                    label="Download Master Balancing Template",
-                    data=template_file,
-                    file_name="Master_Balancing_Template.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+        with col_tab1:
+            # Only Admins and Super Admins can see the Bulk Upload (Excel) option
+            if ROLE in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
+                col_mode = st.radio("Collection Mode", ["Individual & Group Entry", "Bulk Upload (Excel Template)"], horizontal=True, label_visibility="collapsed")
+            else:
+                col_mode = "Individual & Group Entry"
+        
+            if col_mode == "Bulk Upload (Excel Template)":
+                st.markdown("### Bulk Upload (Excel Template)")
+                with open("Master_Balancing_Template_V2.xlsx", "rb") as template_file:
+                    st.download_button(
+                        label="Download Master Balancing Template",
+                        data=template_file,
+                        file_name="Master_Balancing_Template.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
                 
-            uploaded_file = st.file_uploader("Upload filled Master Balancing Template", type=["xlsx"])
-            if uploaded_file:
-                try:
-                    df = pd.read_excel(uploaded_file)
-                    st.success(f"File loaded successfully! Found {len(df)} rows.")
+                uploaded_file = st.file_uploader("Upload filled Master Balancing Template", type=["xlsx"])
+                if uploaded_file:
+                    try:
+                        df = pd.read_excel(uploaded_file)
+                        st.success(f"File loaded successfully! Found {len(df)} rows.")
                     
-                    if st.button("🚀 Process Upload", use_container_width=True):
-                        new_records = []
-                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        if st.button("🚀 Process Upload", use_container_width=True):
+                            new_records = []
+                            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         
-                        for idx, row in df.iterrows():
-                            cid = str(row.get('Member Reference', '')).strip()
-                            gn = str(row.get('Group Name', '')).strip()
-                            co_name = str(row.get('Credit Officer Name', '')).strip()
+                            for idx, row in df.iterrows():
+                                cid = str(row.get('Member Reference', '')).strip()
+                                gn = str(row.get('Group Name', '')).strip()
+                                co_name = str(row.get('Credit Officer Name', '')).strip()
                             
-                            # Safely parse amounts
-                            def get_amt(col_name):
-                                val = row.get(col_name, 0)
-                                if pd.isna(val): return 0
-                                try: return float(val)
-                                except: return 0
+                                # Safely parse amounts
+                                def get_amt(col_name):
+                                    val = row.get(col_name, 0)
+                                    if pd.isna(val): return 0
+                                    try: return float(val)
+                                    except: return 0
                             
-                            lr_amt = get_amt("Today's Loan Repayment")
-                            s_dep = get_amt("Today's Savings Deposit")
-                            s_wd = get_amt("Today's Savings Withdrawal")
-                            gs_dep = get_amt("Group Savings Deposit")
-                            gs_wd = get_amt("Group Savings Withdrawal")
-                            laps_dep = get_amt("Laps Savings Deposit")
-                            laps_wd = get_amt("Laps Savings Withdrawal")
+                                lr_amt = get_amt("Today's Loan Repayment")
+                                s_dep = get_amt("Today's Savings Deposit")
+                                s_wd = get_amt("Today's Savings Withdrawal")
+                                gs_dep = get_amt("Group Savings Deposit")
+                                gs_wd = get_amt("Group Savings Withdrawal")
+                                laps_dep = get_amt("Laps Savings Deposit")
+                                laps_wd = get_amt("Laps Savings Withdrawal")
                             
-                            # 1. Individual Transactions
-                            if lr_amt > 0 or s_dep > 0 or s_wd > 0:
-                                if cid and cid != 'nan':
-                                    new_records.append({
-                                        "id": str(uuid.uuid4()),
-                                        "Date": date_str,
-                                        "Time": timestamp,
-                                        "Client ID": cid,
-                                        "Client Name": str(row.get('Full Name', '')),
-                                        "Officer": target_co,
-                                        "Branch": BRANCH,
-                                        "Amount Paid": 0, # Legacy, keeping 0
-                                        "Savings Amount": s_dep,
-                                        "Withdrawal Amount": s_wd,
-                                        "Loan Repayment Amount": lr_amt,
-                                        "Processing Fee Paid": 0,
-                                        "Insurance Fee Paid": 0,
-                                        "App Fee Paid": 0,
-                                        "Pass Book Paid": 0,
-                                        "Recovery Amount": 0,
-                                        "Mgt Fee Paid": 0,
-                                        "Others Amount": 0,
-                                        "Laps Amount Transferred": 0,
-                                        "Transaction Type": "Collection (Bulk Upload)",
-                                        "Note": f"Bulk Uploaded by {USER}",
-                                        "Reversed": False
-                                    })
+                                # 1. Individual Transactions
+                                if lr_amt > 0 or s_dep > 0 or s_wd > 0:
+                                    if cid and cid != 'nan':
+                                        new_records.append({
+                                            "id": str(uuid.uuid4()),
+                                            "Date": date_str,
+                                            "Time": timestamp,
+                                            "Client ID": cid,
+                                            "Client Name": str(row.get('Full Name', '')),
+                                            "Officer": target_co,
+                                            "Branch": BRANCH,
+                                            "Amount Paid": 0, # Legacy, keeping 0
+                                            "Savings Amount": s_dep,
+                                            "Withdrawal Amount": s_wd,
+                                            "Loan Repayment Amount": lr_amt,
+                                            "Processing Fee Paid": 0,
+                                            "Insurance Fee Paid": 0,
+                                            "App Fee Paid": 0,
+                                            "Pass Book Paid": 0,
+                                            "Recovery Amount": 0,
+                                            "Mgt Fee Paid": 0,
+                                            "Others Amount": 0,
+                                            "Laps Amount Transferred": 0,
+                                            "Transaction Type": "Collection (Bulk Upload)",
+                                            "Note": f"Bulk Uploaded by {USER}",
+                                            "Reversed": False
+                                        })
                                     
-                            # 2. Group Savings
-                            if gs_dep > 0 or gs_wd > 0:
-                                if gn and gn != 'nan':
+                                # 2. Group Savings
+                                if gs_dep > 0 or gs_wd > 0:
+                                    if gn and gn != 'nan':
+                                        new_records.append({
+                                            "id": str(uuid.uuid4()),
+                                            "Date": date_str,
+                                            "Time": timestamp,
+                                            "Client ID": f"GROUP-{gn}",
+                                            "Client Name": f"{gn} Meeting",
+                                            "Officer": target_co,
+                                            "Branch": BRANCH,
+                                            "Amount Paid": 0,
+                                            "Savings Amount": gs_dep,
+                                            "Withdrawal Amount": gs_wd,
+                                            "Loan Repayment Amount": 0,
+                                            "Processing Fee Paid": 0,
+                                            "Insurance Fee Paid": 0,
+                                            "App Fee Paid": 0,
+                                            "Pass Book Paid": 0,
+                                            "Recovery Amount": 0,
+                                            "Mgt Fee Paid": 0,
+                                            "Others Amount": 0,
+                                            "Laps Amount Transferred": 0,
+                                            "Transaction Type": "Group Global Savings (Bulk Upload)",
+                                            "Note": f"Bulk Uploaded by {USER}",
+                                            "Reversed": False
+                                        })
+                                    
+                                # 3. Laps Savings
+                                if laps_dep > 0 or laps_wd > 0:
                                     new_records.append({
                                         "id": str(uuid.uuid4()),
                                         "Date": date_str,
                                         "Time": timestamp,
-                                        "Client ID": f"GROUP-{gn}",
-                                        "Client Name": f"{gn} Meeting",
+                                        "Client ID": f"GLOBAL-LAPS-{BRANCH}",
+                                        "Client Name": f"Laps Savings ({BRANCH})",
                                         "Officer": target_co,
                                         "Branch": BRANCH,
                                         "Amount Paid": 0,
-                                        "Savings Amount": gs_dep,
-                                        "Withdrawal Amount": gs_wd,
+                                        "Savings Amount": laps_dep,
+                                        "Withdrawal Amount": laps_wd,
                                         "Loan Repayment Amount": 0,
                                         "Processing Fee Paid": 0,
                                         "Insurance Fee Paid": 0,
@@ -4128,515 +4158,198 @@ elif page == "Collections":
                                         "Mgt Fee Paid": 0,
                                         "Others Amount": 0,
                                         "Laps Amount Transferred": 0,
-                                        "Transaction Type": "Group Global Savings (Bulk Upload)",
+                                        "Transaction Type": "Laps Savings (Bulk Upload)",
                                         "Note": f"Bulk Uploaded by {USER}",
                                         "Reversed": False
                                     })
-                                    
-                            # 3. Laps Savings
-                            if laps_dep > 0 or laps_wd > 0:
-                                new_records.append({
-                                    "id": str(uuid.uuid4()),
-                                    "Date": date_str,
-                                    "Time": timestamp,
-                                    "Client ID": f"GLOBAL-LAPS-{BRANCH}",
-                                    "Client Name": f"Laps Savings ({BRANCH})",
-                                    "Officer": target_co,
-                                    "Branch": BRANCH,
-                                    "Amount Paid": 0,
-                                    "Savings Amount": laps_dep,
-                                    "Withdrawal Amount": laps_wd,
-                                    "Loan Repayment Amount": 0,
-                                    "Processing Fee Paid": 0,
-                                    "Insurance Fee Paid": 0,
-                                    "App Fee Paid": 0,
-                                    "Pass Book Paid": 0,
-                                    "Recovery Amount": 0,
-                                    "Mgt Fee Paid": 0,
-                                    "Others Amount": 0,
-                                    "Laps Amount Transferred": 0,
-                                    "Transaction Type": "Laps Savings (Bulk Upload)",
-                                    "Note": f"Bulk Uploaded by {USER}",
-                                    "Reversed": False
-                                })
                                 
-                        if new_records:
-                            new_df = pd.DataFrame(new_records)
-                            updated_repayments = pd.concat([repayments, new_df], ignore_index=True)
-                            save_repayments(updated_repayments)
-                            st.success(f"✅ Successfully processed {len(new_records)} transactions from the bulk upload!")
+                            if new_records:
+                                new_df = pd.DataFrame(new_records)
+                                updated_repayments = pd.concat([repayments, new_df], ignore_index=True)
+                                save_repayments(updated_repayments)
+                                st.success(f"✅ Successfully processed {len(new_records)} transactions from the bulk upload!")
                             
-                            # Optional delay and rerun
-                            import time
-                            time.sleep(2)
-                            st.rerun()
-                        else:
-                            st.warning("No valid transactions found in the uploaded file.")
-                except Exception as e:
-                    st.error(f"Error parsing file: {e}")
-                    
-        if col_mode == "Individual & Group Entry":
-            st.markdown("### Member Collections")
-        # Load all active clients for the target officer
-        with SupabaseUnitOfWork() as uow:
-            target_officer_id = uow.loans._resolve_officer_id(target_co)
-            if ROLE in ["BM", ROLE_BRANCH_MANAGER]:
-                res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").eq("branch_id", BRANCH_ID).execute()
-            elif ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
-                res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").in_("branch_id", ASSIGNED_BRANCH_IDS).execute()
-            elif ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
-                res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").execute()
-            else:
-                res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").eq("officer_id", target_officer_id).execute()
-                
-        clients_data = []
-        if res_c.data:
-            for c in res_c.data:
-                c_stat = (c.get("client_statuses") or {}).get("name") if isinstance(c.get("client_statuses"), dict) else c.get("status")
-                if c_stat in ["Closed", "Suspended"]:
-                    continue
-                g_name = (c.get("groups") or {}).get("name") if isinstance(c.get("groups"), dict) else None
-                if not g_name:
-                    m_list = c.get("client_memberships") or []
-                    if isinstance(m_list, list):
-                        for m in m_list:
-                            if m.get("groups") and m["groups"].get("name"):
-                                g_name = m["groups"]["name"]
-                                break
-                    elif isinstance(m_list, dict):
-                        if m_list.get("groups") and m_list["groups"].get("name"):
-                            g_name = m_list["groups"]["name"]
-                
-                if not g_name:
-                    g_name = "Ungrouped"
-                
-                clients_data.append({
-                    "Client ID": c["client_code"] or c["client_id"],
-                    "ID": c["client_id"],
-                    "Client Name": c["name"],
-                    "Group Name": g_name,
-                    "Officer": target_co,
-                    "Branch": BRANCH
-                })
-                
-        if not clients_data:
-            st.info("No registered active clients found for this officer.")
-        else:
-            co_clients_df = pd.DataFrame(clients_data)
-            groups = ["Ungrouped"] + sorted(co_clients_df[co_clients_df['Group Name'] != "Ungrouped"]['Group Name'].unique().tolist())
-            
-            default_idx = 0
-            if "sel_group" in st.session_state and st.session_state["sel_group"] in groups:
-                default_idx = groups.index(st.session_state["sel_group"])
-                del st.session_state["sel_group"]
-                
-            col_g1, col_g2 = st.columns([3, 1])
-            selected_group = col_g1.selectbox("Select Group", groups, index=default_idx)
-            expand_all_members = col_g2.checkbox("Expand All Members", value=st.session_state.get('chk_expand_all', False), key="chk_expand_all")
-            
-            if selected_group == "Ungrouped":
-                group_clients = co_clients_df[co_clients_df['Group Name'] == "Ungrouped"]
-            else:
-                group_clients = co_clients_df[co_clients_df['Group Name'] == selected_group]
-
-            if group_clients.empty:
-                st.info("No active members in this group.")
-            else:
-                # Fetch history for today to prefill/check
-                today_reps = repayments[(repayments['Date'] == date_str) & (repayments['Officer'] == target_co)] if not repayments.empty else pd.DataFrame()
-                
-                # Clear state if group or date changed
-                if st.session_state.get('collections_group') != selected_group or st.session_state.get('collections_date') != date_str:
-                    st.session_state['pending_collections'] = []
-                    st.session_state['collections_group'] = selected_group
-                    st.session_state['collections_date'] = date_str
-                
-                # Pre-compute member data for manifest, CSV, and form inputs
-                member_info = {}
-                from services.schedule_service import ScheduleService
-                with SupabaseUnitOfWork() as uow:
-                    for _, member in group_clients.iterrows():
-                        cid = member['Client ID']
-                        uuid_id = member['ID']
-                        mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
-                        try:
-                            # Match strictly by client UUID
-                            res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", uuid_id).execute()
-                            res_wd = uow.client.table("individual_savings").select("withdrawal_amount").eq("client_id", uuid_id).execute()
-                            sav_bal = sum(float(d.get("deposit_amount") or 0) for d in (res_dep.data or [])) - sum(float(w.get("withdrawal_amount") or 0) for w in (res_wd.data or []))
-                        except Exception:
-                            sav_bal = 0.0
-                        # Find if there is an active loan in all_loans
-                        active_loan_rows = all_loans[((all_loans['Client ID'] == cid) | (all_loans['Client ID'] == uuid_id)) & (all_loans['Status'] == 'Active')]
-                        if not active_loan_rows.empty:
-                            loan_row = active_loan_rows.iloc[0]
-                            active_loan_id = loan_row.get('id') or loan_row.get('loan_id') or loan_row.get('Loan ID')
-                            act_cred = float(loan_row.get('Active Credit', 0) or loan_row.get('active_credit', 0))
-                            total_due_base = float(loan_row.get('Total Due', 0) or loan_row.get('total_due', 0)) or act_cred
-                            
-                            # Baseline remaining balance is Total Due from loans table minus repayments posted
-                            if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
-                                active_loan_total_paid, has_schedule = ScheduleService.get_total_paid(uow, active_loan_id)
-                                if not has_schedule:
-                                    active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
+                                # Optional delay and rerun
+                                import time
+                                time.sleep(2)
+                                st.rerun()
                             else:
-                                active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
-                                
-                            rem_bal = max(0.0, total_due_base - active_loan_total_paid)
-                            loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
-                            
-                            if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
-                                expected_rep_schedule = ScheduleService.get_expected_repayment(uow, active_loan_id, view_date)
-                                if not expected_rep_schedule:
-                                    expected_rep_schedule = float(loan_row.get('Loan Repay', 0.0))
-                            else:
-                                expected_rep_schedule = 0.0
-                                
-                            start_date_val = str(loan_row.get('Start Date', ''))
-                        else:
-                            active_loan_id = None
-                            act_cred = 0.0
-                            total_paid = 0.0
-                            rem_bal = 0.0
-                            loan_prod_val = "None"
-                            expected_rep_schedule = 0.0
-                            start_date_val = ""
-                        
-                        # Check if user has a pending collection in session state
-                        pending_list = st.session_state.get('pending_collections', [])
-                        pending_tx = next((tx for tx in pending_list if tx["Client ID"] == cid), None)
-                        
-                        today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
-                        
-                        if pending_tx:
-                            prev_dep = float(pending_tx.get("Savings Amount") or 0.0)
-                            prev_wd = float(pending_tx.get("Withdrawal Amount") or 0.0)
-                            prev_rep = float(pending_tx.get("Loan Repayment Amount") or 0.0)
-                            prev_status = str(pending_tx.get("Payment Status") or "PAID").upper()
-                        else:
-                            prev_dep = 0.0
-                            prev_wd = 0.0
-                            if not today_paid.empty:
-                                prev_rep = float(today_paid['Loan Repayment Amount'].sum()) if 'Loan Repayment Amount' in today_paid.columns else float(today_paid['Amount Paid'].sum())
-                                prev_status = str(today_paid['Payment Status'].iloc[0] if 'Payment Status' in today_paid.columns else "PAID").upper()
-                            else:
-                                prev_rep = expected_rep_schedule
-                                prev_status = "PAID" if expected_rep_schedule > 0 else "NOT_PAID"
-                            
-                        # Pack member details
-                        member_dict = member.to_dict()
-                        member_dict.update({
-                            "Active Credit": act_cred,
-                            "Remaining Balance": rem_bal,
-                            "Expected Repayment": expected_rep_schedule,
-                            "Loan Product": loan_prod_val,
-                            "Start Date": start_date_val
-                        })
-                        
-                        member_info[cid] = {
-                            "member": pd.Series(member_dict),
-                            "sav_bal": sav_bal,
-                            "rem_bal": rem_bal,
-                            "act_cred": act_cred,
-                            "expected_rep_schedule": expected_rep_schedule,
-                            "prev_dep": prev_dep,
-                            "prev_wd": prev_wd,
-                            "prev_rep": prev_rep,
-                            "prev_status": prev_status,
-                            "start_date": start_date_val
-                        }
-
-                    # Fetch Group-Level Savings Balance
-                    group_savings_balance = 0.0
-                    if selected_group != "Ungrouped":
-                        try:
-                            g_res = uow.client.table("groups").select("group_id").eq("name", selected_group).execute()
-                            if g_res.data:
-                                g_id = g_res.data[0]['group_id']
-                                gs_res = uow.client.table("group_savings").select("deposit_amount, withdrawal_amount").eq("group_id", g_id).execute()
-                                legacy_reps = repayments[repayments['Client ID'] == f"GROUP-{selected_group}"] if not repayments.empty else pd.DataFrame()
-                                legacy_bal = (float(legacy_reps['Savings Amount'].sum()) - float(legacy_reps['Withdrawal Amount'].sum())) if not legacy_reps.empty else 0.0
-                                group_savings_balance = sum(float(g.get("deposit_amount") or 0) for g in (gs_res.data or [])) - sum(float(g.get("withdrawal_amount") or 0) for g in (gs_res.data or [])) + legacy_bal
-                        except Exception:
-                            group_savings_balance = 0.0
-
-                # ── CSV MANIFEST & BULK UPLOAD ──
-                st.markdown("#### Group Collection CSV Manifest")
-                col_csv1, col_csv2 = st.columns([1, 1])
-
-                # 1. Download Editable Manifest CSV
-                manifest_rows = []
-                # Group communal savings row if grouped
-                if selected_group != "Ungrouped":
-                    manifest_rows.append({
-                        "Client ID": f"GROUP-{selected_group}",
-                        "Client Name": f"{selected_group} Communal Savings",
-                        "Savings Balance": round(float(group_savings_balance), 2),
-                        "Remaining Balance": 0.0,
-                        "Expected Repayment": 0.0,
-                        "Amount Collected": 0.0,
-                        "Savings Deposit": 0.0
-                    })
-                for cid, info in member_info.items():
-                    m = info['member']
-                    manifest_rows.append({
-                        "Client ID": cid,
-                        "Client Name": m['Client Name'],
-                        "Savings Balance": round(float(info['sav_bal']), 2),
-                        "Remaining Balance": round(float(info['rem_bal']), 2),
-                        "Expected Repayment": round(float(info['expected_rep_schedule']), 2),
-                        "Amount Collected": 0.0,
-                        "Savings Deposit": 0.0
-                    })
-                manifest_df = pd.DataFrame(manifest_rows)
-                csv_data = manifest_df.to_csv(index=False)
-                col_csv1.download_button(
-                    label="Download Manifest CSV",
-                    data=csv_data,
-                    file_name=f"manifest_{selected_group}_{date_str}.csv",
-                    mime="text/csv",
-                    key=f"btn_dl_manifest_{selected_group}_{date_str}",
-                    use_container_width=True
-                )
-                import base64
-                b64_csv = base64.b64encode(csv_data.encode('utf-8')).decode()
-                col_csv1.markdown(
-                    f'<div style="text-align:center; margin-top:4px;"><a href="data:text/csv;base64,{b64_csv}" download="manifest_{selected_group}_{date_str}.csv" style="font-size:12px; color:#0284c7; text-decoration:none;">Direct CSV Download Link</a></div>',
-                    unsafe_allow_html=True
-                )
-
-                # 2. Upload Completed Manifest CSV
-                with col_csv2:
-                    with st.expander("Upload Completed Manifest (CSV)"):
-                        st.caption("Upload the filled CSV manifest to automatically populate client repayments, member savings, and group savings.")
-                        uploaded_csv = st.file_uploader("Choose Manifest CSV file", type=["csv"], key=f"csv_upload_{selected_group}")
-                        if uploaded_csv is not None:
-                            try:
-                                df_up = pd.read_csv(uploaded_csv)
-                                df_up.columns = [str(c).strip() for c in df_up.columns]
-                                
-                                id_col = next((c for c in df_up.columns if c.lower() in ["client id", "id", "client_id", "code"]), None)
-                                rep_col_name = next((c for c in df_up.columns if c.lower() in ["amount collected", "loan repayment amount", "repayment", "amount_collected", "amount paid"]), None)
-                                sav_col_name = next((c for c in df_up.columns if c.lower() in ["savings deposit", "savings amount", "savings", "savings_deposit"]), None)
-                                
-                                if not id_col:
-                                    st.error("Uploaded CSV must have a 'Client ID' or 'ID' column.")
-                                else:
-                                    csv_entries = []
-                                    matched_count = 0
-                                    for _, u_row in df_up.iterrows():
-                                        raw_cid = str(u_row.get(id_col, '')).strip()
-                                        if not raw_cid or raw_cid == 'nan': continue
-                                        
-                                        # Check if this row is Group Communal Savings
-                                        is_group_row = (
-                                            raw_cid.startswith("GROUP-") or
-                                            "group" in str(u_row.get("Client Name", "")).lower() or
-                                            "communal" in str(u_row.get("Client Name", "")).lower() or
-                                            raw_cid.lower() == selected_group.lower()
-                                        )
-                                        if is_group_row:
-                                            grp_sav = 0.0
-                                            if sav_col_name and pd.notna(u_row.get(sav_col_name)):
-                                                try: grp_sav = float(str(u_row.get(sav_col_name)).replace(',', '').strip() or 0.0)
-                                                except Exception: grp_sav = 0.0
-                                            if grp_sav == 0.0 and rep_col_name and pd.notna(u_row.get(rep_col_name)):
-                                                try: grp_sav = float(str(u_row.get(rep_col_name)).replace(',', '').strip() or 0.0)
-                                                except Exception: grp_sav = 0.0
-                                                
-                                            if grp_sav > 0:
-                                                g_data = {
-                                                    "Date": date_str,
-                                                    "Client ID": f"GROUP-{selected_group}",
-                                                    "Client Name": f"{selected_group} Meeting",
-                                                    "Officer": target_co,
-                                                    "Branch": BRANCH,
-                                                    "Amount Paid": grp_sav,
-                                                    "Transaction Type": "Group Meeting",
-                                                    "Note": "Daily Collection (CSV Upload)",
-                                                    "Savings Amount": grp_sav,
-                                                    "Withdrawal Amount": 0.0,
-                                                    "Laps Reserved": 0, "Loan Repayment Amount": 0,
-                                                    "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
-                                                    "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0,
-                                                    "Bank Withdrawal": 0, "Asset Sales": 0, "App Fee": 0,
-                                                    "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
-                                                    "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
-                                                    "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
-                                                    "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
-                                                    "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
-                                                    "Laps Transferred": 0,
-                                                    "Group Savings Deposit": grp_sav,
-                                                    "Group Savings Withdrawal": 0
-                                                }
-                                                csv_entries.append(g_data)
-                                                matched_count += 1
-                                            continue
-                                        
-                                        info = member_info.get(raw_cid)
-                                        if not info:
-                                            c_name_val = str(u_row.get("Client Name", "")).strip().lower()
-                                            for m_cid, m_info in member_info.items():
-                                                if str(m_info['member'].get('Client Name', '')).strip().lower() == c_name_val:
-                                                    info = m_info
-                                                    raw_cid = m_cid
-                                                    break
-                                                    
-                                        if not info: continue
-                                        
-                                        m = info['member']
-                                        rep_val = 0.0
-                                        if rep_col_name and pd.notna(u_row.get(rep_col_name)):
-                                            try: rep_val = float(str(u_row.get(rep_col_name)).replace(',', '').strip() or 0.0)
-                                            except Exception: rep_val = 0.0
-                                            
-                                        sav_val = 0.0
-                                        if sav_col_name and pd.notna(u_row.get(sav_col_name)):
-                                            try: sav_val = float(str(u_row.get(sav_col_name)).replace(',', '').strip() or 0.0)
-                                            except Exception: sav_val = 0.0
-                                            
-                                        exp_rep = float(info['expected_rep_schedule'] or 0.0)
-                                        prod_low = str(m['Loan Product']).lower()
-                                        rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
-                                        if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep_val
-                                        elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep_val
-                                        elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep_val
-                                        elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep_val
-                                        elif "month" in prod_low: rep_mth = rep_val
-                                        else: rep_60d = rep_val
-                                        
-                                        p_status = "PAID" if rep_val >= exp_rep and exp_rep > 0 else ("PART_PAID" if rep_val > 0 else "NOT_PAID")
-                                        
-                                        if rep_val > 0 or sav_val > 0 or p_status == "NOT_PAID":
-                                            tx_data = {
-                                                "Date": date_str,
-                                                "Client ID": raw_cid,
-                                                "Client Name": m['Client Name'],
-                                                "Officer": target_co,
-                                                "Branch": m.get('Branch', BRANCH),
-                                                "Amount Paid": rep_val,
-                                                "Transaction Type": "Loan",
-                                                "Note": "Daily Collection (CSV Upload)",
-                                                "Savings Amount": sav_val,
-                                                "Withdrawal Amount": 0.0,
-                                                "Loan Repayment Amount": rep_val,
-                                                "Repayment 12 Weeks": rep_12w,
-                                                "Repayment 24 Weeks": rep_24w,
-                                                "Repayment 60 Days": rep_60d,
-                                                "Repayment 120 Days": rep_120d,
-                                                "Monthly": rep_mth,
-                                                "Bank Withdrawal": 0, "Asset Sales": 0, "App Fee": 0,
-                                                "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
-                                                "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
-                                                "Payment Status": p_status,
-                                                "Expected Amount": exp_rep,
-                                                "Overdue Amount": max(0.0, exp_rep - rep_val),
-                                                "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
-                                                "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
-                                                "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
-                                                "Laps Reserved": 0, "Laps Transferred": 0,
-                                                "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
-                                            }
-                                            csv_entries.append(tx_data)
-                                            matched_count += 1
-                                            
-                                    if csv_entries:
-                                        st.success(f"Found {matched_count} matching entries in uploaded CSV.")
-                                        if st.button("Load Uploaded CSV into Review Queue", type="primary", use_container_width=True):
-                                            st.session_state['pending_collections'] = csv_entries
-                                            st.session_state['collections_group'] = selected_group
-                                            st.session_state['collections_date'] = date_str
-                                            st.session_state['edit_collections_mode'] = False
-                                            st.rerun()
-                                    else:
-                                        st.warning("No matching member entries with valid repayment or savings found in CSV.")
-                            except Exception as e:
-                                st.error(f"Error parsing uploaded CSV: {e}")
-
-                st.markdown(f"### Members in {selected_group}")
-                
-                if st.session_state.get('pending_collections') and st.session_state.get('collections_group') == selected_group and st.session_state.get('collections_date') == date_str and not st.session_state.get('edit_collections_mode', False):
-                    st.markdown("### Review Group Collections")
-                    to_insert = st.session_state['pending_collections']
+                                st.warning("No valid transactions found in the uploaded file.")
+                    except Exception as e:
+                        st.error(f"Error parsing file: {e}")
                     
-                    total_in = sum(
-                        float(tx.get('Loan Repayment Amount', 0)) +
-                        float(tx.get('Savings Amount', 0)) +
-                        float(tx.get('App Fee', 0)) +
-                        float(tx.get('Pass Book Bonus', 0)) +
-                        float(tx.get('Misc Fees', 0)) +
-                        float(tx.get('Asset Credit Sales', 0)) +
-                        float(tx.get('Cash and Carry', 0)) +
-                        float(tx.get('Credit Form Damage', 0)) +
-                        float(tx.get('Bonus', 0)) +
-                        float(tx.get('Bank Withdrawal', 0))
-                        for tx in to_insert
-                    )
-                    total_out = sum(float(tx.get('Withdrawal Amount', 0)) + float(tx.get('Expenses', 0)) + float(tx.get('Bank Deposited', 0)) + float(tx.get('Product Withdrawal', 0)) + float(tx.get('Laps Transferred', 0)) for tx in to_insert)
-                    net_cash = total_in - total_out
-                    
-                    total_savings = sum(float(tx.get('Savings Amount', 0)) for tx in to_insert)
-                    total_wd = sum(float(tx.get('Withdrawal Amount', 0)) for tx in to_insert)
-                    total_net_savings = total_savings - total_wd
-                    
-                    st.info(f"**Total Money Collected (Cash In):** ₦{total_in:,.0f}")
-                    st.warning(f"**Total Money Given Out (Cash Out):** ₦{total_out:,.0f}")
-                    st.success(f"**NET CASH EXPECTED FROM GROUP:** ₦{net_cash:,.0f}")
-                    st.markdown(f"**Total Net Savings:** ₦{total_net_savings:,.0f} *(Includes Individual & Group Savings)*")
-                    
-                    # Detailed Review Table for Officer Verification
-                    review_rows = []
-                    for tx in to_insert:
-                        c_name = tx.get("Client Name", "")
-                        c_id = tx.get("Client ID", "")
-                        s_dep = float(tx.get("Savings Amount") or 0.0)
-                        l_rep = float(tx.get("Loan Repayment Amount") or 0.0)
-                        p_stat = str(tx.get("Payment Status") or "PAID").upper()
-                        ov_amt = float(tx.get("Overdue Amount") or 0.0)
-                        exp_amt = float(tx.get("Expected Amount") or 0.0)
-                        
-                        if p_stat == "NOT_PAID":
-                            stat_badge = f"NOT PAID (₦{ov_amt:,.0f} Arrears)"
-                        elif p_stat == "PART_PAID":
-                            stat_badge = f"PART PAID (₦{ov_amt:,.0f} Arrears)"
-                        elif p_stat == "EXCESS":
-                            stat_badge = f"EXCESS (₦{l_rep - exp_amt:,.0f} Advance)"
-                        else:
-                            stat_badge = "FULL PAID" if exp_amt > 0 else "RECORDED"
-                            
-                        review_rows.append({
-                            "Client": f"{c_name} ({c_id})" if not str(c_id).startswith("GROUP-") else c_name,
-                            "Savings (₦)": f"₦{s_dep:,.0f}" if s_dep > 0 else "-",
-                            "Repayment (₦)": f"₦{l_rep:,.0f}" if l_rep > 0 else "₦0",
-                            "Status": stat_badge
-                        })
-                    if review_rows:
-                        st.dataframe(pd.DataFrame(review_rows), use_container_width=True, hide_index=True)
-                    
-                    def _go_back_to_edit():
-                        st.session_state['edit_collections_mode'] = True
-                    
-                    c1, c2 = st.columns(2)
-                    c1.button("Edit / Go Back", on_click=_go_back_to_edit)
-                    
-                    if c2.button("Confirm & Save Collections", type="primary", use_container_width=True):
-                        try:
-                            save_repayments(to_insert)
-                            st.success("Group Collections Submitted Successfully!")
-                            del st.session_state['pending_collections']
-                            if 'edit_collections_mode' in st.session_state:
-                                del st.session_state['edit_collections_mode']
-                            import time
-                            time.sleep(2)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error saving: {e}")
+            if col_mode == "Individual & Group Entry":
+                st.markdown("### Member Collections")
+            # Load all active clients for the target officer
+            with SupabaseUnitOfWork() as uow:
+                target_officer_id = uow.loans._resolve_officer_id(target_co)
+                if ROLE in ["BM", ROLE_BRANCH_MANAGER]:
+                    res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").eq("branch_id", BRANCH_ID).execute()
+                elif ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
+                    res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").in_("branch_id", ASSIGNED_BRANCH_IDS).execute()
+                elif ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
+                    res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").execute()
                 else:
-                    with st.form("collections_form"):
-                        sav_data = {}
-                        rep_data = {}
+                    res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").eq("officer_id", target_officer_id).execute()
+                
+            clients_data = []
+            if res_c.data:
+                for c in res_c.data:
+                    c_stat = (c.get("client_statuses") or {}).get("name") if isinstance(c.get("client_statuses"), dict) else c.get("status")
+                    if c_stat in ["Closed", "Suspended"]:
+                        continue
+                    g_name = (c.get("groups") or {}).get("name") if isinstance(c.get("groups"), dict) else None
+                    if not g_name:
+                        m_list = c.get("client_memberships") or []
+                        if isinstance(m_list, list):
+                            for m in m_list:
+                                if m.get("groups") and m["groups"].get("name"):
+                                    g_name = m["groups"]["name"]
+                                    break
+                        elif isinstance(m_list, dict):
+                            if m_list.get("groups") and m_list["groups"].get("name"):
+                                g_name = m_list["groups"]["name"]
+                
+                    if not g_name:
+                        g_name = "Ungrouped"
+                
+                    clients_data.append({
+                        "Client ID": c["client_code"] or c["client_id"],
+                        "ID": c["client_id"],
+                        "Client Name": c["name"],
+                        "Group Name": g_name,
+                        "Officer": target_co,
+                        "Branch": BRANCH
+                    })
+                
+            if not clients_data:
+                st.info("No registered active clients found for this officer.")
+            else:
+                co_clients_df = pd.DataFrame(clients_data)
+                groups = ["Ungrouped"] + sorted(co_clients_df[co_clients_df['Group Name'] != "Ungrouped"]['Group Name'].unique().tolist())
+            
+                default_idx = 0
+                if "sel_group" in st.session_state and st.session_state["sel_group"] in groups:
+                    default_idx = groups.index(st.session_state["sel_group"])
+                    del st.session_state["sel_group"]
+                
+                col_g1, col_g2 = st.columns([3, 1])
+                selected_group = col_g1.selectbox("Select Group", groups, index=default_idx)
+                expand_all_members = col_g2.checkbox("Expand All Members", value=st.session_state.get('chk_expand_all', False), key="chk_expand_all")
+            
+                if selected_group == "Ungrouped":
+                    group_clients = co_clients_df[co_clients_df['Group Name'] == "Ungrouped"]
+                else:
+                    group_clients = co_clients_df[co_clients_df['Group Name'] == selected_group]
+
+                if group_clients.empty:
+                    st.info("No active members in this group.")
+                else:
+                    # Fetch history for today to prefill/check
+                    today_reps = repayments[(repayments['Date'] == date_str) & (repayments['Officer'] == target_co)] if not repayments.empty else pd.DataFrame()
+                
+                    # Clear state if group or date changed
+                    if st.session_state.get('collections_group') != selected_group or st.session_state.get('collections_date') != date_str:
+                        st.session_state['pending_collections'] = []
+                        st.session_state['collections_group'] = selected_group
+                        st.session_state['collections_date'] = date_str
+                
+                    # Pre-compute member data for manifest, CSV, and form inputs
+                    member_info = {}
+                    from services.schedule_service import ScheduleService
+                    with SupabaseUnitOfWork() as uow:
+                        for _, member in group_clients.iterrows():
+                            cid = member['Client ID']
+                            uuid_id = member['ID']
+                            mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
+                            try:
+                                # Match strictly by client UUID
+                                res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", uuid_id).execute()
+                                res_wd = uow.client.table("individual_savings").select("withdrawal_amount").eq("client_id", uuid_id).execute()
+                                sav_bal = sum(float(d.get("deposit_amount") or 0) for d in (res_dep.data or [])) - sum(float(w.get("withdrawal_amount") or 0) for w in (res_wd.data or []))
+                            except Exception:
+                                sav_bal = 0.0
+                            # Find if there is an active loan in all_loans
+                            active_loan_rows = all_loans[((all_loans['Client ID'] == cid) | (all_loans['Client ID'] == uuid_id)) & (all_loans['Status'] == 'Active')]
+                            if not active_loan_rows.empty:
+                                loan_row = active_loan_rows.iloc[0]
+                                active_loan_id = loan_row.get('id') or loan_row.get('loan_id') or loan_row.get('Loan ID')
+                                act_cred = float(loan_row.get('Active Credit', 0) or loan_row.get('active_credit', 0))
+                                total_due_base = float(loan_row.get('Total Due', 0) or loan_row.get('total_due', 0)) or act_cred
+                            
+                                # Baseline remaining balance is Total Due from loans table minus repayments posted
+                                if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
+                                    active_loan_total_paid, has_schedule = ScheduleService.get_total_paid(uow, active_loan_id)
+                                    if not has_schedule:
+                                        active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
+                                else:
+                                    active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
+                                
+                                rem_bal = max(0.0, total_due_base - active_loan_total_paid)
+                                loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
+                            
+                                if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
+                                    expected_rep_schedule = ScheduleService.get_expected_repayment(uow, active_loan_id, view_date)
+                                    if not expected_rep_schedule:
+                                        expected_rep_schedule = float(loan_row.get('Loan Repay', 0.0))
+                                else:
+                                    expected_rep_schedule = 0.0
+                                
+                                start_date_val = str(loan_row.get('Start Date', ''))
+                            else:
+                                active_loan_id = None
+                                act_cred = 0.0
+                                total_paid = 0.0
+                                rem_bal = 0.0
+                                loan_prod_val = "None"
+                                expected_rep_schedule = 0.0
+                                start_date_val = ""
                         
-                        # ---- GROUP-LEVEL SAVINGS ----
+                            # Check if user has a pending collection in session state
+                            pending_list = st.session_state.get('pending_collections', [])
+                            pending_tx = next((tx for tx in pending_list if tx["Client ID"] == cid), None)
+                        
+                            today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
+                        
+                            if pending_tx:
+                                prev_dep = float(pending_tx.get("Savings Amount") or 0.0)
+                                prev_wd = float(pending_tx.get("Withdrawal Amount") or 0.0)
+                                prev_rep = float(pending_tx.get("Loan Repayment Amount") or 0.0)
+                                prev_status = str(pending_tx.get("Payment Status") or "PAID").upper()
+                            else:
+                                prev_dep = 0.0
+                                prev_wd = 0.0
+                                if not today_paid.empty:
+                                    prev_rep = float(today_paid['Loan Repayment Amount'].sum()) if 'Loan Repayment Amount' in today_paid.columns else float(today_paid['Amount Paid'].sum())
+                                    prev_status = str(today_paid['Payment Status'].iloc[0] if 'Payment Status' in today_paid.columns else "PAID").upper()
+                                else:
+                                    prev_rep = expected_rep_schedule
+                                    prev_status = "PAID" if expected_rep_schedule > 0 else "NOT_PAID"
+                            
+                            # Pack member details
+                            member_dict = member.to_dict()
+                            member_dict.update({
+                                "Active Credit": act_cred,
+                                "Remaining Balance": rem_bal,
+                                "Expected Repayment": expected_rep_schedule,
+                                "Loan Product": loan_prod_val,
+                                "Start Date": start_date_val
+                            })
+                        
+                            member_info[cid] = {
+                                "member": pd.Series(member_dict),
+                                "sav_bal": sav_bal,
+                                "rem_bal": rem_bal,
+                                "act_cred": act_cred,
+                                "expected_rep_schedule": expected_rep_schedule,
+                                "prev_dep": prev_dep,
+                                "prev_wd": prev_wd,
+                                "prev_rep": prev_rep,
+                                "prev_status": prev_status,
+                                "start_date": start_date_val
+                            }
+
+                        # Fetch Group-Level Savings Balance
                         group_savings_balance = 0.0
                         if selected_group != "Ungrouped":
                             try:
@@ -4644,254 +4357,681 @@ elif page == "Collections":
                                 if g_res.data:
                                     g_id = g_res.data[0]['group_id']
                                     gs_res = uow.client.table("group_savings").select("deposit_amount, withdrawal_amount").eq("group_id", g_id).execute()
-                                    
                                     legacy_reps = repayments[repayments['Client ID'] == f"GROUP-{selected_group}"] if not repayments.empty else pd.DataFrame()
                                     legacy_bal = (float(legacy_reps['Savings Amount'].sum()) - float(legacy_reps['Withdrawal Amount'].sum())) if not legacy_reps.empty else 0.0
-                                    
-                                    group_savings_balance = sum(float(g.get("deposit_amount") or 0) for g in gs_res.data) - sum(float(g.get("withdrawal_amount") or 0) for g in gs_res.data) + legacy_bal
+                                    group_savings_balance = sum(float(g.get("deposit_amount") or 0) for g in (gs_res.data or [])) - sum(float(g.get("withdrawal_amount") or 0) for g in (gs_res.data or [])) + legacy_bal
                             except Exception:
-                                pass
-                                
-                        st.markdown(f"### Group-Level Savings (Available: ₦{group_savings_balance:,.0f})")
-                        st.caption("Input communal group savings and withdrawal amounts.")
-                        
-                        # Load previous group values if any
-                        pending_list = st.session_state.get('pending_collections', [])
-                        pending_g = next((tx for tx in pending_list if tx["Client ID"] == f"GROUP-{selected_group}"), None)
-                        if pending_g:
-                            prev_g_dep = float(pending_g.get("Savings Amount") or 0.0)
-                            prev_g_wd = float(pending_g.get("Withdrawal Amount") or 0.0)
-                            prev_laps = float(pending_g.get("Laps Reserved") or 0.0)
-                        else:
-                            prev_g_dep = 0.0
-                            prev_g_wd = 0.0
-                            prev_laps = 0.0
-                            
-                        global_group_savings = st.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=prev_g_dep if prev_g_dep > 0 else None, placeholder="0", key="global_grp_sav")
-                        global_group_wd = 0.0
-                        st.markdown("---")
-                        
-                        # ---- PER-CLIENT COLLECTIONS ----
-                        st.markdown("### Client Collections (Savings & Repayments)")
+                                group_savings_balance = 0.0
 
-                        for cid, info in member_info.items():
-                            m = info['member']
-                            prod = str(m['Loan Product'])
-                            is_asset = str(cid).endswith("-ASSET") or (prod and "asset" in prod.lower() and "non-asset" not in prod.lower())
-                            
-                            if is_asset:
-                                title = f"📋 {m['Client Name']} (ASSET) — Rem: ₦{info['rem_bal']:,.0f}"
-                            else:
-                                title = f"👤 {m['Client Name']} ({cid}) — Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
+                    # ── CSV MANIFEST & BULK UPLOAD ──
+                    st.markdown("#### Group Collection CSV Manifest")
+                    col_csv1, col_csv2 = st.columns([1, 1])
+
+                    # 1. Download Editable Manifest CSV
+                    manifest_rows = []
+                    # Group communal savings row if grouped
+                    if selected_group != "Ungrouped":
+                        manifest_rows.append({
+                            "Client ID": f"GROUP-{selected_group}",
+                            "Client Name": f"{selected_group} Communal Savings",
+                            "Savings Balance": round(float(group_savings_balance), 2),
+                            "Remaining Balance": 0.0,
+                            "Expected Repayment": 0.0,
+                            "Amount Collected": 0.0,
+                            "Savings Deposit": 0.0
+                        })
+                    for cid, info in member_info.items():
+                        m = info['member']
+                        manifest_rows.append({
+                            "Client ID": cid,
+                            "Client Name": m['Client Name'],
+                            "Savings Balance": round(float(info['sav_bal']), 2),
+                            "Remaining Balance": round(float(info['rem_bal']), 2),
+                            "Expected Repayment": round(float(info['expected_rep_schedule']), 2),
+                            "Amount Collected": 0.0,
+                            "Savings Deposit": 0.0
+                        })
+                    manifest_df = pd.DataFrame(manifest_rows)
+                    csv_data = manifest_df.to_csv(index=False)
+                    col_csv1.download_button(
+                        label="Download Manifest CSV",
+                        data=csv_data,
+                        file_name=f"manifest_{selected_group}_{date_str}.csv",
+                        mime="text/csv",
+                        key=f"btn_dl_manifest_{selected_group}_{date_str}",
+                        use_container_width=True
+                    )
+                    import base64
+                    b64_csv = base64.b64encode(csv_data.encode('utf-8')).decode()
+                    col_csv1.markdown(
+                        f'<div style="text-align:center; margin-top:4px;"><a href="data:text/csv;base64,{b64_csv}" download="manifest_{selected_group}_{date_str}.csv" style="font-size:12px; color:#0284c7; text-decoration:none;">Direct CSV Download Link</a></div>',
+                        unsafe_allow_html=True
+                    )
+
+                    # 2. Upload Completed Manifest CSV
+                    with col_csv2:
+                        with st.expander("Upload Completed Manifest (CSV)"):
+                            st.caption("Upload the filled CSV manifest to automatically populate client repayments, member savings, and group savings.")
+                            uploaded_csv = st.file_uploader("Choose Manifest CSV file", type=["csv"], key=f"csv_upload_{selected_group}")
+                            if uploaded_csv is not None:
+                                try:
+                                    df_up = pd.read_csv(uploaded_csv)
+                                    df_up.columns = [str(c).strip() for c in df_up.columns]
                                 
-                            with st.expander(title, expanded=expand_all_members):
-                                s_date_str = info.get("start_date", "")
-                                s_date = pd.to_datetime(s_date_str, errors='coerce') if s_date_str and str(s_date_str).strip() not in ['None', 'nan', ''] else pd.NaT
-                                view_dt = pd.to_datetime(date_str)
+                                    id_col = next((c for c in df_up.columns if c.lower() in ["client id", "id", "client_id", "code"]), None)
+                                    rep_col_name = next((c for c in df_up.columns if c.lower() in ["amount collected", "loan repayment amount", "repayment", "amount_collected", "amount paid"]), None)
+                                    sav_col_name = next((c for c in df_up.columns if c.lower() in ["savings deposit", "savings amount", "savings", "savings_deposit"]), None)
                                 
-                                is_future_loan = pd.notna(s_date) and s_date > view_dt
-                                
-                                if not is_asset:
-                                    st.markdown("**Savings**")
-                                    s_dep = st.number_input("Savings Deposit", min_value=0.0, step=500.0, value=info['prev_dep'] if info['prev_dep'] > 0 else None, placeholder="0", key=f"sdep_{cid}")
-                                    s_wd = 0.0
-                                    sav_data[cid] = {"dep": s_dep, "wd": s_wd}
-                                    st.markdown("---")
-                                
-                                if is_future_loan:
-                                    st.warning(f"**Next Loan Repayment Due On:** {s_date.strftime('%Y-%m-%d')}")
-                                    st.caption("*Loan repayment begins on the next meeting date. No loan repayment is due today.*")
-                                    rep_data[cid] = {
-                                        "rep": 0.0, "app": 0, "pb": 0, "misc": 0,
-                                        "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0,
-                                        "mark_not_paid": True, "expected_amount": 0.0
-                                    }
-                                else:
-                                    st.markdown(f"**Loan ({prod})** — Active Credit: ₦{info['act_cred']:,.0f}")
-                                    expected_rep = float(info['expected_rep_schedule'] or 0.0)
-                                    st.caption(f"Expected repayment calculated from schedule: ₦{expected_rep:,.2f}")
-                                    
-                                    # Smart Initial Status Detection
-                                    has_previous_run = (pending_tx is not None or not today_paid.empty)
-                                    is_defaulter_init = (info.get("prev_status") == "NOT_PAID") or (info.get("prev_rep") == 0.0 and has_previous_run)
-                                    
-                                    mark_not_paid = st.checkbox("Mark as NOT PAID today (₦0 Collection)", value=is_defaulter_init, key=f"not_paid_{cid}")
-                                    
-                                    if not mark_not_paid:
-                                        init_val = float(info['prev_rep']) if (info['prev_rep'] is not None and info['prev_rep'] > 0) else (expected_rep if expected_rep > 0 else 0.0)
-                                        rep_col = st.number_input(
-                                            f"Loan Repayment Collected (₦)", 
-                                            min_value=0.0, 
-                                            step=500.0, 
-                                            value=init_val if init_val > 0 else None, 
-                                            placeholder=str(expected_rep), 
-                                            key=f"rep_{cid}"
-                                        )
+                                    if not id_col:
+                                        st.error("Uploaded CSV must have a 'Client ID' or 'ID' column.")
                                     else:
-                                        st.caption("🔒 *Repayment set to ₦0. Arrears will be logged as overdue.*")
-                                        rep_col = 0.0
-                                    
-                                    rep_data[cid] = {
-                                        "rep": rep_col, "app": 0, "pb": 0, "misc": 0,
-                                        "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0,
-                                        "mark_not_paid": mark_not_paid, "expected_amount": expected_rep
-                                    }
+                                        csv_entries = []
+                                        matched_count = 0
+                                        for _, u_row in df_up.iterrows():
+                                            raw_cid = str(u_row.get(id_col, '')).strip()
+                                            if not raw_cid or raw_cid == 'nan': continue
+                                        
+                                            # Check if this row is Group Communal Savings
+                                            is_group_row = (
+                                                raw_cid.startswith("GROUP-") or
+                                                "group" in str(u_row.get("Client Name", "")).lower() or
+                                                "communal" in str(u_row.get("Client Name", "")).lower() or
+                                                raw_cid.lower() == selected_group.lower()
+                                            )
+                                            if is_group_row:
+                                                grp_sav = 0.0
+                                                if sav_col_name and pd.notna(u_row.get(sav_col_name)):
+                                                    try: grp_sav = float(str(u_row.get(sav_col_name)).replace(',', '').strip() or 0.0)
+                                                    except Exception: grp_sav = 0.0
+                                                if grp_sav == 0.0 and rep_col_name and pd.notna(u_row.get(rep_col_name)):
+                                                    try: grp_sav = float(str(u_row.get(rep_col_name)).replace(',', '').strip() or 0.0)
+                                                    except Exception: grp_sav = 0.0
+                                                
+                                                if grp_sav > 0:
+                                                    g_data = {
+                                                        "Date": date_str,
+                                                        "Client ID": f"GROUP-{selected_group}",
+                                                        "Client Name": f"{selected_group} Meeting",
+                                                        "Officer": target_co,
+                                                        "Branch": BRANCH,
+                                                        "Amount Paid": grp_sav,
+                                                        "Transaction Type": "Group Meeting",
+                                                        "Note": "Daily Collection (CSV Upload)",
+                                                        "Savings Amount": grp_sav,
+                                                        "Withdrawal Amount": 0.0,
+                                                        "Laps Reserved": 0, "Loan Repayment Amount": 0,
+                                                        "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
+                                                        "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0,
+                                                        "Bank Withdrawal": 0, "Asset Sales": 0, "App Fee": 0,
+                                                        "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
+                                                        "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
+                                                        "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
+                                                        "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                                        "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
+                                                        "Laps Transferred": 0,
+                                                        "Group Savings Deposit": grp_sav,
+                                                        "Group Savings Withdrawal": 0
+                                                    }
+                                                    csv_entries.append(g_data)
+                                                    matched_count += 1
+                                                continue
+                                        
+                                            info = member_info.get(raw_cid)
+                                            if not info:
+                                                c_name_val = str(u_row.get("Client Name", "")).strip().lower()
+                                                for m_cid, m_info in member_info.items():
+                                                    if str(m_info['member'].get('Client Name', '')).strip().lower() == c_name_val:
+                                                        info = m_info
+                                                        raw_cid = m_cid
+                                                        break
+                                                    
+                                            if not info: continue
+                                        
+                                            m = info['member']
+                                            rep_val = 0.0
+                                            if rep_col_name and pd.notna(u_row.get(rep_col_name)):
+                                                try: rep_val = float(str(u_row.get(rep_col_name)).replace(',', '').strip() or 0.0)
+                                                except Exception: rep_val = 0.0
+                                            
+                                            sav_val = 0.0
+                                            if sav_col_name and pd.notna(u_row.get(sav_col_name)):
+                                                try: sav_val = float(str(u_row.get(sav_col_name)).replace(',', '').strip() or 0.0)
+                                                except Exception: sav_val = 0.0
+                                            
+                                            exp_rep = float(info['expected_rep_schedule'] or 0.0)
+                                            prod_low = str(m['Loan Product']).lower()
+                                            rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
+                                            if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep_val
+                                            elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep_val
+                                            elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep_val
+                                            elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep_val
+                                            elif "month" in prod_low: rep_mth = rep_val
+                                            else: rep_60d = rep_val
+                                        
+                                            p_status = "PAID" if rep_val >= exp_rep and exp_rep > 0 else ("PART_PAID" if rep_val > 0 else "NOT_PAID")
+                                        
+                                            if rep_val > 0 or sav_val > 0 or p_status == "NOT_PAID":
+                                                tx_data = {
+                                                    "Date": date_str,
+                                                    "Client ID": raw_cid,
+                                                    "Client Name": m['Client Name'],
+                                                    "Officer": target_co,
+                                                    "Branch": m.get('Branch', BRANCH),
+                                                    "Amount Paid": rep_val,
+                                                    "Transaction Type": "Loan",
+                                                    "Note": "Daily Collection (CSV Upload)",
+                                                    "Savings Amount": sav_val,
+                                                    "Withdrawal Amount": 0.0,
+                                                    "Loan Repayment Amount": rep_val,
+                                                    "Repayment 12 Weeks": rep_12w,
+                                                    "Repayment 24 Weeks": rep_24w,
+                                                    "Repayment 60 Days": rep_60d,
+                                                    "Repayment 120 Days": rep_120d,
+                                                    "Monthly": rep_mth,
+                                                    "Bank Withdrawal": 0, "Asset Sales": 0, "App Fee": 0,
+                                                    "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
+                                                    "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
+                                                    "Payment Status": p_status,
+                                                    "Expected Amount": exp_rep,
+                                                    "Overdue Amount": max(0.0, exp_rep - rep_val),
+                                                    "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
+                                                    "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                                    "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
+                                                    "Laps Reserved": 0, "Laps Transferred": 0,
+                                                    "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
+                                                }
+                                                csv_entries.append(tx_data)
+                                                matched_count += 1
+                                            
+                                        if csv_entries:
+                                            st.success(f"Found {matched_count} matching entries in uploaded CSV.")
+                                            if st.button("Load Uploaded CSV into Review Queue", type="primary", use_container_width=True):
+                                                st.session_state['pending_collections'] = csv_entries
+                                                st.session_state['collections_group'] = selected_group
+                                                st.session_state['collections_date'] = date_str
+                                                st.session_state['edit_collections_mode'] = False
+                                                st.rerun()
+                                        else:
+                                            st.warning("No matching member entries with valid repayment or savings found in CSV.")
+                                except Exception as e:
+                                    st.error(f"Error parsing uploaded CSV: {e}")
+
+                    st.markdown(f"### Members in {selected_group}")
+                
+                    if st.session_state.get('pending_collections') and st.session_state.get('collections_group') == selected_group and st.session_state.get('collections_date') == date_str and not st.session_state.get('edit_collections_mode', False):
+                        st.markdown("### Review Group Collections")
+                        to_insert = st.session_state['pending_collections']
+                    
+                        total_in = sum(
+                            float(tx.get('Loan Repayment Amount', 0)) +
+                            float(tx.get('Savings Amount', 0)) +
+                            float(tx.get('App Fee', 0)) +
+                            float(tx.get('Pass Book Bonus', 0)) +
+                            float(tx.get('Misc Fees', 0)) +
+                            float(tx.get('Asset Credit Sales', 0)) +
+                            float(tx.get('Cash and Carry', 0)) +
+                            float(tx.get('Credit Form Damage', 0)) +
+                            float(tx.get('Bonus', 0)) +
+                            float(tx.get('Bank Withdrawal', 0))
+                            for tx in to_insert
+                        )
+                        total_out = sum(float(tx.get('Withdrawal Amount', 0)) + float(tx.get('Expenses', 0)) + float(tx.get('Bank Deposited', 0)) + float(tx.get('Product Withdrawal', 0)) + float(tx.get('Laps Transferred', 0)) for tx in to_insert)
+                        net_cash = total_in - total_out
+                    
+                        total_savings = sum(float(tx.get('Savings Amount', 0)) for tx in to_insert)
+                        total_wd = sum(float(tx.get('Withdrawal Amount', 0)) for tx in to_insert)
+                        total_net_savings = total_savings - total_wd
+                    
+                        st.info(f"**Total Money Collected (Cash In):** ₦{total_in:,.0f}")
+                        st.warning(f"**Total Money Given Out (Cash Out):** ₦{total_out:,.0f}")
+                        st.success(f"**NET CASH EXPECTED FROM GROUP:** ₦{net_cash:,.0f}")
+                        st.markdown(f"**Total Net Savings:** ₦{total_net_savings:,.0f} *(Includes Individual & Group Savings)*")
+                    
+                        # Detailed Review Table for Officer Verification
+                        review_rows = []
+                        for tx in to_insert:
+                            c_name = tx.get("Client Name", "")
+                            c_id = tx.get("Client ID", "")
+                            s_dep = float(tx.get("Savings Amount") or 0.0)
+                            l_rep = float(tx.get("Loan Repayment Amount") or 0.0)
+                            p_stat = str(tx.get("Payment Status") or "PAID").upper()
+                            ov_amt = float(tx.get("Overdue Amount") or 0.0)
+                            exp_amt = float(tx.get("Expected Amount") or 0.0)
                         
-                        st.markdown("---")
-                        submit_btn = st.form_submit_button("Calculate Totals & Review Members", type="primary", use_container_width=True)
-                        
-                        if submit_btn:
-                            to_insert = []
+                            if p_stat == "NOT_PAID":
+                                stat_badge = f"NOT PAID (₦{ov_amt:,.0f} Arrears)"
+                            elif p_stat == "PART_PAID":
+                                stat_badge = f"PART PAID (₦{ov_amt:,.0f} Arrears)"
+                            elif p_stat == "EXCESS":
+                                stat_badge = f"EXCESS (₦{l_rep - exp_amt:,.0f} Advance)"
+                            else:
+                                stat_badge = "FULL PAID" if exp_amt > 0 else "RECORDED"
                             
-                            # Process per-client data
+                            review_rows.append({
+                                "Client": f"{c_name} ({c_id})" if not str(c_id).startswith("GROUP-") else c_name,
+                                "Savings (₦)": f"₦{s_dep:,.0f}" if s_dep > 0 else "-",
+                                "Repayment (₦)": f"₦{l_rep:,.0f}" if l_rep > 0 else "₦0",
+                                "Status": stat_badge
+                            })
+                        if review_rows:
+                            st.dataframe(pd.DataFrame(review_rows), use_container_width=True, hide_index=True)
+                    
+                        def _go_back_to_edit():
+                            st.session_state['edit_collections_mode'] = True
+                    
+                        c1, c2 = st.columns(2)
+                        c1.button("Edit / Go Back", on_click=_go_back_to_edit)
+                    
+                        if c2.button("Confirm & Save Collections", type="primary", use_container_width=True):
+                            try:
+                                save_repayments(to_insert)
+                                st.success("Group Collections Submitted Successfully!")
+                                del st.session_state['pending_collections']
+                                if 'edit_collections_mode' in st.session_state:
+                                    del st.session_state['edit_collections_mode']
+                                import time
+                                time.sleep(2)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error saving: {e}")
+                    else:
+                        with st.form("collections_form"):
+                            sav_data = {}
+                            rep_data = {}
+                        
+                            # ---- GROUP-LEVEL SAVINGS ----
+                            group_savings_balance = 0.0
+                            if selected_group != "Ungrouped":
+                                try:
+                                    g_res = uow.client.table("groups").select("group_id").eq("name", selected_group).execute()
+                                    if g_res.data:
+                                        g_id = g_res.data[0]['group_id']
+                                        gs_res = uow.client.table("group_savings").select("deposit_amount, withdrawal_amount").eq("group_id", g_id).execute()
+                                    
+                                        legacy_reps = repayments[repayments['Client ID'] == f"GROUP-{selected_group}"] if not repayments.empty else pd.DataFrame()
+                                        legacy_bal = (float(legacy_reps['Savings Amount'].sum()) - float(legacy_reps['Withdrawal Amount'].sum())) if not legacy_reps.empty else 0.0
+                                    
+                                        group_savings_balance = sum(float(g.get("deposit_amount") or 0) for g in gs_res.data) - sum(float(g.get("withdrawal_amount") or 0) for g in gs_res.data) + legacy_bal
+                                except Exception:
+                                    pass
+                                
+                            st.markdown(f"### Group-Level Savings (Available: ₦{group_savings_balance:,.0f})")
+                            st.caption("Input communal group savings and withdrawal amounts.")
+                        
+                            # Load previous group values if any
+                            pending_list = st.session_state.get('pending_collections', [])
+                            pending_g = next((tx for tx in pending_list if tx["Client ID"] == f"GROUP-{selected_group}"), None)
+                            if pending_g:
+                                prev_g_dep = float(pending_g.get("Savings Amount") or 0.0)
+                                prev_g_wd = float(pending_g.get("Withdrawal Amount") or 0.0)
+                                prev_laps = float(pending_g.get("Laps Reserved") or 0.0)
+                            else:
+                                prev_g_dep = 0.0
+                                prev_g_wd = 0.0
+                                prev_laps = 0.0
+                            
+                            global_group_savings = st.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=prev_g_dep if prev_g_dep > 0 else None, placeholder="0", key="global_grp_sav")
+                            global_group_wd = 0.0
+                            st.markdown("---")
+                        
+                            # ---- PER-CLIENT COLLECTIONS ----
+                            st.markdown("### Client Collections (Savings & Repayments)")
+
                             for cid, info in member_info.items():
                                 m = info['member']
-                                s = sav_data.get(cid, {"dep": 0, "wd": 0})
-                                r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0, "mark_not_paid": False, "expected_amount": 0.0})
-                                
-                                sav = float(s.get('dep') or 0)
-                                sav_wd = float(s.get('wd') or 0)
-                                rep = float(r.get('rep') or 0)
-                                app = float(r.get('app') or 0)
-                                pb = float(r.get('pb') or 0)
-                                misc = float(r.get('misc') or 0)
-                                asset_cr = float(r.get('asset_cr') or 0)
-                                cc = float(r.get('cc') or 0)
-                                cfd = float(r.get('cfd') or 0)
-                                bon = float(r.get('bonus') or 0)
-                                exp_amt = float(r.get('expected_amount') or 0.0)
-                                is_marked_not_paid = bool(r.get('mark_not_paid', False))
-                                
-                                # Determine Payment Status & Overdue Amount strictly
-                                if is_marked_not_paid or rep == 0.0:
-                                    rep = 0.0
-                                    p_status = "NOT_PAID"
-                                    overdue_val = exp_amt
-                                elif exp_amt > 0 and rep == exp_amt:
-                                    p_status = "PAID"
-                                    overdue_val = 0.0
-                                elif exp_amt > 0 and rep > exp_amt:
-                                    p_status = "EXCESS"
-                                    overdue_val = 0.0
-                                elif exp_amt > 0 and rep < exp_amt and rep > 0:
-                                    p_status = "PART_PAID"
-                                    overdue_val = max(0.0, exp_amt - rep)
+                                prod = str(m['Loan Product'])
+                                is_asset = str(cid).endswith("-ASSET") or (prod and "asset" in prod.lower() and "non-asset" not in prod.lower())
+                            
+                                if is_asset:
+                                    title = f"📋 {m['Client Name']} (ASSET) — Rem: ₦{info['rem_bal']:,.0f}"
                                 else:
-                                    p_status = "PAID"
-                                    overdue_val = 0.0
+                                    title = f"👤 {m['Client Name']} ({cid}) — Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
                                 
-                                if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
-                                    if p_status != "NOT_PAID":
-                                        continue
+                                with st.expander(title, expanded=expand_all_members):
+                                    s_date_str = info.get("start_date", "")
+                                    s_date = pd.to_datetime(s_date_str, errors='coerce') if s_date_str and str(s_date_str).strip() not in ['None', 'nan', ''] else pd.NaT
+                                    view_dt = pd.to_datetime(date_str)
                                 
-                                prod_low = str(m['Loan Product']).lower()
-                                rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
+                                    is_future_loan = pd.notna(s_date) and s_date > view_dt
                                 
-                                if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep
-                                elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep
-                                elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep
-                                elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep
-                                elif "month" in prod_low: rep_mth = rep
-                                else: rep_60d = rep
+                                    if not is_asset:
+                                        st.markdown("**Savings**")
+                                        s_dep = st.number_input("Savings Deposit", min_value=0.0, step=500.0, value=info['prev_dep'] if info['prev_dep'] > 0 else None, placeholder="0", key=f"sdep_{cid}")
+                                        s_wd = 0.0
+                                        sav_data[cid] = {"dep": s_dep, "wd": s_wd}
+                                        st.markdown("---")
                                 
-                                tx_data = {
-                                    "Date": date_str,
-                                    "Client ID": cid,
-                                    "Client Name": m['Client Name'],
-                                    "Officer": target_co,
-                                    "Branch": m['Branch'],
-                                    "Amount Paid": rep,
-                                    "Transaction Type": "Loan",
-                                    "Note": "Daily Collection",
-                                    "Savings Amount": sav,
-                                    "Withdrawal Amount": sav_wd,
-                                    "Loan Repayment Amount": rep,
-                                    "Repayment 12 Weeks": rep_12w,
-                                    "Repayment 24 Weeks": rep_24w,
-                                    "Repayment 60 Days": rep_60d,
-                                    "Repayment 120 Days": rep_120d,
-                                    "Monthly": rep_mth,
-                                    "Bank Withdrawal": 0,
-                                    "Asset Sales": 0,
-                                    "App Fee": app,
-                                    "Pass Book Bonus": pb,
-                                    "Misc Fees": misc,
-                                    "Asset Credit Sales": asset_cr,
-                                    "Cash and Carry": cc,
-                                    "Credit Form": 0,
-                                    "Credit Form Damage": cfd,
-                                    "Bonus": bon,
-                                    "Payment Status": p_status,
-                                    "Expected Amount": exp_amt,
-                                    "Overdue Amount": overdue_val,
-                                    "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
-                                    "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
-                                    "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
-                                    "Laps Reserved": 0, "Laps Transferred": 0,
-                                    "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
-                                }
-                                to_insert.append(tx_data)
+                                    if is_future_loan:
+                                        st.warning(f"**Next Loan Repayment Due On:** {s_date.strftime('%Y-%m-%d')}")
+                                        st.caption("*Loan repayment begins on the next meeting date. No loan repayment is due today.*")
+                                        rep_data[cid] = {
+                                            "rep": 0.0, "app": 0, "pb": 0, "misc": 0,
+                                            "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0,
+                                            "mark_not_paid": True, "expected_amount": 0.0
+                                        }
+                                    else:
+                                        st.markdown(f"**Loan ({prod})** — Active Credit: ₦{info['act_cred']:,.0f}")
+                                        expected_rep = float(info['expected_rep_schedule'] or 0.0)
+                                        st.caption(f"Expected repayment calculated from schedule: ₦{expected_rep:,.2f}")
+                                    
+                                        # Smart Initial Status Detection
+                                        has_previous_run = (pending_tx is not None or not today_paid.empty)
+                                        is_defaulter_init = (info.get("prev_status") == "NOT_PAID") or (info.get("prev_rep") == 0.0 and has_previous_run)
+                                    
+                                        mark_not_paid = st.checkbox("Mark as NOT PAID today (₦0 Collection)", value=is_defaulter_init, key=f"not_paid_{cid}")
+                                    
+                                        if not mark_not_paid:
+                                            init_val = float(info['prev_rep']) if (info['prev_rep'] is not None and info['prev_rep'] > 0) else (expected_rep if expected_rep > 0 else 0.0)
+                                            rep_col = st.number_input(
+                                                f"Loan Repayment Collected (₦)", 
+                                                min_value=0.0, 
+                                                step=500.0, 
+                                                value=init_val if init_val > 0 else None, 
+                                                placeholder=str(expected_rep), 
+                                                key=f"rep_{cid}"
+                                            )
+                                        else:
+                                            st.caption("🔒 *Repayment set to ₦0. Arrears will be logged as overdue.*")
+                                            rep_col = 0.0
+                                    
+                                        rep_data[cid] = {
+                                            "rep": rep_col, "app": 0, "pb": 0, "misc": 0,
+                                            "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0,
+                                            "mark_not_paid": mark_not_paid, "expected_amount": expected_rep
+                                        }
+                        
+                            st.markdown("---")
+                            submit_btn = st.form_submit_button("Calculate Totals & Review Members", type="primary", use_container_width=True)
+                        
+                            if submit_btn:
+                                to_insert = []
                             
-                            # Process Group-Level Inflows
-                            global_group_savings = float(global_group_savings or 0)
-                            global_group_wd = float(global_group_wd or 0)
-                            
-                            if global_group_savings > 0 or global_group_wd > 0:
-                                g_data = {
-                                    "Date": date_str, "Client ID": f"GROUP-{selected_group}", "Client Name": f"{selected_group} Meeting",
-                                    "Officer": target_co, "Branch": BRANCH,
-                                    "Amount Paid": global_group_savings,
-                                    "Transaction Type": "Group Meeting", "Note": "Group Level Inputs",
-                                    "Savings Amount": global_group_savings, "Withdrawal Amount": global_group_wd,
-                                    "Laps Reserved": 0,
-                                    "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
-                                    "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0, "Bank Withdrawal": 0,
-                                    "Asset Sales": 0, "App Fee": 0, "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
-                                    "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
-                                    "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
-                                    "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0, "Laps Transferred": 0,
-                                    "Group Savings Deposit": global_group_savings, "Group Savings Withdrawal": global_group_wd
-                                }
-                                to_insert.append(g_data)
+                                # Process per-client data
+                                for cid, info in member_info.items():
+                                    m = info['member']
+                                    s = sav_data.get(cid, {"dep": 0, "wd": 0})
+                                    r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0, "mark_not_paid": False, "expected_amount": 0.0})
                                 
-                            if to_insert:
-                                st.session_state['pending_collections'] = to_insert
-                                st.session_state['collections_group'] = selected_group
-                                st.session_state['collections_date'] = date_str
-                                st.session_state['edit_collections_mode'] = False
-                                st.rerun()
-                            else:
-                                st.warning("No data entered to save.")
+                                    sav = float(s.get('dep') or 0)
+                                    sav_wd = float(s.get('wd') or 0)
+                                    rep = float(r.get('rep') or 0)
+                                    app = float(r.get('app') or 0)
+                                    pb = float(r.get('pb') or 0)
+                                    misc = float(r.get('misc') or 0)
+                                    asset_cr = float(r.get('asset_cr') or 0)
+                                    cc = float(r.get('cc') or 0)
+                                    cfd = float(r.get('cfd') or 0)
+                                    bon = float(r.get('bonus') or 0)
+                                    exp_amt = float(r.get('expected_amount') or 0.0)
+                                    is_marked_not_paid = bool(r.get('mark_not_paid', False))
+                                
+                                    # Determine Payment Status & Overdue Amount strictly
+                                    if is_marked_not_paid or rep == 0.0:
+                                        rep = 0.0
+                                        p_status = "NOT_PAID"
+                                        overdue_val = exp_amt
+                                    elif exp_amt > 0 and rep == exp_amt:
+                                        p_status = "PAID"
+                                        overdue_val = 0.0
+                                    elif exp_amt > 0 and rep > exp_amt:
+                                        p_status = "EXCESS"
+                                        overdue_val = 0.0
+                                    elif exp_amt > 0 and rep < exp_amt and rep > 0:
+                                        p_status = "PART_PAID"
+                                        overdue_val = max(0.0, exp_amt - rep)
+                                    else:
+                                        p_status = "PAID"
+                                        overdue_val = 0.0
+                                
+                                    if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
+                                        if p_status != "NOT_PAID":
+                                            continue
+                                
+                                    prod_low = str(m['Loan Product']).lower()
+                                    rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
+                                
+                                    if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep
+                                    elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep
+                                    elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep
+                                    elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep
+                                    elif "month" in prod_low: rep_mth = rep
+                                    else: rep_60d = rep
+                                
+                                    tx_data = {
+                                        "Date": date_str,
+                                        "Client ID": cid,
+                                        "Client Name": m['Client Name'],
+                                        "Officer": target_co,
+                                        "Branch": m['Branch'],
+                                        "Amount Paid": rep,
+                                        "Transaction Type": "Loan",
+                                        "Note": "Daily Collection",
+                                        "Savings Amount": sav,
+                                        "Withdrawal Amount": sav_wd,
+                                        "Loan Repayment Amount": rep,
+                                        "Repayment 12 Weeks": rep_12w,
+                                        "Repayment 24 Weeks": rep_24w,
+                                        "Repayment 60 Days": rep_60d,
+                                        "Repayment 120 Days": rep_120d,
+                                        "Monthly": rep_mth,
+                                        "Bank Withdrawal": 0,
+                                        "Asset Sales": 0,
+                                        "App Fee": app,
+                                        "Pass Book Bonus": pb,
+                                        "Misc Fees": misc,
+                                        "Asset Credit Sales": asset_cr,
+                                        "Cash and Carry": cc,
+                                        "Credit Form": 0,
+                                        "Credit Form Damage": cfd,
+                                        "Bonus": bon,
+                                        "Payment Status": p_status,
+                                        "Expected Amount": exp_amt,
+                                        "Overdue Amount": overdue_val,
+                                        "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
+                                        "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                        "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
+                                        "Laps Reserved": 0, "Laps Transferred": 0,
+                                        "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
+                                    }
+                                    to_insert.append(tx_data)
+                            
+                                # Process Group-Level Inflows
+                                global_group_savings = float(global_group_savings or 0)
+                                global_group_wd = float(global_group_wd or 0)
+                            
+                                if global_group_savings > 0 or global_group_wd > 0:
+                                    g_data = {
+                                        "Date": date_str, "Client ID": f"GROUP-{selected_group}", "Client Name": f"{selected_group} Meeting",
+                                        "Officer": target_co, "Branch": BRANCH,
+                                        "Amount Paid": global_group_savings,
+                                        "Transaction Type": "Group Meeting", "Note": "Group Level Inputs",
+                                        "Savings Amount": global_group_savings, "Withdrawal Amount": global_group_wd,
+                                        "Laps Reserved": 0,
+                                        "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
+                                        "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0, "Bank Withdrawal": 0,
+                                        "Asset Sales": 0, "App Fee": 0, "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
+                                        "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
+                                        "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                        "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0, "Laps Transferred": 0,
+                                        "Group Savings Deposit": global_group_savings, "Group Savings Withdrawal": global_group_wd
+                                    }
+                                    to_insert.append(g_data)
+                                
+                                if to_insert:
+                                    st.session_state['pending_collections'] = to_insert
+                                    st.session_state['collections_group'] = selected_group
+                                    st.session_state['collections_date'] = date_str
+                                    st.session_state['edit_collections_mode'] = False
+                                    st.rerun()
+                                else:
+                                    st.warning("No data entered to save.")
 
-        # ---------------------------------------------------------
-        # ERROR CORRECTION & REVERSAL REQUEST HUB (FOUR-EYES BR-ERR-001)
-        # ---------------------------------------------------------
-        st.divider()
-        st.markdown("### Error Correction & Reversal Request")
-        st.caption("Flag a wrong collection or repayment for Branch Manager reversal approval.")
-        with st.expander("Flag a Transaction for Reversal", expanded=False):
-            st.info("Select a transaction to flag for reversal. The Branch Manager or Admin must approve the correction.")
-            with SupabaseUnitOfWork() as uow_corr:
-                query = uow_corr.client.table("repayments").select("id, client_id, amount_paid, date, note, officer_id, clients(name)")
-                if scope.scope_level == "OFFICER":
-                    query = query.eq("officer_id", USER_ID)
-                elif scope.scope_level == "BRANCH" and BRANCH_ID:
-                    query = query.eq("branch_id", BRANCH_ID)
+        with col_tab2:
+            st.markdown("### 📜 Collection History & Audit")
+            st.caption("Inspect all daily repayments and savings deposits posted by Credit Officers.")
+            
+            c_h1, c_h2 = st.columns([1, 2])
+            hist_view_date = c_h1.date_input("Filter Date", view_date, key="col_hist_date")
+            hist_date_str = hist_view_date.strftime("%Y-%m-%d")
+            hist_search = c_h2.text_input("🔍 Search Client Name / Code / Note", placeholder="Type name, code, or ref...", key="col_hist_search").strip().lower()
+            
+            with SupabaseUnitOfWork() as uow_hist:
+                # 1. Query Repayments
+                q_reps = uow_hist.client.table("repayments").select(
+                    "id, client_id, amount_paid, transaction_type, date, created_at, note, officer_id, loan_id, "
+                    "clients(name, nickname, client_code), loans(loan_amount, active_credit, loan_products(name))"
+                )
+                # 2. Query Savings Deposits
+                q_sav = uow_hist.client.table("individual_savings").select(
+                    "id, client_id, deposit_amount, withdrawal_amount, posting_date, created_at, reference, remarks, officer_id, "
+                    "clients(name, nickname, client_code)"
+                )
                 
-                res_reps = query.order("created_at", desc=True).limit(50).execute()
+                # Scope check
+                if scope.scope_level == "OFFICER":
+                    q_reps = q_reps.eq("officer_id", USER_ID)
+                    q_sav = q_sav.eq("officer_id", USER_ID)
+                elif scope.scope_level == "BRANCH" and BRANCH_ID:
+                    q_reps = q_reps.eq("branch_id", BRANCH_ID)
+                    q_sav = q_sav.eq("branch_id", BRANCH_ID)
+                
+                res_reps = q_reps.gte("date", f"{hist_date_str}T00:00:00").lte("date", f"{hist_date_str}T23:59:59").order("created_at", desc=True).execute()
+                res_sav = q_sav.eq("posting_date", hist_date_str).order("created_at", desc=True).execute()
+                
+                reps_list = res_reps.data or []
+                sav_list = res_sav.data or []
+                
+                # Filter deposits (ignore pure withdrawals here)
+                sav_dep_list = [s for s in sav_list if float(s.get("deposit_amount") or 0) > 0]
+                
+                tot_reps_amt = sum(float(r.get("amount_paid") or 0) for r in reps_list)
+                tot_sav_amt = sum(float(s.get("deposit_amount") or 0) for s in sav_dep_list)
+                grand_total_cash = tot_reps_amt + tot_sav_amt
+                
+                # Summary KPIs
+                kpi1, kpi2, kpi3 = st.columns(3)
+                kpi1.metric("Total Repayments Collected", f"₦{tot_reps_amt:,.2f}", f"{len(reps_list)} Payments")
+                kpi2.metric("Total Savings Deposited", f"₦{tot_sav_amt:,.2f}", f"{len(sav_dep_list)} Deposits")
+                kpi3.metric("Grand Total Cash Collected", f"₦{grand_total_cash:,.2f}", "Total Physical Inflow")
+                
+                st.markdown("---")
+                
+                # Subtabs for Repayments vs Savings
+                h_tab1, h_tab2 = st.tabs([f"💳 Loan Repayments ({len(reps_list)})", f"💰 Savings Deposits ({len(sav_dep_list)})"])
+                
+                with h_tab1:
+                    if reps_list:
+                        reps_rows = []
+                        for r in reps_list:
+                            c_dict = r.get("clients") or {} if isinstance(r.get("clients"), dict) else {}
+                            c_name = c_dict.get("name") or str(r.get("client_id") or "Unknown")
+                            c_code = c_dict.get("client_code") or ""
+                            l_dict = r.get("loans") or {} if isinstance(r.get("loans"), dict) else {}
+                            p_dict = l_dict.get("loan_products") or {} if isinstance(l_dict.get("loan_products"), dict) else {}
+                            p_name = p_dict.get("name") or "Standard Loan"
+                            amt = float(r.get("amount_paid") or 0)
+                            time_str = str(r.get("created_at") or r.get("date") or "")[11:16]
+                            note_val = str(r.get("note") or "")
+                            
+                            # Filter search
+                            if hist_search:
+                                match = (hist_search in c_name.lower() or hist_search in c_code.lower() or hist_search in note_val.lower() or hist_search in str(r.get("id")).lower())
+                                if not match:
+                                    continue
+                                    
+                            reps_rows.append({
+                                "Time": time_str,
+                                "Client Name": c_name,
+                                "Client Code": c_code,
+                                "Product": p_name,
+                                "Amount Paid (₦)": f"₦{amt:,.2f}",
+                                "Note / Type": note_val or str(r.get("transaction_type") or "Loan"),
+                                "Ref ID": str(r.get("id", ""))[:8]
+                            })
+                        if reps_rows:
+                            st.dataframe(pd.DataFrame(reps_rows), use_container_width=True, hide_index=True)
+                        else:
+                            st.info("No loan repayments match your search filter.")
+                    else:
+                        st.info(f"No loan repayments recorded on {hist_date_str}.")
+
+                with h_tab2:
+                    if sav_dep_list:
+                        sav_rows = []
+                        for s in sav_dep_list:
+                            c_dict = s.get("clients") or {} if isinstance(s.get("clients"), dict) else {}
+                            c_name = c_dict.get("name") or str(s.get("client_id") or "Unknown")
+                            c_code = c_dict.get("client_code") or ""
+                            amt = float(s.get("deposit_amount") or 0)
+                            time_str = str(s.get("created_at") or s.get("posting_date") or "")[11:16]
+                            rem_val = str(s.get("remarks") or s.get("reference") or "")
+                            
+                            if hist_search:
+                                match = (hist_search in c_name.lower() or hist_search in c_code.lower() or hist_search in rem_val.lower() or hist_search in str(s.get("id")).lower())
+                                if not match:
+                                    continue
+                                    
+                            sav_rows.append({
+                                "Time": time_str,
+                                "Client Name": c_name,
+                                "Client Code": c_code,
+                                "Deposit Amount (₦)": f"₦{amt:,.2f}",
+                                "Remarks / Reference": rem_val or "Individual Deposit",
+                                "Ref ID": str(s.get("id", ""))[:8]
+                            })
+                        if sav_rows:
+                            st.dataframe(pd.DataFrame(sav_rows), use_container_width=True, hide_index=True)
+                        else:
+                            st.info("No savings deposits match your search filter.")
+                    else:
+                        st.info(f"No savings deposits recorded on {hist_date_str}.")
+
+        with col_tab3:
+            st.markdown("### 🔄 Error Correction & Reversal Hub")
+            st.caption("Flag an erroneous collection (loan repayment or savings deposit) for Branch Manager approval.")
+            
+            with SupabaseUnitOfWork() as uow_corr:
+                # 1. Fetch recent repayments
+                q_reps = uow_corr.client.table("repayments").select("id, client_id, amount_paid, date, note, officer_id, clients(name, client_code)")
+                # 2. Fetch recent savings deposits
+                q_sav = uow_corr.client.table("individual_savings").select("id, client_id, deposit_amount, posting_date, remarks, officer_id, clients(name, client_code)")
+                
+                if scope.scope_level == "OFFICER":
+                    q_reps = q_reps.eq("officer_id", USER_ID)
+                    q_sav = q_sav.eq("officer_id", USER_ID)
+                elif scope.scope_level == "BRANCH" and BRANCH_ID:
+                    q_reps = q_reps.eq("branch_id", BRANCH_ID)
+                    q_sav = q_sav.eq("branch_id", BRANCH_ID)
+                
+                res_reps = q_reps.order("created_at", desc=True).limit(40).execute()
+                res_sav = q_sav.gt("deposit_amount", 0).order("created_at", desc=True).limit(40).execute()
+                
                 recent_reps = res_reps.data or []
+                recent_sav = res_sav.data or []
                 
                 opts = {}
+                # Add Repayments
                 for r in recent_reps:
                     tx_id = str(r.get("id", ""))
                     c_name = (r.get("clients") or {}).get("name") if isinstance(r.get("clients"), dict) else (r.get("client_id") or "Unknown")
                     l_rep = float(r.get("amount_paid") or 0.0)
                     tx_date = str(r.get("date", ""))[:10]
-                    label = f"{tx_date} | {c_name} — Loan Repayment: ₦{l_rep:,.2f} | Ref: {tx_id[:8]}"
-                    opts[label] = tx_id
+                    label = f"💳 [Repayment] {tx_date} | {c_name} — ₦{l_rep:,.2f} | Ref: {tx_id[:8]}"
+                    opts[label] = ("Repayment", tx_id)
+                
+                # Add Savings Deposits
+                for s in recent_sav:
+                    tx_id = str(s.get("id", ""))
+                    c_name = (s.get("clients") or {}).get("name") if isinstance(s.get("clients"), dict) else (s.get("client_id") or "Unknown")
+                    s_dep = float(s.get("deposit_amount") or 0.0)
+                    tx_date = str(s.get("posting_date", ""))[:10]
+                    label = f"💰 [Savings Deposit] {tx_date} | {c_name} — ₦{s_dep:,.2f} | Ref: {tx_id[:8]}"
+                    opts[label] = ("Savings", tx_id)
                 
                 if opts:
-                    sel_tx_label = st.selectbox("Select Transaction to Flag", list(opts.keys()), key="col_rev_tx_select")
+                    sel_tx_label = st.selectbox("Select Transaction to Flag for Reversal", list(opts.keys()), key="col_rev_tx_select")
+                    rec_type, rec_id = opts[sel_tx_label]
+                    
                     req_reason = st.text_input("Reason for Reversal", placeholder="e.g., Wrong payment entered. Typed 50000 instead of 5000.", key="col_rev_reason")
                     if st.button("Submit Reversal Request to BM", type="primary", key="col_submit_rev_btn"):
                         if req_reason.strip():
@@ -4899,20 +5039,41 @@ elif page == "Collections":
                                 from services.correction_service import CorrectionService
                                 req_id = CorrectionService.request_correction(
                                     uow=uow_corr,
-                                    record_id=opts[sel_tx_label],
-                                    record_type="Repayment",
+                                    record_id=rec_id,
+                                    record_type=rec_type,
                                     reason=req_reason.strip(),
                                     requested_by=USER,
                                     branch_id=BRANCH_ID
                                 )
-                                st.success(f"Reversal request submitted to Branch Manager for approval! (Ref: #{req_id[:8]})")
+                                st.success(f"✅ Reversal request submitted to Branch Manager for approval! (Ref: #{req_id[:8]})")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Failed to submit correction request: {e}")
                         else:
                             st.warning("Please provide a valid reason for the reversal.")
                 else:
-                    st.info("No recent transactions available to flag.")
+                    st.info("No recent repayments or savings deposits available to flag.")
+                
+                # Display Submitted Requests History for this user
+                st.markdown("---")
+                st.markdown("#### 📋 Submitted Reversal Requests")
+                res_my_reqs = uow_corr.client.table("correction_requests").select("*").eq("requested_by", USER).order("created_at", desc=True).limit(10).execute()
+                my_reqs = res_my_reqs.data or []
+                if my_reqs:
+                    req_display = []
+                    for mr in my_reqs:
+                        st_badge = "🟡 Pending" if mr.get("status") == "Pending" else ("🟢 Approved" if mr.get("status") == "Approved" else "🔴 Rejected")
+                        req_display.append({
+                            "Date": str(mr.get("created_at", ""))[:16].replace("T", " "),
+                            "Type": mr.get("record_type"),
+                            "Record Ref": str(mr.get("record_id", ""))[:8],
+                            "Reason": mr.get("reason"),
+                            "Status": st_badge,
+                            "Approved By": mr.get("approved_by") or "—"
+                        })
+                    st.dataframe(pd.DataFrame(req_display), use_container_width=True, hide_index=True)
+                else:
+                    st.caption("You have not submitted any reversal requests yet.")
 
 elif page == "Withdrawal Operations":
     st.title("Withdrawal Operations")

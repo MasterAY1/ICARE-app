@@ -1,20 +1,37 @@
 import uuid
 from datetime import datetime
+from typing import Optional
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from services.repayment_service import RepaymentService
+from services.savings_service import SavingsService
 
 class CorrectionService:
+    @staticmethod
+    def _resolve_user_id(uow: SupabaseUnitOfWork, user_identifier: str) -> Optional[str]:
+        if not user_identifier:
+            return None
+        try:
+            uuid.UUID(str(user_identifier))
+            return str(user_identifier)
+        except ValueError:
+            pass
+        res = uow.client.table("app_users").select("id").eq("username", str(user_identifier)).execute()
+        if res.data:
+            return res.data[0]["id"]
+        return None
+
     @staticmethod
     def request_correction(uow: SupabaseUnitOfWork, record_id: str, record_type: str, reason: str, requested_by: str, branch_id: str = None) -> str:
         """
         Creates a pending correction request (BR-ERR-001).
         """
         req_id = str(uuid.uuid4())
+        user_uuid = CorrectionService._resolve_user_id(uow, requested_by)
         record = {
             "id": req_id,
             "record_id": record_id,
             "record_type": record_type,
-            "requested_by": requested_by,
+            "requested_by": user_uuid,
             "branch_id": branch_id,
             "reason": reason,
             "status": "Pending",
@@ -38,16 +55,21 @@ class CorrectionService:
         if req["status"] != "Pending":
             raise ValueError(f"Request {request_id} is already {req['status']}.")
 
-        if req["record_type"] == "Repayment":
+        rec_type = req.get("record_type")
+        if rec_type == "Repayment":
             # Delegate to RepaymentService to execute reversal
             RepaymentService.reverse_repayment(uow, req["record_id"], req["reason"], approved_by)
+        elif rec_type in ["Savings", "SavingsDeposit", "individual_savings", "group_savings"]:
+            # Delegate to SavingsService to execute reversal
+            SavingsService.reverse_savings(uow, req["record_id"], req["reason"], approved_by)
         else:
-            raise NotImplementedError(f"Correction for record_type '{req['record_type']}' not yet supported.")
+            raise NotImplementedError(f"Correction for record_type '{rec_type}' not yet supported.")
 
         # Mark as approved
+        approver_uuid = CorrectionService._resolve_user_id(uow, approved_by)
         update_data = {
             "status": "Approved",
-            "approved_by": approved_by,
+            "approved_by": approver_uuid,
             "approval_date": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat()
         }
@@ -55,10 +77,10 @@ class CorrectionService:
 
     @staticmethod
     def reject_correction(uow: SupabaseUnitOfWork, request_id: str, approved_by: str):
-        # Mark as rejected
+        approver_uuid = CorrectionService._resolve_user_id(uow, approved_by)
         update_data = {
             "status": "Rejected",
-            "approved_by": approved_by,
+            "approved_by": approver_uuid,
             "approval_date": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat()
         }
