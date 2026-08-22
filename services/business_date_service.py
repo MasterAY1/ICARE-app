@@ -53,6 +53,59 @@ class BusinessDateService:
         return False
 
     @staticmethod
+    def is_operational_open(uow: UnitOfWork, branch_name_or_id: str, target_date: date) -> tuple[bool, str]:
+        """
+        Unified check for operational activity on target_date:
+        1. Weekend Check (Saturday / Sunday)
+        2. Nigerian Public Holiday Check
+        3. Emergency Branch Closure (AM / Admin / BM)
+        4. Day Close Freeze (EOD Closed in master_cashbook)
+        Returns (is_open: bool, reason: str)
+        """
+        if not target_date:
+            return True, "Valid date"
+        
+        target_d = target_date.date() if hasattr(target_date, 'date') and not isinstance(target_date, date) else target_date
+        
+        # 1. Weekend Check
+        if target_d.weekday() >= 5:
+            day_name = "Saturday" if target_d.weekday() == 5 else "Sunday"
+            return False, f"{day_name} is a weekend (non-working day)"
+
+        # 2. Public Holiday Check
+        if target_d in ng_holidays:
+            holiday_name = ng_holidays.get(target_d)
+            return False, f"{target_d.isoformat()} is a public holiday ({holiday_name})"
+
+        # 3. Emergency Branch Closure Check
+        if branch_name_or_id:
+            try:
+                b_id = branch_name_or_id
+                if len(str(branch_name_or_id)) < 36 or not str(branch_name_or_id).count("-") == 4:
+                    res_b = uow.client.table("branches").select("branch_id").eq("name", branch_name_or_id).execute()
+                    if res_b.data:
+                        b_id = res_b.data[0]["branch_id"]
+                
+                target_str = target_d.isoformat()
+                q_cl = uow.client.table("branch_closures").select("*") \
+                    .lte("start_date", target_str).gte("end_date", target_str)
+                if b_id:
+                    q_cl = q_cl.or_(f"branch_id.is.null,branch_id.eq.{b_id}")
+                res_cl = q_cl.execute()
+                if res_cl.data:
+                    c_reason = res_cl.data[0].get("reason") or "Emergency closure"
+                    return False, f"Branch is closed due to emergency closure ({c_reason})"
+            except Exception:
+                pass
+
+        # 4. Day Close Freeze Check
+        if branch_name_or_id:
+            if BusinessDateService.is_date_closed(uow, branch_name_or_id, target_d):
+                return False, f"Business day {target_d.isoformat()} has already been closed by Branch Manager"
+
+        return True, "Operational business day is open"
+
+    @staticmethod
     def get_next_working_day(target_date: date, custom_closures: Optional[list] = None) -> date:
         """
         Advances target_date until a valid working day is reached.
@@ -67,26 +120,30 @@ class BusinessDateService:
     @staticmethod
     def get_business_date(uow: UnitOfWork, branch_name_or_id: str) -> date:
         """
-        Fetch active business date for the branch.
-        Falls back to system current date if no custom business date override is configured.
+        Fetch active operational business date for the branch.
+        If today is a weekend, holiday, or closed, advances to the next valid open working day.
         """
-        if not branch_name_or_id:
-            return datetime.now().date()
-            
-        try:
-            # Check branches table for active operational date
-            res = uow.client.table("branches").select("cashbook_defaults").eq("name", branch_name_or_id).execute()
-            if not res.data:
-                res = uow.client.table("branches").select("cashbook_defaults").eq("branch_id", branch_name_or_id).execute()
-                
-            if res.data:
-                defaults = res.data[0].get("cashbook_defaults") or {}
-                if isinstance(defaults, dict) and defaults.get("business_date"):
-                    return date.fromisoformat(defaults["business_date"])
-        except Exception:
-            pass
-            
-        return datetime.now().date()
+        today = datetime.now().date()
+        
+        if branch_name_or_id:
+            try:
+                res = uow.client.table("branches").select("branch_id, cashbook_defaults").eq("name", branch_name_or_id).execute()
+                if not res.data:
+                    res = uow.client.table("branches").select("branch_id, cashbook_defaults").eq("branch_id", branch_name_or_id).execute()
+                    
+                if res.data:
+                    defaults = res.data[0].get("cashbook_defaults") or {}
+                    if isinstance(defaults, dict) and defaults.get("business_date"):
+                        stored_date = date.fromisoformat(defaults["business_date"])
+                        # If stored date is valid and >= today, return it
+                        if stored_date >= today:
+                            return stored_date
+            except Exception:
+                pass
+
+        # If today is weekend or holiday, return next valid working day
+        next_open = BusinessDateService.get_next_working_day(today)
+        return next_open
 
     @staticmethod
     def set_business_date(uow: UnitOfWork, branch_name_or_id: str, new_date: date) -> bool:

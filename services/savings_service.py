@@ -16,11 +16,12 @@ class SavingsService:
             return
             
         p_dt = posting_date if posting_date else datetime.now()
-        # Check Business Date Freeze (BR-DATE-002)
+        # Check Business Date Freeze & Working Day (BR-DATE-002)
         from services.business_date_service import BusinessDateService
-        p_check_date = p_dt.date() if hasattr(p_dt, 'date') else p_dt
-        if BusinessDateService.is_date_closed(uow, branch, p_check_date):
-            raise ValueError(f"Cannot post savings. Business date {p_check_date} is already Closed for {branch} branch.")
+        p_check_date = p_dt.date() if hasattr(p_dt, 'date') and not isinstance(p_dt, date) else p_dt
+        is_open, reason = BusinessDateService.is_operational_open(uow, branch, p_check_date)
+        if not is_open:
+            raise ValueError(f"Operational Restriction: Cannot post savings. {reason}.")
 
         entity = IndividualSavings(
             client_id=client_id,
@@ -73,11 +74,12 @@ class SavingsService:
             return
             
         p_dt = posting_date if posting_date else datetime.now()
-        # Check Business Date Freeze (BR-DATE-002)
+        # Check Business Date Freeze & Working Day (BR-DATE-002)
         from services.business_date_service import BusinessDateService
-        p_check_date = p_dt.date() if hasattr(p_dt, 'date') else p_dt
-        if BusinessDateService.is_date_closed(uow, branch, p_check_date):
-            raise ValueError(f"Cannot post group savings. Business date {p_check_date} is already Closed for {branch} branch.")
+        p_check_date = p_dt.date() if hasattr(p_dt, 'date') and not isinstance(p_dt, date) else p_dt
+        is_open, reason = BusinessDateService.is_operational_open(uow, branch, p_check_date)
+        if not is_open:
+            raise ValueError(f"Operational Restriction: Cannot post group savings. {reason}.")
 
         entity = GroupSavings(
             group_name=group_name,

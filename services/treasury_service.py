@@ -46,10 +46,11 @@ class TreasuryService:
         today_date = date.today()
         p_date_str = today_date.isoformat()
 
-        # Check Business Date Freeze (BR-DATE-002)
+        # Check Business Date Freeze & Working Day (BR-DATE-002)
         from services.business_date_service import BusinessDateService
-        if BusinessDateService.is_date_closed(uow, branch_id, today_date):
-            raise ValueError(f"Cannot post treasury transaction. Business date {today_date} is already Closed for {branch} branch.")
+        is_open, reason = BusinessDateService.is_operational_open(uow, branch_id, today_date)
+        if not is_open:
+            raise ValueError(f"Operational Restriction: Cannot post treasury transaction. {reason}.")
 
         # Resolve event type
         mapping = {

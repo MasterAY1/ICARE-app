@@ -37,3 +37,16 @@
   - The branch's operational business date is advanced to the next valid working day.
 - **Status:** CONFIRMED
 - **Implementation Location:** `services/business_date_service.py`
+
+---
+
+## BR-DATE-004: Emergency Branch Closure & Non-Working Day Operational Freeze
+- **Rule ID:** BR-DATE-004
+- **Name:** Non-Working Day & Emergency Closure Freeze
+- **Description:** Saturdays, Sundays, Nigerian public holidays, and custom/emergency closures declared by Area Managers, Admins, or Branch Managers automatically suspend all field collections, savings deposits/withdrawals, loan disbursements, and cashbook modifications.
+- **Required Behavior:**
+  - `BusinessDateService.is_operational_open()` validates weekend status, public holidays, active `branch_closures`, and Day Close status.
+  - Service layers reject any operational posting on non-working days or during emergency closures.
+  - UI displays informative suspension notices and disables form submission buttons.
+- **Status:** CONFIRMED
+- **Implementation Location:** `services/business_date_service.py`, `services/repayment_service.py`, `services/savings_service.py`, `services/treasury_service.py`, `services/loan_service.py`, `app.py`

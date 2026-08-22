@@ -4044,10 +4044,10 @@ elif page == "Collections":
     date_str = view_date.strftime("%Y-%m-%d")
 
     with SupabaseUnitOfWork() as uow_chk:
-        is_day_closed = BusinessDateService.is_date_closed(uow_chk, BRANCH_ID, view_date)
+        is_day_open, open_reason = BusinessDateService.is_operational_open(uow_chk, BRANCH_ID, view_date)
 
-    if is_day_closed and not use_late_entry:
-        st.warning(f"🔒 **Business Date Closed**: Operations for **{view_date.strftime('%d %B %Y')}** have already been closed and finalized by the Branch Manager. All new collection entries for this date are frozen in Read-Only mode. (To record historical entries, toggle 'Late Entry / Backdated Entry' above).")
+    if not is_day_open and not use_late_entry:
+        st.warning(f"🏖️ **Operational Activity Suspended ({open_reason})**: Collections for **{view_date.strftime('%d %B %Y')}** are locked in Read-Only mode. (To record historical entries, toggle 'Late Entry / Backdated Entry' above).")
     
     all_loans = load_loans()
     repayments = load_repayments()
@@ -4666,8 +4666,8 @@ elif page == "Collections":
                         c1, c2 = st.columns(2)
                         c1.button("Edit / Go Back", on_click=_go_back_to_edit)
                     
-                        if is_day_closed and not use_late_entry:
-                            c2.error("🔒 Day is closed. Entries are locked.")
+                        if not is_day_open and not use_late_entry:
+                            c2.error(f"🔒 Operational activity suspended ({open_reason}). Entries are locked.")
                         elif c2.button("Confirm & Save Collections", type="primary", use_container_width=True):
                             try:
                                 save_repayments(to_insert)
@@ -4787,8 +4787,8 @@ elif page == "Collections":
                                         }
                         
                             st.markdown("---")
-                            if is_day_closed and not use_late_entry:
-                                st.warning("🔒 Cannot submit new collections for a closed business date. Switch to the active business date or enable Late Entry.")
+                            if not is_day_open and not use_late_entry:
+                                st.warning(f"🏖️ Cannot submit new collections today ({open_reason}). Switch to the active business date or enable Late Entry.")
                             else:
                                 submit_btn = st.form_submit_button("Calculate Totals & Review Members", type="primary", use_container_width=True)
                                 if submit_btn:
@@ -5146,6 +5146,11 @@ elif page == "Withdrawal Operations":
         st.stop()
 
     uow = SupabaseUnitOfWork()
+    from services.business_date_service import BusinessDateService
+    today_dt = datetime.now().date()
+    is_wth_open, wth_open_reason = BusinessDateService.is_operational_open(uow, BRANCH_ID, today_dt)
+    if not is_wth_open:
+        st.warning(f"🏖️ **Operational Activity Suspended ({wth_open_reason})**: Savings withdrawals and LAPS payouts are frozen today.")
 
     # ── Savings Type Selector ──
     wth_tab1, wth_tab2, wth_tab3, wth_tab4 = st.tabs([
@@ -7062,10 +7067,10 @@ elif page == "CO Cashbook":
         date_str = view_date.strftime("%Y-%m-%d")
 
     with SupabaseUnitOfWork() as uow_cb_chk:
-        is_co_cb_closed = BusinessDateService.is_date_closed(uow_cb_chk, BRANCH_ID, view_date)
+        is_co_cb_open, co_open_reason = BusinessDateService.is_operational_open(uow_cb_chk, BRANCH_ID, view_date)
 
-    if is_co_cb_closed:
-        st.warning(f"🔒 **Business Date Closed**: Operations for **{view_date.strftime('%d %B %Y')}** have already been finalized and closed by the Branch Manager. Entries are in **Read-Only** mode.")
+    if not is_co_cb_open:
+        st.warning(f"🏖️ **Operational Activity Suspended ({co_open_reason})**: Operations for **{view_date.strftime('%d %B %Y')}** are in **Read-Only** mode.")
     
     # Officer Selection based on RBAC
     target_co = USER
@@ -7197,8 +7202,8 @@ elif page == "CO Cashbook":
         submit_eod = st.form_submit_button("💾 Save End of Day Outflows & Fees", type="primary", use_container_width=True)
         
         if submit_eod:
-            if is_co_cb_closed:
-                st.error("🔒 Cannot update End of Day inputs on a closed business date.")
+            if not is_co_cb_open:
+                st.error(f"🔒 Cannot update End of Day inputs today ({co_open_reason}).")
             else:
                 from domain.entities.event_store import DomainEvent
                 from services.posting_engine import FinancialPostingEngine
@@ -7516,10 +7521,12 @@ elif page == "Master Cashbook":
         date_str = view_date.strftime("%Y-%m-%d")
 
         with SupabaseUnitOfWork() as uow_mc_chk:
-            is_mc_closed = BusinessDateService.is_date_closed(uow_mc_chk, BRANCH_ID, view_date)
+            is_mc_open, mc_open_reason = BusinessDateService.is_operational_open(uow_mc_chk, BRANCH_ID, view_date)
 
-        if is_mc_closed:
+        if not is_mc_open and "closed" in mc_open_reason.lower():
             st.success(f"🔒 **Master Cashbook Closed & Verified**: Operations for **{view_date.strftime('%d %B %Y')}** have been finalized. Closing balance has been rolled forward to next working day.")
+        elif not is_mc_open:
+            st.warning(f"🏖️ **Operational Activity Suspended ({mc_open_reason})**: Operations for **{view_date.strftime('%d %B %Y')}** are in **Read-Only** mode.")
         
         # ---- AUTO-SUM: Load from cashbook projection table instead of legacy summing ----
         auto_rep_60d = auto_rep_120d = auto_rep_12w = auto_rep_24w = auto_rep_mth = auto_savings = auto_laps_res = 0.0
@@ -8104,10 +8111,11 @@ elif page == "Master Cashbook":
             k4.error(f"### Closing: ₦{closing_bal:,.0f}")
 
         st.markdown("---")
-        st.markdown("---")
         st.markdown("### 🔒 Branch Manager End of Day (EOD) Controls")
-        if is_mc_closed:
+        if not is_mc_open and "closed" in mc_open_reason.lower():
             st.info(f"✅ **EOD Day Close Already Executed for {date_str}**. Branch operational date has advanced to next working day.")
+        elif not is_mc_open:
+            st.warning(f"🏖️ **Cannot execute Day Close ({mc_open_reason})**.")
         else:
             eod_c1, eod_c2 = st.columns([3, 1])
             with eod_c1:

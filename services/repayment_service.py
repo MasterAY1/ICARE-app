@@ -8,11 +8,13 @@ from services.posting_engine import FinancialPostingEngine
 class RepaymentService:
     @staticmethod
     def post_repayment(uow: SupabaseUnitOfWork, repayment: Repayment) -> Repayment:
-        # Check Business Date Freeze (BR-DATE-002)
+        # Check Business Date Freeze & Working Day (BR-DATE-002)
         from services.business_date_service import BusinessDateService
         rep_date = getattr(repayment, 'payment_date', None) or getattr(repayment, 'date', None)
-        if rep_date and BusinessDateService.is_date_closed(uow, repayment.branch, rep_date):
-            raise ValueError(f"Cannot post repayment. Business date {rep_date} is already Closed for {repayment.branch} branch.")
+        if rep_date:
+            is_open, reason = BusinessDateService.is_operational_open(uow, repayment.branch, rep_date)
+            if not is_open:
+                raise ValueError(f"Operational Restriction: Cannot post repayment. {reason}.")
 
         operations = []
 
