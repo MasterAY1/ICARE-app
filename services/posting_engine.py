@@ -10,6 +10,12 @@ class FinancialPostingEngine:
     def _resolve_branch_id(uow: UnitOfWork, branch_name: str) -> str:
         if not branch_name:
             raise ValueError("Branch name is required but was not provided.")
+        import uuid
+        try:
+            uuid.UUID(str(branch_name))
+            return str(branch_name)
+        except ValueError:
+            pass
         try:
             res = uow.client.table("branches").select("branch_id").eq("name", branch_name).execute()
             if res.data:

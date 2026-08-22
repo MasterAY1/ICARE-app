@@ -7336,43 +7336,53 @@ elif page == "CO Cashbook":
     # ERROR CORRECTION & REVERSAL REQUEST HUB (FOUR-EYES BR-ERR-001)
     # ========================================================
     st.markdown("---")
-    st.markdown("### 🚩 Transaction Error Correction & Reversal Hub")
-    st.caption("Flag an erroneous collection, payment, or EOD input for Branch Manager approval (Rule BR-ERR-001).")
+    st.markdown("### 🚩 Cashbook Error Correction & Reversal Hub")
+    st.caption("Flag an erroneous EOD Fee, Office Expense, or Bank Deposit for Branch Manager approval (Rule BR-ERR-001). (Note: For Client Loan Repayments & Savings Deposits, use the Collections page).")
     
-    with st.expander("Flag a Transaction / Input for BM Reversal", expanded=False):
-        st.info("Select a transaction from today to flag for reversal. The Branch Manager or Admin must review and approve the reversal before it takes effect on the ledger.")
+    with st.expander("Flag an EOD Fee / Expense / Deposit for Reversal", expanded=False):
+        st.info("Select an EOD transaction from recent days to flag for reversal. The Branch Manager or Admin must review and approve the reversal before it takes effect on the ledger.")
         try:
             with SupabaseUnitOfWork() as uow_corr:
-                query = uow_corr.client.table("repayments").select("id, client_id, amount_paid, date, note, officer_id, clients(name)")
-                if scope.scope_level == "OFFICER":
-                    query = query.eq("officer_id", USER_ID)
-                elif scope.scope_level == "BRANCH" and BRANCH_ID:
-                    query = query.eq("branch_id", BRANCH_ID)
-                
-                res_reps = query.order("created_at", desc=True).limit(50).execute()
-                recent_reps = res_reps.data or []
+                # Query recent EOD events for this officer/branch
+                q_events = uow_corr.client.table("event_store").select("*")                     .in_("event_type", ["FeeCharged", "ExpenseRecorded", "BankDeposited", "BankWithdrawn"])                     .order("created_at", desc=True).limit(30)
+                res_events = q_events.execute()
+                raw_events = res_events.data or []
                 
                 opts = {}
-                for r in recent_reps:
-                    tx_id = str(r.get("id", ""))
-                    c_name = (r.get("clients") or {}).get("name") if isinstance(r.get("clients"), dict) else (r.get("client_id") or "Unknown")
-                    l_rep = float(r.get("amount_paid") or 0.0)
-                    tx_date = str(r.get("date", ""))[:10]
-                    label = f"{tx_date} | {c_name} — Amount: ₦{l_rep:,.2f} | Ref: {tx_id[:8]}"
-                    opts[label] = tx_id
+                for ev in raw_events:
+                    p = ev.get("payload") or {}
+                    ev_off = str(p.get("officer") or p.get("officer_id") or "")
+                    ev_br = str(p.get("branch") or p.get("branch_id") or "")
+                    
+                    # Check officer scope
+                    if scope.scope_level == "OFFICER" and ev_off not in [str(USER), str(USER_ID)]:
+                        continue
+                    if scope.scope_level == "BRANCH" and BRANCH and ev_br not in [str(BRANCH), str(BRANCH_ID)]:
+                        continue
+                        
+                    ev_type = ev.get("event_type")
+                    amt = float(p.get("amount") or 0.0)
+                    dt = str(p.get("date") or ev.get("created_at") or "")[:10]
+                    narr = p.get("narration") or p.get("remarks") or ev_type
+                    ev_id = str(ev.get("event_id") or "")
+                    
+                    badge = "🏷️ [Fee]" if ev_type == "FeeCharged" else ("🧾 [Expense]" if ev_type == "ExpenseRecorded" else "🏦 [Bank Transfer]")
+                    label = f"{badge} {dt} | ₦{amt:,.2f} — {narr[:40]} | Ref: {ev_id[:8]}"
+                    opts[label] = ("Fee" if ev_type == "FeeCharged" else ("Expense" if ev_type == "ExpenseRecorded" else "Treasury"), ev_id)
                 
                 if opts:
-                    sel_tx_label = st.selectbox("Select Transaction to Flag", list(opts.keys()), key="co_cb_rev_tx_select")
-                    req_reason = st.text_input("Reason for Reversal", placeholder="e.g., Wrong amount entered. Typed 50000 instead of 5000.", key="co_cb_rev_reason")
+                    sel_tx_label = st.selectbox("Select EOD Transaction to Flag", list(opts.keys()), key="co_cb_rev_tx_select")
+                    rec_type, rec_id = opts[sel_tx_label]
+                    req_reason = st.text_input("Reason for Reversal", placeholder="e.g., Typo in office expense. Typed 50000 instead of 5000.", key="co_cb_rev_reason")
                     if st.button("Submit Reversal Request to BM", type="primary", key="co_cb_submit_rev_btn"):
                         if req_reason.strip():
                             from services.correction_service import CorrectionService
                             req_id = CorrectionService.request_correction(
                                 uow=uow_corr,
-                                record_id=opts[sel_tx_label],
-                                record_type="Repayment",
+                                record_id=rec_id,
+                                record_type=rec_type,
                                 reason=req_reason.strip(),
-                                requested_by=USER,
+                                requested_by=USER_ID if USER_ID else USER,
                                 branch_id=BRANCH_ID
                             )
                             st.success(f"✅ Reversal request submitted to Branch Manager! (Ref: #{req_id[:8]})")
@@ -7380,7 +7390,37 @@ elif page == "CO Cashbook":
                         else:
                             st.warning("Please provide a valid reason for the reversal.")
                 else:
-                    st.info("No recent transactions available to flag.")
+                    st.info("No recent EOD fees, expenses, or bank deposits available to flag.")
+                
+                # Display Submitted Requests History for this user
+                st.markdown("---")
+                st.markdown("#### 📋 Submitted Reversal Requests")
+                try:
+                    req_query = uow_corr.client.table("correction_requests").select("*")
+                    if USER_ID:
+                        req_query = req_query.eq("requested_by", USER_ID)
+                    elif BRANCH_ID:
+                        req_query = req_query.eq("branch_id", BRANCH_ID)
+                    res_my_reqs = req_query.order("created_at", desc=True).limit(10).execute()
+                    my_reqs = res_my_reqs.data or []
+                except Exception:
+                    my_reqs = []
+                
+                if my_reqs:
+                    req_display = []
+                    for mr in my_reqs:
+                        st_badge = "🟡 Pending" if mr.get("status") == "Pending" else ("🟢 Approved" if mr.get("status") == "Approved" else "🔴 Rejected")
+                        req_display.append({
+                            "Date": str(mr.get("created_at", ""))[:16].replace("T", " "),
+                            "Type": mr.get("record_type"),
+                            "Record Ref": str(mr.get("record_id", ""))[:8],
+                            "Reason": mr.get("reason"),
+                            "Status": st_badge,
+                            "Approved By": mr.get("approved_by") or "—"
+                        })
+                    st.dataframe(pd.DataFrame(req_display), use_container_width=True, hide_index=True)
+                else:
+                    st.caption("You have not submitted any reversal requests yet.")
         except Exception as ex_corr:
             st.warning(f"Could not load correction hub: {ex_corr}")
 
@@ -7588,29 +7628,20 @@ elif page == "Master Cashbook":
             
             salaries = st.number_input("Staff Salaries", min_value=0.0, step=1000.0, value=0.0)
             
-            st.markdown("#### ⚖️ Manual Adjustments")
-            st.info("Use these fields ONLY to correct manual mistakes made on previous days. Do not use for normal transactions.")
-            adj1, adj2 = st.columns(2)
-            adj_inflow = adj1.number_input("Adjustment Inflow (+) (₦)", min_value=0.0, step=1000.0, value=0.0)
-            adj_outflow = adj2.number_input("Adjustment Outflow (-) (₦)", min_value=0.0, step=1000.0, value=0.0)
-            adj_reason = st.text_input("Reason for Adjustment", placeholder="E.g., Correcting Staff Salary typo from yesterday")
-            
             # ---- CALCULATE TOTALS ----
             total_inflows = (
                 auto_opening + auto_savings + auto_rep_60d + auto_rep_120d + auto_rep_12w + auto_rep_24w + auto_rep_mth +
                 auto_laps_res + funds_ho + funds_branch + funds_area +
                 auto_asset_cr_sales + auto_cash_carry +
                 auto_daily_11 + auto_daily_20 + auto_weekly_11 + auto_weekly_20 + auto_monthly_markup +
-                auto_contingency + auto_credit_form_dmg + auto_bonus + auto_app_fee + auto_passbook + auto_bank_wd +
-                adj_inflow
+                auto_contingency + auto_credit_form_dmg + auto_bonus + auto_app_fee + auto_passbook + auto_bank_wd
             )
             
             total_outflows = (
                 auto_prod_wd +
                 auto_fund_asset + auto_fund_finance +
                 xfer_branch + xfer_ho + xfer_area +
-                salaries + auto_expenses + auto_laps_ret + auto_bank_dep +
-                adj_outflow
+                salaries + auto_expenses + auto_laps_ret + auto_bank_dep
             )
             
             closing_balance = total_inflows - total_outflows
@@ -7673,9 +7704,9 @@ elif page == "Master Cashbook":
                     "total_inflows": total_inflows,
                     "total_outflows": total_outflows,
                     "closing_balance": closing_balance,
-                    "adjustment_in": adj_inflow,
-                    "adjustment_out": adj_outflow,
-                    "adjustment_reason": adj_reason
+                    "adjustment_in": 0.0,
+                    "adjustment_out": 0.0,
+                    "adjustment_reason": None
                 }
                 
                 try:
@@ -7699,12 +7730,6 @@ elif page == "Master Cashbook":
                         if salaries > 0:
                             TreasuryService.post_treasury_transaction(uow, 'SALARY', salaries, BRANCH, USER, remarks=f"Salary Payment: {salaries}")
                             posted_any = True
-                        if adj_inflow > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_IN', adj_inflow, BRANCH, USER, remarks=f"Inflow Adjustment: {adj_reason or 'Manual Adjustment'}")
-                            posted_any = True
-                        if adj_outflow > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'OFFICE_EXPENSE', adj_outflow, BRANCH, USER, remarks=f"Outflow Adjustment: {adj_reason or 'Manual Adjustment'}")
-                            posted_any = True
                             
                         uow.cashbook.rebuild_projection(branch_id, view_date)
                         
@@ -7714,6 +7739,94 @@ elif page == "Master Cashbook":
                             st.success("Cashbook projection updated and verified successfully!")
                 except Exception as e:
                     st.error(f"Failed to save and post cashbook manual entries: {e}")
+
+        # ========================================================
+        # BM ERROR CORRECTION & REVERSAL HUB (FOUR-EYES BR-ERR-001)
+        # ========================================================
+        st.markdown("---")
+        st.markdown("### 🚩 Branch Error Correction & Reversals Hub")
+        st.caption("Review pending reversal requests from Credit Officers and manage branch-level treasury reversals.")
+
+        bm_rev_col1, bm_rev_col2 = st.columns(2)
+
+        with bm_rev_col1:
+            st.markdown("#### 🚨 Pending Branch Reversal Requests")
+            with SupabaseUnitOfWork() as uow_bm_corr:
+                q_pending = uow_bm_corr.client.table("correction_requests").select("*, app_users!correction_requests_requested_by_fkey(username, full_name)")                     .eq("status", "Pending")
+                if BRANCH_ID:
+                    q_pending = q_pending.eq("branch_id", BRANCH_ID)
+                res_pending = q_pending.order("created_at", desc=False).execute()
+                pending_reqs = res_pending.data or []
+
+                if pending_reqs:
+                    for req in pending_reqs:
+                        r_id = req["id"]
+                        r_type = req.get("record_type")
+                        r_reason = req.get("reason")
+                        req_user = (req.get("app_users") or {}).get("username") if isinstance(req.get("app_users"), dict) else "Officer"
+                        r_date = str(req.get("created_at", ""))[:16].replace("T", " ")
+                        
+                        st.warning(f"**{r_type} Reversal** | By: {req_user} | Ref: {req['record_id'][:8]} | Date: {r_date}\n*Reason:* {r_reason}")
+                        btn_c1, btn_c2 = st.columns(2)
+                        if btn_c1.button("✅ Approve Reversal", key=f"mc_app_{r_id}", type="primary", use_container_width=True):
+                            try:
+                                from services.correction_service import CorrectionService
+                                CorrectionService.approve_correction(uow_bm_corr, r_id, approved_by=USER_ID if USER_ID else USER)
+                                st.success("Reversal approved and executed atomically!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Approval failed: {e}")
+                        if btn_c2.button("❌ Reject", key=f"mc_rej_{r_id}", use_container_width=True):
+                            try:
+                                from services.correction_service import CorrectionService
+                                CorrectionService.reject_correction(uow_bm_corr, r_id, approved_by=USER_ID if USER_ID else USER)
+                                st.info("Reversal rejected.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Rejection failed: {e}")
+                else:
+                    st.success("✅ No pending reversal requests for this branch.")
+
+        with bm_rev_col2:
+            st.markdown("#### 🏛️ Flag Branch Treasury Entry for Reversal")
+            with SupabaseUnitOfWork() as uow_tx_list:
+                q_tx = uow_tx_list.client.table("treasury_transactions").select("*")                     .order("created_at", desc=True).limit(25)
+                if BRANCH_ID:
+                    q_tx = q_tx.eq("branch_id", BRANCH_ID)
+                res_tx = q_tx.execute()
+                tx_list = res_tx.data or []
+
+                tx_opts = {}
+                for t in tx_list:
+                    t_id = str(t.get("id", ""))
+                    t_type = t.get("transaction_type")
+                    t_amt = float(t.get("amount") or 0.0)
+                    t_dt = str(t.get("posting_date") or t.get("created_at") or "")[:10]
+                    t_rem = t.get("remarks") or ""
+                    
+                    label = f"[{t_type}] {t_dt} | ₦{t_amt:,.2f} — {t_rem[:25]} | Ref: {t_id[:8]}"
+                    tx_opts[label] = t_id
+
+                if tx_opts:
+                    sel_bm_tx = st.selectbox("Select Treasury Entry to Flag", list(tx_opts.keys()), key="bm_rev_tx_select")
+                    bm_rev_reason = st.text_input("Reason for Reversal", placeholder="e.g., Wrong salary amount entered.", key="bm_rev_reason")
+                    if st.button("Submit Treasury Reversal Request", type="primary", key="bm_submit_tx_rev_btn"):
+                        if bm_rev_reason.strip():
+                            from services.correction_service import CorrectionService
+                            req_id = CorrectionService.request_correction(
+                                uow=uow_tx_list,
+                                record_id=tx_opts[sel_bm_tx],
+                                record_type="Treasury",
+                                reason=bm_rev_reason.strip(),
+                                requested_by=USER_ID if USER_ID else USER,
+                                branch_id=BRANCH_ID
+                            )
+                            st.success(f"✅ Treasury reversal request submitted! (Ref: #{req_id[:8]})")
+                            st.rerun()
+                        else:
+                            st.warning("Please provide a reason.")
+                else:
+                    st.info("No recent branch treasury transactions found.")
     
     with mc_tab2:
         view_date = st.date_input("Select Date", datetime.now().date(), key="wa_mc_date")

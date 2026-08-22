@@ -9,6 +9,12 @@ class TreasuryService:
     def _resolve_branch_id(uow: SupabaseUnitOfWork, branch_name: str) -> str:
         if not branch_name:
             raise ValueError("Branch name is required but was not provided.")
+        import uuid
+        try:
+            uuid.UUID(str(branch_name))
+            return str(branch_name)
+        except ValueError:
+            pass
         try:
             res = uow.client.table("branches").select("branch_id").eq("name", branch_name).execute()
             if res.data:
@@ -133,3 +139,156 @@ class TreasuryService:
             print(f"[SAVINGS TRACE] Deferred cashbook rebuild failed: {ex}")
 
         return record_id
+
+    @classmethod
+    def reverse_treasury_transaction(cls, uow: SupabaseUnitOfWork, original_tx_id: str, reason: str, reversed_by: str) -> str:
+        """
+        Executes a compensating reversing entry for an erroneous treasury/manual transaction (BR-ERR-002).
+        """
+        res = uow.client.table("treasury_transactions").select("*").eq("id", original_tx_id).execute()
+        if not res.data:
+            # Also check event_store for direct events if not in treasury_transactions
+            res_ev = uow.client.table("event_store").select("*").eq("event_id", original_tx_id).execute()
+            if not res_ev.data:
+                res_ev = uow.client.table("event_store").select("*").eq("aggregate_id", original_tx_id).execute()
+            if not res_ev.data:
+                raise ValueError(f"Transaction {original_tx_id} not found in treasury_transactions or event_store.")
+            
+            orig_ev = res_ev.data[0]
+            orig_payload = orig_ev.get("payload") or {}
+            orig_ev_type = orig_ev.get("event_type")
+            amount = float(orig_payload.get("amount") or 0.0)
+            branch_val = orig_payload.get("branch") or orig_payload.get("branch_id")
+            officer_val = orig_payload.get("officer") or orig_payload.get("officer_id")
+            
+            reversal_ev_map = {
+                "FeeCharged": "FeeReversed",
+                "ExpenseRecorded": "ExpenseReversed",
+                "SalaryPaid": "SalaryReversed",
+                "BankDeposited": "BankWithdrawn",
+                "BankWithdrawn": "BankDeposited",
+                "CashTransferred_HO_In": "CashTransferred_HO_Out",
+                "CashTransferred_HO_Out": "CashTransferred_HO_In"
+            }
+            rev_event_type = reversal_ev_map.get(orig_ev_type, "ExpenseReversed")
+            
+            new_id = str(uuid.uuid4())
+            rev_event = DomainEvent(
+                event_id=str(uuid.uuid4()),
+                aggregate_id=new_id,
+                aggregate_type="Treasury",
+                event_type=rev_event_type,
+                payload={
+                    "branch": branch_val,
+                    "officer": officer_val,
+                    "amount": amount,
+                    "reference": new_id,
+                    "narration": f"REVERSAL of {orig_ev_type} ({original_tx_id}). Reason: {reason} (by {reversed_by})"
+                }
+            )
+            operations = [{
+                "type": "insert",
+                "table": "event_store",
+                "record": {
+                    "event_id": rev_event.event_id,
+                    "aggregate_id": rev_event.aggregate_id,
+                    "aggregate_type": rev_event.aggregate_type,
+                    "event_type": rev_event.event_type,
+                    "version": rev_event.version,
+                    "payload": rev_event.payload,
+                    "status": "Completed"
+                }
+            }]
+            tx_id, post_op = FinancialPostingEngine.post_event(uow, rev_event, defer_commit=True)
+            operations.append(post_op)
+            uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
+            
+            try:
+                b_id = cls._resolve_branch_id(uow, str(branch_val)) if not str(branch_val).startswith("0000") and len(str(branch_val)) < 36 else branch_val
+                uow.cashbook.rebuild_projection(uow, b_id, date.today())
+            except Exception:
+                pass
+            return new_id
+
+        orig = res.data[0]
+        orig_type = orig.get("transaction_type")
+        amount = float(orig.get("amount") or 0.0)
+        branch_id = orig.get("branch_id")
+        officer_id = orig.get("officer_id")
+
+        reversal_map = {
+            "HO_TRANSFER_IN": ("HO_TRANSFER_OUT", "CashTransferred_HO_Out"),
+            "HO_TRANSFER_OUT": ("HO_TRANSFER_IN", "CashTransferred_HO_In"),
+            "INTER_BRANCH_IN": ("INTER_BRANCH_OUT", "CashTransferred_HO_Out"),
+            "INTER_BRANCH_OUT": ("INTER_BRANCH_IN", "CashTransferred_HO_In"),
+            "BANK_DEPOSIT": ("BANK_WITHDRAWAL", "BankWithdrawn"),
+            "BANK_WITHDRAWAL": ("BANK_DEPOSIT", "BankDeposited"),
+            "OFFICE_EXPENSE": ("OFFICE_EXPENSE", "ExpenseReversed"),
+            "SALARY": ("SALARY", "SalaryReversed"),
+            "FLOAT": ("FLOAT", "ExpenseReversed"),
+            "VAULT_ADJUSTMENT": ("VAULT_ADJUSTMENT", "ExpenseReversed")
+        }
+        
+        comp_tx_type, rev_event_type = reversal_map.get(orig_type, ("OFFICE_EXPENSE", "ExpenseReversed"))
+        new_id = str(uuid.uuid4())
+        today_date = date.today()
+        p_date_str = today_date.isoformat()
+
+        operations = []
+
+        operations.append({
+            "type": "insert",
+            "table": "treasury_transactions",
+            "record": {
+                "id": new_id,
+                "posting_date": p_date_str,
+                "branch_id": branch_id,
+                "officer_id": officer_id,
+                "transaction_type": comp_tx_type,
+                "amount": amount,
+                "reference": f"REV-{original_tx_id[:8]}",
+                "remarks": f"REVERSAL of {orig_type} #{original_tx_id[:8]}. Reason: {reason} (by {reversed_by})"
+            }
+        })
+
+        rev_event = DomainEvent(
+            event_id=str(uuid.uuid4()),
+            aggregate_id=new_id,
+            aggregate_type="Treasury",
+            event_type=rev_event_type,
+            payload={
+                "branch": branch_id,
+                "officer": officer_id,
+                "amount": amount,
+                "reference": new_id,
+                "narration": f"REVERSAL of Treasury {orig_type} ({original_tx_id}). Reason: {reason}",
+                "transaction_type": comp_tx_type,
+                "classification": rev_event_type
+            }
+        )
+
+        operations.append({
+            "type": "insert",
+            "table": "event_store",
+            "record": {
+                "event_id": rev_event.event_id,
+                "aggregate_id": rev_event.aggregate_id,
+                "aggregate_type": rev_event.aggregate_type,
+                "event_type": rev_event.event_type,
+                "version": rev_event.version,
+                "payload": rev_event.payload,
+                "status": "Completed"
+            }
+        })
+
+        tx_id, post_op = FinancialPostingEngine.post_event(uow, rev_event, defer_commit=True)
+        operations.append(post_op)
+
+        uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
+
+        try:
+            uow.cashbook.rebuild_projection(uow, branch_id, today_date)
+        except Exception:
+            pass
+
+        return new_id

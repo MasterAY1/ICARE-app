@@ -4,6 +4,7 @@ from typing import Optional
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from services.repayment_service import RepaymentService
 from services.savings_service import SavingsService
+from services.treasury_service import TreasuryService
 
 class CorrectionService:
     @staticmethod
@@ -56,12 +57,15 @@ class CorrectionService:
             raise ValueError(f"Request {request_id} is already {req['status']}.")
 
         rec_type = req.get("record_type")
-        if rec_type == "Repayment":
+        if rec_type in ["Repayment", "Loan"]:
             # Delegate to RepaymentService to execute reversal
             RepaymentService.reverse_repayment(uow, req["record_id"], req["reason"], approved_by)
         elif rec_type in ["Savings", "SavingsDeposit", "individual_savings", "group_savings"]:
             # Delegate to SavingsService to execute reversal
             SavingsService.reverse_savings(uow, req["record_id"], req["reason"], approved_by)
+        elif rec_type in ["Treasury", "TreasuryTransaction", "treasury_transactions", "Expense", "Salary", "Fee", "FeeCharged"]:
+            # Delegate to TreasuryService to execute reversal
+            TreasuryService.reverse_treasury_transaction(uow, req["record_id"], req["reason"], approved_by)
         else:
             raise NotImplementedError(f"Correction for record_type '{rec_type}' not yet supported.")
 
