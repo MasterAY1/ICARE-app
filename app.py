@@ -2279,36 +2279,59 @@ if page == "Dashboard":
                 st.markdown("<br>", unsafe_allow_html=True)
 
             # Section H: Error Correction Queue
-            res_corr = uow.client.table("correction_requests").select("*").eq("branch_id", BRANCH_ID).eq("status", "Pending").order("created_at", desc=False).execute()
+            res_corr = uow.client.table("correction_requests").select("*, app_users!correction_requests_requested_by_fkey(username, full_name)") \
+                .eq("branch_id", BRANCH_ID).eq("status", "Pending").order("created_at", desc=False).execute()
             if res_corr.data:
                 st.markdown("#### 🚨 Pending Error Corrections (Reversals)")
                 for corr in res_corr.data:
                     c_id = corr["id"]
-                    c_reason = corr["reason"]
-                    
-                    st.warning(f"**Reversal Request** | Record ID: {corr['record_id'][:8]} | Reason: {c_reason}")
-                    
-                    corr_col1, corr_col2, corr_col3 = st.columns([2, 1, 1])
-                    if corr_col2.button("✅ Approve Reversal", key=f"app_corr_{c_id}"):
-                        try:
-                            from services.correction_service import CorrectionService
-                            with SupabaseUnitOfWork() as uow_corr:
-                                CorrectionService.approve_correction(uow_corr, c_id, approved_by=USER_ID)
-                            st.success("Reversal Approved and Executed.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Approval failed: {e}")
-                    
-                    if corr_col3.button("❌ Reject", key=f"rej_corr_{c_id}", type="primary"):
-                        try:
-                            from services.correction_service import CorrectionService
-                            with SupabaseUnitOfWork() as uow_corr:
-                                CorrectionService.reject_correction(uow_corr, c_id, approved_by=USER_ID)
-                            st.success("Reversal Rejected.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Rejection failed: {e}")
-                st.divider()
+                    c_type = corr.get("record_type")
+                    c_reason = corr.get("reason")
+                    u_data = corr.get("app_users")
+                    req_user = (u_data.get("full_name") or u_data.get("username")) if isinstance(u_data, dict) else "Officer"
+                    r_date = str(corr.get("created_at", ""))[:16].replace("T", " ")
+                    r_ref = str(corr.get("record_id", ""))[:8]
+
+                    type_icon = "💳 [Loan Repayment]" if c_type == "Repayment" else (
+                        "💰 [Savings Deposit]" if c_type in ["Savings", "SavingsDeposit"] else (
+                            "🏷️ [EOD Fee]" if c_type == "Fee" else (
+                                "🧾 [Office Expense]" if c_type == "Expense" else "🏛️ [Treasury Transfer]"
+                            )
+                        )
+                    )
+
+                    with st.container(border=True):
+                        col_req_info, col_req_meta, col_req_acts = st.columns([4, 2, 2])
+                        with col_req_info:
+                            st.markdown(f"**{type_icon}** &nbsp; `Ref: #{r_ref}`")
+                            st.caption(f"Requested by: **{req_user}** &bull; Submitted: **{r_date}**")
+                            st.markdown(f"**Reason:** *{c_reason}*")
+                        with col_req_meta:
+                            st.markdown("<div style='margin-top: 10px;'><span style='background: #FEF3C7; color: #92400E; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;'>🟡 Pending Approval</span></div>", unsafe_allow_html=True)
+                        with col_req_acts:
+                            st.write("")
+                            b_act1, b_act2 = st.columns(2)
+                            with b_act1:
+                                if st.button("✅ Approve", key=f"app_corr_{c_id}", type="primary", use_container_width=True):
+                                    try:
+                                        from services.correction_service import CorrectionService
+                                        with SupabaseUnitOfWork() as uow_corr:
+                                            CorrectionService.approve_correction(uow_corr, c_id, approved_by=USER_ID if USER_ID else USER)
+                                        st.success("Reversal approved and executed atomically!")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Approval failed: {e}")
+                            with b_act2:
+                                if st.button("❌ Reject", key=f"rej_corr_{c_id}", use_container_width=True):
+                                    try:
+                                        from services.correction_service import CorrectionService
+                                        with SupabaseUnitOfWork() as uow_corr:
+                                            CorrectionService.reject_correction(uow_corr, c_id, approved_by=USER_ID if USER_ID else USER)
+                                        st.info("Reversal rejected.")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Rejection failed: {e}")
+                st.markdown("<br>", unsafe_allow_html=True)
 
             # Section A: Branch Summary
             bs = bm_data["branch_summary"]
@@ -7767,50 +7790,69 @@ elif page == "Master Cashbook":
         st.markdown("### 🚩 Branch Error Correction & Reversals Hub")
         st.caption("Review pending reversal requests from Credit Officers and manage branch-level treasury reversals.")
 
-        bm_rev_col1, bm_rev_col2 = st.columns(2)
+        with SupabaseUnitOfWork() as uow_bm_corr:
+            q_pending = uow_bm_corr.client.table("correction_requests").select("*, app_users!correction_requests_requested_by_fkey(username, full_name)") \
+                .eq("status", "Pending")
+            if BRANCH_ID:
+                q_pending = q_pending.eq("branch_id", BRANCH_ID)
+            res_pending = q_pending.order("created_at", desc=False).execute()
+            pending_reqs = res_pending.data or []
 
-        with bm_rev_col1:
             st.markdown("#### 🚨 Pending Branch Reversal Requests")
-            with SupabaseUnitOfWork() as uow_bm_corr:
-                q_pending = uow_bm_corr.client.table("correction_requests").select("*, app_users!correction_requests_requested_by_fkey(username, full_name)")                     .eq("status", "Pending")
-                if BRANCH_ID:
-                    q_pending = q_pending.eq("branch_id", BRANCH_ID)
-                res_pending = q_pending.order("created_at", desc=False).execute()
-                pending_reqs = res_pending.data or []
+            if pending_reqs:
+                for req in pending_reqs:
+                    r_id = req["id"]
+                    r_type = req.get("record_type")
+                    r_reason = req.get("reason")
+                    u_data = req.get("app_users")
+                    req_user = (u_data.get("full_name") or u_data.get("username")) if isinstance(u_data, dict) else "Officer"
+                    r_date = str(req.get("created_at", ""))[:16].replace("T", " ")
+                    r_ref = str(req.get("record_id", ""))[:8]
+                    
+                    type_icon = "💳 [Loan Repayment]" if r_type == "Repayment" else (
+                        "💰 [Savings Deposit]" if r_type in ["Savings", "SavingsDeposit"] else (
+                            "🏷️ [EOD Fee]" if r_type == "Fee" else (
+                                "🧾 [Office Expense]" if r_type == "Expense" else "🏛️ [Treasury Transfer]"
+                            )
+                        )
+                    )
 
-                if pending_reqs:
-                    for req in pending_reqs:
-                        r_id = req["id"]
-                        r_type = req.get("record_type")
-                        r_reason = req.get("reason")
-                        req_user = (req.get("app_users") or {}).get("username") if isinstance(req.get("app_users"), dict) else "Officer"
-                        r_date = str(req.get("created_at", ""))[:16].replace("T", " ")
-                        
-                        st.warning(f"**{r_type} Reversal** | By: {req_user} | Ref: {req['record_id'][:8]} | Date: {r_date}\n*Reason:* {r_reason}")
-                        btn_c1, btn_c2 = st.columns(2)
-                        if btn_c1.button("✅ Approve Reversal", key=f"mc_app_{r_id}", type="primary", use_container_width=True):
-                            try:
-                                from services.correction_service import CorrectionService
-                                CorrectionService.approve_correction(uow_bm_corr, r_id, approved_by=USER_ID if USER_ID else USER)
-                                st.success("Reversal approved and executed atomically!")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Approval failed: {e}")
-                        if btn_c2.button("❌ Reject", key=f"mc_rej_{r_id}", use_container_width=True):
-                            try:
-                                from services.correction_service import CorrectionService
-                                CorrectionService.reject_correction(uow_bm_corr, r_id, approved_by=USER_ID if USER_ID else USER)
-                                st.info("Reversal rejected.")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Rejection failed: {e}")
-                else:
-                    st.success("✅ No pending reversal requests for this branch.")
+                    with st.container(border=True):
+                        col_req_info, col_req_meta, col_req_acts = st.columns([4, 2, 2])
+                        with col_req_info:
+                            st.markdown(f"**{type_icon}** &nbsp; `Ref: #{r_ref}`")
+                            st.caption(f"Requested by: **{req_user}** &bull; Submitted: **{r_date}**")
+                            st.markdown(f"**Reason:** *{r_reason}*")
+                        with col_req_meta:
+                            st.markdown("<div style='margin-top: 10px;'><span style='background: #FEF3C7; color: #92400E; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;'>🟡 Pending Approval</span></div>", unsafe_allow_html=True)
+                        with col_req_acts:
+                            st.write("")
+                            b_act1, b_act2 = st.columns(2)
+                            with b_act1:
+                                if st.button("✅ Approve", key=f"mc_app_{r_id}", type="primary", use_container_width=True):
+                                    try:
+                                        from services.correction_service import CorrectionService
+                                        CorrectionService.approve_correction(uow_bm_corr, r_id, approved_by=USER_ID if USER_ID else USER)
+                                        st.success("Reversal approved and executed atomically!")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Approval failed: {e}")
+                            with b_act2:
+                                if st.button("❌ Reject", key=f"mc_rej_{r_id}", use_container_width=True):
+                                    try:
+                                        from services.correction_service import CorrectionService
+                                        CorrectionService.reject_correction(uow_bm_corr, r_id, approved_by=USER_ID if USER_ID else USER)
+                                        st.info("Reversal rejected.")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Rejection failed: {e}")
+            else:
+                st.success("✅ No pending reversal requests for this branch.")
 
-        with bm_rev_col2:
-            st.markdown("#### 🏛️ Flag Branch Treasury Entry for Reversal")
+        with st.expander("🏛️ Flag Branch Treasury Entry for Reversal", expanded=False):
             with SupabaseUnitOfWork() as uow_tx_list:
-                q_tx = uow_tx_list.client.table("treasury_transactions").select("*")                     .order("created_at", desc=True).limit(25)
+                q_tx = uow_tx_list.client.table("treasury_transactions").select("*") \
+                    .order("created_at", desc=True).limit(25)
                 if BRANCH_ID:
                     q_tx = q_tx.eq("branch_id", BRANCH_ID)
                 res_tx = q_tx.execute()
@@ -7824,7 +7866,7 @@ elif page == "Master Cashbook":
                     t_dt = str(t.get("posting_date") or t.get("created_at") or "")[:10]
                     t_rem = t.get("remarks") or ""
                     
-                    label = f"[{t_type}] {t_dt} | ₦{t_amt:,.2f} — {t_rem[:25]} | Ref: {t_id[:8]}"
+                    label = f"[{t_type}] {t_dt} | ₦{t_amt:,.2f} — {t_rem[:30]} | Ref: {t_id[:8]}"
                     tx_opts[label] = t_id
 
                 if tx_opts:
@@ -7859,23 +7901,20 @@ elif page == "Master Cashbook":
         st.markdown("### 🏢 Select Credit Officer")
         try:
             with SupabaseUnitOfWork() as uow_co_list:
+                all_users = uow_co_list.users.find_all()
                 b_id = uow_co_list.cashbook._resolve_branch_id(BRANCH)
-                co_users_res = uow_co_list.client.table("app_users").select("username, full_name, role, branch_id").eq("branch_id", b_id).in_("role", ["CO", "Officer"]).execute()
-                branch_cos = co_users_res.data or []
+                branch_cos = [u for u in all_users if u.role in ["CO", "Officer", "Credit Officer"] and (not BRANCH or u.branch_name == BRANCH or u.branch_id == b_id)]
                 if not branch_cos:
-                    co_users_res = uow_co_list.client.table("app_users").select("username, full_name, role, branch_id").in_("role", ["CO", "Officer"]).execute()
-                    branch_cos = co_users_res.data or []
+                    branch_cos = [u for u in all_users if u.role in ["CO", "Officer", "Credit Officer"]]
         except Exception:
             branch_cos = []
 
         co_options = {}
         for u in branch_cos:
-            disp = u.get("full_name") or u.get("username")
-            uname = u.get("username")
-            co_options[disp] = uname
+            disp = f"{u.full_name} ({u.username})" if u.full_name else u.username
+            co_options[disp] = u.username
 
         if not co_options:
-            # Fallback to current user or maps
             for k, v in CO_NAME_MAP.items():
                 co_options[k] = v
 
@@ -7884,9 +7923,6 @@ elif page == "Master Cashbook":
 
         display_list = list(co_options.keys())
         default_idx = 0
-        current_disp = CO_DISPLAY_MAP.get(USER, USER)
-        if current_disp in display_list:
-            default_idx = display_list.index(current_disp)
 
         selected_display = st.selectbox("Select Credit Officer", display_list, index=default_idx, key="wa_cashbook_co")
         target_co = co_options.get(selected_display, selected_display)
