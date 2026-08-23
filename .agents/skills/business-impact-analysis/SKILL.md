@@ -1,6 +1,6 @@
 ---
 name: business-impact-analysis
-description: Performs forensic page-by-page business-rule, data-flow, root-cause, dependency, and regression-impact analysis for ICARE before code changes. Use when auditing any role (CO, BM, AM, Admin, Director), page, section, or metric, resolving data-source mismatches, column mapping discrepancies, reconciliation issues, or evaluating blast radius. Operates as an enforced Analysis-Only state machine by default.
+description: Performs forensic page-by-page business-rule, data-flow, root-cause, dependency, and regression-impact analysis for ICARE before code changes. Supports multi-agent parallel investigation with specialized subagents (Business Rules, Database, Code Trace, Cross-System Impact, Regression, Accounting). Use when auditing any role (CO, BM, AM, Admin, Director), page, section, or metric, resolving data-source mismatches, column mapping discrepancies, reconciliation issues, or evaluating blast radius. Operates as an enforced Analysis-Only state machine by default.
 ---
 
 # ICARE Business Impact Analysis Skill
@@ -487,3 +487,665 @@ For every investigation, return this exact structure:
 - **APPROVAL STATUS**: WAITING FOR APPROVAL
 - **NEXT ACTION**: User must explicitly approve this Analysis ID (e.g. `Approve BIA-...`) before implementation can proceed.
 ```
+
+---
+
+# PART II — MULTI-AGENT INVESTIGATION ARCHITECTURE
+
+> [!IMPORTANT]
+> **The following sections EXTEND the existing skill. All rules from Part I (Sections 0–17) remain fully in force. Part II adds a controlled multi-agent orchestration system for complex investigations.**
+
+---
+
+## 18. Primary Purpose Reinforcement
+
+The skill remains an **INVESTIGATION AND BUSINESS-ANALYSIS** skill.
+
+Its primary job is:
+
+```
+UNDERSTAND → INVESTIGATE → TRACE → CROSS-CHECK → IDENTIFY ROOT CAUSE
+→ ANALYSE IMPACT → PROPOSE FIX → REPORT → STOP
+```
+
+It is **NOT** an implementation skill.
+
+The skill must **NEVER** automatically:
+- Modify application code
+- Edit files
+- Create migrations
+- Modify database records
+- Modify business rules
+- Refactor code
+- "Fix" the issue
+- Run destructive commands
+- Implement its proposed solution
+
+...unless the user explicitly exits investigation mode and gives approval to implement per Section 3.
+
+---
+
+## 19. Multi-Agent Orchestration Architecture
+
+When a problem is sufficiently complex, the skill acts as an **ORCHESTRATOR** and delegates investigation to multiple specialized subagents.
+
+### 19.1 Orchestrator Responsibilities
+
+1. Define the investigation question.
+2. Break the problem into independent investigation tasks.
+3. Assign tasks to specialized subagents.
+4. Run independent investigations in parallel where possible.
+5. Compare their findings.
+6. Detect contradictions.
+7. Resolve contradictions using evidence.
+8. Produce one consolidated investigation report.
+9. Perform final blast-radius analysis.
+10. **STOP** before implementation.
+
+### 19.2 When to Use Multiple Subagents
+
+Do **NOT** create unnecessary subagents for trivial questions.
+
+Use multiple subagents when a problem involves **two or more** of:
+
+- Business rules
+- Database data
+- UI behaviour
+- Service logic
+- Projections
+- Accounting
+- Cashbooks
+- Dashboards
+- Portfolios
+- Cross-role behaviour
+- Shared services
+- Historical data
+- Reconciliation
+- Multiple files
+- Potential cross-page impact
+
+### 19.3 Subagent Invocation Policy
+
+Use **parallel** subagents when investigations are independent.
+
+**Example — BM Dashboard "Collection Today":**
+
+Launch in parallel:
+- Business Rules Analyst
+- Database Analyst
+- Code Trace Analyst
+- Accounting Analyst
+- Cross-System Impact Analyst
+
+Then let the orchestrator reconcile the results.
+
+**Example — Simple UI mapping issue:**
+
+- Code Trace Analyst + Database Analyst may be sufficient.
+
+**Example — Financial cashbook issue:**
+
+- Business Rules + Database + Code Trace + Accounting + Impact + Regression should normally be used.
+
+---
+
+## 20. Specialized Investigation Subagents
+
+These are **INVESTIGATION ROLES**, not coding roles. Each subagent is a deliberately suspicious investigator that independently questions and verifies claims.
+
+---
+
+### 20.1 AGENT 1 — BUSINESS RULES ANALYST
+
+**Purpose:** Determine what the system **SHOULD** do.
+
+**Responsibilities:**
+- Read the authoritative business rules in `.agents/rules/business-rules/*`.
+- Read `00-READ-FIRST.md` and other constitution files.
+- Identify the exact rule governing the issue.
+- Identify relevant business definitions.
+- Identify calculation rules.
+- Identify balancing rules.
+- Identify source-of-truth rules.
+- Identify role-specific behaviour.
+
+**Output — BUSINESS EXPECTATION:**
+
+| Field | Content |
+|---|---|
+| Rule ID/Name | [e.g., BR-DASH-006] |
+| Business Definition | [Plain English definition] |
+| Expected Behaviour | [What should happen] |
+| Expected Calculation | [Formula/logic] |
+| Expected Source | [Authoritative table/column] |
+| Expected Output | [Expected value/format] |
+| Related Rules | [Cross-references] |
+| Ambiguities | [Unresolved questions, if any] |
+
+**DO NOT** modify anything. Read-only investigation.
+
+---
+
+### 20.2 AGENT 2 — DATABASE / DATA SOURCE ANALYST
+
+**Purpose:** Determine where the **CORRECT** data actually exists.
+
+**Trace Chain:**
+```
+UI requirement → database tables → relevant columns → relationships
+→ operational records → event records → ledger records → projection records
+```
+
+**Investigate:**
+- Schema, tables, columns, joins, foreign keys
+- `event_store`
+- `financial_ledger_entries`
+- `financial_transactions`
+- Operational tables
+- Projection tables
+- Historical records
+
+**Determine:**
+- Authoritative source
+- Current source used by application
+- Whether data exists
+- Whether data is missing
+- Whether data is duplicated
+- Whether data is stored in the wrong column
+- Whether the values reconcile
+
+**Output — DATA SOURCE FINDING:**
+
+| Field | Content |
+|---|---|
+| Correct Source | [Authoritative table.column] |
+| Current Source | [What app currently uses] |
+| Relevant Tables | [All involved tables] |
+| Relevant Columns | [All involved columns] |
+| Sample Evidence | [Actual record excerpts] |
+| Data Mismatch | [Discrepancy description] |
+| Reconciliation Result | [Match / Mismatch / Partial] |
+| Data Integrity Concerns | [Orphans, duplicates, nulls] |
+
+**READ ONLY.** No database mutations.
+
+---
+
+### 20.3 AGENT 3 — CODE TRACE ANALYST
+
+**Purpose:** Determine exactly how the application obtains and transforms the data.
+
+**Trace Chain:**
+```
+UI → page/component → state → service → repository → query
+→ transformation → calculation → displayed metric
+```
+
+**Look For:**
+- Wrong table / column / filter / date / branch / officer / role
+- Wrong aggregation / duplicate aggregation / missing aggregation
+- Incorrect joins
+- Stale state
+- Hardcoded values
+- Incorrect aliases / mapping
+- Incorrect projection usage
+- Fallback behaviour
+- Inconsistent definitions across consumers
+
+**Output — CODE TRACE:**
+
+| Field | Content |
+|---|---|
+| UI Location | [Page, section, line range] |
+| Function | [Function name and file] |
+| Service | [Service class and method] |
+| Repository | [Repository class and method] |
+| Query | [Actual query/filter used] |
+| Source Column | [Column being read] |
+| Transformation | [Any post-query logic] |
+| Final Displayed Value | [What the UI shows] |
+| Point of Divergence | [Exact location where value becomes incorrect] |
+
+**READ ONLY.** No file modifications.
+
+---
+
+### 20.4 AGENT 4 — CROSS-SYSTEM IMPACT ANALYST
+
+**Purpose:** Determine what else could be affected by the proposed fix.
+
+**Search Across:**
+- CO, BM, AM, Admin, Director
+- Dashboard, Portfolio, Cashbook, Reports, Reconciliation
+- Shared services, shared repositories, shared calculations
+- Database functions, projections
+
+**Impact Classification:**
+
+| Level | Meaning |
+|---|---|
+| NONE | No dependency exists |
+| LOW | Dependency exists but behaviour unchanged |
+| MEDIUM | Behaviour may change; testing required |
+| HIGH | Behaviour will change; careful coordination required |
+| CRITICAL | Core financial integrity or multi-role stability at risk |
+
+**Output — BLAST RADIUS:**
+
+For every affected area:
+- Why it is affected
+- What dependency exists
+- What could change
+- Whether current behaviour is stable
+- Whether regression testing is required
+
+> [!CAUTION]
+> **CO STABILITY RULE:** CO is currently considered **STABLE** unless the user explicitly says otherwise. Never recommend changing shared code that affects CO without explicitly identifying and quantifying the CO impact.
+
+**READ ONLY.** No file modifications.
+
+---
+
+### 20.5 AGENT 5 — REGRESSION / TEST ANALYST
+
+**Purpose:** Determine how the proposed fix can be verified without breaking existing behaviour.
+
+**Review:**
+- Existing tests
+- Regression tests
+- Business-rule tests
+- Integration tests
+- Previous fixes
+- Known stable workflows
+
+**Output — REGRESSION PLAN:**
+
+| Field | Content |
+|---|---|
+| Existing Tests | [Tests that already cover this area] |
+| Tests To Add | [New tests recommended] |
+| Expected Result | [What passing looks like] |
+| Affected Workflows | [End-to-end flows impacted] |
+| Cross-Role Tests | [CO→BM, BM→AM, AM→Admin, Admin→Director] |
+| Edge Cases | [Boundary conditions to verify] |
+| Transaction Chain | [transaction → ledger → cashbook → portfolio → dashboard → reports] |
+
+**DO NOT write tests.** Only recommend them during investigation mode.
+
+---
+
+### 20.6 AGENT 6 — ACCOUNTING / RECONCILIATION ANALYST
+
+**Use when the issue involves:** cashbook, ledger, portfolio balances, repayments, savings, loan disbursement, treasury, dashboard financial metrics, reconciliation, debit/credit, Account 1000, financial projections.
+
+**Purpose:** Verify the financial meaning independently.
+
+**Check:**
+- Debit / Credit
+- Inflow / Outflow
+- Opening Balance / Closing Balance
+- Expected Balance vs. Actual Balance
+- Ledger Balance vs. Cashbook Balance
+- Operational Balance vs. Projection Balance
+
+**Rule:** Never accept a displayed value merely because it "looks reasonable." **Prove the calculation.**
+
+**Output — FINANCIAL RECONCILIATION FINDING:**
+
+```text
+METRIC:              [Name]
+EXPECTED BALANCE:    [Calculated from authoritative source]
+LEDGER BALANCE:      [From financial_ledger_entries]
+CASHBOOK BALANCE:    [From co_cashbooks / master_cashbook]
+OPERATIONAL BALANCE: [From operational tables]
+PROJECTION BALANCE:  [From projection tables]
+DIFFERENCE:          [Variance]
+RECONCILED:          [YES / NO]
+ROOT CAUSE:          [If NO, explain discrepancy]
+```
+
+**READ ONLY.** No database mutations.
+
+---
+
+## 21. Orchestrator Reconciliation Rules
+
+The orchestrator must **NOT** blindly trust any single subagent.
+
+It must compare:
+
+```
+Business Rules Evidence
+  vs
+Database Evidence
+  vs
+Code Trace Evidence
+  vs
+Accounting Evidence
+  vs
+Cross-System Impact
+  vs
+Regression Analysis
+```
+
+### Confidence Matrix:
+
+| Condition | Confidence |
+|---|---|
+| All agents agree | **HIGH** |
+| Minor disagreements on non-critical details | **MEDIUM** |
+| Major contradictions on source, calculation, or impact | **LOW** |
+
+When confidence is **LOW**, the orchestrator must investigate the contradiction before proposing a fix. Never paper over disagreements.
+
+---
+
+## 22. Evidence-First Rule
+
+No conclusion may be based solely on:
+- Assumptions
+- Filenames
+- Function names
+- Comments
+- UI labels
+- What a developer intended
+- What "looks correct"
+
+Where possible, prove the conclusion through:
+- Actual code (with file and line references)
+- Actual database schema
+- Actual records (sample data)
+- Actual queries
+- Actual business rules (with rule IDs)
+- Actual calculations (with formulas)
+- Actual dependency relationships
+
+Clearly distinguish:
+
+| Classification | Meaning |
+|---|---|
+| **FACT** | Directly observed and independently verifiable |
+| **INFERENCE** | Logically derived from facts but not directly observed |
+| **HYPOTHESIS** | Plausible explanation that requires further investigation |
+
+**Never present an inference as a confirmed fact.**
+
+---
+
+## 23. Metric Contract Investigation Mode (Extended)
+
+For every dashboard, portfolio, cashbook, report, or card metric, investigate using a **METRIC CONTRACT** that extends the Data Contract from Section 9:
+
+```text
+METRIC NAME:
+ROLE:
+PAGE:
+BUSINESS DEFINITION:
+EXPECTED VALUE:
+SOURCE OF TRUTH:
+TABLE:
+COLUMN:
+FILTER:
+DATE LOGIC:
+BRANCH LOGIC:
+OFFICER LOGIC:
+CALCULATION:
+EXCLUSIONS:
+UI COMPONENT:
+CURRENT SOURCE:
+CURRENT CALCULATION:
+CURRENT RESULT:
+EXPECTED RESULT:
+ROOT CAUSE:
+IMPACT:
+REGRESSION RISK:
+CONFIDENCE:
+```
+
+**Anti-Vagueness Rule:** The agent must never say *"Use the correct column."*
+
+It must identify:
+
+```
+CURRENT COLUMN → WHY IT IS WRONG → CORRECT COLUMN → WHY IT IS CORRECT
+→ WHAT OTHER CODE USES THAT COLUMN → WHAT THE CHANGE WILL AFFECT
+```
+
+---
+
+## 24. Cashbook Investigation Mode (Extended)
+
+For cashbook problems, explicitly map:
+
+$$\text{Opening Balance} + \sum\text{Inflows} - \sum\text{Outflows} = \text{Closing Balance}$$
+
+Then independently reconcile each source:
+
+| Source | Verified Independently |
+|---|---|
+| Operational Data | YES / NO |
+| Ledger (`financial_ledger_entries`) | YES / NO |
+| CO Cashbook (`co_cashbooks`) | YES / NO |
+| Master Cashbook (`master_cashbook`) | YES / NO |
+| Dashboard | YES / NO |
+| Portfolio | YES / NO |
+
+**Do not combine these sources merely because they currently produce the same number. Each source must be independently verified.**
+
+For every cashbook column identify:
+
+```text
+COLUMN NAME → BUSINESS MEANING → SOURCE EVENT → SOURCE TABLE → SOURCE COLUMN
+→ DEBIT/CREDIT → INFLOW/OUTFLOW → EXPECTED VALUE → ACTUAL VALUE → DIFFERENCE
+```
+
+---
+
+## 25. CO Stability Protection Protocol
+
+**CURRENT STATUS: CO PAGE = STABLE / LIVE-TESTED**
+
+The CO page has been successfully live-tested and should be treated as a protected stable workflow.
+
+Therefore:
+- **DO NOT** modify CO simply because BM/AM/Admin/Director is being investigated.
+- If a BM issue appears to originate from shared code:
+
+1. Identify the shared dependency.
+2. **Prove** that it affects CO.
+3. Explain the impact.
+4. Explain the regression risk.
+5. Propose the **minimum safe change**.
+6. **STOP.**
+
+No implementation without explicit approval.
+
+---
+
+## 26. No Cascading Fixes Rule
+
+**NEVER** fix a symptom before determining the root cause.
+
+**Example:** If BM Dashboard displays the wrong number:
+
+**DO NOT** immediately change the BM query.
+
+First determine:
+
+1. Is the database value correct?
+2. Is the business definition correct?
+3. Is the source table correct?
+4. Is the backend calculation correct?
+5. Is the UI fetching the wrong value?
+6. Is the projection stale?
+7. Is the same metric calculated differently elsewhere?
+8. Is the problem shared across roles?
+
+Only after answering those questions may a fix be proposed.
+
+---
+
+## 27. Subagent Output Format
+
+Every subagent must return:
+
+```text
+ROLE:            [Subagent role name]
+QUESTION:        [The specific investigation question assigned]
+EVIDENCE:        [Raw facts observed with file/line/record references]
+FINDINGS:        [Interpreted results]
+FACTS:           [Directly observed, independently verifiable]
+INFERENCES:      [Logically derived from facts]
+UNKNOWN:         [Questions that remain unanswered]
+IMPACT:          [Assessment of severity and scope]
+RECOMMENDATION:  [Proposed action — investigation only, no code]
+```
+
+The subagent **must not** modify files.
+
+---
+
+## 28. Final Orchestrator Consolidated Report
+
+The orchestrator must consolidate all subagent findings into a single unified report:
+
+```markdown
+# ICARE MULTI-AGENT INVESTIGATION REPORT
+
+**ANALYSIS ID:** [e.g., BIA-BM-DASH-062]
+**INVESTIGATION MODE:** Multi-Agent Orchestrated
+**AGENTS DEPLOYED:** [List of agents used]
+**CONFIDENCE:** [HIGH | MEDIUM | LOW]
+
+## 1. Problem
+[User-reported issue]
+
+## 2. Business Rule
+[Governing rule from .agents/rules/]
+
+## 3. Expected Behaviour
+[What the system SHOULD do]
+
+## 4. Current Behaviour
+[What the system ACTUALLY does]
+
+## 5. Database Evidence
+[Data Source Analyst findings]
+
+## 6. Code Trace
+[Code Trace Analyst findings]
+
+## 7. Root Cause
+[Precise technical and business root cause]
+
+## 8. Financial / Reconciliation Analysis
+[Accounting Analyst findings — if applicable]
+
+## 9. Cross-System Impact
+[Impact Analyst findings]
+
+## 10. CO Impact
+[Explicit CO stability assessment]
+
+## 11. Proposed Fix
+[Targeted, surgical fix — description only]
+
+## 12. Files Affected
+[Exact files and line ranges]
+
+## 13. Database Changes Required
+[Schema or data changes, if any]
+
+## 14. Regression Risks
+[Regression Analyst findings]
+
+## 15. Test Plan
+[Recommended tests]
+
+## 16. Confidence
+[HIGH | MEDIUM | LOW with justification]
+
+## 17. Agent Agreement Matrix
+| Agent | Agrees with Root Cause | Notes |
+|---|---|---|
+| Business Rules | YES/NO | ... |
+| Database | YES/NO | ... |
+| Code Trace | YES/NO | ... |
+| Accounting | YES/NO | ... |
+| Impact | YES/NO | ... |
+| Regression | YES/NO | ... |
+
+## 18. Implementation Status
+
+**NOT IMPLEMENTED**
+
+**WAITING FOR EXPLICIT APPROVAL.**
+
+---
+
+### 🛑 ANALYSIS COMPLETE
+
+- **ANALYSIS ID**: [e.g., BIA-BM-DASH-062]
+- **CODE CHANGES**: NONE
+- **DATABASE CHANGES**: NONE
+- **FILES MODIFIED**: NONE
+- **APPROVAL STATUS**: WAITING FOR APPROVAL
+- **NEXT ACTION**: User must explicitly approve this Analysis ID (e.g. `Approve BIA-...`) before implementation can proceed.
+```
+
+---
+
+## 29. Critical Anti-Coding Safeguard (Reinforced)
+
+> [!CAUTION]
+> **THIS IS THE MOST IMPORTANT RULE.**
+>
+> When this skill is invoked:
+>
+> **DO NOT** CODE. **DO NOT** PATCH. **DO NOT** EDIT. **DO NOT** REFACTOR.
+> **DO NOT** CREATE FILES. **DO NOT** MODIFY DATABASE DATA. **DO NOT** IMPLEMENT.
+>
+> The skill's job is to **INVESTIGATE** and **REPORT**.
+>
+> Even if the correct fix appears obvious, report the fix and **STOP**.
+>
+> Only an explicit user instruction outside the investigation workflow may authorize implementation.
+
+---
+
+## 30. Final Operating Principle
+
+ICARE must be treated as a **financial system**, not an ordinary CRUD application.
+
+Therefore, never optimize for *"making the screen look right."*
+
+Optimize for:
+
+```
+BUSINESS RULE
+  → SOURCE OF TRUTH
+    → DATA INTEGRITY
+      → ACCOUNTING INTEGRITY
+        → CORRECT CALCULATION
+          → CORRECT UI REPRESENTATION
+            → CROSS-SYSTEM CONSISTENCY
+              → REGRESSION SAFETY
+```
+
+The goal is not merely to make one page display the expected number.
+
+**The goal is to prove that the number is correct throughout the entire ICARE system.**
+
+---
+
+## 31. Protected Files (Extended)
+
+In addition to the original protected files from Part I, the following are also protected:
+
+- `.agents/rules/business-rules/*` — Business rule definitions
+- `.agents/rules/architecture/*` — Architectural invariants
+- `.agents/rules/00-READ-FIRST.md` — Constitution entry point
+- `.agents/skills/business-impact-analysis/SKILL.md` — This skill file
+- `.agents/references/metric-contracts/*` — Verified metric contracts
+
+These files may only be modified with explicit user authorization.
