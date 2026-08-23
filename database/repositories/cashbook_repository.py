@@ -16,6 +16,12 @@ class SupabaseCashbookRepository(BaseRepository[CashbookEntry], CashbookReposito
     def _resolve_branch_id(self, branch_name: str) -> str:
         if not branch_name:
             raise ValueError("Branch name cannot be empty when resolving branch_id")
+        import uuid
+        try:
+            uuid.UUID(str(branch_name))
+            return str(branch_name)
+        except ValueError:
+            pass
         try:
             res = self.client.table("branches").select("branch_id").eq("name", branch_name).execute()
             if res.data:

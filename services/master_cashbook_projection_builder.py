@@ -57,7 +57,7 @@ class MasterCashbookProjectionBuilder:
             "daily_11_pct", "daily_20_pct", "weekly_11_pct", "weekly_20_pct", "savings_adj_amount", "risk_premium_returns",
             "passbook", "app_fee", "asset_credit_sales", "cash_and_carry", "contingency",
             "credit_form", "credit_form_damage", "bonus", "misc_fees",
-            "funds_received_ho", "funds_received_other_branch",
+            "funds_received_ho", "funds_received_other_branch", "funds_received_other_area",
             "fund_transferred_other_branch", "fund_transferred_ho", "fund_to_other_area",
             "fund_to_asset_program", "fund_to_product_finance", "savings_withdrawal",
             "staff_salaries", "office_expenses", "laps_returns", "bank_deposit",
@@ -98,6 +98,8 @@ class MasterCashbookProjectionBuilder:
                         tx_type = payload.get("transaction_type")
                         if tx_type == "INTER_BRANCH_IN":
                             totals["funds_received_other_branch"] += amt
+                        elif tx_type == "INTER_AREA_IN":
+                            totals["funds_received_other_area"] += amt
                         else:
                             totals["funds_received_ho"] += amt
                     elif event_type == "BankWithdrawn":
@@ -110,6 +112,8 @@ class MasterCashbookProjectionBuilder:
                         tx_type = payload.get("transaction_type")
                         if tx_type == "INTER_BRANCH_OUT":
                             totals["fund_transferred_other_branch"] += amt
+                        elif tx_type == "INTER_AREA_OUT":
+                            totals["fund_to_other_area"] += amt
                         else:
                             totals["fund_transferred_ho"] += amt
                     elif event_type == "ExpenseRecorded":
@@ -130,12 +134,15 @@ class MasterCashbookProjectionBuilder:
         except Exception as e:
             print(f"[SAVINGS TRACE] Master Cashbook failed to fetch branch ledger entries: {e}")
 
+        # BR-CASH-001: Funds from Finance (Inflow) balances Fund to Product Finance (Outflow)
+        totals["loan_received_finance"] = totals.get("fund_to_product_finance", 0.0)
+
         # Corrected Master Cashbook Formulas (ICARE Business Rules)
         total_inflows = (
             opening_bal +
             totals["rep_daily"] + totals["rep_12_weeks"] + totals["rep_24_weeks"] + totals["rep_monthly"] +
             totals["savings_deposit"] + totals["laps_reserve"] + totals["bank_withdrawal"] +
-            totals["funds_received_ho"] + totals["funds_received_other_branch"] +
+            totals["funds_received_ho"] + totals["funds_received_other_branch"] + totals["funds_received_other_area"] +
             totals["loan_received_asset"] + totals["loan_received_finance"] +
             totals["daily_11_pct"] + totals["daily_20_pct"] + totals["weekly_11_pct"] + totals["weekly_20_pct"] + totals["savings_adj_amount"] +
             totals["risk_premium_returns"] + totals["passbook"] + totals["app_fee"] +

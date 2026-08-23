@@ -63,7 +63,9 @@ class TreasuryService:
             "FLOAT": "ExpenseRecorded",
             "VAULT_ADJUSTMENT": "ExpenseRecorded",
             "INTER_BRANCH_IN": "CashTransferred_HO_In",
-            "INTER_BRANCH_OUT": "CashTransferred_HO_Out"
+            "INTER_BRANCH_OUT": "CashTransferred_HO_Out",
+            "INTER_AREA_IN": "CashTransferred_HO_In",
+            "INTER_AREA_OUT": "CashTransferred_HO_Out"
         }
         event_type = mapping.get(tx_type, "ExpenseRecorded")
         evt_id = str(uuid.uuid4())
@@ -227,6 +229,8 @@ class TreasuryService:
             "HO_TRANSFER_OUT": ("HO_TRANSFER_IN", "CashTransferred_HO_In"),
             "INTER_BRANCH_IN": ("INTER_BRANCH_OUT", "CashTransferred_HO_Out"),
             "INTER_BRANCH_OUT": ("INTER_BRANCH_IN", "CashTransferred_HO_In"),
+            "INTER_AREA_IN": ("INTER_AREA_OUT", "CashTransferred_HO_Out"),
+            "INTER_AREA_OUT": ("INTER_AREA_IN", "CashTransferred_HO_In"),
             "BANK_DEPOSIT": ("BANK_WITHDRAWAL", "BankWithdrawn"),
             "BANK_WITHDRAWAL": ("BANK_DEPOSIT", "BankDeposited"),
             "OFFICE_EXPENSE": ("OFFICE_EXPENSE", "ExpenseReversed"),

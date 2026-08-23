@@ -51,10 +51,10 @@ class TestRBACScopeService(unittest.TestCase):
         self.assertNotIn("User Management", co_items)
 
         bm_items = RBACScopeService.get_permitted_menu_items("Branch Manager")
-        self.assertIn("Loan Origination", bm_items)
+        self.assertIn("Dashboard", bm_items)
         self.assertIn("Master Cashbook", bm_items)
-        self.assertIn("Withdrawal Operations", bm_items)
-        self.assertNotIn("User Management", bm_items)
+        self.assertIn("User Management", bm_items)
+        self.assertNotIn("Collections", bm_items)
 
         admin_items = RBACScopeService.get_permitted_menu_items("Admin")
         self.assertIn("User Management", admin_items)

@@ -7576,7 +7576,7 @@ elif page == "Master Cashbook":
             today_loans = all_loans[
                 (all_loans['_dt'].dt.date.astype(str) == date_str) &
                 (all_loans['Branch'] == BRANCH) &
-                (all_loans['Status'].isin([STATUS_ACTIVE, STATUS_APPROVED, STATUS_COMPLETED]))
+                (all_loans['Status'].isin([STATUS_ACTIVE, STATUS_APPROVED, STATUS_COMPLETED, "Active", "Approved", "Completed"]))
             ]
             if not today_loans.empty and 'extra_fields' in today_loans.columns:
                 today_loans = today_loans[~today_loans['extra_fields'].apply(lambda x: isinstance(x, dict) and x.get('is_legacy') is True)]
@@ -7595,7 +7595,7 @@ elif page == "Master Cashbook":
                 principal = pd.to_numeric(loan.get('Loan Amount', 0), errors='coerce')
                 active_cr = pd.to_numeric(loan.get('Active Credit', 0), errors='coerce')
                 if pd.isna(principal): principal = 0
-                if pd.isna(active_cr): active_cr = 0
+                if pd.isna(active_cr) or active_cr == 0: active_cr = principal
                 cat = str(loan.get('Product Category', 'Finance'))
                 prod = str(loan.get('Loan Product', '')).lower()
                 if 'Asset' in cat:
@@ -7603,11 +7603,18 @@ elif page == "Master Cashbook":
                 else:
                     auto_fund_finance += principal
                 # Route active credit to product-specific disbursement
-                if '120' in prod: auto_disb_120d += active_cr
-                elif '60' in prod: auto_disb_60d += active_cr
-                elif '24w' in prod: auto_disb_24w += active_cr
-                elif '12w' in prod: auto_disb_12w += active_cr
-                elif '3m' in prod or '6m' in prod: auto_disb_mth += active_cr
+                if '120' in prod:
+                    auto_disb_120d += active_cr
+                elif '60' in prod:
+                    auto_disb_60d += active_cr
+                elif '24w' in prod or '24' in prod:
+                    auto_disb_24w += active_cr
+                elif '12w' in prod or '12' in prod:
+                    auto_disb_12w += active_cr
+                elif '3m' in prod or '6m' in prod or 'month' in prod:
+                    auto_disb_mth += active_cr
+                else:
+                    auto_disb_12w += active_cr
         
         # ---- OPENING BALANCE: Fetch previous day's closing ----
         prev_date = (view_date - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -7634,10 +7641,10 @@ elif page == "Master Cashbook":
             ("Laps Reserve", auto_laps_res),
             ("Funds Received from Head Office", getattr(cb_entry, "funds_received_ho", 0.0) if 'cb_entry' in locals() and cb_entry else 0.0),
             ("Funds Received from Branch Office", getattr(cb_entry, "funds_received_other_branch", 0.0) if 'cb_entry' in locals() and cb_entry else 0.0),
-            ("Funds Received from Other Areas", 0.0),
+            ("Funds Received from Other Areas", getattr(cb_entry, "funds_received_other_area", 0.0) if 'cb_entry' in locals() and cb_entry else 0.0),
             ("Asset Credit Sales", auto_asset_cr_sales),
             ("Cash & Carry", auto_cash_carry),
-            ("Funds from Finance", getattr(cb_entry, "loan_received_finance", 0.0) if 'cb_entry' in locals() and cb_entry else 0.0),
+            ("Funds from Finance", auto_fund_finance),
             ("Daily 11%", auto_daily_11),
             ("Daily 20%", auto_daily_20),
             ("Weekly 11%", auto_weekly_11),
@@ -7718,7 +7725,7 @@ elif page == "Master Cashbook":
             total_inflows = (
                 auto_opening + auto_savings + auto_rep_60d + auto_rep_120d + auto_rep_12w + auto_rep_24w + auto_rep_mth +
                 auto_laps_res + funds_ho + funds_branch + funds_area +
-                auto_asset_cr_sales + auto_cash_carry +
+                auto_asset_cr_sales + auto_cash_carry + auto_fund_finance +
                 auto_daily_11 + auto_daily_20 + auto_weekly_11 + auto_weekly_20 + auto_monthly_markup +
                 auto_contingency + auto_credit_form_dmg + auto_bonus + auto_app_fee + auto_passbook + auto_bank_wd
             )
@@ -7759,8 +7766,9 @@ elif page == "Master Cashbook":
                     "laps_reserve": auto_laps_res,
                     "funds_received_ho": funds_ho,
                     "funds_received_other_branch": funds_branch,
+                    "funds_received_other_area": funds_area,
                     "loan_received_asset": 0,
-                    "loan_received_finance": 0,
+                    "loan_received_finance": auto_fund_finance,
                     "daily_11_pct": auto_daily_11,
                     "weekly_11_pct": auto_weekly_11,
                     "savings_adj_no": 0,
@@ -7807,11 +7815,17 @@ elif page == "Master Cashbook":
                         if funds_branch > 0:
                             TreasuryService.post_treasury_transaction(uow, 'INTER_BRANCH_IN', funds_branch, BRANCH, USER, remarks=f"Branch Funding: {funds_branch}")
                             posted_any = True
+                        if funds_area > 0:
+                            TreasuryService.post_treasury_transaction(uow, 'INTER_AREA_IN', funds_area, BRANCH, USER, remarks=f"Area Funding: {funds_area}")
+                            posted_any = True
                         if xfer_branch > 0:
                             TreasuryService.post_treasury_transaction(uow, 'INTER_BRANCH_OUT', xfer_branch, BRANCH, USER, remarks=f"Transfer to Branch: {xfer_branch}")
                             posted_any = True
                         if xfer_ho > 0:
                             TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_OUT', xfer_ho, BRANCH, USER, remarks=f"Transfer to HO: {xfer_ho}")
+                            posted_any = True
+                        if xfer_area > 0:
+                            TreasuryService.post_treasury_transaction(uow, 'INTER_AREA_OUT', xfer_area, BRANCH, USER, remarks=f"Transfer to Area: {xfer_area}")
                             posted_any = True
                         if salaries > 0:
                             TreasuryService.post_treasury_transaction(uow, 'SALARY', salaries, BRANCH, USER, remarks=f"Salary Payment: {salaries}")
@@ -8141,11 +8155,62 @@ elif page == "Master Cashbook":
     with mc_tab3:
         st.markdown("### Monthly Ledger View")
         
-        ctl1, ctl2 = st.columns(2)
+        # Resolve RBAC Scope for Branch Selection (R2)
+        from services.rbac_scope_service import RBACScopeService
+        tab3_scope = RBACScopeService.resolve_scope(current_user.to_dict() if hasattr(current_user, 'to_dict') else {
+            "id": USER_ID, "username": USER, "role": ROLE, "branch": BRANCH, "branch_id": BRANCH_ID, "assigned_branches": ASSIGNED_BRANCH_IDS
+        })
+        
+        branch_options = []
+        try:
+            with SupabaseUnitOfWork() as uow_br:
+                res_br = uow_br.client.table("branches").select("branch_id, name").eq("is_active", True).execute()
+                br_records = res_br.data or []
+                all_operational_branches = sorted(list(set(b["name"] for b in br_records if b.get("name") and b.get("name") != "Head Office")))
+                id_to_name = {str(b["branch_id"]): b["name"] for b in br_records if b.get("branch_id") and b.get("name")}
+        except Exception:
+            all_operational_branches = ["Ibadan", "Ikorodu", "Kola", "Ogijo"]
+            id_to_name = {}
+
+        if not all_operational_branches:
+            all_operational_branches = ["Ibadan", "Ikorodu", "Kola", "Ogijo"]
+            
+        if tab3_scope.scope_level == "INSTITUTION" or ROLE in ["Admin", "Super Admin", "Director", ROLE_ADMIN, ROLE_SUPER_ADMIN]:
+            branch_options = all_operational_branches
+        elif tab3_scope.scope_level == "REGION" or ROLE in ["Area Manager", "AM"]:
+            raw_assigned = list(tab3_scope.assigned_branch_names or []) + list(tab3_scope.assigned_branch_ids or [])
+            resolved_assigned = []
+            for b in raw_assigned:
+                b_str = str(b)
+                if b_str in id_to_name:
+                    resolved_assigned.append(id_to_name[b_str])
+                elif b_str in all_operational_branches:
+                    resolved_assigned.append(b_str)
+            branch_options = sorted(list(set(b for b in resolved_assigned if b and b != "Head Office")))
+            if not branch_options and BRANCH and BRANCH != "Head Office":
+                branch_options = [BRANCH]
+            if not branch_options:
+                branch_options = all_operational_branches
+        elif tab3_scope.scope_level == "BRANCH" or ROLE in ["Branch Manager", "BM", ROLE_BRANCH_MANAGER]:
+            if BRANCH and BRANCH != "Head Office":
+                branch_options = [BRANCH]
+            else:
+                branch_options = all_operational_branches
+        else:
+            branch_options = [BRANCH] if (BRANCH and BRANCH != "Head Office") else all_operational_branches
+
+        ctl1, ctl2, ctl3 = st.columns(3)
         cb_month = ctl1.selectbox("Month", list(range(1, 13)), index=datetime.now().month - 1,
                                    format_func=lambda m: datetime(2026, m, 1).strftime("%B"), key="mc_month")
         cb_year = ctl2.number_input("Year", value=datetime.now().year, step=1, min_value=2024, max_value=2030, key="mc_year")
         
+        default_br_idx = branch_options.index(BRANCH) if (BRANCH and BRANCH in branch_options) else 0
+        if len(branch_options) > 1:
+            selected_mc_branch = ctl3.selectbox("Branch", branch_options, index=default_br_idx, key="mc_branch_select")
+        else:
+            selected_mc_branch = branch_options[0] if branch_options else BRANCH
+            ctl3.selectbox("Branch", [selected_mc_branch] if selected_mc_branch else ["No Branch"], index=0, disabled=True, key="mc_branch_select_disabled")
+
         try:
             # Build date range for the month
             from calendar import monthrange
@@ -8153,17 +8218,104 @@ elif page == "Master Cashbook":
             start_date = f"{cb_year}-{cb_month:02d}-01"
             end_date = f"{cb_year}-{cb_month:02d}-{last_day:02d}"
             
-            with SupabaseUnitOfWork() as uow:
-                filters = CashbookFilter()
-                filters.branch = BRANCH
-                filters.start_date = start_date
-                filters.end_date = end_date
-                entries = uow.cashbook.find_range(filters)
+            if not selected_mc_branch or selected_mc_branch == "Head Office":
+                st.info("Please select an operational branch to view the monthly ledger.")
+                entries = []
+            else:
+                with SupabaseUnitOfWork() as uow:
+                    filters = CashbookFilter()
+                    filters.branch = selected_mc_branch
+                    filters.start_date = start_date
+                    filters.end_date = end_date
+                    entries = uow.cashbook.find_range(filters)
+            
             from mappers.base_mappers import CashbookMapper
-            result = type('obj', (object,), {'data': [CashbookMapper.to_database(e) for e in entries]})
+            result = type('obj', (object,), {'data': [CashbookMapper.to_database(e) for e in entries]}) if entries else type('obj', (object,), {'data': []})
             
             if result.data:
                 ledger_df = pd.DataFrame(result.data)
+                
+                # Sort by date ascending to ensure chronological order
+                ledger_df["date"] = pd.to_datetime(ledger_df["date"], errors='coerce').dt.strftime("%Y-%m-%d")
+                ledger_df.sort_values(by="date", ascending=True, inplace=True)
+                ledger_df.reset_index(drop=True, inplace=True)
+
+                # Dynamically calculate product-level loan disbursements from all_loans (R3)
+                loan_disb_map = {}
+                if not all_loans.empty:
+                    loans_df = all_loans.copy()
+                    if 'extra_fields' in loans_df.columns:
+                        loans_df = loans_df[~loans_df['extra_fields'].apply(lambda x: isinstance(x, dict) and x.get('is_legacy') is True)]
+                    if 'Branch' in loans_df.columns and selected_mc_branch:
+                        loans_df = loans_df[loans_df['Branch'] == selected_mc_branch]
+                    if 'Status' in loans_df.columns:
+                        loans_df = loans_df[loans_df['Status'].isin([STATUS_ACTIVE, STATUS_APPROVED, STATUS_COMPLETED, "Active", "Approved", "Completed"])]
+                    
+                    if not loans_df.empty and 'Date' in loans_df.columns:
+                        loans_df['_dt_str'] = pd.to_datetime(loans_df['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
+                        for _, l_row in loans_df.iterrows():
+                            d_key = l_row.get('_dt_str')
+                            if not d_key or pd.isna(d_key):
+                                continue
+                            if d_key not in loan_disb_map:
+                                loan_disb_map[d_key] = {
+                                    "disb_60d": 0.0,
+                                    "disb_120d": 0.0,
+                                    "disb_12w": 0.0,
+                                    "disb_24w": 0.0,
+                                    "disb_mth": 0.0,
+                                    "fund_asset": 0.0,
+                                    "fund_finance": 0.0
+                                }
+                            
+                            princ = pd.to_numeric(l_row.get('Loan Amount', 0), errors='coerce')
+                            act_cr = pd.to_numeric(l_row.get('Active Credit', 0), errors='coerce')
+                            if pd.isna(princ): princ = 0.0
+                            if pd.isna(act_cr) or act_cr == 0: act_cr = princ
+                            
+                            p_cat = str(l_row.get('Product Category', 'Finance'))
+                            p_name = str(l_row.get('Loan Product', '')).lower()
+                            
+                            if 'Asset' in p_cat:
+                                loan_disb_map[d_key]["fund_asset"] += princ
+                            else:
+                                loan_disb_map[d_key]["fund_finance"] += princ
+                                
+                            if '120' in p_name:
+                                loan_disb_map[d_key]["disb_120d"] += act_cr
+                            elif '60' in p_name:
+                                loan_disb_map[d_key]["disb_60d"] += act_cr
+                            elif '24w' in p_name or '24' in p_name:
+                                loan_disb_map[d_key]["disb_24w"] += act_cr
+                            elif '12w' in p_name or '12' in p_name:
+                                loan_disb_map[d_key]["disb_12w"] += act_cr
+                            elif '3m' in p_name or '6m' in p_name or 'month' in p_name:
+                                loan_disb_map[d_key]["disb_mth"] += act_cr
+                            else:
+                                loan_disb_map[d_key]["disb_12w"] += act_cr
+
+                # Populate / overlay dynamic disbursement numbers into ledger_df
+                for idx, row in ledger_df.iterrows():
+                    d_str = str(row.get("date", ""))[:10]
+                    if d_str in loan_disb_map:
+                        d_info = loan_disb_map[d_str]
+                        ledger_df.at[idx, "disb_60d"] = d_info["disb_60d"]
+                        ledger_df.at[idx, "disb_120d"] = d_info["disb_120d"]
+                        ledger_df.at[idx, "disb_12w"] = d_info["disb_12w"]
+                        ledger_df.at[idx, "disb_24w"] = d_info["disb_24w"]
+                        ledger_df.at[idx, "disb_mth"] = d_info["disb_mth"]
+                        if d_info["fund_asset"] > 0 and float(row.get("fund_to_asset_program") or 0.0) == 0:
+                            ledger_df.at[idx, "fund_to_asset_program"] = d_info["fund_asset"]
+                        if d_info["fund_finance"] > 0 and float(row.get("fund_to_product_finance") or 0.0) == 0:
+                            ledger_df.at[idx, "fund_to_product_finance"] = d_info["fund_finance"]
+                            ledger_df.at[idx, "total_outflows"] = float(row.get("total_outflows") or 0.0) + d_info["fund_finance"]
+                        if d_info["fund_finance"] > 0 and float(row.get("loan_received_finance") or 0.0) == 0:
+                            ledger_df.at[idx, "loan_received_finance"] = d_info["fund_finance"]
+                            ledger_df.at[idx, "total_inflows"] = float(row.get("total_inflows") or 0.0) + d_info["fund_finance"]
+                    else:
+                        for col in ["disb_60d", "disb_120d", "disb_12w", "disb_24w", "disb_mth"]:
+                            if col not in ledger_df.columns or pd.isna(ledger_df.at[idx, col]):
+                                ledger_df.at[idx, col] = 0.0
                 
                 # Reorder columns to strictly match Credit_Cash_Book_Ledger.xlsx layout (Columns A–AS)
                 display_cols = [
@@ -8189,8 +8341,17 @@ elif page == "Master Cashbook":
                 for c in display_cols:
                     if c not in ledger_df.columns:
                         ledger_df[c] = 0.0
+                    else:
+                        if c != "date":
+                            ledger_df[c] = pd.to_numeric(ledger_df[c], errors='coerce').fillna(0.0)
                 
                 display_df = ledger_df[display_cols].copy()
+                
+                # Monthly KPI calculations (R4)
+                month_opening = float(display_df.iloc[0]["opening_balance"]) if not display_df.empty else 0.0
+                month_inflows = float((display_df["total_inflows"] - display_df["opening_balance"]).sum()) if not display_df.empty else 0.0
+                month_outflows = float(display_df["total_outflows"].sum()) if not display_df.empty else 0.0
+                month_closing = float(display_df.iloc[-1]["closing_balance"]) if not display_df.empty else 0.0
                 
                 # Rename for display matching official Excel subheaders
                 col_rename = {
@@ -8214,7 +8375,7 @@ elif page == "Master Cashbook":
                     "weekly_11_pct": "Weekly 11%",
                     "weekly_20_pct": "Weekly 20%",
                     "risk_premium_returns": "Monthly 11%/20%",
-                    "contingency": "Contigency (1%)",
+                    "contingency": "Contingency (1%)",
                     "credit_form_damage": "Credit form damage",
                     "bonus": "Bonus",
                     "app_fee": "Credit form/App fee",
@@ -8239,40 +8400,39 @@ elif page == "Master Cashbook":
                     "total_outflows": "Total Outflows",
                     "closing_balance": "Closing Balance"
                 }
-                display_df.rename(columns=col_rename, inplace=True)
+                display_df_renamed = display_df.rename(columns=col_rename)
                 
                 st.dataframe(
-                    display_df.style.format(precision=0, thousands=",", na_rep="—"),
+                    display_df_renamed.style.format(precision=0, thousands=",", na_rep="—"),
                     use_container_width=True,
                     hide_index=True,
                     height=600
                 )
                 
                 # Monthly totals
-                st.markdown("#### 📈 Monthly Totals")
-                num_cols = display_df.select_dtypes(include='number').columns
-                totals = display_df[num_cols].sum()
-                mt1, mt2, mt3 = st.columns(3)
-                mt1.metric("Total Inflows", f"₦{totals.get('Total Inflows', 0):,.0f}")
-                mt2.metric("Total Outflows", f"₦{totals.get('Total Outflows', 0):,.0f}")
-                mt3.metric("Net Position", f"₦{totals.get('Closing Balance', 0):,.0f}")
+                st.markdown("#### 📈 Monthly Summary")
+                mt1, mt2, mt3, mt4 = st.columns(4)
+                mt1.metric("Month Opening Balance", f"₦{month_opening:,.0f}")
+                mt2.metric("Total Monthly Inflows", f"₦{month_inflows:,.0f}")
+                mt3.metric("Total Monthly Outflows", f"₦{month_outflows:,.0f}")
+                mt4.metric("Month-End Closing Balance", f"₦{month_closing:,.0f}")
                 
                 # Download
                 st.markdown("---")
-                if st.button("⬇️ Download Ledger as Excel", use_container_width=True, key="dl_mc"):
-                    import io
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        display_df.to_excel(writer, sheet_name='Ledger Data', index=False)
-                    st.download_button(
-                        label="📄 Click to Download",
-                        data=output.getvalue(),
-                        file_name=f"ICARE_Master_Cashbook_{datetime(cb_year, cb_month, 1).strftime('%B_%Y')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="dl_mc_btn"
-                    )
+                import io
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    display_df_renamed.to_excel(writer, sheet_name='Ledger Data', index=False)
+                st.download_button(
+                    label="⬇️ Download Ledger as Excel (.xlsx)",
+                    data=output.getvalue(),
+                    file_name=f"ICARE_Master_Cashbook_{selected_mc_branch}_{datetime(cb_year, cb_month, 1).strftime('%B_%Y')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="dl_mc"
+                )
             else:
-                st.info(f"No ledger entries found for {datetime(cb_year, cb_month, 1).strftime('%B %Y')}.")
+                st.info(f"No ledger entries found for {selected_mc_branch} in {datetime(cb_year, cb_month, 1).strftime('%B %Y')}.")
         except Exception as e:
             st.error(f"Error loading ledger: {e}")
 

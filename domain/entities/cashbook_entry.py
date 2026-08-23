@@ -16,6 +16,7 @@ class CashbookEntry:
     laps_reserve: float = 0.0
     funds_received_ho: float = 0.0
     funds_received_other_branch: float = 0.0
+    funds_received_other_area: float = 0.0
     loan_received_asset: float = 0.0
     loan_received_finance: float = 0.0
     daily_11_pct: float = 0.0
