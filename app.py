@@ -4794,125 +4794,125 @@ elif page == "Collections":
                                 if submit_btn:
                                     to_insert = []
                             
-                                # Process per-client data
-                                for cid, info in member_info.items():
-                                    m = info['member']
-                                    s = sav_data.get(cid, {"dep": 0, "wd": 0})
-                                    r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0, "mark_not_paid": False, "expected_amount": 0.0})
+                                    # Process per-client data
+                                    for cid, info in member_info.items():
+                                        m = info['member']
+                                        s = sav_data.get(cid, {"dep": 0, "wd": 0})
+                                        r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0, "mark_not_paid": False, "expected_amount": 0.0})
+                                    
+                                        sav = float(s.get('dep') or 0)
+                                        sav_wd = float(s.get('wd') or 0)
+                                        rep = float(r.get('rep') or 0)
+                                        app = float(r.get('app') or 0)
+                                        pb = float(r.get('pb') or 0)
+                                        misc = float(r.get('misc') or 0)
+                                        asset_cr = float(r.get('asset_cr') or 0)
+                                        cc = float(r.get('cc') or 0)
+                                        cfd = float(r.get('cfd') or 0)
+                                        bon = float(r.get('bonus') or 0)
+                                        exp_amt = float(r.get('expected_amount') or 0.0)
+                                        is_marked_not_paid = bool(r.get('mark_not_paid', False))
+                                    
+                                        # Determine Payment Status & Overdue Amount strictly
+                                        if is_marked_not_paid or rep == 0.0:
+                                            rep = 0.0
+                                            p_status = "NOT_PAID"
+                                            overdue_val = exp_amt
+                                        elif exp_amt > 0 and rep == exp_amt:
+                                            p_status = "PAID"
+                                            overdue_val = 0.0
+                                        elif exp_amt > 0 and rep > exp_amt:
+                                            p_status = "EXCESS"
+                                            overdue_val = 0.0
+                                        elif exp_amt > 0 and rep < exp_amt and rep > 0:
+                                            p_status = "PART_PAID"
+                                            overdue_val = max(0.0, exp_amt - rep)
+                                        else:
+                                            p_status = "PAID"
+                                            overdue_val = 0.0
+                                    
+                                        if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
+                                            if p_status != "NOT_PAID":
+                                                continue
+                                    
+                                        prod_low = str(m['Loan Product']).lower()
+                                        rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
+                                    
+                                        if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep
+                                        elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep
+                                        elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep
+                                        elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep
+                                        elif "month" in prod_low: rep_mth = rep
+                                        else: rep_60d = rep
+                                    
+                                        tx_data = {
+                                            "Date": date_str,
+                                            "Client ID": cid,
+                                            "Client Name": m['Client Name'],
+                                            "Officer": target_co,
+                                            "Branch": m['Branch'],
+                                            "Amount Paid": rep,
+                                            "Transaction Type": "Loan",
+                                            "Note": "Daily Collection",
+                                            "Savings Amount": sav,
+                                            "Withdrawal Amount": sav_wd,
+                                            "Loan Repayment Amount": rep,
+                                            "Repayment 12 Weeks": rep_12w,
+                                            "Repayment 24 Weeks": rep_24w,
+                                            "Repayment 60 Days": rep_60d,
+                                            "Repayment 120 Days": rep_120d,
+                                            "Monthly": rep_mth,
+                                            "Bank Withdrawal": 0,
+                                            "Asset Sales": 0,
+                                            "App Fee": app,
+                                            "Pass Book Bonus": pb,
+                                            "Misc Fees": misc,
+                                            "Asset Credit Sales": asset_cr,
+                                            "Cash and Carry": cc,
+                                            "Credit Form": 0,
+                                            "Credit Form Damage": cfd,
+                                            "Bonus": bon,
+                                            "Payment Status": p_status,
+                                            "Expected Amount": exp_amt,
+                                            "Overdue Amount": overdue_val,
+                                            "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
+                                            "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                            "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
+                                            "Laps Reserved": 0, "Laps Transferred": 0,
+                                            "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
+                                        }
+                                        to_insert.append(tx_data)
                                 
-                                    sav = float(s.get('dep') or 0)
-                                    sav_wd = float(s.get('wd') or 0)
-                                    rep = float(r.get('rep') or 0)
-                                    app = float(r.get('app') or 0)
-                                    pb = float(r.get('pb') or 0)
-                                    misc = float(r.get('misc') or 0)
-                                    asset_cr = float(r.get('asset_cr') or 0)
-                                    cc = float(r.get('cc') or 0)
-                                    cfd = float(r.get('cfd') or 0)
-                                    bon = float(r.get('bonus') or 0)
-                                    exp_amt = float(r.get('expected_amount') or 0.0)
-                                    is_marked_not_paid = bool(r.get('mark_not_paid', False))
+                                    # Process Group-Level Inflows
+                                    global_group_savings = float(global_group_savings or 0)
+                                    global_group_wd = float(global_group_wd or 0)
                                 
-                                    # Determine Payment Status & Overdue Amount strictly
-                                    if is_marked_not_paid or rep == 0.0:
-                                        rep = 0.0
-                                        p_status = "NOT_PAID"
-                                        overdue_val = exp_amt
-                                    elif exp_amt > 0 and rep == exp_amt:
-                                        p_status = "PAID"
-                                        overdue_val = 0.0
-                                    elif exp_amt > 0 and rep > exp_amt:
-                                        p_status = "EXCESS"
-                                        overdue_val = 0.0
-                                    elif exp_amt > 0 and rep < exp_amt and rep > 0:
-                                        p_status = "PART_PAID"
-                                        overdue_val = max(0.0, exp_amt - rep)
+                                    if global_group_savings > 0 or global_group_wd > 0:
+                                        g_data = {
+                                            "Date": date_str, "Client ID": f"GROUP-{selected_group}", "Client Name": f"{selected_group} Meeting",
+                                            "Officer": target_co, "Branch": BRANCH,
+                                            "Amount Paid": global_group_savings,
+                                            "Transaction Type": "Group Meeting", "Note": "Group Level Inputs",
+                                            "Savings Amount": global_group_savings, "Withdrawal Amount": global_group_wd,
+                                            "Laps Reserved": 0,
+                                            "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
+                                            "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0, "Bank Withdrawal": 0,
+                                            "Asset Sales": 0, "App Fee": 0, "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
+                                            "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
+                                            "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                            "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0, "Laps Transferred": 0,
+                                            "Group Savings Deposit": global_group_savings, "Group Savings Withdrawal": global_group_wd
+                                        }
+                                        to_insert.append(g_data)
+                                    
+                                    if to_insert:
+                                        st.session_state['pending_collections'] = to_insert
+                                        st.session_state['collections_group'] = selected_group
+                                        st.session_state['collections_date'] = date_str
+                                        st.session_state['edit_collections_mode'] = False
+                                        st.rerun()
                                     else:
-                                        p_status = "PAID"
-                                        overdue_val = 0.0
-                                
-                                    if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
-                                        if p_status != "NOT_PAID":
-                                            continue
-                                
-                                    prod_low = str(m['Loan Product']).lower()
-                                    rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
-                                
-                                    if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep
-                                    elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep
-                                    elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep
-                                    elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep
-                                    elif "month" in prod_low: rep_mth = rep
-                                    else: rep_60d = rep
-                                
-                                    tx_data = {
-                                        "Date": date_str,
-                                        "Client ID": cid,
-                                        "Client Name": m['Client Name'],
-                                        "Officer": target_co,
-                                        "Branch": m['Branch'],
-                                        "Amount Paid": rep,
-                                        "Transaction Type": "Loan",
-                                        "Note": "Daily Collection",
-                                        "Savings Amount": sav,
-                                        "Withdrawal Amount": sav_wd,
-                                        "Loan Repayment Amount": rep,
-                                        "Repayment 12 Weeks": rep_12w,
-                                        "Repayment 24 Weeks": rep_24w,
-                                        "Repayment 60 Days": rep_60d,
-                                        "Repayment 120 Days": rep_120d,
-                                        "Monthly": rep_mth,
-                                        "Bank Withdrawal": 0,
-                                        "Asset Sales": 0,
-                                        "App Fee": app,
-                                        "Pass Book Bonus": pb,
-                                        "Misc Fees": misc,
-                                        "Asset Credit Sales": asset_cr,
-                                        "Cash and Carry": cc,
-                                        "Credit Form": 0,
-                                        "Credit Form Damage": cfd,
-                                        "Bonus": bon,
-                                        "Payment Status": p_status,
-                                        "Expected Amount": exp_amt,
-                                        "Overdue Amount": overdue_val,
-                                        "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
-                                        "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
-                                        "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
-                                        "Laps Reserved": 0, "Laps Transferred": 0,
-                                        "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
-                                    }
-                                    to_insert.append(tx_data)
-                            
-                                # Process Group-Level Inflows
-                                global_group_savings = float(global_group_savings or 0)
-                                global_group_wd = float(global_group_wd or 0)
-                            
-                                if global_group_savings > 0 or global_group_wd > 0:
-                                    g_data = {
-                                        "Date": date_str, "Client ID": f"GROUP-{selected_group}", "Client Name": f"{selected_group} Meeting",
-                                        "Officer": target_co, "Branch": BRANCH,
-                                        "Amount Paid": global_group_savings,
-                                        "Transaction Type": "Group Meeting", "Note": "Group Level Inputs",
-                                        "Savings Amount": global_group_savings, "Withdrawal Amount": global_group_wd,
-                                        "Laps Reserved": 0,
-                                        "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
-                                        "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0, "Bank Withdrawal": 0,
-                                        "Asset Sales": 0, "App Fee": 0, "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
-                                        "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
-                                        "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
-                                        "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0, "Laps Transferred": 0,
-                                        "Group Savings Deposit": global_group_savings, "Group Savings Withdrawal": global_group_wd
-                                    }
-                                    to_insert.append(g_data)
-                                
-                                if to_insert:
-                                    st.session_state['pending_collections'] = to_insert
-                                    st.session_state['collections_group'] = selected_group
-                                    st.session_state['collections_date'] = date_str
-                                    st.session_state['edit_collections_mode'] = False
-                                    st.rerun()
-                                else:
-                                    st.warning("No data entered to save.")
+                                        st.warning("No data entered to save.")
 
         with col_tab2:
             st.markdown("### 📜 Collection History & Audit")
