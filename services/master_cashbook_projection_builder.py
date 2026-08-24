@@ -38,15 +38,15 @@ class MasterCashbookProjectionBuilder:
                 opening_bal = float(res_prev.data[0]["closing_balance"] or 0.0)
             else:
                 # If no previous day master cashbook exists (Day 1 / fresh bootstrap),
-                # derive initial opening balance from the sum of CO opening balances
-                sum_co_open = sum(float(r.get("opening_balance") or 0.0) for r in co_rows)
-                if sum_co_open > 0:
-                    opening_bal = sum_co_open
+                # check if master_cashbook already has an existing opening_balance recorded, or derive from COs
+                res_curr = uow.client.table("master_cashbook").select("opening_balance") \
+                    .eq("branch_id", branch_id).eq("date", p_date_str).execute()
+                if res_curr.data and res_curr.data[0].get("opening_balance") is not None and float(res_curr.data[0]["opening_balance"] or 0.0) > 0:
+                    opening_bal = float(res_curr.data[0]["opening_balance"] or 0.0)
                 else:
-                    res_curr = uow.client.table("master_cashbook").select("opening_balance") \
-                        .eq("branch_id", branch_id).eq("date", p_date_str).execute()
-                    if res_curr.data and res_curr.data[0].get("opening_balance") is not None:
-                        opening_bal = float(res_curr.data[0]["opening_balance"] or 0.0)
+                    sum_co_open = sum(float(r.get("opening_balance") or 0.0) for r in co_rows)
+                    if sum_co_open > 0:
+                        opening_bal = sum_co_open
         except Exception:
             pass
 
@@ -61,11 +61,12 @@ class MasterCashbookProjectionBuilder:
             "fund_transferred_other_branch", "fund_transferred_ho", "fund_to_other_area",
             "fund_to_asset_program", "fund_to_product_finance", "savings_withdrawal",
             "staff_salaries", "office_expenses", "laps_returns", "bank_deposit",
-            "bank_withdrawal", "product_withdrawal",
+            "product_withdrawal",
             "disb_60d", "disb_120d", "disb_12w", "disb_24w", "disb_mth"
         ]
 
         totals = {field: 0.0 for field in numeric_fields}
+        totals["bank_withdrawal"] = 0.0
 
         for row in co_rows:
             for field in numeric_fields:
@@ -169,6 +170,10 @@ class MasterCashbookProjectionBuilder:
                     totals["disb_mth"] = totals.get("disb_mth", 0.0) + act_cr
                 else:
                     totals["disb_12w"] = totals.get("disb_12w", 0.0) + act_cr
+                    
+                gap = max(0.0, princ - act_cr)
+                if gap > 0:
+                    totals["misc_fees"] = totals.get("misc_fees", 0.0) + gap
         except Exception as e:
             print(f"Master Cashbook failed to fetch direct loan disbursements: {e}")
 
