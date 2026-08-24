@@ -135,8 +135,8 @@ class BusinessDateService:
                     defaults = res.data[0].get("cashbook_defaults") or {}
                     if isinstance(defaults, dict) and defaults.get("business_date"):
                         stored_date = date.fromisoformat(defaults["business_date"])
-                        # If stored date is valid and >= today, return it
-                        if stored_date >= today:
+                        # If stored date is valid and within a reasonable business cycle (today to today + 7 days), return it
+                        if today <= stored_date <= (today + timedelta(days=7)):
                             return stored_date
             except Exception:
                 pass

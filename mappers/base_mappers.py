@@ -165,7 +165,8 @@ class RepaymentMapper:
 
         # Resolve client name and code from join
         c_name = dto.get("client_name", "")
-        c_code = dto.get("client_id", "")
+        c_uuid = dto.get("client_id", "")
+        c_code = c_uuid
         if dto.get("clients") and isinstance(dto.get("clients"), dict):
             c_name = dto.get("clients", {}).get("name", c_name)
             c_code = dto.get("clients", {}).get("client_code", c_code)
@@ -173,6 +174,7 @@ class RepaymentMapper:
         tx_type = str(dto.get("transaction_type", "Loan"))
         if tx_type.startswith("GROUP-") or tx_type.startswith("GLOBAL-"):
             c_code = tx_type
+            c_uuid = tx_type
 
         # Setup all collection fields expected by domain Repayment
         def safe_float(val, default=0.0):
@@ -216,11 +218,13 @@ class RepaymentMapper:
             
         extra = {k: v for k, v in dto.items() if k not in ["id", "loan_id", "client_id", "amount_paid", "savings_amount", "loan_repayment_amount", "withdrawal_amount", "others_amount", "recovery_amount", "initial_payment", "date", "payment_date", "transaction_type", "branch", "officer", "credit_officer", "note", "created_at", "clients", "branches", "app_users"]}
         extra["client_name"] = c_name
+        extra["client_code"] = c_code
+        extra["client_uuid"] = c_uuid
 
         return Repayment(
             id=str(dto.get("id") or ""),
             loan_id=str(dto.get("loan_id", dto.get("client_id", ""))),
-            client_id=str(c_code),
+            client_id=str(c_uuid),
             amount_paid=amt_paid,
             savings_amount=savings_dep,
             loan_repayment_amount=loan_repay,

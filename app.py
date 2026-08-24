@@ -1021,7 +1021,7 @@ DB_TO_UI_LOANS = {
 UI_TO_DB_LOANS = {v: k for k, v in DB_TO_UI_LOANS.items()}
 
 DB_TO_UI_REP = {
-    "date": "Date", "branch": "Branch", "client_id": "Client ID",
+    "date": "Date", "branch": "Branch", "client_id": "Client ID", "client_code": "Client Code",
     "client_name": "Client Name", "amount_paid": "Amount Paid", "officer": "Officer", 
     "note": "Note", "transaction_type": "Transaction Type",
     "savings_amount": "Savings Amount", "loan_repayment_amount": "Loan Repayment Amount",
@@ -6349,9 +6349,25 @@ elif page == "Dashboard":
     is_working_day = not (is_holiday or is_weekend)
     
     client_savings_map = load_client_savings_map()
+    
+    # Query today's savings for the officer directly from individual_savings and group_savings per BR-SAV-001
+    try:
+        with SupabaseUnitOfWork() as uow_dash_sav:
+            t_officer_id = USER_ID or uow_dash_sav.loans._resolve_officer_id(USER)
+            res_today_sav = uow_dash_sav.client.table("individual_savings").select("deposit_amount, withdrawal_amount").eq("officer_id", t_officer_id).eq("posting_date", today_str).execute()
+            today_savings_deposited = sum(float(s.get("deposit_amount") or 0) for s in (res_today_sav.data or []))
+            today_savings_withdrawn = sum(float(s.get("withdrawal_amount") or 0) for s in (res_today_sav.data or []))
+            
+            res_today_grp_sav = uow_dash_sav.client.table("group_savings").select("deposit_amount, withdrawal_amount").eq("officer_id", t_officer_id).eq("posting_date", today_str).execute()
+            today_savings_deposited += sum(float(s.get("deposit_amount") or 0) for s in (res_today_grp_sav.data or []))
+            today_savings_withdrawn += sum(float(s.get("withdrawal_amount") or 0) for s in (res_today_grp_sav.data or []))
+    except Exception:
+        pass
+
     for _, loan in my_loans.iterrows():
         cid = loan.get('Client ID')
-        c_payments = all_repayments[all_repayments['Client ID'] == cid] if not all_repayments.empty else pd.DataFrame()
+        ccode = loan.get('Client Code', cid)
+        c_payments = all_repayments[(all_repayments['Client ID'] == cid) | (all_repayments.get('Client Code', all_repayments['Client ID']) == ccode) | (all_repayments['Client ID'] == ccode)] if not all_repayments.empty else pd.DataFrame()
         s_amt = client_savings_map.get(cid, 0.0)
         
         total_paid_for_loan = pd.to_numeric(c_payments['Loan Repayment Amount'], errors='coerce').fillna(0).sum() if not c_payments.empty else 0.0
@@ -6369,12 +6385,8 @@ elif page == "Dashboard":
         
         today_payments = c_payments[c_payments['Date'] == today_str] if not c_payments.empty else pd.DataFrame()
         today_loan_paid = pd.to_numeric(today_payments['Loan Repayment Amount'], errors='coerce').fillna(0).sum()
-        today_sav_dep = pd.to_numeric(today_payments['Savings Amount'], errors='coerce').fillna(0).sum()
-        today_sav_wd = pd.to_numeric(today_payments['Withdrawal Amount'], errors='coerce').fillna(0).sum()
         
         collected_today += today_loan_paid
-        today_savings_deposited += today_sav_dep
-        today_savings_withdrawn += today_sav_wd
         
         if not c_payments.empty:
             for _, rep in c_payments.iterrows():
