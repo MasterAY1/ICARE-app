@@ -168,27 +168,25 @@ class ScheduleService:
     @staticmethod
     def get_expected_repayment(uow: SupabaseUnitOfWork, loan_id: str, evaluation_date: date = None) -> float:
         """
-        Calculates the expected repayment amount for a loan up to the evaluation date (default today).
-        Expected payment = sum(total_due) of all installments due up to today - sum(paid_amount) of all installments.
+        Calculates the expected periodic repayment installment for a loan up to the evaluation date (default today).
+        Returns the single installment amount due for the period, or 0.0 if not found.
         """
         if not evaluation_date:
             evaluation_date = date.today()
 
-        res = uow.client.table("loan_schedule").select("*").eq("loan_id", loan_id).execute()
+        res = uow.client.table("loan_schedule").select("*").eq("loan_id", loan_id).order("installment_number").execute()
         if not res.data:
             return 0.0
 
-        total_due_so_far = 0.0
-        total_paid_so_far = 0.0
-
+        # Find the installment due on or immediately relevant to the evaluation date
         for row in res.data:
             due_date = datetime.strptime(row["due_date"].split("T")[0], "%Y-%m-%d").date()
-            if due_date <= evaluation_date:
-                total_due_so_far += float(row["total_due"] or 0)
-            total_paid_so_far += float(row["paid_amount"] or 0)
+            if due_date >= evaluation_date:
+                return float(row.get("total_due") or (float(row.get("principal", 0)) + float(row.get("interest", 0))))
 
-        expected = total_due_so_far - total_paid_so_far
-        return max(0.0, expected)
+        # Fallback to the last installment amount
+        last_row = res.data[-1]
+        return float(last_row.get("total_due") or (float(last_row.get("principal", 0)) + float(last_row.get("interest", 0))))
 
     @staticmethod
     def get_total_paid(uow: SupabaseUnitOfWork, loan_id: str) -> tuple[float, bool]:

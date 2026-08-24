@@ -4332,12 +4332,13 @@ elif page == "Collections":
                                 rem_bal = max(0.0, total_due_base - active_loan_total_paid)
                                 loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
                             
-                                if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
-                                    expected_rep_schedule = ScheduleService.get_expected_repayment(uow, active_loan_id, view_date)
-                                    if not expected_rep_schedule:
-                                        expected_rep_schedule = float(loan_row.get('Loan Repay', 0.0))
-                                else:
-                                    expected_rep_schedule = 0.0
+                                # The expected periodic installment per collection session
+                                inst_repay = float(loan_row.get('Loan Repay', 0.0) or loan_row.get('expected_installment', 0.0) or 0.0)
+                                if inst_repay == 0.0 and act_cred > 0:
+                                    duration_val = float(loan_row.get('Duration', 0) or loan_row.get('duration', 0) or 1)
+                                    inst_repay = (total_due_base / duration_val) if duration_val > 0 else total_due_base
+                                
+                                expected_rep_schedule = min(inst_repay, rem_bal) if rem_bal > 0 else 0.0
                                 
                                 start_date_val = str(loan_row.get('Start Date', ''))
                             else:
