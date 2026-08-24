@@ -9,9 +9,15 @@ class CashbookEntry:
     branch: str
     opening_balance: float = 0.0
     rep_daily: float = 0.0
+    rep_120_days: float = 0.0
     rep_12_weeks: float = 0.0
     rep_24_weeks: float = 0.0
     rep_monthly: float = 0.0
+    disb_60d: float = 0.0
+    disb_120d: float = 0.0
+    disb_12w: float = 0.0
+    disb_24w: float = 0.0
+    disb_mth: float = 0.0
     savings_deposit: float = 0.0
     laps_reserve: float = 0.0
     funds_received_ho: float = 0.0

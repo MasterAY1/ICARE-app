@@ -52,7 +52,7 @@ class MasterCashbookProjectionBuilder:
 
         # 3. Aggregate operational fields across COs
         numeric_fields = [
-            "rep_daily", "rep_12_weeks", "rep_24_weeks", "rep_monthly",
+            "rep_daily", "rep_120_days", "rep_12_weeks", "rep_24_weeks", "rep_monthly",
             "savings_deposit", "laps_reserve", "loan_received_asset", "loan_received_finance",
             "daily_11_pct", "daily_20_pct", "weekly_11_pct", "weekly_20_pct", "savings_adj_amount", "risk_premium_returns",
             "passbook", "app_fee", "asset_credit_sales", "cash_and_carry", "contingency",
@@ -61,7 +61,8 @@ class MasterCashbookProjectionBuilder:
             "fund_transferred_other_branch", "fund_transferred_ho", "fund_to_other_area",
             "fund_to_asset_program", "fund_to_product_finance", "savings_withdrawal",
             "staff_salaries", "office_expenses", "laps_returns", "bank_deposit",
-            "bank_withdrawal", "product_withdrawal"
+            "bank_withdrawal", "product_withdrawal",
+            "disb_60d", "disb_120d", "disb_12w", "disb_24w", "disb_mth"
         ]
 
         totals = {field: 0.0 for field in numeric_fields}
@@ -70,10 +71,8 @@ class MasterCashbookProjectionBuilder:
             for field in numeric_fields:
                 totals[field] += float(row.get(field) or 0.0)
 
-        # 4. Fetch Branch Treasury Activities and Direct Branch Disbursements from Ledger
+        # 4. Fetch Branch Treasury Activities from Ledger
         try:
-            # We fetch all ledger entries for the branch on this date that hit Account 1000 (Vault Cash)
-            # but ONLY for branch-level events that are NOT already captured within CO cashbooks.
             res_ledger = uow.client.table("financial_ledger_entries") \
                 .select("*, financial_transactions!inner(officer_id, event_store(event_type, payload))") \
                 .eq("branch_id", branch_id) \
@@ -123,24 +122,64 @@ class MasterCashbookProjectionBuilder:
                     elif event_type == "BankDeposited":
                         if tx_officer_id not in co_officer_ids:
                             totals["bank_deposit"] += amt
-                    elif event_type == "LoanDisbursed":
-                        # Only add branch-level disbursements if NOT already included in CO cashbooks
-                        if tx_officer_id not in co_officer_ids:
-                            prod_cat = payload.get("product_category") or ("Asset" if "Asset" in str(payload.get("narration", "")) else "Finance")
-                            if prod_cat == "Asset":
-                                totals["fund_to_asset_program"] += amt
-                            else:
-                                totals["fund_to_product_finance"] += amt
         except Exception as e:
             print(f"[SAVINGS TRACE] Master Cashbook failed to fetch branch ledger entries: {e}")
 
-        # BR-CASH-001: Funds from Finance (Inflow) balances Fund to Product Finance (Outflow)
+        # 5. Fetch Original Gross Principal for Loan Disbursements (BR-CASH-001)
+        totals["fund_to_asset_program"] = 0.0
+        totals["fund_to_product_finance"] = 0.0
+        totals["disb_60d"] = 0.0
+        totals["disb_120d"] = 0.0
+        totals["disb_12w"] = 0.0
+        totals["disb_24w"] = 0.0
+        totals["disb_mth"] = 0.0
+        
+        try:
+            res_loans = uow.client.table("loans") \
+                .select("loan_amount, active_credit, extra_fields, loan_products(name, repayment_cycle)") \
+                .eq("branch_id", branch_id) \
+                .eq("disbursement_date", p_date_str) \
+                .in_("status", ["Active", "Approved", "Completed"]) \
+                .execute()
+            
+            for l in (res_loans.data or []):
+                if isinstance(l.get("extra_fields"), dict) and l["extra_fields"].get("is_legacy") is True:
+                    continue
+                princ = float(l.get("loan_amount") or 0.0)
+                act_cr = float(l.get("active_credit") or princ)
+                lp = l.get("loan_products") or {}
+                p_name = str(lp.get("name") or "").lower()
+                p_cat = str(l.get("product_category") or ("Asset" if "asset" in p_name else "Finance"))
+                
+                if "Asset" in p_cat or "asset" in p_name:
+                    totals["fund_to_asset_program"] += princ
+                else:
+                    totals["fund_to_product_finance"] += princ
+                    
+                cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in p_name else "Weekly")
+                if "120" in p_name:
+                    totals["disb_120d"] = totals.get("disb_120d", 0.0) + act_cr
+                elif "60" in p_name or (cycle == "Daily" and "120" not in p_name):
+                    totals["disb_60d"] = totals.get("disb_60d", 0.0) + act_cr
+                elif "24" in p_name:
+                    totals["disb_24w"] = totals.get("disb_24w", 0.0) + act_cr
+                elif "12" in p_name or cycle == "Weekly":
+                    totals["disb_12w"] = totals.get("disb_12w", 0.0) + act_cr
+                elif "3m" in p_name or "6m" in p_name or cycle == "Monthly":
+                    totals["disb_mth"] = totals.get("disb_mth", 0.0) + act_cr
+                else:
+                    totals["disb_12w"] = totals.get("disb_12w", 0.0) + act_cr
+        except Exception as e:
+            print(f"Master Cashbook failed to fetch direct loan disbursements: {e}")
+
+        # BR-CASH-001: Funds from Finance (Inflow) balances Fund to Product Finance (Outflow) with Gross Principal
         totals["loan_received_finance"] = totals.get("fund_to_product_finance", 0.0)
+        totals["loan_received_asset"] = totals.get("fund_to_asset_program", 0.0)
 
         # Corrected Master Cashbook Formulas (ICARE Business Rules)
         total_inflows = (
             opening_bal +
-            totals["rep_daily"] + totals["rep_12_weeks"] + totals["rep_24_weeks"] + totals["rep_monthly"] +
+            totals["rep_daily"] + totals.get("rep_120_days", 0.0) + totals["rep_12_weeks"] + totals["rep_24_weeks"] + totals["rep_monthly"] +
             totals["savings_deposit"] + totals["laps_reserve"] + totals["bank_withdrawal"] +
             totals["funds_received_ho"] + totals["funds_received_other_branch"] + totals["funds_received_other_area"] +
             totals["loan_received_asset"] + totals["loan_received_finance"] +
@@ -151,7 +190,7 @@ class MasterCashbookProjectionBuilder:
         )
 
         total_outflows = (
-            totals["product_withdrawal"] +
+            totals["product_withdrawal"] + totals["savings_withdrawal"] +
             totals["bank_deposit"] + totals["laps_returns"] +
             totals["fund_to_asset_program"] + totals["fund_to_product_finance"] +
             totals["fund_transferred_other_branch"] + totals["fund_transferred_ho"] + totals["fund_to_other_area"] +

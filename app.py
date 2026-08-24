@@ -7744,7 +7744,7 @@ elif page == "Master Cashbook":
             )
             
             total_outflows = (
-                auto_prod_wd +
+                auto_prod_wd + auto_savings_wd +
                 auto_fund_asset + auto_fund_finance +
                 xfer_branch + xfer_ho + xfer_area +
                 salaries + auto_expenses + auto_laps_ret + auto_bank_dep
@@ -7772,15 +7772,21 @@ elif page == "Master Cashbook":
                     "branch": BRANCH,
                     "opening_balance": auto_opening,
                     "rep_daily": auto_rep_60d + auto_rep_120d,
+                    "rep_120_days": auto_rep_120d,
                     "rep_12_weeks": auto_rep_12w,
                     "rep_24_weeks": auto_rep_24w,
                     "rep_monthly": auto_rep_mth,
+                    "disb_60d": auto_disb_60d,
+                    "disb_120d": auto_disb_120d,
+                    "disb_12w": auto_disb_12w,
+                    "disb_24w": auto_disb_24w,
+                    "disb_mth": auto_disb_mth,
                     "savings_deposit": auto_savings,
                     "laps_reserve": auto_laps_res,
                     "funds_received_ho": funds_ho,
                     "funds_received_other_branch": funds_branch,
                     "funds_received_other_area": funds_area,
-                    "loan_received_asset": 0,
+                    "loan_received_asset": auto_fund_asset,
                     "loan_received_finance": auto_fund_finance,
                     "daily_11_pct": auto_daily_11,
                     "weekly_11_pct": auto_weekly_11,
@@ -8312,19 +8318,22 @@ elif page == "Master Cashbook":
                     d_str = str(row.get("date", ""))[:10]
                     if d_str in loan_disb_map:
                         d_info = loan_disb_map[d_str]
-                        ledger_df.at[idx, "disb_60d"] = d_info["disb_60d"]
-                        ledger_df.at[idx, "disb_120d"] = d_info["disb_120d"]
-                        ledger_df.at[idx, "disb_12w"] = d_info["disb_12w"]
-                        ledger_df.at[idx, "disb_24w"] = d_info["disb_24w"]
-                        ledger_df.at[idx, "disb_mth"] = d_info["disb_mth"]
+                        if float(row.get("disb_60d") or 0.0) == 0:
+                            ledger_df.at[idx, "disb_60d"] = d_info["disb_60d"]
+                        if float(row.get("disb_120d") or 0.0) == 0:
+                            ledger_df.at[idx, "disb_120d"] = d_info["disb_120d"]
+                        if float(row.get("disb_12w") or 0.0) == 0:
+                            ledger_df.at[idx, "disb_12w"] = d_info["disb_12w"]
+                        if float(row.get("disb_24w") or 0.0) == 0:
+                            ledger_df.at[idx, "disb_24w"] = d_info["disb_24w"]
+                        if float(row.get("disb_mth") or 0.0) == 0:
+                            ledger_df.at[idx, "disb_mth"] = d_info["disb_mth"]
                         if d_info["fund_asset"] > 0 and float(row.get("fund_to_asset_program") or 0.0) == 0:
                             ledger_df.at[idx, "fund_to_asset_program"] = d_info["fund_asset"]
                         if d_info["fund_finance"] > 0 and float(row.get("fund_to_product_finance") or 0.0) == 0:
                             ledger_df.at[idx, "fund_to_product_finance"] = d_info["fund_finance"]
-                            ledger_df.at[idx, "total_outflows"] = float(row.get("total_outflows") or 0.0) + d_info["fund_finance"]
                         if d_info["fund_finance"] > 0 and float(row.get("loan_received_finance") or 0.0) == 0:
                             ledger_df.at[idx, "loan_received_finance"] = d_info["fund_finance"]
-                            ledger_df.at[idx, "total_inflows"] = float(row.get("total_inflows") or 0.0) + d_info["fund_finance"]
                     else:
                         for col in ["disb_60d", "disb_120d", "disb_12w", "disb_24w", "disb_mth"]:
                             if col not in ledger_df.columns or pd.isna(ledger_df.at[idx, col]):
