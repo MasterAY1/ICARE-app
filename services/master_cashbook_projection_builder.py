@@ -170,10 +170,6 @@ class MasterCashbookProjectionBuilder:
                     totals["disb_mth"] = totals.get("disb_mth", 0.0) + act_cr
                 else:
                     totals["disb_12w"] = totals.get("disb_12w", 0.0) + act_cr
-                    
-                gap = max(0.0, princ - act_cr)
-                if gap > 0:
-                    totals["misc_fees"] = totals.get("misc_fees", 0.0) + gap
         except Exception as e:
             print(f"Master Cashbook failed to fetch direct loan disbursements: {e}")
 
