@@ -7629,18 +7629,19 @@ elif page == "Master Cashbook":
                 else:
                     auto_disb_12w += active_cr
         
-        # ---- OPENING BALANCE: Fetch previous day's closing ----
-        prev_date = (view_date - timedelta(days=1)).strftime("%Y-%m-%d")
-        try:
-            with SupabaseUnitOfWork() as uow:
-                prev_entry = uow.cashbook.find_by_date_and_branch(prev_date, BRANCH)
-            prev_row = type('obj', (object,), {'data': [{'closing_balance': prev_entry.closing_balance}] if prev_entry else []})
-            auto_opening = float(prev_row.data[0]['closing_balance']) if prev_row.data else 0.0
-        except Exception:
-            auto_opening = 0.0
-            
+        # ---- OPENING BALANCE: Fetch projected opening balance ----
+        auto_opening = float(cb_entry.opening_balance) if cb_entry and cb_entry.opening_balance is not None else 0.0
         if auto_opening == 0.0 and date_str == "2026-08-19":
             auto_opening = 450.0
+        elif auto_opening == 0.0:
+            prev_date = (view_date - timedelta(days=1)).strftime("%Y-%m-%d")
+            try:
+                with SupabaseUnitOfWork() as uow:
+                    prev_entry = uow.cashbook.find_by_date_and_branch(prev_date, BRANCH)
+                if prev_entry and prev_entry.closing_balance is not None:
+                    auto_opening = float(prev_entry.closing_balance)
+            except Exception:
+                auto_opening = 0.0
         
         # ---- DISPLAY AUTO-SUMMED VALUES (Excel T-Account Layout) ----
         st.markdown("### 📊 Daily Ledger (Auto-Summed from CO Data)")
