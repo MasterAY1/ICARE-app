@@ -227,6 +227,26 @@ def load_co_mapping():
 
 CO_NAME_MAP, CO_DISPLAY_MAP = load_co_mapping()
 
+@CacheProvider.cache_data(ttl=600)
+def load_active_branches():
+    """Cached reference lookup of active branches."""
+    try:
+        with SupabaseUnitOfWork() as uow:
+            res = uow.client.table("branches").select("branch_id, name, code").eq("is_active", True).execute()
+            return res.data or []
+    except Exception:
+        return []
+
+@CacheProvider.cache_data(ttl=600)
+def load_loan_products_list():
+    """Cached reference lookup of active loan products."""
+    try:
+        with SupabaseUnitOfWork() as uow:
+            res = uow.client.table("loan_products").select("product_id, name").execute()
+            return res.data or []
+    except Exception:
+        return []
+
 # Custom CSS — ICARE Banking Design System v5.0 (Brand Colors)
 st.markdown("""
     <style>
