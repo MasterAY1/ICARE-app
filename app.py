@@ -6596,6 +6596,44 @@ elif page in ["Audit Center", "Audit Ledger"]:
         audit_views = getattr(uow_ac, 'audit_views', None) or SupabaseAuditViewRepository(uow_ac.client)
         enricher = AuditEnricher(uow=uow_ac)
 
+        # RBAC Branch & Officer Scope Resolution for Audit Center
+        is_admin_ac = ROLE in [ROLE_ADMIN, 'Super Admin', 'Admin', 'Director']
+        is_am_ac = ROLE in ['AM', 'Area Manager']
+        is_bm_ac = ROLE in ['BM', ROLE_BRANCH_MANAGER]
+
+        # Fetch active branches for selection
+        try:
+            res_branches = uow_ac.client.table("branches").select("branch_id, name").eq("is_active", True).execute()
+            all_branches_list = res_branches.data or []
+        except Exception:
+            all_branches_list = []
+
+        branch_map_name_to_id = {b["name"]: b["branch_id"] for b in all_branches_list}
+        branch_map_id_to_name = {b["branch_id"]: b["name"] for b in all_branches_list}
+
+        if is_admin_ac:
+            ac_branch_options = ["All Branches"] + [b["name"] for b in all_branches_list]
+        elif is_am_ac:
+            ac_branch_options = [b["name"] for b in all_branches_list if b["branch_id"] in (ASSIGNED_BRANCH_IDS or [])]
+            if not ac_branch_options:
+                ac_branch_options = [BRANCH or "Ogijo"]
+        else:  # BM or CO
+            ac_branch_options = [BRANCH or "Ogijo"]
+
+        def _get_branch_officers(sel_b_name):
+            if sel_b_name == "All Branches" or not sel_b_name:
+                return {"All Officers": "All"}
+            b_id = branch_map_name_to_id.get(sel_b_name) or BRANCH_ID
+            try:
+                res_co = uow_ac.client.table("app_users").select("id, username, full_name, role").eq("branch_id", b_id).execute()
+                co_users = [u for u in (res_co.data or []) if u.get("role") in ["Credit Officer", "CO", "Officer", None]]
+                opts = {"All Officers": "All"}
+                for u in co_users:
+                    disp = f"{u.get('full_name', u.get('username'))} ({u.get('username')})"
+                    opts[disp] = u.get("id") or u.get("username")
+                return opts
+            except Exception:
+                return {"All Officers": "All"}
 
         # ---------------------------------------------------------------------
         # TAB 1: Financial Integrity & 6-Way Match
@@ -6626,9 +6664,9 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     var_df = pd.DataFrame(rec_result["variances"])
                     st.dataframe(var_df, use_container_width=True)
     
-            # ---------------------------------------------------------------------
-            # TAB 2: 📊 Fee Audit
-            # ---------------------------------------------------------------------
+        # ---------------------------------------------------------------------
+        # TAB 2: 📊 Fee Audit
+        # ---------------------------------------------------------------------
         if audit_tab2:
             with audit_tab2:
                 st.subheader("📊 Fee Audit Ledgers")
@@ -6643,16 +6681,26 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 with fb3:
                     fee_sub = st.selectbox("Fee Type", ["PROCESSING_FEE", "PASSBOOK", "CREDIT_FORM", "CREDIT_FORM_DAMAGE", "BONUS", "MISC_FEE", "CONTINGENCY", "MARKUP_11", "MARKUP_20"], key="ac_fee_type")
                 with fb4:
-                    fee_branch = st.selectbox("Branch", ["All Branches", BRANCH or "Ijebu Ode Branch"], key="fee_branch_sel")
+                    fee_branch = st.selectbox("Branch", ac_branch_options, key="fee_branch_sel", disabled=(len(ac_branch_options) == 1))
                 with fb5:
-                    fee_officer = st.selectbox("Officer", ["All Officers", USER or "Ayomide"], key="fee_officer_sel")
+                    fee_officer_map = _get_branch_officers(fee_branch)
+                    fee_officer_disp = st.selectbox("Officer", list(fee_officer_map.keys()), key="fee_officer_sel")
+                    fee_officer_val = fee_officer_map.get(fee_officer_disp)
                 with fb6:
                     fee_search = st.text_input("🔍 Search", "", placeholder="Client / Ref", key="fee_search")
                 with fb7:
                     st.write("")
                     fee_reset = st.button("Reset", key="fee_reset_btn")
     
-                raw_fee_records = audit_views.get_fee_ledger(fee_sub, date_from=fee_d_from, date_to=fee_d_to, limit=500)
+                fee_target_branch_id = branch_map_name_to_id.get(fee_branch) if fee_branch != "All Branches" else None
+                raw_fee_records = audit_views.get_fee_ledger(
+                    fee_sub, 
+                    branch_id=fee_target_branch_id, 
+                    officer_id=fee_officer_val if fee_officer_val != "All" else None, 
+                    date_from=fee_d_from, 
+                    date_to=fee_d_to, 
+                    limit=500
+                )
                 enriched_fees = enricher.enrich_fee_records(raw_fee_records)
     
                 if fee_search:
@@ -6697,9 +6745,9 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 else:
                     st.info("No records found for the selected filters. Try changing the date range or search criteria.")
     
-            # ---------------------------------------------------------------------
-            # TAB 3: 🏦 Treasury Audit
-            # ---------------------------------------------------------------------
+        # ---------------------------------------------------------------------
+        # TAB 3: 🏦 Treasury Audit
+        # ---------------------------------------------------------------------
         if audit_tab3:
             with audit_tab3:
                 st.subheader("🏦 Treasury Audit Ledgers")
@@ -6713,16 +6761,26 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 with tb3:
                     tr_sub = st.selectbox("Category", ["BANK_DEPOSIT", "BANK_WITHDRAWAL", "OFFICE_EXPENSE", "STAFF_SALARY", "HO_TRANSFER_IN", "HO_TRANSFER_OUT", "BRANCH_TRANSFER_IN", "BRANCH_TRANSFER_OUT", "OTHER_AREA_TRANSFER", "ASSET_PROGRAM", "PRODUCT_FINANCE"], key="ac_tr_type")
                 with tb4:
-                    tr_branch = st.selectbox("Branch", ["All Branches", BRANCH or "Ijebu Ode Branch"], key="tr_branch_sel")
+                    tr_branch = st.selectbox("Branch", ac_branch_options, key="tr_branch_sel", disabled=(len(ac_branch_options) == 1))
                 with tb5:
-                    tr_officer = st.selectbox("Officer", ["All Officers", USER or "Ayomide"], key="tr_officer_sel")
+                    tr_officer_map = _get_branch_officers(tr_branch)
+                    tr_officer_disp = st.selectbox("Officer", list(tr_officer_map.keys()), key="tr_officer_sel")
+                    tr_officer_val = tr_officer_map.get(tr_officer_disp)
                 with tb6:
                     tr_search = st.text_input("🔍 Search", "", placeholder="Category / Ref", key="tr_search")
                 with tb7:
                     st.write("")
                     tr_reset = st.button("Reset", key="tr_reset_btn")
     
-                raw_tr_records = audit_views.get_treasury_ledger(tr_sub, date_from=tr_d_from, date_to=tr_d_to, limit=500)
+                tr_target_branch_id = branch_map_name_to_id.get(tr_branch) if tr_branch != "All Branches" else None
+                raw_tr_records = audit_views.get_treasury_ledger(
+                    tr_sub, 
+                    branch_id=tr_target_branch_id, 
+                    officer_id=tr_officer_val if tr_officer_val != "All" else None, 
+                    date_from=tr_d_from, 
+                    date_to=tr_d_to, 
+                    limit=500
+                )
                 enriched_tr = enricher.enrich_treasury_records(raw_tr_records)
     
                 if tr_search:
@@ -6767,9 +6825,9 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 else:
                     st.info("No records found for the selected filters. Try changing the date range or search criteria.")
     
-            # ---------------------------------------------------------------------
-            # TAB 4: 🐷 Savings Audit
-            # ---------------------------------------------------------------------
+        # ---------------------------------------------------------------------
+        # TAB 4: 🐷 Savings Audit
+        # ---------------------------------------------------------------------
         if audit_tab4:
             with audit_tab4:
                 st.subheader("🐷 Savings Audit Ledgers")
@@ -6783,13 +6841,15 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 with sb_3:
                     sav_sub = st.selectbox("Savings Ledger", ["Individual Savings", "Group Savings", "Laps Savings"], key="sav_sub_sel")
                 with sb_4:
-                    sav_branch = st.selectbox("Branch", ["All Branches", BRANCH or "Ijebu Ode Branch"], key="sav_branch_sel")
+                    sav_branch = st.selectbox("Branch", ac_branch_options, key="sav_branch_sel", disabled=(len(ac_branch_options) == 1))
                 with sb_5:
                     if ROLE == ROLE_CREDIT_OFFICER:
-                        sav_officer = USER
+                        sav_officer_val = USER_ID or USER
                         st.selectbox("Officer", [USER], disabled=True, key="sav_officer_sel")
                     else:
-                        sav_officer = st.selectbox("Officer", ["All Officers", USER or "Ayomide"], key="sav_officer_sel")
+                        sav_officer_map = _get_branch_officers(sav_branch)
+                        sav_officer_disp = st.selectbox("Officer", list(sav_officer_map.keys()), key="sav_officer_sel")
+                        sav_officer_val = sav_officer_map.get(sav_officer_disp)
                 with sb_6:
                     sav_search = st.text_input("🔍 Search", "", placeholder="Client / Code", key="sav_search")
                 with sb_7:
@@ -6797,7 +6857,15 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     sav_reset = st.button("Reset", key="sav_reset_btn")
     
                 tbl_map = {"Individual Savings": "individual_savings", "Group Savings": "group_savings", "Laps Savings": "laps_savings"}
-                raw_sav_records = audit_views.get_savings_ledger(tbl_map[sav_sub], date_from=sav_d_from, date_to=sav_d_to, limit=500)
+                sav_target_branch_id = branch_map_name_to_id.get(sav_branch) if sav_branch != "All Branches" else None
+                raw_sav_records = audit_views.get_savings_ledger(
+                    tbl_map[sav_sub], 
+                    branch_id=sav_target_branch_id, 
+                    officer_id=sav_officer_val if sav_officer_val != "All" else None, 
+                    date_from=sav_d_from, 
+                    date_to=sav_d_to, 
+                    limit=500
+                )
                 enriched_sav = enricher.enrich_savings_records(raw_sav_records)
                 if ROLE == ROLE_CREDIT_OFFICER:
                     enriched_sav = [s for s in enriched_sav if str(s.get("Officer", "")) == USER]
@@ -6843,9 +6911,9 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 else:
                     st.info("No records found for the selected filters. Try changing the date range or search criteria.")
     
-            # ---------------------------------------------------------------------
-            # TAB 5: 💵 Loan Audit
-            # ---------------------------------------------------------------------
+        # ---------------------------------------------------------------------
+        # TAB 5: 💵 Loan Audit
+        # ---------------------------------------------------------------------
         if audit_tab5:
             with audit_tab5:
                 st.subheader("💵 Loan Audit Ledgers")
@@ -6859,21 +6927,31 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 with lb3:
                     loan_sub = st.selectbox("Loan View", ["Loan Disbursements", "Repayments"], key="loan_sub_sel")
                 with lb4:
-                    loan_branch = st.selectbox("Branch", ["All Branches", BRANCH or "Ijebu Ode Branch"], key="loan_branch_sel")
+                    loan_branch = st.selectbox("Branch", ac_branch_options, key="loan_branch_sel", disabled=(len(ac_branch_options) == 1))
                 with lb5:
                     if ROLE == ROLE_CREDIT_OFFICER:
-                        loan_officer = USER
+                        loan_officer_val = USER_ID or USER
                         st.selectbox("Officer", [USER], disabled=True, key="loan_officer_sel")
                     else:
-                        loan_officer = st.selectbox("Officer", ["All Officers", USER or "Ayomide"], key="loan_officer_sel")
+                        loan_officer_map = _get_branch_officers(loan_branch)
+                        loan_officer_disp = st.selectbox("Officer", list(loan_officer_map.keys()), key="loan_officer_sel")
+                        loan_officer_val = loan_officer_map.get(loan_officer_disp)
                 with lb6:
                     loan_search = st.text_input("🔍 Search", "", placeholder="Loan No / Client", key="loan_search")
                 with lb7:
                     st.write("")
                     loan_reset = st.button("Reset", key="loan_reset_btn")
     
+                loan_target_branch_id = branch_map_name_to_id.get(loan_branch) if loan_branch != "All Branches" else None
+
                 if loan_sub == "Loan Disbursements":
-                    raw_l_records = audit_views.get_loan_disbursements(date_from=loan_d_from, date_to=loan_d_to, limit=500)
+                    raw_l_records = audit_views.get_loan_disbursements(
+                        branch_id=loan_target_branch_id, 
+                        officer_id=loan_officer_val if loan_officer_val != "All" else None, 
+                        date_from=loan_d_from, 
+                        date_to=loan_d_to, 
+                        limit=500
+                    )
                     enriched_loans = enricher.enrich_loan_records(raw_l_records)
                     if ROLE == ROLE_CREDIT_OFFICER:
                         enriched_loans = [l for l in enriched_loans if str(l.get("Officer", "")) == USER]
@@ -6919,7 +6997,13 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     else:
                         st.info("No records found for the selected filters. Try changing the date range or search criteria.")
                 else:
-                    raw_rep_records = audit_views.get_loan_repayments(date_from=loan_d_from, date_to=loan_d_to, limit=500)
+                    raw_rep_records = audit_views.get_loan_repayments(
+                        branch_id=loan_target_branch_id, 
+                        officer_id=loan_officer_val if loan_officer_val != "All" else None, 
+                        date_from=loan_d_from, 
+                        date_to=loan_d_to, 
+                        limit=500
+                    )
                     enriched_reps = enricher.enrich_repayment_records(raw_rep_records)
                     if ROLE == ROLE_CREDIT_OFFICER:
                         enriched_reps = [r for r in enriched_reps if str(r.get("Officer", "")) == USER]
@@ -6962,15 +7046,19 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     else:
                         st.info("No records found for the selected filters. Try changing the date range or search criteria.")
     
-            # ---------------------------------------------------------------------
-            # TAB 6: 🎯 Collection Performance
-            # ---------------------------------------------------------------------
+        # ---------------------------------------------------------------------
+        # TAB 6: 🎯 Collection Performance
+        # ---------------------------------------------------------------------
         if audit_tab6:
             with audit_tab6:
                 st.subheader("🎯 Collection Performance Audit")
                 st.caption("Meeting compliance matrix comparing expected collections against actual payments.")
                 try:
-                    res_cp = uow_ac.client.table("collection_performance").select("*").order("meeting_date", desc=True).limit(500).execute()
+                    cp_target_b_id = BRANCH_ID if ROLE in ['BM', ROLE_BRANCH_MANAGER, ROLE_CREDIT_OFFICER, 'CO', 'Officer'] else None
+                    query_cp = uow_ac.client.table("collection_performance").select("*")
+                    if cp_target_b_id:
+                        query_cp = query_cp.eq("branch_id", cp_target_b_id)
+                    res_cp = query_cp.order("meeting_date", desc=True).limit(500).execute()
                     raw_cp_data = res_cp.data or []
                     enriched_cp = enricher.enrich_collection_records(raw_cp_data)
                     if ROLE == ROLE_CREDIT_OFFICER:
@@ -6983,9 +7071,9 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 except Exception:
                     st.info("No records found for the selected filters. Try changing the date range or search criteria.")
     
-            # ---------------------------------------------------------------------
-            # TAB 7: 🚨 15 Exception Reports
-            # ---------------------------------------------------------------------
+        # ---------------------------------------------------------------------
+        # TAB 7: 🚨 15 Exception Reports
+        # ---------------------------------------------------------------------
         if audit_tab7:
             with audit_tab7:
                 st.subheader("🚨 15 Automated Audit Exception Reports")
@@ -7001,9 +7089,9 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         else:
                             st.success("✔ Zero exceptions detected for this rule.")
     
-            # ---------------------------------------------------------------------
-            # TAB 8: 🔎 360° Universal Explorer & Timeline
-            # ---------------------------------------------------------------------
+        # ---------------------------------------------------------------------
+        # TAB 8: 🔎 360° Universal Explorer & Timeline
+        # ---------------------------------------------------------------------
         if audit_tab8:
             with audit_tab8:
                 st.subheader("🔎 360° Universal Search & Audit Timeline")
@@ -7011,7 +7099,8 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 search_tx = st.text_input("Enter Search Term:", placeholder="e.g. OGI-12-005, Adewale, Ayomide, REF-00382", key="ac_explorer_input")
     
                 if search_tx:
-                    exp_res = TransactionExplorerService.explore_transaction(uow_ac, search_tx)
+                    explorer_b_id = BRANCH_ID if ROLE in ['BM', ROLE_BRANCH_MANAGER, ROLE_CREDIT_OFFICER, 'CO', 'Officer'] else None
+                    exp_res = TransactionExplorerService.explore_transaction(uow_ac, search_tx, branch_id=explorer_b_id)
                     if exp_res["found"]:
                         st.success(f"✔ Audit records matched '{search_tx}' across sub-systems")
                         if exp_res["loans"]:
