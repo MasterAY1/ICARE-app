@@ -7726,17 +7726,17 @@ elif page == "Master Cashbook":
         with st.form("master_cashbook_form"):
             st.markdown("#### 📥 Inflows (Vault Funding Received)")
             m1, m2, m3 = st.columns(3)
-            funds_ho = m1.number_input("Funds Received from Head Office", min_value=0.0, step=1000.0, value=0.0)
-            funds_branch = m2.number_input("Funds Received from Branch Office", min_value=0.0, step=1000.0, value=0.0)
-            funds_area = m3.number_input("Funds Received from Other Areas", min_value=0.0, step=1000.0, value=0.0)
+            funds_ho = float(m1.number_input("Funds Received from Head Office", min_value=0.0, step=1000.0, value=None, placeholder="0", key="mc_funds_ho") or 0.0)
+            funds_branch = float(m2.number_input("Funds Received from Branch Office", min_value=0.0, step=1000.0, value=None, placeholder="0", key="mc_funds_branch") or 0.0)
+            funds_area = float(m3.number_input("Funds Received from Other Areas", min_value=0.0, step=1000.0, value=None, placeholder="0", key="mc_funds_area") or 0.0)
             
             st.markdown("#### 📤 Outflows (Corporate Transfers)")
             n1, n2, n3 = st.columns(3)
-            xfer_branch = n1.number_input("Fund Transferred to Branch Office", min_value=0.0, step=1000.0, value=0.0)
-            xfer_ho = n2.number_input("Fund Transferred to H.O.", min_value=0.0, step=1000.0, value=0.0)
-            xfer_area = n3.number_input("Fund Transferred to Other Areas", min_value=0.0, step=1000.0, value=0.0)
+            xfer_branch = float(n1.number_input("Fund Transferred to Branch Office", min_value=0.0, step=1000.0, value=None, placeholder="0", key="mc_xfer_branch") or 0.0)
+            xfer_ho = float(n2.number_input("Fund Transferred to H.O.", min_value=0.0, step=1000.0, value=None, placeholder="0", key="mc_xfer_ho") or 0.0)
+            xfer_area = float(n3.number_input("Fund Transferred to Other Areas", min_value=0.0, step=1000.0, value=None, placeholder="0", key="mc_xfer_area") or 0.0)
             
-            salaries = st.number_input("Staff Salaries", min_value=0.0, step=1000.0, value=0.0)
+            salaries = float(st.number_input("Staff Salaries", min_value=0.0, step=1000.0, value=None, placeholder="0", key="mc_salaries") or 0.0)
             
             # ---- CALCULATE TOTALS ----
             total_inflows = (
