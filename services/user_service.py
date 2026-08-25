@@ -107,11 +107,14 @@ class UserService:
                 if not target:
                     return {"success": False, "message": "User not found."}
 
-                # BM can only manage users in their own branch
+                # BM can only manage subordinate staff in their own branch
                 if requesting_user and requesting_user.role == ROLE_BRANCH_MANAGER:
                     if target.branch_id != requesting_user.branch_id:
                         AuditLogService.log_permission_denied(f"{action_word.upper()}_USER", "user_management")
                         return {"success": False, "message": "You can only manage staff in your own branch."}
+                    if target.role in (ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_AREA_MANAGER, ROLE_BRANCH_MANAGER):
+                        AuditLogService.log_permission_denied(f"{action_word.upper()}_USER", "user_management")
+                        return {"success": False, "message": f"You cannot {action_word} administrative or management users."}
 
                 if activate:
                     uow.users.activate_user(user_id)
@@ -152,11 +155,14 @@ class UserService:
                 if not target:
                     return {"success": False, "message": f"User '{username}' not found."}
 
-                # BM scope: own branch only
+                # BM scope: own branch and subordinate staff only
                 if requesting_user and requesting_user.role == ROLE_BRANCH_MANAGER:
                     if target.branch_id != requesting_user.branch_id:
                         AuditLogService.log_permission_denied("RESET_PASSWORD", "user_management")
                         return {"success": False, "message": "You can only reset passwords for staff in your own branch."}
+                    if target.role in (ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_AREA_MANAGER):
+                        AuditLogService.log_permission_denied("RESET_PASSWORD", "user_management")
+                        return {"success": False, "message": "You cannot reset passwords for administrative or area management users."}
 
                 hashed_pw = hash_password(new_password)
                 uow.users.update_password(username, hashed_pw)
@@ -303,7 +309,12 @@ class UserService:
                 return [u for u in user_dicts if u["branch_id"] in am_branch_ids]
 
             if requesting_user.role == ROLE_BRANCH_MANAGER:
-                return [u for u in user_dicts if u["branch_id"] == requesting_user.branch_id]
+                # BM only sees subordinate branch staff (Credit Officers / local staff) in their branch
+                return [
+                    u for u in user_dicts
+                    if u["branch_id"] == requesting_user.branch_id
+                    and u["role"] not in (ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_AREA_MANAGER)
+                ]
 
             return []
 

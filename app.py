@@ -9399,7 +9399,8 @@ elif page == "User Management":
             "Branch Staff", 
             "Password Reset", 
             "Product Assignment", 
-            "Branch Closures"
+            "Branch Closures",
+            "Branch Activity Logs"
         ])
     elif is_am:
         tabs = st.tabs(["Branch Staff (Read Only)"])
@@ -9731,6 +9732,30 @@ elif page == "User Management":
                 else:
                     st.info("No custom closures recorded.")
                 st.markdown("</div>", unsafe_allow_html=True)
+    
+    # --- Tab: Branch Activity Logs (BM Only) ---
+    if is_bm:
+        with tabs[4]:
+            st.subheader(f"📋 Branch Activity Logs ({BRANCH})")
+            st.info(f"Immutable audit trail for operational activities within {BRANCH} branch.")
+            
+            try:
+                with SupabaseUnitOfWork() as uow:
+                    query = uow.client.table("user_audit_logs").select("*")
+                    if BRANCH:
+                        query = query.ilike("branch", f"%{BRANCH}%")
+                    res_bm_audit = query.order("timestamp", desc=True).limit(200).execute()
+                    audit_entries = res_bm_audit.data or []
+                
+                if audit_entries:
+                    df_audit = pd.DataFrame(audit_entries)
+                    display_cols = ['timestamp', 'username', 'role', 'branch', 'action', 'module', 'entity_type', 'display_name', 'status']
+                    display_cols = [c for c in display_cols if c in df_audit.columns]
+                    st.dataframe(df_audit[display_cols], use_container_width=True, height=500)
+                else:
+                    st.info(f"No audit logs recorded for {BRANCH} branch yet.")
+            except Exception as e:
+                st.error(f"Failed to load branch activity logs: {e}")
     
     # --- Tab: Audit Logs (Admin Only) ---
     if is_admin:
