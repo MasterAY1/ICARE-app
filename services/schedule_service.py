@@ -10,50 +10,25 @@ class ScheduleService:
         """
         Generates amortization schedule installments in the database for a loan based on product rules.
         """
-        # 1. Fetch loan product parameters
-        res = uow.client.table("loan_products").select("*").eq("name", loan.product_type).execute()
-        if not res.data:
-            # Fallback values if product not in database
-            cycle = "Weekly"
-            installments = loan.duration
-            rate = 0.21 if loan.duration == 24 or loan.duration == 6 else 0.12
-            rounding_rule = 50
+        # 1. Fetch loan product parameters via LoanProductEngine
+        from services.loan_product_engine import LoanProductEngine
+        prod_cat = getattr(loan, 'product_category', None) or (loan.extra_fields.get("product_category") if hasattr(loan, 'extra_fields') and isinstance(loan.extra_fields, dict) else None) or ("Asset" if getattr(loan, 'is_asset', False) else "Finance")
+        setup = LoanProductEngine.calculate_loan_setup(loan.amount, loan.product_type, prod_cat)
+        
+        is_asset = "asset" in str(prod_cat).lower() or (loan.product_type and "asset" in str(loan.product_type).lower())
+        cycle = setup.get("freq", "Weekly")
+        installments = setup.get("duration", loan.duration) or loan.duration
+        inst_total = float(setup.get("loan_repayment", 0.0))
+        
+        if is_asset:
+            inst_interest = float(setup.get("interest", 0.0) / installments) if installments > 0 else 0.0
+            inst_principal = inst_total - inst_interest
         else:
-            prod = res.data[0]
-            cycle = prod.get("repayment_cycle", "Weekly")
-            installments = prod.get("installments", loan.duration) or loan.duration
-            rate = float(prod.get("interest_rate", 0) or 0)
-            rate = rate / 100.0 if rate > 1.0 else rate
-            rounding_rule = int(prod.get("rounding_rule", 50) or 50)
+            inst_principal = inst_total
+            inst_interest = 0.0
+        gap = 0
 
-        # 2. Compute financial breakdown
-        principal_amount = loan.amount
-        interest_amount = principal_amount * rate
-        total_payable = principal_amount + interest_amount
-
-        # Calculate installment amounts using rounding rules
-        if cycle == "One-Time":
-            inst_principal = principal_amount
-            inst_interest = interest_amount
-            inst_total = total_payable
-            gap = 0
-            installments = 1
-        else:
-            raw_inst = principal_amount / installments
-            if raw_inst.is_integer():
-                inst_principal = int(raw_inst)
-                gap = 0
-            else:
-                import math
-                inst_principal = math.floor(raw_inst / rounding_rule) * rounding_rule
-                gap = principal_amount - (inst_principal * installments)
-            
-            inst_interest = interest_amount / installments
-            inst_total = inst_principal + inst_interest
-
-        # 3. Create schedule rows
-        import holidays
-
+        # 2. Create schedule rows
         schedule_rows = []
         base_date = start_date if start_date else date.today()
 

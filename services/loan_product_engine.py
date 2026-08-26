@@ -128,10 +128,10 @@ class LoanProductEngine:
         - Weekly (12w/24w): Weekly installments on Group Meeting Day (shifting to next working day if holiday).
         - Monthly (3m/6m): Monthly installments starting exactly 1 month after disbursement (shifting to next working day if weekend/holiday).
         """
-        import holidays
         from dateutil.relativedelta import relativedelta
+        from services.business_date_service import get_nigerian_holidays
 
-        ng_holidays = holidays.Nigeria()
+        ng_holidays = get_nigerian_holidays()
         if closed_dates is None:
             closed_dates = []
 
