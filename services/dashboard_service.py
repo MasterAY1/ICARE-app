@@ -548,9 +548,9 @@ class DashboardService:
                         part_paid_amt += c_paid
                         attention_rows.append({
                             "Client Name": c_name, "Client Code": c_code, "Group": g_name,
-                            "Expected (₦)": repay_amt, "Paid (₦)": c_paid, "Shortfall (₦)": repay_amt - c_paid,
-                            "Issue Type": "Part Payment", "Risk Level": "🟡 Medium Risk",
-                            "Action": "Follow Up with Client / Center Leader"
+                            "Expected (₦)": repay_amt, "Paid (₦)": c_paid, "Shortfall (₦)": round(repay_amt - c_paid, 2),
+                            "Issue Type": "Part Payment", "Risk Level": "🟡 Shortfall",
+                            "Action": "Follow Up with Group Leader"
                         })
                     elif repay_amt > 0 and c_paid > repay_amt:
                         excess_paid_count += 1
@@ -565,8 +565,8 @@ class DashboardService:
                         attention_rows.append({
                             "Client Name": c_name, "Client Code": c_code, "Group": g_name,
                             "Expected (₦)": repay_amt, "Paid (₦)": 0.0, "Shortfall (₦)": repay_amt,
-                            "Issue Type": "Not Paid", "Risk Level": "🔴 High Risk",
-                            "Action": "Issue Arrears Reminder / Visit Center"
+                            "Issue Type": "Pending", "Risk Level": "⚪ Pending",
+                            "Action": "Collect at Group Meeting"
                         })
             except Exception:
                 continue
