@@ -6707,7 +6707,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     fee_officer_disp = st.selectbox("Officer", list(fee_officer_map.keys()), key="fee_officer_sel")
                     fee_officer_val = fee_officer_map.get(fee_officer_disp)
                 with fb6:
-                    fee_search = st.text_input("🔍 Search", "", placeholder="Client / Ref", key="fee_search")
+                        fee_search = st.text_input("🔍 Search", "", placeholder="Client / Ref", key="fee_search")
                 with fb7:
                     st.write("")
                     fee_reset = st.button("Reset", key="fee_reset_btn")
@@ -6757,7 +6757,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         c3.markdown(f"**Officer:** {sel['Officer']}\n\n**Branch:** {sel['Branch']}")
                         st.markdown(f"**Reference:** `{sel['Reference']}` &nbsp;&bull;&nbsp; **Status:** {sel['Status']}")
     
-                        with st.expander("🛠️ Advanced Technical Details"):
+                        if st.checkbox("🛠️ Show Advanced Technical Details", key="show_raw_fee_tech"):
                             st.json(sel["_raw_record"])
     
                     csv_data = clean_df.to_csv(index=False).encode('utf-8')
@@ -6837,7 +6837,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         tc3.markdown(f"**Officer:** {t_sel['Officer']}\n\n**Branch:** {t_sel['Branch']}")
                         st.caption(f"**Narration:** {t_sel['Narration']}")
     
-                        with st.expander("🛠️ Advanced Technical Details"):
+                        if st.checkbox("🛠️ Show Advanced Technical Details", key="show_raw_tr_tech"):
                             st.json(t_sel["_raw_record"])
     
                     csv_tr = clean_tr_df.to_csv(index=False).encode('utf-8')
@@ -6923,7 +6923,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         sc2_d.markdown(f"**Client Name:** {s_sel['Client Name']}\n\n**Deposit:** {s_sel['Deposit']}")
                         sc3_d.markdown(f"**Remarks:** {s_sel['Remarks']}\n\n**Withdrawal:** {s_sel['Withdrawal']}\n\n**Balance:** {s_sel['Balance']}")
     
-                        with st.expander("🛠️ Advanced Technical Details"):
+                        if st.checkbox("🛠️ Show Advanced Technical Details", key="show_raw_sav_tech"):
                             st.json(s_sel["_raw_record"])
     
                     csv_sav = clean_sav_df.to_csv(index=False).encode('utf-8')
@@ -7009,7 +7009,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                             lc2_d.markdown(f"**Client:** {l_sel['Client Code']} ({l_sel['Client Name']})\n\n**Principal:** {l_sel['Principal']}")
                             lc3_d.markdown(f"**Product:** {l_sel['Product']}\n\n**Status:** {l_sel['Status']}")
     
-                            with st.expander("🛠️ Advanced Technical Details"):
+                            if st.checkbox("🛠️ Show Advanced Technical Details", key="show_raw_loan_tech"):
                                 st.json(l_sel["_raw_record"])
     
                         csv_l = clean_l_df.to_csv(index=False).encode('utf-8')
@@ -7058,7 +7058,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                             rc2_d.markdown(f"**Client Name:** {r_sel['Client Name']}\n\n**Amount Paid:** {r_sel['Amount Paid']}")
                             rc3_d.markdown(f"**Officer:** {r_sel['Officer']}\n\n**Branch:** {r_sel['Branch']}")
     
-                            with st.expander("🛠️ Advanced Technical Details"):
+                            if st.checkbox("🛠️ Show Advanced Technical Details", key="show_raw_rep_tech"):
                                 st.json(r_sel["_raw_record"])
     
                         csv_r = clean_r_df.to_csv(index=False).encode('utf-8')
