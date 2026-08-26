@@ -69,7 +69,7 @@ class SupabaseAuditViewRepository(BaseRepository):
                 ev_type = ev.get("event_type")
                 payload = ev.get("payload") or {}
                 
-                ev_branch = payload.get("branch_id")
+                ev_branch = payload.get("branch_id") or payload.get("branch")
                 ev_officer = payload.get("officer_id") or payload.get("officer")
                 ev_client = payload.get("client_id") or payload.get("client")
                 ev_date = str(payload.get("date") or str(ev.get("created_at") or "")[:10])[:10]
@@ -86,11 +86,13 @@ class SupabaseAuditViewRepository(BaseRepository):
                         continue
                 
                 # Filter by branch if specified
-                if branch_id and branch_id != "All" and ev_branch and ev_branch != branch_id:
-                    continue
+                if branch_id and branch_id != "All" and ev_branch:
+                    if str(ev_branch).lower() != str(branch_id).lower():
+                        continue
                 # Filter by officer if specified
-                if officer_id and officer_id != "All" and ev_officer and ev_officer != officer_id:
-                    continue
+                if officer_id and officer_id != "All" and ev_officer:
+                    if str(ev_officer).lower() != str(officer_id).lower():
+                        continue
                 # Filter by client if specified
                 if client_id and ev_client and ev_client != client_id:
                     continue
@@ -100,11 +102,11 @@ class SupabaseAuditViewRepository(BaseRepository):
                     cls_val = payload.get("classification") or ""
                     narr = str(payload.get("narration") or "").upper()
                     
-                    if cls_val in ["MARKUP_11", "MARKUP_20", "CONTINGENCY", "PASSBOOK", "CREDIT_FORM_DAMAGE", "BONUS", "MISC_FEE"]:
+                    if cls_val in ["MARKUP_11", "MARKUP_20", "CONTINGENCY", "PASSBOOK", "CREDIT_FORM_DAMAGE", "BONUS"]:
                         f_t = cls_val
-                    elif "11%" in narr or "MARKUP (11%)" in narr:
+                    elif "11%" in narr or "MARKUP (11%)" in narr or "12W" in narr or "60D" in narr or "3M" in narr:
                         f_t = "MARKUP_11"
-                    elif "20%" in narr or "MARKUP (20%)" in narr:
+                    elif "20%" in narr or "MARKUP (20%)" in narr or "24W" in narr or "120D" in narr or "6M" in narr:
                         f_t = "MARKUP_20"
                     elif "CONTINGENCY" in narr:
                         f_t = "CONTINGENCY"
@@ -115,7 +117,7 @@ class SupabaseAuditViewRepository(BaseRepository):
                     elif "BONUS" in narr:
                         f_t = "BONUS"
                     elif "MISC" in narr or "RISK PREMIUM" in narr:
-                        f_t = "MISC_FEE"
+                        continue  # Excluded: Misc Savings belong in Savings Ledger (Tab 4) per BR-SAV-001
                     else:
                         f_t = "PROCESSING_FEE"  # Unified Processing / Credit Form / App Fee
                         
@@ -129,7 +131,7 @@ class SupabaseAuditViewRepository(BaseRepository):
                     if markup_fee > 0:
                         p_type = str(payload.get("product_type") or "")
                         dur = payload.get("duration") or 12
-                        m_t = "MARKUP_20" if ("24" in p_type or "20" in p_type or dur == 24) else "MARKUP_11"
+                        m_t = "MARKUP_20" if ("24" in p_type or "20" in p_type or "120" in p_type or "6m" in p_type.lower() or dur == 24) else "MARKUP_11"
                         fee_items.append((m_t, markup_fee, f"Upfront Markup for {ev_ref}"))
 
                 for f_t, f_amt, f_narr in fee_items:

@@ -6659,12 +6659,14 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 return {"All Officers": "All"}
             b_id = branch_map_name_to_id.get(sel_b_name) or BRANCH_ID
             try:
-                res_co = uow_ac.client.table("app_users").select("id, username, full_name, role").eq("branch_id", b_id).execute()
-                co_users = [u for u in (res_co.data or []) if u.get("role") in ["Credit Officer", "CO", "Officer", None]]
+                res_co = uow_ac.client.table("app_users").select("id, username, full_name, branch_id").eq("branch_id", b_id).eq("is_active", True).execute()
                 opts = {"All Officers": "All"}
-                for u in co_users:
-                    disp = f"{u.get('full_name', u.get('username'))} ({u.get('username')})"
-                    opts[disp] = u.get("id") or u.get("username")
+                for u in (res_co.data or []):
+                    uname = u.get("username", "")
+                    fname = u.get("full_name") or uname
+                    if not uname.startswith("BM_") and uname != "admin":
+                        disp = f"{fname} ({uname})"
+                        opts[disp] = u.get("id") or uname
                 return opts
             except Exception:
                 return {"All Officers": "All"}
@@ -6721,13 +6723,13 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 st.caption("Itemized audit trail of loan origination fees, passbooks, and processing charges.")
     
                 # SINGLE-LINE HORIZONTAL FILTER BAR
-                fb1, fb2, fb3, fb4, fb5, fb6, fb7 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.5, 0.8])
+                fb1, fb2, fb3, fb4, fb5, fb6 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.8])
                 with fb1:
                     fee_d_from = st.date_input("Date From", date(2026, 1, 1), key="fee_d_from")
                 with fb2:
                     fee_d_to = st.date_input("Date To", date.today(), key="fee_d_to")
                 with fb3:
-                    fee_sub = st.selectbox("Fee Type", ["ALL", "PROCESSING_FEE", "PASSBOOK", "CREDIT_FORM_DAMAGE", "BONUS", "MISC_FEE", "CONTINGENCY", "MARKUP_11", "MARKUP_20"], key="ac_fee_type")
+                    fee_sub = st.selectbox("Fee Type", ["ALL", "PROCESSING_FEE", "MARKUP_11", "MARKUP_20", "CONTINGENCY", "PASSBOOK", "CREDIT_FORM_DAMAGE", "BONUS"], key="ac_fee_type")
                 with fb4:
                     fee_branch = st.selectbox("Branch", ac_branch_options, key="fee_branch_sel", disabled=(len(ac_branch_options) == 1))
                 with fb5:
@@ -6735,10 +6737,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     fee_officer_disp = st.selectbox("Officer", list(fee_officer_map.keys()), key="fee_officer_sel")
                     fee_officer_val = fee_officer_map.get(fee_officer_disp)
                 with fb6:
-                        fee_search = st.text_input("🔍 Search", "", placeholder="Client / Ref", key="fee_search")
-                with fb7:
-                    st.write("")
-                    fee_reset = st.button("Reset", key="fee_reset_btn")
+                    fee_search = st.text_input("🔍 Search", "", placeholder="Client / Ref", key="fee_search")
     
                 fee_target_branch_id = branch_map_name_to_id.get(fee_branch) if fee_branch != "All Branches" else None
                 raw_fee_records = audit_views.get_fee_ledger(
@@ -6801,7 +6800,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 st.subheader("🏦 Treasury Audit Ledgers")
                 st.caption("Audit trail of bank deposits, withdrawals, staff salaries, and inter-branch cash transfers.")
     
-                tb1, tb2, tb3, tb4, tb5, tb6, tb7 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.5, 0.8])
+                tb1, tb2, tb3, tb4, tb5, tb6 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.8])
                 with tb1:
                     tr_d_from = st.date_input("Date From", date(2026, 1, 1), key="tr_d_from")
                 with tb2:
@@ -6816,9 +6815,6 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     tr_officer_val = tr_officer_map.get(tr_officer_disp)
                 with tb6:
                     tr_search = st.text_input("🔍 Search", "", placeholder="Category / Ref", key="tr_search")
-                with tb7:
-                    st.write("")
-                    tr_reset = st.button("Reset", key="tr_reset_btn")
     
                 tr_target_branch_id = branch_map_name_to_id.get(tr_branch) if tr_branch != "All Branches" else None
                 raw_tr_records = audit_views.get_treasury_ledger(
@@ -6881,7 +6877,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 st.subheader("🐷 Savings Audit Ledgers")
                 st.caption("Audit trail of voluntary individual deposits, group collateral savings, and laps reserves.")
     
-                sb_1, sb_2, sb_3, sb_4, sb_5, sb_6, sb_7 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.5, 0.8])
+                sb_1, sb_2, sb_3, sb_4, sb_5, sb_6 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.8])
                 with sb_1:
                     sav_d_from = st.date_input("Date From", date(2026, 1, 1), key="sav_d_from")
                 with sb_2:
@@ -6900,9 +6896,6 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         sav_officer_val = sav_officer_map.get(sav_officer_disp)
                 with sb_6:
                     sav_search = st.text_input("🔍 Search", "", placeholder="Client / Code", key="sav_search")
-                with sb_7:
-                    st.write("")
-                    sav_reset = st.button("Reset", key="sav_reset_btn")
     
                 tbl_map = {"Individual Savings": "individual_savings", "Group Savings": "group_savings", "Laps Savings": "laps_savings"}
                 sav_target_branch_id = branch_map_name_to_id.get(sav_branch) if sav_branch != "All Branches" else None
@@ -6967,7 +6960,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 st.subheader("💵 Loan Audit Ledgers")
                 st.caption("Audit trail of approved principal disbursements and loan repayment collections.")
     
-                lb1, lb2, lb3, lb4, lb5, lb6, lb7 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.5, 0.8])
+                lb1, lb2, lb3, lb4, lb5, lb6 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.8])
                 with lb1:
                     loan_d_from = st.date_input("Date From", date(2026, 1, 1), key="loan_d_from")
                 with lb2:
@@ -6986,9 +6979,6 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         loan_officer_val = loan_officer_map.get(loan_officer_disp)
                 with lb6:
                     loan_search = st.text_input("🔍 Search", "", placeholder="Loan No / Client", key="loan_search")
-                with lb7:
-                    st.write("")
-                    loan_reset = st.button("Reset", key="loan_reset_btn")
     
                 loan_target_branch_id = branch_map_name_to_id.get(loan_branch) if loan_branch != "All Branches" else None
 
