@@ -16,6 +16,7 @@ from datetime import date, datetime
 import pandas as pd
 
 from interfaces.unit_of_work import UnitOfWork
+from services.business_date_service import get_nigerian_holidays
 from services.collection_performance_service import CollectionPerformanceService
 from services.co_cashbook_projection_builder import CoCashbookProjectionBuilder
 from services.master_cashbook_projection_builder import MasterCashbookProjectionBuilder
@@ -43,8 +44,7 @@ class DashboardService:
         # Dynamic Closure & Holiday Check
         is_branch_closed = False
         try:
-            import holidays
-            ng_holidays = holidays.NG(years=[target_date.year])
+            ng_holidays = get_nigerian_holidays(years=[target_date.year])
             if target_date in ng_holidays:
                 is_branch_closed = True
 
@@ -424,8 +424,7 @@ class DashboardService:
         is_branch_closed = False
         closure_reason = ""
         try:
-            import holidays
-            ng_holidays = holidays.NG(years=[target_date.year])
+            ng_holidays = get_nigerian_holidays(years=[target_date.year])
             if target_date in ng_holidays:
                 is_branch_closed = True
                 closure_reason = ng_holidays.get(target_date) or "Public Holiday"
@@ -658,8 +657,7 @@ class DashboardService:
         is_branch_closed = False
         closure_reason = ""
         try:
-            import holidays
-            ng_holidays = holidays.NG(years=[target_date.year])
+            ng_holidays = get_nigerian_holidays(years=[target_date.year])
             if target_date in ng_holidays:
                 is_branch_closed = True
                 closure_reason = ng_holidays.get(target_date) or "Public Holiday"
@@ -870,8 +868,7 @@ class DashboardService:
         if not target_date:
             target_date = date.today()
 
-        import holidays
-        ng_holidays = holidays.NG(years=[target_date.year])
+        ng_holidays = get_nigerian_holidays(years=[target_date.year])
 
         branch_stats = []
         total_coll = 0.0

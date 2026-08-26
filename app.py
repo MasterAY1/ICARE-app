@@ -37,9 +37,10 @@ import base64
 import os
 from supabase import create_client, Client
 import holidays
+from services.business_date_service import get_nigerian_holidays
 
-# Initialize Nigerian holidays
-ng_holidays = holidays.Nigeria()
+# Initialize Nigerian holidays with operational calendar overrides
+ng_holidays = get_nigerian_holidays()
 
 @CacheProvider.cache_data(ttl=3600)
 def get_custom_closures():

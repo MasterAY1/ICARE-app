@@ -5,7 +5,21 @@ from interfaces.unit_of_work import UnitOfWork
 
 import holidays
 
-ng_holidays = holidays.Nigeria()
+def get_nigerian_holidays(years=None):
+    """
+    Authoritative Nigerian public holiday provider with operational calendar overrides.
+    Purges unobserved estimated lunar dates where MFI business operations are active.
+    """
+    h = holidays.NG(years=years) if years else holidays.Nigeria()
+    unobserved_estimated_holidays = [
+        date(2026, 8, 26),  # Id el Maulud (estimated) - Active business day per MFI operations
+    ]
+    for d in unobserved_estimated_holidays:
+        if d in h:
+            del h[d]
+    return h
+
+ng_holidays = get_nigerian_holidays()
 
 class BusinessDateService:
     @staticmethod

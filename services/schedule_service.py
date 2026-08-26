@@ -2,6 +2,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from domain.entities.loan import Loan
+from services.business_date_service import get_nigerian_holidays
 
 class ScheduleService:
     @staticmethod
@@ -80,7 +81,7 @@ class ScheduleService:
         day_map = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
         target_weekday = day_map.get(meeting_day_str) if meeting_day_str else None
 
-        ng_holidays = holidays.NG(years=[base_date.year, base_date.year + 1, base_date.year + 2, base_date.year + 3])
+        ng_holidays = get_nigerian_holidays(years=[base_date.year, base_date.year + 1, base_date.year + 2, base_date.year + 3])
 
         def is_working_day(d: date) -> bool:
             if d.weekday() >= 5:  # Weekend
@@ -274,7 +275,7 @@ class ScheduleService:
             except Exception:
                 pass
 
-        ng_holidays = holidays.NG(years=[start_date.year, start_date.year + 1, start_date.year + 2])
+        ng_holidays = get_nigerian_holidays(years=[start_date.year, start_date.year + 1, start_date.year + 2])
 
         def is_working_day(d: date) -> bool:
             if d.weekday() >= 5:
