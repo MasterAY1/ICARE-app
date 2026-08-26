@@ -30,66 +30,77 @@ class FinancialReconciliationService:
         """
         p_date_str = posting_date.isoformat() if isinstance(posting_date, date) else str(posting_date)
 
-        # 1. General Ledger Net Cash Total (Account 1000 Debits - Credits)
+        # 1. General Ledger Account 1000 Cash Receipts (Debits on posting_date)
         ledger_total = 0.0
         try:
             res_leg = uow.client.table("financial_ledger_entries") \
                 .select("amount, side, financial_transactions!inner(posting_date, branch_id)") \
                 .eq("branch_id", branch_id) \
                 .eq("account_code", "1000") \
+                .eq("side", "Debit") \
                 .eq("financial_transactions.posting_date", p_date_str) \
                 .execute()
-            for r in (res_leg.data or []):
-                amt = float(r.get("amount") or 0.0)
-                if r.get("side") == "Debit":
-                    ledger_total += amt
-                elif r.get("side") == "Credit":
-                    ledger_total -= amt
+            ledger_total = sum(float(r.get("amount") or 0.0) for r in (res_leg.data or []))
         except Exception:
             pass
 
-        # 2. Audit Views Total (Fees + Operational Repayments on date)
+        # 2. Audit Views Total (Repayments + Savings Deposits + Fees + Treasury Inflows on date)
         audit_views_total = 0.0
         rep_date_total = 0.0
+        sav_date_total = 0.0
+        fee_date_total = 0.0
+        tr_date_total = 0.0
         try:
-            res_fees = uow.client.table("fees").select("amount") \
-                .eq("branch_id", branch_id).eq("posting_date", p_date_str).execute()
-            audit_views_total += sum(float(r.get("amount") or 0.0) for r in (res_fees.data or []))
-
-            # Query operational repayments on date with push-down date filtering
+            # Operational Repayments on date
             s_d_str = f"{p_date_str}T00:00:00"
             e_d_str = f"{p_date_str}T23:59:59"
             res_rep = uow.client.table("repayments").select("amount_paid") \
                 .eq("branch_id", branch_id).gte("date", s_d_str).lte("date", e_d_str).execute()
             rep_date_total = sum(float(r.get("amount_paid") or 0.0) for r in (res_rep.data or []))
-            audit_views_total += rep_date_total
+
+            # Operational Savings Deposits on date
+            res_sav = uow.client.table("individual_savings").select("deposit_amount") \
+                .eq("branch_id", branch_id).eq("posting_date", p_date_str).execute()
+            sav_date_total = sum(float(r.get("deposit_amount") or 0.0) for r in (res_sav.data or []))
+
+            # Operational Fees on date
+            res_fees = uow.client.table("fees").select("amount") \
+                .eq("branch_id", branch_id).eq("posting_date", p_date_str).execute()
+            fee_date_total = sum(float(r.get("amount") or 0.0) for r in (res_fees.data or []))
+
+            # Treasury / Bank Withdrawals into branch
+            res_tr = uow.client.table("treasury_transactions").select("amount") \
+                .eq("branch_id", branch_id).in_("transaction_type", ["BANK_WITHDRAWAL", "FUNDS_RECEIVED_HO", "FUNDS_RECEIVED_OTHER_BRANCH"]).eq("posting_date", p_date_str).execute()
+            tr_date_total = sum(float(r.get("amount") or 0.0) for r in (res_tr.data or []))
+
+            audit_views_total = rep_date_total + sav_date_total + fee_date_total + tr_date_total
         except Exception:
             pass
 
-        # 3. CO Cashbooks Total (Sum of total_inflows)
+        # 3. CO Cashbooks Total (Sum of total_inflows - opening_balance)
         co_cashbooks_total = 0.0
         try:
-            res_co = uow.client.table("co_cashbooks").select("total_inflows") \
+            res_co = uow.client.table("co_cashbooks").select("opening_balance, total_inflows") \
                 .eq("branch_id", branch_id).eq("date", p_date_str).execute()
-            co_cashbooks_total = sum(float(r.get("total_inflows") or 0.0) for r in (res_co.data or []))
+            co_cashbooks_total = sum(max(0.0, float(c.get("total_inflows") or 0.0) - float(c.get("opening_balance") or 0.0)) for c in (res_co.data or []))
         except Exception:
             pass
 
-        # 4. Master Cashbook Total (total_inflows)
+        # 4. Master Cashbook Total (total_inflows - opening_balance)
         master_cashbook_total = 0.0
         try:
-            res_mb = uow.client.table("master_cashbook").select("total_inflows") \
+            res_mb = uow.client.table("master_cashbook").select("opening_balance, total_inflows") \
                 .eq("branch_id", branch_id).eq("date", p_date_str).execute()
             if res_mb.data:
-                master_cashbook_total = float(res_mb.data[0].get("total_inflows") or 0.0)
+                master_cashbook_total = max(0.0, float(res_mb.data[0].get("total_inflows") or 0.0) - float(res_mb.data[0].get("opening_balance") or 0.0))
         except Exception:
             pass
 
         # 5. Dashboard Total (Operational cash collection for date)
-        dashboard_total = rep_date_total
+        dashboard_total = audit_views_total
 
         # 6. Reports Total (Reporting engine source for date)
-        reports_total = rep_date_total
+        reports_total = audit_views_total
 
         # Compare values (tolerance of ₦0.01 for floating-point rounding)
         is_balanced = (
