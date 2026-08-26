@@ -470,18 +470,7 @@ class DashboardService:
                 is_disbursed_today = (disb_dt_str == target_dt_str)
                 is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
 
-                if l.get("status") in ["Completed", "Closed"]:
-                    is_expected_today = False
-                elif is_weekend or is_branch_closed or is_disbursed_today or is_future_start:
-                    is_expected_today = False
-                elif loan_cycle == "Daily":
-                    is_expected_today = True  # Mon-Fri
-                elif loan_cycle == "Weekly":
-                    is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower() or str(g_mday).strip().lower() == "daily")
-                else:
-                    # Monthly fallback: expected if meeting day matches today
-                    is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower())
-
+                is_meeting_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower() or str(g_mday).strip().lower() == "daily")
                 cid = l.get("client_id")
                 lid = l.get("loan_id")
                 if lid:
@@ -489,6 +478,18 @@ class DashboardService:
                 else:
                     c_reps = [r for r in reps if str(r.get("client_id")) == str(cid)] if cid else []
                 c_paid = sum(float(r.get("amount_paid") or 0.0) for r in c_reps)
+
+                if is_weekend or is_branch_closed or is_disbursed_today or is_future_start:
+                    is_expected_today = False
+                elif l.get("status") in ["Completed", "Closed"]:
+                    is_expected_today = (is_meeting_today and c_paid > 0)
+                elif loan_cycle == "Daily":
+                    is_expected_today = True  # Mon-Fri
+                elif loan_cycle == "Weekly":
+                    is_expected_today = is_meeting_today
+                else:
+                    # Monthly fallback: expected if meeting day matches today
+                    is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower())
 
                 # Only include in Today's Meeting Portfolio if expected today OR if payment was received today
                 if not is_expected_today and c_paid == 0:
@@ -756,9 +757,17 @@ class DashboardService:
                     exp = float(mp["Expected Collection"].sum()) if mp is not None and not mp.empty else 0.0
                     col = float(mp["Collected"].sum()) if mp is not None and not mp.empty else 0.0
                     grps_count = len(mp) if mp is not None and not mp.empty else 0
-                    comp = round((col / exp * 100), 1) if exp > 0 else (100.0 if col > 0 else 100.0 if is_branch_closed else 0.0)
+                    
+                    if exp > 0:
+                        comp = round((col / exp * 100), 1)
+                    elif col > 0:
+                        comp = 100.0
+                    else:
+                        comp = 100.0 if is_branch_closed or grps_count == 0 else 0.0
 
                     status_str = f"🏖️ Closed ({closure_reason})" if is_branch_closed else ("Normal" if comp >= 80 else "Requires Attention")
+                    if grps_count == 0 and exp == 0 and col == 0:
+                        status_str = "Normal"
 
                     officer_stats.append({
                         "Officer": oname,
@@ -797,12 +806,29 @@ class DashboardService:
         # Fetch Authoritative Payment Breakdown for the Branch
         payment_breakdown = DashboardService._calculate_payment_breakdown(uow, target_date, branch_id)
 
+        # Authoritative branch collection today from repayments table (BR-DASH-001)
+        branch_coll_today = 0.0
+        try:
+            if branch_id:
+                t_str = target_date.isoformat()
+                s_t_str = f"{t_str}T00:00:00"
+                e_t_str = f"{t_str}T23:59:59"
+                rep_bm = uow.client.table("repayments").select("amount_paid, transaction_type, note").eq("branch_id", branch_id).gte("date", s_t_str).lte("date", e_t_str).execute()
+                valid_bm_reps = [
+                    r for r in (rep_bm.data or [])
+                    if str(r.get("transaction_type", "")).upper() != "ONBOARDING_LEGACY"
+                    and str(r.get("note", "")).strip() != "Legacy Repayments Onboarded"
+                ]
+                branch_coll_today = sum(float(r.get("amount_paid") or 0.0) for r in valid_bm_reps)
+        except Exception:
+            branch_coll_today = summary.get("total_collected", 0.0)
+
         return {
             "branch_summary": {
                 "active_clients": total_active_clients,
                 "active_loans": total_active_clients,
                 "active_savings": active_savings,
-                "collection_today": summary.get("total_collected", 0.0) if not is_branch_closed else 0.0,
+                "collection_today": branch_coll_today if not is_branch_closed else 0.0,
                 "par": par_val
             },
             "branch_closure": {

@@ -336,8 +336,30 @@ class PortfolioService:
         total_expected_repayment = 0.0
         active_loans_count = 0
 
+        # Build set of days of week in selected date range for period expected calculation (BR-DASH-007)
+        cur_d = start_date
+        selected_weekdays = set()
+        while cur_d <= end_date:
+            selected_weekdays.add(cur_d.strftime("%A").lower())
+            cur_d += timedelta(days=1)
+
+        # Map group meeting days for period expected checking
+        group_mday_map = {}
+        try:
+            loan_client_ids = [l.get("client_id") for l in loans_raw if l.get("client_id")]
+            if loan_client_ids:
+                gm_q = uow.client.table("client_memberships").select("client_id, groups(name, meeting_day)").in_("client_id", loan_client_ids).execute()
+                for gm in (gm_q.data or []):
+                    grp = gm.get("groups") or {}
+                    g_mday_str = grp.get("meeting_day") or "Daily"
+                    g_name_str = grp.get("name") or "Individual"
+                    group_mday_map[g_name_str] = g_mday_str
+        except Exception:
+            pass
+
         for l in loans_raw:
-            if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]:
+            st_raw = str(l.get("status") or "").upper()
+            if st_raw in ["ACTIVE", "APPROVED"]:
                 lid_s = str(l.get("loan_id") or "")
                 act_cred = float(l.get("active_credit") or 0.0)
                 tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
@@ -346,8 +368,37 @@ class PortfolioService:
                 if out_bal > 0:
                     active_loans_count += 1
                     total_active_credit += act_cred
-                    total_expected_repayment += float(l.get("loan_repay") or 0.0)
                     total_outstanding_balance += out_bal
+
+                    # Check if expected in the selected period (BR-DASH-007)
+                    cid_s = str(l.get("client_id") or "")
+                    g_name_s = group_map.get(cid_s, "Individual")
+                    g_mday = str(group_mday_map.get(g_name_s) or l.get("meeting_day") or "Daily").strip().lower()
+                    prod_info = l.get("loan_products") or {}
+                    p_name_lower = str(prod_info.get("name") or l.get("product_type") or "").lower()
+                    is_daily = "daily" in p_name_lower or "60" in p_name_lower or "120" in p_name_lower
+                    
+                    is_exp_in_period = False
+                    if is_daily:
+                        is_exp_in_period = any(wd in selected_weekdays for wd in ["monday", "tuesday", "wednesday", "thursday", "friday"])
+                    else:
+                        is_exp_in_period = (g_mday in selected_weekdays or g_mday == "daily")
+
+                    disb_dt_str = str(l.get("disbursement_date") or l.get("date") or "")[:10]
+                    start_dt_str = str(l.get("start_date") or "")[:10]
+                    if disb_dt_str and start_date.isoformat() <= disb_dt_str <= end_date.isoformat():
+                        is_exp_in_period = False
+                    if start_dt_str and start_dt_str > end_date.isoformat():
+                        is_exp_in_period = False
+
+                    if is_exp_in_period:
+                        total_expected_repayment += float(l.get("loan_repay") or 0.0)
+            elif st_raw in ["COMPLETED", "CLOSED"]:
+                # If loan received repayment in selected period, its installment was expected in period!
+                lid_s = str(l.get("loan_id") or "")
+                c_reps_loan = [r for r in repayments_today if str(r.get("loan_id")) == lid_s]
+                if c_reps_loan:
+                    total_expected_repayment += float(l.get("loan_repay") or 0.0)
                 
         # Calculate disbursement summary within the selected date range
         s_d_str_iso = start_date.isoformat()
@@ -394,11 +445,12 @@ class PortfolioService:
         for l in loans_raw:
             st = str(l.get("status") or "").upper()
             cid_str = str(l.get("client_id") or "")
+            lid_str = str(l.get("loan_id") or "")
             if st in ["ACTIVE", "APPROVED"]:
                 active_loans_by_client[cid_str] = l
             elif st in ["COMPLETED", "CLOSED"]:
-                # Check if repayment was received in the selected period
-                c_reps = [r for r in repayments_today if str(r.get("client_id")) == cid_str or str(r.get("loan_id")) == str(l.get("loan_id"))]
+                # Check if repayment was received for THIS specific loan in the selected period
+                c_reps = [r for r in repayments_today if str(r.get("loan_id")) == lid_str]
                 if c_reps:
                     completed_loans_today_by_client[cid_str] = l
 
@@ -441,15 +493,8 @@ class PortfolioService:
             c_reps = [r for r in repayments_today if str(r.get("client_id")) == cid_str]
             paid_today = sum(float(r.get("amount_paid") or 0.0) for r in c_reps)
 
-            # 1. Full Payment: Client who completed their active loan in period (BR-DASH-005)
-            if comp_l and paid_today > 0:
-                full_payments_count += 1
-                # Display active credit of the completed cycle (e.g. 198,000 for Olaide)
-                disp_act = float(l.get("active_credit") or comp_l.get("active_credit") or comp_l.get("loan_amount") or 0.0) if l else float(comp_l.get("active_credit") or comp_l.get("loan_amount") or 0.0)
-                full_payments_amt += disp_act
-                status_str = "Full Paid (Closed)"
-                if not l:
-                    l = comp_l
+            if not l and comp_l:
+                l = comp_l
             
             if l:
                 # Active Credit is the static contract total due (Principal - Gap)
@@ -471,11 +516,12 @@ class PortfolioService:
                 prod_info = l.get("loan_products") or {}
                 prod_name = prod_info.get("name") or "Unknown"
 
-                if prod_name not in product_summary:
-                    product_summary[prod_name] = {"active_credit": 0.0, "loan_balance": 0.0, "count": 0}
-                product_summary[prod_name]["active_credit"] += act_cred
-                product_summary[prod_name]["loan_balance"] += outstanding_bal
-                product_summary[prod_name]["count"] += 1
+                if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]:
+                    if prod_name not in product_summary:
+                        product_summary[prod_name] = {"active_credit": 0.0, "loan_balance": 0.0, "count": 0}
+                    product_summary[prod_name]["active_credit"] += act_cred
+                    product_summary[prod_name]["loan_balance"] += outstanding_bal
+                    product_summary[prod_name]["count"] += 1
 
                 # Due date check for overdue status
                 exp_end = l.get("expected_end_date") or l.get("end_date")
@@ -494,33 +540,35 @@ class PortfolioService:
                 is_disbursed_today = (disb_dt_str == target_dt_str)
                 is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
 
-                if comp_l and paid_today > 0:
-                    # Already handled under Full Payment
-                    pass
-                elif (outstanding_bal <= 0.0 and (tot_paid_lifetime > 0 or act_cred > 0)) or (tot_paid_lifetime >= act_cred and act_cred > 0):
-                    if not comp_l:
-                        full_payments_count += 1
-                        full_payments_amt += act_cred
-                        status_str = "Full Paid (Closed)"
-                elif is_disbursed_today or is_future_start:
-                    status_str = "Active Loan (New)"
-                elif paid_today > 0:
-                    if paid_today > repay_fixed and repay_fixed > 0:
-                        excess_payments_count += 1
-                        excess_payments_amt += (paid_today - repay_fixed)
-                        status_str = "Excess Paid"
-                    elif paid_today == repay_fixed:
+                # Mathematical Balance Invariant: Normal + Excess + Part = Actual Collection (BR-DASH-007)
+                if paid_today > 0:
+                    if repay_fixed > 0:
+                        if paid_today == repay_fixed:
+                            normal_payments_count += 1
+                            normal_payments_amt += paid_today
+                            status_str = "Normal Paid"
+                        elif paid_today > repay_fixed:
+                            excess_payments_count += 1
+                            excess_payments_amt += (paid_today - repay_fixed)
+                            normal_payments_count += 1
+                            normal_payments_amt += repay_fixed
+                            status_str = "Excess Paid"
+                        else:
+                            part_payments_count += 1
+                            part_payments_amt += paid_today
+                            status_str = "Part Paid"
+                    else:
                         normal_payments_count += 1
                         normal_payments_amt += paid_today
                         status_str = "Normal Paid"
-                    else:
-                        part_payments_count += 1
-                        part_payments_amt += paid_today
-                        status_str = "Part Paid"
                 elif is_past_due:
                     overdue_count += 1
                     overdue_amt += outstanding_bal
                     status_str = "Overdue"
+                elif is_disbursed_today or is_future_start:
+                    status_str = "Active Loan (New)"
+                elif comp_l:
+                    status_str = "Completed"
                 else:
                     status_str = "Active Loan"
 

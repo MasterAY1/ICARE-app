@@ -7238,7 +7238,7 @@ elif page == "CO Cashbook":
     # LEDGER PROJECTION RETRIEVAL (co_cashbooks)
     # ========================================================
     bf_cash = t_sav = t_r12w = t_r24w = t_r60d = t_rmth = t_cont = t_bwd = t_asale = t_app = t_pb = t_bon = t_cfd = 0.0
-    t_d11 = t_w11 = t_mm = t_pwd = t_exp = t_bdep = t_lres = t_ltrans = t_cc = 0.0
+    t_d11 = t_w11 = t_w20 = t_mm = t_pwd = t_exp = t_bdep = t_lres = t_ltrans = t_cc = 0.0
     d_act = w_act_12 = w_act_24 = m_act = 0.0
     left_total = right_total = closing_bal = 0.0
 
@@ -7265,6 +7265,7 @@ elif page == "CO Cashbook":
                     t_rmth = float(c.get("rep_monthly") or 0)
                     t_d11 = float(c.get("daily_11_pct") or 0)
                     t_w11 = float(c.get("weekly_11_pct") or 0)
+                    t_w20 = float(c.get("weekly_20_pct") or 0)
                     t_mm = float(c.get("risk_premium_returns") or 0)
                     t_cont = float(c.get("contingency") or 0)
                     t_app = float(c.get("app_fee") or 0)
@@ -7309,7 +7310,7 @@ elif page == "CO Cashbook":
     if left_total == 0 and right_total == 0:
         left_total = (
             bf_cash + t_lres + t_sav + t_r60d + t_r12w + t_r24w + t_rmth +
-            t_d11 + t_w11 + t_mm + t_cont + t_app + t_cfd + t_pb + t_bon +
+            t_d11 + t_w11 + t_w20 + t_mm + t_cont + t_app + t_cfd + t_pb + t_bon +
             t_asale + t_cc + t_bwd
         )
         right_total = (
@@ -7508,6 +7509,7 @@ elif page == "CO Cashbook":
         ("Cash & Carry", t_cc),
         ("Daily 11% Markup", t_d11),
         ("Weekly 11% Markup", t_w11),
+        ("Weekly 20% Markup", t_w20),
         ("Monthly / 20% Markup", t_mm),
         ("Contingency (1%)", t_cont),
         ("Credit Form / App Fee", t_app),
