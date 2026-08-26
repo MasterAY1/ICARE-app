@@ -6655,6 +6655,20 @@ elif page in ["Audit Center", "Audit Ledger"]:
             except Exception:
                 return {"All Officers": "All"}
 
+        @CacheProvider.cache_data(ttl=60)
+        def _cached_verify_6way_integrity(branch_id: str, posting_date_iso: str):
+            from database.repositories.unit_of_work import SupabaseUnitOfWork
+            from services.financial_reconciliation_service import FinancialReconciliationService
+            with SupabaseUnitOfWork() as uow:
+                return FinancialReconciliationService.verify_6way_financial_integrity(uow, branch_id, posting_date_iso)
+
+        @CacheProvider.cache_data(ttl=60)
+        def _cached_run_15_exception_reports(branch_id: Optional[str]):
+            from database.repositories.unit_of_work import SupabaseUnitOfWork
+            from services.financial_reconciliation_service import FinancialReconciliationService
+            with SupabaseUnitOfWork() as uow:
+                return FinancialReconciliationService.run_15_exception_reports(uow, branch_id)
+
         # ---------------------------------------------------------------------
         # TAB 1: Financial Integrity & 6-Way Match
         # ---------------------------------------------------------------------
@@ -6664,7 +6678,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 st.caption("Automated mathematical balance verification across General Ledger, Audit Views, Cashbooks, Dashboards, and Reports.")
     
                 b_filter = BRANCH_ID if ROLE not in [ROLE_ADMIN, 'Super Admin', 'Admin'] else None
-                rec_result = FinancialReconciliationService.verify_6way_financial_integrity(uow_ac, b_filter or BRANCH_ID, date.today())
+                rec_result = _cached_verify_6way_integrity(b_filter or BRANCH_ID, date.today().isoformat())
     
                 if rec_result["is_balanced"]:
                     st.success(f"{rec_result['status_emoji']} {rec_result['status_text']}")
@@ -7077,7 +7091,10 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     cp_target_b_id = BRANCH_ID if ROLE in ['BM', ROLE_BRANCH_MANAGER, ROLE_CREDIT_OFFICER, 'CO', 'Officer'] else None
                     query_cp = uow_ac.client.table("collection_performance").select("*")
                     if cp_target_b_id:
-                        query_cp = query_cp.eq("branch_id", cp_target_b_id)
+                        branch_users = uow_ac.users.find_by_branch_id(cp_target_b_id)
+                        b_officer_ids = [u.id for u in branch_users if u.id]
+                        if b_officer_ids:
+                            query_cp = query_cp.in_("officer_id", b_officer_ids)
                     res_cp = query_cp.order("meeting_date", desc=True).limit(500).execute()
                     raw_cp_data = res_cp.data or []
                     enriched_cp = enricher.enrich_collection_records(raw_cp_data)
@@ -7099,7 +7116,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 st.subheader("🚨 15 Automated Audit Exception Reports")
                 st.caption("Scans core database for compliance breaches, unposted transactions, or projection anomalies.")
     
-                ex_data = FinancialReconciliationService.run_15_exception_reports(uow_ac, BRANCH_ID if ROLE not in [ROLE_ADMIN, 'Super Admin', 'Admin'] else None)
+                ex_data = _cached_run_15_exception_reports(BRANCH_ID if ROLE not in [ROLE_ADMIN, 'Super Admin', 'Admin'] else None)
                 st.metric("Total Exceptions Detected", ex_data["total_exceptions"], delta=f"{ex_data['exception_rules_evaluated']} Rules Evaluated")
     
                 for rule_name, rule_records in ex_data["details"].items():

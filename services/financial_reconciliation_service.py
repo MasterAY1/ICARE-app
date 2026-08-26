@@ -50,14 +50,19 @@ class FinancialReconciliationService:
 
         # 2. Audit Views Total (Fees + Operational Repayments on date)
         audit_views_total = 0.0
+        rep_date_total = 0.0
         try:
             res_fees = uow.client.table("fees").select("amount") \
                 .eq("branch_id", branch_id).eq("posting_date", p_date_str).execute()
             audit_views_total += sum(float(r.get("amount") or 0.0) for r in (res_fees.data or []))
 
-            res_rep = uow.client.table("repayments").select("amount_paid, date") \
-                .eq("branch_id", branch_id).execute()
-            audit_views_total += sum(float(r.get("amount_paid") or 0.0) for r in (res_rep.data or []) if str(r.get("date") or "")[:10] == p_date_str)
+            # Query operational repayments on date with push-down date filtering
+            s_d_str = f"{p_date_str}T00:00:00"
+            e_d_str = f"{p_date_str}T23:59:59"
+            res_rep = uow.client.table("repayments").select("amount_paid") \
+                .eq("branch_id", branch_id).gte("date", s_d_str).lte("date", e_d_str).execute()
+            rep_date_total = sum(float(r.get("amount_paid") or 0.0) for r in (res_rep.data or []))
+            audit_views_total += rep_date_total
         except Exception:
             pass
 
@@ -80,23 +85,11 @@ class FinancialReconciliationService:
         except Exception:
             pass
 
-        # 5. Dashboard Total (Independent query of operational cash collection for date)
-        dashboard_total = 0.0
-        try:
-            res_dash_rep = uow.client.table("repayments").select("amount_paid") \
-                .eq("branch_id", branch_id).execute()
-            dashboard_total = sum(float(r.get("amount_paid") or 0.0) for r in (res_dash_rep.data or []) if str(r.get("date") or "")[:10] == p_date_str)
-        except Exception:
-            pass
+        # 5. Dashboard Total (Operational cash collection for date)
+        dashboard_total = rep_date_total
 
-        # 6. Reports Total (Independent query from reporting engine source)
-        reports_total = 0.0
-        try:
-            res_rpt_rep = uow.client.table("repayments").select("amount_paid") \
-                .eq("branch_id", branch_id).execute()
-            reports_total = sum(float(r.get("amount_paid") or 0.0) for r in (res_rpt_rep.data or []) if str(r.get("date") or "")[:10] == p_date_str)
-        except Exception:
-            pass
+        # 6. Reports Total (Reporting engine source for date)
+        reports_total = rep_date_total
 
         # Compare values (tolerance of ₦0.01 for floating-point rounding)
         is_balanced = (
@@ -222,15 +215,23 @@ class FinancialReconciliationService:
                 .eq("status", "Active")
             if branch_id and branch_id != "All": q = q.eq("branch_id", branch_id)
             res = q.execute()
+            active_loans = res.data or []
+            loan_ids = [l["loan_id"] for l in active_loans if l.get("loan_id")]
+            
+            # Batch fetch repayments for all loans in a single query
+            paid_by_loan = {}
+            if loan_ids:
+                res_reps = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", loan_ids).execute()
+                for r in (res_reps.data or []):
+                    lid = r.get("loan_id")
+                    amt = float(r.get("amount_paid") or 0.0)
+                    paid_by_loan[lid] = paid_by_loan.get(lid, 0.0) + amt
+
             overdue_loans = []
-            for l in (res.data or []):
+            for l in active_loans:
                 ac_val = float(l.get("active_credit") or 0.0)
                 lid = l.get("loan_id")
-                from services.schedule_service import ScheduleService
-                tot_paid_val, has_sched = ScheduleService.get_total_paid(uow, lid)
-                if not has_sched:
-                    rep_res = uow.client.table("repayments").select("amount_paid").eq("loan_id", lid).execute()
-                    tot_paid_val = sum(float(r.get("amount_paid") or 0) for r in (rep_res.data or []))
+                tot_paid_val = paid_by_loan.get(lid, 0.0)
                 rem = max(0.0, ac_val - tot_paid_val)
                 if rem > 0:
                     overdue_loans.append({**l, "overdue_amount": rem})
