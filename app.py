@@ -8873,13 +8873,12 @@ elif page == "Portfolio":
             l4.metric("Total Outstanding Balance", f"₦{p_sum.get('total_outstanding_balance', 0.0):,.0f}", f"{p_sum.get('outstanding_clients_count', 0)} Clients")
 
             st.caption("Row 5: Repayment Status & Risk")
-            r1, r2, r3, r4, r5 = st.columns(5)
-            r1.metric("Normal Payments", f"₦{p_sum.get('normal_payments', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('normal_payments', {}).get('count', 0)} Clients")
-            r2.metric("Full Payments", f"₦{p_sum.get('full_payments', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('full_payments', {}).get('count', 0)} Clients")
-            r3.metric("Excess Payments", f"₦{p_sum.get('excess_payments', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('excess_payments', {}).get('count', 0)} Clients")
-            r4.metric("Overdue Portfolio", f"₦{p_sum.get('overdue', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('overdue', {}).get('count', 0)} Clients", delta_color="inverse")
+            r1, r2, r3, r4 = st.columns(4)
+            r1.metric("Full Payments", f"₦{p_sum.get('full_payments', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('full_payments', {}).get('count', 0)} Loans Settled")
+            r2.metric("Excess Payments", f"₦{p_sum.get('excess_payments', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('excess_payments', {}).get('count', 0)} Surplus Payers")
+            r3.metric("Overdue Portfolio", f"₦{p_sum.get('overdue', {}).get('amount', 0.0):,.0f}", f"{p_sum.get('overdue', {}).get('count', 0)} Overdue Loans", delta_color="inverse")
             par_val = float(str(p_sum.get('par', '0.00%')).replace('%', '') or 0.0)
-            r5.metric("Portfolio at Risk (PAR)", f"{par_val:.2f}%", f"{p_sum.get('overdue', {}).get('count', 0)} Overdue", delta_color="inverse")
+            r4.metric("Portfolio at Risk (PAR)", f"{par_val:.2f}%", f"{p_sum.get('overdue', {}).get('count', 0)} Overdue", delta_color="inverse")
 
             st.divider()
             st.markdown("### Loan Products Summary")
