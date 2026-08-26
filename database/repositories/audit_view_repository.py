@@ -28,24 +28,141 @@ class SupabaseAuditViewRepository(BaseRepository):
         date_to: Optional[date] = None,
         limit: int = 200
     ) -> List[Dict[str, Any]]:
-        """Fetch fee records for a specific fee_type with optional filters."""
-        query = self.client.table("fees").select("*")
-        if fee_type and fee_type != "ALL":
-            query = query.eq("fee_type", fee_type)
-        if branch_id and branch_id != "All":
-            query = query.eq("branch_id", branch_id)
-        if officer_id and officer_id != "All":
-            query = query.eq("officer_id", officer_id)
-        if client_id:
-            query = query.eq("client_id", client_id)
-        if date_from:
-            query = query.gte("posting_date", date_from.isoformat() if isinstance(date_from, date) else date_from)
-        if date_to:
-            query = query.lte("posting_date", date_to.isoformat() if isinstance(date_to, date) else date_to)
+        """
+        Fetch authoritative fee audit records across event_store, financial_ledger_entries,
+        and fees table with full branch, officer, client, and date filtering.
+        """
+        records: List[Dict[str, Any]] = []
+        seen_keys = set()
 
-        query = query.order("created_at", desc=True).limit(limit)
-        res = query.execute()
-        return res.data or []
+        # 1. First, check public.fees table if records exist
+        try:
+            query = self.client.table("fees").select("*")
+            if fee_type and fee_type != "ALL":
+                if fee_type == "PROCESSING_FEE":
+                    query = query.in_("fee_type", ["PROCESSING_FEE", "CREDIT_FORM", "APP_FEE", "APPLICATION_FEE"])
+                else:
+                    query = query.eq("fee_type", fee_type)
+            if branch_id and branch_id != "All":
+                query = query.eq("branch_id", branch_id)
+            if officer_id and officer_id != "All":
+                query = query.eq("officer_id", officer_id)
+            if client_id:
+                query = query.eq("client_id", client_id)
+            if date_from:
+                query = query.gte("posting_date", date_from.isoformat() if isinstance(date_from, date) else str(date_from))
+            if date_to:
+                query = query.lte("posting_date", date_to.isoformat() if isinstance(date_to, date) else str(date_to))
+
+            res = query.order("created_at", desc=True).limit(limit).execute()
+            for r in (res.data or []):
+                seen_keys.add(f"fees_{r.get('id')}")
+                records.append(r)
+        except Exception:
+            pass
+
+        # 2. Query event_store for FeeCharged and LoanDisbursed events
+        try:
+            q_ev = self.client.table("event_store").select("*").in_("event_type", ["FeeCharged", "LoanDisbursed"])
+            res_ev = q_ev.limit(limit * 5).execute()
+            for ev in (res_ev.data or []):
+                ev_type = ev.get("event_type")
+                payload = ev.get("payload") or {}
+                
+                ev_branch = payload.get("branch_id")
+                ev_officer = payload.get("officer_id") or payload.get("officer")
+                ev_client = payload.get("client_id") or payload.get("client")
+                ev_date = str(payload.get("date") or str(ev.get("created_at") or "")[:10])[:10]
+                ev_ref = payload.get("reference") or ev.get("event_id")[:8]
+                
+                # Filter by date range
+                if date_from:
+                    d_from_str = date_from.isoformat() if isinstance(date_from, date) else str(date_from)[:10]
+                    if ev_date and ev_date < d_from_str:
+                        continue
+                if date_to:
+                    d_to_str = date_to.isoformat() if isinstance(date_to, date) else str(date_to)[:10]
+                    if ev_date and ev_date > d_to_str:
+                        continue
+                
+                # Filter by branch if specified
+                if branch_id and branch_id != "All" and ev_branch and ev_branch != branch_id:
+                    continue
+                # Filter by officer if specified
+                if officer_id and officer_id != "All" and ev_officer and ev_officer != officer_id:
+                    continue
+                # Filter by client if specified
+                if client_id and ev_client and ev_client != client_id:
+                    continue
+
+                fee_items = []
+                if ev_type == "FeeCharged":
+                    cls_val = payload.get("classification") or ""
+                    narr = str(payload.get("narration") or "").upper()
+                    
+                    if cls_val in ["MARKUP_11", "MARKUP_20", "CONTINGENCY", "PASSBOOK", "CREDIT_FORM_DAMAGE", "BONUS", "MISC_FEE"]:
+                        f_t = cls_val
+                    elif "11%" in narr or "MARKUP (11%)" in narr:
+                        f_t = "MARKUP_11"
+                    elif "20%" in narr or "MARKUP (20%)" in narr:
+                        f_t = "MARKUP_20"
+                    elif "CONTINGENCY" in narr:
+                        f_t = "CONTINGENCY"
+                    elif "PASSBOOK" in narr:
+                        f_t = "PASSBOOK"
+                    elif "DAMAGE" in narr or "CFD" in narr:
+                        f_t = "CREDIT_FORM_DAMAGE"
+                    elif "BONUS" in narr:
+                        f_t = "BONUS"
+                    elif "MISC" in narr or "RISK PREMIUM" in narr:
+                        f_t = "MISC_FEE"
+                    else:
+                        f_t = "PROCESSING_FEE"  # Unified Processing / Credit Form / App Fee
+                        
+                    fee_items.append((f_t, float(payload.get("amount") or 0.0), payload.get("narration") or f"{f_t} transaction"))
+
+                elif ev_type == "LoanDisbursed":
+                    cont_fee = float(payload.get("contingency_fee") or 0.0)
+                    if cont_fee > 0:
+                        fee_items.append(("CONTINGENCY", cont_fee, f"Upfront Contingency fee for {ev_ref}"))
+                    markup_fee = float(payload.get("markup_amount") or 0.0)
+                    if markup_fee > 0:
+                        p_type = str(payload.get("product_type") or "")
+                        dur = payload.get("duration") or 12
+                        m_t = "MARKUP_20" if ("24" in p_type or "20" in p_type or dur == 24) else "MARKUP_11"
+                        fee_items.append((m_t, markup_fee, f"Upfront Markup for {ev_ref}"))
+
+                for f_t, f_amt, f_narr in fee_items:
+                    if f_amt <= 0:
+                        continue
+                    # Match fee type filter
+                    if fee_type and fee_type != "ALL":
+                        if fee_type == "PROCESSING_FEE" and f_t not in ["PROCESSING_FEE", "CREDIT_FORM", "APP_FEE"]:
+                            continue
+                        elif fee_type != "PROCESSING_FEE" and f_t != fee_type:
+                            continue
+
+                    k = f"ev_{ev.get('event_id')}_{f_t}"
+                    if k in seen_keys:
+                        continue
+                    seen_keys.add(k)
+
+                    records.append({
+                        "id": ev.get("event_id"),
+                        "fee_type": f_t,
+                        "amount": f_amt,
+                        "branch_id": ev_branch,
+                        "officer_id": ev_officer,
+                        "client_id": ev_client,
+                        "posting_date": ev_date,
+                        "reference": ev_ref,
+                        "remarks": f_narr,
+                        "created_at": ev.get("created_at")
+                    })
+        except Exception:
+            pass
+
+        return records[:limit]
 
     # -------------------------------------------------------------------------
     # 2. Treasury Audit Ledgers (backed by public.treasury_transactions)

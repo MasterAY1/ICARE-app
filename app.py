@@ -6727,7 +6727,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 with fb2:
                     fee_d_to = st.date_input("Date To", date.today(), key="fee_d_to")
                 with fb3:
-                    fee_sub = st.selectbox("Fee Type", ["PROCESSING_FEE", "PASSBOOK", "CREDIT_FORM", "CREDIT_FORM_DAMAGE", "BONUS", "MISC_FEE", "CONTINGENCY", "MARKUP_11", "MARKUP_20"], key="ac_fee_type")
+                    fee_sub = st.selectbox("Fee Type", ["ALL", "PROCESSING_FEE", "PASSBOOK", "CREDIT_FORM_DAMAGE", "BONUS", "MISC_FEE", "CONTINGENCY", "MARKUP_11", "MARKUP_20"], key="ac_fee_type")
                 with fb4:
                     fee_branch = st.selectbox("Branch", ac_branch_options, key="fee_branch_sel", disabled=(len(ac_branch_options) == 1))
                 with fb5:
