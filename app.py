@@ -6591,6 +6591,19 @@ elif page in ["Audit Center", "Audit Ledger"]:
         st.caption("Personalized audit trail of your client savings, loans, and collections.")
         audit_tab4, audit_tab5, audit_tab6 = st.tabs(["Savings Ledger", "Loan Portfolio", "Collection Performance"])
         audit_tab1 = audit_tab2 = audit_tab3 = audit_tab7 = audit_tab8 = audit_tab9 = audit_tab10 = None
+    elif ROLE in ['BM', ROLE_BRANCH_MANAGER, 'AM', 'Area Manager']:
+        st.title("Branch Audit Ledger")
+        st.caption("Read-only branch audit trails, 6-way financial integrity verification, and 360° transaction explorer.")
+        audit_tab1, audit_tab2, audit_tab3, audit_tab4, audit_tab5, audit_tab6, audit_tab8 = st.tabs([
+            "6-Way Integrity Match",
+            "Fees Audit",
+            "Treasury Audit",
+            "Savings Ledger",
+            "Loan Portfolio",
+            "Collection Performance",
+            "360° Explorer & Timeline"
+        ])
+        audit_tab7 = audit_tab9 = audit_tab10 = None
     else:
         st.title("Enterprise Audit & Reconciliation Center")
         st.caption("Read-only executive ledgers, 6-way financial integrity verification, 360° universal explorer, and 15 automated exception reports.")
