@@ -169,7 +169,13 @@ class DashboardService:
                 is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower())
 
             # 1. Full Payment: Represents exclusively clients who completely paid off their active loan today (BR-DASH-005)
-            if (l.get("status") == "Completed" or remaining_bal <= 0.0 or tot_paid_loan >= act_cred) and c_paid_today > 0:
+            is_full_payoff_today = False
+            if c_paid_today > 0 and (remaining_bal <= 0.0 or tot_paid_loan >= act_cred or l.get("status") == "Completed"):
+                prior_paid = tot_paid_loan - c_paid_today
+                if prior_paid < tot_due_base or l.get("status") == "Completed":
+                    is_full_payoff_today = True
+
+            if is_full_payoff_today:
                 if cid not in full_paid_clients:
                     full_count += 1
                     # Display active credit for the full payoff cycle (e.g. 198,000)
@@ -377,7 +383,7 @@ class DashboardService:
                 active_loans = [
                     l for l in l_data 
                     if l.get("status") in ["ACTIVE", "Approved", "Active"] 
-                    or (l.get("status") in ["Completed", "Closed"] and any(r.get("client_id") == l.get("client_id") or r.get("loan_id") == l.get("loan_id") for r in reps))
+                    or (l.get("status") in ["Completed", "Closed"] and any(str(r.get("loan_id")) == str(l.get("loan_id")) for r in reps))
                 ]
         except Exception:
             active_loans = []
@@ -465,7 +471,7 @@ class DashboardService:
                 is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
 
                 if l.get("status") in ["Completed", "Closed"]:
-                    is_expected_today = False if is_branch_closed else (str(g_mday).strip().lower() == str(meeting_day).strip().lower() or str(g_mday).strip().lower() == "daily")
+                    is_expected_today = False
                 elif is_weekend or is_branch_closed or is_disbursed_today or is_future_start:
                     is_expected_today = False
                 elif loan_cycle == "Daily":
@@ -481,7 +487,7 @@ class DashboardService:
                 if lid:
                     c_reps = [r for r in reps if str(r.get("loan_id")) == str(lid)]
                 else:
-                    c_reps = [r for r in reps if r.get("client_id") == cid] if cid else []
+                    c_reps = [r for r in reps if str(r.get("client_id")) == str(cid)] if cid else []
                 c_paid = sum(float(r.get("amount_paid") or 0.0) for r in c_reps)
 
                 # Only include in Today's Meeting Portfolio if expected today OR if payment was received today
@@ -534,11 +540,12 @@ class DashboardService:
                 # Classify repayment status for Today's Repayment Summary (BR-DASH-005)
                 if c_paid > 0:
                     grp_map[g_name]["Clients Paid"] += 1
-                    # Check if client fully paid off their lifetime active credit
+                    # Check if client fully paid off their lifetime active credit TODAY
                     lifetime_reps = co_lifetime_reps_map.get(str(lid), 0.0)
-                    is_loan_fully_cleared = (act_cred > 0 and (act_cred - lifetime_reps) <= 0.0) or (l.get("status") in ["Completed", "Closed"])
+                    prior_reps = lifetime_reps - c_paid
+                    is_loan_fully_cleared_today = (act_cred > 0 and (act_cred - lifetime_reps) <= 0.0 and (act_cred - prior_reps) > 0) or (l.get("status") in ["Completed", "Closed"] and c_paid > 0)
 
-                    if is_loan_fully_cleared:
+                    if is_loan_fully_cleared_today:
                         full_paid_count += 1
                         full_paid_amt += act_cred
                     elif repay_amt > 0 and abs(c_paid - repay_amt) <= 1.0:
