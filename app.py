@@ -6664,7 +6664,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 for u in (res_co.data or []):
                     uname = u.get("username", "")
                     fname = u.get("full_name") or uname
-                    if not uname.startswith("BM_") and uname != "admin":
+                    if uname.startswith("CO") or "Officer" in uname or "CO" in uname:
                         disp = f"{fname} ({uname})"
                         opts[disp] = u.get("id") or uname
                 return opts

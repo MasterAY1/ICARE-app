@@ -61,6 +61,57 @@ class SupabaseAuditViewRepository(BaseRepository):
         except Exception:
             pass
 
+        # Branch & Officer resolution helpers
+        branch_id_to_name = {}
+        officer_id_to_names = {}
+        try:
+            res_b = self.client.table("branches").select("branch_id, name").execute()
+            for b in (res_b.data or []):
+                if b.get("branch_id") and b.get("name"):
+                    branch_id_to_name[str(b["branch_id"])] = str(b["name"])
+        except Exception:
+            pass
+
+        try:
+            res_u = self.client.table("app_users").select("id, username, full_name").execute()
+            for u in (res_u.data or []):
+                u_id = str(u.get("id"))
+                uname = str(u.get("username") or "")
+                fname = str(u.get("full_name") or "")
+                officer_id_to_names[u_id] = {uname.lower(), fname.lower(), u_id.lower()}
+        except Exception:
+            pass
+
+        def matches_branch(ev_b, target_b):
+            if not target_b or target_b in ["All", "All Branches"]:
+                return True
+            if not ev_b:
+                return True
+            if str(ev_b).lower() == str(target_b).lower():
+                return True
+            if str(target_b) in branch_id_to_name and branch_id_to_name[str(target_b)].lower() == str(ev_b).lower():
+                return True
+            if str(ev_b) in branch_id_to_name and branch_id_to_name[str(ev_b)].lower() == str(target_b).lower():
+                return True
+            return False
+
+        def matches_officer(ev_off, target_off):
+            if not target_off or target_off in ["All", "All Officers"]:
+                return True
+            if not ev_off:
+                return True
+            t_str = str(target_off).lower()
+            e_str = str(ev_off).lower()
+            if t_str == e_str:
+                return True
+            if str(target_off) in officer_id_to_names:
+                if e_str in officer_id_to_names[str(target_off)]:
+                    return True
+            for uid, names in officer_id_to_names.items():
+                if t_str in names and e_str in names:
+                    return True
+            return False
+
         # 2. Query event_store for FeeCharged and LoanDisbursed events
         try:
             q_ev = self.client.table("event_store").select("*").in_("event_type", ["FeeCharged", "LoanDisbursed"])
@@ -86,13 +137,11 @@ class SupabaseAuditViewRepository(BaseRepository):
                         continue
                 
                 # Filter by branch if specified
-                if branch_id and branch_id != "All" and ev_branch:
-                    if str(ev_branch).lower() != str(branch_id).lower():
-                        continue
+                if not matches_branch(ev_branch, branch_id):
+                    continue
                 # Filter by officer if specified
-                if officer_id and officer_id != "All" and ev_officer:
-                    if str(ev_officer).lower() != str(officer_id).lower():
-                        continue
+                if not matches_officer(ev_officer, officer_id):
+                    continue
                 # Filter by client if specified
                 if client_id and ev_client and ev_client != client_id:
                     continue
@@ -149,11 +198,17 @@ class SupabaseAuditViewRepository(BaseRepository):
                         continue
                     seen_keys.add(k)
 
+                    b_val = ev_branch
+                    for b_uuid, b_nm in branch_id_to_name.items():
+                        if b_nm.lower() == str(ev_branch).lower():
+                            b_val = b_uuid
+                            break
+
                     records.append({
                         "id": ev.get("event_id"),
                         "fee_type": f_t,
                         "amount": f_amt,
-                        "branch_id": ev_branch,
+                        "branch_id": b_val,
                         "officer_id": ev_officer,
                         "client_id": ev_client,
                         "posting_date": ev_date,
