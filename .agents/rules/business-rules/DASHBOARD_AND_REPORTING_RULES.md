@@ -72,6 +72,26 @@
 - **Status:** CONFIRMED
 - **Implementation Location:** `services/portfolio_service.py`, `services/dashboard_service.py`, `migrate_onboarding_template.py`
 
+## BR-DASH-007: Period Collection and Payment Status Mathematical Balance Invariant
+- **Rule ID:** BR-DASH-007
+- **Name:** Period Collection and Payment Status Mathematical Balance Invariant
+- **Description:** For any operational period or business date, the actual collections received must mathematically balance with the sum of payment status categorizations:
+  $$\text{Actual Collection (Period)} = \text{Normal Payments} + \text{Excess Payments} + \text{Part Payments}$$
+- **Required Behavior:**
+  1. **Normal Payments**: Represents collections from clients who paid their exact scheduled installment (`paid_in_period == expected_installment`), plus the base expected installment portion for clients who paid in excess.
+  2. **Excess Payments**: Represents strictly the surplus cash paid above the scheduled installment (`paid_in_period - expected_installment`).
+  3. **Part Payments**: Represents collections from clients who paid less than their scheduled installment (`0 < paid_in_period < expected_installment`).
+  4. **Mathematical Balance Guarantee**: The sum of `Normal Payments + Excess Payments + Part Payments` MUST ALWAYS exactly equal `Actual Collection (Period)`.
+  5. **Expected Repayment (Period) Alignment**: When all scheduled clients pay their expected installments:
+     $$\text{Expected Repayment (Period)} = \text{Actual Collection (Period)} = \text{Normal Payments}$$
+     with $\text{Excess Payments} = ₦0.00$, $\text{Part Payments} = ₦0.00$, and $\text{Not Paid} = ₦0.00$.
+- **Prohibited Behavior:**
+  - Mathematical imbalances where `Normal + Excess + Part != Actual Collection`.
+  - Showing phantom excess balances when no client paid above their scheduled installment.
+  - Summing non-scheduled loans from other weekdays into the daily period expected repayment.
+- **Status:** CONFIRMED & MANDATORY
+- **Implementation Location:** `services/portfolio_service.py`, `services/dashboard_service.py`
+
 ## Business Impact Map
 
 Every operation affects multiple downstream components. Before modifying any operation, consult this map:

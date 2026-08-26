@@ -89,27 +89,29 @@
 
 ---
 
-## MC-DASH-008: Payment Status Breakdown (BR-DASH-005)
+## MC-DASH-008: Payment Status Breakdown (BR-DASH-005, BR-DASH-007)
+- **Invariant**: `Actual Collection (Period) = Normal Payments + Excess Payments + Part Payments`
+- When all scheduled clients pay their expected installments: `Expected Repayment (Period) = Actual Collection (Period) = Normal Payments`.
 
 Five categories evaluated per client in an operational period:
 
 ### Full Payments (Closed)
-- **Calculation**: `total_paid_lifetime >= active_credit AND paid_in_period > 0`
+- **Calculation**: `total_paid_lifetime >= active_credit AND paid_in_period > 0` (Represents complete loan payoff achieved in period).
 
 ### Normal Payments
-- **Calculation**: `paid_in_period == loan_repay`
+- **Calculation**: `paid_in_period == loan_repay` (Plus base installment portion if `paid_in_period > loan_repay`).
 
 ### Excess Payments
 - **Calculation**: `paid_in_period > loan_repay`
-- **Amount**: Excess portion = `paid_in_period - loan_repay`
+- **Amount**: Strictly the surplus cash portion = `paid_in_period - loan_repay`.
 
 ### Part Payments
 - **Calculation**: `0 < paid_in_period < loan_repay`
 
 ### Not Paid / Overdue
-- **Calculation**: `paid_in_period == 0 AND expected > 0` (daily view), or `expected_end_date < today AND outstanding > 0` (portfolio view).
+- **Calculation**: `paid_in_period == 0 AND is_expected_today == True` (daily view), or `expected_end_date < today AND outstanding > 0` (portfolio view).
 
-- **Known Consumers**: CO Dashboard, Admin Dashboard, Portfolio Page.
+- **Known Consumers**: CO Dashboard, BM Dashboard, Admin Dashboard, Portfolio Page.
 
 ---
 
