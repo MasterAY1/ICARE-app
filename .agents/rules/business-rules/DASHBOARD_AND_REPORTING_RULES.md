@@ -32,31 +32,29 @@
 - **Prohibited Behavior:** Hardcoding PAR as "0.0%" or any static value.
 - **Status:** CONFIRMED
 
-## BR-DASH-005: Repayment Status Categorization (Full, Part, Excess, Not Paid)
+## BR-DASH-005: Repayment Status Categorization (Full Payments, Excess Payments, Overdue)
 - **Rule ID:** BR-DASH-005
-- **Name:** Repayment Status Categorization (Full, Part, Excess, Not Paid)
-- **Description:** Categorization of daily client repayment performance on the Credit Officer and Branch Manager Dashboards:
-  1. `Full Payment`: Represents exclusively clients who have **completely paid off their active loan** today (i.e. `total_paid_lifetime >= active_credit` / `remaining_bal == 0` / `status == 'Completed'`).
-     - **Count**: Number of clients who completed their loan today.
-     - **Amount**: The active credit amount of the completed loan / client cycle (e.g. ₦198,000).
-  2. `Part Payment`: Borrowers scheduled for today's collection who paid positive cash less than their scheduled installment (`0 < paid_in_period < loan_repay`).
-     - **Count**: Number of underpaying clients.
-     - **Amount**: Sum of partial collections.
-  3. `Excess Payment`: Borrowers with ongoing active loans scheduled for today who paid strictly more than their scheduled installment (`paid_in_period > loan_repay` and loan is NOT a full payoff).
-     - **Count**: Number of excess-paying clients.
-     - **Amount**: Sum of unbudgeted surplus (`paid_in_period - loan_repay`).
-  4. `Not Paid`: Borrowers with active ongoing loans whose meeting day is today who made zero payment (`paid_in_period == 0` and `is_expected_today == True`). Loans disbursed today or starting in the future are strictly excluded.
-     - **Count**: Number of non-paying clients.
-     - **Amount**: Sum of missed installments.
+- **Name:** Repayment Status Categorization (Full Payments, Excess Payments, Overdue)
+- **Description:** Categorization of repayment performance on the Portfolio and Dashboard views:
+  1. `Full Payments`: Represents exclusively loans that have **completely reached full payoff (zero balance) in the selected period** (or `status in ['Completed', 'Closed']` with collections received in the period).
+     - **Count**: Number of loans fully settled in the period.
+     - **Amount**: Active credit value of the completed loans (or total payoff principal).
+  2. `Excess Payments`: Borrowers who paid strictly more than their scheduled expected installment for the period (`paid_in_period > expected_in_period` and not a full payoff).
+     - **Count**: Number of excess-paying clients in the period.
+     - **Amount**: Sum of unbudgeted surplus cash (`paid_in_period - expected_in_period`).
+  3. `Overdue Portfolio`: Loans past their expected maturity/due date with outstanding balance > ₦0.
+     - **Count**: Number of overdue loans.
+     - **Amount**: Sum of delinquent outstanding principal.
+  4. `Portfolio at Risk (PAR%)`: (Total Overdue / Total Active Credit) × 100.
 - **Required Behavior:**
-  - `Full Payment` card MUST ONLY count clients who achieved complete loan payoff today, displaying their active credit amount.
-  - Normal recurring installment collections on ongoing loans that match `loan_repay` are standard operational collections, reflected in `meeting_portfolio` (100% compliance) and `repayment_summary`, without triggering "Excess" or "Not Paid" flags.
+  - `Full Payments` must accurately report the count and monetary volume of loans settled during the period.
+  - `Excess Payments` must report only unbudgeted surplus above scheduled installments.
+  - Base scheduled operational repayments are derived as $\text{Actual Collection} - \text{Excess Payments}$.
 - **Prohibited Behavior:**
-  - Displaying normal ongoing installment payers as "Part" or "Excess" payments.
-  - Displaying a loan completion as an "Excess Payment".
-  - Marking clients whose loans were disbursed today as "Not Paid".
-- **Status:** CONFIRMED & ALIGNED
-- **Implementation Location:** `services/dashboard_service.py` (`_calculate_payment_breakdown`)
+  - Marking regular weekly/monthly installments as excess payments.
+  - Hiding or zeroing full payoff completions that occurred within the selected date range.
+- **Status:** CONFIRMED & MANDATORY
+- **Implementation Location:** `services/portfolio_service.py`, `services/dashboard_service.py`
 
 ## BR-DASH-006: Historical Onboarding Repayments Exclusion from Period Metrics
 - **Rule ID:** BR-DASH-006
@@ -64,7 +62,7 @@
 - **Description:** Historical opening repayments imported during migration establish opening balances and MUST NOT be counted as collections of the current operational period.
 - **Required Behavior:**
   - Onboarded historical repayments must have a historical/pre-go-live date or be flagged (`note = 'Legacy Repayments Onboarded'`).
-  - Period collection metrics (`today_collection`, `this_week_collection`, `normal_payments`, `excess_payments`, `part_payments`) must filter out historical onboarding opening balances.
+  - Period collection metrics (`today_collection`, `this_week_collection`, `excess_payments`) must filter out historical onboarding opening balances.
   - Lifetime metrics (`total_outstanding_balance`, `total_paid_lifetime`) include all historical payments to compute accurate current outstanding balances.
 - **Prohibited Behavior:**
   - Counting historical legacy payments as live collections of today.
@@ -72,25 +70,20 @@
 - **Status:** CONFIRMED
 - **Implementation Location:** `services/portfolio_service.py`, `services/dashboard_service.py`, `migrate_onboarding_template.py`
 
-## BR-DASH-007: Period Collection and Payment Status Mathematical Balance Invariant
+## BR-DASH-007: Period Collection and Multi-Filter Cohesion Invariant
 - **Rule ID:** BR-DASH-007
-- **Name:** Period Collection and Payment Status Mathematical Balance Invariant
-- **Description:** For any operational period or business date, the actual collections received must mathematically balance with the sum of payment status categorizations:
-  $$\text{Actual Collection (Period)} = \text{Normal Payments} + \text{Excess Payments} + \text{Part Payments}$$
+- **Name:** Period Collection and Multi-Filter Cohesion Invariant
+- **Description:** For any selected date range $[\text{start\_date}, \text{end\_date}]$ and dropdown filter combination (Branch, Officer, Group, Product):
+  $$\text{Expected Repayment (Period)} = \sum (\text{loan.loan\_repay} \times \text{scheduled\_meeting\_occurrences\_in\_period})$$
+  $$\text{Actual Collection (Period)} = \sum (\text{repayments.amount\_paid\_in\_period})$$
+  $$\text{Excess Payments} = \sum \max(0.0, \text{paid\_in\_period} - \text{expected\_in\_period})$$
 - **Required Behavior:**
-  1. **Normal Payments**: Represents collections from clients who paid their exact scheduled installment (`paid_in_period == expected_installment`), plus the base expected installment portion for clients who paid in excess.
-  2. **Excess Payments**: Represents strictly the surplus cash paid above the scheduled installment (`paid_in_period - expected_installment`).
-  3. **Part Payments**: Represents collections from clients who paid less than their scheduled installment (`0 < paid_in_period < expected_installment`).
-  4. **Mathematical Balance Guarantee**: The sum of `Normal Payments + Excess Payments + Part Payments` MUST ALWAYS exactly equal `Actual Collection (Period)`.
-  5. **Expected Repayment (Period) Alignment**: When all scheduled clients pay their expected installments:
-     $$\text{Expected Repayment (Period)} = \text{Actual Collection (Period)} = \text{Normal Payments}$$
-     with $\text{Excess Payments} = ₦0.00$, $\text{Part Payments} = ₦0.00$, and $\text{Not Paid} = ₦0.00$.
-- **Prohibited Behavior:**
-  - Mathematical imbalances where `Normal + Excess + Part != Actual Collection`.
-  - Showing phantom excess balances when no client paid above their scheduled installment.
-  - Summing non-scheduled loans from other weekdays into the daily period expected repayment.
+  1. `Expected Repayment (Period)` scales dynamically by the number of meeting occurrences within the selected date range for loans matching active filters.
+  2. `Actual Collection (Period)` reflects total cash repayments received in the period matching active filters.
+  3. `Excess Payments` only flags surplus cash above the full period expectation.
+  4. All metrics across Row 1, Row 2, Row 3, Row 4, Row 5, and the Client/Group table must respond symmetrically and cohesively when any filter (Branch, Officer, Group, Product, Date Range) changes.
 - **Status:** CONFIRMED & MANDATORY
-- **Implementation Location:** `services/portfolio_service.py`, `services/dashboard_service.py`
+- **Implementation Location:** `services/portfolio_service.py`, `app.py`
 
 ## Business Impact Map
 

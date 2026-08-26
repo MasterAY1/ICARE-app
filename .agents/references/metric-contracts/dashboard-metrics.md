@@ -89,29 +89,28 @@
 
 ---
 
-## MC-DASH-008: Payment Status Breakdown (BR-DASH-005, BR-DASH-007)
-- **Invariant**: `Actual Collection (Period) = Normal Payments + Excess Payments + Part Payments`
-- When all scheduled clients pay their expected installments: `Expected Repayment (Period) = Actual Collection (Period) = Normal Payments`.
+## MC-DASH-008: Repayment Status & Risk Breakdown (BR-DASH-005, BR-DASH-007)
+- **Invariant**: `Excess Payments = SUM(MAX(0.0, paid_in_period - expected_in_period))`
+- Scheduled base operational payments equal `Actual Collection (Period) - Excess Payments`.
 
-Five categories evaluated per client in an operational period:
+Three core categories evaluated per loan in an operational period:
 
-### Full Payments (Closed)
-- **Calculation**: `total_paid_lifetime >= active_credit AND paid_in_period > 0` (Represents complete loan payoff achieved in period).
-
-### Normal Payments
-- **Calculation**: `paid_in_period == loan_repay` (Plus base installment portion if `paid_in_period > loan_repay`).
+### Full Payments (Closed / Settled)
+- **Calculation**: Complete loan payoff achieved with repayments posted in the selected period.
+- **Count**: Number of loans fully settled in the period.
+- **Amount**: Active credit value of completed loans in the period.
 
 ### Excess Payments
-- **Calculation**: `paid_in_period > loan_repay`
-- **Amount**: Strictly the surplus cash portion = `paid_in_period - loan_repay`.
+- **Calculation**: Borrowers who paid strictly more than their scheduled expected installment for the period (`paid_in_period > expected_in_period` and not a full payoff).
+- **Count**: Number of excess-paying clients in the period.
+- **Amount**: Strictly the surplus cash portion = `paid_in_period - expected_in_period`.
 
-### Part Payments
-- **Calculation**: `0 < paid_in_period < loan_repay`
+### Overdue Portfolio
+- **Calculation**: Loans past expected maturity date with remaining balance > ₦0.
+- **Count**: Number of overdue delinquent loans.
+- **Amount**: Sum of overdue unpaid balance.
 
-### Not Paid / Overdue
-- **Calculation**: `paid_in_period == 0 AND is_expected_today == True` (daily view), or `expected_end_date < today AND outstanding > 0` (portfolio view).
-
-- **Known Consumers**: CO Dashboard, BM Dashboard, Admin Dashboard, Portfolio Page.
+- **Known Consumers**: Portfolio Page (Row 5), CO Dashboard, BM Dashboard, Admin Dashboard.
 
 ---
 
