@@ -446,6 +446,35 @@ class PortfolioService:
         overdue_count = 0
         overdue_amt = 0.0
 
+        # Authoritative Full Payoffs and Excess Collections across Loans in Scope (BR-DASH-005, BR-DASH-007)
+        for l in loans_raw:
+            st = str(l.get("status") or "").upper()
+            lid = str(l.get("loan_id") or "")
+            cid = str(l.get("client_id") or "")
+            repay_fixed = float(l.get("loan_repay") or 0.0)
+            c_reps_l = [r for r in repayments_today if str(r.get("loan_id")) == lid]
+            paid_period_l = sum(float(r.get("amount_paid") or 0.0) for r in c_reps_l)
+
+            if paid_period_l > 0:
+                if st in ["COMPLETED", "CLOSED"]:
+                    full_payments_count += 1
+                    full_payments_amt += float(l.get("active_credit") or l.get("loan_amount") or 0.0)
+
+                # Check excess above period expectation
+                if repay_fixed > 0:
+                    lp = l.get("loan_products") or {}
+                    p_name_l = str(lp.get("name") or l.get("product_type") or "").lower()
+                    is_daily_l = "daily" in p_name_l or "60" in p_name_l or "120" in p_name_l
+                    g_mday_l = group_mday_map.get(group_map.get(cid, "Individual")) or l.get("meeting_day") or "Daily"
+                    l_start_str = str(l.get("start_date") or "")[:10]
+                    l_start_d = date.fromisoformat(l_start_str) if l_start_str else start_date
+                    eff_s = max(start_date, l_start_d)
+                    occ_l = PortfolioService._count_meeting_occurrences(eff_s, end_date, g_mday_l, is_daily_l)
+                    exp_in_period_l = repay_fixed * occ_l
+                    if exp_in_period_l > 0 and paid_period_l > exp_in_period_l:
+                        excess_payments_count += 1
+                        excess_payments_amt += (paid_period_l - exp_in_period_l)
+
         product_summary = {}
         client_rows = []
 
@@ -559,15 +588,11 @@ class PortfolioService:
                 is_disbursed_today = (disb_dt_str == target_dt_str)
                 is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
 
-                # Full Payments: Completed loans settled with payment in period (BR-DASH-005)
-                if comp_l and paid_period_l > 0:
-                    full_payments_count += 1
-                    full_payments_amt += float(l.get("active_credit") or comp_l.get("active_credit") or comp_l.get("loan_amount") or 0.0)
+                # Status label assignment for UI
+                if comp_l and (paid_period_l > 0 or str(comp_l.get("status")).upper() in ["COMPLETED", "CLOSED"]):
                     status_str = "Completed (Paid Off)"
                 elif paid_period_l > 0:
                     if exp_in_period_l > 0 and paid_period_l > exp_in_period_l:
-                        excess_payments_count += 1
-                        excess_payments_amt += (paid_period_l - exp_in_period_l)
                         status_str = "Excess Paid"
                     else:
                         status_str = "Active Loan"

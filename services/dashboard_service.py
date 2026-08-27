@@ -187,6 +187,12 @@ class DashboardService:
                     full_amt += disp_act
                     full_paid_clients.add(cid)
 
+                    # If this payoff loan paid more than scheduled single installment (e.g. Olugbodi Sheriffat), also capture surplus in excess payments
+                    repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0)
+                    if repay_amt > 0 and c_paid_today > repay_amt:
+                        excess_count += 1
+                        excess_amt += (c_paid_today - repay_amt)
+
             elif l.get("status") in ["Active", "Approved", "ACTIVE"]:
                 if not is_expected_today and c_paid_today == 0:
                     continue
@@ -242,7 +248,7 @@ class DashboardService:
             "cash_in": 0.0,
             "cash_out": 0.0,
             "closing_balance": 0.0,
-            "status": "Balanced",
+            "status": "🟢 Balanced",
             "difference": 0.0
         }
 
@@ -263,7 +269,7 @@ class DashboardService:
                         "cash_in": today_in,
                         "cash_out": c_out,
                         "closing_balance": cl_bal,
-                        "status": "Balanced" if diff == 0.0 else "Unbalanced",
+                        "status": "🟢 Balanced" if diff == 0.0 else "🔴 Unbalanced",
                         "difference": diff
                     }
             except Exception:
@@ -549,6 +555,9 @@ class DashboardService:
                     if is_loan_fully_cleared_today:
                         full_paid_count += 1
                         full_paid_amt += act_cred
+                        if repay_amt > 0 and c_paid > repay_amt:
+                            excess_paid_count += 1
+                            excess_amt += (c_paid - repay_amt)
                     elif repay_amt > 0 and abs(c_paid - repay_amt) <= 1.0:
                         pass
                     elif repay_amt > 0 and c_paid < repay_amt:
@@ -710,7 +719,7 @@ class DashboardService:
                         "bank_deposit": float(mb.get("bank_deposit") or 0.0),
                         "bank_withdrawal": float(mb.get("bank_withdrawal") or 0.0),
                         "closing_balance": cl_bal,
-                        "status": "Balanced" if diff == 0.0 else "Unbalanced",
+                        "status": "🟢 Balanced" if diff == 0.0 else "🔴 Unbalanced",
                         "difference": diff
                     }
             except Exception:
@@ -741,12 +750,15 @@ class DashboardService:
                     oname = off.username
                     oid = off.id
 
-                    # CO Cashbook Closing Balance
+                    # CO Cashbook Closing Balance (read saved row or compute projected balance)
                     o_cb_close = 0.0
                     try:
                         cb_res = uow.client.table("co_cashbooks").select("closing_balance").eq("branch_id", branch_id).eq("officer_id", oid).eq("date", target_date.isoformat()).execute()
-                        if cb_res.data:
+                        if cb_res.data and cb_res.data[0].get("closing_balance") is not None:
                             o_cb_close = float(cb_res.data[0].get("closing_balance") or 0.0)
+                        else:
+                            co_proj = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, oid, target_date)
+                            o_cb_close = float(co_proj.get("closing_balance") or 0.0)
                     except Exception:
                         pass
 

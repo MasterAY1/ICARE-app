@@ -2377,7 +2377,8 @@ if page == "Dashboard":
             k3.metric("Total Outflows", f"₦{cp['cash_out']:,.0f}")
             k4.metric("Closing Balance", f"₦{cp['closing_balance']:,.0f}")
             k5, k6 = st.columns(2)
-            k5.metric("Status", cp["status"])
+            k5.metric("Cashbook Status", cp["status"])
+            k6.metric("Difference", f"₦{cp['difference']:,.0f}")
 
         else: # CO / Officer
             st.markdown(f"### Credit Officer Dashboard — {USER} ({BRANCH})")
@@ -2430,10 +2431,10 @@ if page == "Dashboard":
             st.markdown("#### Today's Repayment Status")
             st_cards = co_data["repayment_status"]
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Full Payment", f"₦{st_cards['full_payment']['amount']:,.0f}", f"{st_cards['full_payment']['count']} Clients")
-            c2.metric("Part Payment", f"₦{st_cards['part_payment']['amount']:,.0f}", f"{st_cards['part_payment']['count']} Clients")
-            c3.metric("Excess Payment", f"₦{st_cards['excess_payment']['amount']:,.0f}", f"{st_cards['excess_payment']['count']} Clients")
-            c4.metric("Not Paid", f"₦{st_cards['not_paid']['amount']:,.0f}", f"{st_cards['not_paid']['count']} Clients", delta_color="inverse")
+            c1.metric("Full Payment", f"₦{st_cards['full_payment']['amount']:,.0f}", f"{st_cards['full_payment']['count']} Loans Settled")
+            c2.metric("Excess Payment", f"₦{st_cards['excess_payment']['amount']:,.0f}", f"{st_cards['excess_payment']['count']} Surplus Payers")
+            c3.metric("Part Payment", f"₦{st_cards.get('part_payment', {}).get('amount', 0.0):,.0f}", f"{st_cards.get('part_payment', {}).get('count', 0)} Underpayers")
+            c4.metric("Not Paid", f"₦{st_cards['not_paid']['amount']:,.0f}", f"{st_cards['not_paid']['count']} Non-Payers", delta_color="inverse")
 
             # Cash Position (CO Cashbook)
             st.markdown("#### Cash Position (CO Cashbook)")
