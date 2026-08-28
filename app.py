@@ -6807,7 +6807,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 with tb2:
                     tr_d_to = st.date_input("Date To", date.today(), key="tr_d_to")
                 with tb3:
-                    tr_sub = st.selectbox("Category", ["BANK_DEPOSIT", "BANK_WITHDRAWAL", "OFFICE_EXPENSE", "STAFF_SALARY", "HO_TRANSFER_IN", "HO_TRANSFER_OUT", "BRANCH_TRANSFER_IN", "BRANCH_TRANSFER_OUT", "OTHER_AREA_TRANSFER", "ASSET_PROGRAM", "PRODUCT_FINANCE"], key="ac_tr_type")
+                    tr_sub = st.selectbox("Category", ["ALL", "BANK_DEPOSIT", "BANK_WITHDRAWAL", "OFFICE_EXPENSE", "STAFF_SALARY", "HO_TRANSFER_IN", "HO_TRANSFER_OUT", "BRANCH_TRANSFER_IN", "BRANCH_TRANSFER_OUT", "OTHER_AREA_TRANSFER", "ASSET_PROGRAM", "PRODUCT_FINANCE"], key="ac_tr_type")
                 with tb4:
                     tr_branch = st.selectbox("Branch", ac_branch_options, key="tr_branch_sel", disabled=(len(ac_branch_options) == 1))
                 with tb5:

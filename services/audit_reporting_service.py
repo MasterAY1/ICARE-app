@@ -46,14 +46,20 @@ class AuditReportingService:
             except (ValueError, TypeError):
                 amounts.append(0.0)
 
-        dates = [str(r.get("Date") or r.get("Posting Date") or r.get("posting_date") or r.get("date") or r.get("created_at") or "")[:10] for r in records]
+        raw_dates = []
+        for r in records:
+            raw_rec = r.get("_raw_record") or {}
+            d_val = raw_rec.get("posting_date") or raw_rec.get("date") or raw_rec.get("created_at") or r.get("Posting Date") or r.get("posting_date") or r.get("Date")
+            if d_val:
+                raw_dates.append(d_val)
+
         clients = set([str(r.get("Client Code") or r.get("client_id") or "") for r in records if r.get("Client Code") or r.get("client_id")])
 
         total_amt = sum(amounts)
         count = len(records)
         avg_amt = total_amt / count if count > 0 else 0.0
         max_amt = max(amounts) if amounts else 0.0
-        last_date = sorted(dates, reverse=True)[0] if dates and any(dates) else "N/A"
+        last_date = AuditEnricher.format_date(sorted(raw_dates, reverse=True)[0]) if raw_dates else "N/A"
 
         return {
             "total_amount": total_amt,

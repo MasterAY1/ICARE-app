@@ -446,34 +446,39 @@ class PortfolioService:
         overdue_count = 0
         overdue_amt = 0.0
 
-        # Authoritative Full Payoffs and Excess Collections across Loans in Scope (BR-DASH-005, BR-DASH-007)
-        for l in loans_raw:
-            st = str(l.get("status") or "").upper()
-            lid = str(l.get("loan_id") or "")
-            cid = str(l.get("client_id") or "")
-            repay_fixed = float(l.get("loan_repay") or 0.0)
-            c_reps_l = [r for r in repayments_today if str(r.get("loan_id")) == lid]
-            paid_period_l = sum(float(r.get("amount_paid") or 0.0) for r in c_reps_l)
+        # Authoritative Full Payoffs and Transaction-Level Excess Collections across Loans in Scope (BR-DASH-005, BR-DASH-007)
+        loans_by_id_map = {str(l.get("loan_id")): l for l in loans_raw if l.get("loan_id")}
 
-            if paid_period_l > 0:
-                if st in ["COMPLETED", "CLOSED"]:
+        # 1. Full Payoffs in Period (Loans in scope that have COMPLETED/CLOSED status and received payments in period)
+        paid_loans_in_period = {}
+        for r in repayments_today:
+            lid = str(r.get("loan_id") or "")
+            paid_loans_in_period[lid] = paid_loans_in_period.get(lid, 0.0) + float(r.get("amount_paid") or 0.0)
+
+        for lid, p_amt in paid_loans_in_period.items():
+            l = loans_by_id_map.get(lid)
+            if l:
+                st = str(l.get("status") or "").upper()
+                if st in ["COMPLETED", "CLOSED"] and p_amt > 0:
                     full_payments_count += 1
                     full_payments_amt += float(l.get("active_credit") or l.get("loan_amount") or 0.0)
 
-                # Check excess above period expectation
-                if repay_fixed > 0:
-                    lp = l.get("loan_products") or {}
-                    p_name_l = str(lp.get("name") or l.get("product_type") or "").lower()
-                    is_daily_l = "daily" in p_name_l or "60" in p_name_l or "120" in p_name_l
-                    g_mday_l = group_mday_map.get(group_map.get(cid, "Individual")) or l.get("meeting_day") or "Daily"
-                    l_start_str = str(l.get("start_date") or "")[:10]
-                    l_start_d = date.fromisoformat(l_start_str) if l_start_str else start_date
-                    eff_s = max(start_date, l_start_d)
-                    occ_l = PortfolioService._count_meeting_occurrences(eff_s, end_date, g_mday_l, is_daily_l)
-                    exp_in_period_l = repay_fixed * occ_l
-                    if exp_in_period_l > 0 and paid_period_l > exp_in_period_l:
-                        excess_payments_count += 1
-                        excess_payments_amt += (paid_period_l - exp_in_period_l)
+        # 2. Excess Collections in Period (Summing surplus above fixed scheduled installment on each collection event)
+        excess_clients_set = set()
+        for r in repayments_today:
+            lid = str(r.get("loan_id") or "")
+            amt = float(r.get("amount_paid") or 0.0)
+            l = loans_by_id_map.get(lid)
+            if l:
+                repay_fixed = float(l.get("loan_repay") or 0.0)
+                if repay_fixed > 0 and amt > repay_fixed:
+                    surplus = amt - repay_fixed
+                    excess_payments_amt += surplus
+                    cid_val = str(r.get("client_id") or l.get("client_id") or "")
+                    if cid_val:
+                        excess_clients_set.add(cid_val)
+
+        excess_payments_count = len(excess_clients_set)
 
         product_summary = {}
         client_rows = []

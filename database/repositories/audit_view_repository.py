@@ -222,7 +222,7 @@ class SupabaseAuditViewRepository(BaseRepository):
         return records[:limit]
 
     # -------------------------------------------------------------------------
-    # 2. Treasury Audit Ledgers (backed by public.treasury_transactions)
+    # 2. Treasury Audit Ledgers (backed by public.treasury_transactions & event_store)
     # -------------------------------------------------------------------------
     def get_treasury_ledger(
         self,
@@ -233,25 +233,184 @@ class SupabaseAuditViewRepository(BaseRepository):
         date_to: Optional[date] = None,
         limit: int = 200
     ) -> List[Dict[str, Any]]:
-        """Fetch treasury movement records for a specific transaction_type."""
-        query = self.client.table("treasury_transactions").select("*")
-        if transaction_type and transaction_type != "ALL":
-            if isinstance(transaction_type, list):
-                query = query.in_("transaction_type", transaction_type)
-            else:
-                query = query.eq("transaction_type", transaction_type)
-        if branch_id and branch_id != "All":
-            query = query.eq("branch_id", branch_id)
-        if officer_id and officer_id != "All":
-            query = query.eq("officer_id", officer_id)
-        if date_from:
-            query = query.gte("posting_date", date_from.isoformat() if isinstance(date_from, date) else date_from)
-        if date_to:
-            query = query.lte("posting_date", date_to.isoformat() if isinstance(date_to, date) else date_to)
+        """
+        Fetch authoritative treasury records across treasury_transactions operational table
+        and event_store domain events with full branch, officer, date range, and category filtering.
+        """
+        records: List[Dict[str, Any]] = []
+        seen_keys = set()
 
-        query = query.order("created_at", desc=True).limit(limit)
-        res = query.execute()
-        return res.data or []
+        # 1. First, check public.treasury_transactions table
+        try:
+            query = self.client.table("treasury_transactions").select("*")
+            if transaction_type and transaction_type != "ALL":
+                if isinstance(transaction_type, list):
+                    query = query.in_("transaction_type", transaction_type)
+                else:
+                    query = query.eq("transaction_type", transaction_type)
+            if branch_id and branch_id != "All":
+                query = query.eq("branch_id", branch_id)
+            if officer_id and officer_id != "All":
+                query = query.eq("officer_id", officer_id)
+            if date_from:
+                query = query.gte("posting_date", date_from.isoformat() if isinstance(date_from, date) else str(date_from))
+            if date_to:
+                query = query.lte("posting_date", date_to.isoformat() if isinstance(date_to, date) else str(date_to))
+
+            res = query.order("created_at", desc=True).limit(limit).execute()
+            for r in (res.data or []):
+                seen_keys.add(f"tr_{r.get('id')}")
+                records.append(r)
+        except Exception:
+            pass
+
+        # Branch & Officer resolution helpers
+        branch_id_to_name = {}
+        officer_id_to_names = {}
+        try:
+            res_b = self.client.table("branches").select("branch_id, name").execute()
+            for b in (res_b.data or []):
+                if b.get("branch_id") and b.get("name"):
+                    branch_id_to_name[str(b["branch_id"])] = str(b["name"])
+        except Exception:
+            pass
+
+        try:
+            res_u = self.client.table("app_users").select("id, username, full_name").execute()
+            for u in (res_u.data or []):
+                u_id = str(u.get("id"))
+                uname = str(u.get("username") or "")
+                fname = str(u.get("full_name") or "")
+                officer_id_to_names[u_id] = {uname.lower(), fname.lower(), u_id.lower()}
+        except Exception:
+            pass
+
+        def matches_branch(ev_b, target_b):
+            if not target_b or target_b in ["All", "All Branches"]:
+                return True
+            if not ev_b:
+                return True
+            if str(ev_b).lower() == str(target_b).lower():
+                return True
+            if str(target_b) in branch_id_to_name and branch_id_to_name[str(target_b)].lower() == str(ev_b).lower():
+                return True
+            if str(ev_b) in branch_id_to_name and branch_id_to_name[str(ev_b)].lower() == str(target_b).lower():
+                return True
+            return False
+
+        def matches_officer(ev_off, target_off):
+            if not target_off or target_off in ["All", "All Officers"]:
+                return True
+            if not ev_off:
+                return True
+            t_str = str(target_off).lower()
+            e_str = str(ev_off).lower()
+            if t_str == e_str:
+                return True
+            if str(target_off) in officer_id_to_names:
+                if e_str in officer_id_to_names[str(target_off)]:
+                    return True
+            for uid, names in officer_id_to_names.items():
+                if t_str in names and e_str in names:
+                    return True
+            return False
+
+        # 2. Query event_store for Treasury Domain Events
+        t_events = [
+            "BankDeposited", "BankWithdrawn", "ExpenseRecorded", "SalaryPaid",
+            "CashTransferred_HO_In", "CashTransferred_HO_Out", "AssetProgramFunded", "ProductFinanceFunded"
+        ]
+        try:
+            q_ev = self.client.table("event_store").select("*").in_("event_type", t_events)
+            res_ev = q_ev.limit(limit * 5).execute()
+            for ev in (res_ev.data or []):
+                ev_type = ev.get("event_type")
+                payload = ev.get("payload") or {}
+                
+                ev_branch = payload.get("branch_id") or payload.get("branch")
+                ev_officer = payload.get("officer_id") or payload.get("officer")
+                ev_date = str(payload.get("date") or str(ev.get("created_at") or "")[:10])[:10]
+                ev_ref = payload.get("reference") or ev.get("event_id")[:8]
+                amt = float(payload.get("amount") or 0.0)
+                
+                if amt <= 0:
+                    continue
+
+                # Filter by date range
+                if date_from:
+                    d_from_str = date_from.isoformat() if isinstance(date_from, date) else str(date_from)[:10]
+                    if ev_date and ev_date < d_from_str:
+                        continue
+                if date_to:
+                    d_to_str = date_to.isoformat() if isinstance(date_to, date) else str(date_to)[:10]
+                    if ev_date and ev_date > d_to_str:
+                        continue
+                
+                # Filter by branch if specified
+                if not matches_branch(ev_branch, branch_id):
+                    continue
+                # Filter by officer if specified
+                if not matches_officer(ev_officer, officer_id):
+                    continue
+
+                # Determine transaction category
+                tx_type = payload.get("transaction_type")
+                if not tx_type:
+                    if ev_type == "BankDeposited":
+                        tx_type = "BANK_DEPOSIT"
+                    elif ev_type == "BankWithdrawn":
+                        tx_type = "BANK_WITHDRAWAL"
+                    elif ev_type == "ExpenseRecorded":
+                        tx_type = "OFFICE_EXPENSE"
+                    elif ev_type == "SalaryPaid":
+                        tx_type = "STAFF_SALARY"
+                    elif ev_type == "CashTransferred_HO_In":
+                        tx_type = "HO_TRANSFER_IN"
+                    elif ev_type == "CashTransferred_HO_Out":
+                        tx_type = "HO_TRANSFER_OUT"
+                    elif ev_type == "AssetProgramFunded":
+                        tx_type = "ASSET_PROGRAM"
+                    elif ev_type == "ProductFinanceFunded":
+                        tx_type = "PRODUCT_FINANCE"
+                    else:
+                        tx_type = "TREASURY"
+                tx_type = str(tx_type).upper()
+
+                # Filter by category
+                if transaction_type and transaction_type != "ALL":
+                    if isinstance(transaction_type, list):
+                        if tx_type not in [t.upper() for t in transaction_type]:
+                            continue
+                    elif tx_type != transaction_type.upper():
+                        continue
+
+                k = f"tr_{ev.get('event_id')}"
+                if k in seen_keys:
+                    continue
+                seen_keys.add(k)
+
+                b_val = ev_branch
+                for b_uuid, b_nm in branch_id_to_name.items():
+                    if b_nm.lower() == str(ev_branch).lower():
+                        b_val = b_uuid
+                        break
+
+                records.append({
+                    "id": ev.get("event_id"),
+                    "transaction_type": tx_type,
+                    "amount": amt,
+                    "branch_id": b_val,
+                    "officer_id": ev_officer,
+                    "posting_date": ev_date,
+                    "reference": ev_ref,
+                    "narration": payload.get("narration") or payload.get("remarks") or f"{tx_type} transaction",
+                    "created_at": ev.get("created_at")
+                })
+        except Exception:
+            pass
+
+        records.sort(key=lambda x: str(x.get("posting_date") or x.get("created_at") or ""), reverse=True)
+        return records[:limit]
 
     # -------------------------------------------------------------------------
     # 3. Operational Loan Audit Ledgers
