@@ -1,10 +1,78 @@
-# Python
+# ==============================================================================
+# ICARE CORE BANKING - BULLETPROOF .GITIGNORE SPECIFICATION
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Environment & Secret Credentials (Strict Zero-Leakage)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+*.env
+!.env.example
+!*.env.example
+*.key
+*.pem
+*.secret
+*.p12
+*.pfx
+*.keystore
+*.jks
+secrets.toml
+*/secrets.toml
+.streamlit/secrets.toml
+secrets.json
+*/secrets.json
+service_role_key*
+*service_role*
+credentials.json
+*service-account*.json
+id_rsa*
+id_ed25519*
+
+# ------------------------------------------------------------------------------
+# 2. Flutter & Dart Ecosystem (Frontend)
+# ------------------------------------------------------------------------------
+.dart_tool/
+*/.dart_tool/
+frontend_flutter/.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+*/build/
+frontend_flutter/build/
+frontend_flutter/android/.gradle/
+frontend_flutter/android/app/build/
+frontend_flutter/android/local.properties
+frontend_flutter/ios/Flutter/Generated.xcconfig
+frontend_flutter/ios/Flutter/app.framework
+frontend_flutter/ios/Flutter/Flutter.framework
+frontend_flutter/ios/Flutter/Flutter.podspec
+frontend_flutter/ios/Pods/
+frontend_flutter/ios/.symlinks/
+frontend_flutter/ios/Runner.xcworkspace/xcuserdata/
+frontend_flutter/ios/Runner.xcodeproj/xcuserdata/
+frontend_flutter/ios/Runner.xcodeproj/project.xcworkspace/xcuserdata/
+frontend_flutter/windows/flutter/ephemeral/
+frontend_flutter/linux/flutter/ephemeral/
+frontend_flutter/macos/Flutter/ephemeral/
+frontend_flutter/.pub-cache/
+frontend_flutter/.pub/
+frontend_flutter/lib/generated_plugin_registrant.dart
+coverage/
+*/coverage/
+*.symbols
+*.map
+
+# ------------------------------------------------------------------------------
+# 3. Python & FastAPI Backend
+# ------------------------------------------------------------------------------
 __pycache__/
+*/__pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
 develop-eggs/
 dist/
 downloads/
@@ -19,34 +87,59 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
-# Virtual Environment
 venv/
 ENV/
 env/
+.venv/
+backend/venv/
+backend/.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# Streamlit
-.streamlit/secrets.toml
+# ------------------------------------------------------------------------------
+# 4. Streamlit & Web Framework
+# ------------------------------------------------------------------------------
+# Note: .streamlit/config.toml is intentionally tracked for theme & server settings
+# .streamlit/secrets.toml is explicitly ignored in Section 1
 
-# IDE
+# ------------------------------------------------------------------------------
+# 5. IDE & Editor Artifacts
+# ------------------------------------------------------------------------------
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+*.sublime-project
+*.sublime-workspace
 
-# OS
+# ------------------------------------------------------------------------------
+# 6. Operating System Artifacts
+# ------------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
-# Logs
+# ------------------------------------------------------------------------------
+# 7. Logs & Temporary Files
+# ------------------------------------------------------------------------------
 *.log
+*.tmp
+*.temp
+tmp/
+temp/
 
-# Local exports
+# ------------------------------------------------------------------------------
+# 8. Local Office Exports & Temporary Lock Files
+# ------------------------------------------------------------------------------
 *.xlsx
 *.csv
 *.pdf
-
-# Temporary files
-tmp/
-temp/
+~$*.xlsx
+~$*.xls
+~$*.csv
+# Whitelist mandatory tracked schema and template files
+!Master_Balancing_Template_V2.xlsx
+!icare-group-member-onboarding-template.xlsx
