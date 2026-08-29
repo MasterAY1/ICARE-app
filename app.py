@@ -5915,8 +5915,8 @@ elif page == "Audit Ledger Legacy":
     audit_section = st.radio("View", ["📋 Loans Ledger", "💰 Repayments Ledger", "🐷 Savings & Misc Fees Ledger", "⚖️ Double-Entry Ledger"], horizontal=True, label_visibility="collapsed")
     
     al1, al2, al3 = st.columns([1, 1, 2])
-    audit_date_from = al1.date_input("From Date", datetime.now().date() - timedelta(days=30), key="audit_from")
-    audit_date_to = al2.date_input("To Date", datetime.now().date(), key="audit_to")
+    audit_date_from = al1.date_input("From Date", date.today().replace(day=1), key="audit_from")
+    audit_date_to = al2.date_input("To Date", date.today(), key="audit_to")
     
     # Officer Filter for Managers
     selected_co = "All Officers"
@@ -6726,7 +6726,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 # SINGLE-LINE HORIZONTAL FILTER BAR
                 fb1, fb2, fb3, fb4, fb5, fb6 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.8])
                 with fb1:
-                    fee_d_from = st.date_input("Date From", date(2026, 1, 1), key="fee_d_from")
+                    fee_d_from = st.date_input("Date From", date.today().replace(day=1), key="fee_d_from")
                 with fb2:
                     fee_d_to = st.date_input("Date To", date.today(), key="fee_d_to")
                 with fb3:
@@ -6803,7 +6803,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
     
                 tb1, tb2, tb3, tb4, tb5, tb6 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.8])
                 with tb1:
-                    tr_d_from = st.date_input("Date From", date(2026, 1, 1), key="tr_d_from")
+                    tr_d_from = st.date_input("Date From", date.today().replace(day=1), key="tr_d_from")
                 with tb2:
                     tr_d_to = st.date_input("Date To", date.today(), key="tr_d_to")
                 with tb3:
@@ -6880,7 +6880,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
     
                 sb_1, sb_2, sb_3, sb_4, sb_5, sb_6 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.8])
                 with sb_1:
-                    sav_d_from = st.date_input("Date From", date(2026, 1, 1), key="sav_d_from")
+                    sav_d_from = st.date_input("Date From", date.today().replace(day=1), key="sav_d_from")
                 with sb_2:
                     sav_d_to = st.date_input("Date To", date.today(), key="sav_d_to")
                 with sb_3:
@@ -6963,7 +6963,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
     
                 lb1, lb2, lb3, lb4, lb5, lb6 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.8])
                 with lb1:
-                    loan_d_from = st.date_input("Date From", date(2026, 1, 1), key="loan_d_from")
+                    loan_d_from = st.date_input("Date From", date.today().replace(day=1), key="loan_d_from")
                 with lb2:
                     loan_d_to = st.date_input("Date To", date.today(), key="loan_d_to")
                 with lb3:
