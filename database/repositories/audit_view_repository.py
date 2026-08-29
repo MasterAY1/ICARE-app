@@ -564,8 +564,86 @@ class SupabaseAuditViewRepository(BaseRepository):
                             "narration": f"Funds transferred to other branch on {d_str}",
                             "created_at": mc.get("created_at") or f"{d_str}T12:00:00"
                         })
+
+                # Other Area Transfers
+                other_area = float(mc.get("fund_to_other_area") or 0.0)
+                if other_area > 0 and (transaction_type in ["ALL", "OTHER_AREA_TRANSFER"] if isinstance(transaction_type, str) else True):
+                    k = f"op_{d_str}_OTHER_AREA_TRANSFER_{other_area}"
+                    if k not in seen_keys:
+                        seen_keys.add(k)
+                        records.append({
+                            "id": f"mc_oat_{mc_id}",
+                            "transaction_type": "OTHER_AREA_TRANSFER",
+                            "amount": other_area,
+                            "branch_id": mc_b,
+                            "officer_id": None,
+                            "posting_date": d_str,
+                            "reference": f"AREA-{d_str.replace('-', '')}",
+                            "narration": f"Funds transferred to other operational area on {d_str}",
+                            "created_at": mc.get("created_at") or f"{d_str}T12:00:00"
+                        })
         except Exception:
             pass
+
+        # 5. Query loans for Product Finance & Asset Program original principal disbursements
+        if transaction_type in ["ALL", "PRODUCT_FINANCE", "ASSET_PROGRAM"] or (isinstance(transaction_type, list) and any(t in ["PRODUCT_FINANCE", "ASSET_PROGRAM"] for t in transaction_type)):
+            try:
+                prods_res = self.client.table("loan_products").select("product_id, name").execute()
+                asset_prod_ids = set()
+                for p in (prods_res.data or []):
+                    if "asset" in str(p.get("name") or "").lower():
+                        asset_prod_ids.add(str(p.get("product_id")))
+
+                q_ln = self.client.table("loans").select("*").in_("status", ["Active", "Disbursed", "Completed", "Closed"])
+                if branch_id and branch_id != "All":
+                    q_ln = q_ln.eq("branch_id", branch_id)
+                if officer_id and officer_id != "All":
+                    q_ln = q_ln.eq("officer_id", officer_id)
+                if date_from:
+                    d_from_iso = date_from.isoformat() if isinstance(date_from, date) else str(date_from)[:10]
+                    q_ln = q_ln.gte("disbursement_date", d_from_iso)
+                if date_to:
+                    d_to_iso = date_to.isoformat() if isinstance(date_to, date) else str(date_to)[:10]
+                    q_ln = q_ln.lte("disbursement_date", d_to_iso)
+
+                for ln in (q_ln.limit(limit * 2).execute().data or []):
+                    l_id = str(ln.get("loan_id"))
+                    p_id = str(ln.get("product_id"))
+                    amt = float(ln.get("loan_amount") or 0.0)
+                    if amt <= 0:
+                        continue
+                    d_str = str(ln.get("disbursement_date") or ln.get("created_at"))[:10]
+                    ln_b = ln.get("branch_id")
+                    ln_o = ln.get("officer_id") or ln.get("created_by")
+
+                    is_asset = p_id in asset_prod_ids
+                    t_type = "ASSET_PROGRAM" if is_asset else "PRODUCT_FINANCE"
+
+                    if transaction_type and transaction_type != "ALL":
+                        if isinstance(transaction_type, list):
+                            if t_type not in [t.upper() for t in transaction_type]:
+                                continue
+                        elif t_type != transaction_type.upper():
+                            continue
+
+                    k = f"loan_{t_type}_{l_id}"
+                    if k in seen_keys:
+                        continue
+                    seen_keys.add(k)
+
+                    records.append({
+                        "id": l_id,
+                        "transaction_type": t_type,
+                        "amount": amt,
+                        "branch_id": ln_b,
+                        "officer_id": ln_o,
+                        "posting_date": d_str,
+                        "reference": f"LN-{l_id[:8]}",
+                        "narration": f"{'Asset Program' if is_asset else 'Product Finance'} loan principal disbursed (₦{amt:,.2f})",
+                        "created_at": ln.get("created_at") or f"{d_str}T12:00:00"
+                    })
+            except Exception:
+                pass
 
         records.sort(key=lambda x: str(x.get("posting_date") or x.get("created_at") or ""), reverse=True)
         return records[:limit]
