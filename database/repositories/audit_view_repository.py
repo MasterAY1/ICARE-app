@@ -222,7 +222,7 @@ class SupabaseAuditViewRepository(BaseRepository):
         return records[:limit]
 
     # -------------------------------------------------------------------------
-    # 2. Treasury Audit Ledgers (backed by public.treasury_transactions & event_store)
+    # 2. Treasury Audit Ledgers (backed by public.treasury_transactions, event_store & cashbooks)
     # -------------------------------------------------------------------------
     def get_treasury_ledger(
         self,
@@ -234,8 +234,8 @@ class SupabaseAuditViewRepository(BaseRepository):
         limit: int = 200
     ) -> List[Dict[str, Any]]:
         """
-        Fetch authoritative treasury records across treasury_transactions operational table
-        and event_store domain events with full branch, officer, date range, and category filtering.
+        Fetch authoritative treasury records across treasury_transactions operational table,
+        event_store domain events, and cashbooks with full branch, officer, date range, and category filtering.
         """
         records: List[Dict[str, Any]] = []
         seen_keys = set()
@@ -388,6 +388,7 @@ class SupabaseAuditViewRepository(BaseRepository):
                 if k in seen_keys:
                     continue
                 seen_keys.add(k)
+                seen_keys.add(f"op_{ev_date}_{tx_type}_{amt}")
 
                 b_val = ev_branch
                 for b_uuid, b_nm in branch_id_to_name.items():
@@ -406,6 +407,163 @@ class SupabaseAuditViewRepository(BaseRepository):
                     "narration": payload.get("narration") or payload.get("remarks") or f"{tx_type} transaction",
                     "created_at": ev.get("created_at")
                 })
+        except Exception:
+            pass
+
+        # 3. Query co_cashbooks for Cashbook-recorded Treasury entries (Bank Withdrawal, Expenses, Salary)
+        try:
+            q_co = self.client.table("co_cashbooks").select("*")
+            if branch_id and branch_id != "All":
+                q_co = q_co.eq("branch_id", branch_id)
+            if officer_id and officer_id != "All":
+                q_co = q_co.eq("officer_id", officer_id)
+            if date_from:
+                q_co = q_co.gte("date", date_from.isoformat() if isinstance(date_from, date) else str(date_from)[:10])
+            if date_to:
+                q_co = q_co.lte("date", date_to.isoformat() if isinstance(date_to, date) else str(date_to)[:10])
+            for cb in (q_co.execute().data or []):
+                d_str = str(cb.get("date"))[:10]
+                cb_b = cb.get("branch_id")
+                cb_o = cb.get("officer_id") or cb.get("officer")
+                cb_id = cb.get("id")
+
+                # Bank Withdrawal
+                bw = float(cb.get("bank_withdrawal") or 0.0)
+                if bw > 0 and (transaction_type in ["ALL", "BANK_WITHDRAWAL"] if isinstance(transaction_type, str) else True):
+                    k = f"op_{d_str}_BANK_WITHDRAWAL_{bw}"
+                    if k not in seen_keys:
+                        seen_keys.add(k)
+                        records.append({
+                            "id": f"cb_bw_{cb_id}",
+                            "transaction_type": "BANK_WITHDRAWAL",
+                            "amount": bw,
+                            "branch_id": cb_b,
+                            "officer_id": cb_o,
+                            "posting_date": d_str,
+                            "reference": f"BW-{d_str.replace('-', '')}",
+                            "narration": f"Bank withdrawal for loan disbursements on {d_str}",
+                            "created_at": cb.get("created_at") or f"{d_str}T12:00:00"
+                        })
+
+                # Expenses
+                exp = float(cb.get("expenses") or 0.0)
+                if exp > 0 and (transaction_type in ["ALL", "OFFICE_EXPENSE"] if isinstance(transaction_type, str) else True):
+                    k = f"op_{d_str}_OFFICE_EXPENSE_{exp}"
+                    if k not in seen_keys:
+                        seen_keys.add(k)
+                        records.append({
+                            "id": f"cb_exp_{cb_id}",
+                            "transaction_type": "OFFICE_EXPENSE",
+                            "amount": exp,
+                            "branch_id": cb_b,
+                            "officer_id": cb_o,
+                            "posting_date": d_str,
+                            "reference": f"EXP-{d_str.replace('-', '')}",
+                            "narration": f"Office expenses recorded on {d_str}",
+                            "created_at": cb.get("created_at") or f"{d_str}T12:00:00"
+                        })
+
+                # Salary
+                sal = float(cb.get("salary") or 0.0)
+                if sal > 0 and (transaction_type in ["ALL", "STAFF_SALARY"] if isinstance(transaction_type, str) else True):
+                    k = f"op_{d_str}_STAFF_SALARY_{sal}"
+                    if k not in seen_keys:
+                        seen_keys.add(k)
+                        records.append({
+                            "id": f"cb_sal_{cb_id}",
+                            "transaction_type": "STAFF_SALARY",
+                            "amount": sal,
+                            "branch_id": cb_b,
+                            "officer_id": cb_o,
+                            "posting_date": d_str,
+                            "reference": f"SAL-{d_str.replace('-', '')}",
+                            "narration": f"Staff salary payment on {d_str}",
+                            "created_at": cb.get("created_at") or f"{d_str}T12:00:00"
+                        })
+        except Exception:
+            pass
+
+        # 4. Query master_cashbook for Inter-Branch & Head Office Transfers
+        try:
+            q_mc = self.client.table("master_cashbook").select("*")
+            if branch_id and branch_id != "All":
+                q_mc = q_mc.eq("branch_id", branch_id)
+            if date_from:
+                q_mc = q_mc.gte("date", date_from.isoformat() if isinstance(date_from, date) else str(date_from)[:10])
+            if date_to:
+                q_mc = q_mc.lte("date", date_to.isoformat() if isinstance(date_to, date) else str(date_to)[:10])
+            for mc in (q_mc.execute().data or []):
+                d_str = str(mc.get("date"))[:10]
+                mc_b = mc.get("branch_id")
+                mc_id = mc.get("id")
+
+                ho_in = float(mc.get("funds_received_ho") or 0.0)
+                if ho_in > 0 and (transaction_type in ["ALL", "HO_TRANSFER_IN"] if isinstance(transaction_type, str) else True):
+                    k = f"op_{d_str}_HO_TRANSFER_IN_{ho_in}"
+                    if k not in seen_keys:
+                        seen_keys.add(k)
+                        records.append({
+                            "id": f"mc_hoi_{mc_id}",
+                            "transaction_type": "HO_TRANSFER_IN",
+                            "amount": ho_in,
+                            "branch_id": mc_b,
+                            "officer_id": None,
+                            "posting_date": d_str,
+                            "reference": f"HO-IN-{d_str.replace('-', '')}",
+                            "narration": f"Funds received from Head Office on {d_str}",
+                            "created_at": mc.get("created_at") or f"{d_str}T12:00:00"
+                        })
+
+                ho_out = float(mc.get("fund_transferred_ho") or 0.0)
+                if ho_out > 0 and (transaction_type in ["ALL", "HO_TRANSFER_OUT"] if isinstance(transaction_type, str) else True):
+                    k = f"op_{d_str}_HO_TRANSFER_OUT_{ho_out}"
+                    if k not in seen_keys:
+                        seen_keys.add(k)
+                        records.append({
+                            "id": f"mc_hoo_{mc_id}",
+                            "transaction_type": "HO_TRANSFER_OUT",
+                            "amount": ho_out,
+                            "branch_id": mc_b,
+                            "officer_id": None,
+                            "posting_date": d_str,
+                            "reference": f"HO-OUT-{d_str.replace('-', '')}",
+                            "narration": f"Funds transferred to Head Office on {d_str}",
+                            "created_at": mc.get("created_at") or f"{d_str}T12:00:00"
+                        })
+
+                br_in = float(mc.get("funds_received_other_branch") or 0.0)
+                if br_in > 0 and (transaction_type in ["ALL", "BRANCH_TRANSFER_IN"] if isinstance(transaction_type, str) else True):
+                    k = f"op_{d_str}_BRANCH_TRANSFER_IN_{br_in}"
+                    if k not in seen_keys:
+                        seen_keys.add(k)
+                        records.append({
+                            "id": f"mc_bri_{mc_id}",
+                            "transaction_type": "BRANCH_TRANSFER_IN",
+                            "amount": br_in,
+                            "branch_id": mc_b,
+                            "officer_id": None,
+                            "posting_date": d_str,
+                            "reference": f"BR-IN-{d_str.replace('-', '')}",
+                            "narration": f"Funds received from other branch on {d_str}",
+                            "created_at": mc.get("created_at") or f"{d_str}T12:00:00"
+                        })
+
+                br_out = float(mc.get("fund_transferred_other_branch") or 0.0)
+                if br_out > 0 and (transaction_type in ["ALL", "BRANCH_TRANSFER_OUT"] if isinstance(transaction_type, str) else True):
+                    k = f"op_{d_str}_BRANCH_TRANSFER_OUT_{br_out}"
+                    if k not in seen_keys:
+                        seen_keys.add(k)
+                        records.append({
+                            "id": f"mc_bro_{mc_id}",
+                            "transaction_type": "BRANCH_TRANSFER_OUT",
+                            "amount": br_out,
+                            "branch_id": mc_b,
+                            "officer_id": None,
+                            "posting_date": d_str,
+                            "reference": f"BR-OUT-{d_str.replace('-', '')}",
+                            "narration": f"Funds transferred to other branch on {d_str}",
+                            "created_at": mc.get("created_at") or f"{d_str}T12:00:00"
+                        })
         except Exception:
             pass
 
