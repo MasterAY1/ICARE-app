@@ -607,6 +607,17 @@ class SupabaseAuditViewRepository(BaseRepository):
                     q_ln = q_ln.lte("disbursement_date", d_to_iso)
 
                 for ln in (q_ln.limit(limit * 2).execute().data or []):
+                    # Exclude historical legacy onboarding loans
+                    ef = ln.get("extra_fields") or {}
+                    if isinstance(ef, str):
+                        try:
+                            import json
+                            ef = json.loads(ef)
+                        except Exception:
+                            ef = {}
+                    if ef.get("is_legacy") is True:
+                        continue
+
                     l_id = str(ln.get("loan_id"))
                     p_id = str(ln.get("product_id"))
                     amt = float(ln.get("loan_amount") or 0.0)
@@ -657,22 +668,41 @@ class SupabaseAuditViewRepository(BaseRepository):
         officer_id: Optional[str] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
-        limit: int = 200
+        limit: int = 200,
+        include_legacy: bool = False
     ) -> List[Dict[str, Any]]:
-        """Fetch disbursed/active/completed loan records."""
+        """Fetch disbursed/active/completed loan records (excluding legacy onboarding by default)."""
         query = self.client.table("loans").select("*").in_("status", ["Disbursed", "Active", "Completed", "Closed"])
         if branch_id and branch_id != "All":
             query = query.eq("branch_id", branch_id)
         if officer_id and officer_id != "All":
             query = query.eq("officer_id", officer_id)
         if date_from:
-            query = query.gte("date", date_from.isoformat() if isinstance(date_from, date) else date_from)
+            d_from_iso = date_from.isoformat() if isinstance(date_from, date) else str(date_from)[:10]
+            query = query.gte("disbursement_date", d_from_iso)
         if date_to:
-            query = query.lte("date", date_to.isoformat() if isinstance(date_to, date) else date_to)
+            d_to_iso = date_to.isoformat() if isinstance(date_to, date) else str(date_to)[:10]
+            query = query.lte("disbursement_date", d_to_iso)
 
-        query = query.order("created_at", desc=True).limit(limit)
+        query = query.order("disbursement_date", desc=True).limit(limit * 2)
         res = query.execute()
-        return res.data or []
+        raw_loans = res.data or []
+
+        if not include_legacy:
+            filtered = []
+            for ln in raw_loans:
+                ef = ln.get("extra_fields") or {}
+                if isinstance(ef, str):
+                    try:
+                        import json
+                        ef = json.loads(ef)
+                    except Exception:
+                        ef = {}
+                if ef.get("is_legacy") is True:
+                    continue
+                filtered.append(ln)
+            return filtered[:limit]
+        return raw_loans[:limit]
 
     def get_loan_repayments(
         self,

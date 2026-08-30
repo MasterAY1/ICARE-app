@@ -278,8 +278,9 @@ class AuditEnricher:
         enriched = []
         for r in records:
             client_info = self.resolve_client(r.get("client_id"))
-            principal = float(r.get("amount") or r.get("principal") or 0)
-            loan_code = r.get("loan_code") or ("LN-" + str(r.get("id"))[:8] if r.get("id") else "LN-N/A")
+            principal = float(r.get("loan_amount") or r.get("amount") or r.get("principal") or 0)
+            l_identifier = r.get("loan_id") or r.get("id") or ""
+            loan_code = r.get("loan_code") or r.get("loan_number") or (f"LN-{str(l_identifier)[:8]}" if l_identifier else "LN-N/A")
             row = {
                 "Disbursement Date": self.format_date(r.get("date") or r.get("disbursement_date") or r.get("created_at")),
                 "Loan Number": loan_code,
