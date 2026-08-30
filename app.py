@@ -6884,7 +6884,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 with sb_2:
                     sav_d_to = st.date_input("Date To", date.today(), key="sav_d_to")
                 with sb_3:
-                    sav_sub = st.selectbox("Savings Ledger", ["Individual Savings", "Group Savings", "Laps Savings"], key="sav_sub_sel")
+                    sav_sub = st.selectbox("Savings Ledger", ["ALL", "Individual Savings", "Group Savings", "Misc Savings", "Laps Savings"], key="sav_sub_sel")
                 with sb_4:
                     sav_branch = st.selectbox("Branch", ac_branch_options, key="sav_branch_sel", disabled=(len(ac_branch_options) == 1))
                 with sb_5:
@@ -6898,7 +6898,13 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 with sb_6:
                     sav_search = st.text_input("🔍 Search", "", placeholder="Client / Code", key="sav_search")
     
-                tbl_map = {"Individual Savings": "individual_savings", "Group Savings": "group_savings", "Laps Savings": "laps_savings"}
+                tbl_map = {
+                    "ALL": "ALL",
+                    "Individual Savings": "individual_savings",
+                    "Group Savings": "group_savings",
+                    "Misc Savings": "internal_savings",
+                    "Laps Savings": "laps_savings"
+                }
                 sav_target_branch_id = branch_map_name_to_id.get(sav_branch) if sav_branch != "All Branches" else None
                 raw_sav_records = audit_views.get_savings_ledger(
                     tbl_map[sav_sub], 

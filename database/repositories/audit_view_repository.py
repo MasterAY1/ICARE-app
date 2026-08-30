@@ -735,30 +735,76 @@ class SupabaseAuditViewRepository(BaseRepository):
     # -------------------------------------------------------------------------
     def get_savings_ledger(
         self,
-        savings_table: str,  # "individual_savings", "group_savings", "laps_savings"
+        savings_table: str,  # "ALL", "individual_savings", "group_savings", "internal_savings", "laps_savings"
         branch_id: Optional[str] = None,
         officer_id: Optional[str] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
-        limit: int = 200
+        limit: int = 500
     ) -> List[Dict[str, Any]]:
-        """Fetch savings records from specified savings ledger table."""
-        if savings_table not in ["individual_savings", "group_savings", "laps_savings", "internal_savings"]:
+        """Fetch savings records from specified savings ledger table or all savings tables."""
+        table_aliases = {
+            "ALL": "ALL",
+            "all": "ALL",
+            "individual_savings": "individual_savings",
+            "Individual Savings": "individual_savings",
+            "group_savings": "group_savings",
+            "Group Savings": "group_savings",
+            "internal_savings": "internal_savings",
+            "misc_savings": "internal_savings",
+            "Misc Savings": "internal_savings",
+            "laps_savings": "laps_savings",
+            "Laps Savings": "laps_savings"
+        }
+        target_table = table_aliases.get(savings_table)
+        if not target_table:
             raise ValueError(f"Invalid savings table: {savings_table}")
 
-        query = self.client.table(savings_table).select("*")
-        if branch_id and branch_id != "All":
-            query = query.eq("branch_id", branch_id)
-        if officer_id and officer_id != "All":
-            query = query.eq("officer_id", officer_id)
-        if date_from:
-            query = query.gte("posting_date", date_from.isoformat() if isinstance(date_from, date) else date_from)
-        if date_to:
-            query = query.lte("posting_date", date_to.isoformat() if isinstance(date_to, date) else date_to)
+        tables_to_query = (
+            [
+                ("individual_savings", "Individual Savings"),
+                ("group_savings", "Group Savings"),
+                ("internal_savings", "Misc Savings"),
+                ("laps_savings", "Laps Savings")
+            ]
+            if target_table == "ALL"
+            else [
+                (
+                    target_table,
+                    "Individual Savings" if target_table == "individual_savings"
+                    else "Group Savings" if target_table == "group_savings"
+                    else "Misc Savings" if target_table == "internal_savings"
+                    else "Laps Savings"
+                )
+            ]
+        )
 
-        query = query.order("created_at", desc=True).limit(limit)
-        res = query.execute()
-        return res.data or []
+        all_records = []
+        d_from_iso = date_from.isoformat() if isinstance(date_from, date) else (str(date_from)[:10] if date_from else None)
+        d_to_iso = date_to.isoformat() if isinstance(date_to, date) else (str(date_to)[:10] if date_to else None)
+
+        for tbl, ledger_label in tables_to_query:
+            try:
+                query = self.client.table(tbl).select("*")
+                if branch_id and branch_id != "All":
+                    query = query.eq("branch_id", branch_id)
+                if officer_id and officer_id != "All":
+                    query = query.eq("officer_id", officer_id)
+                if d_from_iso:
+                    query = query.gte("posting_date", d_from_iso)
+                if d_to_iso:
+                    query = query.lte("posting_date", d_to_iso)
+
+                query = query.order("posting_date", desc=True).limit(limit)
+                res = query.execute()
+                for row in (res.data or []):
+                    row["_ledger_type"] = ledger_label
+                    all_records.append(row)
+            except Exception:
+                pass
+
+        all_records.sort(key=lambda x: str(x.get("posting_date") or x.get("created_at") or ""), reverse=True)
+        return all_records[:limit]
 
     # -------------------------------------------------------------------------
     # Read-only mutation safeguards

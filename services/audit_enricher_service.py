@@ -23,6 +23,7 @@ class AuditEnricher:
         self.uow = uow
         self._clients_by_id: Dict[str, Dict[str, str]] = {}
         self._clients_by_code: Dict[str, Dict[str, str]] = {}
+        self._groups_by_id: Dict[str, Dict[str, str]] = {}
         self._branches_by_id: Dict[str, str] = {}
         self._users_by_id: Dict[str, str] = {}
         self._users_by_username: Dict[str, str] = {}
@@ -91,11 +92,33 @@ class AuditEnricher:
         except Exception:
             pass
 
+        # 5. Load Groups
+        try:
+            if db_client:
+                res_g = db_client.table("groups").select("group_id, name, group_code").execute()
+                for g in (res_g.data or []):
+                    g_id = g.get("group_id")
+                    g_name = g.get("name") or "Unnamed Group"
+                    g_code = g.get("group_code") or "GRP-N/A"
+                    if g_id:
+                        self._groups_by_id[str(g_id)] = {"code": g_code, "name": g_name}
+        except Exception:
+            pass
+
         self._is_loaded = True
 
     # -------------------------------------------------------------------------
     # Individual Resolution Helpers
     # -------------------------------------------------------------------------
+
+    def resolve_group(self, group_id_raw: Optional[str]) -> Dict[str, str]:
+        """Resolves raw group_id to {code, name}."""
+        if not group_id_raw or str(group_id_raw) in ["None", "null", ""]:
+            return {"code": "N/A", "name": "N/A"}
+        gid = str(group_id_raw).strip()
+        if gid in self._groups_by_id:
+            return self._groups_by_id[gid]
+        return {"code": f"GRP-{gid[:6]}", "name": f"Group ({gid[:6]})"}
 
     def resolve_client(self, client_id_raw: Optional[str]) -> Dict[str, str]:
         """Resolves raw client_id or client_code to {code, name, full_label}."""
@@ -250,14 +273,30 @@ class AuditEnricher:
         self.load_lookups()
         enriched = []
         for r in records:
-            client_info = self.resolve_client(r.get("client_id") or r.get("group_id"))
+            ledger_type = r.get("_ledger_type") or "Savings"
+            c_id = r.get("client_id")
+            g_id = r.get("group_id")
+
+            if c_id:
+                client_info = self.resolve_client(c_id)
+                code_disp = client_info["code"]
+                name_disp = client_info["name"]
+            elif g_id:
+                grp_info = self.resolve_group(g_id)
+                code_disp = grp_info["code"]
+                name_disp = grp_info["name"]
+            else:
+                code_disp = "BRANCH-MISC" if ledger_type == "Misc Savings" else "N/A"
+                name_disp = "Branch Internal Misc Savings" if ledger_type == "Misc Savings" else "Global Savings Pool"
+
             dep = float(r.get("deposit_amount") or 0)
             wth = float(r.get("withdrawal_amount") or 0)
             bal = float(r.get("balance") or (dep - wth))
             row = {
                 "Date": self.format_date(r.get("posting_date") or r.get("created_at")),
-                "Client Code": client_info["code"],
-                "Client Name": client_info["name"],
+                "Ledger": ledger_type,
+                "Client Code": code_disp,
+                "Client Name": name_disp,
                 "Remarks": r.get("remarks") or r.get("reference") or ("Deposit" if dep > 0 else "Withdrawal"),
                 "Officer": self.resolve_officer(r.get("officer_id")),
                 "Branch": self.resolve_branch(r.get("branch_id")),
