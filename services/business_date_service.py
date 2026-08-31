@@ -22,6 +22,8 @@ def get_nigerian_holidays(years=None):
 ng_holidays = get_nigerian_holidays()
 
 class BusinessDateService:
+    _operational_cache = {}
+
     @staticmethod
     def is_working_day(target_date: date, custom_closures: Optional[list] = None) -> tuple[bool, str]:
         """
@@ -66,8 +68,8 @@ class BusinessDateService:
             pass
         return False
 
-    @staticmethod
-    def is_operational_open(uow: UnitOfWork, branch_name_or_id: str, target_date: date) -> tuple[bool, str]:
+    @classmethod
+    def is_operational_open(cls, uow: UnitOfWork, branch_name_or_id: str, target_date: date) -> tuple[bool, str]:
         """
         Unified check for operational activity on target_date:
         1. Weekend Check (Saturday / Sunday)
@@ -81,15 +83,23 @@ class BusinessDateService:
         
         target_d = target_date.date() if hasattr(target_date, 'date') and not isinstance(target_date, date) else target_date
         
+        cache_key = (str(branch_name_or_id).strip().lower() if branch_name_or_id else "", target_d.isoformat())
+        if cache_key in cls._operational_cache:
+            return cls._operational_cache[cache_key]
+
         # 1. Weekend Check
         if target_d.weekday() >= 5:
             day_name = "Saturday" if target_d.weekday() == 5 else "Sunday"
-            return False, f"{day_name} is a weekend (non-working day)"
+            res = (False, f"{day_name} is a weekend (non-working day)")
+            cls._operational_cache[cache_key] = res
+            return res
 
         # 2. Public Holiday Check
         if target_d in ng_holidays:
             holiday_name = ng_holidays.get(target_d)
-            return False, f"{target_d.isoformat()} is a public holiday ({holiday_name})"
+            res = (False, f"{target_d.isoformat()} is a public holiday ({holiday_name})")
+            cls._operational_cache[cache_key] = res
+            return res
 
         # 3. Emergency Branch Closure Check
         if branch_name_or_id:
@@ -108,16 +118,22 @@ class BusinessDateService:
                 res_cl = q_cl.execute()
                 if res_cl.data:
                     c_reason = res_cl.data[0].get("reason") or "Emergency closure"
-                    return False, f"Branch is closed due to emergency closure ({c_reason})"
+                    res = (False, f"Branch is closed due to emergency closure ({c_reason})")
+                    cls._operational_cache[cache_key] = res
+                    return res
             except Exception:
                 pass
 
         # 4. Day Close Freeze Check
         if branch_name_or_id:
             if BusinessDateService.is_date_closed(uow, branch_name_or_id, target_d):
-                return False, f"Business day {target_d.isoformat()} has already been closed by Branch Manager"
+                res = (False, f"Business day {target_d.isoformat()} has already been closed by Branch Manager")
+                cls._operational_cache[cache_key] = res
+                return res
 
-        return True, "Operational business day is open"
+        res = (True, "Operational business day is open")
+        cls._operational_cache[cache_key] = res
+        return res
 
     @staticmethod
     def get_next_working_day(target_date: date, custom_closures: Optional[list] = None) -> date:

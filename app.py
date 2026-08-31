@@ -1239,9 +1239,8 @@ def save_new_loan(data):
         st.error(f"Error saving loan: {e}")
 
 
-def save_repayment(data, override_uow=None):
+def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None):
     """Save repayment and route savings to respective buckets"""
-    print(f"\n[SAVINGS TRACE] Collections payload received: {data}")
     try:
         from database.repositories.unit_of_work import SupabaseUnitOfWork
         from services.savings_service import SavingsService
@@ -1276,9 +1275,14 @@ def save_repayment(data, override_uow=None):
             
             resolved_client_id = client_id
             if client_id and not is_valid_uuid(client_id) and not str(client_id).startswith('GROUP-') and not str(client_id).startswith('GLOBAL-'):
-                res_c = uow.client.table("clients").select("client_id").eq("client_code", client_id).execute()
-                if res_c.data:
-                    resolved_client_id = res_c.data[0]["client_id"]
+                if client_cache and str(client_id).strip() in client_cache:
+                    resolved_client_id = client_cache[str(client_id).strip()]
+                else:
+                    res_c = uow.client.table("clients").select("client_id").eq("client_code", client_id).execute()
+                    if res_c.data:
+                        resolved_client_id = res_c.data[0]["client_id"]
+                        if client_cache is not None:
+                            client_cache[str(client_id).strip()] = resolved_client_id
             
             db_data['client_id'] = resolved_client_id
             client_id = resolved_client_id
@@ -1316,9 +1320,16 @@ def save_repayment(data, override_uow=None):
             # 4. Route Loan Repayment
             if loan_repay > 0:
                 active_loan_id = None
-                res_l = uow.client.table("loans").select("loan_id, active_credit").eq("client_id", client_id).eq("status", "Active").execute()
-                if res_l.data:
-                    active_loan_id = res_l.data[0]["loan_id"]
+                if loan_cache and client_id in loan_cache:
+                    active_loan_id = loan_cache[client_id]
+                else:
+                    res_l = uow.client.table("loans").select("loan_id, active_credit").eq("client_id", client_id).eq("status", "Active").execute()
+                    if res_l.data:
+                        active_loan_id = res_l.data[0]["loan_id"]
+                        if loan_cache is not None:
+                            loan_cache[client_id] = active_loan_id
+
+                if active_loan_id:
                     from services.schedule_service import ScheduleService
                     ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date)
 
@@ -1524,12 +1535,24 @@ def save_repayment(data, override_uow=None):
 
 
 def save_repayments(data_list):
-    """Save multiple repayments to database"""
+    """Save multiple repayments to database with batch pre-flight caching and deferred projections"""
+    if data_list is None:
+        return
+    if isinstance(data_list, pd.DataFrame):
+        data_list = data_list.to_dict('records')
     if not data_list:
         return
         
     from database.repositories.unit_of_work import SupabaseUnitOfWork
     from services.posting_engine import FinancialPostingEngine
+    import uuid
+
+    def is_valid_uuid(val):
+        try:
+            uuid.UUID(str(val))
+            return True
+        except ValueError:
+            return False
     
     # 1. Enable deferred projections globally for this batch
     original_defer = getattr(FinancialPostingEngine, 'defer_projections', False)
@@ -1540,21 +1563,52 @@ def save_repayments(data_list):
     
     try:
         with SupabaseUnitOfWork() as uow:
+            # 1. Pre-flight Batch Lookups: Client IDs & Active Loans in 2 bulk queries instead of 2 * N queries
+            client_cache = {}
+            clean_codes = []
+            for d in data_list:
+                cid = d.get('Client ID') or d.get('client_id')
+                if cid and not is_valid_uuid(cid) and not str(cid).startswith('GROUP-') and not str(cid).startswith('GLOBAL-'):
+                    clean_codes.append(str(cid).strip())
+            if clean_codes:
+                try:
+                    res_c = uow.client.table("clients").select("client_id, client_code").in_("client_code", list(set(clean_codes))).execute()
+                    for row in (res_c.data or []):
+                        client_cache[row["client_code"]] = row["client_id"]
+                except Exception:
+                    pass
+
+            loan_cache = {}
+            all_resolved_cids = []
+            for d in data_list:
+                cid = d.get('Client ID') or d.get('client_id')
+                resolved = client_cache.get(str(cid).strip(), cid)
+                if resolved and is_valid_uuid(resolved):
+                    all_resolved_cids.append(str(resolved))
+            if all_resolved_cids:
+                try:
+                    res_l = uow.client.table("loans").select("loan_id, client_id, active_credit").in_("client_id", list(set(all_resolved_cids))).eq("status", "Active").execute()
+                    for row in (res_l.data or []):
+                        loan_cache[row["client_id"]] = row["loan_id"]
+                except Exception:
+                    pass
+
+            # 2. Iterate through batch using in-memory caches
             for data in data_list:
-                save_repayment(data, override_uow=uow)
+                save_repayment(data, override_uow=uow, client_cache=client_cache, loan_cache=loan_cache)
                 
                 # capture branch and date for final rebuild
                 if not branch_id_to_rebuild and 'Branch' in data:
                     branch_name = data.get('Branch')
                     try:
-                        res = uow.client.table("branches").select("branch_id").eq("name", branch_name).execute()
-                        if res.data: branch_id_to_rebuild = res.data[0]["branch_id"]
-                    except Exception: pass
+                        branch_id_to_rebuild = FinancialPostingEngine._resolve_branch_id(uow, branch_name)
+                    except Exception:
+                        pass
                     
                 if not date_to_rebuild:
                     date_to_rebuild = data.get('Date')
                     
-            # 2. Trigger ONE projection rebuild after all inserts are complete
+            # 3. Trigger ONE projection rebuild after all inserts are complete
             if branch_id_to_rebuild and date_to_rebuild:
                 from datetime import date
                 try:
@@ -4124,6 +4178,10 @@ elif page == "Collections":
         col_tab1, col_tab2, col_tab3 = st.tabs(["📝 Record Collections", "📜 Collection History & Audit", "🔄 Error Correction & Reversals"])
         
         with col_tab1:
+            if "col_success_msg" in st.session_state and st.session_state["col_success_msg"]:
+                st.success(st.session_state["col_success_msg"])
+                del st.session_state["col_success_msg"]
+
             col_options = ["Group Collection Sheet", "Single Client Quick Entry"]
             if ROLE in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
                 col_options.append("Bulk Upload (Excel Template)")
@@ -4298,11 +4356,7 @@ elif page == "Collections":
                                 new_df = pd.DataFrame(new_records)
                                 updated_repayments = pd.concat([repayments, new_df], ignore_index=True)
                                 save_repayments(updated_repayments)
-                                st.success(f"✅ Successfully processed {len(new_records)} transactions from the bulk upload!")
-                            
-                                # Optional delay and rerun
-                                import time
-                                time.sleep(2)
+                                st.session_state["col_success_msg"] = f"✅ Successfully processed {len(new_records)} transactions from the bulk upload!"
                                 st.rerun()
                             else:
                                 st.warning("No valid transactions found in the uploaded file.")
@@ -4454,9 +4508,7 @@ elif page == "Collections":
                                 }
                                 try:
                                     save_repayments([single_tx])
-                                    st.success(f"🎉 Successfully posted transaction for **{s_name}**! (Savings: ₦{sav_val:,.2f}, Repayment: ₦{rep_val:,.2f})")
-                                    import time
-                                    time.sleep(2)
+                                    st.session_state["col_success_msg"] = f"🎉 Successfully posted transaction for **{s_name}**! (Savings: ₦{sav_val:,.2f}, Repayment: ₦{rep_val:,.2f})"
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error posting transaction: {e}")
@@ -4869,12 +4921,10 @@ elif page == "Collections":
                         elif c2.button("Confirm & Save Collections", type="primary", use_container_width=True):
                             try:
                                 save_repayments(to_insert)
-                                st.success("Group Collections Submitted Successfully!")
+                                st.session_state["col_success_msg"] = f"🎉 Group Collections for **{selected_group}** Submitted Successfully ({len(to_insert)} records processed)!"
                                 del st.session_state['pending_collections']
                                 if 'edit_collections_mode' in st.session_state:
                                     del st.session_state['edit_collections_mode']
-                                import time
-                                time.sleep(2)
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error saving: {e}")

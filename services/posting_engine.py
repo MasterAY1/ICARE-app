@@ -6,8 +6,12 @@ from interfaces.unit_of_work import UnitOfWork
 from core.exceptions import RepositoryError
 
 class FinancialPostingEngine:
-    @staticmethod
-    def _resolve_branch_id(uow: UnitOfWork, branch_name: str) -> str:
+    _branch_cache = {}
+    _officer_cache = {}
+    _rules_cache = {}
+
+    @classmethod
+    def _resolve_branch_id(cls, uow: UnitOfWork, branch_name: str) -> str:
         if not branch_name:
             raise ValueError("Branch name is required but was not provided.")
         import uuid
@@ -16,16 +20,23 @@ class FinancialPostingEngine:
             return str(branch_name)
         except ValueError:
             pass
+        
+        b_key = str(branch_name).strip().lower()
+        if b_key in cls._branch_cache:
+            return cls._branch_cache[b_key]
+
         try:
             res = uow.client.table("branches").select("branch_id").eq("name", branch_name).execute()
             if res.data:
-                return res.data[0]["branch_id"]
+                bid = res.data[0]["branch_id"]
+                cls._branch_cache[b_key] = bid
+                return bid
         except Exception as e:
             raise ValueError(f"Failed to resolve branch '{branch_name}': {str(e)}")
         raise ValueError(f"Branch '{branch_name}' not found.")
 
-    @staticmethod
-    def _resolve_officer_id(uow: UnitOfWork, username: str) -> Optional[str]:
+    @classmethod
+    def _resolve_officer_id(cls, uow: UnitOfWork, username: str) -> Optional[str]:
         if not username:
             return None
         import uuid
@@ -34,16 +45,27 @@ class FinancialPostingEngine:
             return str(username)
         except ValueError:
             pass
+        
+        u_key = str(username).strip().lower()
+        if u_key in cls._officer_cache:
+            return cls._officer_cache[u_key]
+
         try:
             res = uow.client.table("app_users").select("id").eq("username", username).execute()
             if res.data:
-                return res.data[0]["id"]
+                oid = res.data[0]["id"]
+                cls._officer_cache[u_key] = oid
+                return oid
             res_f = uow.client.table("app_users").select("id").eq("full_name", username).execute()
             if res_f.data:
-                return res_f.data[0]["id"]
+                oid = res_f.data[0]["id"]
+                cls._officer_cache[u_key] = oid
+                return oid
             res_il = uow.client.table("app_users").select("id").ilike("full_name", f"%{username}%").execute()
             if res_il.data:
-                return res_il.data[0]["id"]
+                oid = res_il.data[0]["id"]
+                cls._officer_cache[u_key] = oid
+                return oid
         except Exception as e:
             raise ValueError(f"Failed to resolve officer '{username}': {str(e)}")
         raise ValueError(f"Officer '{username}' not found.")
@@ -65,8 +87,15 @@ class FinancialPostingEngine:
             uow.event_store.mark_processing(event.event_id, "posting_engine")
 
         try:
-            # 3. Resolve Posting Rule
-            rule = uow.posting_rules.get_rule(event.event_type, event.version)
+            # 3. Resolve Posting Rule (Cached in memory)
+            rule_key = (event.event_type, event.version)
+            if rule_key in cls._rules_cache:
+                rule = cls._rules_cache[rule_key]
+            else:
+                rule = uow.posting_rules.get_rule(event.event_type, event.version)
+                if rule:
+                    cls._rules_cache[rule_key] = rule
+
             if not rule:
                 raise ValueError(f"No active posting rule found for event type: {event.event_type} v{event.version}")
 
