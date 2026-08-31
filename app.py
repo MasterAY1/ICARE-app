@@ -9142,39 +9142,43 @@ elif page == "Portfolio":
             mth = cat_sum.get("monthly", {})
             ast = cat_sum.get("asset_all", {})
 
-            # 4 High-Visibility Product Category Intelligence Cards
-            pc1, pc2, pc3, pc4 = st.columns(4)
-            with pc1:
-                with st.container(border=True):
-                    st.markdown("##### 🔵 12-Week Loans")
-                    st.markdown(f"### {w12.get('total_count', 0)} <span style='font-size: 1rem; color: #64748b; font-weight: normal;'>Active Loans</span>", unsafe_allow_html=True)
-                    st.markdown(f"**Active Credit:** ₦{w12.get('active_credit', 0.0):,.0f}")
-                    st.markdown(f"**Outstanding:** ₦{w12.get('outstanding_balance', 0.0):,.0f}")
-                    st.caption(f"💵 Cash: **{w12.get('cash_count', 0)}** &middot; 📦 Asset: **{w12.get('asset_count', 0)}**")
+            # Dynamic Product Category Cards (Scoped to CO assigned products or Full Branch for BM)
+            def _is_cat_relevant(cat_key, search_terms):
+                if not allowed_p:  # BM / Admin viewing entire branch
+                    return True
+                # Check if any assigned product matches
+                is_assigned = any(any(st_term.lower() in str(ap).lower() for st_term in search_terms) for ap in allowed_p)
+                has_loans = (cat_sum.get(cat_key, {}).get("total_count", 0) > 0)
+                return is_assigned or has_loans
 
-            with pc2:
-                with st.container(border=True):
-                    st.markdown("##### 🟣 24-Week Loans")
-                    st.markdown(f"### {w24.get('total_count', 0)} <span style='font-size: 1rem; color: #64748b; font-weight: normal;'>Active Loans</span>", unsafe_allow_html=True)
-                    st.markdown(f"**Active Credit:** ₦{w24.get('active_credit', 0.0):,.0f}")
-                    st.markdown(f"**Outstanding:** ₦{w24.get('outstanding_balance', 0.0):,.0f}")
-                    st.caption(f"💵 Cash: **{w24.get('cash_count', 0)}** &middot; 📦 Asset: **{w24.get('asset_count', 0)}**")
+            cards_to_show = []
+            if _is_cat_relevant("12_week", ["12 week", "12w"]):
+                cards_to_show.append(("12_week", "🔵 12-Week Loans", w12))
+            if _is_cat_relevant("24_week", ["24 week", "24w"]):
+                cards_to_show.append(("24_week", "🟣 24-Week Loans", w24))
+            if _is_cat_relevant("daily", ["daily", "60", "120"]):
+                cards_to_show.append(("daily", "🟢 Daily Loans", dly))
+            if _is_cat_relevant("monthly", ["month", "3m", "6m"]):
+                cards_to_show.append(("monthly", "🟡 Monthly Loans", mth))
 
-            with pc3:
-                with st.container(border=True):
-                    st.markdown("##### 🟢 Daily Loans")
-                    st.markdown(f"### {dly.get('total_count', 0)} <span style='font-size: 1rem; color: #64748b; font-weight: normal;'>Active Loans</span>", unsafe_allow_html=True)
-                    st.markdown(f"**Active Credit:** ₦{dly.get('active_credit', 0.0):,.0f}")
-                    st.markdown(f"**Outstanding:** ₦{dly.get('outstanding_balance', 0.0):,.0f}")
-                    st.caption(f"💵 Cash: **{dly.get('cash_count', 0)}** &middot; 📦 Asset: **{dly.get('asset_count', 0)}**")
+            if not cards_to_show:
+                cards_to_show = [
+                    ("12_week", "🔵 12-Week Loans", w12),
+                    ("24_week", "🟣 24-Week Loans", w24),
+                    ("daily", "🟢 Daily Loans", dly),
+                    ("monthly", "🟡 Monthly Loans", mth)
+                ]
 
-            with pc4:
-                with st.container(border=True):
-                    st.markdown("##### 🟡 Monthly Loans")
-                    st.markdown(f"### {mth.get('total_count', 0)} <span style='font-size: 1rem; color: #64748b; font-weight: normal;'>Active Loans</span>", unsafe_allow_html=True)
-                    st.markdown(f"**Active Credit:** ₦{mth.get('active_credit', 0.0):,.0f}")
-                    st.markdown(f"**Outstanding:** ₦{mth.get('outstanding_balance', 0.0):,.0f}")
-                    st.caption(f"💵 Cash: **{mth.get('cash_count', 0)}** &middot; 📦 Asset: **{mth.get('asset_count', 0)}**")
+            # High-Visibility Product Category Intelligence Cards
+            p_cols = st.columns(len(cards_to_show))
+            for idx, (cat_k, cat_title, cat_data) in enumerate(cards_to_show):
+                with p_cols[idx]:
+                    with st.container(border=True):
+                        st.markdown(f"##### {cat_title}")
+                        st.markdown(f"### {cat_data.get('total_count', 0)} <span style='font-size: 1rem; color: #64748b; font-weight: normal;'>Active Loans</span>", unsafe_allow_html=True)
+                        st.markdown(f"**Active Credit:** ₦{cat_data.get('active_credit', 0.0):,.0f}")
+                        st.markdown(f"**Outstanding:** ₦{cat_data.get('outstanding_balance', 0.0):,.0f}")
+                        st.caption(f"💵 Cash: **{cat_data.get('cash_count', 0)}** &middot; 📦 Asset: **{cat_data.get('asset_count', 0)}**")
 
             # Group Matrix Breakdown Section
             st.markdown("<br>", unsafe_allow_html=True)
@@ -9186,21 +9190,41 @@ elif page == "Portfolio":
                     if active_matrix_df.empty:
                         active_matrix_df = group_matrix_df.copy()
                     
+                    # Dynamically determine columns to display (CO assigned vs BM all)
+                    base_cols = ["Group Name", "Meeting Day"]
+                    prod_candidates = [
+                        ("12W Cash", ["12 week", "12w"]),
+                        ("12W Asset", ["12 week", "12w", "asset"]),
+                        ("24W Cash", ["24 week", "24w"]),
+                        ("24W Asset", ["24 week", "24w", "asset"]),
+                        ("Daily", ["daily", "60", "120"]),
+                        ("Monthly", ["month", "3m", "6m"]),
+                    ]
+
+                    active_prod_cols = []
+                    for c_name, c_terms in prod_candidates:
+                        if not allowed_p: # BM sees all operational columns
+                            active_prod_cols.append(c_name)
+                        else: # CO sees assigned or active columns
+                            col_total = int(active_matrix_df[c_name].sum()) if c_name in active_matrix_df.columns else 0
+                            is_assigned = any(any(t.lower() in str(ap).lower() for t in c_terms) for ap in allowed_p)
+                            if is_assigned or col_total > 0:
+                                active_prod_cols.append(c_name)
+
+                    if not active_prod_cols:
+                        active_prod_cols = ["12W Cash", "12W Asset", "24W Cash", "24W Asset"]
+
+                    cols_to_render = base_cols + active_prod_cols + ["Total Active Loans", "Total Active Credit", "Total Outstanding Balance"]
+                    
                     # Compute totals row
-                    totals_row = {
-                        "Group Name": "🔹 TOTALS",
-                        "Meeting Day": "—",
-                        "12W Cash": int(active_matrix_df["12W Cash"].sum()),
-                        "12W Asset": int(active_matrix_df["12W Asset"].sum()),
-                        "24W Cash": int(active_matrix_df["24W Cash"].sum()),
-                        "24W Asset": int(active_matrix_df["24W Asset"].sum()),
-                        "Daily": int(active_matrix_df["Daily"].sum()),
-                        "Monthly": int(active_matrix_df["Monthly"].sum()),
-                        "Total Active Loans": int(active_matrix_df["Total Active Loans"].sum()),
-                        "Total Active Credit": active_matrix_df["Total Active Credit"].sum(),
-                        "Total Outstanding Balance": active_matrix_df["Total Outstanding Balance"].sum(),
-                    }
-                    display_matrix = pd.concat([active_matrix_df, pd.DataFrame([totals_row])], ignore_index=True)
+                    totals_row = {"Group Name": "🔹 TOTALS", "Meeting Day": "—"}
+                    for c in active_prod_cols:
+                        totals_row[c] = int(active_matrix_df[c].sum()) if c in active_matrix_df.columns else 0
+                    totals_row["Total Active Loans"] = int(active_matrix_df["Total Active Loans"].sum())
+                    totals_row["Total Active Credit"] = active_matrix_df["Total Active Credit"].sum()
+                    totals_row["Total Outstanding Balance"] = active_matrix_df["Total Outstanding Balance"].sum()
+
+                    display_matrix = pd.concat([active_matrix_df[cols_to_render], pd.DataFrame([totals_row])], ignore_index=True)
                     
                     format_matrix = display_matrix.copy()
                     format_matrix["Total Active Credit"] = format_matrix["Total Active Credit"].apply(lambda v: f"₦{float(v):,.0f}")
@@ -9230,14 +9254,17 @@ elif page == "Portfolio":
                     cnt_dly = dly.get('total_count', 0)
                     cnt_mth = mth.get('total_count', 0)
 
-                    filter_options = [
-                        f"All Active Loans ({tot_active})",
-                        f"🔵 12-Week Loans ({cnt_12})",
-                        f"🟣 24-Week Loans ({cnt_24})",
-                        f"🟠 Asset Loans ({cnt_ast})",
-                    ]
-                    if cnt_dly > 0: filter_options.append(f"🟢 Daily Loans ({cnt_dly})")
-                    if cnt_mth > 0: filter_options.append(f"🟡 Monthly Loans ({cnt_mth})")
+                    filter_options = [f"All Active Loans ({tot_active})"]
+                    if _is_cat_relevant("12_week", ["12 week", "12w"]) and cnt_12 > 0:
+                        filter_options.append(f"🔵 12-Week Loans ({cnt_12})")
+                    if _is_cat_relevant("24_week", ["24 week", "24w"]) and cnt_24 > 0:
+                        filter_options.append(f"🟣 24-Week Loans ({cnt_24})")
+                    if _is_cat_relevant("asset_all", ["asset"]) and cnt_ast > 0:
+                        filter_options.append(f"🟠 Asset Loans ({cnt_ast})")
+                    if _is_cat_relevant("daily", ["daily", "60", "120"]) and cnt_dly > 0:
+                        filter_options.append(f"🟢 Daily Loans ({cnt_dly})")
+                    if _is_cat_relevant("monthly", ["month", "3m", "6m"]) and cnt_mth > 0:
+                        filter_options.append(f"🟡 Monthly Loans ({cnt_mth})")
                     filter_options.append(f"All Registered Clients ({len(detailed_client_df)})")
 
                     quick_filter = st.selectbox("⚡ Quick Filter by Product", filter_options, index=0, key="quick_prod_filter")
