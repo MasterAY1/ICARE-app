@@ -612,11 +612,32 @@ class PortfolioService:
                 else:
                     status_str = "Active Loan"
 
+            prod_name_val = "None"
+            prod_cat_val = "None"
+            if l:
+                prod_info = l.get("loan_products") or {}
+                prod_name_val = prod_info.get("name") or l.get("product_category") or "Standard"
+                p_low = prod_name_val.lower()
+                if "12 week" in p_low or "12w" in p_low:
+                    prod_cat_val = "12-Week Loans"
+                elif "24 week" in p_low or "24w" in p_low:
+                    prod_cat_val = "24-Week Loans"
+                elif "daily" in p_low or "60" in p_low or "120" in p_low:
+                    prod_cat_val = "Daily Loans"
+                elif "month" in p_low:
+                    prod_cat_val = "Monthly Loans"
+                elif "asset" in p_low:
+                    prod_cat_val = "Asset Loans"
+                else:
+                    prod_cat_val = "Other Loans"
+
             client_rows.append({
                 "Client ID": cid_str,
                 "Client Code": c_code,
                 "Client Name": c_name,
                 "Group": group_name,
+                "Loan Product": prod_name_val,
+                "Loan Category": prod_cat_val,
                 "Savings Balance": c_savings,
                 "Principal Loan": disbursed,
                 "Active Loan": act_cred,
@@ -627,11 +648,12 @@ class PortfolioService:
                 "Lifecycle Status": c_lifecycle_status
             })
 
-        client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client ID", "Client Code", "Client Name", "Group", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Status", "Lifecycle Status"])
+        detailed_client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client ID", "Client Code", "Client Name", "Group", "Loan Product", "Loan Category", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Status", "Lifecycle Status"])
         raw_client_codes = sorted(list(set([r["Client Code"] for r in client_rows if r.get("Client Code") and str(r.get("Client Code")).strip() not in ["", "N/A", "None"]]))) if client_rows else []
         
-        if selected_group == "All" and not client_df.empty:
-            group_df = client_df.groupby("Group").agg(
+        # 1. Build Group Summary DataFrame
+        if not detailed_client_df.empty:
+            group_df = detailed_client_df.groupby("Group").agg(
                 Clients=("Client Code", "count"),
                 Savings_Balance=("Savings Balance", "sum"),
                 Active_Loan=("Active Loan", "sum"),
@@ -646,7 +668,158 @@ class PortfolioService:
             )
             group_df = group_df[["Group", "Clients", "Total Savings Balance", "Active_Loan", "Outstanding_Balance", "Fixed_Repayment", "Total_Paid"]]
             group_df.columns = ["Group Name", "Total Clients", "Total Savings Balance", "Total Active Loan", "Total Outstanding Balance", "Total Fixed Repayment", "Total Paid"]
-            client_df = group_df
+        else:
+            group_df = pd.DataFrame(columns=["Group Name", "Total Clients", "Total Savings Balance", "Total Active Loan", "Total Outstanding Balance", "Total Fixed Repayment", "Total Paid"])
+
+        # 2. Build Category Intelligence Summary
+        category_summary = {
+            "12_week": {
+                "title": "12-Week Loans",
+                "badge": "🔵 Weekly 12W",
+                "cash_count": 0,
+                "asset_count": 0,
+                "total_count": 0,
+                "active_credit": 0.0,
+                "outstanding_balance": 0.0,
+                "total_paid": 0.0
+            },
+            "24_week": {
+                "title": "24-Week Loans",
+                "badge": "🟣 Weekly 24W",
+                "cash_count": 0,
+                "asset_count": 0,
+                "total_count": 0,
+                "active_credit": 0.0,
+                "outstanding_balance": 0.0,
+                "total_paid": 0.0
+            },
+            "daily": {
+                "title": "Daily Loans (60D / 120D)",
+                "badge": "🟢 Daily",
+                "cash_count": 0,
+                "asset_count": 0,
+                "total_count": 0,
+                "active_credit": 0.0,
+                "outstanding_balance": 0.0,
+                "total_paid": 0.0
+            },
+            "monthly": {
+                "title": "Monthly Loans",
+                "badge": "🟡 Monthly",
+                "cash_count": 0,
+                "asset_count": 0,
+                "total_count": 0,
+                "active_credit": 0.0,
+                "outstanding_balance": 0.0,
+                "total_paid": 0.0
+            },
+            "asset_all": {
+                "title": "Asset Loans (All)",
+                "badge": "🟠 Asset Loans",
+                "total_count": 0,
+                "active_credit": 0.0,
+                "outstanding_balance": 0.0,
+                "total_paid": 0.0
+            }
+        }
+
+        # 3. Build Group-by-Product Matrix Breakdown
+        group_matrix_map = {}
+        all_known_groups = sorted(list(set([r["Group"] for r in client_rows if r.get("Group")]))) if client_rows else []
+        for g_name in all_known_groups:
+            group_matrix_map[g_name] = {
+                "Group Name": g_name,
+                "Meeting Day": group_mday_map.get(g_name, "N/A"),
+                "12W Cash": 0,
+                "12W Asset": 0,
+                "24W Cash": 0,
+                "24W Asset": 0,
+                "Daily": 0,
+                "Monthly": 0,
+                "Total Active Loans": 0,
+                "Total Active Credit": 0.0,
+                "Total Outstanding Balance": 0.0,
+            }
+
+        for r in client_rows:
+            p_val = str(r.get("Loan Product", "")).strip()
+            p_low = p_val.lower()
+            ac_val = float(r.get("Active Loan") or 0.0)
+            ob_val = float(r.get("Outstanding Balance") or 0.0)
+            tp_val = float(r.get("Total Paid") or 0.0)
+            g_name = r.get("Group", "Individual")
+            
+            # Check if active loan
+            is_active_loan = (ac_val > 0 and ob_val > 0)
+            if is_active_loan:
+                # Group matrix
+                if g_name not in group_matrix_map:
+                    group_matrix_map[g_name] = {
+                        "Group Name": g_name,
+                        "Meeting Day": group_mday_map.get(g_name, "N/A"),
+                        "12W Cash": 0, "12W Asset": 0, "24W Cash": 0, "24W Asset": 0, "Daily": 0, "Monthly": 0,
+                        "Total Active Loans": 0, "Total Active Credit": 0.0, "Total Outstanding Balance": 0.0,
+                    }
+                gm = group_matrix_map[g_name]
+                gm["Total Active Loans"] += 1
+                gm["Total Active Credit"] += ac_val
+                gm["Total Outstanding Balance"] += ob_val
+
+                # Category & Matrix Classification
+                is_asset = "asset" in p_low
+                if is_asset:
+                    category_summary["asset_all"]["total_count"] += 1
+                    category_summary["asset_all"]["active_credit"] += ac_val
+                    category_summary["asset_all"]["outstanding_balance"] += ob_val
+                    category_summary["asset_all"]["total_paid"] += tp_val
+
+                if "12 week" in p_low or "12w" in p_low:
+                    category_summary["12_week"]["total_count"] += 1
+                    category_summary["12_week"]["active_credit"] += ac_val
+                    category_summary["12_week"]["outstanding_balance"] += ob_val
+                    category_summary["12_week"]["total_paid"] += tp_val
+                    if is_asset:
+                        category_summary["12_week"]["asset_count"] += 1
+                        gm["12W Asset"] += 1
+                    else:
+                        category_summary["12_week"]["cash_count"] += 1
+                        gm["12W Cash"] += 1
+                elif "24 week" in p_low or "24w" in p_low:
+                    category_summary["24_week"]["total_count"] += 1
+                    category_summary["24_week"]["active_credit"] += ac_val
+                    category_summary["24_week"]["outstanding_balance"] += ob_val
+                    category_summary["24_week"]["total_paid"] += tp_val
+                    if is_asset:
+                        category_summary["24_week"]["asset_count"] += 1
+                        gm["24W Asset"] += 1
+                    else:
+                        category_summary["24_week"]["cash_count"] += 1
+                        gm["24W Cash"] += 1
+                elif "daily" in p_low or "60" in p_low or "120" in p_low:
+                    category_summary["daily"]["total_count"] += 1
+                    category_summary["daily"]["active_credit"] += ac_val
+                    category_summary["daily"]["outstanding_balance"] += ob_val
+                    category_summary["daily"]["total_paid"] += tp_val
+                    gm["Daily"] += 1
+                    if is_asset:
+                        category_summary["daily"]["asset_count"] += 1
+                    else:
+                        category_summary["daily"]["cash_count"] += 1
+                elif "month" in p_low:
+                    category_summary["monthly"]["total_count"] += 1
+                    category_summary["monthly"]["active_credit"] += ac_val
+                    category_summary["monthly"]["outstanding_balance"] += ob_val
+                    category_summary["monthly"]["total_paid"] += tp_val
+                    gm["Monthly"] += 1
+                    if is_asset:
+                        category_summary["monthly"]["asset_count"] += 1
+                    else:
+                        category_summary["monthly"]["cash_count"] += 1
+
+        # Build group_matrix_df
+        matrix_rows = list(group_matrix_map.values())
+        matrix_rows.sort(key=lambda x: (x["Total Active Loans"], x["Total Active Credit"]), reverse=True)
+        group_matrix_df = pd.DataFrame(matrix_rows) if matrix_rows else pd.DataFrame(columns=["Group Name", "Meeting Day", "12W Cash", "12W Asset", "24W Cash", "24W Asset", "Daily", "Monthly", "Total Active Loans", "Total Active Credit", "Total Outstanding Balance"])
 
         expected_repay_clients = sum(1 for l in active_loans_by_client.values() if float(l.get("loan_repay") or 0.0) > 0)
         paying_clients_count = len(set(str(r.get("client_id")) for r in repayments_today if float(r.get("amount_paid") or 0.0) > 0))
@@ -691,9 +864,13 @@ class PortfolioService:
                 "overdue": {"count": overdue_count, "amount": overdue_amt},
                 "par": f"{par_pct}%",
                 "product_summary": product_summary,
+                "category_summary": category_summary,
                 "disbursement_summary": disbursement_summary
             },
-            "client_table": client_df,
+            "category_summary": category_summary,
+            "group_matrix": group_matrix_df,
+            "group_table": group_df,
+            "client_table": detailed_client_df,
             "client_codes": raw_client_codes,
             "client_lookup": {r["Client Code"]: f"{r['Client Code']} — {r.get('Client Name', '')} ({r.get('Group', 'Individual')})" for r in client_rows if r.get("Client Code")}
         }

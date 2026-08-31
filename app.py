@@ -9132,45 +9132,174 @@ elif page == "Portfolio":
             r4.metric("Portfolio at Risk (PAR)", f"{par_val:.2f}%", f"{p_sum.get('overdue', {}).get('count', 0)} Overdue", delta_color="inverse")
 
             st.divider()
-            st.markdown("### Loan Products Summary")
-            prod_sum = p_sum.get("product_summary", {})
-            if prod_sum:
-                prod_rows = []
-                for prod, metrics in prod_sum.items():
-                    prod_rows.append({
-                        "Loan Product": prod,
-                        "Active Credit": f"₦{metrics['active_credit']:,.0f}",
-                        "Outstanding Balance": f"₦{metrics['loan_balance']:,.0f}",
-                        "Active Loans": metrics['count']
-                    })
-                st.dataframe(pd.DataFrame(prod_rows), use_container_width=True, hide_index=True)
-            else:
-                st.info("No active loan products in portfolio.")
+            st.markdown("### 📊 Loan Products & Category Intelligence")
+            st.caption("Consolidated portfolio breakdown across loan product cycles, active credit, and distribution.")
+            
+            cat_sum = p_data.get("category_summary", {})
+            w12 = cat_sum.get("12_week", {})
+            w24 = cat_sum.get("24_week", {})
+            dly = cat_sum.get("daily", {})
+            mth = cat_sum.get("monthly", {})
+            ast = cat_sum.get("asset_all", {})
+
+            # 4 High-Visibility Product Category Intelligence Cards
+            pc1, pc2, pc3, pc4 = st.columns(4)
+            with pc1:
+                with st.container(border=True):
+                    st.markdown("##### 🔵 12-Week Loans")
+                    st.markdown(f"### {w12.get('total_count', 0)} <span style='font-size: 1rem; color: #64748b; font-weight: normal;'>Active Loans</span>", unsafe_allow_html=True)
+                    st.markdown(f"**Active Credit:** ₦{w12.get('active_credit', 0.0):,.0f}")
+                    st.markdown(f"**Outstanding:** ₦{w12.get('outstanding_balance', 0.0):,.0f}")
+                    st.caption(f"💵 Cash: **{w12.get('cash_count', 0)}** &middot; 📦 Asset: **{w12.get('asset_count', 0)}**")
+
+            with pc2:
+                with st.container(border=True):
+                    st.markdown("##### 🟣 24-Week Loans")
+                    st.markdown(f"### {w24.get('total_count', 0)} <span style='font-size: 1rem; color: #64748b; font-weight: normal;'>Active Loans</span>", unsafe_allow_html=True)
+                    st.markdown(f"**Active Credit:** ₦{w24.get('active_credit', 0.0):,.0f}")
+                    st.markdown(f"**Outstanding:** ₦{w24.get('outstanding_balance', 0.0):,.0f}")
+                    st.caption(f"💵 Cash: **{w24.get('cash_count', 0)}** &middot; 📦 Asset: **{w24.get('asset_count', 0)}**")
+
+            with pc3:
+                with st.container(border=True):
+                    st.markdown("##### 🟢 Daily Loans")
+                    st.markdown(f"### {dly.get('total_count', 0)} <span style='font-size: 1rem; color: #64748b; font-weight: normal;'>Active Loans</span>", unsafe_allow_html=True)
+                    st.markdown(f"**Active Credit:** ₦{dly.get('active_credit', 0.0):,.0f}")
+                    st.markdown(f"**Outstanding:** ₦{dly.get('outstanding_balance', 0.0):,.0f}")
+                    st.caption(f"💵 Cash: **{dly.get('cash_count', 0)}** &middot; 📦 Asset: **{dly.get('asset_count', 0)}**")
+
+            with pc4:
+                with st.container(border=True):
+                    st.markdown("##### 🟡 Monthly Loans")
+                    st.markdown(f"### {mth.get('total_count', 0)} <span style='font-size: 1rem; color: #64748b; font-weight: normal;'>Active Loans</span>", unsafe_allow_html=True)
+                    st.markdown(f"**Active Credit:** ₦{mth.get('active_credit', 0.0):,.0f}")
+                    st.markdown(f"**Outstanding:** ₦{mth.get('outstanding_balance', 0.0):,.0f}")
+                    st.caption(f"💵 Cash: **{mth.get('cash_count', 0)}** &middot; 📦 Asset: **{mth.get('asset_count', 0)}**")
+
+            # Group Matrix Breakdown Section
+            st.markdown("<br>", unsafe_allow_html=True)
+            with st.expander("🏢 **Group-by-Product Distribution Matrix (Click to Expand / Collapse)**", expanded=True):
+                st.caption("Distribution of active loan products across all groups in the authorized scope.")
+                group_matrix_df = p_data.get("group_matrix", pd.DataFrame())
+                if not group_matrix_df.empty:
+                    active_matrix_df = group_matrix_df[group_matrix_df["Total Active Loans"] > 0].copy()
+                    if active_matrix_df.empty:
+                        active_matrix_df = group_matrix_df.copy()
+                    
+                    # Compute totals row
+                    totals_row = {
+                        "Group Name": "🔹 TOTALS",
+                        "Meeting Day": "—",
+                        "12W Cash": int(active_matrix_df["12W Cash"].sum()),
+                        "12W Asset": int(active_matrix_df["12W Asset"].sum()),
+                        "24W Cash": int(active_matrix_df["24W Cash"].sum()),
+                        "24W Asset": int(active_matrix_df["24W Asset"].sum()),
+                        "Daily": int(active_matrix_df["Daily"].sum()),
+                        "Monthly": int(active_matrix_df["Monthly"].sum()),
+                        "Total Active Loans": int(active_matrix_df["Total Active Loans"].sum()),
+                        "Total Active Credit": active_matrix_df["Total Active Credit"].sum(),
+                        "Total Outstanding Balance": active_matrix_df["Total Outstanding Balance"].sum(),
+                    }
+                    display_matrix = pd.concat([active_matrix_df, pd.DataFrame([totals_row])], ignore_index=True)
+                    
+                    format_matrix = display_matrix.copy()
+                    format_matrix["Total Active Credit"] = format_matrix["Total Active Credit"].apply(lambda v: f"₦{float(v):,.0f}")
+                    format_matrix["Total Outstanding Balance"] = format_matrix["Total Outstanding Balance"].apply(lambda v: f"₦{float(v):,.0f}")
+                    st.dataframe(format_matrix, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No active group loan records in authorized scope.")
 
             st.divider()
-            if sel_group == "All":
-                st.markdown("### Group Portfolio Summary")
-                st.caption("Showing aggregate totals per group. Select a specific group above to drill down to individual clients.")
-            else:
-                st.markdown(f"### Client Portfolio ({sel_group})")
+            
+            # Interactive View Selector & Product Filter Pills
+            st.markdown("### 👥 Client & Group Portfolio Details")
+            
+            v_col1, v_col2 = st.columns([1, 2])
+            with v_col1:
+                port_view_mode = st.radio("Portfolio View Mode", ["Detailed Client List", "Group Aggregate Summary"], horizontal=True, key="port_view_mode")
+            
+            detailed_client_df = p_data.get("client_table", pd.DataFrame())
+            group_summary_df = p_data.get("group_table", pd.DataFrame())
 
-            client_df = p_data["client_table"]
-            if not client_df.empty:
-                st.dataframe(client_df, use_container_width=True)
+            if port_view_mode == "Detailed Client List":
+                with v_col2:
+                    tot_active = p_sum.get('active_loans_count', 0)
+                    cnt_12 = w12.get('total_count', 0)
+                    cnt_24 = w24.get('total_count', 0)
+                    cnt_ast = ast.get('total_count', 0)
+                    cnt_dly = dly.get('total_count', 0)
+                    cnt_mth = mth.get('total_count', 0)
 
-                # Export Controls (Obeying RBAC Scope)
-                e_col1, e_col2 = st.columns(2)
-                with e_col1:
-                    csv_data = client_df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        "Export Scoped Portfolio (CSV)",
-                        data=csv_data,
-                        file_name=f"portfolio_{p_scope.role}_{date.today().isoformat()}.csv",
-                        mime="text/csv",
-                        key="btn_dl_port_csv"
-                    )
+                    filter_options = [
+                        f"All Active Loans ({tot_active})",
+                        f"🔵 12-Week Loans ({cnt_12})",
+                        f"🟣 24-Week Loans ({cnt_24})",
+                        f"🟠 Asset Loans ({cnt_ast})",
+                    ]
+                    if cnt_dly > 0: filter_options.append(f"🟢 Daily Loans ({cnt_dly})")
+                    if cnt_mth > 0: filter_options.append(f"🟡 Monthly Loans ({cnt_mth})")
+                    filter_options.append(f"All Registered Clients ({len(detailed_client_df)})")
+
+                    quick_filter = st.selectbox("⚡ Quick Filter by Product", filter_options, index=0, key="quick_prod_filter")
+
+                display_client_df = detailed_client_df.copy()
+                if "12-Week" in quick_filter:
+                    display_client_df = display_client_df[display_client_df["Loan Category"] == "12-Week Loans"]
+                elif "24-Week" in quick_filter:
+                    display_client_df = display_client_df[display_client_df["Loan Category"] == "24-Week Loans"]
+                elif "Asset" in quick_filter:
+                    display_client_df = display_client_df[display_client_df["Loan Product"].astype(str).str.contains("Asset", case=False)]
+                elif "Daily" in quick_filter:
+                    display_client_df = display_client_df[display_client_df["Loan Category"] == "Daily Loans"]
+                elif "Monthly" in quick_filter:
+                    display_client_df = display_client_df[display_client_df["Loan Category"] == "Monthly Loans"]
+                elif "All Active Loans" in quick_filter:
+                    display_client_df = display_client_df[display_client_df["Active Loan"] > 0]
+
+                if not display_client_df.empty:
+                    cols_to_show = ["Client Code", "Client Name", "Group", "Loan Product", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Total Paid", "Status", "Lifecycle Status"]
+                    avail_cols = [c for c in cols_to_show if c in display_client_df.columns]
+                    formatted_df = display_client_df[avail_cols].copy()
+                    
+                    for col in ["Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Total Paid"]:
+                        if col in formatted_df.columns:
+                            formatted_df[col] = formatted_df[col].apply(lambda v: f"₦{float(v):,.0f}" if pd.notnull(v) and float(v) > 0 else ("₦0" if pd.notnull(v) else "-"))
+                    
+                    st.dataframe(formatted_df, use_container_width=True, hide_index=True)
+                    
+                    e_col1, e_col2 = st.columns(2)
+                    with e_col1:
+                        csv_data = display_client_df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            "📥 Export Filtered Portfolio (CSV)",
+                            data=csv_data,
+                            file_name=f"portfolio_clients_{p_scope.role}_{date.today().isoformat()}.csv",
+                            mime="text/csv",
+                            key="btn_dl_port_clients_csv"
+                        )
+                else:
+                    st.info("No matching client records found for this filter.")
+
             else:
-                st.info("No client records found in authorized scope.")
+                if not group_summary_df.empty:
+                    fmt_grp_df = group_summary_df.copy()
+                    for col in ["Total Savings Balance", "Total Active Loan", "Total Outstanding Balance", "Total Fixed Repayment", "Total Paid"]:
+                        if col in fmt_grp_df.columns:
+                            fmt_grp_df[col] = fmt_grp_df[col].apply(lambda v: f"₦{float(v):,.0f}" if pd.notnull(v) and float(v) > 0 else ("₦0" if pd.notnull(v) else "-"))
+                    st.dataframe(fmt_grp_df, use_container_width=True, hide_index=True)
+
+                    e_col1, e_col2 = st.columns(2)
+                    with e_col1:
+                        csv_data = group_summary_df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            "📥 Export Group Summary (CSV)",
+                            data=csv_data,
+                            file_name=f"portfolio_groups_{p_scope.role}_{date.today().isoformat()}.csv",
+                            mime="text/csv",
+                            key="btn_dl_port_groups_csv"
+                        )
+                else:
+                    st.info("No group summary data available.")
 
         with port_tab2:
             st.markdown("### Client Dossier & Financial Inquiry")
