@@ -2853,41 +2853,26 @@ elif page == "Loan Origination":
                                     "start_date": date.today().isoformat()
                                 }).execute()
                                 
-                                # 5. Create dummy Pending loan to hold guarantor details and client profile references
-                                default_product_res = uow.client.table("loan_products").select("product_id").limit(1).execute()
-                                default_product_id = default_product_res.data[0]["product_id"] if default_product_res.data else None
-                                
-                                uow.client.table("loans").insert({
-                                    "loan_id": str(uuid.uuid4()),
-                                    "client_id": client_entity.id,
-                                    "product_id": default_product_id,
-                                    "branch_id": branch_id,
-                                    "officer_id": client_entity.officer_id,
-                                    "date": date.today().isoformat(),
-                                    "loan_amount": 0.0,
-                                    "active_credit": 0.0,
-                                    "loan_repay": 0.0,
-                                    "total_due": 0.0,
-                                    "status": "Pending",
-                                    "extra_fields": {
-                                        "guarantor_name": st.session_state.get("reg_guarantor_name"),
-                                        "guarantor_nickname": st.session_state.get("reg_guarantor_nickname"),
-                                        "guarantor_phone": st.session_state.get("reg_guarantor_phone"),
-                                        "guarantor_home_address": st.session_state.get("reg_guarantor_address"),
-                                        "guarantor_marital_status": st.session_state.get("reg_guarantor_marital"),
-                                        "guarantor_occupation": st.session_state.get("reg_guarantor_occupation"),
-                                        "guarantor_relationship": st.session_state.get("reg_guarantor_relationship"),
-                                        "guarantor_office_address": st.session_state.get("reg_guarantor_office"),
-                                        "nickname": client_entity.nickname,
-                                        "marital_status": client_entity.marital_status,
-                                        "average_monthly_income": client_entity.average_monthly_income,
-                                        "other_obligations": client_entity.other_obligations
-                                    },
-                                    "guarantor_id_means": st.session_state.get("reg_guarantor_id_means"),
-                                    "guarantor_id_number": st.session_state.get("reg_guarantor_id_number"),
-                                    "guarantor_id_card_url": uploaded_g_id_url,
-                                    "guarantor_passport_url": uploaded_g_pass_url
-                                }).execute()
+                                # 5. Save Guarantor details to guarantors table (if provided)
+                                g_name_val = st.session_state.get("reg_guarantor_name", "").strip()
+                                g_phone_val = st.session_state.get("reg_guarantor_phone", "").strip()
+                                if g_name_val:
+                                    from domain.entities.guarantor import Guarantor
+                                    existing_g = uow.guarantors.find_by_phone(g_phone_val) if g_phone_val else None
+                                    if not existing_g:
+                                        g_entity = Guarantor(
+                                            guarantor_id=str(uuid.uuid4()),
+                                            name=g_name_val,
+                                            phone=g_phone_val,
+                                            address=st.session_state.get("reg_guarantor_address", "").strip(),
+                                            occupation=st.session_state.get("reg_guarantor_occupation", "").strip(),
+                                            business_address=st.session_state.get("reg_guarantor_office", "").strip(),
+                                            id_means=st.session_state.get("reg_guarantor_id_means"),
+                                            id_number=st.session_state.get("reg_guarantor_id_number", "").strip(),
+                                            id_card_url=uploaded_g_id_url,
+                                            passport_url=uploaded_g_pass_url
+                                        )
+                                        uow.guarantors.create_guarantor(g_entity)
                                 
                                 st.session_state["reg_success_msg"] = f"🎉 Successfully registered **{name_val}**! Assigned Client ID: **{generated_client_code}**"
                                 
@@ -3316,39 +3301,22 @@ elif page == "Loan Origination":
                                                     }).execute()
                                                     ScheduleService.record_repayment(uow, loan_id, amount_already_paid, start_sched_date)
                                         else:
-                                            # Create dummy Pending loan for guarantor details if no active loan was created
+                                            # Save guarantor details to guarantors table if provided
                                             if g_name_val:
-                                                default_product_res = uow.client.table("loan_products").select("product_id").limit(1).execute()
-                                                default_product_id = default_product_res.data[0]["product_id"] if default_product_res.data else None
-                                                
-                                                uow.client.table("loans").insert({
-                                                    "loan_id": str(uuid.uuid4()),
-                                                    "client_id": client_id,
-                                                    "product_id": default_product_id,
-                                                    "branch_id": branch_id,
-                                                    "officer_id": officer_id or uow.loans._resolve_officer_id(USER),
-                                                    "date": date.today().isoformat(),
-                                                    "loan_amount": 0.0,
-                                                    "active_credit": 0.0,
-                                                    "loan_repay": 0.0,
-                                                    "total_due": 0.0,
-                                                    "status": "Pending",
-                                                    "extra_fields": {
-                                                        "guarantor_name": g_name_val,
-                                                        "guarantor_phone": g_phone_val,
-                                                        "guarantor_home_address": g_address_val,
-                                                        "guarantor_marital_status": "Married",
-                                                        "guarantor_occupation": g_occ_val,
-                                                        "guarantor_relationship": g_rel_val,
-                                                        "guarantor_office_address": g_office_val,
-                                                        "nickname": str(member_row.get('Nickname', '')) if pd.notna(member_row.get('Nickname')) else "",
-                                                        "marital_status": "Married",
-                                                        "average_monthly_income": 0.0,
-                                                        "other_obligations": ""
-                                                    },
-                                                    "guarantor_id_means": g_id_means_val,
-                                                    "guarantor_id_number": g_id_number_val
-                                                }).execute()
+                                                from domain.entities.guarantor import Guarantor
+                                                existing_g = uow.guarantors.find_by_phone(g_phone_val) if g_phone_val else None
+                                                if not existing_g:
+                                                    g_entity = Guarantor(
+                                                        guarantor_id=str(uuid.uuid4()),
+                                                        name=g_name_val,
+                                                        phone=g_phone_val,
+                                                        address=g_address_val,
+                                                        occupation=g_occ_val,
+                                                        business_address=g_office_val,
+                                                        id_means=g_id_means_val,
+                                                        id_number=g_id_number_val
+                                                    )
+                                                    uow.guarantors.create_guarantor(g_entity)
                                         
                                         # Import opening savings
                                         from services.savings_service import SavingsService
@@ -6730,7 +6698,8 @@ elif page == "Dashboard":
     oc4.metric("Loans Approved", len(my_loans[my_loans['Status'].isin([STATUS_APPROVED, 'Approved'])]))
 
     oc5, oc6, oc7, oc8 = st.columns(4)
-    oc5.metric("Loans Pending", len(my_loans[my_loans['Status'].isin([STATUS_PENDING, 'Pending'])]))
+    pending_real_loans = my_loans[(my_loans['Status'].isin([STATUS_PENDING, 'Pending'])) & (pd.to_numeric(my_loans.get('Loan Amount', 0), errors='coerce').fillna(0) > 0)] if not my_loans.empty else pd.DataFrame()
+    oc5.metric("Loans Pending", len(pending_real_loans))
     oc6.metric("Full Payments", f"₦{today_full_payment_amount:,.2f}")
     oc7.metric("Part Payments", f"₦{today_excess:,.2f}")
     oc8.metric("Overdue Amount", f"₦{total_overdue:,.2f}", delta_color="inverse" if total_overdue > 0 else "normal")
@@ -6738,7 +6707,7 @@ elif page == "Dashboard":
     if ROLE in ['BM', ROLE_BRANCH_MANAGER] and ROLE not in ["Director", "Executive"]:
         try:
             with SupabaseUnitOfWork() as uow_bm_app:
-                p_loans = uow_bm_app.client.table("loans").select("*, clients(name, client_code), loan_products(name), app_users(username)").eq("branch_id", BRANCH_ID).eq("status", "Pending").execute()
+                p_loans = uow_bm_app.client.table("loans").select("*, clients(name, client_code), loan_products(name), app_users(username)").eq("branch_id", BRANCH_ID).eq("status", "Pending").gt("loan_amount", 0).execute()
                 if p_loans and p_loans.data:
                     st.markdown("#### ⏳ Pending Loan Approvals Queue")
                     for pl in p_loans.data:
