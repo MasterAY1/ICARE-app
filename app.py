@@ -2589,6 +2589,10 @@ elif page == "Loan Origination":
                 else:
                     groups_list = []
 
+            if "reg_success_msg" in st.session_state and st.session_state["reg_success_msg"]:
+                st.success(st.session_state["reg_success_msg"])
+                del st.session_state["reg_success_msg"]
+
             group_names = [g["name"] for g in groups_list]
             group_options = ["Individual (No Group)", "+ Create New Group"] + group_names
             selected_group_mode = st.selectbox("Assign to Group", group_options, key="reg_selected_group_mode")
@@ -2679,18 +2683,25 @@ elif page == "Loan Origination":
                                     res_u = uow.client.table("app_users").select("id").eq("username", USER).execute()
                                     officer_id = res_u.data[0]["id"] if res_u.data else None
                                     
-                                    new_group = {
-                                        "name": final_group_name.strip(),
-                                        "group_number": final_group_number.strip(),
-                                        "meeting_day": final_meeting_day,
-                                        "branch_id": branch_id,
-                                        "officer_id": officer_id,
-                                        "current_member_sequence": 0
-                                    }
-                                    res_g_ins = uow.client.table("groups").insert(new_group).execute()
-                                    if res_g_ins.data:
-                                        final_group_id = res_g_ins.data[0]["group_id"]
-                                        final_group_number = res_g_ins.data[0]["group_number"]
+                                    clean_g_num = str(final_group_number).strip()
+                                    # Check if group with same number exists in this branch
+                                    res_eg = uow.client.table("groups").select("group_id, group_number, current_member_sequence").eq("branch_id", branch_id).eq("group_number", clean_g_num).execute()
+                                    if res_eg.data:
+                                        final_group_id = res_eg.data[0]["group_id"]
+                                        final_group_number = res_eg.data[0]["group_number"]
+                                    else:
+                                        new_group = {
+                                            "name": final_group_name.strip(),
+                                            "group_number": clean_g_num,
+                                            "meeting_day": final_meeting_day,
+                                            "branch_id": branch_id,
+                                            "officer_id": officer_id,
+                                            "current_member_sequence": 0
+                                        }
+                                        res_g_ins = uow.client.table("groups").insert(new_group).execute()
+                                        if res_g_ins.data:
+                                            final_group_id = res_g_ins.data[0]["group_id"]
+                                            final_group_number = res_g_ins.data[0]["group_number"]
                                 
                                 # 2. Generate sequential member number and Client ID
                                 if selected_group_mode == "Individual (No Group)":
@@ -2698,7 +2709,9 @@ elif page == "Loan Origination":
                                     res_count = uow.client.table("clients").select("client_id", count="exact").is_("group_id", "null").eq("branch_id", branch_id).execute()
                                     next_seq = (res_count.count or 0) + 1
                                 else:
-                                    g_code = final_group_number
+                                    import re
+                                    digits_match = re.findall(r'\d+', str(final_group_number))
+                                    g_code = digits_match[-1].zfill(2) if digits_match else str(final_group_number).zfill(2)
                                     next_seq = uow.clients.get_next_member_sequence(final_group_id)
                                 
                                 member_number_str = str(next_seq).zfill(3)
@@ -2822,9 +2835,20 @@ elif page == "Loan Origination":
                                     "guarantor_passport_url": uploaded_g_pass_url
                                 }).execute()
                                 
-                                st.success(f"Successfully registered client! Assigned Client ID: {generated_client_code}")
-                                import time
-                                time.sleep(2)
+                                st.session_state["reg_success_msg"] = f"🎉 Successfully registered **{name_val}**! Assigned Client ID: **{generated_client_code}**"
+                                
+                                # Clear registration form input keys from session state so form resets cleanly
+                                keys_to_clear = [
+                                    "reg_client_name", "reg_client_nickname", "reg_client_phone", "reg_client_address",
+                                    "reg_client_biz_type", "reg_client_income", "reg_client_biz_address", "reg_client_obligations",
+                                    "reg_client_id_number", "reg_guarantor_name", "reg_guarantor_nickname", "reg_guarantor_phone",
+                                    "reg_guarantor_address", "reg_guarantor_occupation", "reg_guarantor_relationship",
+                                    "reg_guarantor_office", "reg_guarantor_id_number", "reg_new_group_name", "reg_new_group_number"
+                                ]
+                                for k in keys_to_clear:
+                                    if k in st.session_state:
+                                        del st.session_state[k]
+                                
                                 st.rerun()
                         except Exception as ex:
                             st.error(f"Error registering client: {ex}")
@@ -4100,12 +4124,53 @@ elif page == "Collections":
         col_tab1, col_tab2, col_tab3 = st.tabs(["📝 Record Collections", "📜 Collection History & Audit", "🔄 Error Correction & Reversals"])
         
         with col_tab1:
-            # Only Admins and Super Admins can see the Bulk Upload (Excel) option
+            col_options = ["Group Collection Sheet", "Single Client Quick Entry"]
             if ROLE in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
-                col_mode = st.radio("Collection Mode", ["Individual & Group Entry", "Bulk Upload (Excel Template)"], horizontal=True, label_visibility="collapsed")
-            else:
-                col_mode = "Individual & Group Entry"
-        
+                col_options.append("Bulk Upload (Excel Template)")
+            col_mode = st.radio("Collection Mode", col_options, horizontal=True)
+
+            # Pre-load all active clients for the target officer / branch
+            with SupabaseUnitOfWork() as uow:
+                target_officer_id = uow.loans._resolve_officer_id(target_co)
+                if ROLE in ["BM", ROLE_BRANCH_MANAGER]:
+                    res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").eq("branch_id", BRANCH_ID).execute()
+                elif ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
+                    res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").in_("branch_id", ASSIGNED_BRANCH_IDS).execute()
+                elif ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
+                    res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").execute()
+                else:
+                    res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").eq("officer_id", target_officer_id).execute()
+                
+            clients_data = []
+            if res_c.data:
+                for c in res_c.data:
+                    c_stat = (c.get("client_statuses") or {}).get("name") if isinstance(c.get("client_statuses"), dict) else c.get("status")
+                    if c_stat in ["Closed", "Suspended"]:
+                        continue
+                    g_name = (c.get("groups") or {}).get("name") if isinstance(c.get("groups"), dict) else None
+                    if not g_name:
+                        m_list = c.get("client_memberships") or []
+                        if isinstance(m_list, list):
+                            for m in m_list:
+                                if m.get("groups") and m["groups"].get("name"):
+                                    g_name = m["groups"]["name"]
+                                    break
+                        elif isinstance(m_list, dict):
+                            if m_list.get("groups") and m_list["groups"].get("name"):
+                                g_name = m_list["groups"]["name"]
+                
+                    if not g_name:
+                        g_name = "Ungrouped"
+                
+                    clients_data.append({
+                        "Client ID": c["client_code"] or c["client_id"],
+                        "ID": c["client_id"],
+                        "Client Name": c["name"],
+                        "Group Name": g_name,
+                        "Officer": target_co,
+                        "Branch": BRANCH
+                    })
+
             if col_mode == "Bulk Upload (Excel Template)":
                 st.markdown("### Bulk Upload (Excel Template)")
                 with open("Master_Balancing_Template_V2.xlsx", "rb") as template_file:
@@ -4243,74 +4308,184 @@ elif page == "Collections":
                                 st.warning("No valid transactions found in the uploaded file.")
                     except Exception as e:
                         st.error(f"Error parsing file: {e}")
-                    
-            if col_mode == "Individual & Group Entry":
-                st.markdown("### Member Collections")
-            # Load all active clients for the target officer
-            with SupabaseUnitOfWork() as uow:
-                target_officer_id = uow.loans._resolve_officer_id(target_co)
-                if ROLE in ["BM", ROLE_BRANCH_MANAGER]:
-                    res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").eq("branch_id", BRANCH_ID).execute()
-                elif ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
-                    res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").in_("branch_id", ASSIGNED_BRANCH_IDS).execute()
-                elif ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
-                    res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").execute()
-                else:
-                    res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").eq("officer_id", target_officer_id).execute()
-                
-            clients_data = []
-            if res_c.data:
-                for c in res_c.data:
-                    c_stat = (c.get("client_statuses") or {}).get("name") if isinstance(c.get("client_statuses"), dict) else c.get("status")
-                    if c_stat in ["Closed", "Suspended"]:
-                        continue
-                    g_name = (c.get("groups") or {}).get("name") if isinstance(c.get("groups"), dict) else None
-                    if not g_name:
-                        m_list = c.get("client_memberships") or []
-                        if isinstance(m_list, list):
-                            for m in m_list:
-                                if m.get("groups") and m["groups"].get("name"):
-                                    g_name = m["groups"]["name"]
-                                    break
-                        elif isinstance(m_list, dict):
-                            if m_list.get("groups") and m_list["groups"].get("name"):
-                                g_name = m_list["groups"]["name"]
-                
-                    if not g_name:
-                        g_name = "Ungrouped"
-                
-                    clients_data.append({
-                        "Client ID": c["client_code"] or c["client_id"],
-                        "ID": c["client_id"],
-                        "Client Name": c["name"],
-                        "Group Name": g_name,
-                        "Officer": target_co,
-                        "Branch": BRANCH
-                    })
-                
-            if not clients_data:
-                st.info("No registered active clients found for this officer.")
-            else:
-                co_clients_df = pd.DataFrame(clients_data)
-                groups = ["Ungrouped"] + sorted(co_clients_df[co_clients_df['Group Name'] != "Ungrouped"]['Group Name'].unique().tolist())
-            
-                default_idx = 0
-                if "sel_group" in st.session_state and st.session_state["sel_group"] in groups:
-                    default_idx = groups.index(st.session_state["sel_group"])
-                    del st.session_state["sel_group"]
-                
-                col_g1, col_g2 = st.columns([3, 1])
-                selected_group = col_g1.selectbox("Select Group", groups, index=default_idx)
-                expand_all_members = col_g2.checkbox("Expand All Members", value=st.session_state.get('chk_expand_all', False), key="chk_expand_all")
-            
-                if selected_group == "Ungrouped":
-                    group_clients = co_clients_df[co_clients_df['Group Name'] == "Ungrouped"]
-                else:
-                    group_clients = co_clients_df[co_clients_df['Group Name'] == selected_group]
 
-                if group_clients.empty:
-                    st.info("No active members in this group.")
+            elif col_mode == "Single Client Quick Entry":
+                st.markdown("### 👤 Single Client Collection / Savings Deposit")
+                st.caption("Record an ad-hoc savings deposit, loan repayment, or fee for an individual member without affecting other group records.")
+
+                if not clients_data:
+                    st.info("No registered active clients found.")
                 else:
+                    client_labels = {}
+                    for c in clients_data:
+                        label = f"{c['Client Name']} ({c['Client ID']}) — Group: {c['Group Name']}"
+                        client_labels[label] = c
+
+                    sel_client_lbl = st.selectbox("Search & Select Client", list(client_labels.keys()), key="single_cl_sel")
+                    sel_client_obj = client_labels[sel_client_lbl]
+                    s_cid = sel_client_obj["Client ID"]
+                    s_uuid = sel_client_obj["ID"]
+                    s_name = sel_client_obj["Client Name"]
+                    s_gname = sel_client_obj["Group Name"]
+
+                    from services.schedule_service import ScheduleService
+                    with SupabaseUnitOfWork() as uow:
+                        # 1. Fetch current savings balance
+                        try:
+                            res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", s_uuid).execute()
+                            res_wd = uow.client.table("individual_savings").select("withdrawal_amount").eq("client_id", s_uuid).execute()
+                            client_sav_bal = sum(float(d.get("deposit_amount") or 0) for d in (res_dep.data or [])) - sum(float(w.get("withdrawal_amount") or 0) for w in (res_wd.data or []))
+                        except Exception:
+                            client_sav_bal = 0.0
+
+                        # 2. Fetch active loan
+                        active_loan_rows = all_loans[((all_loans['Client ID'] == s_cid) | (all_loans['Client ID'] == s_uuid)) & (all_loans['Status'] == 'Active')]
+                        if not active_loan_rows.empty:
+                            loan_row = active_loan_rows.iloc[0]
+                            active_loan_id = loan_row.get('id') or loan_row.get('loan_id') or loan_row.get('Loan ID')
+                            act_cred = float(loan_row.get('Active Credit', 0) or loan_row.get('active_credit', 0))
+                            total_due_base = float(loan_row.get('Total Due', 0) or loan_row.get('total_due', 0)) or act_cred
+                            
+                            if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
+                                active_loan_total_paid, has_schedule = ScheduleService.get_total_paid(uow, active_loan_id)
+                                if not has_schedule:
+                                    active_loan_total_paid = 0.0
+                            else:
+                                active_loan_total_paid = 0.0
+
+                            rem_bal = max(0.0, total_due_base - active_loan_total_paid)
+                            loan_prod_val = loan_row.get('Loan Product') or "Loan"
+                            inst_repay = float(loan_row.get('Loan Repay', 0.0) or loan_row.get('expected_installment', 0.0) or 0.0)
+                            if inst_repay == 0.0 and act_cred > 0:
+                                duration_val = float(loan_row.get('Duration', 0) or loan_row.get('duration', 0) or 1)
+                                inst_repay = (total_due_base / duration_val) if duration_val > 0 else total_due_base
+                            expected_rep = min(inst_repay, rem_bal) if rem_bal > 0 else 0.0
+                        else:
+                            active_loan_id = None
+                            act_cred = 0.0
+                            rem_bal = 0.0
+                            loan_prod_val = "None"
+                            expected_rep = 0.0
+
+                    # Display client overview cards
+                    sc1, sc2, sc3 = st.columns(3)
+                    sc1.metric("Group Name", s_gname)
+                    sc2.metric("Savings Balance", f"₦{client_sav_bal:,.2f}")
+                    sc3.metric("Outstanding Loan", f"₦{rem_bal:,.2f}" if active_loan_id else "No Active Loan")
+
+                    with st.form("single_client_collection_form"):
+                        f_col1, f_col2 = st.columns(2)
+                        single_sav = f_col1.number_input("Savings Deposit (₦)", min_value=0.0, step=500.0, value=None, placeholder="0", key="s_sav_amt")
+                        
+                        if active_loan_id:
+                            single_rep = f_col2.number_input(f"Loan Repayment ({loan_prod_val}) (₦)", min_value=0.0, step=500.0, value=None, placeholder=f"Expected: {expected_rep:,.0f}", key="s_rep_amt")
+                        else:
+                            single_rep = 0.0
+                            f_col2.caption("🔒 *Client has no active loan. Repayment field is ₦0.*")
+
+                        with st.expander("Additional Fees (Optional)"):
+                            fee1, fee2, fee3 = st.columns(3)
+                            single_app = fee1.number_input("App Fee (₦)", min_value=0.0, step=100.0, value=0.0, key="s_app_fee")
+                            single_pb = fee2.number_input("Pass Book (₦)", min_value=0.0, step=100.0, value=0.0, key="s_pb_fee")
+                            single_misc = fee3.number_input("Misc Fee (₦)", min_value=0.0, step=100.0, value=0.0, key="s_misc_fee")
+
+                        single_note = st.text_input("Transaction Note / Remarks", value="Single Client Collection", key="s_note")
+
+                        single_submit = st.form_submit_button("Post Client Transaction", type="primary", use_container_width=True)
+
+                        if single_submit:
+                            sav_val = float(single_sav or 0.0)
+                            rep_val = float(single_rep or 0.0)
+                            app_val = float(single_app or 0.0)
+                            pb_val = float(single_pb or 0.0)
+                            misc_val = float(single_misc or 0.0)
+
+                            if sav_val == 0 and rep_val == 0 and app_val == 0 and pb_val == 0 and misc_val == 0:
+                                st.error("Please enter a Savings Deposit, Loan Repayment, or Fee amount greater than ₦0.")
+                            else:
+                                prod_low = str(loan_prod_val).lower()
+                                rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
+                                if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep_val
+                                elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep_val
+                                elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep_val
+                                elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep_val
+                                elif "month" in prod_low: rep_mth = rep_val
+                                else: rep_60d = rep_val
+
+                                single_tx = {
+                                    "Date": date_str,
+                                    "Client ID": s_cid,
+                                    "Client Name": s_name,
+                                    "Officer": target_co,
+                                    "Branch": BRANCH,
+                                    "Amount Paid": rep_val,
+                                    "Transaction Type": "Loan" if rep_val > 0 else "Individual Savings Deposit",
+                                    "Note": single_note.strip() or "Single Client Collection",
+                                    "Savings Amount": sav_val,
+                                    "Withdrawal Amount": 0.0,
+                                    "Loan Repayment Amount": rep_val,
+                                    "Repayment 12 Weeks": rep_12w,
+                                    "Repayment 24 Weeks": rep_24w,
+                                    "Repayment 60 Days": rep_60d,
+                                    "Repayment 120 Days": rep_120d,
+                                    "Monthly": rep_mth,
+                                    "Bank Withdrawal": 0,
+                                    "Asset Sales": 0,
+                                    "App Fee": app_val,
+                                    "Pass Book Bonus": pb_val,
+                                    "Misc Fees": misc_val,
+                                    "Asset Credit Sales": 0,
+                                    "Cash and Carry": 0,
+                                    "Credit Form": 0,
+                                    "Credit Form Damage": 0,
+                                    "Bonus": 0,
+                                    "Contingency": 0,
+                                    "Daily 11%": 0,
+                                    "Daily 20%": 0,
+                                    "Weekly 11%": 0,
+                                    "Weekly 20%": 0,
+                                    "Monthly 11%/20%": 0,
+                                    "Product Withdrawal": 0,
+                                    "Expenses": 0,
+                                    "Bank Deposited": 0,
+                                    "Payment Status": "PAID" if rep_val > 0 else "NOT_PAID",
+                                    "Overdue Amount": 0.0,
+                                    "Expected Amount": expected_rep
+                                }
+                                try:
+                                    save_repayments([single_tx])
+                                    st.success(f"🎉 Successfully posted transaction for **{s_name}**! (Savings: ₦{sav_val:,.2f}, Repayment: ₦{rep_val:,.2f})")
+                                    import time
+                                    time.sleep(2)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error posting transaction: {e}")
+
+            elif col_mode == "Group Collection Sheet":
+                st.markdown("### Group Collection Sheet")
+                if not clients_data:
+                    st.info("No registered active clients found for this officer.")
+                else:
+                    co_clients_df = pd.DataFrame(clients_data)
+                    groups = ["Ungrouped"] + sorted(co_clients_df[co_clients_df['Group Name'] != "Ungrouped"]['Group Name'].unique().tolist())
+                
+                    default_idx = 0
+                    if "sel_group" in st.session_state and st.session_state["sel_group"] in groups:
+                        default_idx = groups.index(st.session_state["sel_group"])
+                        del st.session_state["sel_group"]
+                    
+                    col_g1, col_g2 = st.columns([3, 1])
+                    selected_group = col_g1.selectbox("Select Group", groups, index=default_idx)
+                    expand_all_members = col_g2.checkbox("Expand All Members", value=st.session_state.get('chk_expand_all', False), key="chk_expand_all")
+                
+                    if selected_group == "Ungrouped":
+                        group_clients = co_clients_df[co_clients_df['Group Name'] == "Ungrouped"]
+                    else:
+                        group_clients = co_clients_df[co_clients_df['Group Name'] == selected_group]
+
+                    if group_clients.empty:
+                        st.info("No active members in this group.")
+                    
                     # Fetch history for today to prefill/check
                     today_reps = repayments[(repayments['Date'] == date_str) & (repayments['Officer'] == target_co)] if not repayments.empty else pd.DataFrame()
                 
@@ -4756,6 +4931,13 @@ elif page == "Collections":
                                 else:
                                     title = f"👤 {m['Client Name']} ({cid}) — Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
                                 
+                                mem_today = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
+                                if not mem_today.empty:
+                                    today_l_rep = float(mem_today['Loan Repayment Amount'].sum()) if 'Loan Repayment Amount' in mem_today.columns else float(mem_today['Amount Paid'].sum())
+                                    today_s_dep = float(mem_today['Savings Amount'].sum()) if 'Savings Amount' in mem_today.columns else 0.0
+                                    if today_l_rep > 0 or today_s_dep > 0:
+                                        title += f" | ✅ Paid Today (₦{today_l_rep + today_s_dep:,.0f})"
+                                
                                 with st.expander(title, expanded=expand_all_members):
                                     s_date_str = info.get("start_date", "")
                                     s_date = pd.to_datetime(s_date_str, errors='coerce') if s_date_str and str(s_date_str).strip() not in ['None', 'nan', ''] else pd.NaT
@@ -4855,7 +5037,8 @@ elif page == "Collections":
                                             overdue_val = 0.0
                                     
                                         if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
-                                            if p_status != "NOT_PAID":
+                                            mem_today_chk = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
+                                            if not is_marked_not_paid or not mem_today_chk.empty:
                                                 continue
                                     
                                         prod_low = str(m['Loan Product']).lower()

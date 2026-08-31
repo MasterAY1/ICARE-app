@@ -38,7 +38,25 @@ class SupabaseClientRepository(BaseRepository[Client], ClientRepository):
 
     def get_next_member_sequence(self, group_id: str) -> int:
         res = self.client.rpc("increment_group_member_sequence", {"group_uuid": group_id}).execute()
-        return int(res.data) if res.data else 1
+        rpc_seq = int(res.data) if res.data else 1
+        
+        # Collision safeguard: Verify against actual existing clients for this group
+        try:
+            cl_res = self.client.table(self.table_name).select("client_code").eq("group_id", group_id).execute()
+            if cl_res.data:
+                import re
+                max_cl_seq = 0
+                for row in cl_res.data:
+                    code = row.get("client_code") or ""
+                    digits = re.findall(r'\d+', code)
+                    if digits:
+                        max_cl_seq = max(max_cl_seq, int(digits[-1]))
+                if rpc_seq <= max_cl_seq:
+                    rpc_seq = max_cl_seq + 1
+                    self.client.table("groups").update({"current_member_sequence": rpc_seq}).eq("group_id", group_id).execute()
+        except Exception:
+            pass
+        return rpc_seq
 
     def create(self, entity: Client) -> Client:
         if not entity.id:

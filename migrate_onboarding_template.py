@@ -66,6 +66,19 @@ def run_migration():
             if c_start <= d <= c_end: return False
         return True
 
+    def get_next_working_day(d: datetime.date) -> datetime.date:
+        while not is_working_day(d):
+            d += datetime.timedelta(days=1)
+        return d
+
+    def add_months(d: datetime.date, num_months: int) -> datetime.date:
+        import calendar
+        m = d.month - 1 + num_months
+        y = d.year + m // 12
+        m = m % 12 + 1
+        day = min(d.day, calendar.monthrange(y, m)[1])
+        return datetime.date(y, m, day)
+
     # Pre-load all existing groups & clients in memory
     existing_groups_res = retry_call(lambda u: u.client.table("groups").select("*").execute())
     existing_groups_by_number = {
@@ -283,21 +296,33 @@ def run_migration():
         if pd.notna(a_cred) and float(a_cred) > 0:
             prod = None
             if l_type and l_type != 'nan':
-                lt_lower = l_type.lower()
+                lt_lower = l_type.lower().strip()
                 prod = product_map.get(lt_lower)
                 if not prod:
-                    if "12" in lt_lower and "asset" not in lt_lower:
-                        prod = product_map.get("weekly 12w")
-                    elif "24" in lt_lower and "asset" not in lt_lower:
-                        prod = product_map.get("weekly 24w")
-                    elif "12" in lt_lower and "asset" in lt_lower:
+                    is_asset_type = "asset" in lt_lower
+                    if "12" in lt_lower and "24" not in lt_lower and ("week" in lt_lower or "w" in lt_lower or "wk" in lt_lower):
+                        prod = product_map.get("weekly 12w asset") if is_asset_type else product_map.get("weekly 12w")
+                    elif "24" in lt_lower and ("week" in lt_lower or "w" in lt_lower or "wk" in lt_lower):
+                        prod = product_map.get("weekly 24w asset") if is_asset_type else product_map.get("weekly 24w")
+                    elif "60" in lt_lower and ("day" in lt_lower or "d" in lt_lower):
+                        prod = product_map.get("60-day asset") if is_asset_type else product_map.get("daily 60 days")
+                    elif "120" in lt_lower and ("day" in lt_lower or "d" in lt_lower):
+                        prod = product_map.get("120-day asset") if is_asset_type else product_map.get("daily 120 days")
+                    elif "3" in lt_lower and ("m" in lt_lower or "month" in lt_lower):
+                        prod = product_map.get("monthly 3m asset") if is_asset_type else product_map.get("monthly 3m")
+                    elif "6" in lt_lower and ("m" in lt_lower or "month" in lt_lower):
+                        prod = product_map.get("monthly 6m asset") if is_asset_type else product_map.get("monthly 6m")
+                    elif "cash" in lt_lower or "carry" in lt_lower:
+                        prod = product_map.get("cash and carry")
+                    elif is_asset_type:
                         prod = product_map.get("weekly 12w asset")
-                    elif "24" in lt_lower and "asset" in lt_lower:
-                        prod = product_map.get("weekly 24w asset")
-                    elif "60" in lt_lower and "asset" not in lt_lower:
-                        prod = product_map.get("daily 60 days")
-                    elif "120" in lt_lower and "asset" not in lt_lower:
-                        prod = product_map.get("daily 120 days")
+                    else:
+                        if "daily" in lt_lower:
+                            prod = product_map.get("daily 60 days")
+                        elif "monthly" in lt_lower:
+                            prod = product_map.get("monthly 3m")
+                        elif "weekly" in lt_lower:
+                            prod = product_map.get("weekly 12w")
             if not prod:
                 print(f"  Warning: Loan Product '{l_type}' not found for {f_name}. Skipping loan!")
                 continue
@@ -349,42 +374,47 @@ def run_migration():
                 }).execute())
                 loans_created += 1
             
-            # Generate repayment schedule starting NEXT meeting day (FP-008)
+            # Generate repayment schedule starting NEXT meeting/collection day (FP-008)
             sch_res = retry_call(lambda u, loan_id=loan_id: u.client.table("loan_schedule").select("id").eq("loan_id", loan_id).execute())
             if not sch_res.data and expected_inst > 0 and current_bal > 0:
                 remaining_count = math.ceil(current_bal / expected_inst)
-                
                 target_weekday = day_map.get(group_info['meeting_day'])
-                current_anchor = base_date
-                if cycle == "Weekly" and target_weekday is not None:
-                    days_ahead = target_weekday - current_anchor.weekday()
-                    if days_ahead < 0:
-                        days_ahead += 7
-                    current_anchor = current_anchor + datetime.timedelta(days=days_ahead)
-                
                 schedule_rows = []
                 rem_bal = current_bal
+
+                if cycle == "Weekly" and target_weekday is not None:
+                    days_ahead = target_weekday - base_date.weekday()
+                    if days_ahead <= 0:
+                        days_ahead += 7
+                    first_meeting = base_date + datetime.timedelta(days=days_ahead)
+                    current_anchor = first_meeting - datetime.timedelta(weeks=1)
+                elif cycle == "Daily":
+                    current_anchor = base_date
+                else: # Monthly / Other
+                    current_anchor = base_date
+
                 for i in range(1, remaining_count + 1):
-                    if i > 1:
-                        if cycle == "Weekly":
+                    if cycle == "Daily":
+                        current_anchor += datetime.timedelta(days=1)
+                        current_anchor = get_next_working_day(current_anchor)
+                        current_due_date = current_anchor
+                    elif cycle == "Weekly":
+                        current_anchor += datetime.timedelta(weeks=1)
+                        while not is_working_day(current_anchor):
                             current_anchor += datetime.timedelta(weeks=1)
-                            while not is_working_day(current_anchor):
-                                current_anchor += datetime.timedelta(weeks=1)
-                        elif cycle == "Daily":
-                            current_anchor += datetime.timedelta(days=1)
-                            while not is_working_day(current_anchor):
-                                current_anchor += datetime.timedelta(days=1)
+                        current_due_date = current_anchor
+                    elif cycle == "Monthly":
+                        m_target = add_months(base_date, i)
+                        current_due_date = get_next_working_day(m_target)
                     else:
-                        if cycle == "Weekly":
-                            while not is_working_day(current_anchor):
-                                current_anchor += datetime.timedelta(weeks=1)
+                        current_due_date = get_next_working_day(base_date + datetime.timedelta(days=i * 30))
                     
                     inst_amount = min(expected_inst, rem_bal)
                     rem_bal -= inst_amount
                     
                     schedule_rows.append({
                         "id": str(uuid.uuid4()), "loan_id": loan_id, "installment_number": i,
-                        "due_date": current_anchor.isoformat(), "principal": inst_amount,
+                        "due_date": current_due_date.isoformat(), "principal": inst_amount,
                         "interest": 0.0, "fees": 0.0, "total_due": inst_amount, "status": "Pending",
                         "paid_amount": 0.0, "paid_date": None
                     })
