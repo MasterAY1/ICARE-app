@@ -24,6 +24,7 @@ class AuditEnricher:
         self._clients_by_id: Dict[str, Dict[str, str]] = {}
         self._clients_by_code: Dict[str, Dict[str, str]] = {}
         self._groups_by_id: Dict[str, Dict[str, str]] = {}
+        self._loans_by_id: Dict[str, Dict[str, Any]] = {}
         self._branches_by_id: Dict[str, str] = {}
         self._users_by_id: Dict[str, str] = {}
         self._users_by_username: Dict[str, str] = {}
@@ -102,6 +103,17 @@ class AuditEnricher:
                     g_code = g.get("group_code") or "GRP-N/A"
                     if g_id:
                         self._groups_by_id[str(g_id)] = {"code": g_code, "name": g_name}
+        except Exception:
+            pass
+
+        # 6. Load Loans
+        try:
+            if db_client:
+                res_l = db_client.table("loans").select("loan_id, product_id, client_id, loan_amount").execute()
+                for l in (res_l.data or []):
+                    l_id = l.get("loan_id")
+                    if l_id:
+                        self._loans_by_id[str(l_id)] = l
         except Exception:
             pass
 
@@ -343,10 +355,16 @@ class AuditEnricher:
         for r in records:
             client_info = self.resolve_client(r.get("client_id"))
             paid = float(r.get("amount_paid") or r.get("amount") or 0)
+            l_id = str(r.get("loan_id") or "")
+            loan_info = self._loans_by_id.get(l_id, {})
+            p_id = loan_info.get("product_id") or r.get("product_id")
+            loan_code = f"LN-{l_id[:8]}" if l_id and l_id != "None" else "LN-N/A"
             row = {
                 "Repayment Date": self.format_date(r.get("date") or r.get("created_at")),
+                "Loan Number": loan_code,
                 "Client Code": client_info["code"],
                 "Client Name": client_info["name"],
+                "Product": self.resolve_product(p_id),
                 "Amount Paid": self.format_currency(paid),
                 "Amount_Raw": paid,
                 "Officer": self.resolve_officer(r.get("officer_id")),

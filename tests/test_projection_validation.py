@@ -34,44 +34,56 @@ class TestProjectionValidation(unittest.TestCase):
             ref_id = f"TEST-TXN-{uuid.uuid4().hex[:6].upper()}"
             test_amount = 5000.0
 
-            # 2. Emit SavingsDeposited event
-            event = DomainEvent(
-                event_id=str(uuid.uuid4()),
-                aggregate_id=officer_id,
-                aggregate_type="IndividualSavings",
-                event_type="SavingsDeposited",
-                payload={
-                    "branch": branch_name,
-                    "officer": officer_username,
-                    "amount": test_amount,
-                    "date": p_date_str,
-                    "reference": ref_id,
-                    "classification": TransactionClassification.INDIVIDUAL_SAVINGS_DEPOSIT.value,
-                    "narration": f"Test validation savings deposit {ref_id}"
-                }
-            )
-            uow.event_store.append(event)
-            tx_id = FinancialPostingEngine.post_event(uow, event)
-            self.assertIsNotNone(tx_id, "Ledger transaction ID must not be None")
+            tx_id = None
+            try:
+                # 2. Emit SavingsDeposited event
+                event = DomainEvent(
+                    event_id=str(uuid.uuid4()),
+                    aggregate_id=officer_id,
+                    aggregate_type="IndividualSavings",
+                    event_type="SavingsDeposited",
+                    payload={
+                        "branch": branch_name,
+                        "officer": officer_username,
+                        "amount": test_amount,
+                        "date": p_date_str,
+                        "reference": ref_id,
+                        "classification": TransactionClassification.INDIVIDUAL_SAVINGS_DEPOSIT.value,
+                        "narration": f"Test validation savings deposit {ref_id}"
+                    }
+                )
+                uow.event_store.append(event)
+                tx_id = FinancialPostingEngine.post_event(uow, event)
+                self.assertIsNotNone(tx_id, "Ledger transaction ID must not be None")
 
-            # 3. Verify Ledger double-entry balance
-            entries = uow.ledger.get_transaction_entries(tx_id)
-            self.assertTrue(len(entries) >= 2, "Transaction must have at least 2 entries (debit & credit)")
-            debit_sum = sum(e.amount for e in entries if e.side == "Debit")
-            credit_sum = sum(e.amount for e in entries if e.side == "Credit")
-            self.assertEqual(debit_sum, credit_sum, f"Ledger must balance: Debit {debit_sum} != Credit {credit_sum}")
+                # 3. Verify Ledger double-entry balance
+                entries = uow.ledger.get_transaction_entries(tx_id)
+                self.assertTrue(len(entries) >= 2, "Transaction must have at least 2 entries (debit & credit)")
+                debit_sum = sum(e.amount for e in entries if e.side == "Debit")
+                credit_sum = sum(e.amount for e in entries if e.side == "Credit")
+                self.assertEqual(debit_sum, credit_sum, f"Ledger must balance: Debit {debit_sum} != Credit {credit_sum}")
 
-            # 4. Verify CO Cashbook projection
-            res_co = uow.client.table("co_cashbooks").select("*").eq("date", p_date_str).eq("branch_id", branch_id).eq("officer_id", officer_id).execute()
-            self.assertTrue(len(res_co.data) > 0, "CO Cashbook row must exist for officer")
-            co_row = res_co.data[0]
-            self.assertGreaterEqual(float(co_row.get("savings_deposit") or 0), test_amount, "CO Cashbook savings deposit must reflect test amount")
+                # 4. Verify CO Cashbook projection
+                res_co = uow.client.table("co_cashbooks").select("*").eq("date", p_date_str).eq("branch_id", branch_id).eq("officer_id", officer_id).execute()
+                self.assertTrue(len(res_co.data) > 0, "CO Cashbook row must exist for officer")
+                co_row = res_co.data[0]
+                self.assertGreaterEqual(float(co_row.get("savings_deposit") or 0), test_amount, "CO Cashbook savings deposit must reflect test amount")
 
-            # 5. Verify Master Cashbook projection consistency
-            res_mb = uow.client.table("master_cashbook").select("*").eq("date", p_date_str).eq("branch_id", branch_id).execute()
-            self.assertTrue(len(res_mb.data) > 0, "Master Cashbook row must exist for branch")
-            mb_row = res_mb.data[0]
-            self.assertGreaterEqual(float(mb_row.get("savings_deposit") or 0), float(co_row.get("savings_deposit") or 0), "Master Cashbook savings deposit must equal or exceed CO Cashbook")
+                # 5. Verify Master Cashbook projection consistency
+                res_mb = uow.client.table("master_cashbook").select("*").eq("date", p_date_str).eq("branch_id", branch_id).execute()
+                self.assertTrue(len(res_mb.data) > 0, "Master Cashbook row must exist for branch")
+                mb_row = res_mb.data[0]
+                self.assertGreaterEqual(float(mb_row.get("savings_deposit") or 0), float(co_row.get("savings_deposit") or 0), "Master Cashbook savings deposit must equal or exceed CO Cashbook")
+            finally:
+                # Mandatory Cleanup: remove synthetic test artifacts from DB
+                if tx_id:
+                    uow.client.table("financial_ledger_entries").delete().eq("transaction_id", tx_id).execute()
+                    uow.client.table("financial_transactions").delete().eq("transaction_id", tx_id).execute()
+                uow.client.table("event_store").delete().eq("event_id", event.event_id).execute()
+                from services.co_cashbook_projection_builder import CoCashbookProjectionBuilder
+                from services.master_cashbook_projection_builder import MasterCashbookProjectionBuilder
+                CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, officer_id, p_date)
+                MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, p_date)
 
 if __name__ == "__main__":
     unittest.main()

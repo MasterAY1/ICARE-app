@@ -6967,7 +6967,11 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 st.subheader("💵 Loan Audit Ledgers")
                 st.caption("Audit trail of approved principal disbursements and loan repayment collections.")
     
-                lb1, lb2, lb3, lb4, lb5, lb6 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.8])
+                loan_prods_list = load_loan_products_list()
+                loan_prod_map = {p["name"]: p["product_id"] for p in loan_prods_list if p.get("name")}
+                loan_prod_options = ["All Products"] + list(loan_prod_map.keys())
+
+                lb1, lb2, lb3, lb4, lb5, lb6, lb7 = st.columns([1, 1, 1.2, 1.3, 1.2, 1.2, 1.6])
                 with lb1:
                     loan_d_from = st.date_input("Date From", date.today().replace(day=1), key="loan_d_from")
                 with lb2:
@@ -6975,8 +6979,10 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 with lb3:
                     loan_sub = st.selectbox("Loan View", ["Loan Disbursements", "Repayments"], key="loan_sub_sel")
                 with lb4:
-                    loan_branch = st.selectbox("Branch", ac_branch_options, key="loan_branch_sel", disabled=(len(ac_branch_options) == 1))
+                    loan_prod_sel = st.selectbox("Loan Product", loan_prod_options, key="loan_prod_sel")
                 with lb5:
+                    loan_branch = st.selectbox("Branch", ac_branch_options, key="loan_branch_sel", disabled=(len(ac_branch_options) == 1))
+                with lb6:
                     if ROLE == ROLE_CREDIT_OFFICER:
                         loan_officer_val = USER_ID or USER
                         st.selectbox("Officer", [USER], disabled=True, key="loan_officer_sel")
@@ -6984,15 +6990,17 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         loan_officer_map = _get_branch_officers(loan_branch)
                         loan_officer_disp = st.selectbox("Officer", list(loan_officer_map.keys()), key="loan_officer_sel")
                         loan_officer_val = loan_officer_map.get(loan_officer_disp)
-                with lb6:
-                    loan_search = st.text_input("🔍 Search", "", placeholder="Loan No / Client", key="loan_search")
+                with lb7:
+                    loan_search = st.text_input("🔍 Search", "", placeholder="Loan No / Client / Product", key="loan_search")
     
                 loan_target_branch_id = branch_map_name_to_id.get(loan_branch) if loan_branch != "All Branches" else None
+                loan_target_prod_id = loan_prod_map.get(loan_prod_sel) if loan_prod_sel != "All Products" else None
 
                 if loan_sub == "Loan Disbursements":
                     raw_l_records = audit_views.get_loan_disbursements(
                         branch_id=loan_target_branch_id, 
                         officer_id=loan_officer_val if loan_officer_val != "All" else None, 
+                        product_id=loan_target_prod_id,
                         date_from=loan_d_from, 
                         date_to=loan_d_to, 
                         limit=500
@@ -7045,6 +7053,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     raw_rep_records = audit_views.get_loan_repayments(
                         branch_id=loan_target_branch_id, 
                         officer_id=loan_officer_val if loan_officer_val != "All" else None, 
+                        product_id=loan_target_prod_id,
                         date_from=loan_d_from, 
                         date_to=loan_d_to, 
                         limit=500
@@ -7057,8 +7066,10 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         rs_lower = loan_search.lower()
                         enriched_reps = [
                             r for r in enriched_reps
-                            if rs_lower in str(r.get("Client Code", "")).lower()
+                            if rs_lower in str(r.get("Loan Number", "")).lower()
+                            or rs_lower in str(r.get("Client Code", "")).lower()
                             or rs_lower in str(r.get("Client Name", "")).lower()
+                            or rs_lower in str(r.get("Product", "")).lower()
                             or rs_lower in str(r.get("Officer", "")).lower()
                             or rs_lower in str(r.get("Branch", "")).lower()
                         ]
@@ -7075,12 +7086,12 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         st.dataframe(clean_r_df, use_container_width=True)
     
                         with st.expander("🔍 View Transaction Details"):
-                            r_idx = st.selectbox("Select Repayment to Inspect:", range(len(enriched_reps)), format_func=lambda i: f"{enriched_reps[i]['Client Code']} — {enriched_reps[i]['Client Name']} ({enriched_reps[i]['Amount Paid']})", key="sb_rep_idx")
+                            r_idx = st.selectbox("Select Repayment to Inspect:", range(len(enriched_reps)), format_func=lambda i: f"{enriched_reps[i]['Loan Number']} — {enriched_reps[i]['Client Name']} ({enriched_reps[i]['Amount Paid']})", key="sb_rep_idx")
                             r_sel = enriched_reps[r_idx]
                             st.markdown("### 📄 Transaction Information")
                             rc1_d, rc2_d, rc3_d = st.columns(3)
-                            rc1_d.markdown(f"**Repayment Date:** {r_sel['Repayment Date']}\n\n**Client Code:** {r_sel['Client Code']}")
-                            rc2_d.markdown(f"**Client Name:** {r_sel['Client Name']}\n\n**Amount Paid:** {r_sel['Amount Paid']}")
+                            rc1_d.markdown(f"**Repayment Date:** {r_sel['Repayment Date']}\n\n**Loan Number:** `{r_sel['Loan Number']}`\n\n**Client Code:** {r_sel['Client Code']}")
+                            rc2_d.markdown(f"**Client Name:** {r_sel['Client Name']}\n\n**Product:** {r_sel['Product']}\n\n**Amount Paid:** {r_sel['Amount Paid']}")
                             rc3_d.markdown(f"**Officer:** {r_sel['Officer']}\n\n**Branch:** {r_sel['Branch']}")
     
                             if st.checkbox("🛠️ Show Advanced Technical Details", key="show_raw_rep_tech"):

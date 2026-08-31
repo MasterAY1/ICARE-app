@@ -666,6 +666,7 @@ class SupabaseAuditViewRepository(BaseRepository):
         self,
         branch_id: Optional[str] = None,
         officer_id: Optional[str] = None,
+        product_id: Optional[str] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
         limit: int = 200,
@@ -677,6 +678,8 @@ class SupabaseAuditViewRepository(BaseRepository):
             query = query.eq("branch_id", branch_id)
         if officer_id and officer_id != "All":
             query = query.eq("officer_id", officer_id)
+        if product_id and product_id != "All":
+            query = query.eq("product_id", product_id)
         if date_from:
             d_from_iso = date_from.isoformat() if isinstance(date_from, date) else str(date_from)[:10]
             query = query.gte("disbursement_date", d_from_iso)
@@ -708,6 +711,7 @@ class SupabaseAuditViewRepository(BaseRepository):
         self,
         branch_id: Optional[str] = None,
         officer_id: Optional[str] = None,
+        product_id: Optional[str] = None,
         client_id: Optional[str] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
@@ -721,6 +725,18 @@ class SupabaseAuditViewRepository(BaseRepository):
             query = query.eq("officer_id", officer_id)
         if client_id:
             query = query.eq("client_id", client_id)
+        if product_id and product_id != "All":
+            try:
+                l_q = self.client.table("loans").select("loan_id").eq("product_id", product_id)
+                if branch_id and branch_id != "All":
+                    l_q = l_q.eq("branch_id", branch_id)
+                l_res = l_q.execute()
+                matching_loan_ids = [str(l["loan_id"]) for l in (l_res.data or []) if l.get("loan_id")]
+                if not matching_loan_ids:
+                    return []
+                query = query.in_("loan_id", matching_loan_ids)
+            except Exception:
+                pass
         if date_from:
             query = query.gte("date", date_from.isoformat() if isinstance(date_from, date) else date_from)
         if date_to:

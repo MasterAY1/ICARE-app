@@ -39,6 +39,7 @@ class TestFullChainRuntimeIntegrity(unittest.TestCase):
             "adjustment_reason": None
         }).eq("branch_id", self.branch_id).eq("date", p_date_str).execute()
 
+        tx_id = None
         event = DomainEvent(
             event_id=str(uuid.uuid4()),
             aggregate_id=self.officer_id,
@@ -54,19 +55,27 @@ class TestFullChainRuntimeIntegrity(unittest.TestCase):
                 "narration": f"Runtime verification savings deposit {ref_id}"
             }
         )
-        self.uow.event_store.append(event)
-        tx_id = FinancialPostingEngine.post_event(self.uow, event)
-        self.assertIsNotNone(tx_id, "Ledger transaction ID must exist")
+        try:
+            self.uow.event_store.append(event)
+            tx_id = FinancialPostingEngine.post_event(self.uow, event)
+            self.assertIsNotNone(tx_id, "Ledger transaction ID must exist")
 
-        # Rebuild projections
-        co_proj = CoCashbookProjectionBuilder.rebuild_co_projection(self.uow, self.branch_id, self.officer_id, p_date)
-        mb_proj = MasterCashbookProjectionBuilder.rebuild_master_projection(self.uow, self.branch_id, p_date)
-        self.assertIsNotNone(co_proj)
-        self.assertIsNotNone(mb_proj)
+            # Rebuild projections
+            co_proj = CoCashbookProjectionBuilder.rebuild_co_projection(self.uow, self.branch_id, self.officer_id, p_date)
+            mb_proj = MasterCashbookProjectionBuilder.rebuild_master_projection(self.uow, self.branch_id, p_date)
+            self.assertIsNotNone(co_proj)
+            self.assertIsNotNone(mb_proj)
 
-        # Reconcile
-        recon = DailyReconciliationService.reconcile_branch_day(self.uow, self.branch_id, p_date)
-        self.assertEqual(recon["reconciliation_status"], "BALANCED", f"Reconciliation must be BALANCED: {recon}")
+            # Reconcile
+            recon = DailyReconciliationService.reconcile_branch_day(self.uow, self.branch_id, p_date)
+            self.assertEqual(recon["reconciliation_status"], "BALANCED", f"Reconciliation must be BALANCED: {recon}")
+        finally:
+            if tx_id:
+                self.uow.client.table("financial_ledger_entries").delete().eq("transaction_id", tx_id).execute()
+                self.uow.client.table("financial_transactions").delete().eq("transaction_id", tx_id).execute()
+            self.uow.client.table("event_store").delete().eq("event_id", event.event_id).execute()
+            CoCashbookProjectionBuilder.rebuild_co_projection(self.uow, self.branch_id, self.officer_id, p_date)
+            MasterCashbookProjectionBuilder.rebuild_master_projection(self.uow, self.branch_id, p_date)
 
     def test_directive_3_manual_entries_preserved_on_rebuild(self):
         """Directive 3: Manual treasury entries in Master Cashbook must never be overwritten on rebuild"""
@@ -112,14 +121,23 @@ class TestFullChainRuntimeIntegrity(unittest.TestCase):
                 "narration": f"Idempotency test deposit {ref_id}"
             }
         )
-        self.uow.event_store.append(event)
-        
-        # Post First Time
-        tx1 = FinancialPostingEngine.post_event(self.uow, event)
-        # Post Second Time (Retry)
-        tx2 = FinancialPostingEngine.post_event(self.uow, event)
+        tx1 = None
+        try:
+            self.uow.event_store.append(event)
+            
+            # Post First Time
+            tx1 = FinancialPostingEngine.post_event(self.uow, event)
+            # Post Second Time (Retry)
+            tx2 = FinancialPostingEngine.post_event(self.uow, event)
 
-        self.assertEqual(tx1, tx2, "Re-posting the same event must return identical transaction ID without duplicating GL entries")
+            self.assertEqual(tx1, tx2, "Re-posting the same event must return identical transaction ID without duplicating GL entries")
+        finally:
+            if tx1:
+                self.uow.client.table("financial_ledger_entries").delete().eq("transaction_id", tx1).execute()
+                self.uow.client.table("financial_transactions").delete().eq("transaction_id", tx1).execute()
+            self.uow.client.table("event_store").delete().eq("event_id", event.event_id).execute()
+            CoCashbookProjectionBuilder.rebuild_co_projection(self.uow, self.branch_id, self.officer_id, p_date)
+            MasterCashbookProjectionBuilder.rebuild_master_projection(self.uow, self.branch_id, p_date)
 
     def test_directive_5_disposable_projection_event_replay(self):
         """Directive 5: Deleting cashbook rows and running EventReplay re-builds exact projections"""
