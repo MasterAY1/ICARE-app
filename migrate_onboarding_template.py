@@ -425,6 +425,99 @@ def run_migration():
                     schedules_created += len(schedule_rows)
                     print(f"  Generated {len(schedule_rows)} remaining schedule installments starting {schedule_rows[0]['due_date']}.")
 
+    # 4. PROCESS BRANCH POOLED SAVINGS (Branch LAPS & Misc Fees Savings from Sheet 4)
+    print("\n--- PROCESSING BRANCH POOLED SAVINGS (LAPS & MISC FEES) ---")
+    try:
+        df_bo_raw = pd.read_excel(file_path, sheet_name="Branch and Officer List", header=None)
+        
+        # Determine branch name
+        target_branch_name = None
+        if not df_groups.empty and 'Branch Name*' in df_groups.columns:
+            target_branch_name = str(df_groups['Branch Name*'].dropna().iloc[0]).strip()
+        
+        branch_laps_val = 0.0
+        misc_fees_val = 0.0
+
+        for r_idx in range(len(df_bo_raw)):
+            for c_idx in range(len(df_bo_raw.columns)):
+                cell_val = str(df_bo_raw.iloc[r_idx, c_idx]).strip()
+                if 'laps savings' in cell_val.lower():
+                    if r_idx + 1 < len(df_bo_raw):
+                        val_below = df_bo_raw.iloc[r_idx + 1, c_idx]
+                        try:
+                            if pd.notna(val_below) and float(str(val_below).replace(',', '')) > 0:
+                                branch_laps_val = float(str(val_below).replace(',', ''))
+                        except (ValueError, TypeError):
+                            pass
+                    if c_idx + 1 < len(df_bo_raw.columns) and branch_laps_val == 0.0:
+                        val_right = df_bo_raw.iloc[r_idx, c_idx + 1]
+                        try:
+                            if pd.notna(val_right) and float(str(val_right).replace(',', '')) > 0:
+                                branch_laps_val = float(str(val_right).replace(',', ''))
+                        except (ValueError, TypeError):
+                            pass
+                elif 'misc fees' in cell_val.lower() or 'misc savings' in cell_val.lower():
+                    if r_idx + 1 < len(df_bo_raw):
+                        val_below = df_bo_raw.iloc[r_idx + 1, c_idx]
+                        try:
+                            if pd.notna(val_below) and float(str(val_below).replace(',', '')) > 0:
+                                misc_fees_val = float(str(val_below).replace(',', ''))
+                        except (ValueError, TypeError):
+                            pass
+                    if c_idx + 1 < len(df_bo_raw.columns) and misc_fees_val == 0.0:
+                        val_right = df_bo_raw.iloc[r_idx, c_idx + 1]
+                        try:
+                            if pd.notna(val_right) and float(str(val_right).replace(',', '')) > 0:
+                                misc_fees_val = float(str(val_right).replace(',', ''))
+                        except (ValueError, TypeError):
+                            pass
+
+        if target_branch_name:
+            b_info = branch_map.get(target_branch_name.lower())
+            if b_info:
+                b_id = b_info['branch_id']
+                # Ingest Branch Laps Savings (if > 0)
+                if branch_laps_val > 0:
+                    ex_laps = retry_call(lambda u: u.client.table("laps_savings").select("id").eq("branch_id", b_id).eq("reference", "ONBOARDING_LEGACY").execute())
+                    if not ex_laps.data:
+                        laps_payload = {
+                            "id": str(uuid.uuid4()),
+                            "branch_id": b_id,
+                            "deposit_amount": branch_laps_val,
+                            "withdrawal_amount": 0.0,
+                            "reference": "ONBOARDING_LEGACY",
+                            "remarks": "Legacy Branch LAPS Savings Onboarded",
+                            "posting_date": base_date.isoformat()
+                        }
+                        retry_call(lambda u: u.client.table("laps_savings").insert(laps_payload).execute())
+                        print(f"  Ingested Branch LAPS Savings: ₦{branch_laps_val:,.2f} for branch '{target_branch_name}'.")
+                    else:
+                        print(f"  Branch LAPS Savings already onboarded for branch '{target_branch_name}' (₦{branch_laps_val:,.2f}).")
+                
+                # Ingest Misc Fees / Internal Savings (if > 0)
+                if misc_fees_val > 0:
+                    from services.savings_service import SavingsService
+                    uow_tmp = get_uow()
+                    managing_id, managing_name = SavingsService.get_branch_misc_savings_officer(uow_tmp, target_branch_name)
+                    ex_misc = retry_call(lambda u: u.client.table("internal_savings").select("id").eq("branch_id", b_id).eq("reference", "ONBOARDING_LEGACY").execute())
+                    if not ex_misc.data:
+                        misc_payload = {
+                            "id": str(uuid.uuid4()),
+                            "branch_id": b_id,
+                            "officer_id": managing_id,
+                            "deposit_amount": misc_fees_val,
+                            "withdrawal_amount": 0.0,
+                            "reference": "ONBOARDING_LEGACY",
+                            "remarks": f"Legacy Misc/Internal Savings Onboarded (Managed by {managing_name})",
+                            "posting_date": base_date.isoformat()
+                        }
+                        retry_call(lambda u: u.client.table("internal_savings").insert(misc_payload).execute())
+                        print(f"  Ingested Misc Fees Savings: ₦{misc_fees_val:,.2f} for branch '{target_branch_name}' (Assigned to {managing_name}).")
+                    else:
+                        print(f"  Misc Fees Savings already onboarded for branch '{target_branch_name}' (₦{misc_fees_val:,.2f}).")
+    except Exception as bo_err:
+        print(f"Note: Could not parse Branch and Officer List for pooled savings: {bo_err}")
+
     print("\n==================================================")
     print(f"ONBOARDING COMPLETE!")
     print(f"Loans Created: {loans_created}, Schedule Installments Created: {schedules_created}")
@@ -432,3 +525,4 @@ def run_migration():
 
 if __name__ == '__main__':
     run_migration()
+
