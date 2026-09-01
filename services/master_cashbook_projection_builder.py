@@ -192,6 +192,10 @@ class MasterCashbookProjectionBuilder:
         if totals.get("fund_to_asset_program", 0.0) > 0 and totals.get("loan_received_asset", 0.0) == 0.0:
             totals["loan_received_asset"] = totals["fund_to_asset_program"]
 
+        # Ensure Bank Withdrawal for loan disbursements is not double-counted with loan_received_finance
+        if totals.get("loan_received_finance", 0.0) > 0:
+            totals["bank_withdrawal"] = max(0.0, totals.get("bank_withdrawal", 0.0) - totals.get("loan_received_finance", 0.0))
+
         # Corrected Master Cashbook Formulas (ICARE Business Rules)
         total_inflows = (
             opening_bal +
