@@ -43,8 +43,11 @@ def run_migration():
     b_res = retry_call(lambda u: u.client.table("branches").select("branch_id, name, code").execute())
     branch_map = {b['name'].strip().lower(): b for b in (b_res.data or [])}
     
-    o_res = retry_call(lambda u: u.client.table("app_users").select("id, full_name").execute())
-    officer_map = {o['full_name'].strip().lower(): o['id'] for o in (o_res.data or [])}
+    o_res = retry_call(lambda u: u.client.table("app_users").select("id, full_name, username").execute())
+    officer_map = {o['full_name'].strip().lower(): o['id'] for o in (o_res.data or []) if o.get('full_name')}
+    for o in (o_res.data or []):
+        if o.get('username'):
+            officer_map[o['username'].strip().lower()] = o['id']
     
     p_res = retry_call(lambda u: u.client.table("loan_products").select("product_id, name, installments, repayment_cycle").execute())
     product_map = {p['name'].strip().lower(): p for p in (p_res.data or [])}
@@ -241,8 +244,13 @@ def run_migration():
         else:
             initial_status = REG_STATUS_ID
 
-        # Match existing client by exact code (preserves separate member numbers even if same name)
+        # Match existing client by exact code (in-memory or live DB check)
         existing_c = existing_clients_by_code.get(expected_code)
+        if not existing_c:
+            chk_db = retry_call(lambda u, expected_code=expected_code: u.client.table("clients").select("client_id, name, client_code").eq("client_code", expected_code).execute())
+            if chk_db.data:
+                existing_c = chk_db.data[0]
+                existing_clients_by_code[expected_code] = existing_c
         
         if existing_c:
             c_id = existing_c['client_id']
@@ -258,16 +266,26 @@ def run_migration():
                 "status": initial_status, "status_id": initial_status,
                 "client_code": expected_code, "branch_id": b_id, "group_id": g_id, "officer_id": o_id
             }
-            retry_call(lambda u, new_c_data=new_c_data: u.client.table("clients").insert(new_c_data).execute())
+            try:
+                retry_call(lambda u, new_c_data=new_c_data: u.client.table("clients").insert(new_c_data).execute())
+            except Exception as ins_err:
+                if "duplicate key" in str(ins_err) or "23505" in str(ins_err):
+                    chk_db2 = retry_call(lambda u, expected_code=expected_code: u.client.table("clients").select("client_id").eq("client_code", expected_code).execute())
+                    if chk_db2.data:
+                        c_id = chk_db2.data[0]["client_id"]
+                        new_c_data["client_id"] = c_id
+                else:
+                    raise ins_err
             existing_clients_by_code[expected_code] = new_c_data
             print(f"Created new client: {expected_code} ({f_name}) in Group #{gn}")
             
         # Client Memberships (Guarantee exact 1-to-1 sync with primary group)
-        if (c_id, g_id) not in existing_memberships_set:
-            # Remove any existing memberships for this client with other groups
+        chk_mem = retry_call(lambda u, c_id=c_id, g_id=g_id: u.client.table("client_memberships").select("membership_id").eq("client_id", c_id).eq("group_id", g_id).execute())
+        if not chk_mem.data:
             retry_call(lambda u, c_id=c_id: u.client.table("client_memberships").delete().eq("client_id", c_id).execute())
-            retry_call(lambda u, c_id=c_id, g_id=g_id: u.client.table("client_memberships").insert({"client_id": c_id, "group_id": g_id}).execute())
-            existing_memberships_set = {m for m in existing_memberships_set if m[0] != c_id}
+            retry_call(lambda u, c_id=c_id, g_id=g_id, b_id=b_id, o_id=o_id: u.client.table("client_memberships").insert({
+                "membership_id": str(uuid.uuid4()), "client_id": c_id, "group_id": g_id, "branch_id": b_id, "officer_id": o_id
+            }).execute())
             existing_memberships_set.add((c_id, g_id))
             
         # Member Opening Savings (Upsert)
@@ -354,7 +372,8 @@ def run_migration():
 
             print(f"Setting up Loan for {f_name} ({expected_code}): Product={prod.get('name')}, Active Credit={a_cred}, Bal={current_bal}, Duration={duration}, Disbursed={hist_date.isoformat()}")
             
-            l_res = retry_call(lambda u, c_id=c_id: u.client.table("loans").select("*").eq("client_id", c_id).eq("status", "Active").execute())
+            p_id = prod['product_id']
+            l_res = retry_call(lambda u, c_id=c_id, p_id=p_id: u.client.table("loans").select("*").eq("client_id", c_id).eq("product_id", p_id).eq("status", "Active").execute())
             if l_res.data:
                 loan_id = l_res.data[0]['loan_id']
                 retry_call(lambda u, current_bal=current_bal, a_cred=a_cred, p_loan=p_loan, expected_inst=expected_inst, b_id=b_id, o_id=o_id, prod=prod, prod_cat=prod_cat, loan_id=loan_id, hist_date=hist_date, legacy_extra=legacy_extra: u.client.table("loans").update({
