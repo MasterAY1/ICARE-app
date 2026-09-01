@@ -76,8 +76,7 @@ class MasterCashbookProjectionBuilder:
                 totals[field] += float(row.get(field) or 0.0)
             co_bank_wd += float(row.get("bank_withdrawal") or 0.0)
 
-        if co_bank_wd > 0 and totals["loan_received_finance"] == 0:
-            totals["loan_received_finance"] = co_bank_wd
+        totals["bank_withdrawal"] = co_bank_wd
 
         # 4. Fetch Branch Treasury Activities from Ledger
         try:
@@ -124,9 +123,16 @@ class MasterCashbookProjectionBuilder:
                         else:
                             totals["fund_transferred_ho"] += amt
                     elif event_type == "ExpenseRecorded":
-                        totals["office_expenses"] += amt
+                        if tx_officer_id not in co_officer_ids:
+                            totals["office_expenses"] += amt
                     elif event_type == "SalaryPaid":
                         totals["staff_salaries"] += amt
+                    elif event_type in ["LoanDisbursed", "LOAN_DISBURSED"]:
+                        cat = payload.get("product_category") or "Finance"
+                        if "Asset" in str(cat):
+                            totals["fund_to_asset_program"] += amt
+                        else:
+                            totals["fund_to_product_finance"] += amt
                     elif event_type == "BankDeposited":
                         if tx_officer_id not in co_officer_ids:
                             totals["bank_deposit"] += amt
@@ -143,8 +149,15 @@ class MasterCashbookProjectionBuilder:
                     .in_("status", ["Active", "Approved", "Completed"]) \
                     .execute()
                 
+                import json
                 for l in (res_loans.data or []):
-                    if isinstance(l.get("extra_fields"), dict) and l["extra_fields"].get("is_legacy") is True:
+                    extra = l.get("extra_fields")
+                    if isinstance(extra, str):
+                        try:
+                            extra = json.loads(extra)
+                        except Exception:
+                            extra = {}
+                    if isinstance(extra, dict) and extra.get("is_legacy") is True:
                         continue
                     princ = float(l.get("loan_amount") or 0.0)
                     act_cr = float(l.get("active_credit") or princ)
@@ -171,12 +184,13 @@ class MasterCashbookProjectionBuilder:
                     else:
                         totals["disb_12w"] = totals.get("disb_12w", 0.0) + act_cr
                 
-                if totals["loan_received_finance"] == 0.0:
-                    totals["loan_received_finance"] = totals.get("fund_to_product_finance", 0.0)
-                if totals["loan_received_asset"] == 0.0:
-                    totals["loan_received_asset"] = totals.get("fund_to_asset_program", 0.0)
             except Exception as e:
                 print(f"Master Cashbook failed to fetch direct loan disbursements: {e}")
+
+        if totals.get("fund_to_product_finance", 0.0) > 0 and totals.get("loan_received_finance", 0.0) == 0.0:
+            totals["loan_received_finance"] = totals["fund_to_product_finance"]
+        if totals.get("fund_to_asset_program", 0.0) > 0 and totals.get("loan_received_asset", 0.0) == 0.0:
+            totals["loan_received_asset"] = totals["fund_to_asset_program"]
 
         # Corrected Master Cashbook Formulas (ICARE Business Rules)
         total_inflows = (
@@ -191,8 +205,11 @@ class MasterCashbookProjectionBuilder:
             totals["credit_form"] + totals["credit_form_damage"] + totals["bonus"] + totals["misc_fees"]
         )
 
+        prod_wd = totals["product_withdrawal"] if totals["product_withdrawal"] > 0 else totals["savings_withdrawal"]
+        totals["product_withdrawal"] = prod_wd
+
         total_outflows = (
-            totals["product_withdrawal"] + totals["savings_withdrawal"] +
+            totals["product_withdrawal"] +
             totals["bank_deposit"] + totals["laps_returns"] +
             totals["fund_to_asset_program"] + totals["fund_to_product_finance"] +
             totals["fund_transferred_other_branch"] + totals["fund_transferred_ho"] + totals["fund_to_other_area"] +

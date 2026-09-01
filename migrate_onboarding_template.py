@@ -528,7 +528,7 @@ def run_migration():
                             "withdrawal_amount": 0.0,
                             "reference": "ONBOARDING_LEGACY",
                             "remarks": f"Legacy Misc/Internal Savings Onboarded (Managed by {managing_name})",
-                            "posting_date": base_date.isoformat()
+                            "posting_date": "1970-01-01"
                         }
                         retry_call(lambda u: u.client.table("internal_savings").insert(misc_payload).execute())
                         print(f"  Ingested Misc Fees Savings: ₦{misc_fees_val:,.2f} for branch '{target_branch_name}' (Assigned to {managing_name}).")

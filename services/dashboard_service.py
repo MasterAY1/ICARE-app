@@ -327,9 +327,11 @@ class DashboardService:
         try:
             if officer_id:
                 # 1. Individual Savings
-                sav_res = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount") \
+                sav_res = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount, reference, remarks") \
                     .eq("officer_id", officer_id).eq("posting_date", date_str).execute()
                 for s in (sav_res.data or []):
+                    if str(s.get("reference") or "").startswith("ONBOARDING") or "onboarding" in str(s.get("remarks") or "").lower():
+                        continue
                     cid = s.get("client_id")
                     dep = float(s.get("deposit_amount") or 0.0)
                     wd = float(s.get("withdrawal_amount") or 0.0)
@@ -341,9 +343,11 @@ class DashboardService:
                         if cid: sav_wd_clients.add(cid)
 
                 # 2. Group Savings
-                grp_res = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount") \
+                grp_res = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount, reference, remarks") \
                     .eq("officer_id", officer_id).eq("posting_date", date_str).execute()
                 for g in (grp_res.data or []):
+                    if str(g.get("reference") or "").startswith("ONBOARDING") or "onboarding" in str(g.get("remarks") or "").lower():
+                        continue
                     gid = g.get("group_id")
                     dep = float(g.get("deposit_amount") or 0.0)
                     wd = float(g.get("withdrawal_amount") or 0.0)
@@ -365,12 +369,14 @@ class DashboardService:
                         pass
 
                 if is_misc_officer:
-                    misc_q = uow.client.table("internal_savings").select("id, deposit_amount, withdrawal_amount") \
+                    misc_q = uow.client.table("internal_savings").select("id, deposit_amount, withdrawal_amount, reference, remarks") \
                         .eq("posting_date", date_str)
                     if branch_id:
                         misc_q = misc_q.eq("branch_id", branch_id)
                     misc_res = misc_q.execute()
                     for m in (misc_res.data or []):
+                        if str(m.get("reference") or "").startswith("ONBOARDING") or "legacy" in str(m.get("remarks") or "").lower():
+                            continue
                         dep = float(m.get("deposit_amount") or 0.0)
                         wd = float(m.get("withdrawal_amount") or 0.0)
                         if dep > 0:

@@ -1037,7 +1037,8 @@ DB_TO_UI_LOANS = {
     "group_location": "Group Location", "group_leader_name": "Group Leader Name", "group_formation_date": "Group Formation Date",
     "product_category": "Product Category", "group_savings": "Group Savings", 
     "branch_contingency": "Branch Contingency", "branch_contingency_2": "Branch Contingency 2",
-    "disbursement_date": "Disbursement Date", "start_date": "Start Date", "expected_end_date": "Expected End Date"
+    "disbursement_date": "Disbursement Date", "start_date": "Start Date", "expected_end_date": "Expected End Date",
+    "extra_fields": "extra_fields"
 }
 UI_TO_DB_LOANS = {v: k for k, v in DB_TO_UI_LOANS.items()}
 
@@ -7936,6 +7937,18 @@ elif page == "Master Cashbook":
             st.warning(f"Could not load cashbook projection: {e}")
         
         # Auto-sum VAULT FUNDING from live loans disbursed today (excluding legacy onboarding loans)
+        def _is_legacy_loan(val):
+            if isinstance(val, dict):
+                return val.get('is_legacy') is True
+            elif isinstance(val, str):
+                try:
+                    import json
+                    d = json.loads(val)
+                    return isinstance(d, dict) and d.get('is_legacy') is True
+                except Exception:
+                    return False
+            return False
+
         if not all_loans.empty:
             all_loans['_dt'] = pd.to_datetime(all_loans['Date'], errors='coerce')
             today_loans = all_loans[
@@ -7944,7 +7957,7 @@ elif page == "Master Cashbook":
                 (all_loans['Status'].isin([STATUS_ACTIVE, STATUS_APPROVED, STATUS_COMPLETED, "Active", "Approved", "Completed"]))
             ]
             if not today_loans.empty and 'extra_fields' in today_loans.columns:
-                today_loans = today_loans[~today_loans['extra_fields'].apply(lambda x: isinstance(x, dict) and x.get('is_legacy') is True)]
+                today_loans = today_loans[~today_loans['extra_fields'].apply(_is_legacy_loan)]
         else:
             today_loans = pd.DataFrame()
         
@@ -8620,7 +8633,7 @@ elif page == "Master Cashbook":
                 if not all_loans.empty:
                     loans_df = all_loans.copy()
                     if 'extra_fields' in loans_df.columns:
-                        loans_df = loans_df[~loans_df['extra_fields'].apply(lambda x: isinstance(x, dict) and x.get('is_legacy') is True)]
+                        loans_df = loans_df[~loans_df['extra_fields'].apply(_is_legacy_loan)]
                     if 'Branch' in loans_df.columns and selected_mc_branch:
                         loans_df = loans_df[loans_df['Branch'] == selected_mc_branch]
                     if 'Status' in loans_df.columns:
