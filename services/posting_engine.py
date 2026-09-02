@@ -231,7 +231,7 @@ class FinancialPostingEngine:
             raise e
 
     @classmethod
-    def reverse_transaction(cls, uow: UnitOfWork, transaction_id: str, narration: str = None) -> str:
+    def reverse_transaction(cls, uow: UnitOfWork, transaction_id: str, narration: str = None, reversal_date: Optional[date] = None) -> str:
         # 1. Fetch original transaction
         original_tx = uow.ledger.find_transaction_by_id(transaction_id)
         if not original_tx:
@@ -257,11 +257,17 @@ class FinancialPostingEngine:
                 aggregate_id=e.aggregate_id
             ))
 
+        target_rev_date = reversal_date or date.today()
+        if hasattr(target_rev_date, 'date') and callable(target_rev_date.date):
+            target_rev_date = target_rev_date.date()
+        elif isinstance(target_rev_date, str):
+            target_rev_date = date.fromisoformat(target_rev_date[:10])
+
         # 4. Construct reversing transaction header
         reversing_tx = FinancialTransaction(
             transaction_id=None,
             event_id=None,
-            posting_date=date.today(),
+            posting_date=target_rev_date,
             branch_id=original_tx.branch_id,
             officer_id=original_tx.officer_id,
             narration=narration or f"Offsetting Reversal of {transaction_id}",

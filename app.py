@@ -1306,17 +1306,17 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None):
             # 1. Route Group Savings
             if str(client_id).startswith('GROUP-'):
                 group_name = str(client_id).replace('GROUP-', '')
-                SavingsService.post_group_savings(uow, group_name, branch, officer, group_dep, group_wd, remarks=db_data.get('note'))
+                SavingsService.post_group_savings(uow, group_name, branch, officer, group_dep, group_wd, remarks=db_data.get('note'), posting_date=p_date)
                 return
 
             # 2. Route LAPS
             if str(client_id).startswith('GLOBAL-LAPS'):
-                SavingsService.post_laps_savings(uow, client_id, client_name, branch, officer, laps_res, laps_trans)
+                SavingsService.post_laps_savings(uow, client_id, client_name, branch, officer, laps_res, laps_trans, posting_date=p_date)
                 return
 
             # 3. Route Individual Savings
             if savings_dep > 0 or savings_wd > 0:
-                SavingsService.post_individual_savings(uow, client_id, client_name, branch, officer, savings_dep, savings_wd, remarks=db_data.get('note'))
+                SavingsService.post_individual_savings(uow, client_id, client_name, branch, officer, savings_dep, savings_wd, remarks=db_data.get('note'), posting_date=p_date)
 
             # 4. Route Loan Repayment
             if loan_repay > 0:
@@ -1354,7 +1354,7 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None):
 
             # 5. Route Misc Savings
             if misc_fees > 0:
-                SavingsService.post_misc_savings(uow, client_id, client_name, branch, officer, misc_fees, remarks=db_data.get('note'))
+                SavingsService.post_misc_savings(uow, client_id, client_name, branch, officer, misc_fees, remarks=db_data.get('note'), posting_date=p_date)
 
             # 6. Route EOD / Global Inputs & Cash Flows
             import uuid
@@ -2256,6 +2256,8 @@ if page == "Dashboard":
             pending_withdrawals = res_wr.data or []
             if pending_withdrawals:
                 st.markdown("#### Pending Withdrawal Approvals")
+                wr_default_date = active_b_date if 'active_b_date' in locals() and active_b_date else date.today()
+                wr_approval_date = st.date_input("Operational Date for Withdrawal Approvals", value=wr_default_date, key="bm_wr_approval_date", help="Set the backdated operational date if approving historical transactions.")
                 for wr in pending_withdrawals:
                     wr_id = wr["id"]
                     wr_type = wr["savings_type"]
@@ -2264,7 +2266,7 @@ if page == "Dashboard":
                     wr_name = wr["client_name"]
                     wr_by = wr["requested_by"]
                     wr_remarks = wr.get("remarks") or ""
-                    wr_date = str(wr.get("created_at", ""))[:10]
+                    wr_date = str(wr.get("operational_date") or wr.get("created_at", ""))[:10]
 
                     with st.container(border=True):
                         wcol_info, wcol_amt, wcol_acts = st.columns([3, 2, 2])
@@ -2282,25 +2284,31 @@ if page == "Dashboard":
                                 if st.button("Approve", key=f"approve_wr_{wr_id}", type="primary", use_container_width=True):
                                     try:
                                         from services.savings_service import SavingsService
+                                        effective_op_date = wr.get("operational_date") or wr_approval_date
+                                        if isinstance(effective_op_date, str):
+                                            effective_op_date = date.fromisoformat(effective_op_date[:10])
                                         with SupabaseUnitOfWork() as uow_wr:
                                             if wr_op == "Cash Withdrawal":
                                                 if wr_type == "Individual":
                                                     SavingsService.post_individual_savings(
                                                         uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
                                                         branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
-                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                        posting_date=effective_op_date
                                                     )
                                                 elif wr_type == "Group":
                                                     SavingsService.post_group_savings(
                                                         uow=uow_wr, group_name=wr.get("group_name") or wr_name, branch=BRANCH,
                                                         officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
-                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                        posting_date=effective_op_date
                                                     )
                                                 elif wr_type == "Misc":
                                                     SavingsService.post_misc_savings(
                                                         uow=uow_wr, client_id=wr.get("client_id") or "", client_name=wr_name,
                                                         branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
-                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                        posting_date=effective_op_date
                                                     )
                                             elif wr_op in ["Loan Offset", "Asset Downpayment"]:
                                                 source_type = "IndividualSavings" if wr_type == "Individual" else "GroupSavings"
@@ -2308,21 +2316,24 @@ if page == "Dashboard":
                                                     uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
                                                     loan_id=wr.get("loan_id"), source_savings_type=source_type,
                                                     branch=BRANCH, officer=wr_by, amount=wr_amt,
-                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED {wr_op.upper()}] {wr_remarks}"
+                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED {wr_op.upper()}] {wr_remarks}",
+                                                    posting_date=effective_op_date
                                                 )
                                             elif wr_op == "LAPS Transfer":
                                                 source_type = "IndividualSavings" if wr_type == "Individual" else "GroupSavings"
                                                 SavingsService.transfer_to_laps(
                                                     uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
                                                     source_savings_type=source_type, branch=BRANCH, officer=wr_by, amount=wr_amt,
-                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                    posting_date=effective_op_date
                                                 )
                                             elif wr_op == "LAPS Payout":
                                                 cash_paid = (wr.get("payout_method") or "Cash") == "Cash"
                                                 SavingsService.pay_laps(
                                                     uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
                                                     branch=BRANCH, officer=wr_by, amount=wr_amt, cash_paid=cash_paid,
-                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}"
+                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                    posting_date=effective_op_date
                                                 )
 
                                             uow_wr.client.table("withdrawal_requests").update({
@@ -2673,7 +2684,9 @@ elif page == "Loan Origination":
             st.markdown("---")
             
             with st.form("client_registration_details_form"):
-                st.markdown("#### 1. Personal Info")
+                st.markdown("#### 1. Personal Info & Registration Date")
+                reg_default_date = active_b_date if 'active_b_date' in locals() and active_b_date else date.today()
+                reg_op_date = st.date_input("Registration Date", value=reg_default_date, key="reg_client_date", help="Set the backdated registration date if registering historical clients.")
                 c1, c2, c3 = st.columns(3)
                 name = c1.text_input("Full Name", key="reg_client_name")
                 nickname = c2.text_input("Nickname", key="reg_client_nickname")
@@ -2834,7 +2847,7 @@ elif page == "Loan Origination":
                                     next_of_kin="",
                                     passport_url=uploaded_passport_url,
                                     signature_url="",
-                                    registration_date=date.today(),
+                                    registration_date=reg_op_date,
                                     branch_id=branch_id,
                                     group_id=final_group_id,
                                     officer_id=uow.loans._resolve_officer_id(USER),
@@ -2851,7 +2864,7 @@ elif page == "Loan Origination":
                                     "group_id": final_group_id,
                                     "branch_id": branch_id,
                                     "officer_id": client_entity.officer_id,
-                                    "start_date": date.today().isoformat()
+                                    "start_date": reg_op_date.isoformat() if hasattr(reg_op_date, 'isoformat') else str(reg_op_date)
                                 }).execute()
                                 
                                 # 5. Save Guarantor details to guarantors table (if provided)
@@ -3714,8 +3727,13 @@ elif page == "Loan Origination":
                         else:
                             st.success("SUFFICIENT SAVINGS: Client has enough to cover the upfront fees.")
 
-                st.markdown("#### 2. Loan Notes")
-                notes = st.text_area("Remarks / Notes", key="loan_app_notes")
+                st.markdown("#### 2. Loan Notes & Operational Date")
+                col_app_d1, col_app_d2 = st.columns(2)
+                with col_app_d1:
+                    app_default_date = active_b_date if 'active_b_date' in locals() and active_b_date else date.today()
+                    app_op_date = st.date_input("Application Date", value=app_default_date, key="loan_app_op_date", help="Set the backdated date for this loan application.")
+                with col_app_d2:
+                    notes = st.text_area("Remarks / Notes", key="loan_app_notes")
                 
                 submitted_loan_app = st.button("Submit Application for BM Approval", type="primary", use_container_width=True)
                 
@@ -3759,7 +3777,8 @@ elif page == "Loan Origination":
                                         officer=USER,
                                         deposit_amount=0.0,
                                         withdrawal_amount=total_upfront_required,
-                                        remarks=f"Auto-deducted Upfront Fees (Interest: {interest}, Gap: {gap_fee}) for Loan App"
+                                        remarks=f"Auto-deducted Upfront Fees (Interest: {interest}, Gap: {gap_fee}) for Loan App",
+                                        posting_date=app_op_date
                                     )
 
                                 from domain.entities.loan import Loan
@@ -3787,7 +3806,8 @@ elif page == "Loan Origination":
                                         branch=branch_name,
                                         officer=USER,
                                         amount=sav_dp,
-                                        remarks=f"Asset Downpayment deducted from Savings for loan {loan_id}"
+                                        remarks=f"Asset Downpayment deducted from Savings for loan {loan_id}",
+                                        posting_date=app_op_date
                                     )
 
                                 loan_entity = Loan(
@@ -3806,7 +3826,7 @@ elif page == "Loan Origination":
                                     credit_officer=USER,
                                     officer_id=selected_client.officer_id,
                                     branch_id=selected_client.branch_id,
-                                    start_date=date.today(),
+                                    start_date=app_op_date,
                                     is_asset=(product_category == "Asset"),
                                     extra_fields={
                                         "lifecycle_status": "Submitted",
@@ -3831,7 +3851,7 @@ elif page == "Loan Origination":
                                     print(f"[STATUS TRACE] Failed to update client status to Pending Loan: {st_err}")
 
                                 from services.schedule_service import ScheduleService
-                                ScheduleService.generate_schedule(uow, loan_entity, date.today() + timedelta(days=7))
+                                ScheduleService.generate_schedule(uow, loan_entity, app_op_date + timedelta(days=7))
 
                                 st.session_state["flash_msg"] = "Application submitted successfully! Repayment schedule generated and loan is Pending BM Approval."
                                 st.session_state["orig_tab"] = "Pending Disbursements"
@@ -5372,10 +5392,13 @@ elif page == "Withdrawal Operations":
 
     uow = SupabaseUnitOfWork()
     from services.business_date_service import BusinessDateService
-    today_dt = datetime.now().date()
-    is_wth_open, wth_open_reason = BusinessDateService.is_operational_open(uow, BRANCH_ID, today_dt)
+    wth_default_date = active_b_date if 'active_b_date' in locals() and active_b_date else date.today()
+    wth_op_date = st.date_input("Operational Date for Withdrawals", value=wth_default_date, key="wth_operational_date", help="Select the date this withdrawal was requested/occurred in the field.")
+    wth_date_str = wth_op_date.isoformat()
+    
+    is_wth_open, wth_open_reason = BusinessDateService.is_operational_open(uow, BRANCH_ID, wth_op_date)
     if not is_wth_open:
-        st.warning(f"🏖️ **Operational Activity Suspended ({wth_open_reason})**: Savings withdrawals and LAPS payouts are frozen today.")
+        st.warning(f"🏖️ **Operational Activity Suspended ({wth_open_reason})**: Savings withdrawals and LAPS payouts are frozen for {wth_op_date}.")
 
     # ── Savings Type Selector ──
     wth_tab1, wth_tab2, wth_tab3, wth_tab4 = st.tabs([
@@ -5529,6 +5552,7 @@ elif page == "Withdrawal Operations":
                         "branch_id": BRANCH_ID,
                         "requested_by": USER,
                         "amount": float(amount_val),
+                        "operational_date": wth_date_str,
                         "reference": f"REF-WTH-{datetime.now().strftime('%Y%m%d%H%M%S')}",
                         "remarks": remarks_input or f"{op_type} request for {c_name}",
                         "status": "PENDING"
@@ -5663,6 +5687,7 @@ elif page == "Withdrawal Operations":
                         "branch_id": BRANCH_ID,
                         "requested_by": USER,
                         "amount": float(amount_val),
+                        "operational_date": wth_date_str,
                         "reference": f"REF-GRP-{datetime.now().strftime('%Y%m%d%H%M%S')}",
                         "remarks": remarks_input or f"Group {op_clean} from {g_name}",
                         "status": "PENDING"
@@ -5700,6 +5725,7 @@ elif page == "Withdrawal Operations":
                             "branch_id": BRANCH_ID,
                             "requested_by": USER,
                             "amount": float(amount_val),
+                            "operational_date": wth_date_str,
                             "reference": f"REF-MISC-{datetime.now().strftime('%Y%m%d%H%M%S')}",
                             "remarks": remarks_input or f"Misc Savings withdrawal by {USER}",
                             "status": "PENDING"
@@ -5764,6 +5790,7 @@ elif page == "Withdrawal Operations":
                         "requested_by": USER,
                         "amount": float(amount_val),
                         "payout_method": payout_method,
+                        "operational_date": wth_date_str,
                         "reference": f"REF-LAPS-{datetime.now().strftime('%Y%m%d%H%M%S')}",
                         "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
                         "status": "PENDING"
@@ -6728,13 +6755,15 @@ elif page == "Dashboard":
                                 st.markdown(f"<div style='font-size: 1.15rem; font-weight: 700; color: #0f172a;'>₦{loan_amt:,.2f}</div>", unsafe_allow_html=True)
                                 st.caption("Requested Principal")
                             with col_acts:
+                                disb_default = active_b_date if 'active_b_date' in locals() and active_b_date else date.today()
+                                disb_date = st.date_input("Disbursement Date", value=disb_default, key=f"leg_disb_{pl_id}")
                                 act_col1, act_col2 = st.columns(2)
                                 with act_col1:
                                     if st.button("✅ Approve", key=f"app_leg_{pl_id}", type="primary", use_container_width=True):
                                         try:
                                             from services.loan_service import LoanService
                                             with SupabaseUnitOfWork() as uow_app:
-                                                LoanService.approve_and_disburse_loan(uow_app, pl_id, USER)
+                                                LoanService.approve_and_disburse_loan(uow_app, pl_id, USER, disbursement_date=disb_date)
                                             st.success(f"✅ Loan approved & disbursed for {c_name}!")
                                             st.rerun()
                                         except Exception as ex:
@@ -8198,25 +8227,25 @@ elif page == "Master Cashbook":
                         
                         posted_any = False
                         if funds_ho > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_IN', funds_ho, BRANCH, USER, remarks=f"HO Funding: {funds_ho}")
+                            TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_IN', funds_ho, BRANCH, USER, remarks=f"HO Funding: {funds_ho}", posting_date=view_date)
                             posted_any = True
                         if funds_branch > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'INTER_BRANCH_IN', funds_branch, BRANCH, USER, remarks=f"Branch Funding: {funds_branch}")
+                            TreasuryService.post_treasury_transaction(uow, 'INTER_BRANCH_IN', funds_branch, BRANCH, USER, remarks=f"Branch Funding: {funds_branch}", posting_date=view_date)
                             posted_any = True
                         if funds_area > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'INTER_AREA_IN', funds_area, BRANCH, USER, remarks=f"Area Funding: {funds_area}")
+                            TreasuryService.post_treasury_transaction(uow, 'INTER_AREA_IN', funds_area, BRANCH, USER, remarks=f"Area Funding: {funds_area}", posting_date=view_date)
                             posted_any = True
                         if xfer_branch > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'INTER_BRANCH_OUT', xfer_branch, BRANCH, USER, remarks=f"Transfer to Branch: {xfer_branch}")
+                            TreasuryService.post_treasury_transaction(uow, 'INTER_BRANCH_OUT', xfer_branch, BRANCH, USER, remarks=f"Transfer to Branch: {xfer_branch}", posting_date=view_date)
                             posted_any = True
                         if xfer_ho > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_OUT', xfer_ho, BRANCH, USER, remarks=f"Transfer to HO: {xfer_ho}")
+                            TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_OUT', xfer_ho, BRANCH, USER, remarks=f"Transfer to HO: {xfer_ho}", posting_date=view_date)
                             posted_any = True
                         if xfer_area > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'INTER_AREA_OUT', xfer_area, BRANCH, USER, remarks=f"Transfer to Area: {xfer_area}")
+                            TreasuryService.post_treasury_transaction(uow, 'INTER_AREA_OUT', xfer_area, BRANCH, USER, remarks=f"Transfer to Area: {xfer_area}", posting_date=view_date)
                             posted_any = True
                         if salaries > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'SALARY', salaries, BRANCH, USER, remarks=f"Salary Payment: {salaries}")
+                            TreasuryService.post_treasury_transaction(uow, 'SALARY', salaries, BRANCH, USER, remarks=f"Salary Payment: {salaries}", posting_date=view_date)
                             posted_any = True
                             
                         uow.cashbook.rebuild_projection(branch_id, view_date)

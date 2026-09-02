@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+from typing import Optional, Any
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from domain.entities.event_store import DomainEvent
 from services.posting_engine import FinancialPostingEngine
@@ -36,19 +37,24 @@ class TreasuryService:
         raise ValueError(f"Officer '{username}' not found.")
 
     @classmethod
-    def post_treasury_transaction(cls, uow: SupabaseUnitOfWork, tx_type: str, amount: float, branch: str, officer: str, reference: str = None, remarks: str = None) -> str:
+    def post_treasury_transaction(cls, uow: SupabaseUnitOfWork, tx_type: str, amount: float, branch: str, officer: str, reference: str = None, remarks: str = None, posting_date: Optional[Any] = None) -> str:
         if amount <= 0:
             raise ValueError("Amount must be greater than zero.")
 
         branch_id = cls._resolve_branch_id(uow, branch)
         officer_id = cls._resolve_officer_id(uow, officer)
         record_id = str(uuid.uuid4())
-        today_date = date.today()
-        p_date_str = today_date.isoformat()
+        
+        target_date = posting_date if posting_date else date.today()
+        if hasattr(target_date, 'date') and callable(target_date.date):
+            target_date = target_date.date()
+        elif isinstance(target_date, str):
+            target_date = date.fromisoformat(target_date[:10])
+        p_date_str = target_date.isoformat()
 
         # Check Business Date Freeze & Working Day (BR-DATE-002)
         from services.business_date_service import BusinessDateService
-        is_open, reason = BusinessDateService.is_operational_open(uow, branch_id, today_date)
+        is_open, reason = BusinessDateService.is_operational_open(uow, branch_id, target_date)
         if not is_open:
             raise ValueError(f"Operational Restriction: Cannot post treasury transaction. {reason}.")
 
@@ -82,7 +88,8 @@ class TreasuryService:
                 "reference": reference or record_id,
                 "narration": remarks or f"Treasury {tx_type} transaction.",
                 "transaction_type": tx_type,
-                "classification": event_type
+                "classification": event_type,
+                "date": p_date_str
             }
         )
 
@@ -142,7 +149,7 @@ class TreasuryService:
 
         # Rebuild projection
         try:
-            uow.cashbook.rebuild_projection(uow, branch_id, today_date)
+            uow.cashbook.rebuild_projection(uow, branch_id, target_date)
         except Exception as ex:
             print(f"[SAVINGS TRACE] Deferred cashbook rebuild failed: {ex}")
 

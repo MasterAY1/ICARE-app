@@ -1,5 +1,6 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, date
+from typing import Optional, Any
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from domain.entities.repayment import Repayment
 from domain.entities.event_store import DomainEvent
@@ -194,7 +195,7 @@ class RepaymentService:
         return repayment
 
     @staticmethod
-    def reverse_repayment(uow: SupabaseUnitOfWork, original_repayment_id: str, reason: str, reversed_by: str):
+    def reverse_repayment(uow: SupabaseUnitOfWork, original_repayment_id: str, reason: str, reversed_by: str, reversal_date: Optional[Any] = None):
         """
         Executes a compensating negative repayment to reverse an error (BR-ERR-002).
         """
@@ -221,6 +222,13 @@ class RepaymentService:
             
         comp_record["note"] = f"REVERSAL of {original_repayment_id}. Reason: {reason}"
         comp_record["created_at"] = datetime.now().isoformat()
+
+        rev_dt = reversal_date if reversal_date else datetime.now()
+        rev_dt_str = rev_dt.isoformat() if hasattr(rev_dt, 'isoformat') else str(rev_dt)
+        if "payment_date" in comp_record:
+            comp_record["payment_date"] = rev_dt_str[:10]
+        if "date" in comp_record:
+            comp_record["date"] = rev_dt_str
         
         operations.append({
             "type": "insert",
@@ -236,7 +244,8 @@ class RepaymentService:
             "amount": abs(orig_amount),
             "reference": new_id,
             "loan_id": orig.get("loan_id"),
-            "narration": f"Reversal of repayment {original_repayment_id}"
+            "narration": f"Reversal of repayment {original_repayment_id}",
+            "date": rev_dt_str
         }
         
         ev = DomainEvent(
@@ -269,7 +278,14 @@ class RepaymentService:
 
         # 4. Rebuild projection
         try:
-            from datetime import date
-            uow.cashbook.rebuild_projection(uow, orig.get("branch_id"), date.today())
+            branch_val = orig.get("branch_id")
+            rebuild_date = rev_dt.date() if hasattr(rev_dt, 'date') and callable(rev_dt.date) else (date.fromisoformat(str(rev_dt)[:10]) if rev_dt else date.today())
+            uow.cashbook.rebuild_projection(uow, branch_val, rebuild_date)
+
+            orig_raw_date = orig.get("payment_date") or orig.get("date")
+            if orig_raw_date:
+                orig_date = date.fromisoformat(str(orig_raw_date)[:10])
+                if orig_date != rebuild_date:
+                    uow.cashbook.rebuild_projection(uow, branch_val, orig_date)
         except Exception as ex:
             print(f"Deferred cashbook rebuild failed during reversal: {ex}")

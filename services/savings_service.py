@@ -214,17 +214,19 @@ class SavingsService:
                 "collecting_officer": collecting_officer,
                 "amount": amt,
                 "reference": reference or entity.id,
-                "narration": narr
+                "narration": narr,
+                "date": p_dt.isoformat() if hasattr(p_dt, 'isoformat') else str(p_dt)
             }
         )
         uow.event_store.append(event)
         FinancialPostingEngine.post_event(uow, event)
 
     @staticmethod
-    def post_laps_savings(uow: SupabaseUnitOfWork, client_id: str, client_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None):
+    def post_laps_savings(uow: SupabaseUnitOfWork, client_id: str, client_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None, posting_date: Optional[Any] = None):
         if deposit_amount == 0 and withdrawal_amount == 0:
             return
-            
+
+        p_dt = posting_date if posting_date else datetime.now()
         entity = LapsSavings(
             client_id=client_id,
             client_name=client_name,
@@ -234,7 +236,7 @@ class SavingsService:
             withdrawal_amount=withdrawal_amount,
             reference=reference,
             remarks=remarks,
-            date=datetime.now()
+            date=p_dt
         )
         # 1. Persist operational data
         uow.laps_savings.create(entity)
@@ -255,7 +257,8 @@ class SavingsService:
                 "officer": officer,
                 "amount": amt,
                 "reference": reference or entity.id,
-                "narration": remarks or f"LAPS savings transaction for client {client_name}"
+                "narration": remarks or f"LAPS savings transaction for client {client_name}",
+                "date": p_dt.isoformat() if hasattr(p_dt, 'isoformat') else str(p_dt)
             }
         )
         uow.event_store.append(event)
@@ -310,7 +313,8 @@ class SavingsService:
         officer: str,
         amount: float,
         reference: str = None,
-        remarks: str = None
+        remarks: str = None,
+        posting_date: Optional[Any] = None
     ) -> dict:
         """
         Executes atomic loan offset using client savings balance:
@@ -321,6 +325,8 @@ class SavingsService:
         """
         if amount <= 0:
             raise ValueError("Offset amount must be greater than zero.")
+
+        p_dt = posting_date if posting_date else datetime.now()
 
         cls_info = WithdrawalClassificationEngine.classify_withdrawal(
             TransactionClassification.LOAN_OFFSET, amount
@@ -338,7 +344,7 @@ class SavingsService:
                 withdrawal_amount=amount,
                 reference=reference,
                 remarks=remarks or f"Loan offset withdrawal from GroupSavings",
-                date=datetime.now()
+                date=p_dt
             )
             uow.group_savings.create(source_entity)
         elif source_savings_type == "MiscSavings":
@@ -351,7 +357,7 @@ class SavingsService:
                 withdrawal_amount=amount,
                 reference=reference,
                 remarks=remarks or f"Loan offset withdrawal from MiscSavings",
-                date=datetime.now()
+                date=p_dt
             )
             uow.misc_savings.create(source_entity)
         else: # IndividualSavings
@@ -364,7 +370,7 @@ class SavingsService:
                 withdrawal_amount=amount,
                 reference=reference,
                 remarks=remarks or f"Loan offset withdrawal from IndividualSavings",
-                date=datetime.now()
+                date=p_dt
             )
             uow.individual_savings.create(source_entity)
 
@@ -380,7 +386,7 @@ class SavingsService:
                 others_amount=0.0,
                 recovery_amount=0.0,
                 initial_payment=0.0,
-                payment_date=datetime.now().date(),
+                payment_date=p_dt.date() if hasattr(p_dt, 'date') and callable(p_dt.date) else p_dt,
                 transaction_type="LOAN_OFFSET",
                 branch=branch,
                 credit_officer=officer,
@@ -413,7 +419,8 @@ class SavingsService:
                     "amount": amount,
                     "reference": reference or source_entity.id,
                     "classification": TransactionClassification.LOAN_OFFSET.value,
-                    "narration": remarks or f"Loan offset of {amount:,.2f} from {source_savings_type} for loan {loan_id}"
+                    "narration": remarks or f"Loan offset of {amount:,.2f} from {source_savings_type} for loan {loan_id}",
+                    "date": p_dt.isoformat() if hasattr(p_dt, 'isoformat') else str(p_dt)
                 }
             )
             uow.event_store.append(event)
@@ -458,7 +465,8 @@ class SavingsService:
         officer: str,
         amount: float,
         reference: str = None,
-        remarks: str = None
+        remarks: str = None,
+        posting_date: Optional[Any] = None
     ) -> dict:
         """
         Executes atomic internal savings transfer into LAPS:
@@ -469,6 +477,8 @@ class SavingsService:
         """
         if amount <= 0:
             raise ValueError("Transfer amount must be greater than zero.")
+
+        p_dt = posting_date if posting_date else datetime.now()
 
         cls_info = WithdrawalClassificationEngine.classify_withdrawal(
             TransactionClassification.LAPS_TRANSFER, amount
@@ -486,7 +496,7 @@ class SavingsService:
                 withdrawal_amount=amount,
                 reference=reference,
                 remarks=remarks or f"LAPS transfer withdrawal from GroupSavings",
-                date=datetime.now()
+                date=p_dt
             )
             uow.group_savings.create(source_entity)
         elif source_savings_type == "MiscSavings":
@@ -499,7 +509,7 @@ class SavingsService:
                 withdrawal_amount=amount,
                 reference=reference,
                 remarks=remarks or f"LAPS transfer withdrawal from MiscSavings",
-                date=datetime.now()
+                date=p_dt
             )
             uow.misc_savings.create(source_entity)
         else: # IndividualSavings
@@ -512,7 +522,7 @@ class SavingsService:
                 withdrawal_amount=amount,
                 reference=reference,
                 remarks=remarks or f"LAPS transfer withdrawal from IndividualSavings",
-                date=datetime.now()
+                date=p_dt
             )
             uow.individual_savings.create(source_entity)
 
@@ -526,7 +536,7 @@ class SavingsService:
                 withdrawal_amount=0.0,
                 reference=reference,
                 remarks=remarks or f"LAPS transfer deposit from {source_savings_type}",
-                date=datetime.now()
+                date=p_dt
             )
             uow.laps_savings.create(laps_entity)
 
@@ -554,7 +564,8 @@ class SavingsService:
                     "amount": amount,
                     "reference": reference or laps_entity.id,
                     "classification": TransactionClassification.LAPS_TRANSFER.value,
-                    "narration": remarks or f"LAPS transfer of {amount:,.2f} from {source_savings_type} for client {client_name}"
+                    "narration": remarks or f"LAPS transfer of {amount:,.2f} from {source_savings_type} for client {client_name}",
+                    "date": p_dt.isoformat() if hasattr(p_dt, 'isoformat') else str(p_dt)
                 }
             )
             uow.event_store.append(event)
@@ -599,7 +610,8 @@ class SavingsService:
         amount: float,
         cash_paid: bool = True,
         reference: str = None,
-        remarks: str = None
+        remarks: str = None,
+        posting_date: Optional[Any] = None
     ) -> dict:
         """
         Executes LAPS payout to client:
@@ -610,6 +622,8 @@ class SavingsService:
         """
         if amount <= 0:
             raise ValueError("Payout amount must be greater than zero.")
+
+        p_dt = posting_date if posting_date else datetime.now()
 
         cls_info = WithdrawalClassificationEngine.classify_withdrawal(
             TransactionClassification.LAPS_PAYOUT, amount, is_cash_paid=cash_paid
@@ -624,7 +638,7 @@ class SavingsService:
             withdrawal_amount=amount,
             reference=reference,
             remarks=remarks or f"LAPS payout ({'Cash' if cash_paid else 'Non-Cash'}) for client {client_name}",
-            date=datetime.now()
+            date=p_dt
         )
         uow.laps_savings.create(laps_entity)
 
@@ -652,7 +666,8 @@ class SavingsService:
                     "cash_paid": cash_paid,
                     "reference": reference or laps_entity.id,
                     "classification": TransactionClassification.LAPS_PAYOUT.value,
-                    "narration": remarks or f"LAPS payout of {amount:,.2f} ({'Cash' if cash_paid else 'Non-Cash'}) for client {client_name}"
+                    "narration": remarks or f"LAPS payout of {amount:,.2f} ({'Cash' if cash_paid else 'Non-Cash'}) for client {client_name}",
+                    "date": p_dt.isoformat() if hasattr(p_dt, 'isoformat') else str(p_dt)
                 }
             )
             uow.event_store.append(event)
@@ -682,7 +697,7 @@ class SavingsService:
             raise e
 
     @staticmethod
-    def reverse_savings(uow: SupabaseUnitOfWork, original_savings_id: str, reason: str, reversed_by: str):
+    def reverse_savings(uow: SupabaseUnitOfWork, original_savings_id: str, reason: str, reversed_by: str, reversal_date: Optional[Any] = None):
         """
         Executes a compensating negative savings record to reverse an error (BR-ERR-002).
         Handles both individual_savings and group_savings atomically with Ledger reversal.
@@ -722,6 +737,13 @@ class SavingsService:
         comp_record["remarks"] = f"REVERSAL of {original_savings_id}. Reason: {reason} (by {reversed_by})"
         comp_record["created_at"] = datetime.now().isoformat()
 
+        rev_dt = reversal_date if reversal_date else datetime.now()
+        rev_dt_str = rev_dt.isoformat() if hasattr(rev_dt, 'isoformat') else str(rev_dt)
+        if "posting_date" in comp_record:
+            comp_record["posting_date"] = rev_dt_str[:10]
+        if "date" in comp_record:
+            comp_record["date"] = rev_dt_str
+
         operations.append({
             "type": "insert",
             "table": table_name,
@@ -734,7 +756,8 @@ class SavingsService:
             "officer": orig.get("officer_id") or orig.get("officer"),
             "amount": reversal_amount,
             "reference": new_id,
-            "narration": f"Reversal of savings {original_savings_id}. Reason: {reason}"
+            "narration": f"Reversal of savings {original_savings_id}. Reason: {reason}",
+            "date": rev_dt_str
         }
 
         agg_type = "IndividualSavings" if table_name == "individual_savings" else "GroupSavings"
@@ -770,7 +793,16 @@ class SavingsService:
         try:
             from datetime import date
             branch_val = orig.get("branch_id") or orig.get("branch")
-            uow.cashbook.rebuild_projection(uow, branch_val, date.today())
+            # Rebuild reversal date
+            rebuild_date = rev_dt.date() if hasattr(rev_dt, 'date') and callable(rev_dt.date) else (date.fromisoformat(str(rev_dt)[:10]) if rev_dt else date.today())
+            uow.cashbook.rebuild_projection(uow, branch_val, rebuild_date)
+
+            # Also rebuild original date if different
+            orig_raw_date = orig.get("posting_date") or orig.get("date")
+            if orig_raw_date:
+                orig_date = date.fromisoformat(str(orig_raw_date)[:10])
+                if orig_date != rebuild_date:
+                    uow.cashbook.rebuild_projection(uow, branch_val, orig_date)
         except Exception:
             pass
 
