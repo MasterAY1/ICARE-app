@@ -2996,13 +2996,24 @@ elif page == "Loan Origination":
                                     return None
                                 
                                 # 1. First process Groups
-                                group_mapping = {}  # maps group name -> group_id
-                                group_rows_map = {} # maps group name -> group_row
+                                group_mapping = {}  # maps Group Reference -> group_id (unique per row)
+                                group_rows_map = {} # maps Group Reference -> group_row
                                 for index, group_row in df_groups.iterrows():
                                     gname = str(group_row.get('Group Name', '')).strip()
                                     if not gname or "example" in gname.lower():
                                         continue
                                     
+                                    # Extract Group Reference as unique identifier
+                                    g_ref_raw = group_row.get('Group Reference', '')
+                                    g_ref = str(g_ref_raw).strip() if pd.notna(g_ref_raw) else ''
+                                    if not g_ref or g_ref.lower() == 'nan':
+                                        g_ref = f"AUTO-{index}"
+                                    # Parse group number from reference (e.g. "GRP-04" -> "4", or just "04" -> "4")
+                                    try:
+                                        group_number = str(int(str(g_ref).upper().replace("GRP-", "").strip()))
+                                    except Exception:
+                                        group_number = str(g_ref)[-2:]
+
                                     # Resolve branch_id
                                     bname = str(group_row.get('Branch Name', BRANCH)).strip()
                                     res_b = uow.client.table("branches").select("branch_id").eq("name", bname).execute()
@@ -3027,11 +3038,12 @@ elif page == "Loan Origination":
                                     else:
                                         leader_name = str(leader_name).strip()
 
-                                    # Check if group already exists
-                                    res_g = uow.client.table("groups").select("group_id").eq("name", gname).execute()
-                                    if res_g.data:
+                                    # Check if group already exists by (group_number, branch_id) composite — NOT name-only
+                                    res_g = uow.client.table("groups").select("group_id").eq("group_number", group_number).eq("branch_id", branch_id).execute() if branch_id else None
+                                    if res_g and res_g.data:
                                         group_id = res_g.data[0]["group_id"]
                                         uow.client.table("groups").update({
+                                            "name": gname,
                                             "meeting_day": m_day,
                                             "branch_id": branch_id,
                                             "officer_id": officer_id,
@@ -3045,14 +3057,14 @@ elif page == "Loan Origination":
                                             "branch_id": branch_id,
                                             "officer_id": officer_id,
                                             "leader_name": leader_name,
-                                            "group_number": str(group_row.get('Group Reference', '01'))[-2:],
+                                            "group_number": group_number,
                                             "current_member_sequence": 0
                                         }
                                         res_g_ins = uow.client.table("groups").insert(new_g).execute()
                                         group_id = res_g_ins.data[0]["group_id"] if res_g_ins.data else None
                                     
-                                    group_mapping[gname] = group_id
-                                    group_rows_map[gname] = group_row
+                                    group_mapping[g_ref] = group_id
+                                    group_rows_map[g_ref] = group_row
 
                                 # 2. Process Members
                                 from domain.entities.client import Client
@@ -3065,13 +3077,15 @@ elif page == "Loan Origination":
                                             continue
                                             
                                         group_ref = member_row.get('Group Reference')
+                                        g_ref_str = str(group_ref).strip() if pd.notna(group_ref) else ''
                                         group_match = df_groups[df_groups['Group Reference'] == group_ref] if 'Group Reference' in df_groups.columns else pd.DataFrame()
                                         if group_match.empty:
                                             continue
                                             
                                         group_row = group_match.iloc[0]
                                         group_name = str(group_row.get('Group Name', '')).strip()
-                                        group_id = group_mapping.get(group_name)
+                                        # Resolve group_id via Group Reference (unique), NOT Group Name (may collide)
+                                        group_id = group_mapping.get(g_ref_str)
                                         
                                         # Resolve branch
                                         bname = str(group_row.get('Branch Name', BRANCH)).strip()
