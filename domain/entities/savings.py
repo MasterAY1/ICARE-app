@@ -28,6 +28,7 @@ class GroupSavings:
     remarks: Optional[str] = None
     date: Optional[datetime] = None
     id: Optional[str] = None
+    group_id: Optional[str] = None
 
 @dataclass
 class MiscSavings:

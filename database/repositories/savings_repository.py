@@ -39,6 +39,12 @@ class SupabaseSavingsRepository(BaseRepository):
     def _resolve_group_id(self, group_name: str) -> str:
         if not group_name:
             return "00000000-0000-0000-0000-000000000000"
+        import uuid
+        try:
+            uuid.UUID(str(group_name))
+            return str(group_name)
+        except ValueError:
+            pass
         try:
             res = self.client.table("groups").select("group_id").eq("name", group_name).execute()
             if res.data:
@@ -99,6 +105,7 @@ class SupabaseSavingsRepository(BaseRepository):
                 kwargs["owner_known"] = dto.get("owner_known", True)
         elif self.entity_class.__name__ == "GroupSavings":
             kwargs["group_name"] = g_name
+            kwargs["group_id"] = dto.get("group_id")
             
         return self.entity_class(**kwargs)
 
@@ -162,8 +169,9 @@ class SupabaseSavingsRepository(BaseRepository):
                     pass
             d["client_id"] = clean_uuid(c_id)
         elif self.entity_class.__name__ == "GroupSavings":
-            # If it's a fake group id or name, resolve it
-            g_id = self._resolve_group_id(entity.group_name)
+            g_id = getattr(entity, 'group_id', None)
+            if not g_id or not is_valid_uuid(g_id):
+                g_id = self._resolve_group_id(entity.group_name)
             d["group_id"] = clean_uuid(g_id)
 
         return d
@@ -186,7 +194,7 @@ class SupabaseSavingsRepository(BaseRepository):
         res = query.execute()
         return [self._to_domain(item) for item in res.data]
 
-    def get_total_balance(self, branch: Optional[str] = None, officer: Optional[str] = None, client_id: Optional[str] = None, group_name: Optional[str] = None) -> float:
+    def get_total_balance(self, branch: Optional[str] = None, officer: Optional[str] = None, client_id: Optional[str] = None, group_name: Optional[str] = None, group_id: Optional[str] = None) -> float:
         query = self.client.table(self.table_name).select("deposit_amount, withdrawal_amount")
         if branch:
             branch_id = self._resolve_branch_id(branch)
@@ -196,9 +204,12 @@ class SupabaseSavingsRepository(BaseRepository):
             query = query.eq("officer_id", officer_id)
         if client_id and self.entity_class.__name__ in ["IndividualSavings", "MiscSavings", "LapsSavings"]:
             query = query.eq("client_id", client_id)
-        if group_name and self.entity_class.__name__ == "GroupSavings":
-            group_id = self._resolve_group_id(group_name)
-            query = query.eq("group_id", group_id)
+        if self.entity_class.__name__ == "GroupSavings":
+            if group_id:
+                query = query.eq("group_id", group_id)
+            elif group_name:
+                resolved_gid = self._resolve_group_id(group_name)
+                query = query.eq("group_id", resolved_gid)
         res = query.execute()
         total = 0.0
         for row in res.data:

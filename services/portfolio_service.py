@@ -116,9 +116,24 @@ class PortfolioService:
 
         # Authoritative group name lookup from clients.group_id -> groups.name
         group_map = {}
+        group_name_by_id = {}
+        _raw_groups = []
         try:
-            g_res = uow.client.table("groups").select("group_id, name").execute()
-            group_name_by_id = {str(g["group_id"]): g["name"] for g in (g_res.data or [])}
+            g_res = uow.client.table("groups").select("group_id, name, group_number, meeting_day").execute()
+            _raw_groups = g_res.data or []
+            _g_name_counts = {}
+            for _g in _raw_groups:
+                _gn = _g.get("name", "")
+                _g_name_counts[_gn] = _g_name_counts.get(_gn, 0) + 1
+
+            for _g in _raw_groups:
+                gid = str(_g["group_id"])
+                gn = _g.get("name", "Unknown")
+                if _g_name_counts.get(gn, 1) > 1:
+                    group_name_by_id[gid] = f"{gn} (#{_g.get('group_number', '?')} - {_g.get('meeting_day', '?')})"
+                else:
+                    group_name_by_id[gid] = gn
+
             for c in clients_raw:
                 cid_str = str(c.get("client_id") or c.get("id"))
                 gid_str = str(c.get("group_id") or "")
@@ -357,17 +372,13 @@ class PortfolioService:
 
         # Map group meeting days for period expected checking
         group_mday_map = {}
-        try:
-            loan_client_ids = [l.get("client_id") for l in loans_raw if l.get("client_id")]
-            if loan_client_ids:
-                gm_q = uow.client.table("client_memberships").select("client_id, groups(name, meeting_day)").in_("client_id", loan_client_ids).execute()
-                for gm in (gm_q.data or []):
-                    grp = gm.get("groups") or {}
-                    g_mday_str = grp.get("meeting_day") or "Daily"
-                    g_name_str = grp.get("name") or "Individual"
-                    group_mday_map[g_name_str] = g_mday_str
-        except Exception:
-            pass
+        for _g in _raw_groups:
+            gid = str(_g.get("group_id"))
+            g_lbl = group_name_by_id.get(gid)
+            if g_lbl:
+                group_mday_map[g_lbl] = _g.get("meeting_day") or "Daily"
+            if _g.get("name") and _g.get("name") not in group_mday_map:
+                group_mday_map[_g["name"]] = _g.get("meeting_day") or "Daily"
 
         # Calculate overall dynamic outstanding balance, active credit, and period expected repayment (BR-DASH-007)
         total_outstanding_balance = 0.0

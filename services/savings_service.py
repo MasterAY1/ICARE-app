@@ -69,7 +69,7 @@ class SavingsService:
             raise e
 
     @staticmethod
-    def post_group_savings(uow: SupabaseUnitOfWork, group_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None, posting_date: Optional[Any] = None):
+    def post_group_savings(uow: SupabaseUnitOfWork, group_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None, posting_date: Optional[Any] = None, group_id: Optional[str] = None):
         if deposit_amount == 0 and withdrawal_amount == 0:
             return
             
@@ -89,7 +89,8 @@ class SavingsService:
             withdrawal_amount=withdrawal_amount,
             reference=reference,
             remarks=remarks,
-            date=p_dt
+            date=p_dt,
+            group_id=group_id
         )
         # 1. Persist operational data
         uow.group_savings.create(entity)
@@ -113,7 +114,8 @@ class SavingsService:
                     "amount": amt,
                     "reference": reference or entity.id,
                     "date": p_dt.isoformat() if hasattr(p_dt, 'isoformat') else str(p_dt),
-                    "narration": remarks or f"Group savings transaction for group {group_name}"
+                    "narration": remarks or f"Group savings transaction for group {group_name}",
+                    "group_id": group_id
                 }
             )
             uow.event_store.append(event)

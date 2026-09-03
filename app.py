@@ -1306,7 +1306,8 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None):
             # 1. Route Group Savings
             if str(client_id).startswith('GROUP-'):
                 group_name = str(client_id).replace('GROUP-', '')
-                SavingsService.post_group_savings(uow, group_name, branch, officer, group_dep, group_wd, remarks=db_data.get('note'), posting_date=p_date)
+                g_id_val = db_data.get('group_id')
+                SavingsService.post_group_savings(uow, group_name, branch, officer, group_dep, group_wd, remarks=db_data.get('note'), posting_date=p_date, group_id=g_id_val)
                 return
 
             # 2. Route LAPS
@@ -2659,8 +2660,22 @@ elif page == "Loan Origination":
                 st.success(st.session_state["reg_success_msg"])
                 del st.session_state["reg_success_msg"]
 
-            group_names = [g["name"] for g in groups_list]
-            group_options = ["Individual (No Group)", "+ Create New Group"] + group_names
+            # Disambiguate duplicate group names
+            _g_counts = {}
+            for g in groups_list:
+                gn = g.get("name", "")
+                _g_counts[gn] = _g_counts.get(gn, 0) + 1
+
+            group_display_map = {}
+            for g in groups_list:
+                gn = g.get("name", "")
+                if _g_counts.get(gn, 1) > 1:
+                    lbl = f"{gn} (#{g.get('group_number', '?')} - {g.get('meeting_day', '?')})"
+                else:
+                    lbl = gn
+                group_display_map[lbl] = g
+
+            group_options = ["Individual (No Group)", "+ Create New Group"] + list(group_display_map.keys())
             selected_group_mode = st.selectbox("Assign to Group", group_options, key="reg_selected_group_mode")
             
             final_group_name = ""
@@ -2673,8 +2688,8 @@ elif page == "Loan Origination":
                 final_group_number = gr2.text_input("New Group Number (2-digits)", placeholder="e.g. 01", key="reg_new_group_number")
                 final_meeting_day = gr3.selectbox("Meeting Day", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Daily"], key="reg_new_group_meeting_day")
             elif selected_group_mode != "Individual (No Group)":
-                # Find existing group
-                group_data = next((g for g in groups_list if g["name"] == selected_group_mode), None)
+                # Find existing group from map
+                group_data = group_display_map.get(selected_group_mode)
                 if group_data:
                     final_group_id = group_data["group_id"]
                     final_group_name = group_data["name"]
@@ -4203,11 +4218,31 @@ elif page == "Collections":
                     res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").eq("officer_id", target_officer_id).execute()
                 
             clients_data = []
+            # Pre-load all groups with meeting_day for disambiguating same-named groups
+            _all_groups_res = uow.client.table("groups").select("group_id, name, meeting_day, group_number").execute() if res_c.data else None
+            _groups_by_id = {g["group_id"]: g for g in (_all_groups_res.data or [])} if _all_groups_res else {}
+            # Detect duplicate names to add disambiguating suffix only where needed
+            _group_name_counts = {}
+            for _gv in _groups_by_id.values():
+                _gn = _gv.get("name", "")
+                _group_name_counts[_gn] = _group_name_counts.get(_gn, 0) + 1
+
+            def _make_group_label(g_id):
+                """Create a display label for the group. Adds (#number - meeting_day) suffix only if the name is shared."""
+                gi = _groups_by_id.get(g_id)
+                if not gi:
+                    return "Ungrouped"
+                gn = gi.get("name", "Ungrouped")
+                if _group_name_counts.get(gn, 1) > 1:
+                    return f"{gn} (#{gi.get('group_number', '?')} - {gi.get('meeting_day', '?')})"
+                return gn
+
             if res_c.data:
                 for c in res_c.data:
                     c_stat = (c.get("client_statuses") or {}).get("name") if isinstance(c.get("client_statuses"), dict) else c.get("status")
                     if c_stat in ["Closed", "Suspended"]:
                         continue
+                    c_group_id = c.get("group_id")
                     g_name = (c.get("groups") or {}).get("name") if isinstance(c.get("groups"), dict) else None
                     if not g_name:
                         m_list = c.get("client_memberships") or []
@@ -4222,12 +4257,16 @@ elif page == "Collections":
                 
                     if not g_name:
                         g_name = "Ungrouped"
+                    
+                    # Build disambiguated label for display
+                    g_label = _make_group_label(c_group_id) if c_group_id else g_name
                 
                     clients_data.append({
                         "Client ID": c["client_code"] or c["client_id"],
                         "ID": c["client_id"],
                         "Client Name": c["name"],
-                        "Group Name": g_name,
+                        "Group Name": g_label,
+                        "Group ID": c_group_id,
                         "Officer": target_co,
                         "Branch": BRANCH
                     })
@@ -4650,9 +4689,12 @@ elif page == "Collections":
                         group_savings_balance = 0.0
                         if selected_group != "Ungrouped":
                             try:
-                                g_res = uow.client.table("groups").select("group_id").eq("name", selected_group).execute()
-                                if g_res.data:
-                                    g_id = g_res.data[0]['group_id']
+                                # Resolve group_id from clients DataFrame (avoids name collision)
+                                g_id = group_clients['Group ID'].dropna().iloc[0] if 'Group ID' in group_clients.columns and not group_clients['Group ID'].dropna().empty else None
+                                if not g_id:
+                                    g_res = uow.client.table("groups").select("group_id").eq("name", selected_group).execute()
+                                    g_id = g_res.data[0]['group_id'] if g_res.data else None
+                                if g_id:
                                     gs_res = uow.client.table("group_savings").select("deposit_amount, withdrawal_amount").eq("group_id", g_id).execute()
                                     legacy_reps = repayments[repayments['Client ID'] == f"GROUP-{selected_group}"] if not repayments.empty else pd.DataFrame()
                                     legacy_bal = (float(legacy_reps['Savings Amount'].sum()) - float(legacy_reps['Withdrawal Amount'].sum())) if not legacy_reps.empty else 0.0
@@ -4940,15 +4982,15 @@ elif page == "Collections":
                             group_savings_balance = 0.0
                             if selected_group != "Ungrouped":
                                 try:
-                                    g_res = uow.client.table("groups").select("group_id").eq("name", selected_group).execute()
-                                    if g_res.data:
-                                        g_id = g_res.data[0]['group_id']
+                                    g_id = group_clients['Group ID'].dropna().iloc[0] if 'Group ID' in group_clients.columns and not group_clients['Group ID'].dropna().empty else None
+                                    if not g_id:
+                                        g_res = uow.client.table("groups").select("group_id").eq("name", selected_group).execute()
+                                        g_id = g_res.data[0]['group_id'] if g_res.data else None
+                                    if g_id:
                                         gs_res = uow.client.table("group_savings").select("deposit_amount, withdrawal_amount").eq("group_id", g_id).execute()
-                                    
                                         legacy_reps = repayments[repayments['Client ID'] == f"GROUP-{selected_group}"] if not repayments.empty else pd.DataFrame()
                                         legacy_bal = (float(legacy_reps['Savings Amount'].sum()) - float(legacy_reps['Withdrawal Amount'].sum())) if not legacy_reps.empty else 0.0
-                                    
-                                        group_savings_balance = sum(float(g.get("deposit_amount") or 0) for g in gs_res.data) - sum(float(g.get("withdrawal_amount") or 0) for g in gs_res.data) + legacy_bal
+                                        group_savings_balance = sum(float(g.get("deposit_amount") or 0) for g in (gs_res.data or [])) - sum(float(g.get("withdrawal_amount") or 0) for g in (gs_res.data or [])) + legacy_bal
                                 except Exception:
                                     pass
                                 
@@ -5147,12 +5189,14 @@ elif page == "Collections":
                                     global_group_wd = float(global_group_wd or 0)
                                 
                                     if global_group_savings > 0 or global_group_wd > 0:
+                                        target_gid = group_clients['Group ID'].dropna().iloc[0] if 'Group ID' in group_clients.columns and not group_clients['Group ID'].dropna().empty else None
                                         g_data = {
                                             "Date": date_str, "Client ID": f"GROUP-{selected_group}", "Client Name": f"{selected_group} Meeting",
                                             "Officer": target_co, "Branch": BRANCH,
                                             "Amount Paid": global_group_savings,
                                             "Transaction Type": "Group Meeting", "Note": "Group Level Inputs",
                                             "Savings Amount": global_group_savings, "Withdrawal Amount": global_group_wd,
+                                            "group_id": target_gid,
                                             "Laps Reserved": 0,
                                             "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
                                             "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0, "Bank Withdrawal": 0,
@@ -5443,7 +5487,7 @@ elif page == "Withdrawal Operations":
             co_filter = st.selectbox("Filter by Credit Officer", list(officers_map.keys()), key="wth_ind_co_filter")
             selected_officer_id = officers_map[co_filter]
             
-            query = uow.client.table("clients").select("client_id, client_code, name, status, status_id, client_memberships(group_id, groups(name)), client_statuses(name)")
+            query = uow.client.table("clients").select("client_id, client_code, name, status, status_id, client_memberships(group_id, groups(group_id, name, group_number, meeting_day)), client_statuses(name)")
             if ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
                 query = query.in_("branch_id", ASSIGNED_BRANCH_IDS)
             elif ROLE in ["BM", "Branch Manager", ROLE_BRANCH_MANAGER]:
@@ -5454,29 +5498,40 @@ elif page == "Withdrawal Operations":
             res_c = query.execute()
         else:
             officer_id = uow.loans._resolve_officer_id(USER) or getattr(current_user, 'id', USER_ID)
-            res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, client_memberships(group_id, groups(name)), client_statuses(name)").eq("officer_id", officer_id).execute()
+            res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, client_memberships(group_id, groups(group_id, name, group_number, meeting_day)), client_statuses(name)").eq("officer_id", officer_id).execute()
 
         # Build group list from the CO's own active relationship clients
-        co_groups = {}
         all_clients = [
             c for c in (res_c.data or []) 
             if ((c.get("client_statuses") or {}).get("name") if isinstance(c.get("client_statuses"), dict) else c.get("status")) not in ["Closed", "Suspended"]
         ]
+        _all_g_infos = {}
         for c in all_clients:
             memberships = c.get("client_memberships") or []
             if isinstance(memberships, dict):
                 memberships = [memberships]
             for m in memberships:
-                if m and m.get("group_id") and m.get("groups"):
-                    co_groups[m["group_id"]] = m["groups"].get("name") or "Unknown"
+                if m and m.get("group_id"):
+                    gid = m["group_id"]
+                    grp = m.get("groups") or {}
+                    _all_g_infos[gid] = grp
 
-        group_names = ["All Groups"] + sorted(co_groups.values())
-        sel_group_filter = st.selectbox("Filter by Group", group_names)
+        _gn_counts = {}
+        for grp in _all_g_infos.values():
+            gn = grp.get("name", "")
+            _gn_counts[gn] = _gn_counts.get(gn, 0) + 1
 
-        # Resolve selected group ID
-        selected_group_id = None
-        if sel_group_filter != "All Groups":
-            selected_group_id = next((gid for gid, gname in co_groups.items() if gname == sel_group_filter), None)
+        group_label_to_id = {"All Groups": None}
+        for gid, grp in _all_g_infos.items():
+            gn = grp.get("name") or "Unknown"
+            if _gn_counts.get(gn, 1) > 1:
+                lbl = f"{gn} (#{grp.get('group_number', '?')} - {grp.get('meeting_day', '?')})"
+            else:
+                lbl = gn
+            group_label_to_id[lbl] = gid
+
+        sel_group_filter = st.selectbox("Filter by Group", list(group_label_to_id.keys()))
+        selected_group_id = group_label_to_id[sel_group_filter]
 
         # Filter clients by selected group
         client_opts = {}
@@ -5595,7 +5650,7 @@ elif page == "Withdrawal Operations":
             co_filter = st.selectbox("Filter by Credit Officer", list(officers_map.keys()), key="wth_grp_co_filter")
             selected_officer_id = officers_map[co_filter]
             
-            query = uow.client.table("groups").select("group_id, name")
+            query = uow.client.table("groups").select("group_id, name, group_number, meeting_day")
             if ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
                 query = query.in_("branch_id", ASSIGNED_BRANCH_IDS)
             elif ROLE in ["BM", "Branch Manager", ROLE_BRANCH_MANAGER]:
@@ -5604,16 +5659,25 @@ elif page == "Withdrawal Operations":
             if selected_officer_id:
                 query = query.eq("officer_id", selected_officer_id)
             res_g = query.execute()
-            for g in (res_g.data or []):
-                if g and g.get("name"):
-                    group_opts[g["name"]] = g
         else:
             # Credit Officer (CO): strictly fetch only groups where groups.officer_id == target_officer_id
             target_officer_id = uow.loans._resolve_officer_id(USER) or getattr(current_user, 'id', USER_ID)
-            res_g = uow.client.table("groups").select("group_id, name").eq("branch_id", BRANCH_ID).eq("officer_id", target_officer_id).execute()
-            for g in (res_g.data or []):
-                if g and g.get("name"):
-                    group_opts[g["name"]] = g
+            res_g = uow.client.table("groups").select("group_id, name, group_number, meeting_day").eq("branch_id", BRANCH_ID).eq("officer_id", target_officer_id).execute()
+
+        _g_list = res_g.data or []
+        _gn_counts = {}
+        for g in _g_list:
+            gn = g.get("name", "")
+            _gn_counts[gn] = _gn_counts.get(gn, 0) + 1
+
+        for g in _g_list:
+            if g and g.get("name"):
+                gn = g["name"]
+                if _gn_counts.get(gn, 1) > 1:
+                    lbl = f"{gn} (#{g.get('group_number', '?')} - {g.get('meeting_day', '?')})"
+                else:
+                    lbl = gn
+                group_opts[lbl] = g
 
         if not group_opts:
             st.info("No active groups found for the selected officer.")
@@ -5624,7 +5688,7 @@ elif page == "Withdrawal Operations":
         g_name = sel_group["name"]
 
         # Show balance
-        grp_bal = uow.group_savings.get_total_balance(group_name=g_name)
+        grp_bal = uow.group_savings.get_total_balance(group_id=sel_group["group_id"])
         st.metric("Group Savings Balance", f"₦{grp_bal:,.2f}")
 
         op_type = st.radio("Withdrawal Operation", ["Cash Withdrawal", "Loan Offset (Member Debt)", "Asset Downpayment (Member Loan)", "LAPS Transfer (Group Closed)"], horizontal=True)
@@ -5696,7 +5760,7 @@ elif page == "Withdrawal Operations":
                         "operation_type": op_clean,
                         "client_id": sel_member["client_id"] if ("Loan Offset" in op_type or "Asset Downpayment" in op_type) and 'sel_member' in locals() else None,
                         "client_name": client_name_for_offset or g_name,
-                        "group_name": g_name,
+                        "group_name": sel_group.get("group_id") or g_name,
                         "loan_id": target_loan_id,
                         "branch_id": BRANCH_ID,
                         "requested_by": USER,
@@ -9078,7 +9142,7 @@ elif page == "Portfolio":
             # Dynamic Cascading Group Filter
             all_grp = ["All"]
             try:
-                g_q = uow_p.client.table("groups").select("name, officer_id, branch_id")
+                g_q = uow_p.client.table("groups").select("group_id, name, group_number, meeting_day, officer_id, branch_id")
                 if selected_officer_id:
                     g_q = g_q.eq("officer_id", selected_officer_id)
                 elif sel_branch and sel_branch != "All":
@@ -9091,7 +9155,22 @@ elif page == "Portfolio":
                     g_q = g_q.eq("officer_id", p_scope.user_id)
                 
                 g_res = g_q.execute()
-                all_grp += sorted(list(set(g["name"] for g in (g_res.data or []) if g.get("name"))))
+                _pg_list = g_res.data or []
+                _pg_counts = {}
+                for g in _pg_list:
+                    gn = g.get("name", "")
+                    _pg_counts[gn] = _pg_counts.get(gn, 0) + 1
+
+                for g in _pg_list:
+                    if g and g.get("name"):
+                        gn = g["name"]
+                        if _pg_counts.get(gn, 1) > 1:
+                            lbl = f"{gn} (#{g.get('group_number', '?')} - {g.get('meeting_day', '?')})"
+                        else:
+                            lbl = gn
+                        if lbl not in all_grp:
+                            all_grp.append(lbl)
+                all_grp = ["All"] + sorted(all_grp[1:])
             except Exception:
                 pass
             
