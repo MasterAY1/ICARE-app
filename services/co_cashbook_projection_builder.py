@@ -106,6 +106,53 @@ class CoCashbookProjectionBuilder:
             if event_type == "LoanOffsetFromSavings" and acc in ["2000", "2010", "2020"] and side == "Debit":
                 if ev_id not in processed_pwd_events:
                     product_withdrawal += amount
+                    payload = ev_store.get("payload") or {}
+                    is_asset = bool(payload.get("is_asset"))
+                    cycle = payload.get("cycle") or "Weekly"
+                    prod_name = str(payload.get("loan_product") or "").lower()
+
+                    if is_asset or "asset" in prod_name:
+                        asset_credit_sales += amount
+                    elif "24" in prod_name or "24w" in prod_name or cycle == "24w":
+                        rep_24_weeks += amount
+                    elif "120" in prod_name or "120d" in prod_name or cycle == "120d":
+                        rep_120_days += amount
+                    elif "60" in prod_name or "60d" in prod_name or cycle == "Daily":
+                        rep_daily += amount
+                    elif "month" in prod_name or cycle == "Monthly":
+                        rep_monthly += amount
+                    else:
+                        rep_12_weeks += amount
+                    processed_pwd_events.add(ev_id)
+                continue
+
+            if event_type == "FeeOffsetFromSavings" and acc in ["2000", "2010", "2020"] and side == "Debit":
+                if ev_id not in processed_pwd_events:
+                    product_withdrawal += amount
+                    payload = ev_store.get("payload") or {}
+                    fee_type = str(payload.get("fee_type") or "").lower()
+                    if "damage" in fee_type:
+                        credit_form_damage += amount
+                    elif "passbook" in fee_type:
+                        passbook += amount
+                    elif "app" in fee_type or "form" in fee_type:
+                        app_fee += amount
+                    else:
+                        misc_fees += amount
+                    processed_pwd_events.add(ev_id)
+                continue
+
+            if event_type == "SavingsTransferred" and acc in ["2000", "2010", "2020"] and side == "Debit":
+                if ev_id not in processed_pwd_events:
+                    product_withdrawal += amount
+                    savings_deposit += amount
+                    processed_pwd_events.add(ev_id)
+                continue
+
+            if event_type == "SavingsWithdrawn" and acc in ["2000", "2010", "2020"] and side == "Debit":
+                if ev_id not in processed_pwd_events:
+                    product_withdrawal += amount
+                    bank_withdrawal += amount
                     processed_pwd_events.add(ev_id)
                 continue
 
@@ -222,7 +269,6 @@ class CoCashbookProjectionBuilder:
                     else:
                         # Physical cash savings withdrawal paid to client
                         savings_withdrawal += amount
-                        bank_withdrawal += amount
                         if ev_id not in processed_pwd_events:
                             product_withdrawal += amount
                             processed_pwd_events.add(ev_id)
@@ -230,10 +276,6 @@ class CoCashbookProjectionBuilder:
                     bank_deposit += amount
                 elif event_type == "LapsPaidOut":
                     laps_returns += amount
-                    bank_withdrawal += amount  # Bank transfer payout from bank
-                    if ev_id not in processed_pwd_events:
-                        product_withdrawal += amount
-                        processed_pwd_events.add(ev_id)
                 elif event_type == "LoanDisbursed":
                     # For cash loans disbursed from vault/bank, record product active credit outflow
                     payload = ev_store.get("payload") or {}

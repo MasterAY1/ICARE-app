@@ -100,7 +100,8 @@ class TestE2EWithdrawalReconciliation(unittest.TestCase):
         )
 
         self.assertEqual(res["savings_withdrawal"], 0.0)
-        self.assertEqual(res["total_outflows"], 0.0)
+        self.assertEqual(res["total_inflows"], 25000.0)
+        self.assertEqual(res["total_outflows"], 25000.0)
         self.assertEqual(res["closing_balance"], 0.0)
 
     def test_e2e_laps_transferred_zero_cash(self):
@@ -251,9 +252,13 @@ class TestE2EWithdrawalReconciliation(unittest.TestCase):
             self.mock_uow, self.branch_id, self.officer_id, self.date_val
         )
 
-        self.assertEqual(res["total_inflows"], 70000.0)   # 50k bank_withdrawal + 20k savings_deposit
-        self.assertEqual(res["total_outflows"], 25000.0)  # 10k savings_withdrawal + 15k bank_deposit
-        self.assertEqual(res["closing_balance"], 45000.0) # 0 opening + 70k - 25k = 45k
+        # Dual-sided non-cash offsets reflect symmetrically:
+        # Inflows: 50k (bank_withdrawn) + 20k (savings_deposited) + 30k (rep offset) + 12k (laps_reserve) = 112k
+        # Outflows: 10k (cust withdrawal) + 15k (bank_deposit) + 30k (pwd offset) + 12k (pwd laps) = 67k
+        # Closing balance: 0 opening + 112k - 67k = 45k (identical net vault position)
+        self.assertEqual(res["total_inflows"], 112000.0)
+        self.assertEqual(res["total_outflows"], 67000.0)
+        self.assertEqual(res["closing_balance"], 45000.0)
 
 
 if __name__ == "__main__":

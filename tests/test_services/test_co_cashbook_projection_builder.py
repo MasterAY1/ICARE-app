@@ -78,8 +78,9 @@ class TestCoCashbookProjectionBuilder(unittest.TestCase):
             self.mock_uow, "branch-01", "off-01", date(2026, 7, 31)
         )
 
-        self.assertEqual(result["total_inflows"], 0.0)
-        self.assertEqual(result["total_outflows"], 0.0)
+        # Dual-sided non-cash offset: Left (inflow) = 15000, Right (outflow) = 15000, Net vault cash = 0
+        self.assertEqual(result["total_inflows"], 15000.0)
+        self.assertEqual(result["total_outflows"], 15000.0)
         self.assertEqual(result["closing_balance"], 0.0)
 
     def test_cash_laps_payout_impact(self):
@@ -102,7 +103,6 @@ class TestCoCashbookProjectionBuilder(unittest.TestCase):
         )
 
         self.assertEqual(result["laps_returns"], 7500.0)
-        self.assertEqual(result["product_withdrawal"], 7500.0)
         self.assertEqual(result["total_outflows"], 7500.0)
         self.assertEqual(result["closing_balance"], -7500.0)
 

@@ -2289,7 +2289,8 @@ if page == "Dashboard":
                                         if isinstance(effective_op_date, str):
                                             effective_op_date = date.fromisoformat(effective_op_date[:10])
                                         with SupabaseUnitOfWork() as uow_wr:
-                                            if wr_op == "Cash Withdrawal":
+                                            source_type = "GroupSavings" if wr_type == "Group" else ("MiscSavings" if wr_type == "Misc" else "IndividualSavings")
+                                            if wr_op in ["Cash Withdrawal", "Bank Transfer", "Client Bank Account (Transfer)", "Group Bank Account (Transfer)"]:
                                                 if wr_type == "Individual":
                                                     SavingsService.post_individual_savings(
                                                         uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
@@ -2311,8 +2312,7 @@ if page == "Dashboard":
                                                         reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
                                                         posting_date=effective_op_date
                                                     )
-                                            elif wr_op in ["Loan Offset", "Asset Downpayment"]:
-                                                source_type = "IndividualSavings" if wr_type == "Individual" else "GroupSavings"
+                                            elif wr_op in ["Loan Offset", "Asset Downpayment", "Loan Repayment / Asset Debt Offset"]:
                                                 SavingsService.post_loan_offset_from_savings(
                                                     uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
                                                     loan_id=wr.get("loan_id"), source_savings_type=source_type,
@@ -2320,8 +2320,40 @@ if page == "Dashboard":
                                                     reference=wr.get("reference"), remarks=f"[BM APPROVED {wr_op.upper()}] {wr_remarks}",
                                                     posting_date=effective_op_date
                                                 )
+                                            elif wr_op in ["Fee Offset", "Fee Payment from Savings"]:
+                                                fee_code = "misc_fees"
+                                                if "[FEE:" in wr_remarks:
+                                                    try:
+                                                        fee_code = wr_remarks.split("[FEE:")[1].split("]")[0].strip()
+                                                    except Exception:
+                                                        pass
+                                                SavingsService.post_fee_offset_from_savings(
+                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                    source_savings_type=source_type, branch=BRANCH, officer=wr_by,
+                                                    fee_type=fee_code, amount=wr_amt,
+                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED FEE OFFSET] {wr_remarks}",
+                                                    posting_date=effective_op_date
+                                                )
+                                            elif wr_op in ["Savings Transfer", "Transfer to Another Savings", "Another Member or Group Savings"]:
+                                                dest_id = wr.get("client_id")
+                                                dest_name = wr_name
+                                                dest_type = "IndividualSavings"
+                                                if "[DEST_ID:" in wr_remarks:
+                                                    try:
+                                                        dest_id = wr_remarks.split("[DEST_ID:")[1].split("]")[0].strip()
+                                                        dest_name = wr_remarks.split("[DEST_NAME:")[1].split("]")[0].strip()
+                                                        dest_type = wr_remarks.split("[DEST_TYPE:")[1].split("]")[0].strip()
+                                                    except Exception:
+                                                        pass
+                                                SavingsService.transfer_savings(
+                                                    uow=uow_wr, source_id=wr.get("client_id"), source_name=wr_name,
+                                                    source_type=source_type, destination_id=dest_id,
+                                                    destination_name=dest_name, destination_type=dest_type,
+                                                    branch=BRANCH, officer=wr_by, amount=wr_amt,
+                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED TRANSFER] {wr_remarks}",
+                                                    posting_date=effective_op_date
+                                                )
                                             elif wr_op == "LAPS Transfer":
-                                                source_type = "IndividualSavings" if wr_type == "Individual" else "GroupSavings"
                                                 SavingsService.transfer_to_laps(
                                                     uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
                                                     source_savings_type=source_type, branch=BRANCH, officer=wr_by, amount=wr_amt,
@@ -5560,61 +5592,118 @@ elif page == "Withdrawal Operations":
         st.metric("Individual Savings Balance", f"₦{ind_bal:,.2f}")
 
         # Operation type
-        op_type = st.radio("Withdrawal Operation", ["Cash Withdrawal", "Loan Offset", "Asset Downpayment", "LAPS Transfer"], horizontal=True)
+        dest_op = st.radio(
+            "Where is the money going?",
+            [
+                "Client Bank Account (Transfer)",
+                "Loan Repayment / Asset Debt Offset",
+                "Fee Payment from Savings",
+                "Another Member or Group Savings",
+                "LAPS Reserve"
+            ],
+            horizontal=False
+        )
 
-        if op_type == "Cash Withdrawal":
-            st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: YES (Vault Cash leaves CO position)")
-        elif op_type == "Loan Offset":
-            st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: NO (Internal non-cash offset against active loan debt)")
-        elif op_type == "Asset Downpayment":
-            st.info("Product Withdrawal Value: Increased | Physical Cash Outflow: NO (Internal non-cash deduction from savings to fund Asset Downpayment)")
-        elif op_type == "LAPS Transfer":
-            st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: NO (Internal non-cash transfer to LAPS reserve)")
+        if dest_op == "Client Bank Account (Transfer)":
+            st.info("💡 Electronic Transfer to Client | Right Side: Product Withdrawal | Left Side: Bank Withdrawal | Vault Cash: ₦0 (Untouched)")
+        elif dest_op == "Loan Repayment / Asset Debt Offset":
+            st.info("💡 Non-Cash Debt Offset | Right Side: Product Withdrawal | Left Side: Loan Repayment (rep_*) / Asset Credit | Vault Cash: ₦0 (Untouched)")
+        elif dest_op == "Fee Payment from Savings":
+            st.info("💡 Non-Cash Fee Payment | Right Side: Product Withdrawal | Left Side: Fee Income | Vault Cash: ₦0 (Untouched)")
+        elif dest_op == "Another Member or Group Savings":
+            st.info("💡 Non-Cash Savings Reallocation | Right Side: Product Withdrawal | Left Side: Savings Deposit | Vault Cash: ₦0 (Untouched)")
+        elif dest_op == "LAPS Reserve":
+            st.info("💡 Sweep Residual Savings to LAPS Protection Reserve | Right Side: Product Withdrawal | Left Side: LAPS Reserve | Vault Cash: ₦0 (Untouched)")
 
         with st.form("ind_withdrawal_form"):
             amount_val = st.number_input("Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
 
             target_loan_id = None
-            if op_type == "Loan Offset":
-                res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit").eq("client_id", c_id).eq("status", "Active").execute()
-                active_loans = res_l.data or []
-                if active_loans:
-                    loan_opts = {f"Loan {l['loan_id'][:8]} — Active Credit: ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in active_loans}
-                    sel_loan = st.selectbox("Select Loan to Offset", list(loan_opts.keys()))
-                    target_loan_id = loan_opts[sel_loan]
-                else:
-                    st.warning("No active loans found for this client.")
-            elif op_type == "Asset Downpayment":
-                res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, product_category, extra_fields, loan_products(name)").eq("client_id", c_id).in_("status", ["Active", "Pending"]).execute()
-                asset_loans = [
-                    l for l in (res_l.data or []) 
-                    if l.get("product_category") == "Asset" 
-                    or (l.get("extra_fields") or {}).get("product_category") == "Asset" 
-                    or "asset" in str((l.get("loan_products") or {}).get("name", "")).lower()
-                ]
-                if asset_loans:
-                    loan_opts = {f"Asset Loan {l['loan_id'][:8]} — Active Credit: ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in asset_loans}
-                    sel_loan = st.selectbox("Select Asset Loan for Downpayment", list(loan_opts.keys()))
-                    target_loan_id = loan_opts[sel_loan]
-                else:
-                    st.warning("No active or pending asset loans found for this client.")
+            fee_code = None
+            dest_transfer_id = None
+            dest_transfer_name = None
+            dest_transfer_type = None
 
-            remarks_input = st.text_area("Remarks", placeholder="Reason for withdrawal...")
+            if dest_op == "Loan Repayment / Asset Debt Offset":
+                target_borrower_mode = st.radio("Target Borrower", ["Own Loan", "Another Member's Loan"], horizontal=True)
+                if target_borrower_mode == "Own Loan":
+                    target_cid = c_id
+                    target_cname = c_name
+                else:
+                    other_client_opts = {f"{cl['name']} ({cl.get('client_code') or cl['client_id'][:8]})": cl for cl in all_clients if cl['client_id'] != c_id}
+                    sel_other_lbl = st.selectbox("Select Borrower", list(other_client_opts.keys()))
+                    target_cid = other_client_opts[sel_other_lbl]["client_id"] if sel_other_lbl else None
+                    target_cname = other_client_opts[sel_other_lbl]["name"] if sel_other_lbl else ""
+
+                if target_cid:
+                    res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, is_asset, product_category, extra_fields, loan_products(name)").eq("client_id", target_cid).in_("status", ["Active", "Pending"]).execute()
+                    loans_to_show = res_l.data or []
+                    if loans_to_show:
+                        loan_opts = {f"{'Asset ' if l.get('is_asset') or 'asset' in str(l.get('product_category','')).lower() else ''}Loan {l['loan_id'][:8]} — Active: ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in loans_to_show}
+                        sel_loan = st.selectbox("Select Target Loan", list(loan_opts.keys()))
+                        target_loan_id = loan_opts[sel_loan]
+                    else:
+                        st.warning(f"No eligible loans found for {target_cname}.")
+
+            elif dest_op == "Fee Payment from Savings":
+                fee_map = {
+                    "Credit Form Damage Fee": "credit_form_damage",
+                    "Passbook Fee": "passbook",
+                    "Application Fee": "app_fee",
+                    "Misc Fee / Penalty": "misc_fees"
+                }
+                sel_fee_label = st.selectbox("Select Fee Type", list(fee_map.keys()))
+                fee_code = fee_map[sel_fee_label]
+
+            elif dest_op == "Another Member or Group Savings":
+                transfer_target_cat = st.radio("Transfer Destination", ["Individual Member", "Group Savings"], horizontal=True)
+                if transfer_target_cat == "Individual Member":
+                    other_client_opts = {f"{cl['name']} ({cl.get('client_code') or cl['client_id'][:8]})": cl for cl in all_clients if cl['client_id'] != c_id}
+                    sel_dest_client_lbl = st.selectbox("Select Recipient Member", list(other_client_opts.keys()))
+                    if sel_dest_client_lbl:
+                        dest_transfer_id = other_client_opts[sel_dest_client_lbl]["client_id"]
+                        dest_transfer_name = other_client_opts[sel_dest_client_lbl]["name"]
+                        dest_transfer_type = "IndividualSavings"
+                else:
+                    g_opts = {f"{grp.get('name')} (#{grp.get('group_number','?')})": grp for grp in _all_g_infos.values()}
+                    sel_dest_grp_lbl = st.selectbox("Select Recipient Group", list(g_opts.keys()))
+                    if sel_dest_grp_lbl:
+                        dest_transfer_id = g_opts[sel_dest_grp_lbl]["group_id"]
+                        dest_transfer_name = g_opts[sel_dest_grp_lbl]["name"]
+                        dest_transfer_type = "GroupSavings"
+
+            remarks_input = st.text_area("Remarks", placeholder="Reason or extra details...")
             submitted = st.form_submit_button("Submit for BM Approval", use_container_width=True)
 
             if submitted:
                 if not amount_val or amount_val <= 0:
                     st.error("Amount must be greater than zero.")
-                elif amount_val > ind_bal and op_type not in ["Loan Offset", "Asset Downpayment"]:
+                elif amount_val > ind_bal:
                     st.error(f"Insufficient balance. Available: ₦{ind_bal:,.2f}")
-                elif amount_val > ind_bal and op_type == "Asset Downpayment":
-                    st.error(f"Insufficient savings balance for downpayment. Available: ₦{ind_bal:,.2f}")
-                elif op_type in ["Loan Offset", "Asset Downpayment"] and not target_loan_id:
+                elif dest_op == "Loan Repayment / Asset Debt Offset" and not target_loan_id:
                     st.error("Select an eligible loan.")
+                elif dest_op == "Another Member or Group Savings" and not dest_transfer_id:
+                    st.error("Select a valid destination account.")
                 else:
+                    if dest_op == "Client Bank Account (Transfer)":
+                        op_clean = "Bank Transfer"
+                        rem_final = remarks_input or f"Client bank transfer payout for {c_name}"
+                    elif dest_op == "Loan Repayment / Asset Debt Offset":
+                        op_clean = "Loan Offset"
+                        rem_final = f"[LOAN_OFFSET:{target_loan_id}] {remarks_input or ''}".strip()
+                    elif dest_op == "Fee Payment from Savings":
+                        op_clean = "Fee Offset"
+                        rem_final = f"[FEE:{fee_code}] {remarks_input or ''}".strip()
+                    elif dest_op == "Another Member or Group Savings":
+                        op_clean = "Savings Transfer"
+                        rem_final = f"[DEST_ID:{dest_transfer_id}][DEST_NAME:{dest_transfer_name}][DEST_TYPE:{dest_transfer_type}] {remarks_input or ''}".strip()
+                    else:
+                        op_clean = "LAPS Transfer"
+                        rem_final = remarks_input or f"Sweep to LAPS reserve for {c_name}"
+
                     uow.client.table("withdrawal_requests").insert({
                         "savings_type": "Individual",
-                        "operation_type": op_type,
+                        "operation_type": op_clean,
                         "client_id": c_id,
                         "client_name": c_name,
                         "loan_id": target_loan_id,
@@ -5623,7 +5712,7 @@ elif page == "Withdrawal Operations":
                         "amount": float(amount_val),
                         "operational_date": wth_date_str,
                         "reference": f"REF-WTH-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                        "remarks": remarks_input or f"{op_type} request for {c_name}",
+                        "remarks": rem_final,
                         "status": "PENDING"
                     }).execute()
                     st.success(f"Withdrawal request submitted for BM approval! (₦{amount_val:,.2f})")
@@ -5691,59 +5780,103 @@ elif page == "Withdrawal Operations":
         grp_bal = uow.group_savings.get_total_balance(group_id=sel_group["group_id"])
         st.metric("Group Savings Balance", f"₦{grp_bal:,.2f}")
 
-        op_type = st.radio("Withdrawal Operation", ["Cash Withdrawal", "Loan Offset (Member Debt)", "Asset Downpayment (Member Loan)", "LAPS Transfer (Group Closed)"], horizontal=True)
+        # Operation type
+        dest_op = st.radio(
+            "Where is the money going?",
+            [
+                "Group Bank Account (Transfer)",
+                "Loan Repayment / Asset Debt Offset (Member Debt)",
+                "Fee Payment from Group Savings",
+                "Another Member or Group Savings",
+                "LAPS Reserve (Group Closed)"
+            ],
+            key="grp_dest_op",
+            horizontal=False
+        )
 
-        if "Cash" in op_type:
-            st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: YES (Vault Cash leaves CO position)")
-        elif "Loan Offset" in op_type:
-            st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: NO (Internal non-cash offset against member active loan debt)")
-        elif "Asset Downpayment" in op_type:
-            st.info("Product Withdrawal Value: Increased | Physical Cash Outflow: NO (Internal non-cash deduction from group savings to fund member Asset Downpayment)")
-        elif "LAPS Transfer" in op_type:
-            st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: NO (Internal non-cash transfer to LAPS reserve)")
+        if dest_op == "Group Bank Account (Transfer)":
+            st.info("💡 Electronic Transfer to Group | Right Side: Product Withdrawal | Left Side: Bank Withdrawal | Vault Cash: ₦0 (Untouched)")
+        elif "Loan Repayment" in dest_op:
+            st.info("💡 Non-Cash Debt Offset | Right Side: Product Withdrawal | Left Side: Loan Repayment (rep_*) / Asset Credit | Vault Cash: ₦0 (Untouched)")
+        elif "Fee Payment" in dest_op:
+            st.info("💡 Non-Cash Fee Payment | Right Side: Product Withdrawal | Left Side: Fee Income | Vault Cash: ₦0 (Untouched)")
+        elif "Another Member" in dest_op:
+            st.info("💡 Non-Cash Savings Reallocation | Right Side: Product Withdrawal | Left Side: Savings Deposit | Vault Cash: ₦0 (Untouched)")
+        elif "LAPS Reserve" in dest_op:
+            st.info("💡 Sweep Residual Group Savings to LAPS Protection Reserve | Right Side: Product Withdrawal | Left Side: LAPS Reserve | Vault Cash: ₦0 (Untouched)")
 
         with st.form("grp_withdrawal_form"):
             amount_val = st.number_input("Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
 
             target_loan_id = None
             client_name_for_offset = None
-            if "Loan Offset" in op_type or "Asset Downpayment" in op_type:
-                # Select which member's loan to offset from group savings
-                res_members = uow.client.table("client_memberships").select("clients(client_id, client_code, name)").eq("group_id", sel_group["group_id"]).execute()
-                members = []
-                if res_members.data:
-                    for m in res_members.data:
-                        cl = m.get("clients")
-                        if cl:
-                            members.append(cl)
+            target_cid = None
+            fee_code = None
+            dest_transfer_id = None
+            dest_transfer_name = None
+            dest_transfer_type = None
+
+            # Fetch group members
+            res_members = uow.client.table("client_memberships").select("clients(client_id, client_code, name)").eq("group_id", sel_group["group_id"]).execute()
+            members = []
+            if res_members.data:
+                for m in res_members.data:
+                    cl = m.get("clients")
+                    if cl:
+                        members.append(cl)
+
+            if "Loan Repayment" in dest_op:
                 if members:
                     member_opts = {f"{m['name']} ({m.get('client_code') or m['client_id'][:8]})": m for m in members}
-                    sel_member_label = st.selectbox("Select Member", list(member_opts.keys()))
+                    sel_member_label = st.selectbox("Select Member", list(member_opts.keys()), key="grp_loan_member")
                     sel_member = member_opts[sel_member_label]
+                    target_cid = sel_member["client_id"]
                     client_name_for_offset = sel_member["name"]
 
-                    if "Asset Downpayment" in op_type:
-                        res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, product_category, extra_fields, loan_products(name)").eq("client_id", sel_member["client_id"]).in_("status", ["Active", "Pending"]).execute()
-                        loans_to_show = [
-                            l for l in (res_l.data or []) 
-                            if l.get("product_category") == "Asset" 
-                            or (l.get("extra_fields") or {}).get("product_category") == "Asset" 
-                            or "asset" in str((l.get("loan_products") or {}).get("name", "")).lower()
-                        ]
-                    else:
-                        res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, product_category, extra_fields, loan_products(name)").eq("client_id", sel_member["client_id"]).eq("status", "Active").execute()
-                        loans_to_show = res_l.data or []
-
+                    res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, is_asset, product_category, extra_fields, loan_products(name)").eq("client_id", target_cid).in_("status", ["Active", "Pending"]).execute()
+                    loans_to_show = res_l.data or []
                     if loans_to_show:
-                        loan_opts = {f"Loan {l['loan_id'][:8]} — ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in loans_to_show}
-                        sel_loan = st.selectbox("Select Loan", list(loan_opts.keys()))
+                        loan_opts = {f"{'Asset ' if l.get('is_asset') or 'asset' in str(l.get('product_category','')).lower() else ''}Loan {l['loan_id'][:8]} — Active: ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in loans_to_show}
+                        sel_loan = st.selectbox("Select Loan", list(loan_opts.keys()), key="grp_sel_loan")
                         target_loan_id = loan_opts[sel_loan]
                     else:
                         st.warning("No eligible loans found for this member.")
                 else:
                     st.warning("No members found in this group.")
 
-            remarks_input = st.text_area("Remarks", placeholder="Reason for withdrawal...")
+            elif "Fee Payment" in dest_op:
+                fee_map = {
+                    "Credit Form Damage Fee": "credit_form_damage",
+                    "Passbook Fee": "passbook",
+                    "Application Fee": "app_fee",
+                    "Misc Fee / Penalty": "misc_fees"
+                }
+                sel_fee_label = st.selectbox("Select Fee Type", list(fee_map.keys()), key="grp_sel_fee")
+                fee_code = fee_map[sel_fee_label]
+                if members:
+                    member_opts = {f"{m['name']} ({m.get('client_code') or m['client_id'][:8]})": m for m in members}
+                    sel_fee_mem_lbl = st.selectbox("Affected Member (Optional)", list(member_opts.keys()), key="grp_fee_mem")
+                    target_cid = member_opts[sel_fee_mem_lbl]["client_id"]
+                    client_name_for_offset = member_opts[sel_fee_mem_lbl]["name"]
+
+            elif "Another Member" in dest_op:
+                transfer_target_cat = st.radio("Transfer Destination", ["Group Member", "Another Group"], horizontal=True, key="grp_trans_cat")
+                if transfer_target_cat == "Group Member":
+                    if members:
+                        member_opts = {f"{m['name']} ({m.get('client_code') or m['client_id'][:8]})": m for m in members}
+                        sel_dest_mem_lbl = st.selectbox("Select Recipient Member", list(member_opts.keys()), key="grp_dest_mem")
+                        dest_transfer_id = member_opts[sel_dest_mem_lbl]["client_id"]
+                        dest_transfer_name = member_opts[sel_dest_mem_lbl]["name"]
+                        dest_transfer_type = "IndividualSavings"
+                else:
+                    other_g_opts = {f"{grp.get('name')} (#{grp.get('group_number','?')})": grp for gid, grp in _all_g_infos.items() if gid != sel_group["group_id"]}
+                    if other_g_opts:
+                        sel_dest_g_lbl = st.selectbox("Select Recipient Group", list(other_g_opts.keys()), key="grp_dest_other_g")
+                        dest_transfer_id = other_g_opts[sel_dest_g_lbl]["group_id"]
+                        dest_transfer_name = other_g_opts[sel_dest_g_lbl]["name"]
+                        dest_transfer_type = "GroupSavings"
+
+            remarks_input = st.text_area("Remarks", placeholder="Reason or extra details...")
             submitted = st.form_submit_button("Submit for BM Approval", use_container_width=True)
 
             if submitted:
@@ -5751,14 +5884,31 @@ elif page == "Withdrawal Operations":
                     st.error("Amount must be greater than zero.")
                 elif amount_val > grp_bal:
                     st.error(f"Insufficient group balance. Available: ₦{grp_bal:,.2f}")
-                elif ("Loan Offset" in op_type or "Asset Downpayment" in op_type) and not target_loan_id:
+                elif "Loan Repayment" in dest_op and not target_loan_id:
                     st.error("Select a member and loan.")
+                elif "Another Member" in dest_op and not dest_transfer_id:
+                    st.error("Select a valid destination account.")
                 else:
-                    op_clean = "Cash Withdrawal" if "Cash" in op_type else ("Asset Downpayment" if "Asset Downpayment" in op_type else ("Loan Offset" if "Loan Offset" in op_type else "LAPS Transfer"))
+                    if dest_op == "Group Bank Account (Transfer)":
+                        op_clean = "Bank Transfer"
+                        rem_final = remarks_input or f"Group bank transfer payout for {g_name}"
+                    elif "Loan Repayment" in dest_op:
+                        op_clean = "Loan Offset"
+                        rem_final = f"[LOAN_OFFSET:{target_loan_id}] {remarks_input or ''}".strip()
+                    elif "Fee Payment" in dest_op:
+                        op_clean = "Fee Offset"
+                        rem_final = f"[FEE:{fee_code}] {remarks_input or ''}".strip()
+                    elif "Another Member" in dest_op:
+                        op_clean = "Savings Transfer"
+                        rem_final = f"[DEST_ID:{dest_transfer_id}][DEST_NAME:{dest_transfer_name}][DEST_TYPE:{dest_transfer_type}] {remarks_input or ''}".strip()
+                    else:
+                        op_clean = "LAPS Transfer"
+                        rem_final = remarks_input or f"Sweep to LAPS reserve from {g_name}"
+
                     uow.client.table("withdrawal_requests").insert({
                         "savings_type": "Group",
                         "operation_type": op_clean,
-                        "client_id": sel_member["client_id"] if ("Loan Offset" in op_type or "Asset Downpayment" in op_type) and 'sel_member' in locals() else None,
+                        "client_id": target_cid,
                         "client_name": client_name_for_offset or g_name,
                         "group_name": sel_group.get("group_id") or g_name,
                         "loan_id": target_loan_id,
@@ -5767,7 +5917,7 @@ elif page == "Withdrawal Operations":
                         "amount": float(amount_val),
                         "operational_date": wth_date_str,
                         "reference": f"REF-GRP-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                        "remarks": remarks_input or f"Group {op_clean} from {g_name}",
+                        "remarks": rem_final,
                         "status": "PENDING"
                     }).execute()
                     st.success(f"Group withdrawal request submitted for BM approval! (₦{amount_val:,.2f})")
@@ -5781,34 +5931,125 @@ elif page == "Withdrawal Operations":
         st.metric("Branch Misc Savings Balance", f"₦{misc_bal:,.2f}")
 
         if ROLE not in ["BM", ROLE_BRANCH_MANAGER, ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
-            st.info("Misc Savings is managed by the Branch Manager. You can view the balance but cannot submit withdrawals.")
+            st.info("Misc Savings is managed by the Branch Manager and the Designated Officer. You can view the balance but cannot submit withdrawals.")
         else:
-            st.markdown("**As Branch Manager, you can submit a Misc Savings withdrawal.**")
+            st.markdown("**Submit a Misc Savings Withdrawal or Offset**")
+
+            misc_dest_op = st.radio(
+                "Where is the money going?",
+                [
+                    "Client Bank Account (Transfer)",
+                    "Loan Repayment / Debt Offset",
+                    "Fee Payment from Misc Savings",
+                    "Transfer to Member or Group Savings"
+                ],
+                key="misc_dest_op",
+                horizontal=False
+            )
+
+            if misc_dest_op == "Client Bank Account (Transfer)":
+                st.info("💡 Electronic Transfer to Client | Right Side: Product Withdrawal | Left Side: Bank Withdrawal | Vault Cash: ₦0 (Untouched)")
+            elif "Loan Repayment" in misc_dest_op:
+                st.info("💡 Non-Cash Debt Offset | Right Side: Product Withdrawal | Left Side: Loan Repayment (rep_*) / Asset Credit | Vault Cash: ₦0 (Untouched)")
+            elif "Fee Payment" in misc_dest_op:
+                st.info("💡 Non-Cash Fee Payment | Right Side: Product Withdrawal | Left Side: Fee Income | Vault Cash: ₦0 (Untouched)")
+            elif "Transfer to" in misc_dest_op:
+                st.info("💡 Non-Cash Savings Reallocation | Right Side: Product Withdrawal | Left Side: Savings Deposit | Vault Cash: ₦0 (Untouched)")
 
             with st.form("misc_withdrawal_form"):
                 amount_val = st.number_input("Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
-                remarks_input = st.text_area("Remarks", placeholder="Reason for Misc withdrawal...")
-                submitted = st.form_submit_button("Submit Misc Withdrawal", use_container_width=True)
+
+                target_loan_id = None
+                target_cid = None
+                client_name_target = None
+                fee_code = None
+                dest_transfer_id = None
+                dest_transfer_name = None
+                dest_transfer_type = None
+
+                if "Loan Repayment" in misc_dest_op:
+                    client_opts_all = {f"{cl['name']} ({cl.get('client_code') or cl['client_id'][:8]})": cl for cl in all_clients}
+                    sel_loan_client_lbl = st.selectbox("Select Borrower", list(client_opts_all.keys()), key="misc_borrower_sel")
+                    if sel_loan_client_lbl:
+                        target_cid = client_opts_all[sel_loan_client_lbl]["client_id"]
+                        client_name_target = client_opts_all[sel_loan_client_lbl]["name"]
+                        res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, is_asset, product_category, extra_fields, loan_products(name)").eq("client_id", target_cid).in_("status", ["Active", "Pending"]).execute()
+                        loans_to_show = res_l.data or []
+                        if loans_to_show:
+                            loan_opts = {f"{'Asset ' if l.get('is_asset') or 'asset' in str(l.get('product_category','')).lower() else ''}Loan {l['loan_id'][:8]} — Active: ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in loans_to_show}
+                            sel_loan = st.selectbox("Select Loan", list(loan_opts.keys()), key="misc_loan_sel")
+                            target_loan_id = loan_opts[sel_loan]
+                        else:
+                            st.warning(f"No eligible loans found for {client_name_target}.")
+
+                elif "Fee Payment" in misc_dest_op:
+                    fee_map = {
+                        "Credit Form Damage Fee": "credit_form_damage",
+                        "Passbook Fee": "passbook",
+                        "Application Fee": "app_fee",
+                        "Misc Fee / Penalty": "misc_fees"
+                    }
+                    sel_fee_label = st.selectbox("Select Fee Type", list(fee_map.keys()), key="misc_fee_sel")
+                    fee_code = fee_map[sel_fee_label]
+
+                elif "Transfer to" in misc_dest_op:
+                    transfer_target_cat = st.radio("Transfer Destination", ["Individual Member", "Group Savings"], horizontal=True, key="misc_trans_cat")
+                    if transfer_target_cat == "Individual Member":
+                        client_opts_all = {f"{cl['name']} ({cl.get('client_code') or cl['client_id'][:8]})": cl for cl in all_clients}
+                        sel_dest_mem_lbl = st.selectbox("Select Recipient Member", list(client_opts_all.keys()), key="misc_dest_mem")
+                        if sel_dest_mem_lbl:
+                            dest_transfer_id = client_opts_all[sel_dest_mem_lbl]["client_id"]
+                            dest_transfer_name = client_opts_all[sel_dest_mem_lbl]["name"]
+                            dest_transfer_type = "IndividualSavings"
+                    else:
+                        g_opts = {f"{grp.get('name')} (#{grp.get('group_number','?')})": grp for grp in _all_g_infos.values()}
+                        sel_dest_grp_lbl = st.selectbox("Select Recipient Group", list(g_opts.keys()), key="misc_dest_grp")
+                        if sel_dest_grp_lbl:
+                            dest_transfer_id = g_opts[sel_dest_grp_lbl]["group_id"]
+                            dest_transfer_name = g_opts[sel_dest_grp_lbl]["name"]
+                            dest_transfer_type = "GroupSavings"
+
+                remarks_input = st.text_area("Remarks", placeholder="Reason for Misc withdrawal or offset...")
+                submitted = st.form_submit_button("Submit Misc Request", use_container_width=True)
 
                 if submitted:
                     if not amount_val or amount_val <= 0:
                         st.error("Amount must be greater than zero.")
                     elif amount_val > misc_bal:
                         st.error(f"Insufficient Misc balance. Available: ₦{misc_bal:,.2f}")
+                    elif "Loan Repayment" in misc_dest_op and not target_loan_id:
+                        st.error("Select an eligible loan.")
+                    elif "Transfer to" in misc_dest_op and not dest_transfer_id:
+                        st.error("Select a valid destination account.")
                     else:
+                        if misc_dest_op == "Client Bank Account (Transfer)":
+                            op_clean = "Bank Transfer"
+                            rem_final = remarks_input or f"Misc savings bank payout by {USER}"
+                        elif "Loan Repayment" in misc_dest_op:
+                            op_clean = "Loan Offset"
+                            rem_final = f"[LOAN_OFFSET:{target_loan_id}] {remarks_input or ''}".strip()
+                        elif "Fee Payment" in misc_dest_op:
+                            op_clean = "Fee Offset"
+                            rem_final = f"[FEE:{fee_code}] {remarks_input or ''}".strip()
+                        else:
+                            op_clean = "Savings Transfer"
+                            rem_final = f"[DEST_ID:{dest_transfer_id}][DEST_NAME:{dest_transfer_name}][DEST_TYPE:{dest_transfer_type}] {remarks_input or ''}".strip()
+
                         uow.client.table("withdrawal_requests").insert({
                             "savings_type": "Misc",
-                            "operation_type": "Cash Withdrawal",
-                            "client_name": f"Branch Misc - {BRANCH}",
+                            "operation_type": op_clean,
+                            "client_id": target_cid,
+                            "client_name": client_name_target or f"Branch Misc - {BRANCH}",
+                            "loan_id": target_loan_id,
                             "branch_id": BRANCH_ID,
                             "requested_by": USER,
                             "amount": float(amount_val),
                             "operational_date": wth_date_str,
                             "reference": f"REF-MISC-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                            "remarks": remarks_input or f"Misc Savings withdrawal by {USER}",
+                            "remarks": rem_final,
                             "status": "PENDING"
                         }).execute()
-                        st.success(f"Misc withdrawal request submitted! (₦{amount_val:,.2f})")
+                        st.success(f"Misc withdrawal/offset request submitted! (₦{amount_val:,.2f})")
                         st.rerun()
 
     # ════════════════════════════════════════════════════════════════════

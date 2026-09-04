@@ -376,11 +376,27 @@ class SavingsService:
             )
             uow.individual_savings.create(source_entity)
 
-        try:
+            # Fetch target loan product details for projection routing
+            prod_name = ""
+            cycle = "Weekly"
+            is_asset = False
+            target_client_id = client_id
+            try:
+                res_l = uow.client.table("loans").select("loan_id, client_id, is_asset, product_category, loan_products(name, repayment_cycle)").eq("loan_id", loan_id).execute()
+                if res_l.data:
+                    l_row = res_l.data[0]
+                    target_client_id = l_row.get("client_id") or client_id
+                    is_asset = bool(l_row.get("is_asset") or ("asset" in str(l_row.get("product_category") or "").lower()))
+                    lp = l_row.get("loan_products") or {}
+                    prod_name = str(lp.get("name") or "").lower()
+                    cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in prod_name else ("Weekly" if "weekly" in prod_name else "Monthly"))
+            except Exception:
+                pass
+
             repayment_entity = Repayment(
                 id=str(uuid.uuid4()),
                 loan_id=loan_id,
-                client_id=client_id,
+                client_id=target_client_id,
                 amount_paid=amount,
                 savings_amount=0.0,
                 loan_repayment_amount=amount,
@@ -396,6 +412,21 @@ class SavingsService:
                 note=remarks or f"Loan offset of {amount} from {source_savings_type}"
             )
             uow.repayments.create(repayment_entity)
+
+            # Advance loan schedule chronologically
+            try:
+                from services.schedule_service import ScheduleService
+                p_date_only = p_dt.date() if hasattr(p_dt, 'date') and callable(p_dt.date) else p_dt
+                ScheduleService.record_repayment(uow, loan_id, amount, p_date_only)
+            except Exception as se:
+                print(f"[LOAN OFFSET TRACE] Schedule advancement warning: {se}")
+
+            # Check if loan is fully paid and transition status
+            try:
+                from services.client_status_service import ClientStatusService
+                ClientStatusService.on_loan_repayment_check(uow, target_client_id, loan_id)
+            except Exception as ce:
+                print(f"[LOAN OFFSET TRACE] Client status update warning: {ce}")
 
             uow.audit.log_action(
                 officer,
@@ -413,12 +444,16 @@ class SavingsService:
                 aggregate_type="LoanOffset",
                 event_type="LoanOffsetFromSavings",
                 payload={
-                    "client_id": client_id,
+                    "client_id": target_client_id,
+                    "source_client_id": client_id,
                     "loan_id": loan_id,
                     "source_savings_type": source_savings_type,
                     "branch": branch,
                     "officer": officer,
                     "amount": amount,
+                    "loan_product": prod_name,
+                    "cycle": cycle,
+                    "is_asset": is_asset,
                     "reference": reference or source_entity.id,
                     "classification": TransactionClassification.LOAN_OFFSET.value,
                     "narration": remarks or f"Loan offset of {amount:,.2f} from {source_savings_type} for loan {loan_id}",
@@ -442,6 +477,294 @@ class SavingsService:
                 "repayment_id": repayment_entity.id,
                 "affects_cash_vault": cls_info["affects_cash_vault"]
             }
+
+    @staticmethod
+    def post_fee_offset_from_savings(
+        uow: SupabaseUnitOfWork,
+        client_id: str,
+        client_name: str,
+        source_savings_type: str,
+        branch: str,
+        officer: str,
+        fee_type: str,
+        amount: float,
+        target_client_id: Optional[str] = None,
+        target_client_name: Optional[str] = None,
+        reference: Optional[str] = None,
+        remarks: Optional[str] = None,
+        posting_date: Optional[Any] = None
+    ) -> dict:
+        """
+        Executes atomic non-cash fee payment deducted from savings:
+        - Reduces client savings (source_savings_type)
+        - Emits FeeOffsetFromSavings domain event (DR 2000, CR 3000)
+        - Symmetrically projects to product_withdrawal on Right and fee column on Left
+        - Zero physical vault cash movement (Account 1000 untouched)
+        """
+        if amount <= 0:
+            raise ValueError("Fee offset amount must be greater than zero.")
+
+        p_dt = posting_date if posting_date else datetime.now()
+
+        source_entity = None
+        if source_savings_type == "GroupSavings":
+            source_entity = GroupSavings(
+                group_name=client_name,
+                branch=branch,
+                officer=officer,
+                deposit_amount=0.0,
+                withdrawal_amount=amount,
+                reference=reference,
+                remarks=remarks or f"Fee offset ({fee_type}) from GroupSavings",
+                date=p_dt
+            )
+            uow.group_savings.create(source_entity)
+        elif source_savings_type == "MiscSavings":
+            source_entity = MiscSavings(
+                client_id=client_id,
+                client_name=client_name,
+                branch=branch,
+                officer=officer,
+                deposit_amount=0.0,
+                withdrawal_amount=amount,
+                reference=reference,
+                remarks=remarks or f"Fee offset ({fee_type}) from MiscSavings",
+                date=p_dt
+            )
+            uow.misc_savings.create(source_entity)
+        else:
+            source_entity = IndividualSavings(
+                client_id=client_id,
+                client_name=client_name,
+                branch=branch,
+                officer=officer,
+                deposit_amount=0.0,
+                withdrawal_amount=amount,
+                reference=reference,
+                remarks=remarks or f"Fee offset ({fee_type}) from IndividualSavings",
+                date=p_dt
+            )
+            uow.individual_savings.create(source_entity)
+
+        try:
+            uow.audit.log_action(
+                officer,
+                "Credit Officer",
+                "Fee Offset From Savings",
+                "fees",
+                source_entity.id,
+                None,
+                {"amount": amount, "fee_type": fee_type, "source": source_savings_type, "savings_id": source_entity.id}
+            )
+
+            event = DomainEvent(
+                event_id=str(uuid.uuid4()),
+                aggregate_id=source_entity.id,
+                aggregate_type="FeeOffset",
+                event_type="FeeOffsetFromSavings",
+                payload={
+                    "client_id": target_client_id or client_id,
+                    "client_name": target_client_name or client_name,
+                    "source_savings_type": source_savings_type,
+                    "fee_type": fee_type,
+                    "branch": branch,
+                    "officer": officer,
+                    "amount": amount,
+                    "reference": reference or source_entity.id,
+                    "classification": "FeeOffset",
+                    "narration": remarks or f"Fee offset ({fee_type}) of {amount:,.2f} from {source_savings_type}",
+                    "date": p_dt.isoformat() if hasattr(p_dt, 'isoformat') else str(p_dt)
+                }
+            )
+            uow.event_store.append(event)
+            FinancialPostingEngine.post_event(uow, event)
+
+            return {
+                "status": "SUCCESS",
+                "event_id": event.event_id,
+                "amount": amount,
+                "source_savings_id": source_entity.id,
+                "fee_type": fee_type,
+                "affects_cash_vault": False
+            }
+        except Exception as e:
+            if source_entity and source_entity.id:
+                tbl = "group_savings" if source_savings_type == "GroupSavings" else ("misc_savings" if source_savings_type == "MiscSavings" else "individual_savings")
+                try:
+                    uow.client.table(tbl).delete().eq("id", source_entity.id).execute()
+                except Exception:
+                    pass
+            raise e
+
+    @staticmethod
+    def transfer_savings(
+        uow: SupabaseUnitOfWork,
+        source_id: str,
+        source_name: str,
+        source_type: str,
+        destination_id: str,
+        destination_name: str,
+        destination_type: str,
+        branch: str,
+        officer: str,
+        amount: float,
+        reference: Optional[str] = None,
+        remarks: Optional[str] = None,
+        posting_date: Optional[Any] = None
+    ) -> dict:
+        """
+        Executes atomic peer-to-peer or peer-to-group savings reallocation:
+        - Decreases source savings (withdrawal_amount = amount)
+        - Increases destination savings (deposit_amount = amount)
+        - Emits SavingsTransferred domain event (DR 2000, CR 2000)
+        - Projects product_withdrawal on Right, savings_deposit on Left
+        - Zero physical vault cash movement (Account 1000 untouched)
+        """
+        if amount <= 0:
+            raise ValueError("Transfer amount must be greater than zero.")
+
+        p_dt = posting_date if posting_date else datetime.now()
+
+        source_entity = None
+        dest_entity = None
+
+        # 1. Deduct from Source
+        if source_type == "GroupSavings":
+            source_entity = GroupSavings(
+                group_name=source_name,
+                branch=branch,
+                officer=officer,
+                deposit_amount=0.0,
+                withdrawal_amount=amount,
+                reference=reference,
+                remarks=remarks or f"Transfer to {destination_name} ({destination_type})",
+                date=p_dt
+            )
+            uow.group_savings.create(source_entity)
+        elif source_type == "MiscSavings":
+            source_entity = MiscSavings(
+                client_id=source_id,
+                client_name=source_name,
+                branch=branch,
+                officer=officer,
+                deposit_amount=0.0,
+                withdrawal_amount=amount,
+                reference=reference,
+                remarks=remarks or f"Transfer to {destination_name} ({destination_type})",
+                date=p_dt
+            )
+            uow.misc_savings.create(source_entity)
+        else:
+            source_entity = IndividualSavings(
+                client_id=source_id,
+                client_name=source_name,
+                branch=branch,
+                officer=officer,
+                deposit_amount=0.0,
+                withdrawal_amount=amount,
+                reference=reference,
+                remarks=remarks or f"Transfer to {destination_name} ({destination_type})",
+                date=p_dt
+            )
+            uow.individual_savings.create(source_entity)
+
+        # 2. Credit Destination
+        try:
+            if destination_type == "GroupSavings":
+                dest_entity = GroupSavings(
+                    group_name=destination_name,
+                    branch=branch,
+                    officer=officer,
+                    deposit_amount=amount,
+                    withdrawal_amount=0.0,
+                    reference=reference,
+                    remarks=remarks or f"Transfer from {source_name} ({source_type})",
+                    date=p_dt
+                )
+                uow.group_savings.create(dest_entity)
+            elif destination_type == "MiscSavings":
+                dest_entity = MiscSavings(
+                    client_id=destination_id,
+                    client_name=destination_name,
+                    branch=branch,
+                    officer=officer,
+                    deposit_amount=amount,
+                    withdrawal_amount=0.0,
+                    reference=reference,
+                    remarks=remarks or f"Transfer from {source_name} ({source_type})",
+                    date=p_dt
+                )
+                uow.misc_savings.create(dest_entity)
+            else:
+                dest_entity = IndividualSavings(
+                    client_id=destination_id,
+                    client_name=destination_name,
+                    branch=branch,
+                    officer=officer,
+                    deposit_amount=amount,
+                    withdrawal_amount=0.0,
+                    reference=reference,
+                    remarks=remarks or f"Transfer from {source_name} ({source_type})",
+                    date=p_dt
+                )
+                uow.individual_savings.create(dest_entity)
+
+            uow.audit.log_action(
+                officer,
+                "Credit Officer",
+                "Savings Transfer",
+                "savings",
+                source_entity.id,
+                None,
+                {"amount": amount, "source_id": source_id, "dest_id": destination_id, "source_type": source_type, "dest_type": destination_type}
+            )
+
+            event = DomainEvent(
+                event_id=str(uuid.uuid4()),
+                aggregate_id=source_entity.id,
+                aggregate_type="SavingsTransfer",
+                event_type="SavingsTransferred",
+                payload={
+                    "source_id": source_id,
+                    "source_name": source_name,
+                    "source_type": source_type,
+                    "destination_id": destination_id,
+                    "destination_name": destination_name,
+                    "destination_type": destination_type,
+                    "branch": branch,
+                    "officer": officer,
+                    "amount": amount,
+                    "reference": reference or source_entity.id,
+                    "classification": "SavingsTransfer",
+                    "narration": remarks or f"Savings transfer of {amount:,.2f} from {source_name} to {destination_name}",
+                    "date": p_dt.isoformat() if hasattr(p_dt, 'isoformat') else str(p_dt)
+                }
+            )
+            uow.event_store.append(event)
+            FinancialPostingEngine.post_event(uow, event)
+
+            return {
+                "status": "SUCCESS",
+                "event_id": event.event_id,
+                "amount": amount,
+                "source_savings_id": source_entity.id,
+                "destination_savings_id": dest_entity.id,
+                "affects_cash_vault": False
+            }
+        except Exception as e:
+            if source_entity and source_entity.id:
+                tbl = "group_savings" if source_type == "GroupSavings" else ("misc_savings" if source_type == "MiscSavings" else "individual_savings")
+                try:
+                    uow.client.table(tbl).delete().eq("id", source_entity.id).execute()
+                except Exception:
+                    pass
+            if dest_entity and dest_entity.id:
+                tbl = "group_savings" if destination_type == "GroupSavings" else ("misc_savings" if destination_type == "MiscSavings" else "individual_savings")
+                try:
+                    uow.client.table(tbl).delete().eq("id", dest_entity.id).execute()
+                except Exception:
+                    pass
+            raise e
 
         except Exception as e:
             if source_entity and source_entity.id:
