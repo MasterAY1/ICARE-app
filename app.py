@@ -5074,7 +5074,7 @@ elif page == "Collections":
                                 is_asset = str(cid).endswith("-ASSET") or (prod and "asset" in prod.lower() and "non-asset" not in prod.lower())
                             
                                 if is_asset:
-                                    title = f"📋 {m['Client Name']} (ASSET) — Rem: ₦{info['rem_bal']:,.0f}"
+                                    title = f"📋 {m['Client Name']} (ASSET) — Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
                                 else:
                                     title = f"👤 {m['Client Name']} ({cid}) — Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
                                 
@@ -5092,12 +5092,11 @@ elif page == "Collections":
                                 
                                     is_future_loan = pd.notna(s_date) and s_date > view_dt
                                 
-                                    if not is_asset:
-                                        st.markdown("**Savings**")
-                                        s_dep = st.number_input("Savings Deposit", min_value=0.0, step=500.0, value=info['prev_dep'] if info['prev_dep'] > 0 else None, placeholder="0", key=f"sdep_{cid}")
-                                        s_wd = 0.0
-                                        sav_data[cid] = {"dep": s_dep, "wd": s_wd}
-                                        st.markdown("---")
+                                    st.markdown("**Savings**")
+                                    s_dep = st.number_input("Savings Deposit", min_value=0.0, step=500.0, value=info['prev_dep'] if info['prev_dep'] > 0 else None, placeholder="0", key=f"sdep_{cid}")
+                                    s_wd = 0.0
+                                    sav_data[cid] = {"dep": s_dep, "wd": s_wd}
+                                    st.markdown("---")
                                 
                                     if is_future_loan:
                                         st.warning(f"**Next Loan Repayment Due On:** {s_date.strftime('%Y-%m-%d')}")
