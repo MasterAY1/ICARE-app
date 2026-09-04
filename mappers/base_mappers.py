@@ -87,6 +87,11 @@ class LoanMapper:
         if dto.get("extra_fields") and isinstance(dto.get("extra_fields"), dict):
             extra.update(dto.get("extra_fields"))
 
+        # Authoritatively resolve product_category & is_asset from DTO columns and product name
+        prod_cat = dto.get("product_category") or extra.get("product_category") or ("Asset" if "asset" in str(prod_name or "").lower() else "Finance")
+        extra["product_category"] = prod_cat
+        is_asset_val = bool(dto.get("is_asset") is True or prod_cat == "Asset" or "asset" in str(prod_name or "").lower())
+
         loan_id = str(dto.get("loan_id", dto.get("id") or ""))
         client_id = str(dto.get("client_id") or c_dto.get("client_id") or "")
         client_name = c_dto.get("name") or dto.get("client_name", "")
@@ -111,7 +116,7 @@ class LoanMapper:
             end_date=_parse_date(dto.get("expected_end_date", dto.get("end_date"))),
             created_at=_parse_datetime(dto.get("created_at")),
             group_name=dto.get("group_name"),
-            is_asset=bool(dto.get("is_asset", False)),
+            is_asset=is_asset_val,
             officer_id=str(dto.get("officer_id") or "") if dto.get("officer_id") else None,
             branch_id=str(dto.get("branch_id") or "") if dto.get("branch_id") else None,
             extra_fields=extra

@@ -32,7 +32,8 @@ class LoanService:
         ref_id = f"TXN-{b_date_str}-{uuid.uuid4().hex[:6].upper()}"
 
         # 2. Calculate loan setup pricing parameters
-        prod_cat = getattr(loan, 'product_category', None) or loan.extra_fields.get("product_category") or ("Asset" if getattr(loan, 'is_asset', False) else "Finance")
+        is_asset_loan = bool(getattr(loan, 'is_asset', False) or getattr(loan, 'product_category', None) == "Asset" or loan.extra_fields.get("product_category") == "Asset" or "asset" in str(loan.product_type or "").lower())
+        prod_cat = "Asset" if is_asset_loan else "Finance"
         setup = LoanProductEngine.calculate_loan_setup(loan.amount, loan.product_type, prod_cat)
         
         is_cash_and_carry = bool(loan.product_type and ("cash and carry" in str(loan.product_type).lower() or "cash & carry" in str(loan.product_type).lower()))
@@ -159,8 +160,8 @@ class LoanService:
                     "date": b_date.isoformat(),
                     "reference": ref_id,
                     "classification": TransactionClassification.LOAN_DISBURSEMENT.value,
-                    "product_category": "Asset" if loan.is_asset else "Finance",
-                    "narration": f"Loan disbursement of {loan.amount:,.2f} for client {loan.client_name}"
+                    "product_category": prod_cat,
+                    "narration": f"Loan disbursement of {loan.amount:,.2f} ({loan.product_type}) for client {loan.client_name}"
                 }
             )
             add_event(event_disbursed)

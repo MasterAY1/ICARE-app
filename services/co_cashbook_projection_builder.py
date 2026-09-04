@@ -93,7 +93,8 @@ class CoCashbookProjectionBuilder:
             ev_store = tx.get("event_store") or {}
             event_type = ev_store.get("event_type")
             ev_id = tx.get("event_id") or entry.get("entry_id") or str(uuid.uuid4())
-            narr = str(tx.get("narration") or "").lower()
+            ev_payload = ev_store.get("payload") or {}
+            narr = str(tx.get("narration") or ev_payload.get("narration") or "").lower()
 
             # Handle internal non-cash transfers for Product Withdrawal
             if event_type == "LapsTransferred" and acc == "2030" and side == "Credit":
@@ -150,9 +151,16 @@ class CoCashbookProjectionBuilder:
                 continue
 
             if event_type == "SavingsWithdrawn" and acc in ["2000", "2010", "2020"] and side == "Debit":
+                is_auto_deduction = (
+                    "auto-deducted" in narr or
+                    "upfront" in narr or
+                    event_type == "AUTOMATIC_DEDUCTION" or
+                    ev_store.get("payload", {}).get("classification") == "AUTOMATIC_DEDUCTION"
+                )
                 if ev_id not in processed_pwd_events:
                     product_withdrawal += amount
-                    bank_withdrawal += amount
+                    if not is_auto_deduction:
+                        bank_withdrawal += amount
                     processed_pwd_events.add(ev_id)
                 continue
 
@@ -279,7 +287,10 @@ class CoCashbookProjectionBuilder:
                 elif event_type == "LoanDisbursed":
                     # For cash loans disbursed from vault/bank, record product active credit outflow
                     payload = ev_store.get("payload") or {}
-                    prod_cat = payload.get("product_category") or ("Asset" if "asset" in str(payload.get("narration", "")).lower() else "Finance")
+                    raw_cat = str(payload.get("product_category") or "")
+                    p_type = str(payload.get("product_type") or "").lower()
+                    p_narr = str(payload.get("narration") or "").lower()
+                    prod_cat = "Asset" if ("asset" in raw_cat.lower() or "asset" in p_type or "asset" in p_narr) else "Finance"
                     act_cr = float(payload.get("active_credit") or payload.get("amount") or amount)
                     orig_amt = float(payload.get("amount") or act_cr)
                     prod_name = str(payload.get("product_type") or payload.get("narration") or "").lower()

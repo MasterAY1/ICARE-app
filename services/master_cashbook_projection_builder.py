@@ -128,8 +128,10 @@ class MasterCashbookProjectionBuilder:
                     elif event_type == "SalaryPaid":
                         totals["staff_salaries"] += amt
                     elif event_type in ["LoanDisbursed", "LOAN_DISBURSED"]:
-                        cat = payload.get("product_category") or "Finance"
-                        if "Asset" in str(cat):
+                        cat = str(payload.get("product_category") or "")
+                        p_type = str(payload.get("product_type") or "").lower()
+                        p_narr = str(payload.get("narration") or "").lower()
+                        if "asset" in cat.lower() or "asset" in p_type or "asset" in p_narr:
                             totals["fund_to_asset_program"] += amt
                         else:
                             totals["fund_to_product_finance"] += amt
