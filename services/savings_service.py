@@ -11,7 +11,7 @@ from services.posting_engine import FinancialPostingEngine
 
 class SavingsService:
     @staticmethod
-    def post_individual_savings(uow: SupabaseUnitOfWork, client_id: str, client_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None, posting_date: Optional[Any] = None):
+    def post_individual_savings(uow: SupabaseUnitOfWork, client_id: str, client_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None, posting_date: Optional[Any] = None, savings_id: Optional[str] = None):
         if deposit_amount == 0 and withdrawal_amount == 0:
             return
             
@@ -24,6 +24,7 @@ class SavingsService:
             raise ValueError(f"Operational Restriction: Cannot post savings. {reason}.")
 
         entity = IndividualSavings(
+            id=savings_id,
             client_id=client_id,
             client_name=client_name,
             branch=branch,
@@ -69,7 +70,7 @@ class SavingsService:
             raise e
 
     @staticmethod
-    def post_group_savings(uow: SupabaseUnitOfWork, group_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None, posting_date: Optional[Any] = None, group_id: Optional[str] = None):
+    def post_group_savings(uow: SupabaseUnitOfWork, group_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None, posting_date: Optional[Any] = None, group_id: Optional[str] = None, group_savings_id: Optional[str] = None):
         if deposit_amount == 0 and withdrawal_amount == 0:
             return
             
@@ -82,6 +83,7 @@ class SavingsService:
             raise ValueError(f"Operational Restriction: Cannot post group savings. {reason}.")
 
         entity = GroupSavings(
+            id=group_savings_id,
             group_name=group_name,
             branch=branch,
             officer=officer,

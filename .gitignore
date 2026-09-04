@@ -50,3 +50,14 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+
+# Environment files
+.env*
+
+# Agent temporary workspaces
+.agents/*
+!.agents/references/
+!.agents/rules/
+!.agents/skills/
+
+

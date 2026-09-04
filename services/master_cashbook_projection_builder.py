@@ -32,23 +32,23 @@ class MasterCashbookProjectionBuilder:
         # 2. Previous day opening balance resolution
         opening_bal = 0.0
         try:
+            sum_co_open = sum(float(r.get("opening_balance") or 0.0) for r in co_rows) if co_rows else 0.0
             res_prev = uow.client.table("master_cashbook").select("closing_balance") \
                 .eq("branch_id", branch_id).eq("date", prev_date_str).execute()
             if res_prev.data and res_prev.data[0].get("closing_balance") is not None:
-                opening_bal = float(res_prev.data[0]["closing_balance"] or 0.0)
+                prev_close = float(res_prev.data[0]["closing_balance"] or 0.0)
+                opening_bal = prev_close if prev_close >= 0 else sum_co_open
+            elif co_rows:
+                opening_bal = sum_co_open
             else:
                 # If no previous day master cashbook exists (Day 1 / fresh bootstrap),
-                # check if master_cashbook already has an existing opening_balance recorded, or derive from COs
+                # check if master_cashbook already has an existing opening_balance recorded
                 res_curr = uow.client.table("master_cashbook").select("opening_balance") \
                     .eq("branch_id", branch_id).eq("date", p_date_str).execute()
-                if res_curr.data and res_curr.data[0].get("opening_balance") is not None and float(res_curr.data[0]["opening_balance"] or 0.0) > 0:
+                if res_curr.data and res_curr.data[0].get("opening_balance") is not None:
                     opening_bal = float(res_curr.data[0]["opening_balance"] or 0.0)
                 else:
-                    sum_co_open = sum(float(r.get("opening_balance") or 0.0) for r in co_rows)
-                    if sum_co_open > 0:
-                        opening_bal = sum_co_open
-                    elif p_date_str == "2026-08-19":
-                        opening_bal = 450.0
+                    opening_bal = sum_co_open
         except Exception:
             pass
 

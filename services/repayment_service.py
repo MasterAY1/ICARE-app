@@ -20,11 +20,22 @@ class RepaymentService:
         operations = []
 
         # 1. Persist operational data
+        exists = False
+        if repayment.id:
+            try:
+                check_res = uow.client.table("repayments").select("id").eq("id", repayment.id).execute()
+                if check_res.data:
+                    exists = True
+            except Exception:
+                pass
+
         if not repayment.id:
             repayment.id = str(uuid.uuid4())
             op_type = "insert"
-        else:
+        elif exists:
             op_type = "update"
+        else:
+            op_type = "insert"
             
         rep_record = uow.repayments._prepare_db_data(repayment)
         if "id" in rep_record and not rep_record["id"]:
