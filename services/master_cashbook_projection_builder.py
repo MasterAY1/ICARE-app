@@ -196,10 +196,15 @@ class MasterCashbookProjectionBuilder:
             except Exception as e:
                 print(f"Master Cashbook failed to fetch direct loan disbursements: {e}")
 
-        # Branch treasury loans (disbursed outside CO cashbooks) balance with loan_received_finance / loan_received_asset
-        if branch_treasury_finance > 0 and totals.get("loan_received_finance", 0.0) == 0.0:
+        # Balance loan_received_finance with fund_to_product_finance (BR-CASH-001)
+        if totals.get("fund_to_product_finance", 0.0) > 0 and totals.get("loan_received_finance", 0.0) == 0.0:
+            totals["loan_received_finance"] = totals["fund_to_product_finance"]
+        elif branch_treasury_finance > 0 and totals.get("loan_received_finance", 0.0) == 0.0:
             totals["loan_received_finance"] = branch_treasury_finance
-        if branch_treasury_asset > 0 and totals.get("loan_received_asset", 0.0) == 0.0:
+
+        if totals.get("fund_to_asset_program", 0.0) > 0 and totals.get("loan_received_asset", 0.0) == 0.0:
+            totals["loan_received_asset"] = totals["fund_to_asset_program"]
+        elif branch_treasury_asset > 0 and totals.get("loan_received_asset", 0.0) == 0.0:
             totals["loan_received_asset"] = branch_treasury_asset
 
         # Ensure Bank Withdrawal for branch treasury disbursements is not double-counted with loan_received_finance
