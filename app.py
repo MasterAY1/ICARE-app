@@ -2506,6 +2506,7 @@ if page == "Dashboard":
                 st.markdown("##### Quick Action: Start Collection")
                 def _go_to_collections(grp_name):
                     st.session_state["Navigation"] = "Collections"
+                    st.session_state["collections_mode_radio"] = "Group Collection Sheet"
                     st.session_state["sel_group"] = grp_name
                     
                 g_cols = st.columns(min(len(m_port), 4))
@@ -4235,7 +4236,10 @@ elif page == "Collections":
             col_options = ["Group Collection Sheet", "Single Client Quick Entry"]
             if ROLE in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
                 col_options.append("Bulk Upload (Excel Template)")
-            col_mode = st.radio("Collection Mode", col_options, horizontal=True)
+            
+            if "collections_mode_radio" not in st.session_state or st.session_state["collections_mode_radio"] not in col_options:
+                st.session_state["collections_mode_radio"] = col_options[0]
+            col_mode = st.radio("Collection Mode", col_options, horizontal=True, key="collections_mode_radio")
 
             # Pre-load all active clients for the target officer / branch
             with SupabaseUnitOfWork() as uow:
@@ -4595,13 +4599,29 @@ elif page == "Collections":
                     co_clients_df = pd.DataFrame(clients_data)
                     groups = ["Ungrouped"] + sorted(co_clients_df[co_clients_df['Group Name'] != "Ungrouped"]['Group Name'].unique().tolist())
                 
-                    default_idx = 0
-                    if "sel_group" in st.session_state and st.session_state["sel_group"] in groups:
-                        default_idx = groups.index(st.session_state["sel_group"])
-                        del st.session_state["sel_group"]
-                    
+                    # Resolve requested group from navigation / deep-linking
+                    if "sel_group" in st.session_state:
+                        req_grp = str(st.session_state.pop("sel_group", "")).strip()
+                        matched_grp = None
+                        if req_grp in groups:
+                            matched_grp = req_grp
+                        else:
+                            # Disambiguated / prefix fallback: e.g. "Ifesowapo" matches "Ifesowapo (#2 - Daily)"
+                            matches = [g for g in groups if g == req_grp or g.startswith(f"{req_grp} (") or g.startswith(f"{req_grp} #")]
+                            if matches:
+                                matched_grp = matches[0]
+                            elif req_grp in ["Individual Group", "Ungrouped", "Individual"]:
+                                matched_grp = "Ungrouped"
+                        
+                        if matched_grp and matched_grp in groups:
+                            st.session_state["collections_selected_group"] = matched_grp
+
+                    # Ensure persistent key exists and is valid in current groups list
+                    if "collections_selected_group" not in st.session_state or st.session_state["collections_selected_group"] not in groups:
+                        st.session_state["collections_selected_group"] = groups[0]
+
                     col_g1, col_g2 = st.columns([3, 1])
-                    selected_group = col_g1.selectbox("Select Group", groups, index=default_idx)
+                    selected_group = col_g1.selectbox("Select Group", groups, key="collections_selected_group")
                     expand_all_members = col_g2.checkbox("Expand All Members", value=st.session_state.get('chk_expand_all', False), key="chk_expand_all")
                 
                     if selected_group == "Ungrouped":

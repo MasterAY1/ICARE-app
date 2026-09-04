@@ -417,13 +417,29 @@ class DashboardService:
         group_mday_map = {}
         co_lifetime_reps_map = {}
         try:
+            # Query all groups to detect duplicate names and disambiguate identically to Collections
+            all_groups_res = uow.client.table("groups").select("group_id, name, meeting_day, group_number").execute()
+            all_groups_list = all_groups_res.data or []
+            grp_name_counts = {}
+            for g in all_groups_list:
+                gn = g.get("name", "")
+                grp_name_counts[gn] = grp_name_counts.get(gn, 0) + 1
+
+            def _resolve_grp_label(grp_dict):
+                if not grp_dict:
+                    return "Individual Group"
+                gn = grp_dict.get("name", "Individual Group")
+                if grp_name_counts.get(gn, 1) > 1:
+                    return f"{gn} (#{grp_dict.get('group_number', '?')} - {grp_dict.get('meeting_day', '?')})"
+                return gn
+
             loan_client_ids = [l.get("client_id") for l in active_loans if l.get("client_id")]
             if loan_client_ids:
-                g_query = uow.client.table("client_memberships").select("client_id, groups(name, meeting_day)").in_("client_id", loan_client_ids).execute()
+                g_query = uow.client.table("client_memberships").select("client_id, groups(group_id, name, meeting_day, group_number)").in_("client_id", loan_client_ids).execute()
                 for gm in (g_query.data or []):
                     grp = gm.get("groups") or {}
                     cid_s = str(gm.get("client_id"))
-                    g_name_str = grp.get("name") or "Individual Group"
+                    g_name_str = _resolve_grp_label(grp)
                     group_map[cid_s] = g_name_str
                     group_mday_map[g_name_str] = grp.get("meeting_day") or "Daily"
             
