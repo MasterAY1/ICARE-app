@@ -14,55 +14,101 @@ class SupabaseSavingsRepository(BaseRepository):
         else:
             self.select_columns = "*, branches(name), app_users(username), clients(name)"
 
-    def _resolve_branch_id(self, branch_name: str) -> str:
+    def _resolve_branch_id(self, branch_name: str) -> Optional[str]:
         if not branch_name:
-            return "1a3b5c7d-9e0f-4a2b-8c4d-6e8f0a2b4c6d"
+            return None
+        import uuid
+        try:
+            u = uuid.UUID(str(branch_name).strip())
+            if u.int != 0:
+                return str(u)
+            return None
+        except (ValueError, TypeError, AttributeError):
+            pass
         try:
             res = self.client.table("branches").select("branch_id").eq("name", branch_name).execute()
             if res.data:
                 return res.data[0]["branch_id"]
+            res_ci = self.client.table("branches").select("branch_id").ilike("name", branch_name).execute()
+            if res_ci.data:
+                return res_ci.data[0]["branch_id"]
         except Exception:
             pass
-        return "1a3b5c7d-9e0f-4a2b-8c4d-6e8f0a2b4c6d"
+        return None
 
-    def _resolve_officer_id(self, username: str) -> str:
+    def _resolve_officer_id(self, username: str) -> Optional[str]:
         if not username:
-            return "00000000-0000-0000-0000-000000000000"
+            return None
+        import uuid
+        try:
+            u = uuid.UUID(str(username).strip())
+            if u.int != 0:
+                return str(u)
+            return None
+        except (ValueError, TypeError, AttributeError):
+            pass
         try:
             res = self.client.table("app_users").select("id").eq("username", username).execute()
             if res.data:
                 return res.data[0]["id"]
+            res_ci = self.client.table("app_users").select("id").ilike("username", username).execute()
+            if res_ci.data:
+                return res_ci.data[0]["id"]
         except Exception:
             pass
-        return "00000000-0000-0000-0000-000000000000"
+        return None
 
-    def _resolve_group_id(self, group_name: str) -> str:
+    def _resolve_group_id(self, group_name: str) -> Optional[str]:
         if not group_name:
-            return "00000000-0000-0000-0000-000000000000"
+            return None
         import uuid
+        import re
+        str_name = str(group_name).strip()
         try:
-            uuid.UUID(str(group_name))
-            return str(group_name)
-        except ValueError:
+            u = uuid.UUID(str_name)
+            if u.int != 0:
+                return str(u)
+            return None
+        except (ValueError, TypeError, AttributeError):
             pass
+
+        # Check for disambiguated label: "GroupName (#Number - MeetingDay)" or "GroupName (#Number)"
+        m = re.match(r"^(.+?)\s*\(\s*#(\d+)(?:\s*-\s*[^)]+)?\s*\)$", str_name)
+        if m:
+            base_name = m.group(1).strip()
+            group_num = m.group(2).strip()
+            try:
+                res = self.client.table("groups").select("group_id").eq("group_number", group_num).ilike("name", base_name).execute()
+                if res.data:
+                    return res.data[0]["group_id"]
+                res_num = self.client.table("groups").select("group_id").eq("group_number", group_num).execute()
+                if res_num.data:
+                    return res_num.data[0]["group_id"]
+            except Exception:
+                pass
+            str_name = base_name
+
         try:
-            res = self.client.table("groups").select("group_id").eq("name", group_name).execute()
+            # 1. Exact name match
+            res = self.client.table("groups").select("group_id").eq("name", str_name).execute()
             if res.data:
                 return res.data[0]["group_id"]
-            # Fallback to group_code check
-            res_code = self.client.table("groups").select("group_id").eq("group_code", group_name).execute()
-            if res_code.data:
-                return res_code.data[0]["group_id"]
-            try:
-                code_int = int(group_name)
-                res_int = self.client.table("groups").select("group_id").eq("group_code", code_int).execute()
-                if res_int.data:
-                    return res_int.data[0]["group_id"]
-            except ValueError:
-                pass
+            # 2. Case-insensitive name match
+            res_ci = self.client.table("groups").select("group_id").ilike("name", str_name).execute()
+            if res_ci.data:
+                return res_ci.data[0]["group_id"]
+            # 3. Fallback to group_number check if numeric
+            if str_name.isdigit():
+                res_num = self.client.table("groups").select("group_id").eq("group_number", str_name).execute()
+                if res_num.data:
+                    return res_num.data[0]["group_id"]
+            # 4. Partial substring match
+            res_part = self.client.table("groups").select("group_id").ilike("name", f"%{str_name}%").execute()
+            if res_part.data:
+                return res_part.data[0]["group_id"]
         except Exception:
             pass
-        return "00000000-0000-0000-0000-000000000000"
+        return None
 
     def _to_domain(self, dto: dict):
         c_name = ""
@@ -150,12 +196,14 @@ class SupabaseSavingsRepository(BaseRepository):
 
         import uuid
         def clean_uuid(val):
-            if not val:
+            if not val or str(val) == "00000000-0000-0000-0000-000000000000":
                 return None
             try:
-                uuid.UUID(str(val))
-                return str(val)
-            except ValueError:
+                u = uuid.UUID(str(val))
+                if u.int == 0:
+                    return None
+                return str(u)
+            except (ValueError, TypeError, AttributeError):
                 return None
 
         if self.entity_class.__name__ in ["IndividualSavings", "MiscSavings", "LapsSavings"]:
@@ -170,9 +218,11 @@ class SupabaseSavingsRepository(BaseRepository):
             d["client_id"] = clean_uuid(c_id)
         elif self.entity_class.__name__ == "GroupSavings":
             g_id = getattr(entity, 'group_id', None)
-            if not g_id or not is_valid_uuid(g_id):
+            cleaned = clean_uuid(g_id)
+            if not cleaned:
                 g_id = self._resolve_group_id(entity.group_name)
-            d["group_id"] = clean_uuid(g_id)
+                cleaned = clean_uuid(g_id)
+            d["group_id"] = cleaned
 
         return d
 
@@ -185,12 +235,15 @@ class SupabaseSavingsRepository(BaseRepository):
         print(f"[SAVINGS TRACE] SQL Insert Result for {self.table_name}: {res.data}")
         if res.data:
             entity.id = str(res.data[0].get("id"))
+            if "group_id" in res.data[0] and res.data[0]["group_id"]:
+                entity.group_id = str(res.data[0]["group_id"])
 
     def find_all(self, branch: Optional[str] = None) -> List:
         query = self.client.table(self.table_name).select(self.select_columns)
         if branch:
             branch_id = self._resolve_branch_id(branch)
-            query = query.eq("branch_id", branch_id)
+            if branch_id:
+                query = query.eq("branch_id", branch_id)
         res = query.execute()
         return [self._to_domain(item) for item in res.data]
 
@@ -198,10 +251,12 @@ class SupabaseSavingsRepository(BaseRepository):
         query = self.client.table(self.table_name).select("deposit_amount, withdrawal_amount")
         if branch:
             branch_id = self._resolve_branch_id(branch)
-            query = query.eq("branch_id", branch_id)
+            if branch_id:
+                query = query.eq("branch_id", branch_id)
         if officer:
             officer_id = self._resolve_officer_id(officer)
-            query = query.eq("officer_id", officer_id)
+            if officer_id:
+                query = query.eq("officer_id", officer_id)
         if client_id and self.entity_class.__name__ in ["IndividualSavings", "MiscSavings", "LapsSavings"]:
             query = query.eq("client_id", client_id)
         if self.entity_class.__name__ == "GroupSavings":
@@ -209,7 +264,8 @@ class SupabaseSavingsRepository(BaseRepository):
                 query = query.eq("group_id", group_id)
             elif group_name:
                 resolved_gid = self._resolve_group_id(group_name)
-                query = query.eq("group_id", resolved_gid)
+                if resolved_gid:
+                    query = query.eq("group_id", resolved_gid)
         res = query.execute()
         total = 0.0
         for row in res.data:

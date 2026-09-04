@@ -105,6 +105,7 @@ class SavingsService:
             # 3. Create Event & Post
             event_type = "SavingsDeposited" if deposit_amount > 0 else "SavingsWithdrawn"
             amt = deposit_amount if deposit_amount > 0 else withdrawal_amount
+            final_gid = getattr(entity, 'group_id', None) or group_id
             event = DomainEvent(
                 event_id=str(uuid.uuid4()),
                 aggregate_id=entity.id,
@@ -117,7 +118,7 @@ class SavingsService:
                     "reference": reference or entity.id,
                     "date": p_dt.isoformat() if hasattr(p_dt, 'isoformat') else str(p_dt),
                     "narration": remarks or f"Group savings transaction for group {group_name}",
-                    "group_id": group_id
+                    "group_id": final_gid
                 }
             )
             uow.event_store.append(event)

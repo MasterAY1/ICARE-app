@@ -1066,9 +1066,12 @@ DB_TO_UI_REP = {
     "laps_reserved": "Laps Reserved", "laps_transferred": "Laps Transferred",
     "initial_payment": "initial_payment", "group_savings_dep": "Group Savings Deposit", "group_savings_wd": "Group Savings Withdrawal", "misc_fees": "Misc Fees",
     "asset_credit_sales": "Asset Credit Sales", "cash_and_carry": "Cash and Carry", "credit_form": "Credit Form", "credit_form_damage": "Credit Form Damage", "bonus": "Bonus",
-    "payment_status": "Payment Status", "expected_amount": "Expected Amount", "overdue_amount": "Overdue Amount"
+    "payment_status": "Payment Status", "expected_amount": "Expected Amount", "overdue_amount": "Overdue Amount",
+    "group_id": "Group ID"
 }
 UI_TO_DB_REP = {v: k for k, v in DB_TO_UI_REP.items()}
+UI_TO_DB_REP["Group ID"] = "group_id"
+UI_TO_DB_REP["group_id"] = "group_id"
 
 def load_client_savings_map():
     """Load map of client code to cumulative savings balance from individual_savings table"""
@@ -1321,8 +1324,43 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
 
             # 1. Route Group Savings
             if not skip_savings and str(client_id).startswith('GROUP-'):
-                group_name = str(client_id).replace('GROUP-', '')
-                g_id_val = db_data.get('group_id')
+                group_name = str(client_id).replace('GROUP-', '').strip()
+                g_id_val = data.get('group_id') or data.get('Group ID') or db_data.get('group_id')
+                import uuid
+                def is_valid_group_uuid(val):
+                    if not val or str(val) == "00000000-0000-0000-0000-000000000000":
+                        return False
+                    try:
+                        u = uuid.UUID(str(val))
+                        return u.int != 0
+                    except (ValueError, TypeError, AttributeError):
+                        return False
+
+                if not is_valid_group_uuid(g_id_val):
+                    try:
+                        import re
+                        m = re.match(r"^(.+?)\s*\(\s*#(\d+)(?:\s*-\s*[^)]+)?\s*\)$", group_name)
+                        if m:
+                            base_gname = m.group(1).strip()
+                            g_num = m.group(2).strip()
+                            res_g = uow.client.table("groups").select("group_id").eq("group_number", g_num).ilike("name", base_gname).execute()
+                            if res_g.data:
+                                g_id_val = res_g.data[0]["group_id"]
+                            if not g_id_val:
+                                res_num = uow.client.table("groups").select("group_id").eq("group_number", g_num).execute()
+                                if res_num.data:
+                                    g_id_val = res_num.data[0]["group_id"]
+                        if not is_valid_group_uuid(g_id_val):
+                            res_name = uow.client.table("groups").select("group_id").eq("name", group_name).execute()
+                            if res_name.data:
+                                g_id_val = res_name.data[0]["group_id"]
+                            else:
+                                res_ci = uow.client.table("groups").select("group_id").ilike("name", group_name).execute()
+                                if res_ci.data:
+                                    g_id_val = res_ci.data[0]["group_id"]
+                    except Exception as ex_resolve:
+                        print(f"[GROUP RESOLVE WARNING] Failed resolving group_id for '{group_name}': {ex_resolve}")
+
                 sav_id_val = data.get('savings_tx_id') or data.get('tx_id')
                 SavingsService.post_group_savings(uow, group_name, branch, officer, group_dep, group_wd, remarks=db_data.get('note'), posting_date=p_date, group_id=g_id_val, group_savings_id=sav_id_val)
                 return

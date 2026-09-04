@@ -40,6 +40,7 @@ DB_TO_UI_REP = {
     'branch': 'Branch',
     'credit_officer': 'CO',
     'officer': 'Officer',
+    'group_id': 'Group ID',
     'created_at': 'Created At'
 }
 
@@ -48,3 +49,5 @@ UI_TO_DB_REP['Date'] = 'date'
 UI_TO_DB_REP['Payment Date'] = 'date'
 UI_TO_DB_REP['Officer'] = 'officer'
 UI_TO_DB_REP['CO'] = 'credit_officer'
+UI_TO_DB_REP['Group ID'] = 'group_id'
+UI_TO_DB_REP['group_id'] = 'group_id'

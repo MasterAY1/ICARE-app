@@ -79,6 +79,8 @@ class MasterCashbookProjectionBuilder:
         totals["bank_withdrawal"] = co_bank_wd
 
         # 4. Fetch Branch Treasury Activities from Ledger
+        branch_treasury_finance = 0.0
+        branch_treasury_asset = 0.0
         try:
             res_ledger = uow.client.table("financial_ledger_entries") \
                 .select("*, financial_transactions!inner(officer_id, event_store(event_type, payload))") \
@@ -128,21 +130,24 @@ class MasterCashbookProjectionBuilder:
                     elif event_type == "SalaryPaid":
                         totals["staff_salaries"] += amt
                     elif event_type in ["LoanDisbursed", "LOAN_DISBURSED"]:
-                        cat = str(payload.get("product_category") or "")
-                        p_type = str(payload.get("product_type") or "").lower()
-                        p_narr = str(payload.get("narration") or "").lower()
-                        if "asset" in cat.lower() or "asset" in p_type or "asset" in p_narr:
-                            totals["fund_to_asset_program"] += amt
-                        else:
-                            totals["fund_to_product_finance"] += amt
+                        if tx_officer_id not in co_officer_ids:
+                            cat = str(payload.get("product_category") or "")
+                            p_type = str(payload.get("product_type") or "").lower()
+                            p_narr = str(payload.get("narration") or "").lower()
+                            if "asset" in cat.lower() or "asset" in p_type or "asset" in p_narr:
+                                totals["fund_to_asset_program"] += amt
+                                branch_treasury_asset += amt
+                            else:
+                                totals["fund_to_product_finance"] += amt
+                                branch_treasury_finance += amt
                     elif event_type == "BankDeposited":
                         if tx_officer_id not in co_officer_ids:
                             totals["bank_deposit"] += amt
         except Exception as e:
             print(f"[SAVINGS TRACE] Master Cashbook failed to fetch branch ledger entries: {e}")
 
-        # 5. Fallback: If no direct loans aggregated from CO rows, fetch from loans table
-        if totals["fund_to_product_finance"] == 0.0 and totals["fund_to_asset_program"] == 0.0:
+        # 5. Fallback: If no direct loans aggregated from CO rows AND no branch treasury loans, fetch from loans table
+        if totals["fund_to_product_finance"] == 0.0 and totals["fund_to_asset_program"] == 0.0 and not co_rows:
             try:
                 res_loans = uow.client.table("loans") \
                     .select("loan_amount, active_credit, extra_fields, loan_products(name, repayment_cycle)") \
@@ -169,8 +174,10 @@ class MasterCashbookProjectionBuilder:
                     
                     if "Asset" in p_cat or "asset" in p_name:
                         totals["fund_to_asset_program"] += princ
+                        branch_treasury_asset += princ
                     else:
                         totals["fund_to_product_finance"] += act_cr
+                        branch_treasury_finance += act_cr
                         
                     cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in p_name else "Weekly")
                     if "120" in p_name:
@@ -189,13 +196,14 @@ class MasterCashbookProjectionBuilder:
             except Exception as e:
                 print(f"Master Cashbook failed to fetch direct loan disbursements: {e}")
 
-        if totals.get("fund_to_product_finance", 0.0) > 0 and totals.get("loan_received_finance", 0.0) == 0.0:
-            totals["loan_received_finance"] = totals["fund_to_product_finance"]
-        if totals.get("fund_to_asset_program", 0.0) > 0 and totals.get("loan_received_asset", 0.0) == 0.0:
-            totals["loan_received_asset"] = totals["fund_to_asset_program"]
+        # Branch treasury loans (disbursed outside CO cashbooks) balance with loan_received_finance / loan_received_asset
+        if branch_treasury_finance > 0 and totals.get("loan_received_finance", 0.0) == 0.0:
+            totals["loan_received_finance"] = branch_treasury_finance
+        if branch_treasury_asset > 0 and totals.get("loan_received_asset", 0.0) == 0.0:
+            totals["loan_received_asset"] = branch_treasury_asset
 
-        # Ensure Bank Withdrawal for loan disbursements is not double-counted with loan_received_finance
-        if totals.get("loan_received_finance", 0.0) > 0:
+        # Ensure Bank Withdrawal for branch treasury disbursements is not double-counted with loan_received_finance
+        if branch_treasury_finance > 0 and totals.get("bank_withdrawal", 0.0) >= totals.get("loan_received_finance", 0.0):
             totals["bank_withdrawal"] = max(0.0, totals.get("bank_withdrawal", 0.0) - totals.get("loan_received_finance", 0.0))
 
         # Corrected Master Cashbook Formulas (ICARE Business Rules)
