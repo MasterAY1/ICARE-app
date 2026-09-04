@@ -2252,6 +2252,10 @@ if page == "Dashboard":
     else:
         st.title("Performance & Risk Dashboard")
 
+    if "flash_msg" in st.session_state:
+        st.success(st.session_state["flash_msg"])
+        del st.session_state["flash_msg"]
+
     from services.dashboard_service import DashboardService
     from database.repositories.unit_of_work import SupabaseUnitOfWork
 
@@ -2544,7 +2548,7 @@ if page == "Dashboard":
                                                 "approved_at": datetime.now().isoformat()
                                             }).eq("id", wr_id).execute()
 
-                                        st.success(f"Withdrawal of ₦{wr_amt:,.2f} approved!")
+                                        st.session_state["flash_msg"] = f"✅ Withdrawal of ₦{wr_amt:,.2f} for {wr_name} approved and posted to financial ledger!"
                                         st.rerun()
                                     except Exception as ex:
                                         st.error(f"Approval failed: {str(ex)}")
@@ -2563,7 +2567,7 @@ if page == "Dashboard":
                                     "rejection_reason": reject_reason or "Rejected by BM"
                                 }).eq("id", wr_id).execute()
                                 st.session_state[f"rejecting_{wr_id}"] = False
-                                st.success(f"Withdrawal request rejected for {wr_name}.")
+                                st.session_state["flash_msg"] = f"⚠️ Withdrawal request rejected for {wr_name}."
                                 st.rerun()
                 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -5853,6 +5857,13 @@ elif page == "Withdrawal Operations":
     st.title("Withdrawal Operations")
     st.caption("Submit withdrawal requests for BM approval. All withdrawals require Branch Manager authorization before execution.")
 
+    if "withdrawal_flash_msg" in st.session_state:
+        st.success(st.session_state["withdrawal_flash_msg"])
+        del st.session_state["withdrawal_flash_msg"]
+    if "withdrawal_error_msg" in st.session_state:
+        st.error(st.session_state["withdrawal_error_msg"])
+        del st.session_state["withdrawal_error_msg"]
+
     user_dict = current_user.to_dict() if hasattr(current_user, 'to_dict') else {
         "id": USER_ID, "username": USER, "role": ROLE, "branch": BRANCH, "branch_id": BRANCH_ID, "assigned_branches": ASSIGNED_BRANCH_IDS
     }
@@ -5872,13 +5883,34 @@ elif page == "Withdrawal Operations":
     if not is_wth_open:
         st.warning(f"🏖️ **Operational Activity Suspended ({wth_open_reason})**: Savings withdrawals and LAPS payouts are frozen for {wth_op_date}.")
 
+    is_manager = ROLE in ["BM", "AM", "Branch Manager", "Area Manager", ROLE_BRANCH_MANAGER, ROLE_AREA_MANAGER, ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]
+    if is_manager:
+        if ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
+            res_wr_all = uow.client.table("withdrawal_requests").select("*").in_("branch_id", ASSIGNED_BRANCH_IDS).eq("status", "PENDING").order("created_at", desc=False).execute()
+        elif ROLE in ["BM", "Branch Manager", ROLE_BRANCH_MANAGER]:
+            res_wr_all = uow.client.table("withdrawal_requests").select("*").eq("branch_id", BRANCH_ID).eq("status", "PENDING").order("created_at", desc=False).execute()
+        else:
+            res_wr_all = uow.client.table("withdrawal_requests").select("*").eq("status", "PENDING").order("created_at", desc=False).execute()
+        pending_withdrawals_all = res_wr_all.data or []
+    else:
+        pending_withdrawals_all = []
+
     # ── Savings Type Selector ──
-    wth_tab1, wth_tab2, wth_tab3, wth_tab4 = st.tabs([
-        "Individual Savings", 
-        "Group Savings", 
-        "Misc Savings", 
-        "LAPS Savings"
-    ])
+    if is_manager:
+        wth_tab1, wth_tab2, wth_tab3, wth_tab4, wth_tab5 = st.tabs([
+            "Individual Savings", 
+            "Group Savings", 
+            "Misc Savings", 
+            "LAPS Savings",
+            f"🔔 Pending Approvals ({len(pending_withdrawals_all)})"
+        ])
+    else:
+        wth_tab1, wth_tab2, wth_tab3, wth_tab4 = st.tabs([
+            "Individual Savings", 
+            "Group Savings", 
+            "Misc Savings", 
+            "LAPS Savings"
+        ])
 
     # ════════════════════════════════════════════════════════════════════
     # INDIVIDUAL SAVINGS
@@ -6055,7 +6087,13 @@ elif page == "Withdrawal Operations":
                         dest_transfer_type = "GroupSavings"
 
             remarks_input = st.text_area("Remarks", placeholder="Reason or extra details...")
-            submitted = st.form_submit_button("Submit for BM Approval", use_container_width=True)
+            if is_manager:
+                auto_exec_ind = st.checkbox("⚡ Authorize & Post Immediately (Direct BM / Admin Execution)", value=True, key="wth_ind_auto_exec", help="When checked, Branch Managers and Admins can authorize and immediately post this withdrawal to individual savings and the general ledger.")
+            else:
+                auto_exec_ind = False
+
+            btn_label_ind = "⚡ Authorize & Post Withdrawal to Ledger" if auto_exec_ind else "Submit for BM Approval"
+            submitted = st.form_submit_button(btn_label_ind, use_container_width=True, type="primary" if auto_exec_ind else "secondary")
 
             if submitted:
                 if not amount_val or amount_val <= 0:
@@ -6083,22 +6121,91 @@ elif page == "Withdrawal Operations":
                         op_clean = "LAPS Transfer"
                         rem_final = remarks_input or f"Sweep to LAPS reserve for {c_name}"
 
-                    uow.client.table("withdrawal_requests").insert({
-                        "savings_type": "Individual",
-                        "operation_type": op_clean,
-                        "client_id": c_id,
-                        "client_name": c_name,
-                        "loan_id": target_loan_id,
-                        "branch_id": BRANCH_ID,
-                        "requested_by": USER,
-                        "amount": float(amount_val),
-                        "operational_date": wth_date_str,
-                        "reference": f"REF-WTH-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                        "remarks": rem_final,
-                        "status": "PENDING"
-                    }).execute()
-                    st.success(f"Withdrawal request submitted for BM approval! (₦{amount_val:,.2f})")
-                    st.rerun()
+                    ref_code = f"REF-WTH-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+                    if auto_exec_ind:
+                        try:
+                            from services.savings_service import SavingsService
+                            effective_op_date = wth_op_date
+                            with SupabaseUnitOfWork() as uow_direct:
+                                if dest_op == "Client Bank Account (Transfer)":
+                                    SavingsService.post_individual_savings(
+                                        uow=uow_direct, client_id=c_id, client_name=c_name,
+                                        branch=BRANCH, officer=USER, deposit_amount=0.0, withdrawal_amount=float(amount_val),
+                                        reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {rem_final}",
+                                        posting_date=effective_op_date
+                                    )
+                                elif dest_op == "Loan Repayment / Asset Debt Offset":
+                                    SavingsService.post_loan_offset_from_savings(
+                                        uow=uow_direct, client_id=c_id, client_name=c_name,
+                                        loan_id=target_loan_id, source_savings_type="IndividualSavings",
+                                        branch=BRANCH, officer=USER, amount=float(amount_val),
+                                        reference=ref_code, remarks=f"[BM DIRECT LOAN OFFSET] {rem_final}",
+                                        posting_date=effective_op_date
+                                    )
+                                elif dest_op == "Fee Payment from Savings":
+                                    SavingsService.post_fee_offset_from_savings(
+                                        uow=uow_direct, client_id=c_id, client_name=c_name,
+                                        source_savings_type="IndividualSavings", branch=BRANCH, officer=USER,
+                                        fee_type=fee_code, amount=float(amount_val),
+                                        reference=ref_code, remarks=f"[BM DIRECT FEE OFFSET] {rem_final}",
+                                        posting_date=effective_op_date
+                                    )
+                                elif dest_op == "Another Member or Group Savings":
+                                    SavingsService.transfer_savings(
+                                        uow=uow_direct, source_id=c_id, source_name=c_name,
+                                        source_type="IndividualSavings", destination_id=dest_transfer_id,
+                                        destination_name=dest_transfer_name, destination_type=dest_transfer_type,
+                                        branch=BRANCH, officer=USER, amount=float(amount_val),
+                                        reference=ref_code, remarks=f"[BM DIRECT TRANSFER] {rem_final}",
+                                        posting_date=effective_op_date
+                                    )
+                                elif dest_op == "LAPS Reserve":
+                                    SavingsService.transfer_to_laps(
+                                        uow=uow_direct, client_id=c_id, client_name=c_name,
+                                        source_savings_type="IndividualSavings", branch=BRANCH, officer=USER, amount=float(amount_val),
+                                        reference=ref_code, remarks=f"[BM DIRECT LAPS] {rem_final}",
+                                        posting_date=effective_op_date
+                                    )
+
+                                uow_direct.client.table("withdrawal_requests").insert({
+                                    "savings_type": "Individual",
+                                    "operation_type": op_clean,
+                                    "client_id": c_id,
+                                    "client_name": c_name,
+                                    "loan_id": target_loan_id,
+                                    "branch_id": BRANCH_ID,
+                                    "requested_by": USER,
+                                    "amount": float(amount_val),
+                                    "operational_date": wth_date_str,
+                                    "reference": ref_code,
+                                    "remarks": rem_final,
+                                    "status": "APPROVED",
+                                    "approved_by": USER,
+                                    "approved_at": datetime.now().isoformat()
+                                }).execute()
+
+                            st.session_state["withdrawal_flash_msg"] = f"🎉 Withdrawal of ₦{amount_val:,.2f} for **{c_name}** ({dest_op}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"Execution failed: {str(ex)}")
+                    else:
+                        uow.client.table("withdrawal_requests").insert({
+                            "savings_type": "Individual",
+                            "operation_type": op_clean,
+                            "client_id": c_id,
+                            "client_name": c_name,
+                            "loan_id": target_loan_id,
+                            "branch_id": BRANCH_ID,
+                            "requested_by": USER,
+                            "amount": float(amount_val),
+                            "operational_date": wth_date_str,
+                            "reference": ref_code,
+                            "remarks": rem_final,
+                            "status": "PENDING"
+                        }).execute()
+                        st.session_state["withdrawal_flash_msg"] = f"✅ Withdrawal request of ₦{amount_val:,.2f} for **{c_name}** ({dest_op}) submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
+                        st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
     # GROUP SAVINGS
@@ -6259,7 +6366,13 @@ elif page == "Withdrawal Operations":
                         dest_transfer_type = "GroupSavings"
 
             remarks_input = st.text_area("Remarks", placeholder="Reason or extra details...")
-            submitted = st.form_submit_button("Submit for BM Approval", use_container_width=True)
+            if is_manager:
+                auto_exec_grp = st.checkbox("⚡ Authorize & Post Immediately (Direct BM / Admin Execution)", value=True, key="wth_grp_auto_exec", help="When checked, Branch Managers and Admins can authorize and immediately post this group withdrawal to group savings and the general ledger.")
+            else:
+                auto_exec_grp = False
+
+            btn_label_grp = "⚡ Authorize & Post Group Withdrawal to Ledger" if auto_exec_grp else "Submit for BM Approval"
+            submitted = st.form_submit_button(btn_label_grp, use_container_width=True, type="primary" if auto_exec_grp else "secondary")
 
             if submitted:
                 if not amount_val or amount_val <= 0:
@@ -6287,23 +6400,93 @@ elif page == "Withdrawal Operations":
                         op_clean = "LAPS Transfer"
                         rem_final = remarks_input or f"Sweep to LAPS reserve from {g_name}"
 
-                    uow.client.table("withdrawal_requests").insert({
-                        "savings_type": "Group",
-                        "operation_type": op_clean,
-                        "client_id": target_cid,
-                        "client_name": client_name_for_offset or g_name,
-                        "group_name": sel_group.get("group_id") or g_name,
-                        "loan_id": target_loan_id,
-                        "branch_id": BRANCH_ID,
-                        "requested_by": USER,
-                        "amount": float(amount_val),
-                        "operational_date": wth_date_str,
-                        "reference": f"REF-GRP-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                        "remarks": rem_final,
-                        "status": "PENDING"
-                    }).execute()
-                    st.success(f"Group withdrawal request submitted for BM approval! (₦{amount_val:,.2f})")
-                    st.rerun()
+                    ref_code = f"REF-GRP-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+                    if auto_exec_grp:
+                        try:
+                            from services.savings_service import SavingsService
+                            effective_op_date = wth_op_date
+                            with SupabaseUnitOfWork() as uow_direct:
+                                if dest_op == "Group Bank Account (Transfer)":
+                                    SavingsService.post_group_savings(
+                                        uow=uow_direct, group_name=sel_group.get("group_id") or g_name,
+                                        branch=BRANCH, officer=USER, deposit_amount=0.0, withdrawal_amount=float(amount_val),
+                                        reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {rem_final}",
+                                        posting_date=effective_op_date
+                                    )
+                                elif "Loan Repayment" in dest_op:
+                                    SavingsService.post_loan_offset_from_savings(
+                                        uow=uow_direct, client_id=target_cid, client_name=client_name_for_offset or g_name,
+                                        loan_id=target_loan_id, source_savings_type="GroupSavings",
+                                        branch=BRANCH, officer=USER, amount=float(amount_val),
+                                        reference=ref_code, remarks=f"[BM DIRECT LOAN OFFSET] {rem_final}",
+                                        posting_date=effective_op_date
+                                    )
+                                elif "Fee Payment" in dest_op:
+                                    SavingsService.post_fee_offset_from_savings(
+                                        uow=uow_direct, client_id=target_cid, client_name=client_name_for_offset or g_name,
+                                        source_savings_type="GroupSavings", branch=BRANCH, officer=USER,
+                                        fee_type=fee_code, amount=float(amount_val),
+                                        reference=ref_code, remarks=f"[BM DIRECT FEE OFFSET] {rem_final}",
+                                        posting_date=effective_op_date
+                                    )
+                                elif "Another Member" in dest_op:
+                                    SavingsService.transfer_savings(
+                                        uow=uow_direct, source_id=sel_group.get("group_id"), source_name=g_name,
+                                        source_type="GroupSavings", destination_id=dest_transfer_id,
+                                        destination_name=dest_transfer_name, destination_type=dest_transfer_type,
+                                        branch=BRANCH, officer=USER, amount=float(amount_val),
+                                        reference=ref_code, remarks=f"[BM DIRECT TRANSFER] {rem_final}",
+                                        posting_date=effective_op_date
+                                    )
+                                else:
+                                    SavingsService.transfer_to_laps(
+                                        uow=uow_direct, client_id=sel_group.get("group_id"), client_name=g_name,
+                                        source_savings_type="GroupSavings", branch=BRANCH, officer=USER, amount=float(amount_val),
+                                        reference=ref_code, remarks=f"[BM DIRECT LAPS] {rem_final}",
+                                        posting_date=effective_op_date
+                                    )
+
+                                uow_direct.client.table("withdrawal_requests").insert({
+                                    "savings_type": "Group",
+                                    "operation_type": op_clean,
+                                    "client_id": target_cid,
+                                    "client_name": client_name_for_offset or g_name,
+                                    "group_name": sel_group.get("group_id") or g_name,
+                                    "loan_id": target_loan_id,
+                                    "branch_id": BRANCH_ID,
+                                    "requested_by": USER,
+                                    "amount": float(amount_val),
+                                    "operational_date": wth_date_str,
+                                    "reference": ref_code,
+                                    "remarks": rem_final,
+                                    "status": "APPROVED",
+                                    "approved_by": USER,
+                                    "approved_at": datetime.now().isoformat()
+                                }).execute()
+
+                            st.session_state["withdrawal_flash_msg"] = f"🎉 Group withdrawal of ₦{amount_val:,.2f} for **{g_name}** ({dest_op}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"Execution failed: {str(ex)}")
+                    else:
+                        uow.client.table("withdrawal_requests").insert({
+                            "savings_type": "Group",
+                            "operation_type": op_clean,
+                            "client_id": target_cid,
+                            "client_name": client_name_for_offset or g_name,
+                            "group_name": sel_group.get("group_id") or g_name,
+                            "loan_id": target_loan_id,
+                            "branch_id": BRANCH_ID,
+                            "requested_by": USER,
+                            "amount": float(amount_val),
+                            "operational_date": wth_date_str,
+                            "reference": ref_code,
+                            "remarks": rem_final,
+                            "status": "PENDING"
+                        }).execute()
+                        st.session_state["withdrawal_flash_msg"] = f"✅ Group withdrawal request of ₦{amount_val:,.2f} for group **{g_name}** submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
+                        st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
     # MISC SAVINGS (Read-only for CO, BM can withdraw)
@@ -6392,7 +6575,13 @@ elif page == "Withdrawal Operations":
                             dest_transfer_type = "GroupSavings"
 
                 remarks_input = st.text_area("Remarks", placeholder="Reason for Misc withdrawal or offset...")
-                submitted = st.form_submit_button("Submit Misc Request", use_container_width=True)
+                if is_manager:
+                    auto_exec_misc = st.checkbox("⚡ Authorize & Post Immediately (Direct BM / Admin Execution)", value=True, key="wth_misc_auto_exec", help="When checked, Branch Managers and Admins can authorize and immediately post this Misc savings withdrawal to the ledger.")
+                else:
+                    auto_exec_misc = False
+
+                btn_label_misc = "⚡ Authorize & Post Misc Withdrawal to Ledger" if auto_exec_misc else "Submit Misc Request"
+                submitted = st.form_submit_button(btn_label_misc, use_container_width=True, type="primary" if auto_exec_misc else "secondary")
 
                 if submitted:
                     if not amount_val or amount_val <= 0:
@@ -6417,22 +6606,84 @@ elif page == "Withdrawal Operations":
                             op_clean = "Savings Transfer"
                             rem_final = f"[DEST_ID:{dest_transfer_id}][DEST_NAME:{dest_transfer_name}][DEST_TYPE:{dest_transfer_type}] {remarks_input or ''}".strip()
 
-                        uow.client.table("withdrawal_requests").insert({
-                            "savings_type": "Misc",
-                            "operation_type": op_clean,
-                            "client_id": target_cid,
-                            "client_name": client_name_target or f"Branch Misc - {BRANCH}",
-                            "loan_id": target_loan_id,
-                            "branch_id": BRANCH_ID,
-                            "requested_by": USER,
-                            "amount": float(amount_val),
-                            "operational_date": wth_date_str,
-                            "reference": f"REF-MISC-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                            "remarks": rem_final,
-                            "status": "PENDING"
-                        }).execute()
-                        st.success(f"Misc withdrawal/offset request submitted! (₦{amount_val:,.2f})")
-                        st.rerun()
+                        ref_code = f"REF-MISC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+                        if auto_exec_misc:
+                            try:
+                                from services.savings_service import SavingsService
+                                effective_op_date = wth_op_date
+                                with SupabaseUnitOfWork() as uow_direct:
+                                    if misc_dest_op == "Client Bank Account (Transfer)":
+                                        SavingsService.post_misc_savings(
+                                            uow=uow_direct, client_id=target_cid or "", client_name=client_name_target or f"Branch Misc - {BRANCH}",
+                                            branch=BRANCH, officer=USER, deposit_amount=0.0, withdrawal_amount=float(amount_val),
+                                            reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {rem_final}",
+                                            posting_date=effective_op_date
+                                        )
+                                    elif "Loan Repayment" in misc_dest_op:
+                                        SavingsService.post_loan_offset_from_savings(
+                                            uow=uow_direct, client_id=target_cid, client_name=client_name_target,
+                                            loan_id=target_loan_id, source_savings_type="MiscSavings",
+                                            branch=BRANCH, officer=USER, amount=float(amount_val),
+                                            reference=ref_code, remarks=f"[BM DIRECT LOAN OFFSET] {rem_final}",
+                                            posting_date=effective_op_date
+                                        )
+                                    elif "Fee Payment" in misc_dest_op:
+                                        SavingsService.post_fee_offset_from_savings(
+                                            uow=uow_direct, client_id=target_cid, client_name=client_name_target,
+                                            source_savings_type="MiscSavings", branch=BRANCH, officer=USER,
+                                            fee_type=fee_code, amount=float(amount_val),
+                                            reference=ref_code, remarks=f"[BM DIRECT FEE OFFSET] {rem_final}",
+                                            posting_date=effective_op_date
+                                        )
+                                    else:
+                                        SavingsService.transfer_savings(
+                                            uow=uow_direct, source_id=target_cid, source_name=client_name_target or "Misc Savings",
+                                            source_type="MiscSavings", destination_id=dest_transfer_id,
+                                            destination_name=dest_transfer_name, destination_type=dest_transfer_type,
+                                            branch=BRANCH, officer=USER, amount=float(amount_val),
+                                            reference=ref_code, remarks=f"[BM DIRECT TRANSFER] {rem_final}",
+                                            posting_date=effective_op_date
+                                        )
+
+                                    uow_direct.client.table("withdrawal_requests").insert({
+                                        "savings_type": "Misc",
+                                        "operation_type": op_clean,
+                                        "client_id": target_cid,
+                                        "client_name": client_name_target or f"Branch Misc - {BRANCH}",
+                                        "loan_id": target_loan_id,
+                                        "branch_id": BRANCH_ID,
+                                        "requested_by": USER,
+                                        "amount": float(amount_val),
+                                        "operational_date": wth_date_str,
+                                        "reference": ref_code,
+                                        "remarks": rem_final,
+                                        "status": "APPROVED",
+                                        "approved_by": USER,
+                                        "approved_at": datetime.now().isoformat()
+                                    }).execute()
+
+                                st.session_state["withdrawal_flash_msg"] = f"🎉 Misc savings withdrawal of ₦{amount_val:,.2f} authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"Execution failed: {str(ex)}")
+                        else:
+                            uow.client.table("withdrawal_requests").insert({
+                                "savings_type": "Misc",
+                                "operation_type": op_clean,
+                                "client_id": target_cid,
+                                "client_name": client_name_target or f"Branch Misc - {BRANCH}",
+                                "loan_id": target_loan_id,
+                                "branch_id": BRANCH_ID,
+                                "requested_by": USER,
+                                "amount": float(amount_val),
+                                "operational_date": wth_date_str,
+                                "reference": ref_code,
+                                "remarks": rem_final,
+                                "status": "PENDING"
+                            }).execute()
+                            st.session_state["withdrawal_flash_msg"] = f"✅ Misc withdrawal/offset request of ₦{amount_val:,.2f} submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
+                            st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
     # LAPS SAVINGS (Closed client/group payouts)
@@ -6474,7 +6725,13 @@ elif page == "Withdrawal Operations":
             else:
                 st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: NO (Paid directly via Bank Account)")
             remarks_input = st.text_area("Remarks", placeholder="Client details, reason for payout...")
-            submitted = st.form_submit_button("Submit LAPS Payout for BM Approval", use_container_width=True)
+            if is_manager:
+                auto_exec_laps = st.checkbox("⚡ Authorize & Post Immediately (Direct BM / Admin Execution)", value=True, key="wth_laps_auto_exec", help="When checked, Branch Managers and Admins can authorize and immediately post this LAPS payout to the ledger.")
+            else:
+                auto_exec_laps = False
+
+            btn_label_laps = "⚡ Authorize & Post LAPS Payout to Ledger" if auto_exec_laps else "Submit LAPS Payout for BM Approval"
+            submitted = st.form_submit_button(btn_label_laps, use_container_width=True, type="primary" if auto_exec_laps else "secondary")
 
             if submitted:
                 if not amount_val or amount_val <= 0:
@@ -6482,39 +6739,247 @@ elif page == "Withdrawal Operations":
                 elif amount_val > sel_laps["balance"]:
                     st.error(f"Insufficient LAPS balance. Available: ₦{sel_laps['balance']:,.2f}")
                 else:
-                    uow.client.table("withdrawal_requests").insert({
-                        "savings_type": "LAPS",
-                        "operation_type": "LAPS Payout",
-                        "client_id": sel_laps["client_id"],
-                        "client_name": remarks_input.split('\n')[0][:50] if remarks_input else f"LAPS Client {sel_laps['client_id'][:8]}",
-                        "branch_id": BRANCH_ID,
-                        "requested_by": USER,
-                        "amount": float(amount_val),
-                        "payout_method": payout_method,
-                        "operational_date": wth_date_str,
-                        "reference": f"REF-LAPS-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                        "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
-                        "status": "PENDING"
-                    }).execute()
-                    st.success(f"LAPS payout request submitted for BM approval! (₦{amount_val:,.2f})")
-                    st.rerun()
+                    ref_code = f"REF-LAPS-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                    c_name_laps = remarks_input.split('\n')[0][:50] if remarks_input else f"LAPS Client {sel_laps['client_id'][:8]}"
 
-    # ── My Pending Requests ──
+                    if auto_exec_laps:
+                        try:
+                            from services.savings_service import SavingsService
+                            effective_op_date = wth_op_date
+                            cash_paid = payout_method == "Cash"
+                            with SupabaseUnitOfWork() as uow_direct:
+                                SavingsService.pay_laps(
+                                    uow=uow_direct, client_id=sel_laps["client_id"], client_name=c_name_laps,
+                                    branch=BRANCH, officer=USER, amount=float(amount_val), cash_paid=cash_paid,
+                                    reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {remarks_input or 'LAPS Payout'}",
+                                    posting_date=effective_op_date
+                                )
+
+                                uow_direct.client.table("withdrawal_requests").insert({
+                                    "savings_type": "LAPS",
+                                    "operation_type": "LAPS Payout",
+                                    "client_id": sel_laps["client_id"],
+                                    "client_name": c_name_laps,
+                                    "branch_id": BRANCH_ID,
+                                    "requested_by": USER,
+                                    "amount": float(amount_val),
+                                    "payout_method": payout_method,
+                                    "operational_date": wth_date_str,
+                                    "reference": ref_code,
+                                    "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
+                                    "status": "APPROVED",
+                                    "approved_by": USER,
+                                    "approved_at": datetime.now().isoformat()
+                                }).execute()
+
+                            st.session_state["withdrawal_flash_msg"] = f"🎉 LAPS payout of ₦{amount_val:,.2f} ({payout_method}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"Execution failed: {str(ex)}")
+                    else:
+                        uow.client.table("withdrawal_requests").insert({
+                            "savings_type": "LAPS",
+                            "operation_type": "LAPS Payout",
+                            "client_id": sel_laps["client_id"],
+                            "client_name": c_name_laps,
+                            "branch_id": BRANCH_ID,
+                            "requested_by": USER,
+                            "amount": float(amount_val),
+                            "payout_method": payout_method,
+                            "operational_date": wth_date_str,
+                            "reference": ref_code,
+                            "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
+                            "status": "PENDING"
+                        }).execute()
+                        st.session_state["withdrawal_flash_msg"] = f"✅ LAPS payout request of ₦{amount_val:,.2f} ({payout_method}) submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
+                        st.rerun()
+
+    # ════════════════════════════════════════════════════════════════════
+    # PENDING APPROVALS QUEUE (BM / AM / Admin)
+    # ════════════════════════════════════════════════════════════════════
+    if is_manager:
+        with wth_tab5:
+            st.markdown("#### 🔔 Branch Manager Withdrawal Approval Queue")
+            st.caption("Review, authorize, and post pending withdrawal requests submitted by field officers.")
+            if not pending_withdrawals_all:
+                st.info("✅ No pending withdrawal requests awaiting approval.")
+            else:
+                wr_page_default_date = wth_op_date or (active_b_date if 'active_b_date' in locals() and active_b_date else date.today())
+                wr_approval_op_date = st.date_input(
+                    "Operational Date for Approvals", 
+                    value=wr_page_default_date, 
+                    key="wth_queue_approval_date",
+                    help="Transactions will be posted to the ledger under this operational date."
+                )
+                for wr in pending_withdrawals_all:
+                    wr_id = wr["id"]
+                    wr_type = wr["savings_type"]
+                    wr_op = wr["operation_type"]
+                    wr_amt = float(wr["amount"])
+                    wr_name = wr["client_name"]
+                    wr_by = wr["requested_by"]
+                    wr_remarks = wr.get("remarks") or ""
+                    wr_ref = wr.get("reference") or wr_id[:8]
+                    wr_date = str(wr.get("operational_date") or wr.get("created_at", ""))[:10]
+
+                    with st.container(border=True):
+                        wcol_info, wcol_amt, wcol_acts = st.columns([3, 2, 2])
+                        with wcol_info:
+                            st.markdown(f"**{wr_name}** — `{wr_type} Savings`")
+                            st.caption(f"Op: **{wr_op}** | Req By: **{wr_by}** | Ref: `{wr_ref}` | Op Date: **{wr_date}**")
+                            if wr_remarks:
+                                st.caption(f"*{wr_remarks}*")
+                        with wcol_amt:
+                            st.markdown(f"<div style='font-size: 1.15rem; font-weight: 700; color: #b91c1c;'>₦{wr_amt:,.2f}</div>", unsafe_allow_html=True)
+                            st.caption("Withdrawal Amount")
+                        with wcol_acts:
+                            wact_col1, wact_col2 = st.columns(2)
+                            with wact_col1:
+                                if st.button("Approve", key=f"page_approve_wr_{wr_id}", type="primary", use_container_width=True):
+                                    try:
+                                        from services.savings_service import SavingsService
+                                        effective_op_date = wr.get("operational_date") or wr_approval_op_date
+                                        if isinstance(effective_op_date, str):
+                                            effective_op_date = date.fromisoformat(effective_op_date[:10])
+                                        with SupabaseUnitOfWork() as uow_wr:
+                                            source_type = "GroupSavings" if wr_type == "Group" else ("MiscSavings" if wr_type == "Misc" else "IndividualSavings")
+                                            if wr_op in ["Cash Withdrawal", "Bank Transfer", "Client Bank Account (Transfer)", "Group Bank Account (Transfer)"]:
+                                                if wr_type == "Individual":
+                                                    SavingsService.post_individual_savings(
+                                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                        branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                        posting_date=effective_op_date
+                                                    )
+                                                elif wr_type == "Group":
+                                                    SavingsService.post_group_savings(
+                                                        uow=uow_wr, group_name=wr.get("group_name") or wr_name, branch=BRANCH,
+                                                        officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                        posting_date=effective_op_date
+                                                    )
+                                                elif wr_type == "Misc":
+                                                    SavingsService.post_misc_savings(
+                                                        uow=uow_wr, client_id=wr.get("client_id") or "", client_name=wr_name,
+                                                        branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                        posting_date=effective_op_date
+                                                    )
+                                            elif wr_op in ["Loan Offset", "Asset Downpayment", "Loan Repayment / Asset Debt Offset"]:
+                                                SavingsService.post_loan_offset_from_savings(
+                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                    loan_id=wr.get("loan_id"), source_savings_type=source_type,
+                                                    branch=BRANCH, officer=wr_by, amount=wr_amt,
+                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED {wr_op.upper()}] {wr_remarks}",
+                                                    posting_date=effective_op_date
+                                                )
+                                            elif wr_op in ["Fee Offset", "Fee Payment from Savings"]:
+                                                fee_code = "misc_fees"
+                                                if "[FEE:" in wr_remarks:
+                                                    try:
+                                                        fee_code = wr_remarks.split("[FEE:")[1].split("]")[0].strip()
+                                                    except Exception:
+                                                        pass
+                                                SavingsService.post_fee_offset_from_savings(
+                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                    source_savings_type=source_type, branch=BRANCH, officer=wr_by,
+                                                    fee_type=fee_code, amount=wr_amt,
+                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED FEE OFFSET] {wr_remarks}",
+                                                    posting_date=effective_op_date
+                                                )
+                                            elif wr_op in ["Savings Transfer", "Transfer to Another Savings", "Another Member or Group Savings"]:
+                                                dest_id = wr.get("client_id")
+                                                dest_name = wr_name
+                                                dest_type = "IndividualSavings"
+                                                if "[DEST_ID:" in wr_remarks:
+                                                    try:
+                                                        dest_id = wr_remarks.split("[DEST_ID:")[1].split("]")[0].strip()
+                                                        dest_name = wr_remarks.split("[DEST_NAME:")[1].split("]")[0].strip()
+                                                        dest_type = wr_remarks.split("[DEST_TYPE:")[1].split("]")[0].strip()
+                                                    except Exception:
+                                                        pass
+                                                SavingsService.transfer_savings(
+                                                    uow=uow_wr, source_id=wr.get("client_id"), source_name=wr_name,
+                                                    source_type=source_type, destination_id=dest_id,
+                                                    destination_name=dest_name, destination_type=dest_type,
+                                                    branch=BRANCH, officer=wr_by, amount=wr_amt,
+                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED TRANSFER] {wr_remarks}",
+                                                    posting_date=effective_op_date
+                                                )
+                                            elif wr_op == "LAPS Transfer":
+                                                SavingsService.transfer_to_laps(
+                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                    source_savings_type=source_type, branch=BRANCH, officer=wr_by, amount=wr_amt,
+                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                    posting_date=effective_op_date
+                                                )
+                                            elif wr_op == "LAPS Payout":
+                                                cash_paid = (wr.get("payout_method") or "Cash") == "Cash"
+                                                SavingsService.pay_laps(
+                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                    branch=BRANCH, officer=wr_by, amount=wr_amt, cash_paid=cash_paid,
+                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                    posting_date=effective_op_date
+                                                )
+
+                                            uow_wr.client.table("withdrawal_requests").update({
+                                                "status": "APPROVED",
+                                                "approved_by": USER,
+                                                "approved_at": datetime.now().isoformat()
+                                            }).eq("id", wr_id).execute()
+
+                                        st.session_state["withdrawal_flash_msg"] = f"✅ Withdrawal of ₦{wr_amt:,.2f} for **{wr_name}** approved and posted to the financial ledger!"
+                                        st.rerun()
+                                    except Exception as ex:
+                                        st.error(f"Approval failed: {str(ex)}")
+                            with wact_col2:
+                                if st.button("Reject", key=f"page_reject_wr_{wr_id}", type="secondary", use_container_width=True):
+                                    st.session_state[f"page_rejecting_{wr_id}"] = True
+
+                        if st.session_state.get(f"page_rejecting_{wr_id}"):
+                            st.divider()
+                            reject_reason = st.text_input("Rejection Reason", key=f"page_rej_reason_{wr_id}", placeholder="Why is this request being rejected?")
+                            if st.button("Confirm Rejection", key=f"page_confirm_rej_{wr_id}", type="primary"):
+                                uow.client.table("withdrawal_requests").update({
+                                    "status": "REJECTED",
+                                    "approved_by": USER,
+                                    "approved_at": datetime.now().isoformat(),
+                                    "rejection_reason": reject_reason or "Rejected by BM"
+                                }).eq("id", wr_id).execute()
+                                st.session_state[f"page_rejecting_{wr_id}"] = False
+                                st.session_state["withdrawal_flash_msg"] = f"⚠️ Withdrawal request of ₦{wr_amt:,.2f} for {wr_name} has been rejected."
+                                st.rerun()
+
+    # ── Withdrawal Requests History ──
     st.markdown("---")
-    st.markdown("### My Pending Withdrawal Requests")
-    res_pending = uow.client.table("withdrawal_requests").select("*").eq("requested_by", USER).order("created_at", desc=True).limit(20).execute()
+    if is_manager:
+        st.markdown("### 📋 Branch Withdrawal Requests History")
+        if ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
+            res_history = uow.client.table("withdrawal_requests").select("*").in_("branch_id", ASSIGNED_BRANCH_IDS).order("created_at", desc=True).limit(30).execute()
+        elif ROLE in ["BM", "Branch Manager", ROLE_BRANCH_MANAGER]:
+            res_history = uow.client.table("withdrawal_requests").select("*").eq("branch_id", BRANCH_ID).order("created_at", desc=True).limit(30).execute()
+        else:
+            res_history = uow.client.table("withdrawal_requests").select("*").order("created_at", desc=True).limit(30).execute()
+    else:
+        st.markdown("### 📋 My Withdrawal Requests")
+        res_history = uow.client.table("withdrawal_requests").select("*").eq("requested_by", USER).order("created_at", desc=True).limit(25).execute()
 
-    if res_pending.data:
-        for req in res_pending.data:
+    if res_history.data:
+        for req in res_history.data:
+            st_badge = "🟡 PENDING" if req["status"] == "PENDING" else ("🟢 APPROVED" if req["status"] == "APPROVED" else "🔴 REJECTED")
+            ref_str = f" | Ref: `{req.get('reference')}`" if req.get('reference') else ""
+            req_by_str = f" | Officer: **{req.get('requested_by')}**" if is_manager else ""
             st.markdown(
                 f"**{req['savings_type']} — {req['operation_type']}** | "
-                f"₦{float(req['amount']):,.2f} | {req['client_name']} | "
-                f"Status: **{req['status']}** | {req['created_at'][:10]}"
+                f"**₦{float(req['amount']):,.2f}** | Client: **{req['client_name']}**{req_by_str} | "
+                f"Status: **{st_badge}** | Date: **{str(req.get('operational_date') or req['created_at'])[:10]}**{ref_str}"
             )
             if req["status"] == "REJECTED" and req.get("rejection_reason"):
-                st.caption(f"  ↳ Reason: {req['rejection_reason']}")
+                st.caption(f"  ↳ Rejection Reason: {req['rejection_reason']}")
+            elif req["status"] == "APPROVED" and req.get("approved_by"):
+                st.caption(f"  ↳ Authorized by: {req['approved_by']} at {str(req.get('approved_at', ''))[:19]}")
     else:
-        st.info("No withdrawal requests submitted yet.")
+        st.info("No withdrawal requests found.")
 
 elif page == "Legacy LAPS Migration":
     st.title("🏛️ Legacy LAPS Bulk Migration Console (Super Admin)")
