@@ -35,10 +35,16 @@ DB_TO_UI_REP = {
     'recovery_amount': 'Recovery Amount',
     'initial_payment': 'initial_payment',
     'payment_date': 'Payment Date',
+    'date': 'Date',
     'transaction_type': 'Transaction Type',
     'branch': 'Branch',
     'credit_officer': 'CO',
+    'officer': 'Officer',
     'created_at': 'Created At'
 }
 
 UI_TO_DB_REP = {v: k for k, v in DB_TO_UI_REP.items()}
+UI_TO_DB_REP['Date'] = 'date'
+UI_TO_DB_REP['Payment Date'] = 'date'
+UI_TO_DB_REP['Officer'] = 'officer'
+UI_TO_DB_REP['CO'] = 'credit_officer'

@@ -1191,12 +1191,22 @@ def load_repayments():
                 reps = [r for r in reps if get_repayment_branch_id(r) in ASSIGNED_BRANCH_IDS]
             
             if not reps:
-                return pd.DataFrame(columns=list(DB_TO_UI_REP.values()))
+                empty_cols = list(set(list(DB_TO_UI_REP.values()) + ['Date', 'Officer']))
+                return pd.DataFrame(columns=empty_cols)
                 
             from mappers.base_mappers import RepaymentMapper
             df = pd.DataFrame([RepaymentMapper.to_database(R) for R in reps]).rename(columns=DB_TO_UI_REP)
-            if not df.empty and 'Date' in df.columns:
-                df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
+            if not df.empty:
+                if 'date' in df.columns and 'Date' not in df.columns:
+                    df['Date'] = df['date']
+                if 'Date' in df.columns:
+                    df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
+                if 'officer' in df.columns and 'Officer' not in df.columns:
+                    df['Officer'] = df['officer']
+            else:
+                for req_col in ['Date', 'Officer', 'Client ID', 'Amount Paid', 'Loan Repayment Amount', 'Savings Amount']:
+                    if req_col not in df.columns:
+                        df[req_col] = None
             num_cols = ['Amt Paid', 'Savings Amount', 'Loan Repayment Amount', 'Withdrawal Amount', 'Others Amount', 'Recovery Amount', 'Initial Payment']
             for c in num_cols:
                 if c in df.columns:
@@ -1289,9 +1299,15 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None):
             client_id = resolved_client_id
             client_name = db_data.get('client_name', client_id)
             branch = db_data.get('branch', BRANCH)
-            officer = db_data.get('credit_officer', USER)
-            p_date_str = db_data.get('date') or datetime.now().strftime("%Y-%m-%d")
+            officer = data.get('Officer') or data.get('officer') or db_data.get('credit_officer', USER)
+            db_data['officer'] = officer
+            db_data['credit_officer'] = officer
+
+            raw_date = data.get('Date') or data.get('date') or data.get('Payment Date') or db_data.get('date') or db_data.get('payment_date')
+            p_date_str = str(raw_date).split('T')[0] if raw_date else datetime.now().strftime("%Y-%m-%d")
             p_date = datetime.strptime(p_date_str, "%Y-%m-%d").date()
+            db_data['date'] = p_date_str
+            db_data['payment_date'] = p_date_str
 
             # Extract component amounts
             savings_dep = float(db_data.get('savings_amount', 0))
@@ -1340,6 +1356,9 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None):
                 if active_loan_id:
                     db_data['loan_id'] = active_loan_id
                 rep = RepaymentMapper.to_domain(db_data)
+                rep.payment_date = p_date
+                rep.credit_officer = officer
+                rep.branch = branch
                 rep.amount_paid = loan_repay
                 rep.loan_repayment_amount = loan_repay
                 if active_loan_id:
@@ -5323,6 +5342,11 @@ elif page == "Collections":
                     "id, client_id, deposit_amount, withdrawal_amount, posting_date, created_at, reference, remarks, officer_id, "
                     "clients(name, nickname, client_code)"
                 )
+                # 3. Query Group Savings Deposits
+                q_gsav = uow_hist.client.table("group_savings").select(
+                    "id, group_id, deposit_amount, withdrawal_amount, posting_date, created_at, reference, remarks, "
+                    "groups(name)"
+                )
                 
                 # Scope check
                 if scope.scope_level == "OFFICER":
@@ -5331,15 +5355,31 @@ elif page == "Collections":
                 elif scope.scope_level == "BRANCH" and BRANCH_ID:
                     q_reps = q_reps.eq("branch_id", BRANCH_ID)
                     q_sav = q_sav.eq("branch_id", BRANCH_ID)
+                    q_gsav = q_gsav.eq("branch_id", BRANCH_ID)
                 
                 res_reps = q_reps.gte("date", f"{hist_date_str}T00:00:00").lte("date", f"{hist_date_str}T23:59:59").order("created_at", desc=True).execute()
                 res_sav = q_sav.eq("posting_date", hist_date_str).order("created_at", desc=True).execute()
+                res_gsav = q_gsav.eq("posting_date", hist_date_str).order("created_at", desc=True).execute()
                 
                 reps_list = res_reps.data or []
                 sav_list = res_sav.data or []
+                gsav_list = res_gsav.data or []
                 
                 # Filter deposits (ignore pure withdrawals here)
                 sav_dep_list = [s for s in sav_list if float(s.get("deposit_amount") or 0) > 0]
+                for g in gsav_list:
+                    if float(g.get("deposit_amount") or 0) > 0:
+                        g_name = (g.get("groups") or {}).get("name") if isinstance(g.get("groups"), dict) else "Group"
+                        sav_dep_list.append({
+                            "id": g.get("id"),
+                            "client_id": f"GROUP-{g_name}",
+                            "clients": {"name": f"{g_name} (Communal)", "client_code": "GROUP"},
+                            "deposit_amount": g.get("deposit_amount"),
+                            "posting_date": g.get("posting_date"),
+                            "created_at": g.get("created_at"),
+                            "remarks": g.get("remarks") or "Group Communal Savings",
+                            "reference": g.get("reference")
+                        })
                 
                 tot_reps_amt = sum(float(r.get("amount_paid") or 0) for r in reps_list)
                 tot_sav_amt = sum(float(s.get("deposit_amount") or 0) for s in sav_dep_list)
