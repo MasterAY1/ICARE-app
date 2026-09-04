@@ -1369,8 +1369,8 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None):
                 except (ValueError, AttributeError, TypeError):
                     return False
 
-            officer_uuid = uow.loans._resolve_officer_id(officer)
-            branch_uuid = uow.cashbook._resolve_branch_id(branch)
+            officer_uuid = FinancialPostingEngine._resolve_officer_id(uow, officer)
+            branch_uuid = FinancialPostingEngine._resolve_branch_id(uow, branch)
             valid_aggregate_id = str(client_id) if _is_valid_uuid(client_id) else (officer_uuid or branch_uuid or str(uuid.uuid4()))
 
             # Bank Deposited (Field Cash to Bank)
@@ -4645,17 +4645,49 @@ elif page == "Collections":
                     member_info = {}
                     from services.schedule_service import ScheduleService
                     with SupabaseUnitOfWork() as uow:
+                        # Batch pre-fetch individual savings for all members in this group
+                        group_uuids = [str(m['ID']).strip() for _, m in group_clients.iterrows() if pd.notna(m.get('ID')) and str(m.get('ID')).strip()]
+                        group_sav_map = {}
+                        if group_uuids:
+                            try:
+                                res_bulk_sav = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount").in_("client_id", group_uuids).execute()
+                                for s in (res_bulk_sav.data or []):
+                                    c_uuid = s.get("client_id")
+                                    d_amt = float(s.get("deposit_amount") or 0.0)
+                                    w_amt = float(s.get("withdrawal_amount") or 0.0)
+                                    group_sav_map[c_uuid] = group_sav_map.get(c_uuid, 0.0) + (d_amt - w_amt)
+                            except Exception:
+                                pass
+
+                        # Batch pre-fetch schedule paid amounts for all active loans in this group
+                        group_lids = []
+                        for _, member in group_clients.iterrows():
+                            cid = member['Client ID']
+                            uuid_id = member['ID']
+                            active_loan_rows = all_loans[((all_loans['Client ID'] == cid) | (all_loans['Client ID'] == uuid_id)) & (all_loans['Status'] == 'Active')]
+                            if not active_loan_rows.empty:
+                                lid = active_loan_rows.iloc[0].get('id') or active_loan_rows.iloc[0].get('loan_id') or active_loan_rows.iloc[0].get('Loan ID')
+                                if lid and isinstance(lid, str) and len(lid) > 10:
+                                    group_lids.append(str(lid).strip())
+
+                        group_sched_paid_map = {}
+                        group_has_sched_set = set()
+                        if group_lids:
+                            try:
+                                res_bulk_sched = uow.client.table("loan_schedule").select("loan_id, paid_amount").in_("loan_id", list(set(group_lids))).execute()
+                                for r in (res_bulk_sched.data or []):
+                                    l_id = r.get("loan_id")
+                                    p_amt = float(r.get("paid_amount") or 0.0)
+                                    group_sched_paid_map[l_id] = group_sched_paid_map.get(l_id, 0.0) + p_amt
+                                    group_has_sched_set.add(l_id)
+                            except Exception:
+                                pass
+
                         for _, member in group_clients.iterrows():
                             cid = member['Client ID']
                             uuid_id = member['ID']
                             mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
-                            try:
-                                # Match strictly by client UUID
-                                res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", uuid_id).execute()
-                                res_wd = uow.client.table("individual_savings").select("withdrawal_amount").eq("client_id", uuid_id).execute()
-                                sav_bal = sum(float(d.get("deposit_amount") or 0) for d in (res_dep.data or [])) - sum(float(w.get("withdrawal_amount") or 0) for w in (res_wd.data or []))
-                            except Exception:
-                                sav_bal = 0.0
+                            sav_bal = group_sav_map.get(uuid_id, 0.0)
                             # Find if there is an active loan in all_loans
                             active_loan_rows = all_loans[((all_loans['Client ID'] == cid) | (all_loans['Client ID'] == uuid_id)) & (all_loans['Status'] == 'Active')]
                             if not active_loan_rows.empty:
@@ -4666,9 +4698,12 @@ elif page == "Collections":
                             
                                 # Baseline remaining balance is Total Due from loans table minus repayments posted
                                 if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
-                                    active_loan_total_paid, has_schedule = ScheduleService.get_total_paid(uow, active_loan_id)
-                                    if not has_schedule:
-                                        active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
+                                    if active_loan_id in group_has_sched_set:
+                                        active_loan_total_paid = group_sched_paid_map.get(active_loan_id, 0.0)
+                                    else:
+                                        active_loan_total_paid, has_schedule = ScheduleService.get_total_paid(uow, active_loan_id)
+                                        if not has_schedule:
+                                            active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
                                 else:
                                     active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
                                 

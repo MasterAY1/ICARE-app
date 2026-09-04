@@ -183,14 +183,17 @@ class RepaymentService:
         except Exception as ex:
             print(f"[REPAYMENT TRACE] Client status lifecycle check failed: {ex}")
 
-        # Rebuild projection
-        try:
-            b_id = uow.repayments._resolve_branch_id(repayment.branch)
-            from datetime import date
-            p_rebuild_date = repayment.payment_date if repayment.payment_date else date.today()
-            uow.cashbook.rebuild_projection(b_id, p_rebuild_date)
-        except Exception as ex:
-            print(f"[SAVINGS TRACE] Deferred cashbook rebuild failed: {ex}")
+        # Rebuild projection (only if not deferred during batch execution)
+        if not getattr(FinancialPostingEngine, 'defer_projections', False):
+            try:
+                b_id = uow.repayments._resolve_branch_id(repayment.branch)
+                from datetime import date
+                p_rebuild_date = repayment.payment_date if repayment.payment_date else date.today()
+                uow.cashbook.rebuild_projection(b_id, p_rebuild_date)
+            except Exception as ex:
+                print(f"[REPAYMENT TRACE] Cashbook rebuild failed: {ex}")
+        else:
+            print(f"[REPAYMENT TRACE] Cashbook projection rebuild deferred for batch execution.")
 
         return repayment
 
