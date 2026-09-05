@@ -4732,6 +4732,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         s_uuid = sel_client_obj["ID"]
                         s_name = sel_client_obj["Client Name"]
                         s_gname = sel_client_obj["Group Name"]
+                        sel_client_id = s_cid
 
                         from services.schedule_service import ScheduleService
                         with SupabaseUnitOfWork() as uow:
@@ -4821,8 +4822,12 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                         "Date": date_str,
                                         "Client ID": s_cid,
                                         "Client Name": s_name,
+                                        "Group Name": s_gname,
+                                        "Group ID": sel_client_obj.get("Group ID"),
                                         "Officer": target_co,
                                         "Branch": BRANCH,
+                                        "client_id": s_uuid,
+                                        "id": s_uuid,
                                         "Amount Paid": rep_val,
                                         "Transaction Type": "Loan" if rep_val > 0 else "Individual Savings Deposit",
                                         "Note": single_note.strip() or "Single Client Collection",
@@ -4860,8 +4865,8 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                     try:
                                         sc_batch_id = f"COL-SC-{date_str}-{uuid.uuid4().hex[:6].upper()}"
                                         single_tx["batch_id"] = sc_batch_id
-                                        single_tx["tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{sel_client_id}_rep"))
-                                        single_tx["savings_tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{sel_client_id}_sav"))
+                                        single_tx["tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{s_cid}_rep"))
+                                        single_tx["savings_tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{s_cid}_sav"))
                                         receipt = save_repayments([single_tx], batch_id=sc_batch_id)
                                         if receipt:
                                             receipt["group_name"] = f"Single Client: {s_name}"
