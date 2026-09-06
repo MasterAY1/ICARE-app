@@ -16,6 +16,25 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, date
 
 
+CHART_OF_ACCOUNTS_MAP: Dict[str, str] = {
+    "1000": "Vault Cash",
+    "1010": "Main Vault",
+    "1020": "Branch Vault",
+    "1050": "Bank",
+    "1200": "Loan Portfolio",
+    "1300": "Asset Inventory",
+    "2000": "Individual Deposits",
+    "2010": "Group Deposits",
+    "2020": "Internal Savings",
+    "2030": "LAPS Savings",
+    "3000": "Fee Income",
+    "3100": "Head Office Capital",
+    "3200": "Asset Sales",
+    "4000": "Office Expenses",
+    "4100": "Salary Expenses"
+}
+
+
 class AuditEnricher:
     """High-performance lookup enricher for executive audit reporting."""
 
@@ -31,6 +50,7 @@ class AuditEnricher:
         self._users_by_id: Dict[str, str] = {}
         self._users_by_username: Dict[str, str] = {}
         self._products_by_id: Dict[str, str] = {}
+        self._chart_of_accounts: Dict[str, str] = dict(CHART_OF_ACCOUNTS_MAP)
         self._is_loaded = False
 
     def load_lookups(self):
@@ -129,6 +149,18 @@ class AuditEnricher:
         except Exception:
             pass
 
+        # 7. Load Chart of Accounts
+        try:
+            if db_client:
+                res_coa = db_client.table("chart_of_accounts").select("account_code, account_name").execute()
+                for a in (res_coa.data or []):
+                    code = str(a.get("account_code", "")).strip()
+                    name = a.get("account_name")
+                    if code and name:
+                        self._chart_of_accounts[code] = name
+        except Exception:
+            pass
+
         self._is_loaded = True
 
     # -------------------------------------------------------------------------
@@ -208,7 +240,25 @@ class AuditEnricher:
         if len(pid) < 25 and not pid.count("-") == 4:
             return pid
 
-        return "Product (" + pid[:8] + ")"
+    def resolve_account(self, account_code_raw: Any) -> str:
+        """Resolves account code to friendly Name (e.g. 1000 -> 1000 — Vault Cash)."""
+        code = str(account_code_raw or "").strip()
+        if not code:
+            return "General Account"
+        name = self._chart_of_accounts.get(code) or CHART_OF_ACCOUNTS_MAP.get(code)
+        if name:
+            return f"{code} — {name}"
+        return f"Account {code}"
+
+    @staticmethod
+    def clean_reference(ref_raw: Any, prefix: str = "REF") -> str:
+        """Formats references cleanly; replaces raw 36-character UUIDs with human-readable references."""
+        if not ref_raw or str(ref_raw) in ["None", "null", ""]:
+            return "N/A"
+        s = str(ref_raw).strip()
+        if len(s) == 36 and s.count("-") == 4:
+            return f"{prefix}-{s[:8].upper()}"
+        return s
 
     @staticmethod
     def format_currency(val: Any) -> str:
@@ -269,7 +319,7 @@ class AuditEnricher:
                 "Amount_Raw": amount,
                 "Officer": self.resolve_officer(r.get("officer_id")),
                 "Branch": self.resolve_branch(r.get("branch_id"), officer_id=r.get("officer_id"), client_id=r.get("client_id")),
-                "Reference": r.get("reference") or r.get("id") or "N/A",
+                "Reference": self.clean_reference(r.get("reference") or r.get("id"), prefix="FEE"),
                 "Status": self.format_status_badge("PAID"),
                 "_raw_record": r
             }
@@ -289,7 +339,7 @@ class AuditEnricher:
                 "Amount_Raw": amount,
                 "Officer": self.resolve_officer(r.get("officer_id")),
                 "Branch": self.resolve_branch(r.get("branch_id"), officer_id=r.get("officer_id")),
-                "Reference": r.get("reference") or r.get("id") or "N/A",
+                "Reference": self.clean_reference(r.get("reference") or r.get("id"), prefix="TR"),
                 "Narration": r.get("narration") or r.get("remarks") or "Treasury transaction",
                 "Status": self.format_status_badge("COMPLETED"),
                 "_raw_record": r
@@ -437,3 +487,70 @@ class AuditEnricher:
             }
             enriched.append(row)
         return enriched
+
+    def enrich_ledger_records(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Enrich raw general ledger transactions and double-entry legs for executive reporting."""
+        self.load_lookups()
+        enriched = []
+        for tx in records:
+            tx_id = str(tx.get("transaction_id") or tx.get("id") or "")
+            ref_raw = tx.get("reference") or tx_id
+            ref_disp = self.clean_reference(ref_raw, prefix="JNL")
+            b_name = self.resolve_branch(tx.get("branch_id"), officer_id=tx.get("officer_id"))
+            o_name = self.resolve_officer(tx.get("officer_id"))
+            p_date = self.format_date(tx.get("posting_date") or tx.get("created_at"))
+
+            entries = tx.get("financial_ledger_entries") or []
+            if isinstance(entries, dict):
+                entries = [entries]
+
+            debits = [e for e in entries if str(e.get("entry_type") or "").upper() == "DEBIT"]
+            credits = [e for e in entries if str(e.get("entry_type") or "").upper() == "CREDIT"]
+            tot_debit = sum(float(e.get("amount") or 0.0) for e in debits)
+            tot_credit = sum(float(e.get("amount") or 0.0) for e in credits)
+            amt = tot_debit if tot_debit > 0 else (tot_credit if tot_credit > 0 else float(tx.get("amount") or 0.0))
+
+            dr_unique = list(dict.fromkeys([self.resolve_account(e.get("account_number")) for e in debits]))
+            cr_unique = list(dict.fromkeys([self.resolve_account(e.get("account_number")) for e in credits]))
+
+            is_balanced = (abs(tot_debit - tot_credit) < 0.01) and (tot_debit > 0)
+            if is_balanced:
+                status_badge = "🟢 Balanced"
+            elif tot_debit == 0 and tot_credit == 0 and amt == 0:
+                status_badge = "🟡 Non-Monetary"
+            else:
+                status_badge = "🔴 Unbalanced"
+
+            # Pre-enrich double-entry legs so consumers / UI do not need to do lookups
+            enriched_legs = []
+            for e in entries:
+                etype = str(e.get("entry_type") or "").upper()
+                e_amt = float(e.get("amount") or 0.0)
+                acct_name = self.resolve_account(e.get("account_number"))
+                enriched_legs.append({
+                    "Journal Ref": ref_disp,
+                    "Account": acct_name,
+                    "Leg": "📥 DEBIT" if etype == "DEBIT" else "📤 CREDIT",
+                    "Debit (₦)": self.format_currency(e_amt) if etype == "DEBIT" else "—",
+                    "Credit (₦)": self.format_currency(e_amt) if etype == "CREDIT" else "—",
+                    "Debit_Raw": e_amt if etype == "DEBIT" else 0.0,
+                    "Credit_Raw": e_amt if etype == "CREDIT" else 0.0,
+                    "Line Narration": e.get("narration") or tx.get("narration") or "—"
+                })
+
+            enriched.append({
+                "Posting Date": p_date,
+                "Journal Ref": ref_disp,
+                "Narration": tx.get("narration") or "General Ledger Journal Entry",
+                "Debit Account": ", ".join(dr_unique) if dr_unique else "N/A",
+                "Credit Account": ", ".join(cr_unique) if cr_unique else "N/A",
+                "Amount": self.format_currency(amt),
+                "Amount_Raw": amt,
+                "Branch": b_name,
+                "Officer": o_name,
+                "Status": status_badge,
+                "_entries": enriched_legs,
+                "_raw_record": tx
+            })
+        return enriched
+

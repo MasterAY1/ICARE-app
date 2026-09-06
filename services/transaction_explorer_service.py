@@ -141,11 +141,18 @@ class TransactionExplorerService:
             q_tx = uow.client.table("financial_transactions").select("*, financial_ledger_entries(*)")
             if branch_id: q_tx = q_tx.eq("branch_id", branch_id)
             res_tx = q_tx.execute()
+            all_tx = enricher.enrich_ledger_records(res_tx.data or [])
             matching_tx = [
-                tx for tx in (res_tx.data or [])
-                if q.lower() in str(tx.get("transaction_id", "")).lower()
-                or q.lower() in str(tx.get("reference", "")).lower()
-                or q.lower() in str(tx.get("narration", "")).lower()
+                tx for tx in all_tx
+                if q.lower() in str(tx.get("Journal Ref", "")).lower()
+                or q.lower() in str(tx.get("Narration", "")).lower()
+                or q.lower() in str(tx.get("Debit Account", "")).lower()
+                or q.lower() in str(tx.get("Credit Account", "")).lower()
+                or q.lower() in str(tx.get("Officer", "")).lower()
+                or q.lower() in str(tx.get("Branch", "")).lower()
+                or q.lower() in str(tx.get("Posting Date", "")).lower()
+                or q.lower() in str(tx.get("_raw_record", {}).get("transaction_id", "")).lower()
+                or q.lower() in str(tx.get("_raw_record", {}).get("reference", "")).lower()
             ]
             result["ledger_transactions"] = matching_tx[:50]
         except Exception:
@@ -156,11 +163,25 @@ class TransactionExplorerService:
             q_al = uow.client.table("user_audit_logs").select("*")
             if branch_id: q_al = q_al.eq("branch_id", branch_id)
             res_al = q_al.execute()
+            all_al = res_al.data or []
+            enriched_al = []
+            for al in all_al:
+                enriched_al.append({
+                    "Timestamp": enricher.format_date(al.get("created_at") or al.get("timestamp")),
+                    "Action": al.get("action") or "N/A",
+                    "User": al.get("display_name") or enricher.resolve_officer(al.get("user_id")),
+                    "Details": al.get("details") or al.get("description") or "",
+                    "Entity": al.get("entity_type") or "System",
+                    "Branch": enricher.resolve_branch(al.get("branch_id")),
+                    "_raw_record": al
+                })
             matching_al = [
-                al for al in (res_al.data or [])
-                if q.lower() in str(al.get("action", "")).lower()
-                or q.lower() in str(al.get("display_name", "")).lower()
-                or q.lower() in str(al.get("details", "")).lower()
+                al for al in enriched_al
+                if q.lower() in str(al.get("Action", "")).lower()
+                or q.lower() in str(al.get("User", "")).lower()
+                or q.lower() in str(al.get("Details", "")).lower()
+                or q.lower() in str(al.get("Entity", "")).lower()
+                or q.lower() in str(al.get("Branch", "")).lower()
             ]
             result["audit_logs"] = matching_al[:20]
         except Exception:

@@ -8438,7 +8438,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 if rec_result["variances"]:
                     st.markdown("#### 🚨 Itemized Variance Breakdown Table")
                     var_df = pd.DataFrame(rec_result["variances"])
-                    st.dataframe(var_df, use_container_width=True)
+                    st.dataframe(var_df, use_container_width=True, hide_index=True)
     
         # ---------------------------------------------------------------------
         # TAB 2: 📊 Fee Audit
@@ -8498,7 +8498,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
     
                 if enriched_fees:
                     clean_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_fees])
-                    st.dataframe(clean_df, use_container_width=True)
+                    st.dataframe(clean_df, use_container_width=True, hide_index=True)
     
                     with st.expander("🔍 View Transaction Details"):
                         idx = st.selectbox("Select Transaction to Inspect:", range(len(enriched_fees)), format_func=lambda i: f"{enriched_fees[i]['Client Code']} — {enriched_fees[i]['Client Name']} ({enriched_fees[i]['Amount']})", key="sb_fee_idx")
@@ -8575,7 +8575,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
     
                 if enriched_tr:
                     clean_tr_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_tr])
-                    st.dataframe(clean_tr_df, use_container_width=True)
+                    st.dataframe(clean_tr_df, use_container_width=True, hide_index=True)
     
                     with st.expander("🔍 View Transaction Details"):
                         t_idx = st.selectbox("Select Transaction to Inspect:", range(len(enriched_tr)), format_func=lambda i: f"{enriched_tr[i]['Category']} — {enriched_tr[i]['Amount']} ({enriched_tr[i]['Date']})", key="sb_tr_idx")
@@ -8679,7 +8679,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
     
                 if enriched_sav:
                     clean_sav_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_sav])
-                    st.dataframe(clean_sav_df, use_container_width=True)
+                    st.dataframe(clean_sav_df, use_container_width=True, hide_index=True)
     
                     with st.expander("🔍 View Transaction Details"):
                         s_idx = st.selectbox("Select Transaction to Inspect:", range(len(enriched_sav)), format_func=lambda i: f"{enriched_sav[i]['Client Code']} — {enriched_sav[i]['Client Name']} (Dep: {enriched_sav[i]['Deposit']})", key="sb_sav_idx")
@@ -8783,7 +8783,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
     
                     if enriched_loans:
                         clean_l_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_loans])
-                        st.dataframe(clean_l_df, use_container_width=True)
+                        st.dataframe(clean_l_df, use_container_width=True, hide_index=True)
     
                         with st.expander("🔍 View Transaction Details"):
                             l_idx = st.selectbox("Select Loan to Inspect:", range(len(enriched_loans)), format_func=lambda i: f"{enriched_loans[i]['Loan Number']} — {enriched_loans[i]['Client Name']} ({enriched_loans[i]['Principal']})", key="sb_loan_idx")
@@ -8844,7 +8844,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
     
                     if enriched_reps:
                         clean_r_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_reps])
-                        st.dataframe(clean_r_df, use_container_width=True)
+                        st.dataframe(clean_r_df, use_container_width=True, hide_index=True)
     
                         with st.expander("🔍 View Transaction Details"):
                             r_idx = st.selectbox("Select Repayment to Inspect:", range(len(enriched_reps)), format_func=lambda i: f"{enriched_reps[i]['Loan Number']} — {enriched_reps[i]['Client Name']} ({enriched_reps[i]['Amount Paid']})", key="sb_rep_idx")
@@ -8956,7 +8956,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
 
                     if enriched_cp:
                         clean_cp_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_cp])
-                        st.dataframe(clean_cp_df, use_container_width=True)
+                        st.dataframe(clean_cp_df, use_container_width=True, hide_index=True)
 
                         with st.expander("🔍 View Meeting Collection Details"):
                             cp_idx = st.selectbox(
@@ -8996,7 +8996,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 for rule_name, rule_records in ex_data["details"].items():
                     with st.expander(f"📌 Rule: {rule_name.replace('_', ' ').title()} ({len(rule_records)} issues)"):
                         if rule_records:
-                            st.dataframe(pd.DataFrame(rule_records), use_container_width=True)
+                            st.dataframe(pd.DataFrame(rule_records), use_container_width=True, hide_index=True)
                         else:
                             st.success("✔ Zero exceptions detected for this rule.")
     
@@ -9016,22 +9016,61 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         st.success(f"✔ Audit records matched '{search_tx}' across sub-systems")
                         if exp_res["loans"]:
                             st.markdown("#### 💵 Loans")
-                            st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["loans"]]), use_container_width=True)
+                            st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["loans"]]), use_container_width=True, hide_index=True)
+
+                            with st.expander("⏱️ View Loan Lifecycle Audit Timelines", expanded=False):
+                                for l_row in exp_res["loans"][:5]:
+                                    raw_l = l_row.get("_raw_record", {})
+                                    lid = raw_l.get("loan_id") or raw_l.get("id")
+                                    if lid:
+                                        tline = TransactionExplorerService.build_loan_audit_timeline(uow_ac, lid)
+                                        if tline:
+                                            st.markdown(f"**Timeline for {l_row.get('Loan Number')} — {l_row.get('Client Name')} ({l_row.get('Principal')})**")
+                                            st.dataframe(pd.DataFrame(tline), use_container_width=True, hide_index=True)
+
                         if exp_res["repayments"]:
                             st.markdown("#### 💰 Repayments")
-                            st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["repayments"]]), use_container_width=True)
+                            st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["repayments"]]), use_container_width=True, hide_index=True)
+
                         if exp_res["savings"]:
                             st.markdown("#### 🐷 Savings Ledger")
-                            st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["savings"]]), use_container_width=True)
+                            st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["savings"]]), use_container_width=True, hide_index=True)
+
                         if exp_res["fees"]:
                             st.markdown("#### 📊 Fee Ledger")
-                            st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["fees"]]), use_container_width=True)
+                            st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["fees"]]), use_container_width=True, hide_index=True)
+
                         if exp_res["treasury_transactions"]:
                             st.markdown("#### 🏦 Treasury Ledger")
-                            st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["treasury_transactions"]]), use_container_width=True)
+                            st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["treasury_transactions"]]), use_container_width=True, hide_index=True)
+
                         if exp_res["ledger_transactions"]:
                             st.markdown("#### ⚖️ General Ledger Journals")
-                            st.dataframe(pd.DataFrame(exp_res["ledger_transactions"]), use_container_width=True)
+                            clean_jnl_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["ledger_transactions"]])
+                            st.dataframe(clean_jnl_df, use_container_width=True, hide_index=True)
+
+                            with st.expander("🔍 Inspect Journal Double-Entry Legs", expanded=False):
+                                for jnl in exp_res["ledger_transactions"]:
+                                    entries = jnl.get("_entries") or []
+                                    if entries:
+                                        leg_rows = []
+                                        for e in entries:
+                                            leg_rows.append({
+                                                "Journal Ref": jnl.get("Journal Ref"),
+                                                "Account": e.get("Account"),
+                                                "Leg": e.get("Leg"),
+                                                "Debit (₦)": e.get("Debit (₦)"),
+                                                "Credit (₦)": e.get("Credit (₦)"),
+                                                "Line Narration": e.get("Line Narration")
+                                            })
+                                        if leg_rows:
+                                            st.markdown(f"**Journal: {jnl.get('Journal Ref')} — {jnl.get('Narration')} ({jnl.get('Amount')})**")
+                                            st.dataframe(pd.DataFrame(leg_rows), use_container_width=True, hide_index=True)
+
+                        if exp_res.get("audit_logs"):
+                            st.markdown("#### 📜 Audit Logs")
+                            clean_al_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["audit_logs"]])
+                            st.dataframe(clean_al_df, use_container_width=True, hide_index=True)
                     else:
                         st.info("No records found for the selected filters. Try changing the date range or search criteria.")
     
