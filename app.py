@@ -8232,13 +8232,21 @@ elif page in ["Audit Center", "Audit Ledger"]:
         ])
 
     with SupabaseUnitOfWork() as uow_ac:
-        from database.repositories.audit_view_repository import SupabaseAuditViewRepository
+        import importlib
+        import database.repositories.audit_view_repository as avr_mod
+        if not hasattr(avr_mod.SupabaseAuditViewRepository, "get_collection_performance"):
+            avr_mod = importlib.reload(avr_mod)
+        SupabaseAuditViewRepository = avr_mod.SupabaseAuditViewRepository
+
         from services.audit_enricher_service import AuditEnricher
         from services.audit_reporting_service import AuditReportingService
         from services.financial_reconciliation_service import FinancialReconciliationService
         from services.transaction_explorer_service import TransactionExplorerService
 
-        audit_views = getattr(uow_ac, 'audit_views', None) or SupabaseAuditViewRepository(uow_ac.client)
+        audit_views = getattr(uow_ac, 'audit_views', None)
+        if audit_views is None or not hasattr(audit_views, 'get_collection_performance'):
+            audit_views = SupabaseAuditViewRepository(uow_ac.client)
+            uow_ac.audit_views = audit_views
         enricher = AuditEnricher(uow=uow_ac)
 
         # Fetch active branches for selection
@@ -8278,6 +8286,116 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 return opts
             except Exception:
                 return {"All Officers": "All"}
+
+        def _get_collection_performance_records(av, uow, b_id=None, off_id=None, c_id=None, d_from=None, d_to=None, limit=500):
+            """
+            Resilient loader for collection performance records.
+            Attempts audit_views.get_collection_performance, falling back to direct table queries
+            if running under a long-standing Streamlit process with a stale module cache.
+            """
+            if av and hasattr(av, "get_collection_performance"):
+                try:
+                    return av.get_collection_performance(
+                        branch_id=b_id,
+                        officer_id=off_id if off_id != "All" else None,
+                        client_id=c_id,
+                        date_from=d_from,
+                        date_to=d_to,
+                        limit=limit
+                    )
+                except Exception:
+                    pass
+
+            d_from_iso = d_from.isoformat() if isinstance(d_from, date) else (str(d_from)[:10] if d_from else None)
+            d_to_iso = d_to.isoformat() if isinstance(d_to, date) else (str(d_to)[:10] if d_to else None)
+
+            branch_officer_ids = []
+            if b_id and b_id not in ["All", "All Branches"]:
+                try:
+                    res_off = uow.client.table("app_users").select("id").eq("branch_id", b_id).execute()
+                    branch_officer_ids = [str(u["id"]) for u in (res_off.data or []) if u.get("id")]
+                except Exception:
+                    pass
+
+            cp_records = []
+            try:
+                query_cp = uow.client.table("collection_performance").select("*")
+                if off_id and off_id not in ["All", "All Officers"]:
+                    query_cp = query_cp.eq("officer_id", off_id)
+                elif branch_officer_ids:
+                    query_cp = query_cp.in_("officer_id", branch_officer_ids)
+
+                if c_id:
+                    query_cp = query_cp.eq("client_id", c_id)
+                if d_from_iso:
+                    query_cp = query_cp.gte("meeting_date", d_from_iso)
+                if d_to_iso:
+                    query_cp = query_cp.lte("meeting_date", d_to_iso)
+
+                res_cp = query_cp.order("meeting_date", desc=True).limit(limit).execute()
+                for r in (res_cp.data or []):
+                    if b_id and not r.get("branch_id"):
+                        r["branch_id"] = b_id
+                    cp_records.append(r)
+            except Exception:
+                cp_records = []
+
+            if not cp_records:
+                try:
+                    query_rep = uow.client.table("repayments").select("*")
+                    if b_id and b_id not in ["All", "All Branches"]:
+                        query_rep = query_rep.eq("branch_id", b_id)
+                    if off_id and off_id not in ["All", "All Officers"]:
+                        query_rep = query_rep.eq("officer_id", off_id)
+                    elif branch_officer_ids:
+                        query_rep = query_rep.in_("officer_id", branch_officer_ids)
+
+                    if c_id:
+                        query_rep = query_rep.eq("client_id", c_id)
+                    if d_from_iso:
+                        query_rep = query_rep.gte("date", d_from_iso)
+                    if d_to_iso:
+                        query_rep = query_rep.lte("date", f"{d_to_iso}T23:59:59")
+
+                    res_rep = query_rep.order("date", desc=True).limit(limit).execute()
+                    for r in (res_rep.data or []):
+                        paid = float(r.get("amount_paid") or 0.0)
+                        expected = float(r.get("expected_amount") or 0.0)
+                        if expected <= 0.0 and paid > 0.0:
+                            expected = paid
+
+                        status = r.get("payment_status")
+                        if not status or status.upper() not in ["PAID", "PART_PAYMENT", "NOT_PAID"]:
+                            if expected > 0:
+                                ratio = (paid / expected) * 100.0
+                                status = "PAID" if ratio >= 99.0 else ("PART_PAYMENT" if paid > 0 else "NOT_PAID")
+                            else:
+                                status = "PAID" if paid > 0 else "NOT_PAID"
+
+                        m_date = str(r.get("date") or r.get("created_at") or "")[:10]
+                        cp_records.append({
+                            "id": r.get("id"),
+                            "client_id": r.get("client_id"),
+                            "loan_id": r.get("loan_id"),
+                            "officer_id": r.get("officer_id"),
+                            "branch_id": r.get("branch_id") or b_id,
+                            "meeting_date": m_date,
+                            "date": m_date,
+                            "expected_amount": expected,
+                            "amount_paid": paid,
+                            "collected_amount": paid,
+                            "status": status,
+                            "remarks": r.get("note") or r.get("transaction_type") or "Meeting repayment",
+                            "created_at": r.get("created_at")
+                        })
+                except Exception:
+                    pass
+
+            cp_records.sort(key=lambda x: str(x.get("meeting_date") or x.get("date") or x.get("created_at") or ""), reverse=True)
+            return cp_records[:limit]
+
+        if not hasattr(audit_views, "get_collection_performance"):
+            audit_views.get_collection_performance = lambda **kwargs: _get_collection_performance_records(None, uow_ac, **kwargs)
 
         @CacheProvider.cache_data(ttl=60)
         def _cached_verify_6way_integrity(branch_id: str, posting_date_iso: str):
@@ -8783,11 +8901,13 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     cp_target_branch_id = BRANCH_ID or cp_target_branch_id
 
                 try:
-                    raw_cp_data = audit_views.get_collection_performance(
-                        branch_id=cp_target_branch_id,
-                        officer_id=cp_officer_val if cp_officer_val != "All" else None,
-                        date_from=cp_d_from,
-                        date_to=cp_d_to,
+                    raw_cp_data = _get_collection_performance_records(
+                        audit_views,
+                        uow=uow_ac,
+                        b_id=cp_target_branch_id,
+                        off_id=cp_officer_val if cp_officer_val != "All" else None,
+                        d_from=cp_d_from,
+                        d_to=cp_d_to,
                         limit=500
                     )
                     enriched_cp = enricher.enrich_collection_records(raw_cp_data)
