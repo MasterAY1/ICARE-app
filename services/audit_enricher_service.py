@@ -23,6 +23,8 @@ class AuditEnricher:
         self.uow = uow
         self._clients_by_id: Dict[str, Dict[str, str]] = {}
         self._clients_by_code: Dict[str, Dict[str, str]] = {}
+        self._client_branches: Dict[str, str] = {}
+        self._officer_branches: Dict[str, str] = {}
         self._groups_by_id: Dict[str, Dict[str, str]] = {}
         self._loans_by_id: Dict[str, Dict[str, Any]] = {}
         self._branches_by_id: Dict[str, str] = {}
@@ -41,14 +43,22 @@ class AuditEnricher:
         # 1. Load Clients
         try:
             if db_client:
-                res = db_client.table("clients").select("client_id, client_code, name").execute()
+                res = db_client.table("clients").select("client_id, client_code, name, branch_id, group_id").execute()
                 for c in (res.data or []):
                     c_id = c.get("client_id")
                     code = c.get("client_code") or c_id or "UNKNOWN"
                     name = c.get("name") or "Unknown Client"
-                    entry = {"code": code, "name": name, "full_label": f"{code} — {name}"}
+                    entry = {
+                        "code": code,
+                        "name": name,
+                        "full_label": f"{code} — {name}",
+                        "branch_id": c.get("branch_id"),
+                        "group_id": c.get("group_id")
+                    }
                     if c_id:
                         self._clients_by_id[str(c_id)] = entry
+                        if c.get("branch_id"):
+                            self._client_branches[str(c_id)] = str(c["branch_id"])
                     if code:
                         self._clients_by_code[str(code)] = entry
         except Exception:
@@ -69,13 +79,15 @@ class AuditEnricher:
         # 3. Load App Users (Officers)
         try:
             if db_client:
-                res_u = db_client.table("app_users").select("id, username, full_name").execute()
+                res_u = db_client.table("app_users").select("id, username, full_name, branch_id").execute()
                 for u in (res_u.data or []):
                     u_id = u.get("id")
                     uname = u.get("username")
                     fname = u.get("full_name") or uname or "Unassigned"
                     if u_id:
                         self._users_by_id[str(u_id)] = fname
+                        if u.get("branch_id"):
+                            self._officer_branches[str(u_id)] = str(u["branch_id"])
                     if uname:
                         self._users_by_username[str(uname)] = fname
         except Exception:
@@ -149,12 +161,17 @@ class AuditEnricher:
         short_id = cid[:8] + "..." if len(cid) > 12 else cid
         return {"code": short_id, "name": "Client (" + short_id + ")", "full_label": short_id}
 
-    def resolve_branch(self, branch_id_raw: Optional[str]) -> str:
-        """Resolves raw branch_id to Branch Name."""
-        if not branch_id_raw or str(branch_id_raw) in ["None", "null", ""]:
-            return "Head Office"
+    def resolve_branch(self, branch_id_raw: Optional[str], officer_id: Optional[str] = None, client_id: Optional[str] = None) -> str:
+        """Resolves raw branch_id to Branch Name, falling back to officer or client branch if missing."""
+        bid = str(branch_id_raw).strip() if branch_id_raw else ""
+        if not bid or bid in ["None", "null", ""]:
+            if officer_id and str(officer_id) in self._officer_branches:
+                bid = self._officer_branches[str(officer_id)]
+            elif client_id and str(client_id) in self._client_branches:
+                bid = self._client_branches[str(client_id)]
+            else:
+                return "Unassigned"
 
-        bid = str(branch_id_raw).strip()
         if bid in self._branches_by_id:
             return self._branches_by_id[bid]
 
@@ -210,7 +227,7 @@ class AuditEnricher:
         try:
             if isinstance(date_val, (date, datetime)):
                 return date_val.strftime("%d %b %Y")
-            s = str(date_val).split("T")[0]
+            s = str(date_val).replace("T", " ").split(" ")[0].strip()
             dt = datetime.strptime(s, "%Y-%m-%d")
             return dt.strftime("%d %b %Y")
         except Exception:
@@ -251,7 +268,7 @@ class AuditEnricher:
                 "Amount": self.format_currency(amount),
                 "Amount_Raw": amount,
                 "Officer": self.resolve_officer(r.get("officer_id")),
-                "Branch": self.resolve_branch(r.get("branch_id")),
+                "Branch": self.resolve_branch(r.get("branch_id"), officer_id=r.get("officer_id"), client_id=r.get("client_id")),
                 "Reference": r.get("reference") or r.get("id") or "N/A",
                 "Status": self.format_status_badge("PAID"),
                 "_raw_record": r
@@ -271,7 +288,7 @@ class AuditEnricher:
                 "Amount": self.format_currency(amount),
                 "Amount_Raw": amount,
                 "Officer": self.resolve_officer(r.get("officer_id")),
-                "Branch": self.resolve_branch(r.get("branch_id")),
+                "Branch": self.resolve_branch(r.get("branch_id"), officer_id=r.get("officer_id")),
                 "Reference": r.get("reference") or r.get("id") or "N/A",
                 "Narration": r.get("narration") or r.get("remarks") or "Treasury transaction",
                 "Status": self.format_status_badge("COMPLETED"),
@@ -311,7 +328,7 @@ class AuditEnricher:
                 "Client Name": name_disp,
                 "Remarks": r.get("remarks") or r.get("reference") or ("Deposit" if dep > 0 else "Withdrawal"),
                 "Officer": self.resolve_officer(r.get("officer_id")),
-                "Branch": self.resolve_branch(r.get("branch_id")),
+                "Branch": self.resolve_branch(r.get("branch_id"), officer_id=r.get("officer_id"), client_id=r.get("client_id")),
                 "Deposit": self.format_currency(dep),
                 "Withdrawal": self.format_currency(wth),
                 "Balance": self.format_currency(bal),
@@ -339,7 +356,7 @@ class AuditEnricher:
                 "Client Name": client_info["name"],
                 "Product": self.resolve_product(r.get("product_id")),
                 "Officer": self.resolve_officer(r.get("officer_id")),
-                "Branch": self.resolve_branch(r.get("branch_id")),
+                "Branch": self.resolve_branch(r.get("branch_id"), officer_id=r.get("officer_id"), client_id=r.get("client_id")),
                 "Principal": self.format_currency(principal),
                 "Principal_Raw": principal,
                 "Status": self.format_status_badge(r.get("status") or "Disbursed"),
@@ -368,7 +385,7 @@ class AuditEnricher:
                 "Amount Paid": self.format_currency(paid),
                 "Amount_Raw": paid,
                 "Officer": self.resolve_officer(r.get("officer_id")),
-                "Branch": self.resolve_branch(r.get("branch_id")),
+                "Branch": self.resolve_branch(r.get("branch_id"), officer_id=r.get("officer_id"), client_id=r.get("client_id")),
                 "Transaction Type": r.get("transaction_type") or "Repayment",
                 "Status": self.format_status_badge("PAID"),
                 "_raw_record": r
@@ -387,17 +404,35 @@ class AuditEnricher:
             ratio = (paid / expected * 100) if expected > 0 else (100.0 if paid > 0 else 0.0)
             status_tag = "PAID" if ratio >= 99.0 else ("PART_PAYMENT" if ratio > 0 else "NOT_PAID")
 
+            grp_name = r.get("group_name")
+            if not grp_name or str(grp_name) in ["None", "null", ""]:
+                gid = r.get("group_id") or client_info.get("group_id")
+                if gid:
+                    grp_res = self.resolve_group(gid)
+                    grp_name = grp_res.get("name")
+            if not grp_name or str(grp_name) in ["None", "null", "N/A"] or str(grp_name).startswith("Group (0000"):
+                grp_name = "Individual"
+
+            b_name = self.resolve_branch(
+                r.get("branch_id"),
+                officer_id=r.get("officer_id"),
+                client_id=r.get("client_id")
+            )
+
             row = {
-                "Meeting Date": self.format_date(r.get("meeting_date") or r.get("created_at")),
+                "Meeting Date": self.format_date(r.get("meeting_date") or r.get("date") or r.get("created_at")),
                 "Client Code": client_info["code"],
                 "Client Name": client_info["name"],
-                "Group": r.get("group_name") or r.get("group_id") or "Individual",
+                "Group": grp_name,
                 "Expected": self.format_currency(expected),
                 "Paid": self.format_currency(paid),
                 "Compliance %": f"{ratio:.1f}%",
                 "Officer": self.resolve_officer(r.get("officer_id")),
-                "Branch": self.resolve_branch(r.get("branch_id")),
+                "Branch": b_name,
                 "Status": self.format_status_badge(status_tag),
+                "Expected_Raw": expected,
+                "Paid_Raw": paid,
+                "Status_Raw": status_tag,
                 "_raw_record": r
             }
             enriched.append(row)

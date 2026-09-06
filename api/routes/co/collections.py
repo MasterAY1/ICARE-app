@@ -290,7 +290,8 @@ def submit_batch_collections(
             "Bonus": bon,
             "Payment Status": p_status,
             "Expected Amount": exp_amt,
-            "Overdue Amount": overdue_val
+            "Overdue Amount": overdue_val,
+            "mark_not_paid": is_marked_not_paid
         })
 
     # 3. Add Group Savings if provided

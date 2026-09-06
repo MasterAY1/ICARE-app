@@ -299,3 +299,125 @@ class FinancialReconciliationService:
             "master_cashbook_rebuilt": True,
             "verification_after_repair": verification
         }
+
+    @staticmethod
+    def get_daily_collection_arrears_tally(
+        uow: UnitOfWork,
+        branch_id: str,
+        posting_date: date,
+        officer_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Computes the Daily Field Collection vs. Cashbook Arrears Reconciliation Tally.
+        Provides the paper-style reconciliation bridge:
+          Scheduled Inflows - Red-Pen Not Paid (Arrears) + Excess Banked = Actual Cash Collected
+          Actual Cash Collected - Bank Deposited = Net Closing Cash Balance
+          Arrears Float = Total Uncollected Arrears Generated Today
+        """
+        p_date_str = posting_date.isoformat() if isinstance(posting_date, date) else str(posting_date)[:10]
+
+        # 1. Fetch Repayments on Date
+        reps_query = uow.client.table("repayments").select(
+            "id, client_id, amount_paid, expected_amount, overdue_amount, payment_status, note, clients(name, client_code)"
+        ).eq("branch_id", branch_id).gte("date", f"{p_date_str}T00:00:00").lte("date", f"{p_date_str}T23:59:59")
+
+        if officer_id:
+            reps_query = reps_query.eq("officer_id", officer_id)
+
+        try:
+            res_reps = reps_query.execute()
+            reps_data = res_reps.data or []
+        except Exception:
+            reps_data = []
+
+        # 2. Fetch Savings Deposits on Date
+        sav_query = uow.client.table("individual_savings").select("deposit_amount").eq("branch_id", branch_id).eq("posting_date", p_date_str)
+        if officer_id:
+            sav_query = sav_query.eq("officer_id", officer_id)
+
+        try:
+            res_sav = sav_query.execute()
+            sav_data = res_sav.data or []
+        except Exception:
+            sav_data = []
+
+        # 3. Fetch Cashbook figures (Bank deposit & Closing balance)
+        bank_deposited = 0.0
+        closing_balance = 0.0
+        try:
+            if officer_id:
+                cb_res = uow.client.table("co_cashbooks").select("bank_deposit, closing_balance") \
+                    .eq("branch_id", branch_id).eq("officer_id", officer_id).eq("date", p_date_str).execute()
+            else:
+                cb_res = uow.client.table("master_cashbook").select("bank_deposit, closing_balance") \
+                    .eq("branch_id", branch_id).eq("date", p_date_str).execute()
+
+            if cb_res.data:
+                bank_deposited = float(cb_res.data[0].get("bank_deposit") or 0.0)
+                closing_balance = float(cb_res.data[0].get("closing_balance") or 0.0)
+        except Exception:
+            pass
+
+        # 4. Aggregate Tally Metrics
+        scheduled_expected = 0.0
+        not_paid_amount = 0.0
+        not_paid_count = 0
+        not_paid_clients = []
+        excess_amount = 0.0
+        excess_count = 0
+        actual_repayments = 0.0
+
+        for r in reps_data:
+            amt = float(r.get("amount_paid") or 0.0)
+            exp = float(r.get("expected_amount") or 0.0)
+            status = str(r.get("payment_status") or "").upper()
+            c_info = r.get("clients") or {} if isinstance(r.get("clients"), dict) else {}
+            c_name = c_info.get("name") or "Unknown Client"
+            c_code = c_info.get("client_code") or ""
+
+            scheduled_expected += exp
+            actual_repayments += amt
+
+            if status == "NOT_PAID" or amt == 0.0:
+                not_paid_amount += exp
+                not_paid_count += 1
+                not_paid_clients.append({
+                    "name": c_name,
+                    "code": c_code,
+                    "expected": exp,
+                    "shortfall": exp
+                })
+            elif amt > exp and exp > 0.0:
+                diff = amt - exp
+                excess_amount += diff
+                excess_count += 1
+            elif status == "PART_PAID":
+                shortfall = max(0.0, exp - amt)
+                if shortfall > 0:
+                    not_paid_clients.append({
+                        "name": c_name,
+                        "code": c_code,
+                        "expected": exp,
+                        "shortfall": shortfall,
+                        "is_partial": True
+                    })
+
+        actual_savings = sum(float(s.get("deposit_amount") or 0.0) for s in sav_data)
+        actual_cash_collected = actual_repayments + actual_savings
+
+        return {
+            "scheduled_expected": round(scheduled_expected, 2),
+            "not_paid_amount": round(not_paid_amount, 2),
+            "not_paid_count": not_paid_count,
+            "not_paid_clients": not_paid_clients,
+            "excess_amount": round(excess_amount, 2),
+            "excess_count": excess_count,
+            "actual_repayments": round(actual_repayments, 2),
+            "actual_savings": round(actual_savings, 2),
+            "actual_cash_collected": round(actual_cash_collected, 2),
+            "bank_deposited": round(bank_deposited, 2),
+            "closing_cash_balance": round(closing_balance, 2),
+            "is_cash_balanced": abs(closing_balance) < 0.01,
+            "arrears_float": round(not_paid_amount, 2),
+            "total_reps_count": len(reps_data)
+        }

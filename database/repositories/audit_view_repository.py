@@ -823,6 +823,113 @@ class SupabaseAuditViewRepository(BaseRepository):
         return all_records[:limit]
 
     # -------------------------------------------------------------------------
+    # 5. Collection Performance Audit Ledgers
+    # -------------------------------------------------------------------------
+    def get_collection_performance(
+        self,
+        branch_id: Optional[str] = None,
+        officer_id: Optional[str] = None,
+        client_id: Optional[str] = None,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        limit: int = 500
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch collection performance records comparing expected collections against actual payments.
+        Queries public.collection_performance, falling back to public.repayments if table is empty.
+        """
+        d_from_iso = date_from.isoformat() if isinstance(date_from, date) else (str(date_from)[:10] if date_from else None)
+        d_to_iso = date_to.isoformat() if isinstance(date_to, date) else (str(date_to)[:10] if date_to else None)
+
+        branch_officer_ids = []
+        if branch_id and branch_id not in ["All", "All Branches"]:
+            try:
+                res_off = self.client.table("app_users").select("id").eq("branch_id", branch_id).execute()
+                branch_officer_ids = [str(u["id"]) for u in (res_off.data or []) if u.get("id")]
+            except Exception:
+                pass
+
+        cp_records: List[Dict[str, Any]] = []
+
+        # 1. First, attempt query on public.collection_performance
+        try:
+            query_cp = self.client.table("collection_performance").select("*")
+            if officer_id and officer_id not in ["All", "All Officers"]:
+                query_cp = query_cp.eq("officer_id", officer_id)
+            elif branch_officer_ids:
+                query_cp = query_cp.in_("officer_id", branch_officer_ids)
+
+            if client_id:
+                query_cp = query_cp.eq("client_id", client_id)
+            if d_from_iso:
+                query_cp = query_cp.gte("meeting_date", d_from_iso)
+            if d_to_iso:
+                query_cp = query_cp.lte("meeting_date", d_to_iso)
+
+            res_cp = query_cp.order("meeting_date", desc=True).limit(limit).execute()
+            for r in (res_cp.data or []):
+                if branch_id and not r.get("branch_id"):
+                    r["branch_id"] = branch_id
+                cp_records.append(r)
+        except Exception:
+            cp_records = []
+
+        # 2. If collection_performance yielded no records, query repayments as authoritative fallback
+        if not cp_records:
+            try:
+                query_rep = self.client.table("repayments").select("*")
+                if branch_id and branch_id not in ["All", "All Branches"]:
+                    query_rep = query_rep.eq("branch_id", branch_id)
+                if officer_id and officer_id not in ["All", "All Officers"]:
+                    query_rep = query_rep.eq("officer_id", officer_id)
+                elif branch_officer_ids:
+                    query_rep = query_rep.in_("officer_id", branch_officer_ids)
+
+                if client_id:
+                    query_rep = query_rep.eq("client_id", client_id)
+                if d_from_iso:
+                    query_rep = query_rep.gte("date", d_from_iso)
+                if d_to_iso:
+                    query_rep = query_rep.lte("date", f"{d_to_iso}T23:59:59")
+
+                res_rep = query_rep.order("date", desc=True).limit(limit).execute()
+                for r in (res_rep.data or []):
+                    paid = float(r.get("amount_paid") or 0.0)
+                    expected = float(r.get("expected_amount") or 0.0)
+                    if expected <= 0.0 and paid > 0.0:
+                        expected = paid
+
+                    status = r.get("payment_status")
+                    if not status or status.upper() not in ["PAID", "PART_PAYMENT", "NOT_PAID"]:
+                        if expected > 0:
+                            ratio = (paid / expected) * 100.0
+                            status = "PAID" if ratio >= 99.0 else ("PART_PAYMENT" if paid > 0 else "NOT_PAID")
+                        else:
+                            status = "PAID" if paid > 0 else "NOT_PAID"
+
+                    m_date = str(r.get("date") or r.get("created_at") or "")[:10]
+                    cp_records.append({
+                        "id": r.get("id"),
+                        "client_id": r.get("client_id"),
+                        "loan_id": r.get("loan_id"),
+                        "officer_id": r.get("officer_id"),
+                        "branch_id": r.get("branch_id") or branch_id,
+                        "meeting_date": m_date,
+                        "date": m_date,
+                        "expected_amount": expected,
+                        "amount_paid": paid,
+                        "collected_amount": paid,
+                        "status": status,
+                        "remarks": r.get("note") or r.get("transaction_type") or "Meeting repayment",
+                        "created_at": r.get("created_at")
+                    })
+            except Exception:
+                pass
+
+        cp_records.sort(key=lambda x: str(x.get("meeting_date") or x.get("date") or x.get("created_at") or ""), reverse=True)
+        return cp_records[:limit]
+
+    # -------------------------------------------------------------------------
     # Read-only mutation safeguards
     # -------------------------------------------------------------------------
     def create(self, entity: Any) -> Any:

@@ -536,16 +536,16 @@ class DashboardService:
                         "Clients Not Paid": 0
                     }
 
-                repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0) if is_expected_today else 0.0
-                if is_expected_today and repay_amt <= 0:
-                    lid = l.get("loan_id")
-                    if lid:
-                        try:
-                            res_sch = uow.client.table("loan_schedule").select("total_due").eq("loan_id", lid).order("installment_number").limit(1).execute()
-                            if res_sch.data:
-                                repay_amt = float(res_sch.data[0].get("total_due") or 0.0)
-                        except Exception:
-                            pass
+                # Fetch authoritative loan due breakdown from ScheduleService
+                from services.schedule_service import ScheduleService
+                due_info = ScheduleService.get_loan_due_breakdown(uow, lid, target_date, client_id=cid)
+                has_arrears_flag = due_info.get("has_overdue", False)
+                overdue_arrears_amt = float(due_info.get("overdue_arrears") or 0.0)
+                curr_inst_amt = float(due_info.get("current_installment") or 0.0)
+
+                repay_amt = float(due_info.get("total_due_today") or 0.0) if is_expected_today else 0.0
+                if is_expected_today and repay_amt <= 0 and not is_branch_closed:
+                    repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0)
                     if repay_amt <= 0:
                         dur = int(l.get("duration") or 0)
                         ac = float(l.get("active_credit") or 0.0)
@@ -585,11 +585,13 @@ class DashboardService:
                     elif repay_amt > 0 and c_paid < repay_amt:
                         part_paid_count += 1
                         part_paid_amt += c_paid
+                        issue_msg = "Arrears Shortfall" if has_arrears_flag else "Part Payment"
+                        risk_tag = "🔴 Arrears" if has_arrears_flag else "🟡 Shortfall"
                         attention_rows.append({
                             "Client Name": c_name, "Client Code": c_code, "Group": g_name,
                             "Expected (₦)": repay_amt, "Paid (₦)": c_paid, "Shortfall (₦)": round(repay_amt - c_paid, 2),
-                            "Issue Type": "Part Payment", "Risk Level": "🟡 Shortfall",
-                            "Action": "Follow Up with Group Leader"
+                            "Issue Type": issue_msg, "Risk Level": risk_tag,
+                            "Action": f"Follow Up with Group Leader (₦{repay_amt - c_paid:,.0f} due)"
                         })
                     elif repay_amt > 0 and c_paid > repay_amt:
                         excess_paid_count += 1
@@ -601,11 +603,14 @@ class DashboardService:
                         grp_map[g_name]["Clients Not Paid"] += 1
                         not_paid_count += 1
                         not_paid_amt += repay_amt
+                        issue_type = "Overdue Arrears + Current" if has_arrears_flag else "Pending"
+                        risk_lvl = "🔴 Overdue Arrears" if has_arrears_flag else "⚪ Pending"
+                        action_msg = f"Collect ₦{overdue_arrears_amt:,.0f} arrears + ₦{curr_inst_amt:,.0f} today" if has_arrears_flag else "Collect at Group Meeting"
                         attention_rows.append({
                             "Client Name": c_name, "Client Code": c_code, "Group": g_name,
                             "Expected (₦)": repay_amt, "Paid (₦)": 0.0, "Shortfall (₦)": repay_amt,
-                            "Issue Type": "Pending", "Risk Level": "⚪ Pending",
-                            "Action": "Collect at Group Meeting"
+                            "Issue Type": issue_type, "Risk Level": risk_lvl,
+                            "Action": action_msg
                         })
             except Exception:
                 continue

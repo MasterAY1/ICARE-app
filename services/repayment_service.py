@@ -303,3 +303,72 @@ class RepaymentService:
                     uow.cashbook.rebuild_projection(uow, branch_val, orig_date)
         except Exception as ex:
             print(f"Deferred cashbook rebuild failed during reversal: {ex}")
+
+    @staticmethod
+    def classify_repayment(
+        amount_paid: float,
+        total_due_today: float,
+        current_installment: float = 0.0,
+        has_overdue: bool = False
+    ) -> dict:
+        """
+        Authoritative classification of loan repayment per BR-DASH-007.
+        Distinguishes between:
+        - NOT_PAID: ₦0 collection
+        - PAID: Exactly meets total_due_today (or base installment when on-schedule)
+        - PART_PAID: Amount > 0 but less than total_due_today
+        - EXCESS: Amount > total_due_today (surplus cash goes to principal prepayment)
+        """
+        amt = float(amount_paid or 0.0)
+        due = float(total_due_today or 0.0)
+
+        if amt <= 0.0:
+            return {
+                "status": "NOT_PAID",
+                "status_badge": "❌ NOT PAID",
+                "overdue_shortfall": due,
+                "true_excess": 0.0,
+                "arrears_recovered": 0.0,
+                "is_arrears_cleared": False
+            }
+
+        if due <= 0.0:
+            # If nothing was currently due (e.g. advance prepayment)
+            return {
+                "status": "EXCESS",
+                "status_badge": "🔵 EXCESS",
+                "overdue_shortfall": 0.0,
+                "true_excess": amt,
+                "arrears_recovered": 0.0,
+                "is_arrears_cleared": False
+            }
+
+        diff = amt - due
+        if abs(diff) < 0.01:
+            badge = "✅ PAID (ARREARS CLEARED)" if has_overdue else "✅ PAID"
+            return {
+                "status": "PAID",
+                "status_badge": badge,
+                "overdue_shortfall": 0.0,
+                "true_excess": 0.0,
+                "arrears_recovered": max(0.0, due - current_installment) if has_overdue else 0.0,
+                "is_arrears_cleared": has_overdue
+            }
+        elif diff > 0.01:
+            return {
+                "status": "EXCESS",
+                "status_badge": "🔵 EXCESS",
+                "overdue_shortfall": 0.0,
+                "true_excess": round(diff, 2),
+                "arrears_recovered": max(0.0, due - current_installment) if has_overdue else 0.0,
+                "is_arrears_cleared": has_overdue
+            }
+        else: # amt < due
+            return {
+                "status": "PART_PAID",
+                "status_badge": "⚠️ PART PAID",
+                "overdue_shortfall": round(due - amt, 2),
+                "true_excess": 0.0,
+                "arrears_recovered": min(amt, max(0.0, due - current_installment)) if has_overdue else 0.0,
+                "is_arrears_cleared": False
+            }

@@ -218,7 +218,7 @@ def load_co_mapping():
     try:
         with SupabaseUnitOfWork() as uow:
             users = uow.users.find_all()
-            co_users = [u for u in users if u.role in ['CO', 'Officer']]
+            co_users = [u for u in users if u.role in ['CO', 'Officer', 'Credit Officer']]
             name_map = {u.full_name.strip(): u.username for u in co_users if u.full_name}
             display_map = {v: k for k, v in name_map.items()}
             return name_map, display_map
@@ -1072,6 +1072,57 @@ DB_TO_UI_REP = {
 UI_TO_DB_REP = {v: k for k, v in DB_TO_UI_REP.items()}
 UI_TO_DB_REP["Group ID"] = "group_id"
 UI_TO_DB_REP["group_id"] = "group_id"
+UI_TO_DB_REP["payment_status"] = "payment_status"
+UI_TO_DB_REP["expected_amount"] = "expected_amount"
+UI_TO_DB_REP["overdue_amount"] = "overdue_amount"
+UI_TO_DB_REP["mark_not_paid"] = "mark_not_paid"
+
+def render_collection_arrears_tally(tally_data: dict, title: str = "📋 Field Collection & Arrears Reconciliation Tally"):
+    """
+    Renders the paper-style reconciliation bridge between Field Expected Inflows,
+    Red-Pen Arrears, Physical Cash Banked, and Net Cash Position.
+    """
+    if not tally_data:
+        return
+
+    st.markdown(f"#### {title}")
+    st.caption("Reconciles Field Collections & Red-Pen Arrears against EOD Bank Deposits")
+
+    c1, c2, c3, c4 = st.columns(4)
+    exp = float(tally_data.get("scheduled_expected") or 0.0)
+    not_paid = float(tally_data.get("not_paid_amount") or 0.0)
+    not_paid_cnt = int(tally_data.get("not_paid_count") or 0)
+    cash_col = float(tally_data.get("actual_cash_collected") or 0.0)
+    bank_dep = float(tally_data.get("bank_deposited") or 0.0)
+    closing = float(tally_data.get("closing_cash_balance") or 0.0)
+    excess = float(tally_data.get("excess_amount") or 0.0)
+
+    c1.metric("1. Scheduled Inflows", f"₦{exp:,.2f}")
+    c2.metric("2. 🔴 Red-Pen Arrears", f"₦{not_paid:,.2f}", f"{not_paid_cnt} Not Paid" if not_paid_cnt > 0 else "0 Arrears", delta_color="inverse")
+    c3.metric("3. 💵 Physical Cash Collected", f"₦{cash_col:,.2f}", f"+₦{excess:,.2f} Excess" if excess > 0 else None)
+    c4.metric("4. 🏦 Bank Deposited", f"₦{bank_dep:,.2f}")
+
+    if abs(closing) < 0.01:
+        st.success(f"✅ **Physical Cash Reconciled**: Net Closing Cash Balance is **₦0.00** (Balanced). Uncollected Arrears of **₦{not_paid:,.2f}** recorded in Defaulter Register.")
+    elif closing > 0:
+        st.info(f"💼 **Cash in Vault/Bag**: **₦{closing:,.2f}** unbanked physical cash remaining. Uncollected Arrears of **₦{not_paid:,.2f}** recorded in Defaulter Register.")
+    else:
+        st.warning(f"⚠️ **Extra Cash Deposited**: Bank deposit exceeds daily collections by **₦{abs(closing):,.2f}**.")
+
+    not_paid_list = tally_data.get("not_paid_clients") or []
+    if not_paid_list:
+        with st.expander(f"🔍 View Non-Paying Clients ({len(not_paid_list)} Arrears Records)", expanded=False):
+            df_np = pd.DataFrame([
+                {
+                    "Client Name": c.get("name"),
+                    "Client Code": c.get("code"),
+                    "Expected Installment": f"₦{c.get('expected', 0.0):,.2f}",
+                    "Shortfall / Arrears": f"₦{c.get('shortfall', 0.0):,.2f}",
+                    "Type": "Partial Payment Shortfall" if c.get("is_partial") else "Marked NOT PAID (₦0)"
+                }
+                for c in not_paid_list
+            ])
+            st.dataframe(df_np, use_container_width=True, hide_index=True)
 
 def load_client_savings_map():
     """Load map of client code to cumulative savings balance from individual_savings table"""
@@ -1375,8 +1426,11 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
                 sav_id_val = data.get('savings_tx_id') or data.get('tx_id')
                 SavingsService.post_individual_savings(uow, client_id, client_name, branch, officer, savings_dep, savings_wd, remarks=db_data.get('note'), posting_date=p_date, savings_id=sav_id_val)
 
-            # 4. Route Loan Repayment
-            if not skip_repayment and loan_repay > 0:
+            # 4. Route Loan Repayment (including explicit NOT_PAID / ₦0 collection records)
+            raw_p_status = str(data.get('Payment Status') or data.get('payment_status') or db_data.get('payment_status') or "PAID").upper()
+            is_marked_not_paid = bool(data.get('mark_not_paid') or (raw_p_status == "NOT_PAID" and str(data.get('Transaction Type') or db_data.get('transaction_type')) != "Individual Savings Deposit"))
+
+            if not skip_repayment and (loan_repay > 0 or is_marked_not_paid):
                 active_loan_id = None
                 if loan_cache and client_id in loan_cache:
                     active_loan_id = loan_cache[client_id]
@@ -1387,12 +1441,21 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
                         if loan_cache is not None:
                             loan_cache[client_id] = active_loan_id
 
-                if active_loan_id:
+                if active_loan_id and loan_repay > 0:
                     from services.schedule_service import ScheduleService
                     ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date)
 
+                exp_amt = float(data.get('Expected Amount') or data.get('expected_amount') or db_data.get('expected_amount') or (loan_repay if loan_repay > 0 else 0.0))
+                overdue_val = float(data.get('Overdue Amount') or data.get('overdue_amount') or db_data.get('overdue_amount') or (exp_amt if is_marked_not_paid else 0.0))
+                final_p_status = "NOT_PAID" if is_marked_not_paid else raw_p_status
+
                 db_data['loan_repayment_amount'] = loan_repay
                 db_data['amount_paid'] = loan_repay
+                db_data['payment_status'] = final_p_status
+                db_data['expected_amount'] = exp_amt
+                db_data['overdue_amount'] = overdue_val
+                if is_marked_not_paid and not db_data.get('note'):
+                    db_data['note'] = "Marked as NOT PAID today"
                 if active_loan_id:
                     db_data['loan_id'] = active_loan_id
                 rep = RepaymentMapper.to_domain(db_data)
@@ -1403,6 +1466,9 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
                 rep.branch = branch
                 rep.amount_paid = loan_repay
                 rep.loan_repayment_amount = loan_repay
+                rep.payment_status = final_p_status
+                rep.expected_amount = exp_amt
+                rep.overdue_amount = overdue_val
                 if active_loan_id:
                     rep.loan_id = active_loan_id
 
@@ -1413,6 +1479,23 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
                     print(f"[ERROR] Error inserting repayment for {client_id}: {re}")
                     st.error(f"Error inserting repayment for {client_id}: {re}")
                     return
+
+                try:
+                    from services.collection_performance_service import CollectionPerformanceService
+                    from services.posting_engine import FinancialPostingEngine
+                    off_id = FinancialPostingEngine._resolve_officer_id(uow, officer)
+                    CollectionPerformanceService.record_meeting_collection(
+                        uow=uow,
+                        client_id=client_id,
+                        loan_id=active_loan_id or client_id,
+                        officer_id=off_id or str(uuid.uuid4()),
+                        meeting_date=p_date,
+                        expected_amount=exp_amt,
+                        amount_paid=loan_repay,
+                        remarks=db_data.get('note') or ("Marked as NOT PAID today" if is_marked_not_paid else "Meeting collection repayment")
+                    )
+                except Exception as ex_cp_rec:
+                    print(f"[COLLECTION PERFORMANCE RECORD NOTE]: {ex_cp_rec}")
 
             if skip_repayment:
                 return
@@ -1717,6 +1800,8 @@ def save_repayments(data_list, batch_id=None):
 
                 l_rep = float(data.get('Loan Repayment Amount') or data.get('amount_paid') or 0.0)
                 s_dep = float(data.get('Savings Amount') or data.get('savings_amount') or 0.0)
+                p_status_val = str(data.get('Payment Status') or data.get('payment_status') or "PAID").upper()
+                is_not_paid_mark = bool(data.get('mark_not_paid') or (p_status_val == "NOT_PAID" and str(data.get('Transaction Type')) != "Individual Savings Deposit"))
 
                 is_rep_done = bool(rep_tx_id and rep_tx_id in existing_rep_ids)
                 is_sav_done = bool(sav_tx_id and sav_tx_id in existing_sav_ids)
@@ -1724,7 +1809,7 @@ def save_repayments(data_list, batch_id=None):
                 c_name = data.get('Client Name') or data.get('client_name') or data.get('Client ID') or 'Unknown'
 
                 # If all components with amounts were already saved, this is a full recovery
-                rep_needed = (l_rep > 0)
+                rep_needed = (l_rep > 0 or is_not_paid_mark)
                 sav_needed = (s_dep > 0)
 
                 already_saved_fully = (
@@ -1752,8 +1837,8 @@ def save_repayments(data_list, batch_id=None):
                     )
                     any_new_records = True
                     report["new_processed"] += 1
-                    status_lbl = "✅ Processed"
-                    if is_rep_done or is_sav_done:
+                    status_lbl = "❌ Recorded (NOT PAID)" if (is_not_paid_mark and l_rep == 0) else "✅ Processed"
+                    if (is_rep_done or is_sav_done) and not (is_not_paid_mark and l_rep == 0):
                         status_lbl = "✅ Completed (Partial Recovery)"
                     report["items"].append({
                         "client": c_name,
@@ -4998,14 +5083,22 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                     rem_bal = max(0.0, total_due_base - active_loan_total_paid)
                                     loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
                             
-                                    # The expected periodic installment per collection session
-                                    inst_repay = float(loan_row.get('Loan Repay', 0.0) or loan_row.get('expected_installment', 0.0) or 0.0)
-                                    if inst_repay == 0.0 and act_cred > 0:
-                                        duration_val = float(loan_row.get('Duration', 0) or loan_row.get('duration', 0) or 1)
-                                        inst_repay = (total_due_base / duration_val) if duration_val > 0 else total_due_base
-                                
-                                    expected_rep_schedule = min(inst_repay, rem_bal) if rem_bal > 0 else 0.0
-                                
+                                    # Fetch authoritative loan due breakdown from ScheduleService (Zero UI Calculation)
+                                    from services.schedule_service import ScheduleService
+                                    due_info = ScheduleService.get_loan_due_breakdown(uow, active_loan_id, view_date, client_id=cid)
+                                    expected_rep_schedule = float(due_info.get("total_due_today") or 0.0)
+                                    has_overdue_flag = bool(due_info.get("has_overdue", False))
+                                    overdue_arrears_amt = float(due_info.get("overdue_arrears") or 0.0)
+                                    current_inst_amt = float(due_info.get("current_installment") or 0.0)
+
+                                    if expected_rep_schedule <= 0.0 and rem_bal > 0:
+                                        inst_repay = float(loan_row.get('Loan Repay', 0.0) or loan_row.get('expected_installment', 0.0) or 0.0)
+                                        if inst_repay == 0.0 and act_cred > 0:
+                                            duration_val = float(loan_row.get('Duration', 0) or loan_row.get('duration', 0) or 1)
+                                            inst_repay = (total_due_base / duration_val) if duration_val > 0 else total_due_base
+                                        expected_rep_schedule = min(inst_repay, rem_bal) if rem_bal > 0 else 0.0
+                                        current_inst_amt = expected_rep_schedule
+
                                     start_date_val = str(loan_row.get('Start Date', ''))
                                 else:
                                     active_loan_id = None
@@ -5014,14 +5107,17 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                     rem_bal = 0.0
                                     loan_prod_val = "None"
                                     expected_rep_schedule = 0.0
+                                    has_overdue_flag = False
+                                    overdue_arrears_amt = 0.0
+                                    current_inst_amt = 0.0
                                     start_date_val = ""
-                        
+
                                 # Check if user has a pending collection in session state
                                 pending_list = st.session_state.get('pending_collections', [])
                                 pending_tx = next((tx for tx in pending_list if tx["Client ID"] == cid), None)
-                        
+
                                 today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
-                        
+
                                 if pending_tx:
                                     prev_dep = float(pending_tx.get("Savings Amount") or 0.0)
                                     prev_wd = float(pending_tx.get("Withdrawal Amount") or 0.0)
@@ -5036,7 +5132,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                     else:
                                         prev_rep = expected_rep_schedule
                                         prev_status = "PAID" if expected_rep_schedule > 0 else "NOT_PAID"
-                            
+
                                 # Pack member details
                                 member_dict = member.to_dict()
                                 member_dict.update({
@@ -5046,13 +5142,16 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                     "Loan Product": loan_prod_val,
                                     "Start Date": start_date_val
                                 })
-                        
+
                                 member_info[cid] = {
                                     "member": pd.Series(member_dict),
                                     "sav_bal": sav_bal,
                                     "rem_bal": rem_bal,
                                     "act_cred": act_cred,
                                     "expected_rep_schedule": expected_rep_schedule,
+                                    "has_overdue": has_overdue_flag,
+                                    "overdue_arrears": overdue_arrears_amt,
+                                    "current_installment": current_inst_amt,
                                     "prev_dep": prev_dep,
                                     "prev_wd": prev_wd,
                                     "prev_rep": prev_rep,
@@ -5321,17 +5420,21 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         
                                 if p_stat == "NOT_PAID":
                                     stat_badge = f"NOT PAID (₦{ov_amt:,.0f} Arrears)"
+                                    rep_display = f"₦0 (Expected ₦{exp_amt:,.0f})"
                                 elif p_stat == "PART_PAID":
                                     stat_badge = f"PART PAID (₦{ov_amt:,.0f} Arrears)"
+                                    rep_display = f"₦{l_rep:,.0f}"
                                 elif p_stat == "EXCESS":
                                     stat_badge = f"EXCESS (₦{l_rep - exp_amt:,.0f} Advance)"
+                                    rep_display = f"₦{l_rep:,.0f}"
                                 else:
                                     stat_badge = "FULL PAID" if exp_amt > 0 else "RECORDED"
+                                    rep_display = f"₦{l_rep:,.0f}" if l_rep > 0 else "₦0"
                             
                                 review_rows.append({
                                     "Client": f"{c_name} ({c_id})" if not str(c_id).startswith("GROUP-") else c_name,
                                     "Savings (₦)": f"₦{s_dep:,.0f}" if s_dep > 0 else "-",
-                                    "Repayment (₦)": f"₦{l_rep:,.0f}" if l_rep > 0 else "₦0",
+                                    "Repayment (₦)": rep_display,
                                     "Status": stat_badge
                                 })
                             if review_rows:
@@ -5421,8 +5524,11 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                     if not mem_today.empty:
                                         today_l_rep = float(mem_today['Loan Repayment Amount'].sum()) if 'Loan Repayment Amount' in mem_today.columns else float(mem_today['Amount Paid'].sum())
                                         today_s_dep = float(mem_today['Savings Amount'].sum()) if 'Savings Amount' in mem_today.columns else 0.0
+                                        today_status = mem_today['Payment Status'].iloc[0] if 'Payment Status' in mem_today.columns else ""
                                         if today_l_rep > 0 or today_s_dep > 0:
                                             title += f" | ✅ Paid Today (₦{today_l_rep + today_s_dep:,.0f})"
+                                        elif today_status == "NOT_PAID" or (mem_today['Amount Paid'].sum() == 0 and not mem_today.empty):
+                                            title += f" | ❌ Recorded as NOT PAID"
                                 
                                     with st.expander(title, expanded=expand_all_members):
                                         s_date_str = info.get("start_date", "")
@@ -5443,12 +5549,15 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                             rep_data[cid] = {
                                                 "rep": 0.0, "app": 0, "pb": 0, "misc": 0,
                                                 "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0,
-                                                "mark_not_paid": True, "expected_amount": 0.0
+                                                "mark_not_paid": False, "expected_amount": 0.0
                                             }
                                         else:
                                             st.markdown(f"**Loan ({prod})** — Active Credit: ₦{info['act_cred']:,.0f}")
                                             expected_rep = float(info['expected_rep_schedule'] or 0.0)
-                                            st.caption(f"Expected repayment calculated from schedule: ₦{expected_rep:,.2f}")
+                                            if info.get('has_overdue'):
+                                                st.caption(f"⚠️ **Total Due Today: ₦{expected_rep:,.2f}** (₦{info.get('overdue_arrears', 0.0):,.2f} Overdue Arrears + ₦{info.get('current_installment', 0.0):,.2f} Today's Installment)")
+                                            else:
+                                                st.caption(f"Expected repayment calculated from schedule: ₦{expected_rep:,.2f}")
                                     
                                             # Smart Initial Status Detection
                                             has_previous_run = (pending_tx is not None or not today_paid.empty)
@@ -5467,13 +5576,16 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                                     key=f"rep_{cid}"
                                                 )
                                             else:
-                                                st.caption("🔒 *Repayment set to ₦0. Arrears will be logged as overdue.*")
+                                                st.caption(f"🔒 *Repayment set to ₦0. Normal installment of ₦{expected_rep:,.2f} will be recorded as NOT PAID (Arrears).*")
                                                 rep_col = 0.0
                                     
                                             rep_data[cid] = {
                                                 "rep": rep_col, "app": 0, "pb": 0, "misc": 0,
                                                 "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0,
-                                                "mark_not_paid": mark_not_paid, "expected_amount": expected_rep
+                                                "mark_not_paid": mark_not_paid, "expected_amount": expected_rep,
+                                                "has_overdue": bool(info.get('has_overdue', False)),
+                                                "overdue_arrears": float(info.get('overdue_arrears', 0.0)),
+                                                "current_installment": float(info.get('current_installment', expected_rep))
                                             }
                         
                                 st.markdown("---")
@@ -5489,7 +5601,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                         for cid, info in member_info.items():
                                             m = info['member']
                                             s = sav_data.get(cid, {"dep": 0, "wd": 0})
-                                            r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0, "mark_not_paid": False, "expected_amount": 0.0})
+                                            r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0, "mark_not_paid": False, "expected_amount": 0.0, "has_overdue": False, "current_installment": 0.0})
                                     
                                             sav = float(s.get('dep') or 0)
                                             sav_wd = float(s.get('wd') or 0)
@@ -5504,23 +5616,19 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                             exp_amt = float(r.get('expected_amount') or 0.0)
                                             is_marked_not_paid = bool(r.get('mark_not_paid', False))
                                     
-                                            # Determine Payment Status & Overdue Amount strictly
-                                            if is_marked_not_paid or rep == 0.0:
+                                            # Determine Payment Status & Overdue Amount via authoritative RepaymentService (Zero UI Calculation)
+                                            if is_marked_not_paid:
                                                 rep = 0.0
-                                                p_status = "NOT_PAID"
-                                                overdue_val = exp_amt
-                                            elif exp_amt > 0 and rep == exp_amt:
-                                                p_status = "PAID"
-                                                overdue_val = 0.0
-                                            elif exp_amt > 0 and rep > exp_amt:
-                                                p_status = "EXCESS"
-                                                overdue_val = 0.0
-                                            elif exp_amt > 0 and rep < exp_amt and rep > 0:
-                                                p_status = "PART_PAID"
-                                                overdue_val = max(0.0, exp_amt - rep)
-                                            else:
-                                                p_status = "PAID"
-                                                overdue_val = 0.0
+
+                                            from services.repayment_service import RepaymentService
+                                            cls_res = RepaymentService.classify_repayment(
+                                                amount_paid=rep,
+                                                total_due_today=exp_amt,
+                                                current_installment=float(r.get('current_installment') or exp_amt),
+                                                has_overdue=bool(r.get('has_overdue', False))
+                                            )
+                                            p_status = cls_res["status"]
+                                            overdue_val = cls_res["overdue_shortfall"]
                                     
                                             if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
                                                 mem_today_chk = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
@@ -5550,7 +5658,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                                 "Branch": m['Branch'],
                                                 "Amount Paid": rep,
                                                 "Transaction Type": "Loan",
-                                                "Note": "Daily Collection",
+                                                "Note": "Daily Collection" if not is_marked_not_paid else "Marked NOT PAID (₦0 Collection)",
                                                 "Savings Amount": sav,
                                                 "Withdrawal Amount": sav_wd,
                                                 "Loan Repayment Amount": rep,
@@ -5572,6 +5680,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                                 "Payment Status": p_status,
                                                 "Expected Amount": exp_amt,
                                                 "Overdue Amount": overdue_val,
+                                                "mark_not_paid": is_marked_not_paid,
                                                 "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
                                                 "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
                                                 "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
@@ -5623,15 +5732,25 @@ Status: CONFIRMED & POSTED TO LEDGER"""
             st.markdown("### 📜 Collection History & Audit")
             st.caption("Inspect all daily repayments and savings deposits posted by Credit Officers.")
             
-            c_h1, c_h2 = st.columns([1, 2])
-            hist_view_date = c_h1.date_input("Filter Date", view_date, key="col_hist_date")
-            hist_date_str = hist_view_date.strftime("%Y-%m-%d")
-            hist_search = c_h2.text_input("🔍 Search Client Name / Code / Note", placeholder="Type name, code, or ref...", key="col_hist_search").strip().lower()
+            is_officer_col = (scope.scope_level == "OFFICER" or ROLE in ['CO', 'Officer', ROLE_CREDIT_OFFICER])
+            if not is_officer_col and scope.scope_level in ["BRANCH", "REGION", "INSTITUTION"]:
+                c_h1, c_h2, c_h3 = st.columns([1, 1.2, 1.8])
+                hist_view_date = c_h1.date_input("Filter Date", view_date, key="col_hist_date")
+                hist_date_str = hist_view_date.strftime("%Y-%m-%d")
+                officer_options = ["All Officers"] + sorted(list(CO_DISPLAY_MAP.keys()))
+                sel_hist_co = c_h2.selectbox("Filter Officer", officer_options, key="col_hist_co_sel")
+                hist_search = c_h3.text_input("🔍 Search Client Name / Code / Note", placeholder="Type name, code, or ref...", key="col_hist_search").strip().lower()
+            else:
+                c_h1, c_h2 = st.columns([1, 2])
+                hist_view_date = c_h1.date_input("Filter Date", view_date, key="col_hist_date")
+                hist_date_str = hist_view_date.strftime("%Y-%m-%d")
+                sel_hist_co = "All Officers"
+                hist_search = c_h2.text_input("🔍 Search Client Name / Code / Note", placeholder="Type name, code, or ref...", key="col_hist_search").strip().lower()
             
             with SupabaseUnitOfWork() as uow_hist:
                 # 1. Query Repayments
                 q_reps = uow_hist.client.table("repayments").select(
-                    "id, client_id, amount_paid, transaction_type, date, created_at, note, officer_id, loan_id, "
+                    "id, client_id, amount_paid, transaction_type, date, created_at, note, officer_id, loan_id, payment_status, expected_amount, overdue_amount, "
                     "clients(name, nickname, client_code), loans(loan_amount, active_credit, loan_products(name))"
                 )
                 # 2. Query Savings Deposits
@@ -5641,18 +5760,41 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 )
                 # 3. Query Group Savings Deposits
                 q_gsav = uow_hist.client.table("group_savings").select(
-                    "id, group_id, deposit_amount, withdrawal_amount, posting_date, created_at, reference, remarks, "
+                    "id, group_id, deposit_amount, withdrawal_amount, posting_date, created_at, reference, remarks, officer_id, "
                     "groups(name)"
                 )
                 
                 # Scope check
-                if scope.scope_level == "OFFICER":
+                if is_officer_col:
                     q_reps = q_reps.eq("officer_id", USER_ID)
                     q_sav = q_sav.eq("officer_id", USER_ID)
+                    q_gsav = q_gsav.eq("officer_id", USER_ID)
                 elif scope.scope_level == "BRANCH" and BRANCH_ID:
                     q_reps = q_reps.eq("branch_id", BRANCH_ID)
                     q_sav = q_sav.eq("branch_id", BRANCH_ID)
                     q_gsav = q_gsav.eq("branch_id", BRANCH_ID)
+                    if sel_hist_co != "All Officers":
+                        target_uid = uow_hist.loans._resolve_officer_id(sel_hist_co)
+                        if target_uid:
+                            q_reps = q_reps.eq("officer_id", target_uid)
+                            q_sav = q_sav.eq("officer_id", target_uid)
+                            q_gsav = q_gsav.eq("officer_id", target_uid)
+                elif scope.scope_level == "REGION" and ASSIGNED_BRANCH_IDS:
+                    q_reps = q_reps.in_("branch_id", ASSIGNED_BRANCH_IDS)
+                    q_sav = q_sav.in_("branch_id", ASSIGNED_BRANCH_IDS)
+                    q_gsav = q_gsav.in_("branch_id", ASSIGNED_BRANCH_IDS)
+                    if sel_hist_co != "All Officers":
+                        target_uid = uow_hist.loans._resolve_officer_id(sel_hist_co)
+                        if target_uid:
+                            q_reps = q_reps.eq("officer_id", target_uid)
+                            q_sav = q_sav.eq("officer_id", target_uid)
+                            q_gsav = q_gsav.eq("officer_id", target_uid)
+                elif sel_hist_co != "All Officers":
+                    target_uid = uow_hist.loans._resolve_officer_id(sel_hist_co)
+                    if target_uid:
+                        q_reps = q_reps.eq("officer_id", target_uid)
+                        q_sav = q_sav.eq("officer_id", target_uid)
+                        q_gsav = q_gsav.eq("officer_id", target_uid)
                 
                 res_reps = q_reps.gte("date", f"{hist_date_str}T00:00:00").lte("date", f"{hist_date_str}T23:59:59").order("created_at", desc=True).execute()
                 res_sav = q_sav.eq("posting_date", hist_date_str).order("created_at", desc=True).execute()
@@ -5683,12 +5825,35 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 grand_total_cash = tot_reps_amt + tot_sav_amt
                 
                 # Summary KPIs
+                paid_reps_cnt = sum(1 for r in reps_list if float(r.get("amount_paid") or 0) > 0)
+                not_paid_reps_cnt = sum(1 for r in reps_list if str(r.get("payment_status")).upper() == "NOT_PAID" or float(r.get("amount_paid") or 0) == 0)
+                rep_kpi_subtitle = f"{paid_reps_cnt} Paid" + (f", {not_paid_reps_cnt} Not Paid" if not_paid_reps_cnt > 0 else "")
                 kpi1, kpi2, kpi3 = st.columns(3)
-                kpi1.metric("Total Repayments Collected", f"₦{tot_reps_amt:,.2f}", f"{len(reps_list)} Payments")
+                kpi1.metric("Total Repayments Collected", f"₦{tot_reps_amt:,.2f}", rep_kpi_subtitle)
                 kpi2.metric("Total Savings Deposited", f"₦{tot_sav_amt:,.2f}", f"{len(sav_dep_list)} Deposits")
                 kpi3.metric("Grand Total Cash Collected", f"₦{grand_total_cash:,.2f}", "Total Physical Inflow")
                 
                 st.markdown("---")
+                # Daily Field Collection & Arrears Reconciliation Tally
+                try:
+                    from services.financial_reconciliation_service import FinancialReconciliationService
+                    eff_b_id = BRANCH_ID
+                    if not eff_b_id and reps_list:
+                        eff_b_id = reps_list[0].get("branch_id")
+                    if not eff_b_id:
+                        eff_b_id = uow_hist.loans._resolve_branch_id(BRANCH)
+                    if eff_b_id:
+                        eff_off_id = USER_ID if is_officer_col else (target_uid if sel_hist_co != "All Officers" and 'target_uid' in locals() else None)
+                        tally_res = FinancialReconciliationService.get_daily_collection_arrears_tally(
+                            uow=uow_hist,
+                            branch_id=eff_b_id,
+                            posting_date=hist_view_date,
+                            officer_id=eff_off_id
+                        )
+                        render_collection_arrears_tally(tally_res, title="📋 Daily Field Collection & Arrears Reconciliation Tally")
+                        st.markdown("---")
+                except Exception as ex_tally:
+                    print(f"Error rendering collection arrears tally: {ex_tally}")
                 
                 # Subtabs for Repayments vs Savings
                 h_tab1, h_tab2 = st.tabs([f"💳 Loan Repayments ({len(reps_list)})", f"💰 Savings Deposits ({len(sav_dep_list)})"])
@@ -5704,21 +5869,34 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             p_dict = l_dict.get("loan_products") or {} if isinstance(l_dict.get("loan_products"), dict) else {}
                             p_name = p_dict.get("name") or "Standard Loan"
                             amt = float(r.get("amount_paid") or 0)
+                            exp_amt = float(r.get("expected_amount") or 0)
+                            p_stat = str(r.get("payment_status") or ("PAID" if amt > 0 else "NOT_PAID")).upper()
                             time_str = str(r.get("created_at") or r.get("date") or "")[11:16]
                             note_val = str(r.get("note") or "")
                             
                             # Filter search
                             if hist_search:
-                                match = (hist_search in c_name.lower() or hist_search in c_code.lower() or hist_search in note_val.lower() or hist_search in str(r.get("id")).lower())
+                                match = (hist_search in c_name.lower() or hist_search in c_code.lower() or hist_search in note_val.lower() or hist_search in str(r.get("id")).lower() or hist_search in p_stat.lower())
                                 if not match:
                                     continue
+
+                            if p_stat == "NOT_PAID":
+                                stat_badge = "❌ NOT PAID"
+                            elif p_stat == "PART_PAID":
+                                stat_badge = "⚠️ PART PAID"
+                            elif p_stat == "EXCESS":
+                                stat_badge = "🔵 EXCESS"
+                            else:
+                                stat_badge = "✅ PAID"
                                     
                             reps_rows.append({
                                 "Time": time_str,
                                 "Client Name": c_name,
                                 "Client Code": c_code,
                                 "Product": p_name,
+                                "Expected (₦)": f"₦{exp_amt:,.2f}" if exp_amt > 0 else "-",
                                 "Amount Paid (₦)": f"₦{amt:,.2f}",
+                                "Status": stat_badge,
                                 "Note / Type": note_val or str(r.get("transaction_type") or "Loan"),
                                 "Ref ID": str(r.get("id", ""))[:8]
                             })
@@ -5770,7 +5948,8 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 # 2. Fetch recent savings deposits
                 q_sav = uow_corr.client.table("individual_savings").select("id, client_id, deposit_amount, posting_date, remarks, officer_id, clients(name, client_code)")
                 
-                if scope.scope_level == "OFFICER":
+                is_officer_corr = (scope.scope_level == "OFFICER" or ROLE in ['CO', 'Officer', ROLE_CREDIT_OFFICER])
+                if is_officer_corr:
                     q_reps = q_reps.eq("officer_id", USER_ID)
                     q_sav = q_sav.eq("officer_id", USER_ID)
                 elif scope.scope_level == "BRANCH" and BRANCH_ID:
@@ -5833,8 +6012,11 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 st.markdown("#### 📋 Submitted Reversal Requests")
                 try:
                     req_query = uow_corr.client.table("correction_requests").select("*")
-                    if USER_ID:
-                        req_query = req_query.eq("requested_by", USER_ID)
+                    if is_officer_corr:
+                        if USER_ID:
+                            req_query = req_query.eq("requested_by", USER_ID)
+                        elif USER:
+                            req_query = req_query.eq("requested_by", USER)
                     elif BRANCH_ID:
                         req_query = req_query.eq("branch_id", BRANCH_ID)
                     res_my_reqs = req_query.order("created_at", desc=True).limit(10).execute()
@@ -7973,14 +8155,34 @@ elif page == "Dashboard":
     st.markdown("### 📜 Recent Activities")
     try:
         with SupabaseUnitOfWork() as uow_act:
-            res_act = uow_act.client.table("user_audit_logs").select("*").order("created_at", desc=True).limit(10).execute()
+            q_act = uow_act.client.table("user_audit_logs").select("*")
+            if scope.scope_level == "OFFICER" or ROLE in ['CO', 'Officer', ROLE_CREDIT_OFFICER]:
+                if USER_ID:
+                    q_act = q_act.eq("user_id", USER_ID)
+                elif USER:
+                    q_act = q_act.eq("username", USER)
+            elif scope.scope_level == "BRANCH" or ROLE in ['BM', ROLE_BRANCH_MANAGER]:
+                if BRANCH:
+                    q_act = q_act.eq("branch", BRANCH)
+            elif scope.scope_level == "REGION" or ROLE in ['AM', 'Area Manager']:
+                if scope.assigned_branch_names:
+                    q_act = q_act.in_("branch", list(scope.assigned_branch_names))
+
+            try:
+                res_act = q_act.order("timestamp", desc=True).limit(10).execute()
+            except Exception:
+                res_act = q_act.order("created_at", desc=True).limit(10).execute()
+
             act_logs = res_act.data or []
             if act_logs:
                 act_df = pd.DataFrame([{
-                    "Timestamp": str(a.get("created_at", ""))[:19].replace("T", " "),
-                    "User": a.get("display_name") or a.get("user_id") or "System",
+                    "Timestamp": str(a.get("timestamp") or a.get("created_at") or "")[:19].replace("T", " "),
+                    "User": a.get("display_name") or a.get("username") or a.get("user_id") or "System",
                     "Action": a.get("action") or "TRANSACTION",
-                    "Details": a.get("details") or a.get("description") or "Operation recorded"
+                    "Details": a.get("details") or a.get("description") or (
+                        f"{a.get('action', '')} on {a.get('entity_type', '')} ({a.get('display_name', '')})"
+                        if a.get('display_name') else "Operation recorded"
+                    )
                 } for a in act_logs])
                 st.dataframe(act_df, use_container_width=True, hide_index=True)
             else:
@@ -7990,12 +8192,17 @@ elif page == "Dashboard":
 
 elif page in ["Audit Center", "Audit Ledger"]:
 
-    if ROLE == ROLE_CREDIT_OFFICER:
+    is_officer_ac = (scope.scope_level == "OFFICER" or ROLE in ['CO', 'Officer', ROLE_CREDIT_OFFICER])
+    is_bm_ac = (scope.scope_level == "BRANCH" or ROLE in ['BM', ROLE_BRANCH_MANAGER])
+    is_am_ac = (scope.scope_level == "REGION" or ROLE in ['AM', 'Area Manager'])
+    is_admin_ac = (scope.scope_level == "INSTITUTION" or ROLE in [ROLE_ADMIN, 'Super Admin', 'Admin', 'Director'])
+
+    if is_officer_ac:
         st.title("Credit Officer Audit Ledger")
         st.caption("Personalized audit trail of your client savings, loans, and collections.")
         audit_tab4, audit_tab5, audit_tab6 = st.tabs(["Savings Ledger", "Loan Portfolio", "Collection Performance"])
         audit_tab1 = audit_tab2 = audit_tab3 = audit_tab7 = audit_tab8 = audit_tab9 = audit_tab10 = None
-    elif ROLE in ['BM', ROLE_BRANCH_MANAGER, 'AM', 'Area Manager']:
+    elif is_bm_ac or is_am_ac:
         st.title("Branch Audit Ledger")
         st.caption("Read-only branch audit trails, 6-way financial integrity verification, and 360° transaction explorer.")
         audit_tab1, audit_tab2, audit_tab3, audit_tab4, audit_tab5, audit_tab6, audit_tab8 = st.tabs([
@@ -8034,11 +8241,6 @@ elif page in ["Audit Center", "Audit Ledger"]:
         audit_views = getattr(uow_ac, 'audit_views', None) or SupabaseAuditViewRepository(uow_ac.client)
         enricher = AuditEnricher(uow=uow_ac)
 
-        # RBAC Branch & Officer Scope Resolution for Audit Center
-        is_admin_ac = ROLE in [ROLE_ADMIN, 'Super Admin', 'Admin', 'Director']
-        is_am_ac = ROLE in ['AM', 'Area Manager']
-        is_bm_ac = ROLE in ['BM', ROLE_BRANCH_MANAGER]
-
         # Fetch active branches for selection
         try:
             res_branches = uow_ac.client.table("branches").select("branch_id, name").eq("is_active", True).execute()
@@ -8059,16 +8261,18 @@ elif page in ["Audit Center", "Audit Ledger"]:
             ac_branch_options = [BRANCH or "Ogijo"]
 
         def _get_branch_officers(sel_b_name):
-            if sel_b_name == "All Branches" or not sel_b_name:
-                return {"All Officers": "All"}
-            b_id = branch_map_name_to_id.get(sel_b_name) or BRANCH_ID
             try:
-                res_co = uow_ac.client.table("app_users").select("id, username, full_name, branch_id").eq("branch_id", b_id).eq("is_active", True).execute()
                 opts = {"All Officers": "All"}
+                if sel_b_name == "All Branches" or not sel_b_name:
+                    res_co = uow_ac.client.table("app_users").select("id, username, full_name, branch_id, role").eq("is_active", True).execute()
+                else:
+                    b_id = branch_map_name_to_id.get(sel_b_name) or BRANCH_ID
+                    res_co = uow_ac.client.table("app_users").select("id, username, full_name, branch_id, role").eq("branch_id", b_id).eq("is_active", True).execute()
                 for u in (res_co.data or []):
                     uname = u.get("username", "")
                     fname = u.get("full_name") or uname
-                    if uname.startswith("CO") or "Officer" in uname or "CO" in uname:
+                    role_str = str(u.get("role") or "").lower()
+                    if uname.startswith("CO") or "officer" in uname.lower() or "co" in uname.lower() or "officer" in role_str:
                         disp = f"{fname} ({uname})"
                         opts[disp] = u.get("id") or uname
                 return opts
@@ -8289,11 +8493,12 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 with sb_3:
                     sav_sub = st.selectbox("Savings Ledger", ["ALL", "Individual Savings", "Group Savings", "Misc Savings", "Laps Savings"], key="sav_sub_sel")
                 with sb_4:
-                    sav_branch = st.selectbox("Branch", ac_branch_options, key="sav_branch_sel", disabled=(len(ac_branch_options) == 1))
+                    sav_branch = st.selectbox("Branch", ac_branch_options, key="sav_branch_sel", disabled=(len(ac_branch_options) == 1 or is_officer_ac))
                 with sb_5:
-                    if ROLE == ROLE_CREDIT_OFFICER:
-                        sav_officer_val = USER_ID or USER
-                        st.selectbox("Officer", [USER], disabled=True, key="sav_officer_sel")
+                    if is_officer_ac:
+                        sav_officer_val = USER_ID
+                        co_disp = f"{getattr(current_user, 'full_name', USER)} ({USER})" if getattr(current_user, 'full_name', None) else USER
+                        st.selectbox("Officer", [co_disp], disabled=True, key="sav_officer_sel")
                     else:
                         sav_officer_map = _get_branch_officers(sav_branch)
                         sav_officer_disp = st.selectbox("Officer", list(sav_officer_map.keys()), key="sav_officer_sel")
@@ -8309,6 +8514,10 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     "Laps Savings": "laps_savings"
                 }
                 sav_target_branch_id = branch_map_name_to_id.get(sav_branch) if sav_branch != "All Branches" else None
+                if is_officer_ac:
+                    sav_target_branch_id = BRANCH_ID or sav_target_branch_id
+                    sav_officer_val = USER_ID
+
                 raw_sav_records = audit_views.get_savings_ledger(
                     tbl_map[sav_sub], 
                     branch_id=sav_target_branch_id, 
@@ -8318,8 +8527,17 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     limit=500
                 )
                 enriched_sav = enricher.enrich_savings_records(raw_sav_records)
-                if ROLE == ROLE_CREDIT_OFFICER:
-                    enriched_sav = [s for s in enriched_sav if str(s.get("Officer", "")) == USER]
+                if is_officer_ac:
+                    co_full = getattr(current_user, 'full_name', '') or ''
+                    enriched_sav = [
+                        s for s in enriched_sav
+                        if str(s.get("_raw_record", {}).get("officer_id") or "") == str(USER_ID)
+                        or str(s.get("Officer", "")).lower() in [
+                            str(USER or "").lower(),
+                            co_full.lower(),
+                            f"{co_full.lower()} ({str(USER or '').lower()})"
+                        ]
+                    ]
     
                 if sav_search:
                     ss_lower = sav_search.lower()
@@ -8384,11 +8602,12 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 with lb4:
                     loan_prod_sel = st.selectbox("Loan Product", loan_prod_options, key="loan_prod_sel")
                 with lb5:
-                    loan_branch = st.selectbox("Branch", ac_branch_options, key="loan_branch_sel", disabled=(len(ac_branch_options) == 1))
+                    loan_branch = st.selectbox("Branch", ac_branch_options, key="loan_branch_sel", disabled=(len(ac_branch_options) == 1 or is_officer_ac))
                 with lb6:
-                    if ROLE == ROLE_CREDIT_OFFICER:
-                        loan_officer_val = USER_ID or USER
-                        st.selectbox("Officer", [USER], disabled=True, key="loan_officer_sel")
+                    if is_officer_ac:
+                        loan_officer_val = USER_ID
+                        co_disp = f"{getattr(current_user, 'full_name', USER)} ({USER})" if getattr(current_user, 'full_name', None) else USER
+                        st.selectbox("Officer", [co_disp], disabled=True, key="loan_officer_sel")
                     else:
                         loan_officer_map = _get_branch_officers(loan_branch)
                         loan_officer_disp = st.selectbox("Officer", list(loan_officer_map.keys()), key="loan_officer_sel")
@@ -8398,6 +8617,9 @@ elif page in ["Audit Center", "Audit Ledger"]:
     
                 loan_target_branch_id = branch_map_name_to_id.get(loan_branch) if loan_branch != "All Branches" else None
                 loan_target_prod_id = loan_prod_map.get(loan_prod_sel) if loan_prod_sel != "All Products" else None
+                if is_officer_ac:
+                    loan_target_branch_id = BRANCH_ID or loan_target_branch_id
+                    loan_officer_val = USER_ID
 
                 if loan_sub == "Loan Disbursements":
                     raw_l_records = audit_views.get_loan_disbursements(
@@ -8409,8 +8631,17 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         limit=500
                     )
                     enriched_loans = enricher.enrich_loan_records(raw_l_records)
-                    if ROLE == ROLE_CREDIT_OFFICER:
-                        enriched_loans = [l for l in enriched_loans if str(l.get("Officer", "")) == USER]
+                    if is_officer_ac:
+                        co_full = getattr(current_user, 'full_name', '') or ''
+                        enriched_loans = [
+                            l for l in enriched_loans
+                            if str(l.get("_raw_record", {}).get("officer_id") or "") == str(USER_ID)
+                            or str(l.get("Officer", "")).lower() in [
+                                str(USER or "").lower(),
+                                co_full.lower(),
+                                f"{co_full.lower()} ({str(USER or '').lower()})"
+                            ]
+                        ]
     
                     if loan_search:
                         ls_lower = loan_search.lower()
@@ -8462,9 +8693,18 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         limit=500
                     )
                     enriched_reps = enricher.enrich_repayment_records(raw_rep_records)
-                    if ROLE == ROLE_CREDIT_OFFICER:
-                        enriched_reps = [r for r in enriched_reps if str(r.get("Officer", "")) == USER]
-    
+                    if is_officer_ac:
+                        co_full = getattr(current_user, 'full_name', '') or ''
+                        enriched_reps = [
+                            r for r in enriched_reps
+                            if str(r.get("_raw_record", {}).get("officer_id") or "") == str(USER_ID)
+                            or str(r.get("Officer", "")).lower() in [
+                                str(USER or "").lower(),
+                                co_full.lower(),
+                                f"{co_full.lower()} ({str(USER or '').lower()})"
+                            ]
+                        ]
+
                     if loan_search:
                         rs_lower = loan_search.lower()
                         enriched_reps = [
@@ -8512,26 +8752,115 @@ elif page in ["Audit Center", "Audit Ledger"]:
             with audit_tab6:
                 st.subheader("🎯 Collection Performance Audit")
                 st.caption("Meeting compliance matrix comparing expected collections against actual payments.")
+
+                # Filter Controls Row
+                cp_c1, cp_c2, cp_c3, cp_c4, cp_c5, cp_c6 = st.columns([1.5, 1.5, 2, 2, 1.5, 2.5])
+                with cp_c1:
+                    cp_d_from = st.date_input("Date From", date.today() - timedelta(days=30), key="cp_d_from")
+                with cp_c2:
+                    cp_d_to = st.date_input("Date To", date.today(), key="cp_d_to")
+                with cp_c3:
+                    cp_branch = st.selectbox("Branch", ac_branch_options, key="cp_branch_sel", disabled=(len(ac_branch_options) == 1 or is_officer_ac))
+                with cp_c4:
+                    if is_officer_ac:
+                        cp_officer_val = USER_ID
+                        co_disp = f"{getattr(current_user, 'full_name', USER)} ({USER})" if getattr(current_user, 'full_name', None) else USER
+                        st.selectbox("Officer", [co_disp], disabled=True, key="cp_officer_sel")
+                    else:
+                        cp_officer_map = _get_branch_officers(cp_branch)
+                        cp_officer_disp = st.selectbox("Officer", list(cp_officer_map.keys()), key="cp_officer_sel")
+                        cp_officer_val = cp_officer_map.get(cp_officer_disp)
+                with cp_c5:
+                    cp_status_sel = st.selectbox("Compliance Status", ["ALL", "PAID", "PART_PAYMENT", "NOT_PAID"], key="cp_status_sel")
+                with cp_c6:
+                    cp_search = st.text_input("🔍 Search", "", placeholder="Client / Code / Group", key="cp_search")
+
+                cp_target_branch_id = branch_map_name_to_id.get(cp_branch) if cp_branch != "All Branches" else None
+                if is_officer_ac:
+                    cp_target_branch_id = BRANCH_ID or cp_target_branch_id
+                    cp_officer_val = USER_ID
+                elif is_bm_ac:
+                    cp_target_branch_id = BRANCH_ID or cp_target_branch_id
+
                 try:
-                    cp_target_b_id = BRANCH_ID if ROLE in ['BM', ROLE_BRANCH_MANAGER, ROLE_CREDIT_OFFICER, 'CO', 'Officer'] else None
-                    query_cp = uow_ac.client.table("collection_performance").select("*")
-                    if cp_target_b_id:
-                        branch_users = uow_ac.users.find_by_branch_id(cp_target_b_id)
-                        b_officer_ids = [u.id for u in branch_users if u.id]
-                        if b_officer_ids:
-                            query_cp = query_cp.in_("officer_id", b_officer_ids)
-                    res_cp = query_cp.order("meeting_date", desc=True).limit(500).execute()
-                    raw_cp_data = res_cp.data or []
+                    raw_cp_data = audit_views.get_collection_performance(
+                        branch_id=cp_target_branch_id,
+                        officer_id=cp_officer_val if cp_officer_val != "All" else None,
+                        date_from=cp_d_from,
+                        date_to=cp_d_to,
+                        limit=500
+                    )
                     enriched_cp = enricher.enrich_collection_records(raw_cp_data)
-                    if ROLE == ROLE_CREDIT_OFFICER:
-                        enriched_cp = [c for c in enriched_cp if str(c.get("Officer", "")) == USER]
+
+                    if is_officer_ac:
+                        co_full = getattr(current_user, 'full_name', '') or ''
+                        enriched_cp = [
+                            c for c in enriched_cp
+                            if str(c.get("_raw_record", {}).get("officer_id") or "") == str(USER_ID)
+                            or str(c.get("Officer", "")).lower() in [
+                                str(USER or "").lower(),
+                                co_full.lower(),
+                                f"{co_full.lower()} ({str(USER or '').lower()})"
+                            ]
+                        ]
+
+                    if cp_status_sel != "ALL":
+                        enriched_cp = [
+                            c for c in enriched_cp
+                            if c.get("Status_Raw") == cp_status_sel or cp_status_sel in str(c.get("Status", ""))
+                        ]
+
+                    if cp_search:
+                        cps_lower = cp_search.lower()
+                        enriched_cp = [
+                            c for c in enriched_cp
+                            if cps_lower in str(c.get("Client Code", "")).lower()
+                            or cps_lower in str(c.get("Client Name", "")).lower()
+                            or cps_lower in str(c.get("Officer", "")).lower()
+                            or cps_lower in str(c.get("Group", "")).lower()
+                            or cps_lower in str(c.get("Branch", "")).lower()
+                        ]
+
+                    tot_exp = sum(float(c.get("Expected_Raw", 0.0) or 0.0) for c in enriched_cp)
+                    tot_act = sum(float(c.get("Paid_Raw", 0.0) or 0.0) for c in enriched_cp)
+                    tot_var = sum(max(0.0, float(c.get("Expected_Raw", 0.0) or 0.0) - float(c.get("Paid_Raw", 0.0) or 0.0)) for c in enriched_cp)
+                    comp_ratio = (tot_act / tot_exp * 100.0) if tot_exp > 0 else (100.0 if tot_act > 0 else 0.0)
+                    paid_count = sum(1 for c in enriched_cp if c.get("Status_Raw") == "PAID" or "PAID" in str(c.get("Status", "")))
+
+                    cpm1, cpm2, cpm3, cpm4, cpm5 = st.columns(5)
+                    cpm1.metric("Expected Collections", f"₦{tot_exp:,.2f}")
+                    cpm2.metric("Actual Collections", f"₦{tot_act:,.2f}")
+                    cpm3.metric("Collection Variance", f"₦{tot_var:,.2f}", delta=f"-₦{tot_var:,.2f}" if tot_var > 0 else "₦0.00", delta_color="inverse")
+                    cpm4.metric("Meeting Compliance", f"{comp_ratio:.1f}%")
+                    cpm5.metric("Meetings Audited", f"{len(enriched_cp)} ({paid_count} Paid)")
+
                     if enriched_cp:
                         clean_cp_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_cp])
                         st.dataframe(clean_cp_df, use_container_width=True)
+
+                        with st.expander("🔍 View Meeting Collection Details"):
+                            cp_idx = st.selectbox(
+                                "Select Meeting Record to Inspect:",
+                                range(len(enriched_cp)),
+                                format_func=lambda i: f"{enriched_cp[i]['Meeting Date']} — {enriched_cp[i]['Client Name']} (Paid: {enriched_cp[i]['Paid']} / Exp: {enriched_cp[i]['Expected']})",
+                                key="sb_cp_idx"
+                            )
+                            cp_sel = enriched_cp[cp_idx]
+                            st.markdown("### 📄 Meeting Performance Detail")
+                            cpc1, cpc2, cpc3 = st.columns(3)
+                            cpc1.markdown(f"**Meeting Date:** {cp_sel['Meeting Date']}\n\n**Client Code:** {cp_sel['Client Code']}\n\n**Client Name:** {cp_sel['Client Name']}")
+                            cpc2.markdown(f"**Group:** {cp_sel['Group']}\n\n**Expected Amount:** {cp_sel['Expected']}\n\n**Actual Paid:** {cp_sel['Paid']}")
+                            cpc3.markdown(f"**Compliance:** {cp_sel['Compliance %']}\n\n**Status:** {cp_sel['Status']}\n\n**Officer:** {cp_sel['Officer']}")
+
+                            if st.checkbox("🛠️ Show Advanced Technical Details", key="show_raw_cp_tech"):
+                                st.json(cp_sel["_raw_record"])
+
+                        csv_cp = clean_cp_df.to_csv(index=False).encode('utf-8')
+                        st.download_button("📥 Export Collection Performance CSV", data=csv_cp, file_name="audit_collection_performance.csv", mime="text/csv")
                     else:
                         st.info("No records found for the selected filters. Try changing the date range or search criteria.")
-                except Exception:
-                    st.info("No records found for the selected filters. Try changing the date range or search criteria.")
+                except Exception as ex_cp:
+                    st.error(f"Error loading collection performance: {ex_cp}")
     
         # ---------------------------------------------------------------------
         # TAB 7: 🚨 15 Exception Reports
@@ -8916,6 +9245,21 @@ elif page == "CO Cashbook":
     # BALANCED 2-COLUMN T-ACCOUNT LEDGER DISPLAY
     # ========================================================
     st.markdown("---")
+    try:
+        from services.financial_reconciliation_service import FinancialReconciliationService
+        if branch_id and o_id:
+            with SupabaseUnitOfWork() as uow_tally:
+                tally_res = FinancialReconciliationService.get_daily_collection_arrears_tally(
+                    uow=uow_tally,
+                    branch_id=branch_id,
+                    posting_date=view_date,
+                    officer_id=o_id
+                )
+                render_collection_arrears_tally(tally_res, title=f"📋 Daily Field Collection & Arrears Reconciliation Tally ({target_co})")
+                st.markdown("---")
+    except Exception as ex_co_tally:
+        print(f"Error rendering CO Cashbook tally: {ex_co_tally}")
+
     st.markdown("### 📊 Credit Officer Daily Cashbook Ledger")
     
     inflow_items = [
@@ -9213,6 +9557,23 @@ elif page == "Master Cashbook":
             except Exception:
                 auto_opening = 0.0
         
+        # Render Branch-Level Daily Collection & Arrears Reconciliation Tally
+        try:
+            from services.financial_reconciliation_service import FinancialReconciliationService
+            with SupabaseUnitOfWork() as uow_mc_tally:
+                branch_uuid = uow_mc_tally.cashbook._resolve_branch_id(BRANCH)
+                if branch_uuid:
+                    tally_res = FinancialReconciliationService.get_daily_collection_arrears_tally(
+                        uow=uow_mc_tally,
+                        branch_id=branch_uuid,
+                        posting_date=view_date,
+                        officer_id=None
+                    )
+                    render_collection_arrears_tally(tally_res, title=f"📋 Branch Collection & Arrears Reconciliation Tally ({BRANCH})")
+                    st.markdown("---")
+        except Exception as ex_mc_tally:
+            print(f"Error rendering Master Cashbook tally: {ex_mc_tally}")
+
         # ---- DISPLAY AUTO-SUMMED VALUES (Excel T-Account Layout) ----
         st.markdown("### 📊 Daily Ledger (Auto-Summed from CO Data)")
         
@@ -10819,11 +11180,96 @@ elif page == "Portfolio":
                             )
                             
                     with dd_t5:
+                        st.markdown("##### 📋 Meeting Collection History & Compliance")
+                        st.caption("Audit trail of scheduled meeting collections tracking expected installments vs. actual payments.")
+
                         c_perf = dd.get("collection_history", pd.DataFrame())
-                        if c_perf.empty:
-                            st.info("No collection performance anomalies logged for this client.")
+                        if c_perf.empty or not isinstance(c_perf, pd.DataFrame) or len(c_perf) == 0:
+                            st.info("No meeting collection records found for this client.")
                         else:
-                            st.dataframe(c_perf, use_container_width=True)
+                            df_cp = c_perf.copy()
+
+                            # 1. Resolve Officer Names if officer_id is present
+                            officer_map = {}
+                            if "officer_id" in df_cp.columns and df_cp["officer_id"].notna().any():
+                                unique_offs = [str(x) for x in df_cp["officer_id"].dropna().unique() if x]
+                                if unique_offs:
+                                    try:
+                                        res_u = uow_p.client.table("app_users").select("id, full_name, username").in_("id", unique_offs).execute()
+                                        for u in (res_u.data or []):
+                                            officer_map[str(u.get("id"))] = u.get("full_name") or u.get("username") or "Unknown"
+                                    except Exception:
+                                        pass
+
+                            # 2. Compute Summary Metrics
+                            exp_col = "expected_amount" if "expected_amount" in df_cp.columns else ("Expected" if "Expected" in df_cp.columns else None)
+                            paid_col = "amount_paid" if "amount_paid" in df_cp.columns else ("collected_amount" if "collected_amount" in df_cp.columns else ("Paid" if "Paid" in df_cp.columns else None))
+
+                            tot_expected = float(pd.to_numeric(df_cp[exp_col], errors='coerce').sum()) if exp_col else 0.0
+                            tot_paid = float(pd.to_numeric(df_cp[paid_col], errors='coerce').sum()) if paid_col else 0.0
+                            tot_var = max(0.0, tot_expected - tot_paid)
+                            comp_pct = (tot_paid / tot_expected * 100.0) if tot_expected > 0 else (100.0 if tot_paid > 0 else 0.0)
+
+                            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                            kpi1.metric("Total Expected", f"{CURRENCY_SYMBOL}{tot_expected:,.2f}")
+                            kpi2.metric("Total Collected", f"{CURRENCY_SYMBOL}{tot_paid:,.2f}")
+                            kpi3.metric("Collection Variance", f"{CURRENCY_SYMBOL}{tot_var:,.2f}", delta=f"-{CURRENCY_SYMBOL}{tot_var:,.2f}" if tot_var > 0 else f"{CURRENCY_SYMBOL}0.00", delta_color="inverse")
+                            kpi4.metric("Compliance Rate", f"{comp_pct:.1f}%")
+
+                            # 3. Clean and format the display rows
+                            display_rows = []
+                            for _, row in df_cp.iterrows():
+                                # Date formatting
+                                raw_date = row.get("meeting_date") or row.get("date") or row.get("created_at")
+                                m_date_str = "N/A"
+                                if raw_date:
+                                    try:
+                                        m_date_str = pd.to_datetime(raw_date).strftime("%d %b %Y")
+                                    except Exception:
+                                        m_date_str = str(raw_date)[:10]
+
+                                # Officer resolution
+                                off_id = str(row.get("officer_id") or "")
+                                off_disp = officer_map.get(off_id) or (f"Officer ({off_id[:8]})" if len(off_id) > 10 else off_id) or "Unassigned"
+
+                                # Monetary amounts
+                                exp_val = float(row.get("expected_amount") or row.get("Expected") or 0.0)
+                                paid_val = float(row.get("amount_paid") or row.get("collected_amount") or row.get("Paid") or 0.0)
+                                var_val = max(0.0, exp_val - paid_val)
+
+                                # Status Badge
+                                raw_st = str(row.get("status") or row.get("collection_status") or "").upper()
+                                if raw_st in ["PAID", "COMPLETE"] or (exp_val > 0 and paid_val >= exp_val):
+                                    st_badge = "🟢 PAID"
+                                elif raw_st in ["PART_PAYMENT", "PARTIAL"] or (paid_val > 0 and paid_val < exp_val):
+                                    st_badge = "🟡 PART PAYMENT"
+                                else:
+                                    st_badge = "🔴 NOT PAID"
+
+                                rem = str(row.get("remarks") or row.get("note") or "").replace("None", "").strip()
+                                if not rem:
+                                    rem = "Meeting collection"
+
+                                display_rows.append({
+                                    "Meeting Date": m_date_str,
+                                    "Expected (₦)": exp_val,
+                                    "Collected (₦)": paid_val,
+                                    "Variance (₦)": var_val,
+                                    "Officer": off_disp,
+                                    "Compliance Status": st_badge,
+                                    "Remarks": rem
+                                })
+
+                            clean_table_df = pd.DataFrame(display_rows)
+                            st.dataframe(
+                                clean_table_df.style.format({
+                                    "Expected (₦)": lambda x: f"{CURRENCY_SYMBOL}{x:,.2f}",
+                                    "Collected (₦)": lambda x: f"{CURRENCY_SYMBOL}{x:,.2f}",
+                                    "Variance (₦)": lambda x: f"{CURRENCY_SYMBOL}{x:,.2f}"
+                                }),
+                                use_container_width=True,
+                                hide_index=True
+                            )
 
                     with dd_t6:
                         st.markdown("##### Client Lifecycle Status & Management")

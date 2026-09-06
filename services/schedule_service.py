@@ -165,6 +165,173 @@ class ScheduleService:
         return float(last_row.get("total_due") or (float(last_row.get("principal", 0)) + float(last_row.get("interest", 0))))
 
     @staticmethod
+    def get_loan_due_breakdown(
+        uow: SupabaseUnitOfWork,
+        loan_id: str,
+        evaluation_date: date = None,
+        client_id: str = None
+    ) -> dict:
+        """
+        Authoritative calculation of loan repayment obligations for an evaluation date per BR-DASH-007.
+        Strictly enforces frequency/meeting-day invariants:
+        - Daily loans: Evaluated on every valid working day.
+        - Weekly loans: Evaluated ONLY on the client's assigned group meeting day.
+        - Monthly loans: Evaluated on their monthly due date.
+        Returns cumulative total due = (Past Overdue Arrears + Current Installment Due Today).
+        """
+        if not evaluation_date:
+            evaluation_date = date.today()
+        elif isinstance(evaluation_date, str):
+            evaluation_date = date.fromisoformat(evaluation_date.split("T")[0])
+        elif isinstance(evaluation_date, datetime):
+            evaluation_date = evaluation_date.date()
+
+        eval_weekday_str = evaluation_date.strftime("%A")
+
+        # 1. Fetch loan and product details
+        loan_data = None
+        if loan_id:
+            try:
+                res_l = uow.client.table("loans").select(
+                    "loan_id, client_id, active_credit, duration, status, amount, extra_fields, loan_products(name, repayment_cycle, installments)"
+                ).eq("loan_id", loan_id).execute()
+                if res_l.data:
+                    loan_data = res_l.data[0]
+            except Exception:
+                pass
+
+        if not loan_data and client_id:
+            try:
+                res_l = uow.client.table("loans").select(
+                    "loan_id, client_id, active_credit, duration, status, amount, extra_fields, loan_products(name, repayment_cycle, installments)"
+                ).eq("client_id", client_id).eq("status", "Active").execute()
+                if res_l.data:
+                    loan_data = res_l.data[0]
+                    loan_id = loan_data.get("loan_id")
+            except Exception:
+                pass
+
+        if not loan_data:
+            return {
+                "loan_id": loan_id,
+                "client_id": client_id,
+                "cycle": "Weekly",
+                "meeting_day": None,
+                "is_meeting_today": False,
+                "current_installment": 0.0,
+                "overdue_arrears": 0.0,
+                "total_due_today": 0.0,
+                "has_overdue": False,
+                "missed_installments_count": 0,
+                "remaining_balance": 0.0
+            }
+
+        resolved_client_id = loan_data.get("client_id") or client_id
+        lp = loan_data.get("loan_products") or {}
+        p_name = str(lp.get("name") or "").lower()
+        cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in p_name else ("Weekly" if "weekly" in p_name else "Monthly"))
+
+        # 2. Fetch Group Meeting Day
+        meeting_day_str = None
+        if resolved_client_id:
+            try:
+                res_mem = uow.client.table("client_memberships").select("groups(meeting_day)").eq("client_id", resolved_client_id).execute()
+                if res_mem.data and res_mem.data[0].get("groups"):
+                    meeting_day_str = res_mem.data[0]["groups"].get("meeting_day")
+            except Exception:
+                pass
+
+        # 3. Check Meeting Day Validity
+        is_meeting_today = False
+        if cycle == "Daily":
+            # Working day check
+            if evaluation_date.weekday() < 5:
+                is_meeting_today = True
+        elif cycle == "Weekly":
+            if meeting_day_str:
+                is_meeting_today = (meeting_day_str.strip().lower() == eval_weekday_str.lower())
+            else:
+                # If unassigned group, default to True on evaluation date
+                is_meeting_today = True
+        elif cycle == "Monthly":
+            # Monthly loans check if scheduled due date matches
+            is_meeting_today = True
+
+        # 4. Fetch schedule rows
+        res_sch = uow.client.table("loan_schedule").select("*").eq("loan_id", loan_id).order("installment_number").execute()
+        schedule_rows = res_sch.data or []
+
+        total_due_base = float(loan_data.get("active_credit") or loan_data.get("amount") or 0.0)
+        total_paid_sch, has_sch = ScheduleService.get_total_paid(uow, loan_id)
+        rem_bal = max(0.0, total_due_base - total_paid_sch)
+
+        overdue_arrears = 0.0
+        current_installment = 0.0
+        missed_count = 0
+        found_exact_today = False
+
+        if schedule_rows:
+            for row in schedule_rows:
+                try:
+                    d_due = datetime.strptime(row["due_date"].split("T")[0], "%Y-%m-%d").date()
+                except Exception:
+                    continue
+
+                t_due = float(row.get("total_due") or 0.0)
+                p_amt = float(row.get("paid_amount") or 0.0)
+                needed = max(0.0, t_due - p_amt)
+
+                if d_due < evaluation_date:
+                    if needed > 0:
+                        overdue_arrears += needed
+                        missed_count += 1
+                elif d_due == evaluation_date:
+                    if needed > 0:
+                        current_installment += needed
+                        found_exact_today = True
+                else:
+                    pass
+
+            if is_meeting_today and not found_exact_today and current_installment == 0:
+                # Look for first pending installment on or after evaluation date
+                for row in schedule_rows:
+                    try:
+                        d_due = datetime.strptime(row["due_date"].split("T")[0], "%Y-%m-%d").date()
+                    except Exception:
+                        continue
+                    needed = max(0.0, float(row.get("total_due") or 0.0) - float(row.get("paid_amount") or 0.0))
+                    if d_due >= evaluation_date and needed > 0:
+                        current_installment = needed
+                        break
+        else:
+            # Fallback for unscheduled / legacy loan
+            dur = int(loan_data.get("duration") or 1)
+            inst_val = round(total_due_base / dur, 2) if dur > 0 else total_due_base
+            current_installment = inst_val if is_meeting_today else 0.0
+
+        current_installment = min(current_installment, rem_bal)
+        overdue_arrears = min(overdue_arrears, rem_bal)
+
+        if is_meeting_today:
+            total_due_today = min(rem_bal, overdue_arrears + current_installment)
+        else:
+            total_due_today = 0.0
+
+        return {
+            "loan_id": loan_id,
+            "client_id": resolved_client_id,
+            "cycle": cycle,
+            "meeting_day": meeting_day_str,
+            "is_meeting_today": is_meeting_today,
+            "current_installment": round(current_installment, 2),
+            "overdue_arrears": round(overdue_arrears, 2),
+            "total_due_today": round(total_due_today, 2),
+            "has_overdue": overdue_arrears > 0,
+            "missed_installments_count": missed_count,
+            "remaining_balance": round(rem_bal, 2)
+        }
+
+    @staticmethod
     def get_total_paid(uow: SupabaseUnitOfWork, loan_id: str) -> tuple[float, bool]:
         """
         Calculates the total paid amount for a specific loan from its schedule.
