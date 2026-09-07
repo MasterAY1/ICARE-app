@@ -9330,6 +9330,7 @@ elif page == "CO Cashbook":
                                         "narration": narr
                                     }
                                 )
+                                uow_eod.event_store.append(ev)
                                 FinancialPostingEngine.post_event(uow_eod, ev)
 
                             # 3. Post Delta Adjustments for each fee/expense/deposit:

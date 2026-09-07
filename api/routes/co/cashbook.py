@@ -226,6 +226,7 @@ def submit_eod_adjustments(
                 "narration": narr
             }
         )
+        uow.event_store.append(ev)
         FinancialPostingEngine.post_event(uow, ev)
 
     # 3. Post Delta Adjustments for each fee/expense/deposit:
