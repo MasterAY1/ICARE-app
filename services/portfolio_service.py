@@ -474,20 +474,22 @@ class PortfolioService:
                     full_payments_count += 1
                     full_payments_amt += float(l.get("active_credit") or l.get("loan_amount") or 0.0)
 
-        # 2. Excess Collections in Period (Summing surplus above fixed scheduled installment on each collection event)
+        # 2. Excess Collections in Period (Summing surplus above expected scheduled installment on each collection event)
         excess_clients_set = set()
         for r in repayments_today:
             lid = str(r.get("loan_id") or "")
             amt = float(r.get("amount_paid") or 0.0)
             l = loans_by_id_map.get(lid)
-            if l:
-                repay_fixed = float(l.get("loan_repay") or 0.0)
-                if repay_fixed > 0 and amt > repay_fixed:
-                    surplus = amt - repay_fixed
-                    excess_payments_amt += surplus
-                    cid_val = str(r.get("client_id") or l.get("client_id") or "")
-                    if cid_val:
-                        excess_clients_set.add(cid_val)
+            repay_target = float(r.get("expected_amount") or 0.0)
+            if repay_target <= 0 and l:
+                repay_target = float(l.get("loan_repay") or 0.0)
+
+            if repay_target > 0 and amt > repay_target:
+                surplus = amt - repay_target
+                excess_payments_amt += surplus
+                cid_val = str(r.get("client_id") or (l.get("client_id") if l else "") or "")
+                if cid_val:
+                    excess_clients_set.add(cid_val)
 
         excess_payments_count = len(excess_clients_set)
 

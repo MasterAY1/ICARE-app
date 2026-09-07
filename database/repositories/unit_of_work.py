@@ -45,6 +45,7 @@ from database.repositories.treasury_repository import (
 )
 from database.repositories.collection_performance_repository import SupabaseCollectionPerformanceRepository
 from database.repositories.audit_view_repository import SupabaseAuditViewRepository
+from database.repositories.payoff_excess_repository import SupabaseLoanPayoffExcessRepository
 from database.connection import supabase
 
 
@@ -53,6 +54,7 @@ class SupabaseUnitOfWork(UnitOfWork):
         self.client = supabase
         self.loans = SupabaseLoanRepository(self.client)
         self.repayments = SupabaseRepaymentRepository(self.client)
+        self.payoff_excess = SupabaseLoanPayoffExcessRepository(self.client)
         self.users = SupabaseUserRepository(self.client)
         self.audit = SupabaseAuditRepository(self.client)
         self.cashbook = SupabaseCashbookRepository(self.client)

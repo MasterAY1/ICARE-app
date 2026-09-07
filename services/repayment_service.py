@@ -194,6 +194,13 @@ class RepaymentService:
         except Exception as ex:
             print(f"[REPAYMENT TRACE] Client status lifecycle check failed: {ex}")
 
+        # Check and record Full Payoff and Excess Payment in dedicated table (BR-DASH-005, BR-DASH-007)
+        try:
+            if repayment.loan_id and repayment.loan_repayment_amount > 0:
+                cls._record_payoff_and_excess_if_applicable(uow, repayment)
+        except Exception as ex_pe:
+            print(f"[REPAYMENT TRACE] Payoff/excess recording failed: {ex_pe}")
+
         # Rebuild projection (only if not deferred during batch execution)
         if not getattr(FinancialPostingEngine, 'defer_projections', False):
             try:
@@ -290,6 +297,15 @@ class RepaymentService:
         # 3. Execute all accumulated operations atomically
         uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
 
+        # Delete any associated payoff_excess record
+        try:
+            if hasattr(uow, 'payoff_excess'):
+                uow.payoff_excess.delete_by_repayment_id(original_repayment_id)
+            else:
+                uow.client.table("loan_payoff_excess_records").delete().eq("repayment_id", original_repayment_id).execute()
+        except Exception as ex_del:
+            print(f"[REPAYMENT REVERSAL] Cleanup payoff/excess record failed: {ex_del}")
+
         # 4. Rebuild projection
         try:
             branch_val = orig.get("branch_id")
@@ -372,3 +388,123 @@ class RepaymentService:
                 "arrears_recovered": min(amt, max(0.0, due - current_installment)) if has_overdue else 0.0,
                 "is_arrears_cleared": False
             }
+
+    @classmethod
+    def _record_payoff_and_excess_if_applicable(cls, uow: SupabaseUnitOfWork, repayment: Repayment):
+        """
+        Determines if a repayment triggers a Full Payoff (outstanding balance = 0)
+        and/or an Excess Payment (amount_paid > expected_installment), and persists
+        the authoritative record in public.loan_payoff_excess_records (BR-DASH-005).
+        """
+        from domain.entities.payoff_excess_record import LoanPayoffExcessRecord
+        from services.posting_engine import FinancialPostingEngine
+
+        l_res = uow.client.table("loans").select("loan_id, client_id, active_credit, total_due, loan_amount, loan_repay, branch_id, officer_id, status").eq("loan_id", repayment.loan_id).execute()
+        if not l_res.data:
+            return
+        loan = l_res.data[0]
+
+        act_cred = float(loan.get("active_credit") or loan.get("loan_amount") or 0.0)
+        tot_due_base = float(loan.get("total_due") if loan.get("total_due") is not None else act_cred)
+        loan_repay = float(loan.get("loan_repay") or 0.0)
+        exp_inst = float(getattr(repayment, 'expected_amount', 0.0) or 0.0)
+        if exp_inst <= 0:
+            exp_inst = loan_repay
+
+        # Query all repayments for this loan to determine lifetime total paid
+        rep_res = uow.client.table("repayments").select("id, amount_paid").eq("loan_id", repayment.loan_id).execute()
+        all_reps = rep_res.data or []
+        tot_paid_all = sum(float(r.get("amount_paid") or 0.0) for r in all_reps)
+
+        paid_amt = float(repayment.loan_repayment_amount or repayment.amount_paid or 0.0)
+        prior_paid = max(0.0, tot_paid_all - paid_amt)
+        rem_before = max(0.0, tot_due_base - prior_paid)
+        rem_after = max(0.0, tot_due_base - tot_paid_all)
+
+        is_payoff = (rem_after <= 0.0 and rem_before > 0.0 and act_cred > 0)
+        is_excess = (exp_inst > 0 and paid_amt > exp_inst)
+
+        if not is_payoff and not is_excess:
+            return
+
+        # Resolve client UUID
+        c_id = loan.get("client_id") or repayment.client_id
+        try:
+            import uuid
+            uuid.UUID(str(c_id))
+        except Exception:
+            c_res = uow.client.table("clients").select("client_id").eq("client_code", str(c_id)).execute()
+            if c_res.data:
+                c_id = c_res.data[0]["client_id"]
+
+        b_id = loan.get("branch_id")
+        if not b_id and repayment.branch:
+            try:
+                b_id = FinancialPostingEngine._resolve_branch_id(uow, repayment.branch)
+            except Exception:
+                pass
+
+        o_id = loan.get("officer_id")
+        if not o_id and repayment.credit_officer:
+            try:
+                o_id = FinancialPostingEngine._resolve_officer_id(uow, repayment.credit_officer)
+            except Exception:
+                pass
+
+        if is_payoff and is_excess:
+            rec_type = "FULL_PAYOFF_AND_EXCESS"
+            active_settled = act_cred
+            excess_amt = round(paid_amt - exp_inst, 2)
+        elif is_payoff:
+            rec_type = "FULL_PAYOFF"
+            active_settled = act_cred
+            excess_amt = 0.0
+        else:
+            rec_type = "EXCESS_PAYMENT"
+            active_settled = 0.0
+            excess_amt = round(paid_amt - exp_inst, 2)
+
+        rep_date = repayment.payment_date if repayment.payment_date else date.today()
+        if hasattr(rep_date, 'date') and callable(rep_date.date):
+            rep_date = rep_date.date()
+        elif isinstance(rep_date, str):
+            rep_date = date.fromisoformat(rep_date[:10])
+
+        rec = LoanPayoffExcessRecord(
+            repayment_id=repayment.id,
+            loan_id=repayment.loan_id,
+            client_id=str(c_id),
+            officer_id=o_id,
+            branch_id=b_id,
+            date=rep_date,
+            record_type=rec_type,
+            amount_paid=paid_amt,
+            expected_installment=exp_inst,
+            active_credit_settled=active_settled,
+            excess_amount=excess_amt,
+            remaining_balance_before=round(rem_before, 2),
+            remaining_balance_after=round(rem_after, 2),
+            notes=repayment.note or f"Automatic payoff/excess record ({rec_type})"
+        )
+
+        if hasattr(uow, 'payoff_excess'):
+            uow.payoff_excess.record_event(rec)
+        else:
+            uow.client.table("loan_payoff_excess_records").insert({
+                "id": rec.id,
+                "repayment_id": rec.repayment_id,
+                "loan_id": rec.loan_id,
+                "client_id": rec.client_id,
+                "officer_id": rec.officer_id,
+                "branch_id": rec.branch_id,
+                "date": rep_date.isoformat(),
+                "record_type": rec_type,
+                "amount_paid": paid_amt,
+                "expected_installment": exp_inst,
+                "active_credit_settled": active_settled,
+                "excess_amount": excess_amt,
+                "remaining_balance_before": round(rem_before, 2),
+                "remaining_balance_after": round(rem_after, 2),
+                "notes": rec.notes
+            }).execute()
+

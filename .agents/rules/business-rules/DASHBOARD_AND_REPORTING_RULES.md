@@ -38,23 +38,30 @@
 - **Description:** Categorization of repayment performance on the Portfolio and Dashboard views:
   1. `Full Payments`: Represents exclusively loans that have **completely reached full payoff (zero balance) in the selected period** (or `status in ['Completed', 'Closed']` with collections received in the period).
      - **Count**: Number of loans fully settled in the period.
-     - **Amount**: Active credit value of the completed loans (or total payoff principal).
-  2. `Excess Payments`: Borrowers who paid strictly more than their scheduled expected installment for the period (`paid_in_period > expected_in_period` and not a full payoff).
-     - **Count**: Number of excess-paying clients in the period.
-     - **Amount**: Sum of unbudgeted surplus cash (`paid_in_period - expected_in_period`).
-  3. `Overdue Portfolio`: Loans past their expected maturity/due date with outstanding balance > ₦0.
+     - **Amount**: Total **Active Credit** value (contract capacity) of the completed loans (e.g., ₦150,000).
+  2. `Excess Payments`: Surplus cash collected strictly above the scheduled expected meeting installment for the period:
+     - When a borrower pays more than their scheduled expected installment (`amount_paid > expected_installment`), the surplus cash ($\text{amount\_paid} - \text{expected\_installment}$) is recorded as an Excess Payment.
+     - **Dual Registration on Full Payoff**: When a borrower executes a full loan payoff (e.g. Active Credit = ₦150,000, Loan Balance = ₦50,000, Expected Installment = ₦2,500, and pays ₦50,000):
+       - Full Payment is recorded as **₦150,000** (Active Credit) with Count = 1.
+       - Excess Payment is ALSO recorded as **₦47,500** ($\text{Cash Paid } 50,000 - \text{Expected Installment } 2,500$) with Count = 1.
+     - **Count**: Number of excess payment occurrences in the period.
+     - **Amount**: Sum of unbudgeted surplus cash ($\sum \max(0.0, \text{amount\_paid} - \text{expected\_installment})$).
+  3. `Dedicated Table Requirement`: All full payoffs and excess payments must be permanently recorded in a dedicated database table (`public.loan_payoff_excess_records`) and audit view (`audit.loan_payoff_excess_records`) capturing full transaction provenance (`repayment_id`, `loan_id`, `client_id`, `officer_id`, `branch_id`, `date`, `record_type`, `amount_paid`, `expected_installment`, `active_credit_settled`, `excess_amount`, `remaining_balance_before`, `remaining_balance_after`).
+  4. `Overdue Portfolio`: Loans past their expected maturity/due date with outstanding balance > ₦0.
      - **Count**: Number of overdue loans.
      - **Amount**: Sum of delinquent outstanding principal.
-  4. `Portfolio at Risk (PAR%)`: (Total Overdue / Total Active Credit) × 100.
+  5. `Portfolio at Risk (PAR%)`: (Total Overdue / Total Active Credit) × 100.
 - **Required Behavior:**
-  - `Full Payments` must accurately report the count and monetary volume of loans settled during the period.
-  - `Excess Payments` must report only unbudgeted surplus above scheduled installments.
+  - `Full Payments` must accurately report the count and active credit monetary volume of loans settled during the period.
+  - `Excess Payments` must report all unbudgeted surplus cash above scheduled installments (including full payoff surpluses).
   - Base scheduled operational repayments are derived as $\text{Actual Collection} - \text{Excess Payments}$.
+  - Every payoff and excess event must be persisted to `loan_payoff_excess_records`.
 - **Prohibited Behavior:**
-  - Marking regular weekly/monthly installments as excess payments.
+  - Marking regular weekly/monthly installments or arrears clearances as excess payments.
   - Hiding or zeroing full payoff completions that occurred within the selected date range.
+  - Failing to record full payoff or excess events in `loan_payoff_excess_records`.
 - **Status:** CONFIRMED & MANDATORY
-- **Implementation Location:** `services/portfolio_service.py`, `services/dashboard_service.py`
+- **Implementation Location:** `services/portfolio_service.py`, `services/dashboard_service.py`, `services/repayment_service.py`, `database/repositories/payoff_excess_repository.py`
 
 ## BR-DASH-006: Historical Onboarding Repayments Exclusion from Period Metrics
 - **Rule ID:** BR-DASH-006

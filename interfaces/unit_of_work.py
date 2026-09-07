@@ -25,6 +25,7 @@ class UnitOfWork(Protocol):
     guarantors: GuarantorRepository
     audit_views: Any
     collection_performance: Any
+    payoff_excess: Any
 
 
     def __enter__(self) -> 'UnitOfWork': ...
