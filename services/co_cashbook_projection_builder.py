@@ -165,8 +165,11 @@ class CoCashbookProjectionBuilder:
                 continue
 
             # Account 4000 Office Expenses
-            if acc == "4000" and side == "Debit":
-                office_expenses += amount
+            if acc == "4000":
+                if side == "Debit":
+                    office_expenses += amount
+                elif side == "Credit":
+                    office_expenses -= amount
                 continue
 
             if acc != "1000":
@@ -249,6 +252,11 @@ class CoCashbookProjectionBuilder:
 
                 elif event_type == "BankWithdrawn":
                     bank_withdrawal += amount
+                elif event_type == "BankDepositReversed":
+                    bank_deposit -= amount
+                elif event_type == "ExpenseReversed":
+                    # Expense reduction restores physical vault cash through lower outflows
+                    pass
                 elif event_type == "AssetSoldCash":
                     if "credit" in narr or "credit sale" in narr:
                         asset_credit_sales += amount
@@ -261,8 +269,40 @@ class CoCashbookProjectionBuilder:
                         misc_fees += amount
 
             elif side == "Credit":
-                # CO Outflows
-                if event_type in ["SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION"]:
+                # CO Outflows / Fee Reversals
+                if event_type == "FeeReversed":
+                    if "passbook" in narr or "pass book" in narr or "pass_book" in narr:
+                        passbook -= amount
+                    elif "processing" in narr or "application" in narr or "app fee" in narr or "app_fee" in narr:
+                        app_fee -= amount
+                    elif "contingency" in narr:
+                        contingency -= amount
+                    elif "credit form damage" in narr or "credit_form_damage" in narr:
+                        credit_form_damage -= amount
+                    elif "credit form" in narr or "credit_form" in narr:
+                        credit_form -= amount
+                    elif "bonus" in narr:
+                        bonus -= amount
+                    elif "11%" in narr and ("weekly" in narr or "12w" in narr):
+                        weekly_11_pct -= amount
+                    elif "20%" in narr and ("weekly" in narr or "24w" in narr or "24" in narr):
+                        weekly_20_pct -= amount
+                    elif "11%" in narr and ("daily" in narr or "60" in narr):
+                        daily_11_pct -= amount
+                    elif "20%" in narr and ("daily" in narr or "120" in narr):
+                        daily_20_pct -= amount
+                    elif "month" in narr or "3m" in narr or "6m" in narr or "monthly" in narr:
+                        risk_premium_returns -= amount
+                    elif "weekly" in narr:
+                        weekly_11_pct -= amount
+                    elif "daily" in narr:
+                        daily_11_pct -= amount
+                    else:
+                        if is_misc_officer:
+                            savings_deposit -= amount
+                        else:
+                            misc_fees -= amount
+                elif event_type in ["SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION"]:
                     is_auto_deduction = (
                         "auto-deducted" in narr or
                         "upfront" in narr or

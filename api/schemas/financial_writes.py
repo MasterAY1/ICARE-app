@@ -42,14 +42,14 @@ class BatchCollectionResponse(BaseModel):
 
 class EodAdjustmentsInput(BaseModel):
     date: Optional[str] = Field(None, description="ISO Date (YYYY-MM-DD)")
-    opening_balance: Optional[float] = 0.0
-    office_expenses: Optional[float] = 0.0
-    bank_deposit: Optional[float] = 0.0
-    app_fee: Optional[float] = 0.0
-    passbook: Optional[float] = 0.0
-    misc_fee: Optional[float] = 0.0
-    credit_form_damage: Optional[float] = 0.0
-    bonus: Optional[float] = 0.0
+    opening_balance: Optional[float] = None
+    office_expenses: Optional[float] = None
+    bank_deposit: Optional[float] = None
+    app_fee: Optional[float] = None
+    passbook: Optional[float] = None
+    misc_fee: Optional[float] = None
+    credit_form_damage: Optional[float] = None
+    bonus: Optional[float] = None
 
 
 class EodAdjustmentsResponse(BaseModel):

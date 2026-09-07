@@ -167,16 +167,7 @@ def submit_eod_adjustments(
     b_uuid = uow.cashbook._resolve_branch_id(current_user.branch)
     officer_uuid = uow.loans._resolve_officer_id(current_user.username) or current_user.id
 
-    # 1. Update manual opening balance if provided
-    if (payload.opening_balance or 0.0) > 0:
-        uow.client.table("co_cashbooks").upsert({
-            "date": date_str,
-            "branch_id": b_uuid,
-            "officer_id": officer_uuid,
-            "opening_balance": float(payload.opening_balance)
-        }, on_conflict="date,branch_id,officer_id").execute()
-
-    # 2. Fetch current projection to compute deltas
+    # 1. Fetch current projection to preserve untouched fields and compute deltas
     cb_res = uow.client.table("co_cashbooks").select("*").eq("branch_id", b_uuid).eq("officer_id", officer_uuid).eq("date", date_str).execute()
     cur_cb = cb_res.data[0] if cb_res.data else {}
 
@@ -188,97 +179,63 @@ def submit_eod_adjustments(
     cur_exp = float(cur_cb.get("office_expenses") or 0.0)
     cur_bdep = float(cur_cb.get("bank_deposit") or 0.0)
 
-    # 3. Post Delta Adjustments
-    # App Fee Delta
-    d_app = float(payload.app_fee or 0.0) - cur_app_fee
-    if d_app != 0:
-        ev_app = DomainEvent(
-            event_id=str(uuid.uuid4()),
-            aggregate_id=officer_uuid,
-            aggregate_type="Fee",
-            event_type="FeeCharged",
-            payload={"branch": current_user.branch, "branch_id": b_uuid, "officer": current_user.username, "officer_id": officer_uuid, "amount": d_app, "date": date_str, "narration": f"EOD App Fee Update (Adjusted from ₦{cur_app_fee:,.2f} to ₦{payload.app_fee:,.2f})"}
-        )
-        uow.event_store.append(ev_app)
-        FinancialPostingEngine.post_event(uow, ev_app)
+    # Resolve effective values: preserve untouched fields if None
+    global_opening_val = float(payload.opening_balance) if payload.opening_balance is not None else float(cur_cb.get("opening_balance") or 0.0)
+    global_expenses_val = float(payload.office_expenses) if payload.office_expenses is not None else cur_exp
+    global_bank_dep_val = float(payload.bank_deposit) if payload.bank_deposit is not None else cur_bdep
+    global_app_fee_val = float(payload.app_fee) if payload.app_fee is not None else cur_app_fee
+    global_passbook_val = float(payload.passbook) if payload.passbook is not None else cur_pb
+    global_misc_fee_val = float(payload.misc_fee) if payload.misc_fee is not None else cur_misc
+    global_cfd_val = float(payload.credit_form_damage) if payload.credit_form_damage is not None else cur_cfd
+    global_bonus_val = float(payload.bonus) if payload.bonus is not None else cur_bon
 
-    # Passbook Delta
-    d_pb = float(payload.passbook or 0.0) - cur_pb
-    if d_pb != 0:
-        ev_pb = DomainEvent(
-            event_id=str(uuid.uuid4()),
-            aggregate_id=officer_uuid,
-            aggregate_type="Fee",
-            event_type="FeeCharged",
-            payload={"branch": current_user.branch, "branch_id": b_uuid, "officer": current_user.username, "officer_id": officer_uuid, "amount": d_pb, "date": date_str, "narration": f"EOD Passbook Update (Adjusted from ₦{cur_pb:,.2f} to ₦{payload.passbook:,.2f})"}
-        )
-        uow.event_store.append(ev_pb)
-        FinancialPostingEngine.post_event(uow, ev_pb)
+    # 2. Update manual opening balance if provided
+    if payload.opening_balance is not None and global_opening_val > 0:
+        uow.client.table("co_cashbooks").upsert({
+            "date": date_str,
+            "branch_id": b_uuid,
+            "officer_id": officer_uuid,
+            "opening_balance": global_opening_val
+        }, on_conflict="date,branch_id,officer_id").execute()
 
-    # CFD Delta
-    d_cfd = float(payload.credit_form_damage or 0.0) - cur_cfd
-    if d_cfd != 0:
-        ev_cfd = DomainEvent(
-            event_id=str(uuid.uuid4()),
-            aggregate_id=officer_uuid,
-            aggregate_type="Fee",
-            event_type="FeeCharged",
-            payload={"branch": current_user.branch, "branch_id": b_uuid, "officer": current_user.username, "officer_id": officer_uuid, "amount": d_cfd, "date": date_str, "narration": f"EOD Cr Form Damage Update (Adjusted from ₦{cur_cfd:,.2f} to ₦{payload.credit_form_damage:,.2f})"}
-        )
-        uow.event_store.append(ev_cfd)
-        FinancialPostingEngine.post_event(uow, ev_cfd)
+    # Helper function to post delta with proper reversal handling
+    def _post_adjustment(d, ev_pos, ev_neg, agg_type, name, cur_val, new_val):
+        if d == 0:
+            return
+        if d > 0:
+            ev_type = ev_pos
+            amt = d
+            narr = f"EOD {name} Update (Added ₦{amt:,.2f}, Total: ₦{new_val:,.2f})"
+        else:
+            ev_type = ev_neg
+            amt = abs(d)
+            narr = f"EOD {name} Adjustment (Reduced ₦{amt:,.2f}, Adjusted from ₦{cur_val:,.2f} to ₦{new_val:,.2f})"
 
-    # Bonus Delta
-    d_bon = float(payload.bonus or 0.0) - cur_bon
-    if d_bon != 0:
-        ev_bon = DomainEvent(
+        ev = DomainEvent(
             event_id=str(uuid.uuid4()),
             aggregate_id=officer_uuid,
-            aggregate_type="Fee",
-            event_type="FeeCharged",
-            payload={"branch": current_user.branch, "branch_id": b_uuid, "officer": current_user.username, "officer_id": officer_uuid, "amount": d_bon, "date": date_str, "narration": f"EOD Bonus Update (Adjusted from ₦{cur_bon:,.2f} to ₦{payload.bonus:,.2f})"}
+            aggregate_type=agg_type,
+            event_type=ev_type,
+            payload={
+                "branch": current_user.branch,
+                "branch_id": b_uuid,
+                "officer": current_user.username,
+                "officer_id": officer_uuid,
+                "amount": amt,
+                "date": date_str,
+                "narration": narr
+            }
         )
-        uow.event_store.append(ev_bon)
-        FinancialPostingEngine.post_event(uow, ev_bon)
+        FinancialPostingEngine.post_event(uow, ev)
 
-    # Misc Fees Delta
-    d_misc = float(payload.misc_fee or 0.0) - cur_misc
-    if d_misc != 0:
-        ev_misc = DomainEvent(
-            event_id=str(uuid.uuid4()),
-            aggregate_id=officer_uuid,
-            aggregate_type="Fee",
-            event_type="FeeCharged",
-            payload={"branch": current_user.branch, "branch_id": b_uuid, "officer": current_user.username, "officer_id": officer_uuid, "amount": d_misc, "date": date_str, "narration": f"EOD Misc Fee Update (Adjusted from ₦{cur_misc:,.2f} to ₦{payload.misc_fee:,.2f})"}
-        )
-        uow.event_store.append(ev_misc)
-        FinancialPostingEngine.post_event(uow, ev_misc)
-
-    # Expenses Delta
-    d_exp = float(payload.office_expenses or 0.0) - cur_exp
-    if d_exp != 0:
-        ev_exp = DomainEvent(
-            event_id=str(uuid.uuid4()),
-            aggregate_id=officer_uuid,
-            aggregate_type="Expense",
-            event_type="ExpenseRecorded",
-            payload={"branch": current_user.branch, "branch_id": b_uuid, "officer": current_user.username, "officer_id": officer_uuid, "amount": d_exp, "date": date_str, "narration": f"EOD Expense Update (Adjusted from ₦{cur_exp:,.2f} to ₦{payload.office_expenses:,.2f})"}
-        )
-        uow.event_store.append(ev_exp)
-        FinancialPostingEngine.post_event(uow, ev_exp)
-
-    # Bank Deposit Delta
-    d_bdep = float(payload.bank_deposit or 0.0) - cur_bdep
-    if d_bdep != 0:
-        ev_bdep = DomainEvent(
-            event_id=str(uuid.uuid4()),
-            aggregate_id=officer_uuid,
-            aggregate_type="Treasury",
-            event_type="BankDeposited",
-            payload={"branch": current_user.branch, "branch_id": b_uuid, "officer": current_user.username, "officer_id": officer_uuid, "amount": d_bdep, "date": date_str, "narration": f"EOD Bank Deposit Update (Adjusted from ₦{cur_bdep:,.2f} to ₦{payload.bank_deposit:,.2f})"}
-        )
-        uow.event_store.append(ev_bdep)
-        FinancialPostingEngine.post_event(uow, ev_bdep)
+    # 3. Post Delta Adjustments for each fee/expense/deposit:
+    _post_adjustment(global_app_fee_val - cur_app_fee, "FeeCharged", "FeeReversed", "Fee", "App Fee", cur_app_fee, global_app_fee_val)
+    _post_adjustment(global_passbook_val - cur_pb, "FeeCharged", "FeeReversed", "Fee", "Passbook", cur_pb, global_passbook_val)
+    _post_adjustment(global_cfd_val - cur_cfd, "FeeCharged", "FeeReversed", "Fee", "Cr Form Damage", cur_cfd, global_cfd_val)
+    _post_adjustment(global_bonus_val - cur_bon, "FeeCharged", "FeeReversed", "Fee", "Bonus", cur_bon, global_bonus_val)
+    _post_adjustment(global_misc_fee_val - cur_misc, "FeeCharged", "FeeReversed", "Fee", "Misc Fee", cur_misc, global_misc_fee_val)
+    _post_adjustment(global_expenses_val - cur_exp, "ExpenseRecorded", "ExpenseReversed", "Expense", "Expense", cur_exp, global_expenses_val)
+    _post_adjustment(global_bank_dep_val - cur_bdep, "BankDeposited", "BankDepositReversed", "Treasury", "Bank Deposit", cur_bdep, global_bank_dep_val)
 
     # Rebuild Cashbook projection
     if officer_uuid and b_uuid:
