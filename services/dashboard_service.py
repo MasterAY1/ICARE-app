@@ -773,30 +773,53 @@ class DashboardService:
             if branch_id:
                 branch_users = uow.users.find_by_branch_id(branch_id)
                 officers = [u for u in branch_users if u.role in ["CO", "Officer", "Credit Officer"]]
+
+                date_str = target_date.isoformat()
+                meeting_day = target_date.strftime("%A")
+
+                # 1. Batch fetch repayments for the date
+                rep_res = uow.client.table("repayments").select("officer_id, amount_paid").gte("date", f"{date_str}T00:00:00").lte("date", f"{date_str}T23:59:59").execute()
+                reps_by_off = {}
+                for r in (rep_res.data or []):
+                    oid_s = str(r.get("officer_id") or "")
+                    if oid_s:
+                        reps_by_off[oid_s] = reps_by_off.get(oid_s, 0.0) + float(r.get("amount_paid") or 0.0)
+
+                # 2. Batch fetch groups scheduled for the meeting day
+                grp_res = uow.client.table("groups").select("group_id, officer_id").eq("branch_id", branch_id).eq("meeting_day", meeting_day).execute()
+                grps_by_off = {}
+                for g in (grp_res.data or []):
+                    oid_s = str(g.get("officer_id") or "")
+                    if oid_s:
+                        grps_by_off[oid_s] = grps_by_off.get(oid_s, 0) + 1
+
+                # 3. Batch fetch expected collections from loan_schedule
+                loans_res = uow.client.table("loans").select("loan_id, officer_id").eq("branch_id", branch_id).in_("status", ["Active", "Approved", "ACTIVE"]).execute()
+                loan_to_off = {str(l["loan_id"]): str(l.get("officer_id") or "") for l in (loans_res.data or []) if l.get("loan_id")}
+                loan_ids = list(loan_to_off.keys())
+
+                exp_by_off = {}
+                if loan_ids:
+                    sched_res = uow.client.table("loan_schedule").select("loan_id, total_due").in_("loan_id", loan_ids).eq("due_date", date_str).execute()
+                    for s in (sched_res.data or []):
+                        lid_s = str(s.get("loan_id") or "")
+                        oid_s = loan_to_off.get(lid_s)
+                        if oid_s:
+                            exp_by_off[oid_s] = exp_by_off.get(oid_s, 0.0) + float(s.get("total_due") or 0.0)
+
+                # 4. Batch fetch saved co_cashbooks closing balances
+                cb_res = uow.client.table("co_cashbooks").select("officer_id, closing_balance").eq("branch_id", branch_id).eq("date", date_str).execute()
+                cb_by_off = {str(c["officer_id"]): float(c.get("closing_balance") or 0.0) for c in (cb_res.data or []) if c.get("officer_id")}
+
                 for off in officers:
                     oname = off.username
-                    oid = off.id
+                    oid = str(off.id)
 
-                    # CO Cashbook Closing Balance (read saved row or compute projected balance)
-                    o_cb_close = 0.0
-                    try:
-                        cb_res = uow.client.table("co_cashbooks").select("closing_balance").eq("branch_id", branch_id).eq("officer_id", oid).eq("date", target_date.isoformat()).execute()
-                        if cb_res.data and cb_res.data[0].get("closing_balance") is not None:
-                            o_cb_close = float(cb_res.data[0].get("closing_balance") or 0.0)
-                        else:
-                            co_proj = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, oid, target_date)
-                            o_cb_close = float(co_proj.get("closing_balance") or 0.0)
-                    except Exception:
-                        pass
+                    o_cb_close = cb_by_off.get(oid, 0.0)
+                    exp = exp_by_off.get(oid, 0.0)
+                    col = reps_by_off.get(oid, 0.0)
+                    grps_count = grps_by_off.get(oid, 0)
 
-                    # CO Dashboard expected and collected from meeting portfolio
-                    co_dash = DashboardService.get_co_dashboard_data(uow, branch_name, oname, officer_id=oid, branch_id=branch_id, target_date=target_date)
-                    mp = co_dash.get("meeting_portfolio")
-
-                    exp = float(mp["Expected Collection"].sum()) if mp is not None and not mp.empty else 0.0
-                    col = float(mp["Collected"].sum()) if mp is not None and not mp.empty else 0.0
-                    grps_count = len(mp) if mp is not None and not mp.empty else 0
-                    
                     if exp > 0:
                         comp = round((col / exp * 100), 1)
                     elif col > 0:

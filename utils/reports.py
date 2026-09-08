@@ -300,60 +300,82 @@ def generate_saving_withdrawal_df(loans_df):
         })
     return pd.DataFrame(data)
 
+def export_dataframe_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Report") -> bytes:
+    """Export single DataFrame to formatted in-memory Excel bytes for direct browser download."""
+    import io
+    from openpyxl.styles import Font, PatternFill
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="003366", end_color="003366", fill_type="solid")
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        clean_name = sheet_name[:31]
+        df.to_excel(writer, sheet_name=clean_name, index=False)
+        ws = writer.sheets[clean_name]
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = col[0].column_letter
+            ws.column_dimensions[col_letter].width = min(max(max_len + 3, 12), 45)
+    return output.getvalue()
+
+
+def export_consolidated_report_to_excel(
+    trial_balance_df: pd.DataFrame = None,
+    savings_df: pd.DataFrame = None,
+    repayments_df: pd.DataFrame = None,
+    loans_df: pd.DataFrame = None,
+    portfolio_summary: dict = None
+) -> bytes:
+    """Generate comprehensive multi-tab Excel workbook in-memory with zero external cloud dependencies."""
+    import io
+    from openpyxl.styles import Font, PatternFill
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="003366", end_color="003366", fill_type="solid")
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        if trial_balance_df is not None and not trial_balance_df.empty:
+            trial_balance_df.to_excel(writer, sheet_name='Trial_Balance', index=False)
+        if savings_df is not None and not savings_df.empty:
+            savings_df.to_excel(writer, sheet_name='Savings_Summary', index=False)
+        if repayments_df is not None and not repayments_df.empty:
+            repayments_df.to_excel(writer, sheet_name='Repayment_Summary', index=False)
+        if portfolio_summary:
+            pd.DataFrame([portfolio_summary]).to_excel(writer, sheet_name='Portfolio_Summary', index=False)
+        if loans_df is not None and not loans_df.empty:
+            loans_df.to_excel(writer, sheet_name='Raw_Loans', index=False)
+
+        for ws_name in writer.sheets:
+            ws = writer.sheets[ws_name]
+            for cell in ws[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+            for col in ws.columns:
+                max_len = max(len(str(cell.value or '')) for cell in col)
+                col_letter = col[0].column_letter
+                ws.column_dimensions[col_letter].width = min(max(max_len + 3, 12), 45)
+
+    return output.getvalue()
+
+
 def export_to_excel(loans_df, repayments_df, filename="trustmicro_export.xlsx"):
-    """Export data to Excel file"""
+    """Export data to Excel file on disk (legacy fallback)."""
     import os
     try:
         with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-            # Standard sheets
             loans_df.to_excel(writer, sheet_name='Raw_Loans', index=False)
             repayments_df.to_excel(writer, sheet_name='Raw_Repayments', index=False)
-            
             summary = generate_portfolio_summary(loans_df, repayments_df)
             pd.DataFrame([summary]).to_excel(writer, sheet_name='Summary', index=False)
-            
-            # --- CUSTOM MANUAL TEMPLATES FROM CSV ---
-            products = ["Daily", "12 Weeks", "24 Weeks"]
-            
-            for prod in products:
-                short_prod = prod.replace(' Weeks', 'W')
-                prod_loans = loans_df[loans_df['Loan Product'].astype(str).str.contains(prod, na=False)]
-                
-                # 1. Savings
-                if os.path.exists('Savings.csv'):
-                    sav_df = pd.read_csv('Savings.csv', header=None)
-                    sav_df.to_excel(writer, sheet_name=f'Sav {short_prod}', index=False, header=False)
-                    
-                # 2. Credit
-                if os.path.exists('Credit.csv'):
-                    cred_df = pd.read_csv('Credit.csv', header=None)
-                    cred_df.to_excel(writer, sheet_name=f'Cred {short_prod}', index=False, header=False)
-                    
-                # 3. Groupwise
-                if os.path.exists('groupwise.csv'):
-                    grp_df = pd.read_csv('groupwise.csv', header=None)
-                    groups = prod_loans['Group Name'].dropna().unique()
-                    
-                    # Fill group names starting at row 5 (0-indexed)
-                    start_row = 5
-                    for i, group in enumerate(groups):
-                        if start_row + i < len(grp_df):
-                            grp_df.iloc[start_row + i, 0] = group
-                            
-                    grp_df.to_excel(writer, sheet_name=f'Grp {short_prod}', index=False, header=False)
-            
-            # Get workbook and apply formatting
+
             workbook = writer.book
-            
-            # Helper to style header
             def style_header(ws_name):
                 if ws_name in writer.sheets:
                     ws = writer.sheets[ws_name]
-                    # Only style raw data sheets
-                    if 'Raw' in ws_name or ws_name == 'Summary':
-                        for cell in ws[1]:
-                            cell.font = cell.font.copy(bold=True)
-                            cell.fill = cell.fill.copy(patternType='solid', fgColor='003366')
+                    for cell in ws[1]:
+                        cell.font = cell.font.copy(bold=True)
+                        cell.fill = cell.fill.copy(patternType='solid', fgColor='003366')
 
             for sheet in ['Raw_Loans', 'Raw_Repayments', 'Summary']:
                 style_header(sheet)
@@ -361,3 +383,4 @@ def export_to_excel(loans_df, repayments_df, filename="trustmicro_export.xlsx"):
         return True, filename
     except Exception as e:
         return False, str(e)
+

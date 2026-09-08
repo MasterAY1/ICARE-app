@@ -148,6 +148,18 @@ class BusinessDateService:
             curr += timedelta(days=1)
 
     @staticmethod
+    def get_previous_working_day(target_date: date, custom_closures: Optional[list] = None) -> date:
+        """
+        Steps target_date backward until a valid working day is reached.
+        """
+        curr = target_date - timedelta(days=1)
+        while True:
+            is_valid, _ = BusinessDateService.is_working_day(curr, custom_closures)
+            if is_valid:
+                return curr
+            curr -= timedelta(days=1)
+
+    @staticmethod
     def get_business_date(uow: UnitOfWork, branch_name_or_id: str) -> date:
         """
         Fetch active operational business date for the branch.

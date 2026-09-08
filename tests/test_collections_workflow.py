@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from app import save_repayment, load_client_savings_map
 
+@unittest.skipUnless(os.environ.get("RUN_LIVE_INTEGRATION_TESTS") == "1", "Requires RUN_LIVE_INTEGRATION_TESTS=1 to prevent live database mutation")
 class TestCollectionsWorkflow(unittest.TestCase):
     def test_full_collections_and_readback_workflow(self):
         client_code = "OGI-28-001"
@@ -79,8 +80,14 @@ class TestCollectionsWorkflow(unittest.TestCase):
                 curr_res = uow.client.table("individual_savings").select("id").eq("client_id", c_uuid).execute()
                 created_ids = [r["id"] for r in curr_res.data if r["id"] not in initial_entry_ids]
                 if created_ids:
+                    ft_res = uow.client.table("financial_transactions").select("transaction_id, event_id").in_("reference", created_ids).execute()
+                    ev_ids = [f["event_id"] for f in (ft_res.data or []) if f.get("event_id")]
+                    if ev_ids:
+                        uow.client.table("event_processing").delete().in_("event_id", ev_ids).execute()
                     uow.client.table("financial_ledger_entries").delete().in_("aggregate_id", created_ids).execute()
                     uow.client.table("financial_transactions").delete().in_("reference", created_ids).execute()
+                    if ev_ids:
+                        uow.client.table("event_store").delete().in_("event_id", ev_ids).execute()
                     uow.client.table("event_store").delete().in_("aggregate_id", created_ids).execute()
                     uow.client.table("individual_savings").delete().in_("id", created_ids).execute()
                 # Remove any test cashbook projection generated for AM_Area_1
@@ -130,8 +137,14 @@ class TestCollectionsWorkflow(unittest.TestCase):
                 curr_res = uow.client.table("individual_savings").select("id").eq("client_id", c_uuid).execute()
                 created_ids = [r["id"] for r in curr_res.data if r["id"] not in initial_entry_ids]
                 if created_ids:
+                    ft_res = uow.client.table("financial_transactions").select("transaction_id, event_id").in_("reference", created_ids).execute()
+                    ev_ids = [f["event_id"] for f in (ft_res.data or []) if f.get("event_id")]
+                    if ev_ids:
+                        uow.client.table("event_processing").delete().in_("event_id", ev_ids).execute()
                     uow.client.table("financial_ledger_entries").delete().in_("aggregate_id", created_ids).execute()
                     uow.client.table("financial_transactions").delete().in_("reference", created_ids).execute()
+                    if ev_ids:
+                        uow.client.table("event_store").delete().in_("event_id", ev_ids).execute()
                     uow.client.table("event_store").delete().in_("aggregate_id", created_ids).execute()
                     uow.client.table("individual_savings").delete().in_("id", created_ids).execute()
                 uow.client.table("co_cashbooks").delete().eq("officer_id", officer_am_id).execute()

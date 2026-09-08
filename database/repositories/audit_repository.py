@@ -9,6 +9,9 @@ def resolve_officer_id(client, username: str) -> str:
         res = client.table("app_users").select("id").eq("username", username).execute()
         if res.data:
             return res.data[0]["id"]
+        res_f = client.table("app_users").select("id").eq("full_name", username).execute()
+        if res_f.data:
+            return res_f.data[0]["id"]
     except Exception:
         pass
     return "00000000-0000-0000-0000-000000000000"

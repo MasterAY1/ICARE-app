@@ -10,6 +10,7 @@ from app import save_repayment
 from mappers.base_mappers import RepaymentMapper
 from domain.entities.repayment import Repayment
 
+@unittest.skipUnless(os.environ.get("RUN_LIVE_INTEGRATION_TESTS") == "1", "Requires RUN_LIVE_INTEGRATION_TESTS=1 to prevent live database mutation")
 class TestCollectionEdit(unittest.TestCase):
     def test_repayment_edit_idempotency(self):
         client_code = "OGI-28-001"
@@ -82,11 +83,15 @@ class TestCollectionEdit(unittest.TestCase):
         finally:
             if rep_id:
                 with SupabaseUnitOfWork() as uow:
-                    # Clean up FT, FLE, CP, and repayment
-                    ft_res = uow.client.table("financial_transactions").select("transaction_id").eq("reference", rep_id).execute()
+                    # Clean up FT, FLE, CP, event_processing, event_store, and repayment
+                    ft_res = uow.client.table("financial_transactions").select("transaction_id, event_id").eq("reference", rep_id).execute()
                     for f in (ft_res.data or []):
+                        if f.get("event_id"):
+                            uow.client.table("event_processing").delete().eq("event_id", f["event_id"]).execute()
                         uow.client.table("financial_ledger_entries").delete().eq("transaction_id", f["transaction_id"]).execute()
                         uow.client.table("financial_transactions").delete().eq("transaction_id", f["transaction_id"]).execute()
+                        if f.get("event_id"):
+                            uow.client.table("event_store").delete().eq("event_id", f["event_id"]).execute()
                     uow.client.table("collection_performance").delete().eq("id", rep_id).execute()
                     uow.client.table("repayments").delete().eq("id", rep_id).execute()
 

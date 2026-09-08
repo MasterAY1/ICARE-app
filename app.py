@@ -2491,9 +2491,10 @@ if page == "Dashboard":
                             with act_col1:
                                 if st.button("Approve & Disburse", key=f"app_{pl_id}", type="primary", use_container_width=True):
                                     try:
-                                        from services.loan_service import LoanService
-                                        with SupabaseUnitOfWork() as uow_app:
-                                            LoanService.approve_and_disburse_loan(uow_app, pl_id, USER, disbursement_date=disb_date)
+                                        with st.spinner(f"Approving & disbursing loan for {c_name}..."):
+                                            from services.loan_service import LoanService
+                                            with SupabaseUnitOfWork() as uow_app:
+                                                LoanService.approve_and_disburse_loan(uow_app, pl_id, USER, disbursement_date=disb_date)
                                         st.success(f"Loan approved & disbursed for {c_name} on {disb_date.strftime('%d %B %Y')}!")
                                         st.rerun()
                                     except Exception as ex:
@@ -2501,9 +2502,10 @@ if page == "Dashboard":
                             with act_col2:
                                 if st.button("Reject", key=f"rej_{pl_id}", type="secondary", use_container_width=True):
                                     try:
-                                        from services.loan_service import LoanService
-                                        with SupabaseUnitOfWork() as uow_app:
-                                            LoanService.reject_loan(uow_app, pl_id, USER, "Rejected by BM")
+                                        with st.spinner(f"Rejecting loan for {c_name}..."):
+                                            from services.loan_service import LoanService
+                                            with SupabaseUnitOfWork() as uow_app:
+                                                LoanService.reject_loan(uow_app, pl_id, USER, "Rejected by BM")
                                         st.success(f"Loan rejected for {c_name}.")
                                         st.rerun()
                                     except Exception as ex:
@@ -8115,8 +8117,10 @@ elif page == "Dashboard":
                                     if st.button("✅ Approve", key=f"app_leg_{pl_id}", type="primary", use_container_width=True):
                                         try:
                                             from services.loan_service import LoanService
-                                            with SupabaseUnitOfWork() as uow_app:
-                                                LoanService.approve_and_disburse_loan(uow_app, pl_id, USER, disbursement_date=disb_date)
+                                            with st.spinner(f"Approving & disbursing loan for {c_name}..."):
+                                                from services.loan_service import LoanService
+                                                with SupabaseUnitOfWork() as uow_app:
+                                                    LoanService.approve_and_disburse_loan(uow_app, pl_id, USER, disbursement_date=disb_date)
                                             st.success(f"✅ Loan approved & disbursed for {c_name}!")
                                             st.rerun()
                                         except Exception as ex:
@@ -8124,9 +8128,10 @@ elif page == "Dashboard":
                                 with act_col2:
                                     if st.button("❌ Reject", key=f"rej_leg_{pl_id}", type="secondary", use_container_width=True):
                                         try:
-                                            from services.loan_service import LoanService
-                                            with SupabaseUnitOfWork() as uow_app:
-                                                LoanService.reject_loan(uow_app, pl_id, USER, "Rejected by BM")
+                                            with st.spinner(f"Rejecting loan for {c_name}..."):
+                                                from services.loan_service import LoanService
+                                                with SupabaseUnitOfWork() as uow_app:
+                                                    LoanService.reject_loan(uow_app, pl_id, USER, "Rejected by BM")
                                             st.success(f"Loan rejected for {c_name}.")
                                             st.rerun()
                                         except Exception as ex:
@@ -11523,144 +11528,406 @@ elif page == "Calculator":
     st.markdown("</div>", unsafe_allow_html=True)
 
 elif page in ["Reports", "Reports & Export"]:
-    st.title("Reports & Data Export")
-    
+    st.markdown("<div class='dashboard-header'>", unsafe_allow_html=True)
+    st.markdown("<h1>Reports & Operational Exports</h1>", unsafe_allow_html=True)
+    st.markdown("<p>Comprehensive Double-Entry General Ledger, Savings Portfolio, Collections Performance, and Direct Data Exports.</p>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    from services.report_service import ReportService
+    from utils.reports import export_dataframe_to_excel_bytes, export_consolidated_report_to_excel
+
     all_loans = load_loans()
     all_repayments = load_repayments()
-    
-    # Filter datasets using centralized RBACScopeService
-    my_loans = RBACScopeService.filter_dataframe(all_loans, scope)
-    all_repayments = RBACScopeService.filter_dataframe(all_repayments, scope)
 
-    if scope.scope_level == "REGION":
-        assigned_b_names = scope.assigned_branch_names
-        am_rep_branch_opts = ["All Assigned Branches"] + assigned_b_names
-        selected_rep_am_branch = st.selectbox("🌐 Filter Reports by Branch:", am_rep_branch_opts, key="am_reports_branch_filter")
-        if selected_rep_am_branch != "All Assigned Branches":
-            my_loans = RBACScopeService.filter_dataframe(my_loans, scope, selected_branch=selected_rep_am_branch)
-            all_repayments = RBACScopeService.filter_dataframe(all_repayments, scope, selected_branch=selected_rep_am_branch)
-    
-    # Summary Report
+    # 1. Resolve Available Branches based on RBAC Scope
+    with SupabaseUnitOfWork() as uow_b:
+        res_all_branches = uow_b.client.table("branches").select("branch_id, name").order("name").execute()
+        branch_rows = res_all_branches.data or []
+        branch_name_to_id = {b["name"]: b["branch_id"] for b in branch_rows}
+
+    is_hq_or_admin = ROLE in [ROLE_ADMIN, "Admin", "Super Admin", ROLE_SUPER_ADMIN, "Director", "Board Director"]
+    is_am = ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]
+
+    if is_hq_or_admin:
+        branch_options = ["All Branches (Consolidated)"] + [b["name"] for b in branch_rows]
+    elif is_am:
+        assigned_names = scope.assigned_branch_names if hasattr(scope, "assigned_branch_names") and scope.assigned_branch_names else [b["name"] for b in branch_rows]
+        branch_options = ["All Assigned Branches"] + assigned_names
+    else:
+        branch_options = [BRANCH] if BRANCH else ["Default Branch"]
+
+    # 2. Universal Filter Header
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("📊 Portfolio Summary Report")
-    
-    summary = generate_portfolio_summary(my_loans, all_repayments)
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Active Loans", summary['active_loans'])
-    col2.metric("Total Portfolio", f"₦{summary['total_portfolio']:,.0f}")
-    col3.metric("PAR %", f"{summary['par_percentage']:.2f}%")
-    
-    # Export to Google Sheets
-    st.markdown("---")
-    st.subheader("☁️ Export to Google Sheets")
-    
-    sheet_col1, sheet_col2, sheet_col3 = st.columns(3)
-    
-    with sheet_col1:
-        if st.button("📤 Export Loans", use_container_width=True):
-            with st.spinner("Exporting to Google Sheets..."):
-                url, msg = export_loans_to_sheet(my_loans)
-                if url:
-                    st.success(msg)
-                    st.markdown(f"[Open Spreadsheet]({url})")
-                else:
-                    st.error(msg)
-    
-    with sheet_col2:
-        if st.button("📤 Export Repayments", use_container_width=True):
-            with st.spinner("Exporting to Google Sheets..."):
-                url, msg = export_repayments_to_sheet(all_repayments)
-                if url:
-                    st.success(msg)
-                    st.markdown(f"[Open Spreadsheet]({url})")
-                else:
-                    st.error(msg)
-    
-    with sheet_col3:
-        if st.button("📤 Export Summary", use_container_width=True):
-            with st.spinner("Exporting to Google Sheets..."):
-                url, msg = export_summary_report(summary)
-                if url:
-                    st.success(msg)
-                    st.markdown(f"[Open Spreadsheet]({url})")
-                else:
-                    st.error(msg)
-    
+    st.markdown("### Filter Controls")
+    f_col1, f_col2, f_col3, f_col4 = st.columns([2, 1.2, 1.4, 1.4])
+
+    with f_col1:
+        selected_branch_label = st.selectbox("Branch Scope", branch_options, key="rep_branch_filter")
+
+    with f_col2:
+        date_mode = st.selectbox("Date Mode", ["As of Date", "Date Range", "All Time"], key="rep_date_mode")
+
+    start_date_filter = None
+    end_date_filter = None
+    as_of_date_filter = None
+
+    if date_mode == "As of Date":
+        with f_col3:
+            as_of_date_filter = st.date_input("As of Date", value=datetime.now().date(), key="rep_as_of")
+    elif date_mode == "Date Range":
+        with f_col3:
+            start_date_filter = st.date_input("Start Date", value=datetime.now().date().replace(day=1), key="rep_start")
+        with f_col4:
+            end_date_filter = st.date_input("End Date", value=datetime.now().date(), key="rep_end")
+    else:
+        with f_col3:
+            st.info("Full historical operational dataset selected.")
+
     st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Excel Export
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("📥 Download Excel Report")
-    
-    if st.button("⬇️ Download Full Report (Excel)", use_container_width=True):
-        with st.spinner("Generating Excel file..."):
-            success, result = export_to_excel(my_loans, all_repayments, 
-                                              f"trustmicro_report_{datetime.now().strftime('%Y%m%d')}.xlsx")
-            if success:
-                with open(result, "rb") as f:
-                    st.download_button(
-                        label="📄 Click to Download",
-                        data=f,
-                        file_name=result,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-            else:
-                st.error(f"Export failed: {result}")
-    
-    st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Officer Reports
-    if ROLE in [ROLE_ADMIN, "BM", "AM", "Area Manager"]:
+
+    # Determine resolved branch ID for service queries
+    resolved_branch_id = None
+    if selected_branch_label in ["All Branches (Consolidated)", "All Assigned Branches"]:
+        resolved_branch_id = None
+    else:
+        resolved_branch_id = branch_name_to_id.get(selected_branch_label)
+
+    # Filter loans and repayments DataFrames for portfolio/officer tabs
+    filtered_loans = all_loans
+    filtered_reps = all_repayments
+    if resolved_branch_id and selected_branch_label in branch_name_to_id:
+        if not filtered_loans.empty and "Branch" in filtered_loans.columns:
+            filtered_loans = filtered_loans[filtered_loans["Branch"] == selected_branch_label]
+        if not filtered_reps.empty and "Branch" in filtered_reps.columns:
+            filtered_reps = filtered_reps[filtered_reps["Branch"] == selected_branch_label]
+
+    # Fetch live report datasets via ReportService
+    with SupabaseUnitOfWork() as uow_rep:
+        tb_data = ReportService.get_trial_balance(
+            uow_rep,
+            branch_id=resolved_branch_id,
+            as_of_date=as_of_date_filter,
+            start_date=start_date_filter,
+            end_date=end_date_filter
+        )
+        sav_data = ReportService.get_savings_summary(
+            uow_rep,
+            branch_id=resolved_branch_id,
+            start_date=start_date_filter,
+            end_date=end_date_filter,
+            as_of_date=as_of_date_filter
+        )
+        rep_data = ReportService.get_repayment_summary(
+            uow_rep,
+            branch_id=resolved_branch_id,
+            start_date=start_date_filter,
+            end_date=end_date_filter
+        )
+
+    # 3. Clean Professional Tab Navigation (No unnecessary emojis)
+    tab_tb, tab_sav, tab_rep, tab_port, tab_export = st.tabs([
+        "General Ledger & Trial Balance",
+        "Savings Summary",
+        "Repayment Summary",
+        "Portfolio & Officer Performance",
+        "Data Exports & Downloads"
+    ])
+
+    # --- TAB 1: GENERAL LEDGER & TRIAL BALANCE ---
+    with tab_tb:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("👥 Officer Performance Reports")
-        
-        officers = my_loans['Officer'].unique() if not my_loans.empty else []
-        display_options = ["All"] + [CO_DISPLAY_MAP.get(o, o) for o in officers]
-        selected_display = st.selectbox("Select Officer:", display_options)
-        selected_officer = "All" if selected_display == "All" else CO_NAME_MAP.get(selected_display, selected_display)
-        
-        if selected_officer != "All":
-            officer_report = generate_officer_report(my_loans, all_repayments, selected_officer)
-        else:
-            officer_report = generate_officer_report(my_loans, all_repayments)
-        
-        if not officer_report.empty:
+        st.subheader("General Ledger Trial Balance")
+        st.caption("Double-entry verification of all Chart of Accounts balances. Total Debits must mathematically equal Total Credits.")
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total Debits", f"₦{tb_data['total_debits']:,.2f}")
+        m2.metric("Total Credits", f"₦{tb_data['total_credits']:,.2f}")
+        m3.metric("Net Variance", f"₦{tb_data['variance']:,.2f}")
+        status_color = "#166534" if tb_data["is_balanced"] else "#991b1b"
+        status_bg = "#f0fdf4" if tb_data["is_balanced"] else "#fef2f2"
+        m4.markdown(f"""
+            <div style='background: {status_bg}; padding: 10px 14px; border-radius: 8px; border: 1px solid {status_color}; text-align: center; margin-top: 4px;'>
+                <span style='font-size: 0.75rem; color: #64748B; font-weight: 600; text-transform: uppercase;'>Ledger Integrity</span>
+                <p style='color: {status_color}; font-size: 1.1rem; font-weight: 800; margin: 0;'>{tb_data['status']}</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+        tb_df = tb_data["dataframe"]
+        if not tb_df.empty:
+            display_tb = tb_df.copy()
             st.dataframe(
-                officer_report.style.format({
-                    "Active Credit": "₦{:,.0f}",
-                    "Loan Repay": "₦{:,.0f}",
-                    "Paid to Loan": "₦{:,.0f}",
-                    "Loan Balance": "₦{:,.0f}",
-                    "Savings": "₦{:,.0f}",
-                    "Overdue": "₦{:,.0f}"
+                display_tb.style.format({
+                    "Gross Debits": "₦{:,.2f}",
+                    "Gross Credits": "₦{:,.2f}",
+                    "Debit Balance": "₦{:,.2f}",
+                    "Credit Balance": "₦{:,.2f}",
+                    "Net Position": "₦{:,.2f}"
                 }),
-                use_container_width=True
+                use_container_width=True,
+                hide_index=True
             )
         else:
-            st.info("No data available for officer report")
-        
+            st.info("No ledger entries found for the selected scope.")
+
+        st.markdown("---")
+        st.markdown("#### Direct Download: Trial Balance")
+        d_col1, d_col2 = st.columns(2)
+        with d_col1:
+            tb_csv = tb_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="Download Trial Balance (CSV)",
+                data=tb_csv,
+                file_name=f"trial_balance_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        with d_col2:
+            tb_excel = export_dataframe_to_excel_bytes(tb_df, sheet_name="Trial_Balance")
+            st.download_button(
+                label="Download Trial Balance (Excel)",
+                data=tb_excel,
+                file_name=f"trial_balance_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
         st.markdown("</div>", unsafe_allow_html=True)
-        
-        # Credit Intelligence & Risk Rating Report
+
+    # --- TAB 2: SAVINGS SUMMARY ---
+    with tab_sav:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("⭐ Client Risk Rating & Credit Intelligence")
-        st.caption("Automated credit risk evaluation, repayment compliance %, and upgrade eligibility recommendations.")
+        st.subheader("Savings Portfolio & Savers Breakdown")
+        st.caption("Authoritative savings summary derived from individual deposits, group savings, and LAPS reserves.")
 
-        try:
-            with SupabaseUnitOfWork() as uow_risk:
-                from services.client_risk_rating_service import ClientRiskRatingService
-                risk_dist = ClientRiskRatingService.get_branch_risk_distribution(uow_risk, BRANCH_ID)
-                
-                r1, r2, r3, r4, r5 = st.columns(5)
-                r1.metric("⭐ Excellent (Upgrade)", risk_dist.get("EXCELLENT", 0))
-                r2.metric("🟢 Good (Maintain)", risk_dist.get("GOOD", 0))
-                r3.metric("🟡 Fair (Monitor)", risk_dist.get("FAIR", 0))
-                r4.metric("🟠 Risky (No Increase)", risk_dist.get("RISKY", 0))
-                r5.metric("🔴 High Risk (Decline)", risk_dist.get("HIGH_RISK", 0))
-        except Exception:
-            st.info("No active risk rating data available.")
+        s1, s2, s3, s4 = st.columns(4)
+        s1.metric("Individual Deposits", f"₦{sav_data['total_individual_deposits']:,.2f}")
+        s2.metric("Individual Withdrawals", f"₦{sav_data['total_individual_withdrawals']:,.2f}")
+        s3.metric("Net Individual Savings", f"₦{sav_data['net_individual_savings']:,.2f}")
+        s4.metric("Active Savers Count", f"{sav_data['active_savers_count']:,} Clients")
 
+        s5, s6, s7 = st.columns(3)
+        s5.metric("Net Group Savings", f"₦{sav_data['net_group_savings']:,.2f}")
+        s6.metric("LAPS Reserve", f"₦{sav_data['laps_reserve']:,.2f}")
+        s7.metric("Consolidated Savings Portfolio", f"₦{sav_data['total_consolidated_savings']:,.2f}")
+
+        st.markdown("---")
+        st.markdown("#### Itemized Savers List")
+        savers_df = sav_data["savers_dataframe"]
+        if not savers_df.empty:
+            st.dataframe(
+                savers_df.style.format({
+                    "Total Deposited": "₦{:,.2f}",
+                    "Total Withdrawn": "₦{:,.2f}",
+                    "Net Savings Balance": "₦{:,.2f}"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No active savers found for the selected scope.")
+
+        st.markdown("---")
+        st.markdown("#### Direct Download: Savings Summary")
+        sd_col1, sd_col2 = st.columns(2)
+        with sd_col1:
+            sav_csv = savers_df.to_csv(index=False).encode('utf-8') if not savers_df.empty else b""
+            st.download_button(
+                label="Download Savings Summary (CSV)",
+                data=sav_csv,
+                file_name=f"savings_summary_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        with sd_col2:
+            sav_excel = export_dataframe_to_excel_bytes(savers_df, sheet_name="Savings_Summary") if not savers_df.empty else b""
+            st.download_button(
+                label="Download Savings Summary (Excel)",
+                data=sav_excel,
+                file_name=f"savings_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- TAB 3: REPAYMENT SUMMARY ---
+    with tab_rep:
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.subheader("Repayments & Collections Performance Summary")
+        st.caption("Granular collection summary detailing base scheduled collections, full early payoffs, and excess payments.")
+
+        r1, r2, r3 = st.columns(3)
+        r1.metric("Total Collections Received", f"₦{rep_data['total_collected']:,.2f}")
+        r2.metric("Scheduled Expected Collections", f"₦{rep_data['total_expected']:,.2f}")
+        r3.metric("Collection Efficiency", f"{rep_data['collection_efficiency']:.2f}%")
+
+        r4, r5, r6 = st.columns(3)
+        r4.metric("Full Payoffs Settled", f"₦{rep_data['full_payoff_amount']:,.2f}", f"{rep_data['full_payoff_count']} Loans")
+        r5.metric("Excess Surplus Cash", f"₦{rep_data['excess_payment_amount']:,.2f}", f"{rep_data['excess_payment_count']} Events")
+        r6.metric("Overdue Collections", f"₦{rep_data['total_overdue_collected']:,.2f}")
+
+        st.markdown("---")
+        st.markdown("#### Collections by Loan Product")
+        prod_df = rep_data["product_dataframe"]
+        if not prod_df.empty:
+            st.dataframe(
+                prod_df.style.format({
+                    "Collections (NGN)": "₦{:,.2f}",
+                    "Transactions": "{:,}",
+                    "Unique Clients": "{:,}"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No product collections found for the selected scope.")
+
+        st.markdown("---")
+        st.markdown("#### Itemized Collections Log")
+        reps_df = rep_data["repayments_dataframe"]
+        if not reps_df.empty:
+            st.dataframe(
+                reps_df.style.format({
+                    "Amount Paid": "₦{:,.2f}",
+                    "Expected Amount": "₦{:,.2f}"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No repayments recorded for the selected scope.")
+
+        st.markdown("---")
+        st.markdown("#### Direct Download: Repayment Summary")
+        rd_col1, rd_col2 = st.columns(2)
+        with rd_col1:
+            rep_csv = reps_df.to_csv(index=False).encode('utf-8') if not reps_df.empty else b""
+            st.download_button(
+                label="Download Repayments Log (CSV)",
+                data=rep_csv,
+                file_name=f"repayments_summary_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        with rd_col2:
+            rep_excel = export_dataframe_to_excel_bytes(reps_df, sheet_name="Repayment_Summary") if not reps_df.empty else b""
+            st.download_button(
+                label="Download Repayments Log (Excel)",
+                data=rep_excel,
+                file_name=f"repayments_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- TAB 4: PORTFOLIO & OFFICER PERFORMANCE ---
+    with tab_port:
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.subheader("Portfolio Summary & Health")
+        portfolio_summary = generate_portfolio_summary(filtered_loans, filtered_reps)
+
+        p1, p2, p3 = st.columns(3)
+        p1.metric("Active Loans", portfolio_summary['active_loans'])
+        p2.metric("Total Portfolio", f"₦{portfolio_summary['total_portfolio']:,.0f}")
+        p3.metric("PAR %", f"{portfolio_summary['par_percentage']:.2f}%")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        if ROLE in [ROLE_ADMIN, "Admin", "Super Admin", "BM", "AM", "Area Manager", "Director"]:
+            st.markdown("<div class='card'>", unsafe_allow_html=True)
+            st.subheader("Officer Performance Reports")
+
+            officers = filtered_loans['Officer'].dropna().unique() if not filtered_loans.empty and 'Officer' in filtered_loans.columns else []
+            display_options = ["All"] + [CO_DISPLAY_MAP.get(o, o) for o in officers]
+            selected_display = st.selectbox("Select Officer:", display_options, key="rep_officer_sel")
+            selected_officer = "All" if selected_display == "All" else CO_NAME_MAP.get(selected_display, selected_display)
+
+            if selected_officer != "All":
+                officer_report = generate_officer_report(filtered_loans, filtered_reps, selected_officer)
+            else:
+                officer_report = generate_officer_report(filtered_loans, filtered_reps)
+
+            if not officer_report.empty:
+                st.dataframe(
+                    officer_report.style.format({
+                        "Active Credit": "₦{:,.0f}",
+                        "Loan Repay": "₦{:,.0f}",
+                        "Paid to Loan": "₦{:,.0f}",
+                        "Loan Balance": "₦{:,.0f}",
+                        "Savings": "₦{:,.0f}",
+                        "Overdue": "₦{:,.0f}"
+                    }),
+                    use_container_width=True
+                )
+            else:
+                st.info("No data available for officer report.")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # Credit Intelligence & Risk Rating Report
+            st.markdown("<div class='card'>", unsafe_allow_html=True)
+            st.subheader("Client Risk Rating & Credit Intelligence")
+            st.caption("Automated credit risk evaluation, repayment compliance, and upgrade eligibility recommendations.")
+
+            try:
+                with SupabaseUnitOfWork() as uow_risk:
+                    from services.client_risk_rating_service import ClientRiskRatingService
+                    risk_target_branch = resolved_branch_id or BRANCH_ID
+                    risk_dist = ClientRiskRatingService.get_branch_risk_distribution(uow_risk, risk_target_branch)
+
+                    r1, r2, r3, r4, r5 = st.columns(5)
+                    r1.metric("[EXCELLENT] Upgrade", risk_dist.get("EXCELLENT", 0))
+                    r2.metric("[GOOD] Maintain", risk_dist.get("GOOD", 0))
+                    r3.metric("[FAIR] Monitor", risk_dist.get("FAIR", 0))
+                    r4.metric("[RISKY] No Increase", risk_dist.get("RISKY", 0))
+                    r5.metric("[HIGH RISK] Decline", risk_dist.get("HIGH_RISK", 0))
+            except Exception:
+                st.info("No active risk rating data available.")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- TAB 5: DATA EXPORTS & DOWNLOADS ---
+    with tab_export:
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.subheader("Comprehensive Operational Data Exports")
+        st.caption("Direct in-memory generation of full operational datasets. All files download directly to your browser without external cloud dependencies.")
+
+        st.markdown("#### Master Operational Report (Excel)")
+        st.write("Contains synchronized worksheets: **Trial Balance**, **Savings Summary**, **Repayment Summary**, **Portfolio Summary**, and **Raw Loan Records**.")
+
+        portfolio_summary_for_export = generate_portfolio_summary(filtered_loans, filtered_reps)
+        consolidated_excel_bytes = export_consolidated_report_to_excel(
+            trial_balance_df=tb_data["dataframe"],
+            savings_df=sav_data["savers_dataframe"],
+            repayments_df=rep_data["repayments_dataframe"],
+            loans_df=filtered_loans,
+            portfolio_summary=portfolio_summary_for_export
+        )
+
+        st.download_button(
+            label="Download Master Operational Report (Excel)",
+            data=consolidated_excel_bytes,
+            file_name=f"icare_master_report_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+
+        st.markdown("---")
+        st.markdown("#### Raw Operational Records (CSV)")
+        exp_c1, exp_c2 = st.columns(2)
+        with exp_c1:
+            loans_csv_bytes = filtered_loans.to_csv(index=False).encode('utf-8') if not filtered_loans.empty else b""
+            st.download_button(
+                label="Download Raw Loans (CSV)",
+                data=loans_csv_bytes,
+                file_name=f"raw_loans_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        with exp_c2:
+            reps_csv_bytes = filtered_reps.to_csv(index=False).encode('utf-8') if not filtered_reps.empty else b""
+            st.download_button(
+                label="Download Raw Repayments (CSV)",
+                data=reps_csv_bytes,
+                file_name=f"raw_repayments_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
         st.markdown("</div>", unsafe_allow_html=True)
 
 
