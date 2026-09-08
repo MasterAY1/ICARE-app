@@ -338,9 +338,13 @@ class DashboardService:
                     if dep > 0:
                         sav_deposited += dep
                         if cid: sav_dep_clients.add(cid)
+                    elif dep < 0:
+                        sav_deposited += dep
                     if wd > 0:
                         sav_withdrawn += wd
                         if cid: sav_wd_clients.add(cid)
+                    elif wd < 0:
+                        sav_withdrawn += wd
 
                 # 2. Group Savings
                 grp_res = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount, reference, remarks") \
@@ -354,9 +358,13 @@ class DashboardService:
                     if dep > 0:
                         sav_deposited += dep
                         if gid: sav_dep_clients.add(f"group_{gid}")
+                    elif dep < 0:
+                        sav_deposited += dep
                     if wd > 0:
                         sav_withdrawn += wd
                         if gid: sav_wd_clients.add(f"group_{gid}")
+                    elif wd < 0:
+                        sav_withdrawn += wd
 
                 # 3. Misc Savings (Internal Savings) if designated managing officer per BR-SAV-002
                 is_misc_officer = False

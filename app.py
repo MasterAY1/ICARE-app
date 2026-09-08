@@ -2543,102 +2543,103 @@ if page == "Dashboard":
                             wact_col1, wact_col2 = st.columns(2)
                             with wact_col1:
                                 if st.button("Approve", key=f"approve_wr_{wr_id}", type="primary", use_container_width=True):
-                                    try:
-                                        from services.savings_service import SavingsService
-                                        effective_op_date = wr.get("operational_date") or wr_approval_date
-                                        if isinstance(effective_op_date, str):
-                                            effective_op_date = date.fromisoformat(effective_op_date[:10])
-                                        with SupabaseUnitOfWork() as uow_wr:
-                                            source_type = "GroupSavings" if wr_type == "Group" else ("MiscSavings" if wr_type == "Misc" else "IndividualSavings")
-                                            if wr_op in ["Cash Withdrawal", "Bank Transfer", "Client Bank Account (Transfer)", "Group Bank Account (Transfer)"]:
-                                                if wr_type == "Individual":
-                                                    SavingsService.post_individual_savings(
+                                    with st.spinner(f"Approving withdrawal for {wr_name}..."):
+                                        try:
+                                            from services.savings_service import SavingsService
+                                            effective_op_date = wr.get("operational_date") or wr_approval_date
+                                            if isinstance(effective_op_date, str):
+                                                effective_op_date = date.fromisoformat(effective_op_date[:10])
+                                            with SupabaseUnitOfWork() as uow_wr:
+                                                source_type = "GroupSavings" if wr_type == "Group" else ("MiscSavings" if wr_type == "Misc" else "IndividualSavings")
+                                                if wr_op in ["Cash Withdrawal", "Bank Transfer", "Client Bank Account (Transfer)", "Group Bank Account (Transfer)"]:
+                                                    if wr_type == "Individual":
+                                                        SavingsService.post_individual_savings(
+                                                            uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                            branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                            posting_date=effective_op_date
+                                                        )
+                                                    elif wr_type == "Group":
+                                                        SavingsService.post_group_savings(
+                                                            uow=uow_wr, group_name=wr.get("group_name") or wr_name, branch=BRANCH,
+                                                            officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                            posting_date=effective_op_date
+                                                        )
+                                                    elif wr_type == "Misc":
+                                                        SavingsService.post_misc_savings(
+                                                            uow=uow_wr, client_id=wr.get("client_id") or "", client_name=wr_name,
+                                                            branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                            posting_date=effective_op_date
+                                                        )
+                                                elif wr_op in ["Loan Offset", "Asset Downpayment", "Loan Repayment / Asset Debt Offset"]:
+                                                    SavingsService.post_loan_offset_from_savings(
                                                         uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                        branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                        loan_id=wr.get("loan_id"), source_savings_type=source_type,
+                                                        branch=BRANCH, officer=wr_by, amount=wr_amt,
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED {wr_op.upper()}] {wr_remarks}",
+                                                        posting_date=effective_op_date
+                                                    )
+                                                elif wr_op in ["Fee Offset", "Fee Payment from Savings"]:
+                                                    fee_code = "misc_fees"
+                                                    if "[FEE:" in wr_remarks:
+                                                        try:
+                                                            fee_code = wr_remarks.split("[FEE:")[1].split("]")[0].strip()
+                                                        except Exception:
+                                                            pass
+                                                    SavingsService.post_fee_offset_from_savings(
+                                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                        source_savings_type=source_type, branch=BRANCH, officer=wr_by,
+                                                        fee_type=fee_code, amount=wr_amt,
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED FEE OFFSET] {wr_remarks}",
+                                                        posting_date=effective_op_date
+                                                    )
+                                                elif wr_op in ["Savings Transfer", "Transfer to Another Savings", "Another Member or Group Savings"]:
+                                                    dest_id = wr.get("client_id")
+                                                    dest_name = wr_name
+                                                    dest_type = "IndividualSavings"
+                                                    if "[DEST_ID:" in wr_remarks:
+                                                        try:
+                                                            dest_id = wr_remarks.split("[DEST_ID:")[1].split("]")[0].strip()
+                                                            dest_name = wr_remarks.split("[DEST_NAME:")[1].split("]")[0].strip()
+                                                            dest_type = wr_remarks.split("[DEST_TYPE:")[1].split("]")[0].strip()
+                                                        except Exception:
+                                                            pass
+                                                    SavingsService.transfer_savings(
+                                                        uow=uow_wr, source_id=wr.get("client_id"), source_name=wr_name,
+                                                        source_type=source_type, destination_id=dest_id,
+                                                        destination_name=dest_name, destination_type=dest_type,
+                                                        branch=BRANCH, officer=wr_by, amount=wr_amt,
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED TRANSFER] {wr_remarks}",
+                                                        posting_date=effective_op_date
+                                                    )
+                                                elif wr_op == "LAPS Transfer":
+                                                    SavingsService.transfer_to_laps(
+                                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                        source_savings_type=source_type, branch=BRANCH, officer=wr_by, amount=wr_amt,
                                                         reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
                                                         posting_date=effective_op_date
                                                     )
-                                                elif wr_type == "Group":
-                                                    SavingsService.post_group_savings(
-                                                        uow=uow_wr, group_name=wr.get("group_name") or wr_name, branch=BRANCH,
-                                                        officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                elif wr_op == "LAPS Payout":
+                                                    cash_paid = (wr.get("payout_method") or "Cash") == "Cash"
+                                                    SavingsService.pay_laps(
+                                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                        branch=BRANCH, officer=wr_by, amount=wr_amt, cash_paid=cash_paid,
                                                         reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
                                                         posting_date=effective_op_date
                                                     )
-                                                elif wr_type == "Misc":
-                                                    SavingsService.post_misc_savings(
-                                                        uow=uow_wr, client_id=wr.get("client_id") or "", client_name=wr_name,
-                                                        branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
-                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
-                                                        posting_date=effective_op_date
-                                                    )
-                                            elif wr_op in ["Loan Offset", "Asset Downpayment", "Loan Repayment / Asset Debt Offset"]:
-                                                SavingsService.post_loan_offset_from_savings(
-                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                    loan_id=wr.get("loan_id"), source_savings_type=source_type,
-                                                    branch=BRANCH, officer=wr_by, amount=wr_amt,
-                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED {wr_op.upper()}] {wr_remarks}",
-                                                    posting_date=effective_op_date
-                                                )
-                                            elif wr_op in ["Fee Offset", "Fee Payment from Savings"]:
-                                                fee_code = "misc_fees"
-                                                if "[FEE:" in wr_remarks:
-                                                    try:
-                                                        fee_code = wr_remarks.split("[FEE:")[1].split("]")[0].strip()
-                                                    except Exception:
-                                                        pass
-                                                SavingsService.post_fee_offset_from_savings(
-                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                    source_savings_type=source_type, branch=BRANCH, officer=wr_by,
-                                                    fee_type=fee_code, amount=wr_amt,
-                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED FEE OFFSET] {wr_remarks}",
-                                                    posting_date=effective_op_date
-                                                )
-                                            elif wr_op in ["Savings Transfer", "Transfer to Another Savings", "Another Member or Group Savings"]:
-                                                dest_id = wr.get("client_id")
-                                                dest_name = wr_name
-                                                dest_type = "IndividualSavings"
-                                                if "[DEST_ID:" in wr_remarks:
-                                                    try:
-                                                        dest_id = wr_remarks.split("[DEST_ID:")[1].split("]")[0].strip()
-                                                        dest_name = wr_remarks.split("[DEST_NAME:")[1].split("]")[0].strip()
-                                                        dest_type = wr_remarks.split("[DEST_TYPE:")[1].split("]")[0].strip()
-                                                    except Exception:
-                                                        pass
-                                                SavingsService.transfer_savings(
-                                                    uow=uow_wr, source_id=wr.get("client_id"), source_name=wr_name,
-                                                    source_type=source_type, destination_id=dest_id,
-                                                    destination_name=dest_name, destination_type=dest_type,
-                                                    branch=BRANCH, officer=wr_by, amount=wr_amt,
-                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED TRANSFER] {wr_remarks}",
-                                                    posting_date=effective_op_date
-                                                )
-                                            elif wr_op == "LAPS Transfer":
-                                                SavingsService.transfer_to_laps(
-                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                    source_savings_type=source_type, branch=BRANCH, officer=wr_by, amount=wr_amt,
-                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
-                                                    posting_date=effective_op_date
-                                                )
-                                            elif wr_op == "LAPS Payout":
-                                                cash_paid = (wr.get("payout_method") or "Cash") == "Cash"
-                                                SavingsService.pay_laps(
-                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                    branch=BRANCH, officer=wr_by, amount=wr_amt, cash_paid=cash_paid,
-                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
-                                                    posting_date=effective_op_date
-                                                )
 
-                                            uow_wr.client.table("withdrawal_requests").update({
-                                                "status": "APPROVED",
-                                                "approved_by": USER,
-                                                "approved_at": datetime.now().isoformat()
-                                            }).eq("id", wr_id).execute()
+                                                uow_wr.client.table("withdrawal_requests").update({
+                                                    "status": "APPROVED",
+                                                    "approved_by": USER,
+                                                    "approved_at": datetime.now().isoformat()
+                                                }).eq("id", wr_id).execute()
 
-                                        st.session_state["flash_msg"] = f"✅ Withdrawal of ₦{wr_amt:,.2f} for {wr_name} approved and posted to financial ledger!"
-                                        st.rerun()
-                                    except Exception as ex:
-                                        st.error(f"Approval failed: {str(ex)}")
+                                            st.session_state["flash_msg"] = f"✅ Withdrawal of ₦{wr_amt:,.2f} for {wr_name} approved and posted to financial ledger!"
+                                            st.rerun()
+                                        except Exception as ex:
+                                            st.error(f"Approval failed: {str(ex)}")
                             with wact_col2:
                                 if st.button("Reject", key=f"reject_wr_{wr_id}", type="secondary", use_container_width=True):
                                     st.session_state[f"rejecting_{wr_id}"] = True
@@ -2647,15 +2648,16 @@ if page == "Dashboard":
                             st.divider()
                             reject_reason = st.text_input("Rejection Reason", key=f"rej_reason_{wr_id}", placeholder="Why is this being rejected?")
                             if st.button("Confirm Rejection", key=f"confirm_rej_{wr_id}", type="primary"):
-                                uow.client.table("withdrawal_requests").update({
-                                    "status": "REJECTED",
-                                    "approved_by": USER,
-                                    "approved_at": datetime.now().isoformat(),
-                                    "rejection_reason": reject_reason or "Rejected by BM"
-                                }).eq("id", wr_id).execute()
-                                st.session_state[f"rejecting_{wr_id}"] = False
-                                st.session_state["flash_msg"] = f"⚠️ Withdrawal request rejected for {wr_name}."
-                                st.rerun()
+                                with st.spinner("Rejecting withdrawal request..."):
+                                    uow.client.table("withdrawal_requests").update({
+                                        "status": "REJECTED",
+                                        "approved_by": USER,
+                                        "approved_at": datetime.now().isoformat(),
+                                        "rejection_reason": reject_reason or "Rejected by BM"
+                                    }).eq("id", wr_id).execute()
+                                    st.session_state[f"rejecting_{wr_id}"] = False
+                                    st.session_state["flash_msg"] = f"⚠️ Withdrawal request rejected for {wr_name}."
+                                    st.rerun()
                 st.markdown("<br>", unsafe_allow_html=True)
 
             # Section H: Error Correction Queue
@@ -2693,24 +2695,26 @@ if page == "Dashboard":
                             b_act1, b_act2 = st.columns(2)
                             with b_act1:
                                 if st.button("✅ Approve", key=f"app_corr_{c_id}", type="primary", use_container_width=True):
-                                    try:
-                                        from services.correction_service import CorrectionService
-                                        with SupabaseUnitOfWork() as uow_corr:
-                                            CorrectionService.approve_correction(uow_corr, c_id, approved_by=USER_ID if USER_ID else USER)
-                                        st.success("Reversal approved and executed atomically!")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Approval failed: {e}")
+                                    with st.spinner("Approving reversal and posting compensating ledger entry..."):
+                                        try:
+                                            from services.correction_service import CorrectionService
+                                            with SupabaseUnitOfWork() as uow_corr:
+                                                CorrectionService.approve_correction(uow_corr, c_id, approved_by=USER_ID if USER_ID else USER)
+                                            st.success("Reversal approved and executed atomically!")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Approval failed: {e}")
                             with b_act2:
                                 if st.button("❌ Reject", key=f"rej_corr_{c_id}", use_container_width=True):
-                                    try:
-                                        from services.correction_service import CorrectionService
-                                        with SupabaseUnitOfWork() as uow_corr:
-                                            CorrectionService.reject_correction(uow_corr, c_id, approved_by=USER_ID if USER_ID else USER)
-                                        st.info("Reversal rejected.")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Rejection failed: {e}")
+                                    with st.spinner("Rejecting correction request..."):
+                                        try:
+                                            from services.correction_service import CorrectionService
+                                            with SupabaseUnitOfWork() as uow_corr:
+                                                CorrectionService.reject_correction(uow_corr, c_id, approved_by=USER_ID if USER_ID else USER)
+                                            st.info("Reversal rejected.")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Rejection failed: {e}")
                 st.markdown("<br>", unsafe_allow_html=True)
 
             # Section A: Branch Summary
@@ -2863,59 +2867,60 @@ elif page == "Loan Origination":
                             st.error(f"⛔ **Non-Working Day Restriction**: Loans cannot be activated or disbursed on {workday_reason}. Please select a valid working day.")
                             st.stop()
 
-                        loan_row = pending_clients[pending_clients['Client ID'] == selected_client_id].iloc[0]
-                        product = str(loan_row.get("Loan Product", ""))
-                        meeting_day = str(loan_row.get("Meeting Day", ""))
-                        
-                        if "Daily" in product or "60" in product or "120" in product:
-                            initial_start_date = today + timedelta(days=1)
-                        else:
-                            days_of_week = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
-                            if meeting_day and meeting_day in days_of_week:
-                                target_weekday = days_of_week[meeting_day]
-                                current_weekday = today.weekday()
-                                days_ahead = target_weekday - current_weekday
-                                if days_ahead <= 0:
-                                    days_ahead += 7
-                                initial_start_date = today + timedelta(days=days_ahead)
+                        with st.spinner("Authorizing and activating loan disbursement..."):
+                            loan_row = pending_clients[pending_clients['Client ID'] == selected_client_id].iloc[0]
+                            product = str(loan_row.get("Loan Product", ""))
+                            meeting_day = str(loan_row.get("Meeting Day", ""))
+                            
+                            if "Daily" in product or "60" in product or "120" in product:
+                                initial_start_date = today + timedelta(days=1)
                             else:
-                                initial_start_date = today + timedelta(days=7)
-                                
-                        final_start_date = BusinessDateService.get_next_working_day(initial_start_date, closures)
-                        is_adjusted = (final_start_date != initial_start_date)
-                        shift_reason = "a non-working day or closure"
-                        
-                        from services.loan_product_engine import LoanProductEngine
-                        setup = LoanProductEngine.calculate_loan_setup(100000, product)
-                        loan_freq = setup.get("freq", "Daily")
-                        duration_in_installments = setup.get("duration", 60)
-                        
-                        schedule = LoanProductEngine.generate_repayment_schedule(
-                            final_start_date, duration_in_installments, loan_freq,
-                            meeting_day=meeting_day, closed_dates=[c[0] for c in closures]
-                        )
-                        expected_end_date = schedule[-1] if schedule else final_start_date
-                        
-                        try:
-                            from services.loan_service import LoanService
-                            with SupabaseUnitOfWork() as uow:
-                                loans = uow.loans.find_by_client_id(selected_client_id)
-                                pending_loans = [L for L in loans if (L.status.value == STATUS_PENDING if hasattr(L.status, 'value') else L.status == STATUS_PENDING)]
-                                for L in pending_loans:
-                                    L.start_date = final_start_date
-                                    L.expected_end_date = expected_end_date
-                                    LoanService.disburse_loan(uow, L, disbursement_date=disbursement_date)
+                                days_of_week = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
+                                if meeting_day and meeting_day in days_of_week:
+                                    target_weekday = days_of_week[meeting_day]
+                                    current_weekday = today.weekday()
+                                    days_ahead = target_weekday - current_weekday
+                                    if days_ahead <= 0:
+                                        days_ahead += 7
+                                    initial_start_date = today + timedelta(days=days_ahead)
+                                else:
+                                    initial_start_date = today + timedelta(days=7)
+                                    
+                            final_start_date = BusinessDateService.get_next_working_day(initial_start_date, closures)
+                            is_adjusted = (final_start_date != initial_start_date)
+                            shift_reason = "a non-working day or closure"
                             
-                            st.success(f"Successfully activated and disbursed loan! Disbursement Date set to {today_str}.")
+                            from services.loan_product_engine import LoanProductEngine
+                            setup = LoanProductEngine.calculate_loan_setup(100000, product)
+                            loan_freq = setup.get("freq", "Daily")
+                            duration_in_installments = setup.get("duration", 60)
                             
-                            if is_adjusted:
-                                st.warning(f"📅 **Schedule Adjusted:** The first repayment was automatically moved to **{final_start_date.strftime('%A, %b %d')}** because the original date fell on {shift_reason}.")
+                            schedule = LoanProductEngine.generate_repayment_schedule(
+                                final_start_date, duration_in_installments, loan_freq,
+                                meeting_day=meeting_day, closed_dates=[c[0] for c in closures]
+                            )
+                            expected_end_date = schedule[-1] if schedule else final_start_date
+                            
+                            try:
+                                from services.loan_service import LoanService
+                                with SupabaseUnitOfWork() as uow:
+                                    loans = uow.loans.find_by_client_id(selected_client_id)
+                                    pending_loans = [L for L in loans if (L.status.value == STATUS_PENDING if hasattr(L.status, 'value') else L.status == STATUS_PENDING)]
+                                    for L in pending_loans:
+                                        L.start_date = final_start_date
+                                        L.expected_end_date = expected_end_date
+                                        LoanService.disburse_loan(uow, L, disbursement_date=disbursement_date)
                                 
-                            import time
-                            time.sleep(2)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Failed to activate loan: {e}")
+                                st.success(f"Successfully activated and disbursed loan! Disbursement Date set to {today_str}.")
+                                
+                                if is_adjusted:
+                                    st.warning(f"📅 **Schedule Adjusted:** The first repayment was automatically moved to **{final_start_date.strftime('%A, %b %d')}** because the original date fell on {shift_reason}.")
+                                    
+                                import time
+                                time.sleep(2)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to activate loan: {e}")
             else:
                 st.info("🔒 Note: You are a Credit Officer. Only Branch Managers or Area Managers can authorize and activate disbursements.")
 
@@ -3052,167 +3057,168 @@ elif page == "Loan Origination":
                     elif selected_group_mode == "+ Create New Group" and (not final_group_name.strip() or not final_group_number.strip()):
                         st.error("Please enter the Group Name and Group Number.")
                     else:
-                        try:
-                            with SupabaseUnitOfWork() as uow:
-                                # 1. Create group if needed
-                                if selected_group_mode == "+ Create New Group":
-                                    res_u = uow.client.table("app_users").select("id").eq("username", USER).execute()
-                                    officer_id = res_u.data[0]["id"] if res_u.data else None
+                        with st.spinner(f"Registering client {name_val}..."):
+                            try:
+                                with SupabaseUnitOfWork() as uow:
+                                    # 1. Create group if needed
+                                    if selected_group_mode == "+ Create New Group":
+                                        res_u = uow.client.table("app_users").select("id").eq("username", USER).execute()
+                                        officer_id = res_u.data[0]["id"] if res_u.data else None
+                                        
+                                        clean_g_num = str(final_group_number).strip()
+                                        # Check if group with same number exists in this branch
+                                        res_eg = uow.client.table("groups").select("group_id, group_number, current_member_sequence").eq("branch_id", branch_id).eq("group_number", clean_g_num).execute()
+                                        if res_eg.data:
+                                            final_group_id = res_eg.data[0]["group_id"]
+                                            final_group_number = res_eg.data[0]["group_number"]
+                                        else:
+                                            new_group = {
+                                                "name": final_group_name.strip(),
+                                                "group_number": clean_g_num,
+                                                "meeting_day": final_meeting_day,
+                                                "branch_id": branch_id,
+                                                "officer_id": officer_id,
+                                                "current_member_sequence": 0
+                                            }
+                                            res_g_ins = uow.client.table("groups").insert(new_group).execute()
+                                            if res_g_ins.data:
+                                                final_group_id = res_g_ins.data[0]["group_id"]
+                                                final_group_number = res_g_ins.data[0]["group_number"]
                                     
-                                    clean_g_num = str(final_group_number).strip()
-                                    # Check if group with same number exists in this branch
-                                    res_eg = uow.client.table("groups").select("group_id, group_number, current_member_sequence").eq("branch_id", branch_id).eq("group_number", clean_g_num).execute()
-                                    if res_eg.data:
-                                        final_group_id = res_eg.data[0]["group_id"]
-                                        final_group_number = res_eg.data[0]["group_number"]
+                                    # 2. Generate sequential member number and Client ID
+                                    if selected_group_mode == "Individual (No Group)":
+                                        g_code = "IND"
+                                        res_count = uow.client.table("clients").select("client_id", count="exact").is_("group_id", "null").eq("branch_id", branch_id).execute()
+                                        next_seq = (res_count.count or 0) + 1
                                     else:
-                                        new_group = {
-                                            "name": final_group_name.strip(),
-                                            "group_number": clean_g_num,
-                                            "meeting_day": final_meeting_day,
-                                            "branch_id": branch_id,
-                                            "officer_id": officer_id,
-                                            "current_member_sequence": 0
-                                        }
-                                        res_g_ins = uow.client.table("groups").insert(new_group).execute()
-                                        if res_g_ins.data:
-                                            final_group_id = res_g_ins.data[0]["group_id"]
-                                            final_group_number = res_g_ins.data[0]["group_number"]
-                                
-                                # 2. Generate sequential member number and Client ID
-                                if selected_group_mode == "Individual (No Group)":
-                                    g_code = "IND"
-                                    res_count = uow.client.table("clients").select("client_id", count="exact").is_("group_id", "null").eq("branch_id", branch_id).execute()
-                                    next_seq = (res_count.count or 0) + 1
-                                else:
-                                    import re
-                                    digits_match = re.findall(r'\d+', str(final_group_number))
-                                    g_code = digits_match[-1].zfill(2) if digits_match else str(final_group_number).zfill(2)
-                                    next_seq = uow.clients.get_next_member_sequence(final_group_id)
-                                
-                                member_number_str = str(next_seq).zfill(3)
-                                generated_client_code = f"{branch_code}-{g_code}-{member_number_str}"
-                                
-                                # 3. Save Client
-                                client_uuid = str(uuid.uuid4())
-                                
-                                # Setup storage path helper
-                                def upload_client_file(file_data, file_name):
-                                    if not file_data:
-                                        return ""
-                                    try:
-                                        file_bytes = file_data.read()
-                                        file_ext = file_data.name.split('.')[-1]
-                                        storage_path = f"{client_uuid}/{file_name}.{file_ext}"
-                                        
-                                        # Try to ensure bucket exists
+                                        import re
+                                        digits_match = re.findall(r'\d+', str(final_group_number))
+                                        g_code = digits_match[-1].zfill(2) if digits_match else str(final_group_number).zfill(2)
+                                        next_seq = uow.clients.get_next_member_sequence(final_group_id)
+                                    
+                                    member_number_str = str(next_seq).zfill(3)
+                                    generated_client_code = f"{branch_code}-{g_code}-{member_number_str}"
+                                    
+                                    # 3. Save Client
+                                    client_uuid = str(uuid.uuid4())
+                                    
+                                    # Setup storage path helper
+                                    def upload_client_file(file_data, file_name):
+                                        if not file_data:
+                                            return ""
                                         try:
-                                            buckets = uow.client.storage.list_buckets()
-                                            bucket_names = [b.name for b in buckets]
-                                            if "client-ids" not in bucket_names:
-                                                uow.client.storage.create_bucket("client-ids", options={"public": True})
-                                        except Exception:
-                                            pass
+                                            file_bytes = file_data.read()
+                                            file_ext = file_data.name.split('.')[-1]
+                                            storage_path = f"{client_uuid}/{file_name}.{file_ext}"
                                             
-                                        # Upload file
-                                        uow.client.storage.from_("client-ids").upload(
-                                            path=storage_path,
-                                            file=file_bytes,
-                                            file_options={"content-type": file_data.type}
-                                        )
-                                        
-                                        # Get public URL
-                                        return uow.client.storage.from_("client-ids").get_public_url(storage_path)
-                                    except Exception as upload_err:
-                                        st.warning(f"File upload failed for '{file_name}': {upload_err}")
-                                        return ""
-                                
-                                # Upload Client ID and Passport
-                                uploaded_id_url = upload_client_file(st.session_state.get("reg_client_id_file"), "id_document")
-                                uploaded_passport_url = upload_client_file(st.session_state.get("reg_client_passport"), "passport")
-                                
-                                # Upload Guarantor ID and Passport
-                                uploaded_g_id_url = upload_client_file(st.session_state.get("reg_guarantor_id_file"), "guarantor_id")
-                                uploaded_g_pass_url = upload_client_file(st.session_state.get("reg_guarantor_passport"), "guarantor_passport")
-                                
-                                from domain.entities.client import Client
-                                client_entity = Client(
-                                    id=client_uuid,
-                                    name=name_val,
-                                    client_code=generated_client_code,
-                                    nickname=st.session_state.get("reg_client_nickname"),
-                                    phone=phone_val,
-                                    address=st.session_state.get("reg_client_address"),
-                                    business_address=st.session_state.get("reg_client_biz_address"),
-                                    dob=date(1990, 1, 1),
-                                    gender="Female",
-                                    marital_status=st.session_state.get("reg_client_marital"),
-                                    occupation="Trader",
-                                    business_type=st.session_state.get("reg_client_biz_type"),
-                                    id_means=st.session_state.get("reg_client_id_means"),
-                                    id_number=st.session_state.get("reg_client_id_number"),
-                                    id_card_url=uploaded_id_url,
-                                    next_of_kin="",
-                                    passport_url=uploaded_passport_url,
-                                    signature_url="",
-                                    registration_date=reg_op_date,
-                                    branch_id=branch_id,
-                                    group_id=final_group_id,
-                                    officer_id=uow.loans._resolve_officer_id(USER),
-                                    status="11111111-1111-1111-1111-111111110001",
-                                    status_id="11111111-1111-1111-1111-111111110001",
-                                    average_monthly_income=float(raw_inc or 0.0),
-                                    other_obligations=st.session_state.get("reg_client_obligations")
-                                )
-                                uow.clients.create(client_entity)
-                                
-                                # 4. Create membership
-                                uow.client.table("client_memberships").insert({
-                                    "client_id": client_entity.id,
-                                    "group_id": final_group_id,
-                                    "branch_id": branch_id,
-                                    "officer_id": client_entity.officer_id,
-                                    "start_date": reg_op_date.isoformat() if hasattr(reg_op_date, 'isoformat') else str(reg_op_date)
-                                }).execute()
-                                
-                                # 5. Save Guarantor details to guarantors table (if provided)
-                                g_name_val = st.session_state.get("reg_guarantor_name", "").strip()
-                                g_phone_val = st.session_state.get("reg_guarantor_phone", "").strip()
-                                if g_name_val:
-                                    from domain.entities.guarantor import Guarantor
-                                    existing_g = uow.guarantors.find_by_phone(g_phone_val) if g_phone_val else None
-                                    if not existing_g:
-                                        g_entity = Guarantor(
-                                            guarantor_id=str(uuid.uuid4()),
-                                            name=g_name_val,
-                                            phone=g_phone_val,
-                                            address=st.session_state.get("reg_guarantor_address", "").strip(),
-                                            occupation=st.session_state.get("reg_guarantor_occupation", "").strip(),
-                                            business_address=st.session_state.get("reg_guarantor_office", "").strip(),
-                                            id_means=st.session_state.get("reg_guarantor_id_means"),
-                                            id_number=st.session_state.get("reg_guarantor_id_number", "").strip(),
-                                            id_card_url=uploaded_g_id_url,
-                                            passport_url=uploaded_g_pass_url
-                                        )
-                                        uow.guarantors.create_guarantor(g_entity)
-                                
-                                st.session_state["reg_success_msg"] = f"🎉 Successfully registered **{name_val}**! Assigned Client ID: **{generated_client_code}**"
-                                
-                                # Clear registration form input keys from session state so form resets cleanly
-                                keys_to_clear = [
-                                    "reg_client_name", "reg_client_nickname", "reg_client_phone", "reg_client_address",
-                                    "reg_client_biz_type", "reg_client_income", "reg_client_biz_address", "reg_client_obligations",
-                                    "reg_client_id_number", "reg_guarantor_name", "reg_guarantor_nickname", "reg_guarantor_phone",
-                                    "reg_guarantor_address", "reg_guarantor_occupation", "reg_guarantor_relationship",
-                                    "reg_guarantor_office", "reg_guarantor_id_number", "reg_new_group_name", "reg_new_group_number"
-                                ]
-                                for k in keys_to_clear:
-                                    if k in st.session_state:
-                                        del st.session_state[k]
-                                
-                                st.rerun()
-                        except Exception as ex:
-                            st.error(f"Error registering client: {ex}")
+                                            # Try to ensure bucket exists
+                                            try:
+                                                buckets = uow.client.storage.list_buckets()
+                                                bucket_names = [b.name for b in buckets]
+                                                if "client-ids" not in bucket_names:
+                                                    uow.client.storage.create_bucket("client-ids", options={"public": True})
+                                            except Exception:
+                                                pass
+                                                
+                                            # Upload file
+                                            uow.client.storage.from_("client-ids").upload(
+                                                path=storage_path,
+                                                file=file_bytes,
+                                                file_options={"content-type": file_data.type}
+                                            )
+                                            
+                                            # Get public URL
+                                            return uow.client.storage.from_("client-ids").get_public_url(storage_path)
+                                        except Exception as upload_err:
+                                            st.warning(f"File upload failed for '{file_name}': {upload_err}")
+                                            return ""
+                                    
+                                    # Upload Client ID and Passport
+                                    uploaded_id_url = upload_client_file(st.session_state.get("reg_client_id_file"), "id_document")
+                                    uploaded_passport_url = upload_client_file(st.session_state.get("reg_client_passport"), "passport")
+                                    
+                                    # Upload Guarantor ID and Passport
+                                    uploaded_g_id_url = upload_client_file(st.session_state.get("reg_guarantor_id_file"), "guarantor_id")
+                                    uploaded_g_pass_url = upload_client_file(st.session_state.get("reg_guarantor_passport"), "guarantor_passport")
+                                    
+                                    from domain.entities.client import Client
+                                    client_entity = Client(
+                                        id=client_uuid,
+                                        name=name_val,
+                                        client_code=generated_client_code,
+                                        nickname=st.session_state.get("reg_client_nickname"),
+                                        phone=phone_val,
+                                        address=st.session_state.get("reg_client_address"),
+                                        business_address=st.session_state.get("reg_client_biz_address"),
+                                        dob=date(1990, 1, 1),
+                                        gender="Female",
+                                        marital_status=st.session_state.get("reg_client_marital"),
+                                        occupation="Trader",
+                                        business_type=st.session_state.get("reg_client_biz_type"),
+                                        id_means=st.session_state.get("reg_client_id_means"),
+                                        id_number=st.session_state.get("reg_client_id_number"),
+                                        id_card_url=uploaded_id_url,
+                                        next_of_kin="",
+                                        passport_url=uploaded_passport_url,
+                                        signature_url="",
+                                        registration_date=reg_op_date,
+                                        branch_id=branch_id,
+                                        group_id=final_group_id,
+                                        officer_id=uow.loans._resolve_officer_id(USER),
+                                        status="11111111-1111-1111-1111-111111110001",
+                                        status_id="11111111-1111-1111-1111-111111110001",
+                                        average_monthly_income=float(raw_inc or 0.0),
+                                        other_obligations=st.session_state.get("reg_client_obligations")
+                                    )
+                                    uow.clients.create(client_entity)
+                                    
+                                    # 4. Create membership
+                                    uow.client.table("client_memberships").insert({
+                                        "client_id": client_entity.id,
+                                        "group_id": final_group_id,
+                                        "branch_id": branch_id,
+                                        "officer_id": client_entity.officer_id,
+                                        "start_date": reg_op_date.isoformat() if hasattr(reg_op_date, 'isoformat') else str(reg_op_date)
+                                    }).execute()
+                                    
+                                    # 5. Save Guarantor details to guarantors table (if provided)
+                                    g_name_val = st.session_state.get("reg_guarantor_name", "").strip()
+                                    g_phone_val = st.session_state.get("reg_guarantor_phone", "").strip()
+                                    if g_name_val:
+                                        from domain.entities.guarantor import Guarantor
+                                        existing_g = uow.guarantors.find_by_phone(g_phone_val) if g_phone_val else None
+                                        if not existing_g:
+                                            g_entity = Guarantor(
+                                                guarantor_id=str(uuid.uuid4()),
+                                                name=g_name_val,
+                                                phone=g_phone_val,
+                                                address=st.session_state.get("reg_guarantor_address", "").strip(),
+                                                occupation=st.session_state.get("reg_guarantor_occupation", "").strip(),
+                                                business_address=st.session_state.get("reg_guarantor_office", "").strip(),
+                                                id_means=st.session_state.get("reg_guarantor_id_means"),
+                                                id_number=st.session_state.get("reg_guarantor_id_number", "").strip(),
+                                                id_card_url=uploaded_g_id_url,
+                                                passport_url=uploaded_g_pass_url
+                                            )
+                                            uow.guarantors.create_guarantor(g_entity)
+                                    
+                                    st.session_state["reg_success_msg"] = f"🎉 Successfully registered **{name_val}**! Assigned Client ID: **{generated_client_code}**"
+                                    
+                                    # Clear registration form input keys from session state so form resets cleanly
+                                    keys_to_clear = [
+                                        "reg_client_name", "reg_client_nickname", "reg_client_phone", "reg_client_address",
+                                        "reg_client_biz_type", "reg_client_income", "reg_client_biz_address", "reg_client_obligations",
+                                        "reg_client_id_number", "reg_guarantor_name", "reg_guarantor_nickname", "reg_guarantor_phone",
+                                        "reg_guarantor_address", "reg_guarantor_occupation", "reg_guarantor_relationship",
+                                        "reg_guarantor_office", "reg_guarantor_id_number", "reg_new_group_name", "reg_new_group_number"
+                                    ]
+                                    for k in keys_to_clear:
+                                        if k in st.session_state:
+                                            del st.session_state[k]
+                                    
+                                    st.rerun()
+                            except Exception as ex:
+                                st.error(f"Error registering client: {ex}")
                         
         else:
             st.markdown("<div class='card'>", unsafe_allow_html=True)
@@ -4088,96 +4094,97 @@ elif page == "Loan Origination":
                                     st.error("Cannot submit! Insufficient savings for Asset Downpayment.")
                                     st.stop()
 
-                                # For Finance: auto-deduct upfront fees from savings
-                                if product_category == "Finance" and total_upfront_required > 0:
-                                    from services.savings_service import SavingsService
-                                    SavingsService.post_individual_savings(
-                                        uow,
+                                with st.spinner("Submitting loan application for BM approval..."):
+                                    # For Finance: auto-deduct upfront fees from savings
+                                    if product_category == "Finance" and total_upfront_required > 0:
+                                        from services.savings_service import SavingsService
+                                        SavingsService.post_individual_savings(
+                                            uow,
+                                            client_id=selected_client_id,
+                                            client_name=selected_client.name,
+                                            branch=branch_name,
+                                            officer=USER,
+                                            deposit_amount=0.0,
+                                            withdrawal_amount=total_upfront_required,
+                                            remarks=f"Auto-deducted Upfront Fees (Interest: {interest}, Gap: {gap_fee}) for Loan App",
+                                            posting_date=app_op_date
+                                        )
+
+                                    from domain.entities.loan import Loan
+                                    from domain.enums import LoanStatus
+                                    
+                                    loan_id = str(uuid.uuid4())
+                                    if product_category == "Finance":
+                                        final_active_credit = requested_amount - gap_fee
+                                        final_total_payable = requested_amount + interest
+                                        final_expected_installment = final_active_credit / duration if duration > 0 else 0.0
+                                    else:
+                                        final_active_credit = (requested_amount + interest) - initial_downpayment
+                                        final_total_payable = final_active_credit
+                                        final_expected_installment = final_active_credit / duration if duration > 0 else 0.0
+
+                                    # For Asset with Savings Downpayment: register non-cash downpayment offset from savings
+                                    if product_category == "Asset" and sav_dp > 0:
+                                        from services.savings_service import SavingsService
+                                        SavingsService.post_loan_offset_from_savings(
+                                            uow,
+                                            client_id=selected_client_id,
+                                            client_name=selected_client.name,
+                                            loan_id=loan_id,
+                                            source_savings_type="IndividualSavings",
+                                            branch=branch_name,
+                                            officer=USER,
+                                            amount=sav_dp,
+                                            remarks=f"Asset Downpayment deducted from Savings for loan {loan_id}",
+                                            posting_date=app_op_date
+                                        )
+
+                                    loan_entity = Loan(
+                                        id=loan_id,
                                         client_id=selected_client_id,
                                         client_name=selected_client.name,
+                                        product_type=product_type,
+                                        amount=requested_amount,
+                                        duration=duration,
+                                        frequency=cycle,
+                                        gap_fee=gap_fee,
+                                        expected_installment=final_expected_installment,
+                                        total_payable=final_total_payable,
+                                        status=LoanStatus.PENDING,
                                         branch=branch_name,
-                                        officer=USER,
-                                        deposit_amount=0.0,
-                                        withdrawal_amount=total_upfront_required,
-                                        remarks=f"Auto-deducted Upfront Fees (Interest: {interest}, Gap: {gap_fee}) for Loan App",
-                                        posting_date=app_op_date
+                                        credit_officer=USER,
+                                        officer_id=selected_client.officer_id,
+                                        branch_id=selected_client.branch_id,
+                                        start_date=app_op_date,
+                                        is_asset=(product_category == "Asset"),
+                                        extra_fields={
+                                            "lifecycle_status": "Submitted",
+                                            "notes": notes,
+                                            "product_category": product_category,
+                                            "downpayment_source": dp_mode if product_category == "Asset" else None,
+                                            "downpayment_cash": cash_dp if product_category == "Asset" else 0.0,
+                                            "downpayment_savings": sav_dp if product_category == "Asset" else 0.0,
+                                            "initial_downpayment": initial_downpayment,
+                                            "active_credit": final_active_credit,
+                                            "loan_repay": final_expected_installment,
+                                            "total_due": final_active_credit
+                                        }
                                     )
+                                    uow.loans.create(loan_entity)
 
-                                from domain.entities.loan import Loan
-                                from domain.enums import LoanStatus
-                                
-                                loan_id = str(uuid.uuid4())
-                                if product_category == "Finance":
-                                    final_active_credit = requested_amount - gap_fee
-                                    final_total_payable = requested_amount + interest
-                                    final_expected_installment = final_active_credit / duration if duration > 0 else 0.0
-                                else:
-                                    final_active_credit = (requested_amount + interest) - initial_downpayment
-                                    final_total_payable = final_active_credit
-                                    final_expected_installment = final_active_credit / duration if duration > 0 else 0.0
+                                    # Update client lifecycle status to 'Pending Loan' (BR-CLI-003.1)
+                                    try:
+                                        from services.client_status_service import ClientStatusService
+                                        ClientStatusService.on_loan_submitted(uow, selected_client_id, loan_id, getattr(selected_client, "officer_id", None))
+                                    except Exception as st_err:
+                                        print(f"[STATUS TRACE] Failed to update client status to Pending Loan: {st_err}")
 
-                                # For Asset with Savings Downpayment: register non-cash downpayment offset from savings
-                                if product_category == "Asset" and sav_dp > 0:
-                                    from services.savings_service import SavingsService
-                                    SavingsService.post_loan_offset_from_savings(
-                                        uow,
-                                        client_id=selected_client_id,
-                                        client_name=selected_client.name,
-                                        loan_id=loan_id,
-                                        source_savings_type="IndividualSavings",
-                                        branch=branch_name,
-                                        officer=USER,
-                                        amount=sav_dp,
-                                        remarks=f"Asset Downpayment deducted from Savings for loan {loan_id}",
-                                        posting_date=app_op_date
-                                    )
+                                    from services.schedule_service import ScheduleService
+                                    ScheduleService.generate_schedule(uow, loan_entity, app_op_date + timedelta(days=7))
 
-                                loan_entity = Loan(
-                                    id=loan_id,
-                                    client_id=selected_client_id,
-                                    client_name=selected_client.name,
-                                    product_type=product_type,
-                                    amount=requested_amount,
-                                    duration=duration,
-                                    frequency=cycle,
-                                    gap_fee=gap_fee,
-                                    expected_installment=final_expected_installment,
-                                    total_payable=final_total_payable,
-                                    status=LoanStatus.PENDING,
-                                    branch=branch_name,
-                                    credit_officer=USER,
-                                    officer_id=selected_client.officer_id,
-                                    branch_id=selected_client.branch_id,
-                                    start_date=app_op_date,
-                                    is_asset=(product_category == "Asset"),
-                                    extra_fields={
-                                        "lifecycle_status": "Submitted",
-                                        "notes": notes,
-                                        "product_category": product_category,
-                                        "downpayment_source": dp_mode if product_category == "Asset" else None,
-                                        "downpayment_cash": cash_dp if product_category == "Asset" else 0.0,
-                                        "downpayment_savings": sav_dp if product_category == "Asset" else 0.0,
-                                        "initial_downpayment": initial_downpayment,
-                                        "active_credit": final_active_credit,
-                                        "loan_repay": final_expected_installment,
-                                        "total_due": final_active_credit
-                                    }
-                                )
-                                uow.loans.create(loan_entity)
-
-                                # Update client lifecycle status to 'Pending Loan' (BR-CLI-003.1)
-                                try:
-                                    from services.client_status_service import ClientStatusService
-                                    ClientStatusService.on_loan_submitted(uow, selected_client_id, loan_id, getattr(selected_client, "officer_id", None))
-                                except Exception as st_err:
-                                    print(f"[STATUS TRACE] Failed to update client status to Pending Loan: {st_err}")
-
-                                from services.schedule_service import ScheduleService
-                                ScheduleService.generate_schedule(uow, loan_entity, app_op_date + timedelta(days=7))
-
-                                st.session_state["flash_msg"] = "Application submitted successfully! Repayment schedule generated and loan is Pending BM Approval."
-                                st.session_state["orig_tab"] = "Pending Disbursements"
-                                st.rerun()
+                                    st.session_state["flash_msg"] = "Application submitted successfully! Repayment schedule generated and loan is Pending BM Approval."
+                                    st.session_state["orig_tab"] = "Pending Disbursements"
+                                    st.rerun()
                         except Exception as ex:
                             st.error(f"Error submitting loan application: {ex}")
                             
@@ -4296,143 +4303,144 @@ elif page == "Loan Origination":
                     if not c_name.strip():
                         st.error("Client Name is required.")
                     else:
-                        try:
-                            with SupabaseUnitOfWork() as uow:
-                                # Setup storage path helper
-                                def upload_client_file(file_data, file_name):
-                                    if not file_data:
-                                        return None
-                                    try:
-                                        file_bytes = file_data.read()
-                                        file_ext = file_data.name.split('.')[-1]
-                                        storage_path = f"{selected_client.id}/{file_name}.{file_ext}"
-                                        
-                                        # Try to upload file
-                                        uow.client.storage.from_("client-ids").upload(
-                                            path=storage_path,
-                                            file=file_bytes,
-                                            file_options={"content-type": file_data.type}
-                                        )
-                                        return uow.client.storage.from_("client-ids").get_public_url(storage_path)
-                                    except Exception as upload_err:
-                                        # If already exists, we might need to overwrite/update it
+                        with st.spinner("Saving client and guarantor updates..."):
+                            try:
+                                with SupabaseUnitOfWork() as uow:
+                                    # Setup storage path helper
+                                    def upload_client_file(file_data, file_name):
+                                        if not file_data:
+                                            return None
                                         try:
-                                            uow.client.storage.from_("client-ids").remove([storage_path])
+                                            file_bytes = file_data.read()
+                                            file_ext = file_data.name.split('.')[-1]
+                                            storage_path = f"{selected_client.id}/{file_name}.{file_ext}"
+                                            
+                                            # Try to upload file
                                             uow.client.storage.from_("client-ids").upload(
                                                 path=storage_path,
                                                 file=file_bytes,
                                                 file_options={"content-type": file_data.type}
                                             )
                                             return uow.client.storage.from_("client-ids").get_public_url(storage_path)
-                                        except Exception as fallback_err:
-                                            st.warning(f"⚠️ File upload failed for '{file_name}': {fallback_err}")
-                                            return None
+                                        except Exception as upload_err:
+                                            # If already exists, we might need to overwrite/update it
+                                            try:
+                                                uow.client.storage.from_("client-ids").remove([storage_path])
+                                                uow.client.storage.from_("client-ids").upload(
+                                                    path=storage_path,
+                                                    file=file_bytes,
+                                                    file_options={"content-type": file_data.type}
+                                                )
+                                                return uow.client.storage.from_("client-ids").get_public_url(storage_path)
+                                            except Exception as fallback_err:
+                                                st.warning(f"⚠️ File upload failed for '{file_name}': {fallback_err}")
+                                                return None
 
-                                # 1. Process files
-                                new_id_url = upload_client_file(c_id_file, "id_document")
-                                new_pass_url = upload_client_file(c_pass_file, "passport")
-                                new_g_id_url = upload_client_file(g_id_file, "guarantor_id")
-                                new_g_pass_url = upload_client_file(g_pass_file, "guarantor_passport")
+                                    # 1. Process files
+                                    new_id_url = upload_client_file(c_id_file, "id_document")
+                                    new_pass_url = upload_client_file(c_pass_file, "passport")
+                                    new_g_id_url = upload_client_file(g_id_file, "guarantor_id")
+                                    new_g_pass_url = upload_client_file(g_pass_file, "guarantor_passport")
 
-                                # 2. Update Client Details in Supabase clients table
-                                client_update_data = {
-                                    "name": c_name.strip(),
-                                    "phone": c_phone.strip() if c_phone.strip() else None,
-                                    "address": c_address.strip() if c_address.strip() else None,
-                                    "marital_status": c_marital,
-                                    "business_type": c_biz.strip() if c_biz.strip() else None,
-                                    "average_monthly_income": c_income,
-                                    "other_obligations": c_obligations.strip() if c_obligations.strip() else None,
-                                    "id_means": c_id_means,
-                                    "id_number": c_id_number.strip() if c_id_number.strip() else None
-                                }
-                                if new_id_url:
-                                    client_update_data["id_card_url"] = new_id_url
-                                if new_pass_url:
-                                    client_update_data["passport_url"] = new_pass_url
-                                    
-                                uow.client.table("clients").update(client_update_data).eq("client_id", selected_client.id).execute()
-
-                                # 3. Update Guarantor details in the latest loan (if exists)
-                                if latest_loan:
-                                    loan_extra = latest_loan.get("extra_fields") or {}
-                                    loan_extra.update({
-                                        "guarantor_name": g_name.strip() if g_name.strip() else None,
-                                        "guarantor_phone": g_phone.strip() if g_phone.strip() else None,
-                                        "guarantor_home_address": g_address.strip() if g_address.strip() else None,
-                                        "guarantor_marital_status": g_marital,
-                                        "guarantor_occupation": g_occ.strip() if g_occ.strip() else None,
-                                        "guarantor_relationship": g_rel.strip() if g_rel.strip() else None,
-                                        "guarantor_office_address": g_office.strip() if g_office.strip() else None,
-                                    })
-                                    loan_update_data = {
-                                        "extra_fields": loan_extra,
-                                        "guarantor_id_means": g_id_means,
-                                        "guarantor_id_number": g_id_number.strip() if g_id_number.strip() else None
+                                    # 2. Update Client Details in Supabase clients table
+                                    client_update_data = {
+                                        "name": c_name.strip(),
+                                        "phone": c_phone.strip() if c_phone.strip() else None,
+                                        "address": c_address.strip() if c_address.strip() else None,
+                                        "marital_status": c_marital,
+                                        "business_type": c_biz.strip() if c_biz.strip() else None,
+                                        "average_monthly_income": c_income,
+                                        "other_obligations": c_obligations.strip() if c_obligations.strip() else None,
+                                        "id_means": c_id_means,
+                                        "id_number": c_id_number.strip() if c_id_number.strip() else None
                                     }
-                                    if new_g_id_url:
-                                        loan_update_data["guarantor_id_card_url"] = new_g_id_url
-                                    if new_g_pass_url:
-                                        loan_update_data["guarantor_passport_url"] = new_g_pass_url
+                                    if new_id_url:
+                                        client_update_data["id_card_url"] = new_id_url
+                                    if new_pass_url:
+                                        client_update_data["passport_url"] = new_pass_url
                                         
-                                    uow.client.table("loans").update(loan_update_data).eq("loan_id", latest_loan["loan_id"]).execute()
-                                    
-                                    # 4. Sync / Update or Create in public.guarantors table
-                                    if g_name.strip() and g_phone.strip():
-                                        res_g = uow.guarantors.find_by_phone(g_phone.strip())
-                                        guarantor_id = None
-                                        if res_g:
-                                            guarantor_id = res_g.guarantor_id
-                                            # Update guarantor details
-                                            g_update = {
-                                                "name": g_name.strip(),
-                                                "address": g_address.strip() if g_address.strip() else None,
-                                                "occupation": g_occ.strip() if g_occ.strip() else None,
-                                                "business_address": g_office.strip() if g_office.strip() else None,
-                                                "id_means": g_id_means,
-                                                "id_number": g_id_number.strip() if g_id_number.strip() else None
-                                            }
-                                            if new_g_id_url:
-                                                g_update["id_card_url"] = new_g_id_url
-                                            if new_g_pass_url:
-                                                g_update["passport_url"] = new_g_pass_url
-                                                
-                                            uow.client.table("guarantors").update(g_update).eq("guarantor_id", guarantor_id).execute()
-                                        else:
-                                            # Create new guarantor record
-                                            from domain.entities.guarantor import Guarantor
-                                            g_new = Guarantor(
-                                                guarantor_id=str(uuid.uuid4()),
-                                                name=g_name.strip(),
-                                                phone=g_phone.strip(),
-                                                address=g_address.strip() if g_address.strip() else None,
-                                                occupation=g_occ.strip() if g_occ.strip() else None,
-                                                business_address=g_office.strip() if g_office.strip() else None,
-                                                id_means=g_id_means,
-                                                id_number=g_id_number.strip() if g_id_number.strip() else None,
-                                                id_card_url=new_g_id_url,
-                                                passport_url=new_g_pass_url
-                                            )
-                                            g_ent = uow.guarantors.create_guarantor(g_new)
-                                            guarantor_id = g_ent.guarantor_id
-                                            
-                                        # Ensure loan link is established in loan_guarantors
-                                        res_link = uow.client.table("loan_guarantors").select("*").eq("loan_id", latest_loan["loan_id"]).eq("guarantor_id", guarantor_id).execute()
-                                        if not res_link.data:
-                                            from domain.entities.guarantor import LoanGuarantor
-                                            uow.guarantors.link_to_loan(LoanGuarantor(
-                                                id=str(uuid.uuid4()),
-                                                loan_id=latest_loan["loan_id"],
-                                                guarantor_id=guarantor_id,
-                                                relationship=g_rel.strip()
-                                            ))
+                                    uow.client.table("clients").update(client_update_data).eq("client_id", selected_client.id).execute()
 
-                                st.success("🎉 Client and Guarantor details updated successfully!")
-                                import time
-                                time.sleep(2)
-                                st.rerun()
-                        except Exception as e:
-                            st.error(f"Error updating details: {e}")
+                                    # 3. Update Guarantor details in the latest loan (if exists)
+                                    if latest_loan:
+                                        loan_extra = latest_loan.get("extra_fields") or {}
+                                        loan_extra.update({
+                                            "guarantor_name": g_name.strip() if g_name.strip() else None,
+                                            "guarantor_phone": g_phone.strip() if g_phone.strip() else None,
+                                            "guarantor_home_address": g_address.strip() if g_address.strip() else None,
+                                            "guarantor_marital_status": g_marital,
+                                            "guarantor_occupation": g_occ.strip() if g_occ.strip() else None,
+                                            "guarantor_relationship": g_rel.strip() if g_rel.strip() else None,
+                                            "guarantor_office_address": g_office.strip() if g_office.strip() else None,
+                                        })
+                                        loan_update_data = {
+                                            "extra_fields": loan_extra,
+                                            "guarantor_id_means": g_id_means,
+                                            "guarantor_id_number": g_id_number.strip() if g_id_number.strip() else None
+                                        }
+                                        if new_g_id_url:
+                                            loan_update_data["guarantor_id_card_url"] = new_g_id_url
+                                        if new_g_pass_url:
+                                            loan_update_data["guarantor_passport_url"] = new_g_pass_url
+                                            
+                                        uow.client.table("loans").update(loan_update_data).eq("loan_id", latest_loan["loan_id"]).execute()
+                                        
+                                        # 4. Sync / Update or Create in public.guarantors table
+                                        if g_name.strip() and g_phone.strip():
+                                            res_g = uow.guarantors.find_by_phone(g_phone.strip())
+                                            guarantor_id = None
+                                            if res_g:
+                                                guarantor_id = res_g.guarantor_id
+                                                # Update guarantor details
+                                                g_update = {
+                                                    "name": g_name.strip(),
+                                                    "address": g_address.strip() if g_address.strip() else None,
+                                                    "occupation": g_occ.strip() if g_occ.strip() else None,
+                                                    "business_address": g_office.strip() if g_office.strip() else None,
+                                                    "id_means": g_id_means,
+                                                    "id_number": g_id_number.strip() if g_id_number.strip() else None
+                                                }
+                                                if new_g_id_url:
+                                                    g_update["id_card_url"] = new_g_id_url
+                                                if new_g_pass_url:
+                                                    g_update["passport_url"] = new_g_pass_url
+                                                    
+                                                uow.client.table("guarantors").update(g_update).eq("guarantor_id", guarantor_id).execute()
+                                            else:
+                                                # Create new guarantor record
+                                                from domain.entities.guarantor import Guarantor
+                                                g_new = Guarantor(
+                                                    guarantor_id=str(uuid.uuid4()),
+                                                    name=g_name.strip(),
+                                                    phone=g_phone.strip(),
+                                                    address=g_address.strip() if g_address.strip() else None,
+                                                    occupation=g_occ.strip() if g_occ.strip() else None,
+                                                    business_address=g_office.strip() if g_office.strip() else None,
+                                                    id_means=g_id_means,
+                                                    id_number=g_id_number.strip() if g_id_number.strip() else None,
+                                                    id_card_url=new_g_id_url,
+                                                    passport_url=new_g_pass_url
+                                                )
+                                                g_ent = uow.guarantors.create_guarantor(g_new)
+                                                guarantor_id = g_ent.guarantor_id
+                                                
+                                            # Ensure loan link is established in loan_guarantors
+                                            res_link = uow.client.table("loan_guarantors").select("*").eq("loan_id", latest_loan["loan_id"]).eq("guarantor_id", guarantor_id).execute()
+                                            if not res_link.data:
+                                                from domain.entities.guarantor import LoanGuarantor
+                                                uow.guarantors.link_to_loan(LoanGuarantor(
+                                                    id=str(uuid.uuid4()),
+                                                    loan_id=latest_loan["loan_id"],
+                                                    guarantor_id=guarantor_id,
+                                                    relationship=g_rel.strip()
+                                                ))
+
+                                    st.success("🎉 Client and Guarantor details updated successfully!")
+                                    import time
+                                    time.sleep(2)
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Error updating details: {e}")
                             
                             
 
@@ -4674,60 +4682,99 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             st.success(f"File loaded successfully! Found {len(df)} rows.")
                     
                             if st.button("🚀 Process Upload", use_container_width=True):
-                                new_records = []
-                                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        
-                                for idx, row in df.iterrows():
-                                    cid = str(row.get('Member Reference', '')).strip()
-                                    gn = str(row.get('Group Name', '')).strip()
-                                    co_name = str(row.get('Credit Officer Name', '')).strip()
+                                with st.spinner("Processing bulk upload and saving collections..."):
+                                    new_records = []
+                                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             
-                                    # Safely parse amounts
-                                    def get_amt(col_name):
-                                        val = row.get(col_name, 0)
-                                        if pd.isna(val): return 0
-                                        try: return float(val)
-                                        except: return 0
-                            
-                                    lr_amt = get_amt("Today's Loan Repayment")
-                                    s_dep = get_amt("Today's Savings Deposit")
-                                    s_wd = get_amt("Today's Savings Withdrawal")
-                                    gs_dep = get_amt("Group Savings Deposit")
-                                    gs_wd = get_amt("Group Savings Withdrawal")
-                                    laps_dep = get_amt("Laps Savings Deposit")
-                                    laps_wd = get_amt("Laps Savings Withdrawal")
-                            
-                                    # 1. Individual Transactions
-                                    if lr_amt > 0 or s_dep > 0 or s_wd > 0:
-                                        if cid and cid != 'nan':
+                                    for idx, row in df.iterrows():
+                                        cid = str(row.get('Member Reference', '')).strip()
+                                        gn = str(row.get('Group Name', '')).strip()
+                                        co_name = str(row.get('Credit Officer Name', '')).strip()
+                                
+                                        # Safely parse amounts
+                                        def get_amt(col_name):
+                                            val = row.get(col_name, 0)
+                                            if pd.isna(val): return 0
+                                            try: return float(val)
+                                            except: return 0
+                                
+                                        lr_amt = get_amt("Today's Loan Repayment")
+                                        s_dep = get_amt("Today's Savings Deposit")
+                                        s_wd = get_amt("Today's Savings Withdrawal")
+                                        gs_dep = get_amt("Group Savings Deposit")
+                                        gs_wd = get_amt("Group Savings Withdrawal")
+                                        laps_dep = get_amt("Laps Savings Deposit")
+                                        laps_wd = get_amt("Laps Savings Withdrawal")
+                                
+                                        # 1. Individual Transactions
+                                        if cid and (lr_amt > 0 or s_dep > 0 or s_wd > 0):
+                                            # Find member to get accurate product and branch
+                                            match = all_clients[all_clients['Client ID'] == cid] if not all_clients.empty and 'Client ID' in all_clients.columns else pd.DataFrame()
+                                            c_name = match.iloc[0]['Client Name'] if not match.empty else f"Member {cid}"
+                                            prod = match.iloc[0]['Loan Product'] if not match.empty else "Daily 60 Days"
+                                            target_co = match.iloc[0]['Officer'] if not match.empty and pd.notna(match.iloc[0]['Officer']) else (co_name or USER)
+                                            c_branch = match.iloc[0]['Branch'] if not match.empty and pd.notna(match.iloc[0]['Branch']) else BRANCH
+                                            
+                                            prod_low = str(prod).lower()
+                                            rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
+                                            if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = lr_amt
+                                            elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = lr_amt
+                                            elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = lr_amt
+                                            elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = lr_amt
+                                            elif "month" in prod_low: rep_mth = lr_amt
+                                            else: rep_60d = lr_amt
+                                            
                                             new_records.append({
                                                 "id": str(uuid.uuid4()),
                                                 "Date": date_str,
                                                 "Time": timestamp,
                                                 "Client ID": cid,
-                                                "Client Name": str(row.get('Full Name', '')),
+                                                "Client Name": c_name,
                                                 "Officer": target_co,
-                                                "Branch": BRANCH,
-                                                "Amount Paid": 0, # Legacy, keeping 0
+                                                "Branch": c_branch,
+                                                "Amount Paid": lr_amt,
                                                 "Savings Amount": s_dep,
                                                 "Withdrawal Amount": s_wd,
                                                 "Loan Repayment Amount": lr_amt,
-                                                "Processing Fee Paid": 0,
-                                                "Insurance Fee Paid": 0,
-                                                "App Fee Paid": 0,
-                                                "Pass Book Paid": 0,
-                                                "Recovery Amount": 0,
-                                                "Mgt Fee Paid": 0,
-                                                "Others Amount": 0,
-                                                "Laps Amount Transferred": 0,
-                                                "Transaction Type": "Collection (Bulk Upload)",
+                                                "Repayment 12 Weeks": rep_12w,
+                                                "Repayment 24 Weeks": rep_24w,
+                                                "Repayment 60 Days": rep_60d,
+                                                "Repayment 120 Days": rep_120d,
+                                                "Monthly": rep_mth,
+                                                "Bank Withdrawal": 0,
+                                                "Asset Sales": 0,
+                                                "App Fee": 0,
+                                                "Pass Book Bonus": 0,
+                                                "Misc Fees": 0,
+                                                "Asset Credit Sales": 0,
+                                                "Cash and Carry": 0,
+                                                "Credit Form": 0,
+                                                "Credit Form Damage": 0,
+                                                "Bonus": 0,
+                                                "Payment Status": "PAID" if lr_amt > 0 else "NOT_PAID",
+                                                "Overdue Amount": 0,
+                                                "Expected Amount": lr_amt,
+                                                "Contingency": 0,
+                                                "Daily 11%": 0,
+                                                "Daily 20%": 0,
+                                                "Weekly 11%": 0,
+                                                "Weekly 20%": 0,
+                                                "Monthly 11%/20%": 0,
+                                                "Product Withdrawal": 0,
+                                                "Expenses": 0,
+                                                "Bank Deposited": 0,
+                                                "Laps Reserved": 0,
+                                                "Laps Transferred": 0,
+                                                "Group Savings Deposit": 0,
+                                                "Group Savings Withdrawal": 0,
+                                                "Transaction Type": "Daily Collection (Bulk Upload)",
                                                 "Note": f"Bulk Uploaded by {USER}",
                                                 "Reversed": False
                                             })
-                                    
-                                    # 2. Group Savings
-                                    if gs_dep > 0 or gs_wd > 0:
-                                        if gn and gn != 'nan':
+                                        
+                                        # 2. Group Savings
+                                        if gn and (gs_dep > 0 or gs_wd > 0):
+                                            target_co = co_name or USER
                                             new_records.append({
                                                 "id": str(uuid.uuid4()),
                                                 "Date": date_str,
@@ -4752,52 +4799,52 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                                 "Note": f"Bulk Uploaded by {USER}",
                                                 "Reversed": False
                                             })
+                                        
+                                        # 3. Laps Savings
+                                        if laps_dep > 0 or laps_wd > 0:
+                                            new_records.append({
+                                                "id": str(uuid.uuid4()),
+                                                "Date": date_str,
+                                                "Time": timestamp,
+                                                "Client ID": f"GLOBAL-LAPS-{BRANCH}",
+                                                "Client Name": f"Laps Savings ({BRANCH})",
+                                                "Officer": target_co,
+                                                "Branch": BRANCH,
+                                                "Amount Paid": 0,
+                                                "Savings Amount": laps_dep,
+                                                "Withdrawal Amount": laps_wd,
+                                                "Loan Repayment Amount": 0,
+                                                "Processing Fee Paid": 0,
+                                                "Insurance Fee Paid": 0,
+                                                "App Fee Paid": 0,
+                                                "Pass Book Paid": 0,
+                                                "Recovery Amount": 0,
+                                                "Mgt Fee Paid": 0,
+                                                "Others Amount": 0,
+                                                "Laps Amount Transferred": 0,
+                                                "Transaction Type": "Laps Savings (Bulk Upload)",
+                                                "Note": f"Bulk Uploaded by {USER}",
+                                                "Reversed": False
+                                            })
                                     
-                                    # 3. Laps Savings
-                                    if laps_dep > 0 or laps_wd > 0:
-                                        new_records.append({
-                                            "id": str(uuid.uuid4()),
-                                            "Date": date_str,
-                                            "Time": timestamp,
-                                            "Client ID": f"GLOBAL-LAPS-{BRANCH}",
-                                            "Client Name": f"Laps Savings ({BRANCH})",
-                                            "Officer": target_co,
-                                            "Branch": BRANCH,
-                                            "Amount Paid": 0,
-                                            "Savings Amount": laps_dep,
-                                            "Withdrawal Amount": laps_wd,
-                                            "Loan Repayment Amount": 0,
-                                            "Processing Fee Paid": 0,
-                                            "Insurance Fee Paid": 0,
-                                            "App Fee Paid": 0,
-                                            "Pass Book Paid": 0,
-                                            "Recovery Amount": 0,
-                                            "Mgt Fee Paid": 0,
-                                            "Others Amount": 0,
-                                            "Laps Amount Transferred": 0,
-                                            "Transaction Type": "Laps Savings (Bulk Upload)",
-                                            "Note": f"Bulk Uploaded by {USER}",
-                                            "Reversed": False
-                                        })
-                                
-                                if new_records:
-                                    bulk_batch_id = f"COL-BULK-{date_str}-{uuid.uuid4().hex[:6].upper()}"
-                                    for idx, r in enumerate(new_records):
-                                        cid = r.get("Client ID") or idx
-                                        r["batch_id"] = bulk_batch_id
-                                        r["tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{bulk_batch_id}_{cid}_{idx}_rep"))
-                                        r["savings_tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{bulk_batch_id}_{cid}_{idx}_sav"))
-                                    receipt = save_repayments(new_records, batch_id=bulk_batch_id)
-                                    if receipt:
-                                        receipt["group_name"] = "Bulk Excel Upload"
-                                        receipt["officer"] = USER
-                                        receipt["branch"] = BRANCH
-                                        receipt["date"] = date_str
-                                        receipt["timestamp"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
-                                        st.session_state["collection_receipt"] = receipt
-                                    st.rerun()
-                                else:
-                                    st.warning("No valid transactions found in the uploaded file.")
+                                    if new_records:
+                                        bulk_batch_id = f"COL-BULK-{date_str}-{uuid.uuid4().hex[:6].upper()}"
+                                        for idx, r in enumerate(new_records):
+                                            cid = r.get("Client ID") or idx
+                                            r["batch_id"] = bulk_batch_id
+                                            r["tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{bulk_batch_id}_{cid}_{idx}_rep"))
+                                            r["savings_tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{bulk_batch_id}_{cid}_{idx}_sav"))
+                                        receipt = save_repayments(new_records, batch_id=bulk_batch_id)
+                                        if receipt:
+                                            receipt["group_name"] = "Bulk Excel Upload"
+                                            receipt["officer"] = USER
+                                            receipt["branch"] = BRANCH
+                                            receipt["date"] = date_str
+                                            receipt["timestamp"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
+                                            st.session_state["collection_receipt"] = receipt
+                                        st.rerun()
+                                    else:
+                                        st.warning("No valid transactions found in the uploaded file.")
                         except Exception as e:
                             st.error(f"Error parsing file: {e}")
 
@@ -4896,75 +4943,76 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                 if sav_val == 0 and rep_val == 0 and app_val == 0 and pb_val == 0 and misc_val == 0:
                                     st.error("Please enter a Savings Deposit, Loan Repayment, or Fee amount greater than ₦0.")
                                 else:
-                                    prod_low = str(loan_prod_val).lower()
-                                    rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
-                                    if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep_val
-                                    elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep_val
-                                    elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep_val
-                                    elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep_val
-                                    elif "month" in prod_low: rep_mth = rep_val
-                                    else: rep_60d = rep_val
+                                    with st.spinner("Posting client collection to financial ledger..."):
+                                        prod_low = str(loan_prod_val).lower()
+                                        rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
+                                        if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep_val
+                                        elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep_val
+                                        elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep_val
+                                        elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep_val
+                                        elif "month" in prod_low: rep_mth = rep_val
+                                        else: rep_60d = rep_val
 
-                                    single_tx = {
-                                        "Date": date_str,
-                                        "Client ID": s_cid,
-                                        "Client Name": s_name,
-                                        "Group Name": s_gname,
-                                        "Group ID": sel_client_obj.get("Group ID"),
-                                        "Officer": target_co,
-                                        "Branch": BRANCH,
-                                        "client_id": s_uuid,
-                                        "id": s_uuid,
-                                        "Amount Paid": rep_val,
-                                        "Transaction Type": "Loan" if rep_val > 0 else "Individual Savings Deposit",
-                                        "Note": single_note.strip() or "Single Client Collection",
-                                        "Savings Amount": sav_val,
-                                        "Withdrawal Amount": 0.0,
-                                        "Loan Repayment Amount": rep_val,
-                                        "Repayment 12 Weeks": rep_12w,
-                                        "Repayment 24 Weeks": rep_24w,
-                                        "Repayment 60 Days": rep_60d,
-                                        "Repayment 120 Days": rep_120d,
-                                        "Monthly": rep_mth,
-                                        "Bank Withdrawal": 0,
-                                        "Asset Sales": 0,
-                                        "App Fee": app_val,
-                                        "Pass Book Bonus": pb_val,
-                                        "Misc Fees": misc_val,
-                                        "Asset Credit Sales": 0,
-                                        "Cash and Carry": 0,
-                                        "Credit Form": 0,
-                                        "Credit Form Damage": 0,
-                                        "Bonus": 0,
-                                        "Contingency": 0,
-                                        "Daily 11%": 0,
-                                        "Daily 20%": 0,
-                                        "Weekly 11%": 0,
-                                        "Weekly 20%": 0,
-                                        "Monthly 11%/20%": 0,
-                                        "Product Withdrawal": 0,
-                                        "Expenses": 0,
-                                        "Bank Deposited": 0,
-                                        "Payment Status": "PAID" if rep_val > 0 else "NOT_PAID",
-                                        "Overdue Amount": 0.0,
-                                        "Expected Amount": expected_rep
-                                    }
-                                    try:
-                                        sc_batch_id = f"COL-SC-{date_str}-{uuid.uuid4().hex[:6].upper()}"
-                                        single_tx["batch_id"] = sc_batch_id
-                                        single_tx["tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{s_cid}_rep"))
-                                        single_tx["savings_tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{s_cid}_sav"))
-                                        receipt = save_repayments([single_tx], batch_id=sc_batch_id)
-                                        if receipt:
-                                            receipt["group_name"] = f"Single Client: {s_name}"
-                                            receipt["officer"] = target_co
-                                            receipt["branch"] = BRANCH
-                                            receipt["date"] = date_str
-                                            receipt["timestamp"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
-                                            st.session_state["collection_receipt"] = receipt
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Error posting transaction: {e}")
+                                        single_tx = {
+                                            "Date": date_str,
+                                            "Client ID": s_cid,
+                                            "Client Name": s_name,
+                                            "Group Name": s_gname,
+                                            "Group ID": sel_client_obj.get("Group ID"),
+                                            "Officer": target_co,
+                                            "Branch": BRANCH,
+                                            "client_id": s_uuid,
+                                            "id": s_uuid,
+                                            "Amount Paid": rep_val,
+                                            "Transaction Type": "Loan" if rep_val > 0 else "Individual Savings Deposit",
+                                            "Note": single_note.strip() or "Single Client Collection",
+                                            "Savings Amount": sav_val,
+                                            "Withdrawal Amount": 0.0,
+                                            "Loan Repayment Amount": rep_val,
+                                            "Repayment 12 Weeks": rep_12w,
+                                            "Repayment 24 Weeks": rep_24w,
+                                            "Repayment 60 Days": rep_60d,
+                                            "Repayment 120 Days": rep_120d,
+                                            "Monthly": rep_mth,
+                                            "Bank Withdrawal": 0,
+                                            "Asset Sales": 0,
+                                            "App Fee": app_val,
+                                            "Pass Book Bonus": pb_val,
+                                            "Misc Fees": misc_val,
+                                            "Asset Credit Sales": 0,
+                                            "Cash and Carry": 0,
+                                            "Credit Form": 0,
+                                            "Credit Form Damage": 0,
+                                            "Bonus": 0,
+                                            "Contingency": 0,
+                                            "Daily 11%": 0,
+                                            "Daily 20%": 0,
+                                            "Weekly 11%": 0,
+                                            "Weekly 20%": 0,
+                                            "Monthly 11%/20%": 0,
+                                            "Product Withdrawal": 0,
+                                            "Expenses": 0,
+                                            "Bank Deposited": 0,
+                                            "Payment Status": "PAID" if rep_val > 0 else "NOT_PAID",
+                                            "Overdue Amount": 0.0,
+                                            "Expected Amount": expected_rep
+                                        }
+                                        try:
+                                            sc_batch_id = f"COL-SC-{date_str}-{uuid.uuid4().hex[:6].upper()}"
+                                            single_tx["batch_id"] = sc_batch_id
+                                            single_tx["tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{s_cid}_rep"))
+                                            single_tx["savings_tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{s_cid}_sav"))
+                                            receipt = save_repayments([single_tx], batch_id=sc_batch_id)
+                                            if receipt:
+                                                receipt["group_name"] = f"Single Client: {s_name}"
+                                                receipt["officer"] = target_co
+                                                receipt["branch"] = BRANCH
+                                                receipt["date"] = date_str
+                                                receipt["timestamp"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
+                                                st.session_state["collection_receipt"] = receipt
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Error posting transaction: {e}")
 
                 elif col_mode == "Group Collection Sheet":
                     st.markdown("### Group Collection Sheet")
@@ -5361,18 +5409,19 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                             if csv_entries:
                                                 st.success(f"Found {matched_count} matching entries in uploaded CSV.")
                                                 if st.button("Load Uploaded CSV into Review Queue", type="primary", use_container_width=True):
-                                                    csv_batch_id = f"COL-CSV-{date_str}-{uuid.uuid4().hex[:6].upper()}"
-                                                    for idx, tx in enumerate(csv_entries):
-                                                        c_id_val = str(tx.get("Client ID") or idx)
-                                                        tx["batch_id"] = csv_batch_id
-                                                        tx["tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{csv_batch_id}_{c_id_val}_{idx}_rep"))
-                                                        tx["savings_tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{csv_batch_id}_{c_id_val}_{idx}_sav"))
-                                                    st.session_state['pending_collections'] = csv_entries
-                                                    st.session_state['collections_batch_id'] = csv_batch_id
-                                                    st.session_state['collections_group'] = selected_group
-                                                    st.session_state['collections_date'] = date_str
-                                                    st.session_state['edit_collections_mode'] = False
-                                                    st.rerun()
+                                                    with st.spinner("Loading CSV entries into review queue..."):
+                                                        csv_batch_id = f"COL-CSV-{date_str}-{uuid.uuid4().hex[:6].upper()}"
+                                                        for idx, tx in enumerate(csv_entries):
+                                                            c_id_val = str(tx.get("Client ID") or idx)
+                                                            tx["batch_id"] = csv_batch_id
+                                                            tx["tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{csv_batch_id}_{c_id_val}_{idx}_rep"))
+                                                            tx["savings_tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{csv_batch_id}_{c_id_val}_{idx}_sav"))
+                                                        st.session_state['pending_collections'] = csv_entries
+                                                        st.session_state['collections_batch_id'] = csv_batch_id
+                                                        st.session_state['collections_group'] = selected_group
+                                                        st.session_state['collections_date'] = date_str
+                                                        st.session_state['edit_collections_mode'] = False
+                                                        st.rerun()
                                             else:
                                                 st.warning("No matching member entries with valid repayment or savings found in CSV.")
                                     except Exception as e:
@@ -5596,139 +5645,140 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                 else:
                                     submit_btn = st.form_submit_button("Calculate Totals & Review Members", type="primary", use_container_width=True)
                                     if submit_btn:
-                                        to_insert = []
-                                        batch_id = f"COL-{date_str}-{uuid.uuid4().hex[:6].upper()}"
-                            
-                                        # Process per-client data
-                                        for cid, info in member_info.items():
-                                            m = info['member']
-                                            s = sav_data.get(cid, {"dep": 0, "wd": 0})
-                                            r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0, "mark_not_paid": False, "expected_amount": 0.0, "has_overdue": False, "current_installment": 0.0})
-                                    
-                                            sav = float(s.get('dep') or 0)
-                                            sav_wd = float(s.get('wd') or 0)
-                                            rep = float(r.get('rep') or 0)
-                                            app = float(r.get('app') or 0)
-                                            pb = float(r.get('pb') or 0)
-                                            misc = float(r.get('misc') or 0)
-                                            asset_cr = float(r.get('asset_cr') or 0)
-                                            cc = float(r.get('cc') or 0)
-                                            cfd = float(r.get('cfd') or 0)
-                                            bon = float(r.get('bonus') or 0)
-                                            exp_amt = float(r.get('expected_amount') or 0.0)
-                                            is_marked_not_paid = bool(r.get('mark_not_paid', False))
-                                    
-                                            # Determine Payment Status & Overdue Amount via authoritative RepaymentService (Zero UI Calculation)
-                                            if is_marked_not_paid:
-                                                rep = 0.0
+                                        with st.spinner("Calculating group totals and staging collections..."):
+                                            to_insert = []
+                                            batch_id = f"COL-{date_str}-{uuid.uuid4().hex[:6].upper()}"
+                                
+                                            # Process per-client data
+                                            for cid, info in member_info.items():
+                                                m = info['member']
+                                                s = sav_data.get(cid, {"dep": 0, "wd": 0})
+                                                r = rep_data.get(cid, {"rep": 0, "app": 0, "pb": 0, "misc": 0, "asset_cr": 0, "cc": 0, "cfd": 0, "bonus": 0, "mark_not_paid": False, "expected_amount": 0.0, "has_overdue": False, "current_installment": 0.0})
+                                        
+                                                sav = float(s.get('dep') or 0)
+                                                sav_wd = float(s.get('wd') or 0)
+                                                rep = float(r.get('rep') or 0)
+                                                app = float(r.get('app') or 0)
+                                                pb = float(r.get('pb') or 0)
+                                                misc = float(r.get('misc') or 0)
+                                                asset_cr = float(r.get('asset_cr') or 0)
+                                                cc = float(r.get('cc') or 0)
+                                                cfd = float(r.get('cfd') or 0)
+                                                bon = float(r.get('bonus') or 0)
+                                                exp_amt = float(r.get('expected_amount') or 0.0)
+                                                is_marked_not_paid = bool(r.get('mark_not_paid', False))
+                                        
+                                                # Determine Payment Status & Overdue Amount via authoritative RepaymentService (Zero UI Calculation)
+                                                if is_marked_not_paid:
+                                                    rep = 0.0
 
-                                            from services.repayment_service import RepaymentService
-                                            cls_res = RepaymentService.classify_repayment(
-                                                amount_paid=rep,
-                                                total_due_today=exp_amt,
-                                                current_installment=float(r.get('current_installment') or exp_amt),
-                                                has_overdue=bool(r.get('has_overdue', False))
-                                            )
-                                            p_status = cls_res["status"]
-                                            overdue_val = cls_res["overdue_shortfall"]
+                                                from services.repayment_service import RepaymentService
+                                                cls_res = RepaymentService.classify_repayment(
+                                                    amount_paid=rep,
+                                                    total_due_today=exp_amt,
+                                                    current_installment=float(r.get('current_installment') or exp_amt),
+                                                    has_overdue=bool(r.get('has_overdue', False))
+                                                )
+                                                p_status = cls_res["status"]
+                                                overdue_val = cls_res["overdue_shortfall"]
+                                        
+                                                if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
+                                                    mem_today_chk = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
+                                                    if not is_marked_not_paid or not mem_today_chk.empty:
+                                                        continue
+                                        
+                                                prod_low = str(m['Loan Product']).lower()
+                                                rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
+                                        
+                                                if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep
+                                                elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep
+                                                elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep
+                                                elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep
+                                                elif "month" in prod_low: rep_mth = rep
+                                                else: rep_60d = rep
+                                        
+                                                tx_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{batch_id}_{cid}_rep"))
+                                                sav_tx_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{batch_id}_{cid}_sav"))
+                                                tx_data = {
+                                                    "batch_id": batch_id,
+                                                    "tx_id": tx_id,
+                                                    "savings_tx_id": sav_tx_id,
+                                                    "Date": date_str,
+                                                    "Client ID": cid,
+                                                    "Client Name": m['Client Name'],
+                                                    "Officer": target_co,
+                                                    "Branch": m['Branch'],
+                                                    "Amount Paid": rep,
+                                                    "Transaction Type": "Loan",
+                                                    "Note": "Daily Collection" if not is_marked_not_paid else "Marked NOT PAID (₦0 Collection)",
+                                                    "Savings Amount": sav,
+                                                    "Withdrawal Amount": sav_wd,
+                                                    "Loan Repayment Amount": rep,
+                                                    "Repayment 12 Weeks": rep_12w,
+                                                    "Repayment 24 Weeks": rep_24w,
+                                                    "Repayment 60 Days": rep_60d,
+                                                    "Repayment 120 Days": rep_120d,
+                                                    "Monthly": rep_mth,
+                                                    "Bank Withdrawal": 0,
+                                                    "Asset Sales": 0,
+                                                    "App Fee": app,
+                                                    "Pass Book Bonus": pb,
+                                                    "Misc Fees": misc,
+                                                    "Asset Credit Sales": asset_cr,
+                                                    "Cash and Carry": cc,
+                                                    "Credit Form": 0,
+                                                    "Credit Form Damage": cfd,
+                                                    "Bonus": bon,
+                                                    "Payment Status": p_status,
+                                                    "Expected Amount": exp_amt,
+                                                    "Overdue Amount": overdue_val,
+                                                    "mark_not_paid": is_marked_not_paid,
+                                                    "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
+                                                    "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                                    "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
+                                                    "Laps Reserved": 0, "Laps Transferred": 0,
+                                                    "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
+                                                }
+                                                to_insert.append(tx_data)
                                     
-                                            if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
-                                                mem_today_chk = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
-                                                if not is_marked_not_paid or not mem_today_chk.empty:
-                                                    continue
+                                            # Process Group-Level Inflows
+                                            global_group_savings = float(global_group_savings or 0)
+                                            global_group_wd = float(global_group_wd or 0)
                                     
-                                            prod_low = str(m['Loan Product']).lower()
-                                            rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
-                                    
-                                            if "12 week" in prod_low or "12wk" in prod_low or "12w" in prod_low: rep_12w = rep
-                                            elif "24 week" in prod_low or "24wk" in prod_low or "24w" in prod_low: rep_24w = rep
-                                            elif "60 day" in prod_low or ("daily" in prod_low and "120" not in prod_low) or "60-day" in prod_low: rep_60d = rep
-                                            elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep
-                                            elif "month" in prod_low: rep_mth = rep
-                                            else: rep_60d = rep
-                                    
-                                            tx_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{batch_id}_{cid}_rep"))
-                                            sav_tx_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{batch_id}_{cid}_sav"))
-                                            tx_data = {
-                                                "batch_id": batch_id,
-                                                "tx_id": tx_id,
-                                                "savings_tx_id": sav_tx_id,
-                                                "Date": date_str,
-                                                "Client ID": cid,
-                                                "Client Name": m['Client Name'],
-                                                "Officer": target_co,
-                                                "Branch": m['Branch'],
-                                                "Amount Paid": rep,
-                                                "Transaction Type": "Loan",
-                                                "Note": "Daily Collection" if not is_marked_not_paid else "Marked NOT PAID (₦0 Collection)",
-                                                "Savings Amount": sav,
-                                                "Withdrawal Amount": sav_wd,
-                                                "Loan Repayment Amount": rep,
-                                                "Repayment 12 Weeks": rep_12w,
-                                                "Repayment 24 Weeks": rep_24w,
-                                                "Repayment 60 Days": rep_60d,
-                                                "Repayment 120 Days": rep_120d,
-                                                "Monthly": rep_mth,
-                                                "Bank Withdrawal": 0,
-                                                "Asset Sales": 0,
-                                                "App Fee": app,
-                                                "Pass Book Bonus": pb,
-                                                "Misc Fees": misc,
-                                                "Asset Credit Sales": asset_cr,
-                                                "Cash and Carry": cc,
-                                                "Credit Form": 0,
-                                                "Credit Form Damage": cfd,
-                                                "Bonus": bon,
-                                                "Payment Status": p_status,
-                                                "Expected Amount": exp_amt,
-                                                "Overdue Amount": overdue_val,
-                                                "mark_not_paid": is_marked_not_paid,
-                                                "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0,
-                                                "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
-                                                "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0,
-                                                "Laps Reserved": 0, "Laps Transferred": 0,
-                                                "Group Savings Deposit": 0, "Group Savings Withdrawal": 0
-                                            }
-                                            to_insert.append(tx_data)
-                                
-                                        # Process Group-Level Inflows
-                                        global_group_savings = float(global_group_savings or 0)
-                                        global_group_wd = float(global_group_wd or 0)
-                                
-                                        if global_group_savings > 0 or global_group_wd > 0:
-                                            target_gid = group_clients['Group ID'].dropna().iloc[0] if 'Group ID' in group_clients.columns and not group_clients['Group ID'].dropna().empty else None
-                                            g_tx_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{batch_id}_group_{selected_group}_rep"))
-                                            g_sav_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{batch_id}_group_{selected_group}_sav"))
-                                            g_data = {
-                                                "batch_id": batch_id,
-                                                "tx_id": g_tx_id,
-                                                "savings_tx_id": g_sav_id,
-                                                "Date": date_str, "Client ID": f"GROUP-{selected_group}", "Client Name": f"{selected_group} Meeting",
-                                                "Officer": target_co, "Branch": BRANCH,
-                                                "Amount Paid": global_group_savings,
-                                                "Transaction Type": "Group Meeting", "Note": "Group Level Inputs",
-                                                "Savings Amount": global_group_savings, "Withdrawal Amount": global_group_wd,
-                                                "group_id": target_gid,
-                                                "Laps Reserved": 0,
-                                                "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
-                                                "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0, "Bank Withdrawal": 0,
-                                                "Asset Sales": 0, "App Fee": 0, "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
-                                                "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
-                                                "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
-                                                "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0, "Laps Transferred": 0,
-                                                "Group Savings Deposit": global_group_savings, "Group Savings Withdrawal": global_group_wd
-                                            }
-                                            to_insert.append(g_data)
-                                    
-                                        if to_insert:
-                                            st.session_state['pending_collections'] = to_insert
-                                            st.session_state['collections_batch_id'] = batch_id
-                                            st.session_state['collections_group'] = selected_group
-                                            st.session_state['collections_date'] = date_str
-                                            st.session_state['edit_collections_mode'] = False
-                                            st.rerun()
-                                        else:
-                                            st.warning("No data entered to save.")
+                                            if global_group_savings > 0 or global_group_wd > 0:
+                                                target_gid = group_clients['Group ID'].dropna().iloc[0] if 'Group ID' in group_clients.columns and not group_clients['Group ID'].dropna().empty else None
+                                                g_tx_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{batch_id}_group_{selected_group}_rep"))
+                                                g_sav_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{batch_id}_group_{selected_group}_sav"))
+                                                g_data = {
+                                                    "batch_id": batch_id,
+                                                    "tx_id": g_tx_id,
+                                                    "savings_tx_id": g_sav_id,
+                                                    "Date": date_str, "Client ID": f"GROUP-{selected_group}", "Client Name": f"{selected_group} Meeting",
+                                                    "Officer": target_co, "Branch": BRANCH,
+                                                    "Amount Paid": global_group_savings,
+                                                    "Transaction Type": "Group Meeting", "Note": "Group Level Inputs",
+                                                    "Savings Amount": global_group_savings, "Withdrawal Amount": global_group_wd,
+                                                    "group_id": target_gid,
+                                                    "Laps Reserved": 0,
+                                                    "Loan Repayment Amount": 0, "Repayment 12 Weeks": 0, "Repayment 24 Weeks": 0,
+                                                    "Repayment 60 Days": 0, "Repayment 120 Days": 0, "Monthly": 0, "Bank Withdrawal": 0,
+                                                    "Asset Sales": 0, "App Fee": 0, "Pass Book Bonus": 0, "Misc Fees": 0, "Asset Credit Sales": 0,
+                                                    "Cash and Carry": 0, "Credit Form": 0, "Credit Form Damage": 0, "Bonus": 0,
+                                                    "Contingency": 0, "Daily 11%": 0, "Daily 20%": 0, "Weekly 11%": 0, "Weekly 20%": 0, "Monthly 11%/20%": 0,
+                                                    "Product Withdrawal": 0, "Expenses": 0, "Bank Deposited": 0, "Laps Transferred": 0,
+                                                    "Group Savings Deposit": global_group_savings, "Group Savings Withdrawal": global_group_wd
+                                                }
+                                                to_insert.append(g_data)
+                                        
+                                            if to_insert:
+                                                st.session_state['pending_collections'] = to_insert
+                                                st.session_state['collections_batch_id'] = batch_id
+                                                st.session_state['collections_group'] = selected_group
+                                                st.session_state['collections_date'] = date_str
+                                                st.session_state['edit_collections_mode'] = False
+                                                st.rerun()
+                                            else:
+                                                st.warning("No data entered to save.")
 
         with col_tab2:
             st.markdown("### 📜 Collection History & Audit")
@@ -5990,20 +6040,21 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                     req_reason = st.text_input("Reason for Reversal", placeholder="e.g., Wrong payment entered. Typed 50000 instead of 5000.", key="col_rev_reason")
                     if st.button("Submit Reversal Request to BM", type="primary", key="col_submit_rev_btn"):
                         if req_reason.strip():
-                            try:
-                                from services.correction_service import CorrectionService
-                                req_id = CorrectionService.request_correction(
-                                    uow=uow_corr,
-                                    record_id=rec_id,
-                                    record_type=rec_type,
-                                    reason=req_reason.strip(),
-                                    requested_by=USER_ID if USER_ID else USER,
-                                    branch_id=BRANCH_ID
-                                )
-                                st.success(f"✅ Reversal request submitted to Branch Manager for approval! (Ref: #{req_id[:8]})")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Failed to submit correction request: {e}")
+                            with st.spinner("Submitting reversal request to BM..."):
+                                try:
+                                    from services.correction_service import CorrectionService
+                                    req_id = CorrectionService.request_correction(
+                                        uow=uow_corr,
+                                        record_id=rec_id,
+                                        record_type=rec_type,
+                                        reason=req_reason.strip(),
+                                        requested_by=USER_ID if USER_ID else USER,
+                                        branch_id=BRANCH_ID
+                                    )
+                                    st.success(f"✅ Reversal request submitted to Branch Manager for approval! (Ref: #{req_id[:8]})")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Failed to submit correction request: {e}")
                         else:
                             st.warning("Please provide a valid reason for the reversal.")
                 else:
@@ -6294,107 +6345,109 @@ elif page == "Withdrawal Operations":
                 elif dest_op == "Another Member or Group Savings" and not dest_transfer_id:
                     st.error("Select a valid destination account.")
                 else:
-                    if dest_op == "Client Bank Account (Transfer)":
-                        op_clean = "Bank Transfer"
-                        rem_final = remarks_input or f"Client bank transfer payout for {c_name}"
-                    elif dest_op == "Loan Repayment / Asset Debt Offset":
-                        op_clean = "Loan Offset"
-                        rem_final = f"[LOAN_OFFSET:{target_loan_id}] {remarks_input or ''}".strip()
-                    elif dest_op == "Fee Payment from Savings":
-                        op_clean = "Fee Offset"
-                        rem_final = f"[FEE:{fee_code}] {remarks_input or ''}".strip()
-                    elif dest_op == "Another Member or Group Savings":
-                        op_clean = "Savings Transfer"
-                        rem_final = f"[DEST_ID:{dest_transfer_id}][DEST_NAME:{dest_transfer_name}][DEST_TYPE:{dest_transfer_type}] {remarks_input or ''}".strip()
-                    else:
-                        op_clean = "LAPS Transfer"
-                        rem_final = remarks_input or f"Sweep to LAPS reserve for {c_name}"
+                    spin_msg = "Authorizing and posting withdrawal to ledger..." if auto_exec_ind else "Submitting withdrawal request for BM approval..."
+                    with st.spinner(spin_msg):
+                        if dest_op == "Client Bank Account (Transfer)":
+                            op_clean = "Bank Transfer"
+                            rem_final = remarks_input or f"Client bank transfer payout for {c_name}"
+                        elif dest_op == "Loan Repayment / Asset Debt Offset":
+                            op_clean = "Loan Offset"
+                            rem_final = f"[LOAN_OFFSET:{target_loan_id}] {remarks_input or ''}".strip()
+                        elif dest_op == "Fee Payment from Savings":
+                            op_clean = "Fee Offset"
+                            rem_final = f"[FEE:{fee_code}] {remarks_input or ''}".strip()
+                        elif dest_op == "Another Member or Group Savings":
+                            op_clean = "Savings Transfer"
+                            rem_final = f"[DEST_ID:{dest_transfer_id}][DEST_NAME:{dest_transfer_name}][DEST_TYPE:{dest_transfer_type}] {remarks_input or ''}".strip()
+                        else:
+                            op_clean = "LAPS Transfer"
+                            rem_final = remarks_input or f"Sweep to LAPS reserve for {c_name}"
 
-                    ref_code = f"REF-WTH-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        ref_code = f"REF-WTH-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
-                    if auto_exec_ind:
-                        try:
-                            from services.savings_service import SavingsService
-                            effective_op_date = wth_op_date
-                            with SupabaseUnitOfWork() as uow_direct:
-                                if dest_op == "Client Bank Account (Transfer)":
-                                    SavingsService.post_individual_savings(
-                                        uow=uow_direct, client_id=c_id, client_name=c_name,
-                                        branch=BRANCH, officer=USER, deposit_amount=0.0, withdrawal_amount=float(amount_val),
-                                        reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {rem_final}",
-                                        posting_date=effective_op_date
-                                    )
-                                elif dest_op == "Loan Repayment / Asset Debt Offset":
-                                    SavingsService.post_loan_offset_from_savings(
-                                        uow=uow_direct, client_id=c_id, client_name=c_name,
-                                        loan_id=target_loan_id, source_savings_type="IndividualSavings",
-                                        branch=BRANCH, officer=USER, amount=float(amount_val),
-                                        reference=ref_code, remarks=f"[BM DIRECT LOAN OFFSET] {rem_final}",
-                                        posting_date=effective_op_date
-                                    )
-                                elif dest_op == "Fee Payment from Savings":
-                                    SavingsService.post_fee_offset_from_savings(
-                                        uow=uow_direct, client_id=c_id, client_name=c_name,
-                                        source_savings_type="IndividualSavings", branch=BRANCH, officer=USER,
-                                        fee_type=fee_code, amount=float(amount_val),
-                                        reference=ref_code, remarks=f"[BM DIRECT FEE OFFSET] {rem_final}",
-                                        posting_date=effective_op_date
-                                    )
-                                elif dest_op == "Another Member or Group Savings":
-                                    SavingsService.transfer_savings(
-                                        uow=uow_direct, source_id=c_id, source_name=c_name,
-                                        source_type="IndividualSavings", destination_id=dest_transfer_id,
-                                        destination_name=dest_transfer_name, destination_type=dest_transfer_type,
-                                        branch=BRANCH, officer=USER, amount=float(amount_val),
-                                        reference=ref_code, remarks=f"[BM DIRECT TRANSFER] {rem_final}",
-                                        posting_date=effective_op_date
-                                    )
-                                elif dest_op == "LAPS Reserve":
-                                    SavingsService.transfer_to_laps(
-                                        uow=uow_direct, client_id=c_id, client_name=c_name,
-                                        source_savings_type="IndividualSavings", branch=BRANCH, officer=USER, amount=float(amount_val),
-                                        reference=ref_code, remarks=f"[BM DIRECT LAPS] {rem_final}",
-                                        posting_date=effective_op_date
-                                    )
+                        if auto_exec_ind:
+                            try:
+                                from services.savings_service import SavingsService
+                                effective_op_date = wth_op_date
+                                with SupabaseUnitOfWork() as uow_direct:
+                                    if dest_op == "Client Bank Account (Transfer)":
+                                        SavingsService.post_individual_savings(
+                                            uow=uow_direct, client_id=c_id, client_name=c_name,
+                                            branch=BRANCH, officer=USER, deposit_amount=0.0, withdrawal_amount=float(amount_val),
+                                            reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {rem_final}",
+                                            posting_date=effective_op_date
+                                        )
+                                    elif dest_op == "Loan Repayment / Asset Debt Offset":
+                                        SavingsService.post_loan_offset_from_savings(
+                                            uow=uow_direct, client_id=c_id, client_name=c_name,
+                                            loan_id=target_loan_id, source_savings_type="IndividualSavings",
+                                            branch=BRANCH, officer=USER, amount=float(amount_val),
+                                            reference=ref_code, remarks=f"[BM DIRECT LOAN OFFSET] {rem_final}",
+                                            posting_date=effective_op_date
+                                        )
+                                    elif dest_op == "Fee Payment from Savings":
+                                        SavingsService.post_fee_offset_from_savings(
+                                            uow=uow_direct, client_id=c_id, client_name=c_name,
+                                            source_savings_type="IndividualSavings", branch=BRANCH, officer=USER,
+                                            fee_type=fee_code, amount=float(amount_val),
+                                            reference=ref_code, remarks=f"[BM DIRECT FEE OFFSET] {rem_final}",
+                                            posting_date=effective_op_date
+                                        )
+                                    elif dest_op == "Another Member or Group Savings":
+                                        SavingsService.transfer_savings(
+                                            uow=uow_direct, source_id=c_id, source_name=c_name,
+                                            source_type="IndividualSavings", destination_id=dest_transfer_id,
+                                            destination_name=dest_transfer_name, destination_type=dest_transfer_type,
+                                            branch=BRANCH, officer=USER, amount=float(amount_val),
+                                            reference=ref_code, remarks=f"[BM DIRECT TRANSFER] {rem_final}",
+                                            posting_date=effective_op_date
+                                        )
+                                    elif dest_op == "LAPS Reserve":
+                                        SavingsService.transfer_to_laps(
+                                            uow=uow_direct, client_id=c_id, client_name=c_name,
+                                            source_savings_type="IndividualSavings", branch=BRANCH, officer=USER, amount=float(amount_val),
+                                            reference=ref_code, remarks=f"[BM DIRECT LAPS] {rem_final}",
+                                            posting_date=effective_op_date
+                                        )
 
-                                uow_direct.client.table("withdrawal_requests").insert({
-                                    "savings_type": "Individual",
-                                    "operation_type": op_clean,
-                                    "client_id": c_id,
-                                    "client_name": c_name,
-                                    "loan_id": target_loan_id,
-                                    "branch_id": BRANCH_ID,
-                                    "requested_by": USER,
-                                    "amount": float(amount_val),
-                                    "operational_date": wth_date_str,
-                                    "reference": ref_code,
-                                    "remarks": rem_final,
-                                    "status": "APPROVED",
-                                    "approved_by": USER,
-                                    "approved_at": datetime.now().isoformat()
-                                }).execute()
+                                    uow_direct.client.table("withdrawal_requests").insert({
+                                        "savings_type": "Individual",
+                                        "operation_type": op_clean,
+                                        "client_id": c_id,
+                                        "client_name": c_name,
+                                        "loan_id": target_loan_id,
+                                        "branch_id": BRANCH_ID,
+                                        "requested_by": USER,
+                                        "amount": float(amount_val),
+                                        "operational_date": wth_date_str,
+                                        "reference": ref_code,
+                                        "remarks": rem_final,
+                                        "status": "APPROVED",
+                                        "approved_by": USER,
+                                        "approved_at": datetime.now().isoformat()
+                                    }).execute()
 
-                            st.session_state["withdrawal_flash_msg"] = f"🎉 Withdrawal of ₦{amount_val:,.2f} for **{c_name}** ({dest_op}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                                st.session_state["withdrawal_flash_msg"] = f"🎉 Withdrawal of ₦{amount_val:,.2f} for **{c_name}** ({dest_op}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"Execution failed: {str(ex)}")
+                        else:
+                            uow.client.table("withdrawal_requests").insert({
+                                "savings_type": "Individual",
+                                "operation_type": op_clean,
+                                "client_id": c_id,
+                                "client_name": c_name,
+                                "loan_id": target_loan_id,
+                                "branch_id": BRANCH_ID,
+                                "requested_by": USER,
+                                "amount": float(amount_val),
+                                "operational_date": wth_date_str,
+                                "reference": ref_code,
+                                "remarks": rem_final,
+                                "status": "PENDING"
+                            }).execute()
+                            st.session_state["withdrawal_flash_msg"] = f"✅ Withdrawal request of ₦{amount_val:,.2f} for **{c_name}** ({dest_op}) submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
                             st.rerun()
-                        except Exception as ex:
-                            st.error(f"Execution failed: {str(ex)}")
-                    else:
-                        uow.client.table("withdrawal_requests").insert({
-                            "savings_type": "Individual",
-                            "operation_type": op_clean,
-                            "client_id": c_id,
-                            "client_name": c_name,
-                            "loan_id": target_loan_id,
-                            "branch_id": BRANCH_ID,
-                            "requested_by": USER,
-                            "amount": float(amount_val),
-                            "operational_date": wth_date_str,
-                            "reference": ref_code,
-                            "remarks": rem_final,
-                            "status": "PENDING"
-                        }).execute()
-                        st.session_state["withdrawal_flash_msg"] = f"✅ Withdrawal request of ₦{amount_val:,.2f} for **{c_name}** ({dest_op}) submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
-                        st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
     # GROUP SAVINGS
@@ -6573,109 +6626,111 @@ elif page == "Withdrawal Operations":
                 elif "Another Member" in dest_op and not dest_transfer_id:
                     st.error("Select a valid destination account.")
                 else:
-                    if dest_op == "Group Bank Account (Transfer)":
-                        op_clean = "Bank Transfer"
-                        rem_final = remarks_input or f"Group bank transfer payout for {g_name}"
-                    elif "Loan Repayment" in dest_op:
-                        op_clean = "Loan Offset"
-                        rem_final = f"[LOAN_OFFSET:{target_loan_id}] {remarks_input or ''}".strip()
-                    elif "Fee Payment" in dest_op:
-                        op_clean = "Fee Offset"
-                        rem_final = f"[FEE:{fee_code}] {remarks_input or ''}".strip()
-                    elif "Another Member" in dest_op:
-                        op_clean = "Savings Transfer"
-                        rem_final = f"[DEST_ID:{dest_transfer_id}][DEST_NAME:{dest_transfer_name}][DEST_TYPE:{dest_transfer_type}] {remarks_input or ''}".strip()
-                    else:
-                        op_clean = "LAPS Transfer"
-                        rem_final = remarks_input or f"Sweep to LAPS reserve from {g_name}"
+                    spin_msg = "Authorizing and posting group withdrawal to ledger..." if auto_exec_grp else "Submitting group withdrawal request for BM approval..."
+                    with st.spinner(spin_msg):
+                        if dest_op == "Group Bank Account (Transfer)":
+                            op_clean = "Bank Transfer"
+                            rem_final = remarks_input or f"Group bank transfer payout for {g_name}"
+                        elif "Loan Repayment" in dest_op:
+                            op_clean = "Loan Offset"
+                            rem_final = f"[LOAN_OFFSET:{target_loan_id}] {remarks_input or ''}".strip()
+                        elif "Fee Payment" in dest_op:
+                            op_clean = "Fee Offset"
+                            rem_final = f"[FEE:{fee_code}] {remarks_input or ''}".strip()
+                        elif "Another Member" in dest_op:
+                            op_clean = "Savings Transfer"
+                            rem_final = f"[DEST_ID:{dest_transfer_id}][DEST_NAME:{dest_transfer_name}][DEST_TYPE:{dest_transfer_type}] {remarks_input or ''}".strip()
+                        else:
+                            op_clean = "LAPS Transfer"
+                            rem_final = remarks_input or f"Sweep to LAPS reserve from {g_name}"
 
-                    ref_code = f"REF-GRP-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        ref_code = f"REF-GRP-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
-                    if auto_exec_grp:
-                        try:
-                            from services.savings_service import SavingsService
-                            effective_op_date = wth_op_date
-                            with SupabaseUnitOfWork() as uow_direct:
-                                if dest_op == "Group Bank Account (Transfer)":
-                                    SavingsService.post_group_savings(
-                                        uow=uow_direct, group_name=sel_group.get("group_id") or g_name,
-                                        branch=BRANCH, officer=USER, deposit_amount=0.0, withdrawal_amount=float(amount_val),
-                                        reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {rem_final}",
-                                        posting_date=effective_op_date
-                                    )
-                                elif "Loan Repayment" in dest_op:
-                                    SavingsService.post_loan_offset_from_savings(
-                                        uow=uow_direct, client_id=target_cid, client_name=client_name_for_offset or g_name,
-                                        loan_id=target_loan_id, source_savings_type="GroupSavings",
-                                        branch=BRANCH, officer=USER, amount=float(amount_val),
-                                        reference=ref_code, remarks=f"[BM DIRECT LOAN OFFSET] {rem_final}",
-                                        posting_date=effective_op_date
-                                    )
-                                elif "Fee Payment" in dest_op:
-                                    SavingsService.post_fee_offset_from_savings(
-                                        uow=uow_direct, client_id=target_cid, client_name=client_name_for_offset or g_name,
-                                        source_savings_type="GroupSavings", branch=BRANCH, officer=USER,
-                                        fee_type=fee_code, amount=float(amount_val),
-                                        reference=ref_code, remarks=f"[BM DIRECT FEE OFFSET] {rem_final}",
-                                        posting_date=effective_op_date
-                                    )
-                                elif "Another Member" in dest_op:
-                                    SavingsService.transfer_savings(
-                                        uow=uow_direct, source_id=sel_group.get("group_id"), source_name=g_name,
-                                        source_type="GroupSavings", destination_id=dest_transfer_id,
-                                        destination_name=dest_transfer_name, destination_type=dest_transfer_type,
-                                        branch=BRANCH, officer=USER, amount=float(amount_val),
-                                        reference=ref_code, remarks=f"[BM DIRECT TRANSFER] {rem_final}",
-                                        posting_date=effective_op_date
-                                    )
-                                else:
-                                    SavingsService.transfer_to_laps(
-                                        uow=uow_direct, client_id=sel_group.get("group_id"), client_name=g_name,
-                                        source_savings_type="GroupSavings", branch=BRANCH, officer=USER, amount=float(amount_val),
-                                        reference=ref_code, remarks=f"[BM DIRECT LAPS] {rem_final}",
-                                        posting_date=effective_op_date
-                                    )
+                        if auto_exec_grp:
+                            try:
+                                from services.savings_service import SavingsService
+                                effective_op_date = wth_op_date
+                                with SupabaseUnitOfWork() as uow_direct:
+                                    if dest_op == "Group Bank Account (Transfer)":
+                                        SavingsService.post_group_savings(
+                                            uow=uow_direct, group_name=sel_group.get("group_id") or g_name,
+                                            branch=BRANCH, officer=USER, deposit_amount=0.0, withdrawal_amount=float(amount_val),
+                                            reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {rem_final}",
+                                            posting_date=effective_op_date
+                                        )
+                                    elif "Loan Repayment" in dest_op:
+                                        SavingsService.post_loan_offset_from_savings(
+                                            uow=uow_direct, client_id=target_cid, client_name=client_name_for_offset or g_name,
+                                            loan_id=target_loan_id, source_savings_type="GroupSavings",
+                                            branch=BRANCH, officer=USER, amount=float(amount_val),
+                                            reference=ref_code, remarks=f"[BM DIRECT LOAN OFFSET] {rem_final}",
+                                            posting_date=effective_op_date
+                                        )
+                                    elif "Fee Payment" in dest_op:
+                                        SavingsService.post_fee_offset_from_savings(
+                                            uow=uow_direct, client_id=target_cid, client_name=client_name_for_offset or g_name,
+                                            source_savings_type="GroupSavings", branch=BRANCH, officer=USER,
+                                            fee_type=fee_code, amount=float(amount_val),
+                                            reference=ref_code, remarks=f"[BM DIRECT FEE OFFSET] {rem_final}",
+                                            posting_date=effective_op_date
+                                        )
+                                    elif "Another Member" in dest_op:
+                                        SavingsService.transfer_savings(
+                                            uow=uow_direct, source_id=sel_group.get("group_id"), source_name=g_name,
+                                            source_type="GroupSavings", destination_id=dest_transfer_id,
+                                            destination_name=dest_transfer_name, destination_type=dest_transfer_type,
+                                            branch=BRANCH, officer=USER, amount=float(amount_val),
+                                            reference=ref_code, remarks=f"[BM DIRECT TRANSFER] {rem_final}",
+                                            posting_date=effective_op_date
+                                        )
+                                    else:
+                                        SavingsService.transfer_to_laps(
+                                            uow=uow_direct, client_id=sel_group.get("group_id"), client_name=g_name,
+                                            source_savings_type="GroupSavings", branch=BRANCH, officer=USER, amount=float(amount_val),
+                                            reference=ref_code, remarks=f"[BM DIRECT LAPS] {rem_final}",
+                                            posting_date=effective_op_date
+                                        )
 
-                                uow_direct.client.table("withdrawal_requests").insert({
-                                    "savings_type": "Group",
-                                    "operation_type": op_clean,
-                                    "client_id": target_cid,
-                                    "client_name": client_name_for_offset or g_name,
-                                    "group_name": sel_group.get("group_id") or g_name,
-                                    "loan_id": target_loan_id,
-                                    "branch_id": BRANCH_ID,
-                                    "requested_by": USER,
-                                    "amount": float(amount_val),
-                                    "operational_date": wth_date_str,
-                                    "reference": ref_code,
-                                    "remarks": rem_final,
-                                    "status": "APPROVED",
-                                    "approved_by": USER,
-                                    "approved_at": datetime.now().isoformat()
-                                }).execute()
+                                    uow_direct.client.table("withdrawal_requests").insert({
+                                        "savings_type": "Group",
+                                        "operation_type": op_clean,
+                                        "client_id": target_cid,
+                                        "client_name": client_name_for_offset or g_name,
+                                        "group_name": sel_group.get("group_id") or g_name,
+                                        "loan_id": target_loan_id,
+                                        "branch_id": BRANCH_ID,
+                                        "requested_by": USER,
+                                        "amount": float(amount_val),
+                                        "operational_date": wth_date_str,
+                                        "reference": ref_code,
+                                        "remarks": rem_final,
+                                        "status": "APPROVED",
+                                        "approved_by": USER,
+                                        "approved_at": datetime.now().isoformat()
+                                    }).execute()
 
-                            st.session_state["withdrawal_flash_msg"] = f"🎉 Group withdrawal of ₦{amount_val:,.2f} for **{g_name}** ({dest_op}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                                st.session_state["withdrawal_flash_msg"] = f"🎉 Group withdrawal of ₦{amount_val:,.2f} for **{g_name}** ({dest_op}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"Execution failed: {str(ex)}")
+                        else:
+                            uow.client.table("withdrawal_requests").insert({
+                                "savings_type": "Group",
+                                "operation_type": op_clean,
+                                "client_id": target_cid,
+                                "client_name": client_name_for_offset or g_name,
+                                "group_name": sel_group.get("group_id") or g_name,
+                                "loan_id": target_loan_id,
+                                "branch_id": BRANCH_ID,
+                                "requested_by": USER,
+                                "amount": float(amount_val),
+                                "operational_date": wth_date_str,
+                                "reference": ref_code,
+                                "remarks": rem_final,
+                                "status": "PENDING"
+                            }).execute()
+                            st.session_state["withdrawal_flash_msg"] = f"✅ Group withdrawal request of ₦{amount_val:,.2f} for group **{g_name}** submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
                             st.rerun()
-                        except Exception as ex:
-                            st.error(f"Execution failed: {str(ex)}")
-                    else:
-                        uow.client.table("withdrawal_requests").insert({
-                            "savings_type": "Group",
-                            "operation_type": op_clean,
-                            "client_id": target_cid,
-                            "client_name": client_name_for_offset or g_name,
-                            "group_name": sel_group.get("group_id") or g_name,
-                            "loan_id": target_loan_id,
-                            "branch_id": BRANCH_ID,
-                            "requested_by": USER,
-                            "amount": float(amount_val),
-                            "operational_date": wth_date_str,
-                            "reference": ref_code,
-                            "remarks": rem_final,
-                            "status": "PENDING"
-                        }).execute()
-                        st.session_state["withdrawal_flash_msg"] = f"✅ Group withdrawal request of ₦{amount_val:,.2f} for group **{g_name}** submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
-                        st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
     # MISC SAVINGS (Read-only for CO, BM can withdraw)
@@ -6782,97 +6837,99 @@ elif page == "Withdrawal Operations":
                     elif "Transfer to" in misc_dest_op and not dest_transfer_id:
                         st.error("Select a valid destination account.")
                     else:
-                        if misc_dest_op == "Client Bank Account (Transfer)":
-                            op_clean = "Bank Transfer"
-                            rem_final = remarks_input or f"Misc savings bank payout by {USER}"
-                        elif "Loan Repayment" in misc_dest_op:
-                            op_clean = "Loan Offset"
-                            rem_final = f"[LOAN_OFFSET:{target_loan_id}] {remarks_input or ''}".strip()
-                        elif "Fee Payment" in misc_dest_op:
-                            op_clean = "Fee Offset"
-                            rem_final = f"[FEE:{fee_code}] {remarks_input or ''}".strip()
-                        else:
-                            op_clean = "Savings Transfer"
-                            rem_final = f"[DEST_ID:{dest_transfer_id}][DEST_NAME:{dest_transfer_name}][DEST_TYPE:{dest_transfer_type}] {remarks_input or ''}".strip()
+                        spin_msg = "Authorizing and posting misc withdrawal to ledger..." if auto_exec_misc else "Submitting misc withdrawal request for BM approval..."
+                        with st.spinner(spin_msg):
+                            if misc_dest_op == "Client Bank Account (Transfer)":
+                                op_clean = "Bank Transfer"
+                                rem_final = remarks_input or f"Misc savings bank payout by {USER}"
+                            elif "Loan Repayment" in misc_dest_op:
+                                op_clean = "Loan Offset"
+                                rem_final = f"[LOAN_OFFSET:{target_loan_id}] {remarks_input or ''}".strip()
+                            elif "Fee Payment" in misc_dest_op:
+                                op_clean = "Fee Offset"
+                                rem_final = f"[FEE:{fee_code}] {remarks_input or ''}".strip()
+                            else:
+                                op_clean = "Savings Transfer"
+                                rem_final = f"[DEST_ID:{dest_transfer_id}][DEST_NAME:{dest_transfer_name}][DEST_TYPE:{dest_transfer_type}] {remarks_input or ''}".strip()
 
-                        ref_code = f"REF-MISC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                            ref_code = f"REF-MISC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
-                        if auto_exec_misc:
-                            try:
-                                from services.savings_service import SavingsService
-                                effective_op_date = wth_op_date
-                                with SupabaseUnitOfWork() as uow_direct:
-                                    if misc_dest_op == "Client Bank Account (Transfer)":
-                                        SavingsService.post_misc_savings(
-                                            uow=uow_direct, client_id=target_cid or "", client_name=client_name_target or f"Branch Misc - {BRANCH}",
-                                            branch=BRANCH, officer=USER, deposit_amount=0.0, withdrawal_amount=float(amount_val),
-                                            reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {rem_final}",
-                                            posting_date=effective_op_date
-                                        )
-                                    elif "Loan Repayment" in misc_dest_op:
-                                        SavingsService.post_loan_offset_from_savings(
-                                            uow=uow_direct, client_id=target_cid, client_name=client_name_target,
-                                            loan_id=target_loan_id, source_savings_type="MiscSavings",
-                                            branch=BRANCH, officer=USER, amount=float(amount_val),
-                                            reference=ref_code, remarks=f"[BM DIRECT LOAN OFFSET] {rem_final}",
-                                            posting_date=effective_op_date
-                                        )
-                                    elif "Fee Payment" in misc_dest_op:
-                                        SavingsService.post_fee_offset_from_savings(
-                                            uow=uow_direct, client_id=target_cid, client_name=client_name_target,
-                                            source_savings_type="MiscSavings", branch=BRANCH, officer=USER,
-                                            fee_type=fee_code, amount=float(amount_val),
-                                            reference=ref_code, remarks=f"[BM DIRECT FEE OFFSET] {rem_final}",
-                                            posting_date=effective_op_date
-                                        )
-                                    else:
-                                        SavingsService.transfer_savings(
-                                            uow=uow_direct, source_id=target_cid, source_name=client_name_target or "Misc Savings",
-                                            source_type="MiscSavings", destination_id=dest_transfer_id,
-                                            destination_name=dest_transfer_name, destination_type=dest_transfer_type,
-                                            branch=BRANCH, officer=USER, amount=float(amount_val),
-                                            reference=ref_code, remarks=f"[BM DIRECT TRANSFER] {rem_final}",
-                                            posting_date=effective_op_date
-                                        )
+                            if auto_exec_misc:
+                                try:
+                                    from services.savings_service import SavingsService
+                                    effective_op_date = wth_op_date
+                                    with SupabaseUnitOfWork() as uow_direct:
+                                        if misc_dest_op == "Client Bank Account (Transfer)":
+                                            SavingsService.post_misc_savings(
+                                                uow=uow_direct, client_id=target_cid or "", client_name=client_name_target or f"Branch Misc - {BRANCH}",
+                                                branch=BRANCH, officer=USER, deposit_amount=0.0, withdrawal_amount=float(amount_val),
+                                                reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {rem_final}",
+                                                posting_date=effective_op_date
+                                            )
+                                        elif "Loan Repayment" in misc_dest_op:
+                                            SavingsService.post_loan_offset_from_savings(
+                                                uow=uow_direct, client_id=target_cid, client_name=client_name_target,
+                                                loan_id=target_loan_id, source_savings_type="MiscSavings",
+                                                branch=BRANCH, officer=USER, amount=float(amount_val),
+                                                reference=ref_code, remarks=f"[BM DIRECT LOAN OFFSET] {rem_final}",
+                                                posting_date=effective_op_date
+                                            )
+                                        elif "Fee Payment" in misc_dest_op:
+                                            SavingsService.post_fee_offset_from_savings(
+                                                uow=uow_direct, client_id=target_cid, client_name=client_name_target,
+                                                source_savings_type="MiscSavings", branch=BRANCH, officer=USER,
+                                                fee_type=fee_code, amount=float(amount_val),
+                                                reference=ref_code, remarks=f"[BM DIRECT FEE OFFSET] {rem_final}",
+                                                posting_date=effective_op_date
+                                            )
+                                        else:
+                                            SavingsService.transfer_savings(
+                                                uow=uow_direct, source_id=target_cid, source_name=client_name_target or "Misc Savings",
+                                                source_type="MiscSavings", destination_id=dest_transfer_id,
+                                                destination_name=dest_transfer_name, destination_type=dest_transfer_type,
+                                                branch=BRANCH, officer=USER, amount=float(amount_val),
+                                                reference=ref_code, remarks=f"[BM DIRECT TRANSFER] {rem_final}",
+                                                posting_date=effective_op_date
+                                            )
 
-                                    uow_direct.client.table("withdrawal_requests").insert({
-                                        "savings_type": "Misc",
-                                        "operation_type": op_clean,
-                                        "client_id": target_cid,
-                                        "client_name": client_name_target or f"Branch Misc - {BRANCH}",
-                                        "loan_id": target_loan_id,
-                                        "branch_id": BRANCH_ID,
-                                        "requested_by": USER,
-                                        "amount": float(amount_val),
-                                        "operational_date": wth_date_str,
-                                        "reference": ref_code,
-                                        "remarks": rem_final,
-                                        "status": "APPROVED",
-                                        "approved_by": USER,
-                                        "approved_at": datetime.now().isoformat()
-                                    }).execute()
+                                        uow_direct.client.table("withdrawal_requests").insert({
+                                            "savings_type": "Misc",
+                                            "operation_type": op_clean,
+                                            "client_id": target_cid,
+                                            "client_name": client_name_target or f"Branch Misc - {BRANCH}",
+                                            "loan_id": target_loan_id,
+                                            "branch_id": BRANCH_ID,
+                                            "requested_by": USER,
+                                            "amount": float(amount_val),
+                                            "operational_date": wth_date_str,
+                                            "reference": ref_code,
+                                            "remarks": rem_final,
+                                            "status": "APPROVED",
+                                            "approved_by": USER,
+                                            "approved_at": datetime.now().isoformat()
+                                        }).execute()
 
-                                st.session_state["withdrawal_flash_msg"] = f"🎉 Misc savings withdrawal of ₦{amount_val:,.2f} authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                                    st.session_state["withdrawal_flash_msg"] = f"🎉 Misc savings withdrawal of ₦{amount_val:,.2f} authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                                    st.rerun()
+                                except Exception as ex:
+                                    st.error(f"Execution failed: {str(ex)}")
+                            else:
+                                uow.client.table("withdrawal_requests").insert({
+                                    "savings_type": "Misc",
+                                    "operation_type": op_clean,
+                                    "client_id": target_cid,
+                                    "client_name": client_name_target or f"Branch Misc - {BRANCH}",
+                                    "loan_id": target_loan_id,
+                                    "branch_id": BRANCH_ID,
+                                    "requested_by": USER,
+                                    "amount": float(amount_val),
+                                    "operational_date": wth_date_str,
+                                    "reference": ref_code,
+                                    "remarks": rem_final,
+                                    "status": "PENDING"
+                                }).execute()
+                                st.session_state["withdrawal_flash_msg"] = f"✅ Misc withdrawal/offset request of ₦{amount_val:,.2f} submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
                                 st.rerun()
-                            except Exception as ex:
-                                st.error(f"Execution failed: {str(ex)}")
-                        else:
-                            uow.client.table("withdrawal_requests").insert({
-                                "savings_type": "Misc",
-                                "operation_type": op_clean,
-                                "client_id": target_cid,
-                                "client_name": client_name_target or f"Branch Misc - {BRANCH}",
-                                "loan_id": target_loan_id,
-                                "branch_id": BRANCH_ID,
-                                "requested_by": USER,
-                                "amount": float(amount_val),
-                                "operational_date": wth_date_str,
-                                "reference": ref_code,
-                                "remarks": rem_final,
-                                "status": "PENDING"
-                            }).execute()
-                            st.session_state["withdrawal_flash_msg"] = f"✅ Misc withdrawal/offset request of ₦{amount_val:,.2f} submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
-                            st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
     # LAPS SAVINGS (Closed client/group payouts)
@@ -6928,60 +6985,62 @@ elif page == "Withdrawal Operations":
                 elif amount_val > sel_laps["balance"]:
                     st.error(f"Insufficient LAPS balance. Available: ₦{sel_laps['balance']:,.2f}")
                 else:
-                    ref_code = f"REF-LAPS-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                    c_name_laps = remarks_input.split('\n')[0][:50] if remarks_input else f"LAPS Client {sel_laps['client_id'][:8]}"
+                    spin_msg = "Authorizing and posting LAPS payout to ledger..." if auto_exec_laps else "Submitting LAPS payout for BM approval..."
+                    with st.spinner(spin_msg):
+                        ref_code = f"REF-LAPS-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        c_name_laps = remarks_input.split('\n')[0][:50] if remarks_input else f"LAPS Client {sel_laps['client_id'][:8]}"
 
-                    if auto_exec_laps:
-                        try:
-                            from services.savings_service import SavingsService
-                            effective_op_date = wth_op_date
-                            cash_paid = payout_method == "Cash"
-                            with SupabaseUnitOfWork() as uow_direct:
-                                SavingsService.pay_laps(
-                                    uow=uow_direct, client_id=sel_laps["client_id"], client_name=c_name_laps,
-                                    branch=BRANCH, officer=USER, amount=float(amount_val), cash_paid=cash_paid,
-                                    reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {remarks_input or 'LAPS Payout'}",
-                                    posting_date=effective_op_date
-                                )
+                        if auto_exec_laps:
+                            try:
+                                from services.savings_service import SavingsService
+                                effective_op_date = wth_op_date
+                                cash_paid = payout_method == "Cash"
+                                with SupabaseUnitOfWork() as uow_direct:
+                                    SavingsService.pay_laps(
+                                        uow=uow_direct, client_id=sel_laps["client_id"], client_name=c_name_laps,
+                                        branch=BRANCH, officer=USER, amount=float(amount_val), cash_paid=cash_paid,
+                                        reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {remarks_input or 'LAPS Payout'}",
+                                        posting_date=effective_op_date
+                                    )
 
-                                uow_direct.client.table("withdrawal_requests").insert({
-                                    "savings_type": "LAPS",
-                                    "operation_type": "LAPS Payout",
-                                    "client_id": sel_laps["client_id"],
-                                    "client_name": c_name_laps,
-                                    "branch_id": BRANCH_ID,
-                                    "requested_by": USER,
-                                    "amount": float(amount_val),
-                                    "payout_method": payout_method,
-                                    "operational_date": wth_date_str,
-                                    "reference": ref_code,
-                                    "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
-                                    "status": "APPROVED",
-                                    "approved_by": USER,
-                                    "approved_at": datetime.now().isoformat()
-                                }).execute()
+                                    uow_direct.client.table("withdrawal_requests").insert({
+                                        "savings_type": "LAPS",
+                                        "operation_type": "LAPS Payout",
+                                        "client_id": sel_laps["client_id"],
+                                        "client_name": c_name_laps,
+                                        "branch_id": BRANCH_ID,
+                                        "requested_by": USER,
+                                        "amount": float(amount_val),
+                                        "payout_method": payout_method,
+                                        "operational_date": wth_date_str,
+                                        "reference": ref_code,
+                                        "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
+                                        "status": "APPROVED",
+                                        "approved_by": USER,
+                                        "approved_at": datetime.now().isoformat()
+                                    }).execute()
 
-                            st.session_state["withdrawal_flash_msg"] = f"🎉 LAPS payout of ₦{amount_val:,.2f} ({payout_method}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                                st.session_state["withdrawal_flash_msg"] = f"🎉 LAPS payout of ₦{amount_val:,.2f} ({payout_method}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"Execution failed: {str(ex)}")
+                        else:
+                            uow.client.table("withdrawal_requests").insert({
+                                "savings_type": "LAPS",
+                                "operation_type": "LAPS Payout",
+                                "client_id": sel_laps["client_id"],
+                                "client_name": c_name_laps,
+                                "branch_id": BRANCH_ID,
+                                "requested_by": USER,
+                                "amount": float(amount_val),
+                                "payout_method": payout_method,
+                                "operational_date": wth_date_str,
+                                "reference": ref_code,
+                                "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
+                                "status": "PENDING"
+                            }).execute()
+                            st.session_state["withdrawal_flash_msg"] = f"✅ LAPS payout request of ₦{amount_val:,.2f} ({payout_method}) submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
                             st.rerun()
-                        except Exception as ex:
-                            st.error(f"Execution failed: {str(ex)}")
-                    else:
-                        uow.client.table("withdrawal_requests").insert({
-                            "savings_type": "LAPS",
-                            "operation_type": "LAPS Payout",
-                            "client_id": sel_laps["client_id"],
-                            "client_name": c_name_laps,
-                            "branch_id": BRANCH_ID,
-                            "requested_by": USER,
-                            "amount": float(amount_val),
-                            "payout_method": payout_method,
-                            "operational_date": wth_date_str,
-                            "reference": ref_code,
-                            "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
-                            "status": "PENDING"
-                        }).execute()
-                        st.session_state["withdrawal_flash_msg"] = f"✅ LAPS payout request of ₦{amount_val:,.2f} ({payout_method}) submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
-                        st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
     # PENDING APPROVALS QUEUE (BM / AM / Admin)
@@ -7025,102 +7084,103 @@ elif page == "Withdrawal Operations":
                             wact_col1, wact_col2 = st.columns(2)
                             with wact_col1:
                                 if st.button("Approve", key=f"page_approve_wr_{wr_id}", type="primary", use_container_width=True):
-                                    try:
-                                        from services.savings_service import SavingsService
-                                        effective_op_date = wr.get("operational_date") or wr_approval_op_date
-                                        if isinstance(effective_op_date, str):
-                                            effective_op_date = date.fromisoformat(effective_op_date[:10])
-                                        with SupabaseUnitOfWork() as uow_wr:
-                                            source_type = "GroupSavings" if wr_type == "Group" else ("MiscSavings" if wr_type == "Misc" else "IndividualSavings")
-                                            if wr_op in ["Cash Withdrawal", "Bank Transfer", "Client Bank Account (Transfer)", "Group Bank Account (Transfer)"]:
-                                                if wr_type == "Individual":
-                                                    SavingsService.post_individual_savings(
+                                    with st.spinner(f"Approving withdrawal for {wr_name}..."):
+                                        try:
+                                            from services.savings_service import SavingsService
+                                            effective_op_date = wr.get("operational_date") or wr_approval_op_date
+                                            if isinstance(effective_op_date, str):
+                                                effective_op_date = date.fromisoformat(effective_op_date[:10])
+                                            with SupabaseUnitOfWork() as uow_wr:
+                                                source_type = "GroupSavings" if wr_type == "Group" else ("MiscSavings" if wr_type == "Misc" else "IndividualSavings")
+                                                if wr_op in ["Cash Withdrawal", "Bank Transfer", "Client Bank Account (Transfer)", "Group Bank Account (Transfer)"]:
+                                                    if wr_type == "Individual":
+                                                        SavingsService.post_individual_savings(
+                                                            uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                            branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                            posting_date=effective_op_date
+                                                        )
+                                                    elif wr_type == "Group":
+                                                        SavingsService.post_group_savings(
+                                                            uow=uow_wr, group_name=wr.get("group_name") or wr_name, branch=BRANCH,
+                                                            officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                            posting_date=effective_op_date
+                                                        )
+                                                    elif wr_type == "Misc":
+                                                        SavingsService.post_misc_savings(
+                                                            uow=uow_wr, client_id=wr.get("client_id") or "", client_name=wr_name,
+                                                            branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
+                                                            posting_date=effective_op_date
+                                                        )
+                                                elif wr_op in ["Loan Offset", "Asset Downpayment", "Loan Repayment / Asset Debt Offset"]:
+                                                    SavingsService.post_loan_offset_from_savings(
                                                         uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                        branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                        loan_id=wr.get("loan_id"), source_savings_type=source_type,
+                                                        branch=BRANCH, officer=wr_by, amount=wr_amt,
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED {wr_op.upper()}] {wr_remarks}",
+                                                        posting_date=effective_op_date
+                                                    )
+                                                elif wr_op in ["Fee Offset", "Fee Payment from Savings"]:
+                                                    fee_code = "misc_fees"
+                                                    if "[FEE:" in wr_remarks:
+                                                        try:
+                                                            fee_code = wr_remarks.split("[FEE:")[1].split("]")[0].strip()
+                                                        except Exception:
+                                                            pass
+                                                    SavingsService.post_fee_offset_from_savings(
+                                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                        source_savings_type=source_type, branch=BRANCH, officer=wr_by,
+                                                        fee_type=fee_code, amount=wr_amt,
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED FEE OFFSET] {wr_remarks}",
+                                                        posting_date=effective_op_date
+                                                    )
+                                                elif wr_op in ["Savings Transfer", "Transfer to Another Savings", "Another Member or Group Savings"]:
+                                                    dest_id = wr.get("client_id")
+                                                    dest_name = wr_name
+                                                    dest_type = "IndividualSavings"
+                                                    if "[DEST_ID:" in wr_remarks:
+                                                        try:
+                                                            dest_id = wr_remarks.split("[DEST_ID:")[1].split("]")[0].strip()
+                                                            dest_name = wr_remarks.split("[DEST_NAME:")[1].split("]")[0].strip()
+                                                            dest_type = wr_remarks.split("[DEST_TYPE:")[1].split("]")[0].strip()
+                                                        except Exception:
+                                                            pass
+                                                    SavingsService.transfer_savings(
+                                                        uow=uow_wr, source_id=wr.get("client_id"), source_name=wr_name,
+                                                        source_type=source_type, destination_id=dest_id,
+                                                        destination_name=dest_name, destination_type=dest_type,
+                                                        branch=BRANCH, officer=wr_by, amount=wr_amt,
+                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED TRANSFER] {wr_remarks}",
+                                                        posting_date=effective_op_date
+                                                    )
+                                                elif wr_op == "LAPS Transfer":
+                                                    SavingsService.transfer_to_laps(
+                                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                        source_savings_type=source_type, branch=BRANCH, officer=wr_by, amount=wr_amt,
                                                         reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
                                                         posting_date=effective_op_date
                                                     )
-                                                elif wr_type == "Group":
-                                                    SavingsService.post_group_savings(
-                                                        uow=uow_wr, group_name=wr.get("group_name") or wr_name, branch=BRANCH,
-                                                        officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                                                elif wr_op == "LAPS Payout":
+                                                    cash_paid = (wr.get("payout_method") or "Cash") == "Cash"
+                                                    SavingsService.pay_laps(
+                                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
+                                                        branch=BRANCH, officer=wr_by, amount=wr_amt, cash_paid=cash_paid,
                                                         reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
                                                         posting_date=effective_op_date
                                                     )
-                                                elif wr_type == "Misc":
-                                                    SavingsService.post_misc_savings(
-                                                        uow=uow_wr, client_id=wr.get("client_id") or "", client_name=wr_name,
-                                                        branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
-                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
-                                                        posting_date=effective_op_date
-                                                    )
-                                            elif wr_op in ["Loan Offset", "Asset Downpayment", "Loan Repayment / Asset Debt Offset"]:
-                                                SavingsService.post_loan_offset_from_savings(
-                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                    loan_id=wr.get("loan_id"), source_savings_type=source_type,
-                                                    branch=BRANCH, officer=wr_by, amount=wr_amt,
-                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED {wr_op.upper()}] {wr_remarks}",
-                                                    posting_date=effective_op_date
-                                                )
-                                            elif wr_op in ["Fee Offset", "Fee Payment from Savings"]:
-                                                fee_code = "misc_fees"
-                                                if "[FEE:" in wr_remarks:
-                                                    try:
-                                                        fee_code = wr_remarks.split("[FEE:")[1].split("]")[0].strip()
-                                                    except Exception:
-                                                        pass
-                                                SavingsService.post_fee_offset_from_savings(
-                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                    source_savings_type=source_type, branch=BRANCH, officer=wr_by,
-                                                    fee_type=fee_code, amount=wr_amt,
-                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED FEE OFFSET] {wr_remarks}",
-                                                    posting_date=effective_op_date
-                                                )
-                                            elif wr_op in ["Savings Transfer", "Transfer to Another Savings", "Another Member or Group Savings"]:
-                                                dest_id = wr.get("client_id")
-                                                dest_name = wr_name
-                                                dest_type = "IndividualSavings"
-                                                if "[DEST_ID:" in wr_remarks:
-                                                    try:
-                                                        dest_id = wr_remarks.split("[DEST_ID:")[1].split("]")[0].strip()
-                                                        dest_name = wr_remarks.split("[DEST_NAME:")[1].split("]")[0].strip()
-                                                        dest_type = wr_remarks.split("[DEST_TYPE:")[1].split("]")[0].strip()
-                                                    except Exception:
-                                                        pass
-                                                SavingsService.transfer_savings(
-                                                    uow=uow_wr, source_id=wr.get("client_id"), source_name=wr_name,
-                                                    source_type=source_type, destination_id=dest_id,
-                                                    destination_name=dest_name, destination_type=dest_type,
-                                                    branch=BRANCH, officer=wr_by, amount=wr_amt,
-                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED TRANSFER] {wr_remarks}",
-                                                    posting_date=effective_op_date
-                                                )
-                                            elif wr_op == "LAPS Transfer":
-                                                SavingsService.transfer_to_laps(
-                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                    source_savings_type=source_type, branch=BRANCH, officer=wr_by, amount=wr_amt,
-                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
-                                                    posting_date=effective_op_date
-                                                )
-                                            elif wr_op == "LAPS Payout":
-                                                cash_paid = (wr.get("payout_method") or "Cash") == "Cash"
-                                                SavingsService.pay_laps(
-                                                    uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                    branch=BRANCH, officer=wr_by, amount=wr_amt, cash_paid=cash_paid,
-                                                    reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
-                                                    posting_date=effective_op_date
-                                                )
 
-                                            uow_wr.client.table("withdrawal_requests").update({
-                                                "status": "APPROVED",
-                                                "approved_by": USER,
-                                                "approved_at": datetime.now().isoformat()
-                                            }).eq("id", wr_id).execute()
+                                                uow_wr.client.table("withdrawal_requests").update({
+                                                    "status": "APPROVED",
+                                                    "approved_by": USER,
+                                                    "approved_at": datetime.now().isoformat()
+                                                }).eq("id", wr_id).execute()
 
-                                        st.session_state["withdrawal_flash_msg"] = f"✅ Withdrawal of ₦{wr_amt:,.2f} for **{wr_name}** approved and posted to the financial ledger!"
-                                        st.rerun()
-                                    except Exception as ex:
-                                        st.error(f"Approval failed: {str(ex)}")
+                                            st.session_state["withdrawal_flash_msg"] = f"✅ Withdrawal of ₦{wr_amt:,.2f} for **{wr_name}** approved and posted to the financial ledger!"
+                                            st.rerun()
+                                        except Exception as ex:
+                                            st.error(f"Approval failed: {str(ex)}")
                             with wact_col2:
                                 if st.button("Reject", key=f"page_reject_wr_{wr_id}", type="secondary", use_container_width=True):
                                     st.session_state[f"page_rejecting_{wr_id}"] = True
@@ -7129,15 +7189,16 @@ elif page == "Withdrawal Operations":
                             st.divider()
                             reject_reason = st.text_input("Rejection Reason", key=f"page_rej_reason_{wr_id}", placeholder="Why is this request being rejected?")
                             if st.button("Confirm Rejection", key=f"page_confirm_rej_{wr_id}", type="primary"):
-                                uow.client.table("withdrawal_requests").update({
-                                    "status": "REJECTED",
-                                    "approved_by": USER,
-                                    "approved_at": datetime.now().isoformat(),
-                                    "rejection_reason": reject_reason or "Rejected by BM"
-                                }).eq("id", wr_id).execute()
-                                st.session_state[f"page_rejecting_{wr_id}"] = False
-                                st.session_state["withdrawal_flash_msg"] = f"⚠️ Withdrawal request of ₦{wr_amt:,.2f} for {wr_name} has been rejected."
-                                st.rerun()
+                                with st.spinner("Rejecting withdrawal request..."):
+                                    uow.client.table("withdrawal_requests").update({
+                                        "status": "REJECTED",
+                                        "approved_by": USER,
+                                        "approved_at": datetime.now().isoformat(),
+                                        "rejection_reason": reject_reason or "Rejected by BM"
+                                    }).eq("id", wr_id).execute()
+                                    st.session_state[f"page_rejecting_{wr_id}"] = False
+                                    st.session_state["withdrawal_flash_msg"] = f"⚠️ Withdrawal request of ₦{wr_amt:,.2f} for {wr_name} has been rejected."
+                                    st.rerun()
 
     # ── Withdrawal Requests History ──
     st.markdown("---")
@@ -7194,38 +7255,39 @@ elif page == "Legacy LAPS Migration":
                 st.caption(f"Total Rows Detected: {len(df_mig)}")
 
                 if st.button("🚀 Process Bulk LAPS Migration", type="primary"):
-                    records_to_migrate = []
-                    for idx, row in df_mig.iterrows():
-                        rec = {
-                            "client_id": row.get("client_id") or row.get("Client ID") or row.get("client_code") or None,
-                            "client_name": row.get("client_name") or row.get("Name") or row.get("Client Name") or "Legacy Account",
-                            "amount": float(row.get("amount") or row.get("LAPS Balance") or row.get("Balance") or row.get("deposit_amount") or 0.0),
-                            "branch": row.get("branch") or row.get("Branch") or "Main Branch",
-                            "officer": row.get("officer") or row.get("Officer") or USER,
-                            "owner_known": row.get("owner_known") if "owner_known" in row else (row.get("Owner Known") if "Owner Known" in row else None),
-                            "remarks": row.get("remarks") or row.get("Remarks") or "Legacy LAPS bulk import"
-                        }
-                        records_to_migrate.append(rec)
+                    with st.spinner("Executing bulk LAPS migration..."):
+                        records_to_migrate = []
+                        for idx, row in df_mig.iterrows():
+                            rec = {
+                                "client_id": row.get("client_id") or row.get("Client ID") or row.get("client_code") or None,
+                                "client_name": row.get("client_name") or row.get("Name") or row.get("Client Name") or "Legacy Account",
+                                "amount": float(row.get("amount") or row.get("LAPS Balance") or row.get("Balance") or row.get("deposit_amount") or 0.0),
+                                "branch": row.get("branch") or row.get("Branch") or "Main Branch",
+                                "officer": row.get("officer") or row.get("Officer") or USER,
+                                "owner_known": row.get("owner_known") if "owner_known" in row else (row.get("Owner Known") if "Owner Known" in row else None),
+                                "remarks": row.get("remarks") or row.get("Remarks") or "Legacy LAPS bulk import"
+                            }
+                            records_to_migrate.append(rec)
 
-                    with SupabaseUnitOfWork() as uow:
-                        from services.laps_migration_service import LAPSMigrationService
-                        res = LAPSMigrationService.migrate_legacy_laps(
-                            uow=uow,
-                            records=records_to_migrate,
-                            user_id=USER,
-                            source_name=source_name
-                        )
+                        with SupabaseUnitOfWork() as uow:
+                            from services.laps_migration_service import LAPSMigrationService
+                            res = LAPSMigrationService.migrate_legacy_laps(
+                                uow=uow,
+                                records=records_to_migrate,
+                                user_id=USER,
+                                source_name=source_name
+                            )
 
-                    if res["success_count"] > 0:
-                        st.success(f"🎉 Successfully Migrated {res['success_count']} LAPS Records! (Total Value: ₦{res['total_amount_migrated']:,.2f})")
-                        st.info(f"🏷️ Batch ID: **{res['batch_id']}**")
-                        st.warning("🔄 Zero Physical Cash Movement: Opening equity ledger entries posted with ZERO vault cash impact.")
+                        if res["success_count"] > 0:
+                            st.success(f"🎉 Successfully Migrated {res['success_count']} LAPS Records! (Total Value: ₦{res['total_amount_migrated']:,.2f})")
+                            st.info(f"🏷️ Batch ID: **{res['batch_id']}**")
+                            st.warning("🔄 Zero Physical Cash Movement: Opening equity ledger entries posted with ZERO vault cash impact.")
 
-                    if res["failed_count"] > 0:
-                        st.error(f"⚠️ Failed Records: {res['failed_count']}")
-                        with st.expander("View Error Details"):
-                            for err in res["errors"]:
-                                st.write(f"- {err}")
+                        if res["failed_count"] > 0:
+                            st.error(f"⚠️ Failed Records: {res['failed_count']}")
+                            with st.expander("View Error Details"):
+                                for err in res["errors"]:
+                                    st.write(f"- {err}")
 
             except Exception as ex:
                 st.error(f"❌ Failed to parse Excel file: {str(ex)}")
@@ -7471,20 +7533,21 @@ elif page == "Daily Report":
                         
                         if st.button("Submit Correction Request", type="primary"):
                             if req_reason:
-                                try:
-                                    from services.correction_service import CorrectionService
-                                    with SupabaseUnitOfWork() as uow:
-                                        CorrectionService.request_correction(
-                                            uow,
-                                            record_id=opts[sel_tx_label],
-                                            record_type="Repayment",
-                                            reason=req_reason,
-                                            requested_by=USER_ID,
-                                            branch_id=BRANCH_ID
-                                        )
-                                    st.success("Correction request submitted successfully! Awaiting Manager approval.")
-                                except Exception as e:
-                                    st.error(f"Error submitting request: {e}")
+                                with st.spinner("Submitting error correction request for BM approval..."):
+                                    try:
+                                        from services.correction_service import CorrectionService
+                                        with SupabaseUnitOfWork() as uow:
+                                            CorrectionService.request_correction(
+                                                uow,
+                                                record_id=opts[sel_tx_label],
+                                                record_type="Repayment",
+                                                reason=req_reason,
+                                                requested_by=USER_ID,
+                                                branch_id=BRANCH_ID
+                                            )
+                                        st.success("Correction request submitted successfully! Awaiting Manager approval.")
+                                    except Exception as e:
+                                        st.error(f"Error submitting request: {e}")
                             else:
                                 st.warning("Please provide a reason for the correction.")
                     else:
@@ -7640,51 +7703,52 @@ elif page == "Audit Ledger Legacy":
                         elif not rev_reason:
                             st.error("Please provide a reason for the reversal.")
                         else:
-                            try:
-                                target_row = filtered[filtered['id'] == rev_id]
-                                if target_row.empty:
-                                    st.error("Transaction ID not found in current search results.")
-                                else:
-                                    # Create negative mirror
-                                    orig_tx = target_row.iloc[0].to_dict()
-                                    
-                                    # List of numeric columns to invert
-                                    numeric_cols = [
-                                        'Amount Paid', 'Savings Amount', 'Loan Repayment Amount', 'Processing Fee Paid',
-                                        'Markup Paid', 'Pass Book Paid', 'Recovery Amount', 'Withdrawal Amount', 'Mgt Fee Paid',
-                                        'Others Amount', 'Repayment 12 Weeks', 'Repayment 24 Weeks', 'Repayment 60 Days',
-                                        'Repayment 120 Days', 'Monthly', 'Contingency', 'Bank Withdrawal', 'Asset Sales',
-                                        'App Fee', 'Pass Book Bonus', 'Daily 11%', 'Daily 20%', 'Weekly 11%', 'Weekly 20%',
-                                        'Monthly 11%/20%', 'Cash Carry', 'Product Withdrawal', 'Weekly Active', 'Daily Active',
-                                        'Monthly Active', 'Expenses', 'Bank Deposited', 'Laps Reserved', 'Laps Transferred',
-                                        'initial_payment', 'Group Savings Deposit', 'Group Savings Withdrawal', 'Misc Fees',
-                                        'Asset Credit Sales', 'Cash and Carry', 'Credit Form', 'Credit Form Damage', 'Bonus',
-                                        'Opening Balance'
-                                    ]
-                                    
-                                    new_tx = {}
-                                    for key, value in orig_tx.items():
-                                        if key in numeric_cols:
-                                            val = pd.to_numeric(value, errors='coerce')
-                                            new_tx[key] = -float(val) if not pd.isna(val) else 0.0
-                                        elif key == 'Date':
-                                            new_tx[key] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                        elif key == 'Note':
-                                            new_tx[key] = f"REVERSAL of Tx #{rev_id}. Reason: {rev_reason} (by {USER})"
-                                        elif key == '_dstr' or key == 'id':
-                                            continue # Don't map temp cols or old ID
-                                        else:
-                                            new_tx[key] = value
-                                            
-                                    # Map back to DB column names
-                                    db_new_tx = {UI_TO_DB_REP.get(k, k): v for k, v in new_tx.items() if k in UI_TO_DB_REP}
-                                    
-                                    # Insert to Supabase
-                                    save_repayment({v: db_new_tx.get(k, db_new_tx.get(v)) for k, v in DB_TO_UI_REP.items() if k in db_new_tx or v in db_new_tx})
-                                    st.success(f"Transaction #{rev_id} successfully reversed! Refreshing...")
-                                    st.rerun()
-                            except ValueError:
-                                st.error("Transaction ID must be a number.")
+                            with st.spinner("Executing atomic financial reversal..."):
+                                try:
+                                    target_row = filtered[filtered['id'] == rev_id]
+                                    if target_row.empty:
+                                        st.error("Transaction ID not found in current search results.")
+                                    else:
+                                        # Create negative mirror
+                                        orig_tx = target_row.iloc[0].to_dict()
+                                        
+                                        # List of numeric columns to invert
+                                        numeric_cols = [
+                                            'Amount Paid', 'Savings Amount', 'Loan Repayment Amount', 'Processing Fee Paid',
+                                            'Markup Paid', 'Pass Book Paid', 'Recovery Amount', 'Withdrawal Amount', 'Mgt Fee Paid',
+                                            'Others Amount', 'Repayment 12 Weeks', 'Repayment 24 Weeks', 'Repayment 60 Days',
+                                            'Repayment 120 Days', 'Monthly', 'Contingency', 'Bank Withdrawal', 'Asset Sales',
+                                            'App Fee', 'Pass Book Bonus', 'Daily 11%', 'Daily 20%', 'Weekly 11%', 'Weekly 20%',
+                                            'Monthly 11%/20%', 'Cash Carry', 'Product Withdrawal', 'Weekly Active', 'Daily Active',
+                                            'Monthly Active', 'Expenses', 'Bank Deposited', 'Laps Reserved', 'Laps Transferred',
+                                            'initial_payment', 'Group Savings Deposit', 'Group Savings Withdrawal', 'Misc Fees',
+                                            'Asset Credit Sales', 'Cash and Carry', 'Credit Form', 'Credit Form Damage', 'Bonus',
+                                            'Opening Balance'
+                                        ]
+                                        
+                                        new_tx = {}
+                                        for key, value in orig_tx.items():
+                                            if key in numeric_cols:
+                                                val = pd.to_numeric(value, errors='coerce')
+                                                new_tx[key] = -float(val) if not pd.isna(val) else 0.0
+                                            elif key == 'Date':
+                                                new_tx[key] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                            elif key == 'Note':
+                                                new_tx[key] = f"REVERSAL of Tx #{rev_id}. Reason: {rev_reason} (by {USER})"
+                                            elif key == '_dstr' or key == 'id':
+                                                continue # Don't map temp cols or old ID
+                                            else:
+                                                new_tx[key] = value
+                                                
+                                        # Map back to DB column names
+                                        db_new_tx = {UI_TO_DB_REP.get(k, k): v for k, v in new_tx.items() if k in UI_TO_DB_REP}
+                                        
+                                        # Insert to Supabase
+                                        save_repayment({v: db_new_tx.get(k, db_new_tx.get(v)) for k, v in DB_TO_UI_REP.items() if k in db_new_tx or v in db_new_tx})
+                                        st.success(f"Transaction #{rev_id} successfully reversed! Refreshing...")
+                                        st.rerun()
+                                except ValueError:
+                                    st.error("Transaction ID must be a number.")
     elif audit_section == "🐷 Savings & Misc Fees Ledger":
         try:
             with SupabaseUnitOfWork() as uow:
@@ -9266,97 +9330,98 @@ elif page == "CO Cashbook":
                 if not is_co_cb_open:
                     st.error(f"🔒 Cannot update End of Day inputs today ({co_open_reason}).")
                 else:
-                    import uuid
-                    from domain.entities.event_store import DomainEvent
-                    from services.posting_engine import FinancialPostingEngine
+                    with st.spinner("Posting EOD expenses and updating CO cashbook..."):
+                        import uuid
+                        from domain.entities.event_store import DomainEvent
+                        from services.posting_engine import FinancialPostingEngine
 
-                    try:
-                        with SupabaseUnitOfWork() as uow_eod:
-                            b_uuid = uow_eod.cashbook._resolve_branch_id(BRANCH)
-                            u_res = uow_eod.client.table("app_users").select("id").eq("username", target_co).execute()
-                            off_uuid = u_res.data[0]["id"] if u_res.data else None
-                            
-                            # 1. Fetch current projection to preserve untouched fields and compute deltas
-                            cb_res = uow_eod.client.table("co_cashbooks").select("*").eq("branch_id", b_uuid).eq("officer_id", off_uuid).eq("date", date_str).execute()
-                            cur_cb = cb_res.data[0] if cb_res.data else {}
-                            
-                            cur_app_fee = float(cur_cb.get("app_fee") or 0.0)
-                            cur_pb = float(cur_cb.get("passbook") or 0.0)
-                            cur_cfd = float(cur_cb.get("credit_form_damage") or 0.0)
-                            cur_bon = float(cur_cb.get("bonus") or 0.0)
-                            cur_misc = float(cur_cb.get("misc_fees") or 0.0)
-                            cur_exp = float(cur_cb.get("office_expenses") or 0.0)
-                            cur_bdep = float(cur_cb.get("bank_deposit") or 0.0)
+                        try:
+                            with SupabaseUnitOfWork() as uow_eod:
+                                b_uuid = uow_eod.cashbook._resolve_branch_id(BRANCH)
+                                u_res = uow_eod.client.table("app_users").select("id").eq("username", target_co).execute()
+                                off_uuid = u_res.data[0]["id"] if u_res.data else None
+                                
+                                # 1. Fetch current projection to preserve untouched fields and compute deltas
+                                cb_res = uow_eod.client.table("co_cashbooks").select("*").eq("branch_id", b_uuid).eq("officer_id", off_uuid).eq("date", date_str).execute()
+                                cur_cb = cb_res.data[0] if cb_res.data else {}
+                                
+                                cur_app_fee = float(cur_cb.get("app_fee") or 0.0)
+                                cur_pb = float(cur_cb.get("passbook") or 0.0)
+                                cur_cfd = float(cur_cb.get("credit_form_damage") or 0.0)
+                                cur_bon = float(cur_cb.get("bonus") or 0.0)
+                                cur_misc = float(cur_cb.get("misc_fees") or 0.0)
+                                cur_exp = float(cur_cb.get("office_expenses") or 0.0)
+                                cur_bdep = float(cur_cb.get("bank_deposit") or 0.0)
 
-                            # Resolve effective values: if field was left blank/None, keep current database value
-                            global_opening_val = float(global_opening) if global_opening is not None else float(cur_cb.get("opening_balance") or 0.0)
-                            global_expenses_val = float(global_expenses) if global_expenses is not None else cur_exp
-                            global_bank_dep_val = float(global_bank_dep) if global_bank_dep is not None else cur_bdep
-                            global_app_fee_val = float(global_app_fee) if global_app_fee is not None else cur_app_fee
-                            global_passbook_val = float(global_passbook) if global_passbook is not None else cur_pb
-                            global_misc_fee_val = float(global_misc_fee) if global_misc_fee is not None else cur_misc
-                            global_cfd_val = float(global_cfd) if global_cfd is not None else cur_cfd
-                            global_bonus_val = float(global_bonus) if global_bonus is not None else cur_bon
+                                # Resolve effective values: if field was left blank/None, keep current database value
+                                global_opening_val = float(global_opening) if global_opening is not None else float(cur_cb.get("opening_balance") or 0.0)
+                                global_expenses_val = float(global_expenses) if global_expenses is not None else cur_exp
+                                global_bank_dep_val = float(global_bank_dep) if global_bank_dep is not None else cur_bdep
+                                global_app_fee_val = float(global_app_fee) if global_app_fee is not None else cur_app_fee
+                                global_passbook_val = float(global_passbook) if global_passbook is not None else cur_pb
+                                global_misc_fee_val = float(global_misc_fee) if global_misc_fee is not None else cur_misc
+                                global_cfd_val = float(global_cfd) if global_cfd is not None else cur_cfd
+                                global_bonus_val = float(global_bonus) if global_bonus is not None else cur_bon
 
-                            # 2. Update manual opening balance if provided
-                            if global_opening is not None and global_opening_val > 0:
-                                uow_eod.client.table("co_cashbooks").upsert({
-                                    "date": date_str,
-                                    "branch_id": b_uuid,
-                                    "officer_id": off_uuid,
-                                    "opening_balance": global_opening_val
-                                }, on_conflict="date,branch_id,officer_id").execute()
-
-                            # Helper function to post delta with proper reversal handling
-                            def _post_adjustment(d, ev_pos, ev_neg, agg_type, name, cur_val, new_val):
-                                if d == 0:
-                                    return
-                                if d > 0:
-                                    ev_type = ev_pos
-                                    amt = d
-                                    narr = f"EOD {name} Update (Added ₦{amt:,.2f}, Total: ₦{new_val:,.2f})"
-                                else:
-                                    ev_type = ev_neg
-                                    amt = abs(d)
-                                    narr = f"EOD {name} Adjustment (Reduced ₦{amt:,.2f}, Adjusted from ₦{cur_val:,.2f} to ₦{new_val:,.2f})"
-
-                                ev = DomainEvent(
-                                    event_id=str(uuid.uuid4()),
-                                    aggregate_id=off_uuid or str(uuid.uuid4()),
-                                    aggregate_type=agg_type,
-                                    event_type=ev_type,
-                                    payload={
-                                        "branch": BRANCH,
-                                        "branch_id": b_uuid,
-                                        "officer": target_co,
-                                        "officer_id": off_uuid,
-                                        "amount": amt,
+                                # 2. Update manual opening balance if provided
+                                if global_opening is not None and global_opening_val > 0:
+                                    uow_eod.client.table("co_cashbooks").upsert({
                                         "date": date_str,
-                                        "narration": narr
-                                    }
-                                )
-                                uow_eod.event_store.append(ev)
-                                FinancialPostingEngine.post_event(uow_eod, ev)
+                                        "branch_id": b_uuid,
+                                        "officer_id": off_uuid,
+                                        "opening_balance": global_opening_val
+                                    }, on_conflict="date,branch_id,officer_id").execute()
 
-                            # 3. Post Delta Adjustments for each fee/expense/deposit:
-                            _post_adjustment(global_app_fee_val - cur_app_fee, "FeeCharged", "FeeReversed", "Fee", "App Fee", cur_app_fee, global_app_fee_val)
-                            _post_adjustment(global_passbook_val - cur_pb, "FeeCharged", "FeeReversed", "Fee", "Passbook", cur_pb, global_passbook_val)
-                            _post_adjustment(global_cfd_val - cur_cfd, "FeeCharged", "FeeReversed", "Fee", "Cr Form Damage", cur_cfd, global_cfd_val)
-                            _post_adjustment(global_bonus_val - cur_bon, "FeeCharged", "FeeReversed", "Fee", "Bonus", cur_bon, global_bonus_val)
-                            _post_adjustment(global_misc_fee_val - cur_misc, "FeeCharged", "FeeReversed", "Fee", "Misc Fee", cur_misc, global_misc_fee_val)
-                            _post_adjustment(global_expenses_val - cur_exp, "ExpenseRecorded", "ExpenseReversed", "Expense", "Expense", cur_exp, global_expenses_val)
-                            _post_adjustment(global_bank_dep_val - cur_bdep, "BankDeposited", "BankDepositReversed", "Treasury", "Bank Deposit", cur_bdep, global_bank_dep_val)
+                                # Helper function to post delta with proper reversal handling
+                                def _post_adjustment(d, ev_pos, ev_neg, agg_type, name, cur_val, new_val):
+                                    if d == 0:
+                                        return
+                                    if d > 0:
+                                        ev_type = ev_pos
+                                        amt = d
+                                        narr = f"EOD {name} Update (Added ₦{amt:,.2f}, Total: ₦{new_val:,.2f})"
+                                    else:
+                                        ev_type = ev_neg
+                                        amt = abs(d)
+                                        narr = f"EOD {name} Adjustment (Reduced ₦{amt:,.2f}, Adjusted from ₦{cur_val:,.2f} to ₦{new_val:,.2f})"
 
-                            # 4. Rebuild projection
-                            if off_uuid:
-                                uow_eod.cashbook.rebuild_projection(b_uuid, view_date, officer_id=off_uuid)
-                        
-                        st.success("✅ End of Day Outflows & Fees Updated Successfully!")
-                        import time
-                        time.sleep(1.2)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error updating End of Day inputs: {e}")
+                                    ev = DomainEvent(
+                                        event_id=str(uuid.uuid4()),
+                                        aggregate_id=off_uuid or str(uuid.uuid4()),
+                                        aggregate_type=agg_type,
+                                        event_type=ev_type,
+                                        payload={
+                                            "branch": BRANCH,
+                                            "branch_id": b_uuid,
+                                            "officer": target_co,
+                                            "officer_id": off_uuid,
+                                            "amount": amt,
+                                            "date": date_str,
+                                            "narration": narr
+                                        }
+                                    )
+                                    uow_eod.event_store.append(ev)
+                                    FinancialPostingEngine.post_event(uow_eod, ev)
+
+                                # 3. Post Delta Adjustments for each fee/expense/deposit:
+                                _post_adjustment(global_app_fee_val - cur_app_fee, "FeeCharged", "FeeReversed", "Fee", "App Fee", cur_app_fee, global_app_fee_val)
+                                _post_adjustment(global_passbook_val - cur_pb, "FeeCharged", "FeeReversed", "Fee", "Passbook", cur_pb, global_passbook_val)
+                                _post_adjustment(global_cfd_val - cur_cfd, "FeeCharged", "FeeReversed", "Fee", "Cr Form Damage", cur_cfd, global_cfd_val)
+                                _post_adjustment(global_bonus_val - cur_bon, "FeeCharged", "FeeReversed", "Fee", "Bonus", cur_bon, global_bonus_val)
+                                _post_adjustment(global_misc_fee_val - cur_misc, "FeeCharged", "FeeReversed", "Fee", "Misc Fee", cur_misc, global_misc_fee_val)
+                                _post_adjustment(global_expenses_val - cur_exp, "ExpenseRecorded", "ExpenseReversed", "Expense", "Expense", cur_exp, global_expenses_val)
+                                _post_adjustment(global_bank_dep_val - cur_bdep, "BankDeposited", "BankDepositReversed", "Treasury", "Bank Deposit", cur_bdep, global_bank_dep_val)
+
+                                # 4. Rebuild projection
+                                if off_uuid:
+                                    uow_eod.cashbook.rebuild_projection(b_uuid, view_date, officer_id=off_uuid)
+                            
+                            st.success("✅ End of Day Outflows & Fees Updated Successfully!")
+                            import time
+                            time.sleep(1.2)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error updating End of Day inputs: {e}")
 
     # ========================================================
     # BALANCED 2-COLUMN T-ACCOUNT LEDGER DISPLAY
@@ -9478,17 +9543,18 @@ elif page == "CO Cashbook":
                     req_reason = st.text_input("Reason for Reversal", placeholder="e.g., Typo in office expense. Typed 50000 instead of 5000.", key="co_cb_rev_reason")
                     if st.button("Submit Reversal Request to BM", type="primary", key="co_cb_submit_rev_btn"):
                         if req_reason.strip():
-                            from services.correction_service import CorrectionService
-                            req_id = CorrectionService.request_correction(
-                                uow=uow_corr,
-                                record_id=rec_id,
-                                record_type=rec_type,
-                                reason=req_reason.strip(),
-                                requested_by=USER_ID if USER_ID else USER,
-                                branch_id=BRANCH_ID
-                            )
-                            st.success(f"✅ Reversal request submitted to Branch Manager! (Ref: #{req_id[:8]})")
-                            st.rerun()
+                            with st.spinner("Submitting cashbook reversal request to BM..."):
+                                from services.correction_service import CorrectionService
+                                req_id = CorrectionService.request_correction(
+                                    uow=uow_corr,
+                                    record_id=rec_id,
+                                    record_type=rec_type,
+                                    reason=req_reason.strip(),
+                                    requested_by=USER_ID if USER_ID else USER,
+                                    branch_id=BRANCH_ID
+                                )
+                                st.success(f"✅ Reversal request submitted to Branch Manager! (Ref: #{req_id[:8]})")
+                                st.rerun()
                         else:
                             st.warning("Please provide a valid reason for the reversal.")
                 else:
@@ -9831,97 +9897,98 @@ elif page == "Master Cashbook":
             save_mc = st.form_submit_button("💾 Save Master Cashbook Entry", type="primary", use_container_width=True)
             
             if save_mc:
-                mc_data = {
-                    "date": date_str,
-                    "branch": BRANCH,
-                    "opening_balance": auto_opening,
-                    "rep_daily": auto_rep_60d + auto_rep_120d,
-                    "rep_120_days": auto_rep_120d,
-                    "rep_12_weeks": auto_rep_12w,
-                    "rep_24_weeks": auto_rep_24w,
-                    "rep_monthly": auto_rep_mth,
-                    "disb_60d": auto_disb_60d,
-                    "disb_120d": auto_disb_120d,
-                    "disb_12w": auto_disb_12w,
-                    "disb_24w": auto_disb_24w,
-                    "disb_mth": auto_disb_mth,
-                    "savings_deposit": auto_savings,
-                    "laps_reserve": auto_laps_res,
-                    "funds_received_ho": funds_ho,
-                    "funds_received_other_branch": funds_branch,
-                    "funds_received_other_area": funds_area,
-                    "loan_received_asset": auto_fund_asset,
-                    "loan_received_finance": auto_fund_finance,
-                    "daily_11_pct": auto_daily_11,
-                    "weekly_11_pct": auto_weekly_11,
-                    "savings_adj_no": 0,
-                    "savings_adj_amount": 0,
-                    "risk_premium_returns": 0,
-                    "passbook": auto_passbook,
-                    "app_fee": auto_app_fee,
-                    "asset_credit_sales": auto_asset_cr_sales,
-                    "cash_and_carry": auto_cash_carry,
-                    "contingency": auto_contingency,
-                    "credit_form": 0,
-                    "credit_form_damage": auto_credit_form_dmg,
-                    "bonus": auto_bonus,
-                    "misc_fees": auto_misc,
-                    "fund_transferred_other_branch": xfer_branch,
-                    "fund_transferred_ho": xfer_ho,
-                    "fund_to_other_area": xfer_area,
-                    "fund_to_asset_program": auto_fund_asset,
-                    "fund_to_product_finance": auto_fund_finance,
-                    "savings_withdrawal": auto_savings_wd,
-                    "staff_salaries": salaries,
-                    "office_expenses": auto_expenses,
-                    "laps_returns": auto_laps_ret,
-                    "bank_deposit": auto_bank_dep,
-                    "bank_withdrawal": auto_bank_wd,
-                    "product_withdrawal": auto_prod_wd,
-                    "total_inflows": total_inflows,
-                    "total_outflows": total_outflows,
-                    "closing_balance": closing_balance,
-                    "adjustment_in": adj_in_val,
-                    "adjustment_out": adj_out_val,
-                    "adjustment_reason": adj_reason_val.strip() if adj_reason_val else None
-                }
-                
-                try:
-                    with SupabaseUnitOfWork() as uow:
-                        from services.treasury_service import TreasuryService
-                        branch_id = uow.cashbook._resolve_branch_id(BRANCH)
-                        
-                        posted_any = False
-                        if funds_ho > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_IN', funds_ho, BRANCH, USER, remarks=f"HO Funding: {funds_ho}", posting_date=view_date)
-                            posted_any = True
-                        if funds_branch > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'INTER_BRANCH_IN', funds_branch, BRANCH, USER, remarks=f"Branch Funding: {funds_branch}", posting_date=view_date)
-                            posted_any = True
-                        if funds_area > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'INTER_AREA_IN', funds_area, BRANCH, USER, remarks=f"Area Funding: {funds_area}", posting_date=view_date)
-                            posted_any = True
-                        if xfer_branch > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'INTER_BRANCH_OUT', xfer_branch, BRANCH, USER, remarks=f"Transfer to Branch: {xfer_branch}", posting_date=view_date)
-                            posted_any = True
-                        if xfer_ho > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_OUT', xfer_ho, BRANCH, USER, remarks=f"Transfer to HO: {xfer_ho}", posting_date=view_date)
-                            posted_any = True
-                        if xfer_area > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'INTER_AREA_OUT', xfer_area, BRANCH, USER, remarks=f"Transfer to Area: {xfer_area}", posting_date=view_date)
-                            posted_any = True
-                        if salaries > 0:
-                            TreasuryService.post_treasury_transaction(uow, 'SALARY', salaries, BRANCH, USER, remarks=f"Salary Payment: {salaries}", posting_date=view_date)
-                            posted_any = True
+                with st.spinner("Saving Master Cashbook entry and rebuilding projections..."):
+                    mc_data = {
+                        "date": date_str,
+                        "branch": BRANCH,
+                        "opening_balance": auto_opening,
+                        "rep_daily": auto_rep_60d + auto_rep_120d,
+                        "rep_120_days": auto_rep_120d,
+                        "rep_12_weeks": auto_rep_12w,
+                        "rep_24_weeks": auto_rep_24w,
+                        "rep_monthly": auto_rep_mth,
+                        "disb_60d": auto_disb_60d,
+                        "disb_120d": auto_disb_120d,
+                        "disb_12w": auto_disb_12w,
+                        "disb_24w": auto_disb_24w,
+                        "disb_mth": auto_disb_mth,
+                        "savings_deposit": auto_savings,
+                        "laps_reserve": auto_laps_res,
+                        "funds_received_ho": funds_ho,
+                        "funds_received_other_branch": funds_branch,
+                        "funds_received_other_area": funds_area,
+                        "loan_received_asset": auto_fund_asset,
+                        "loan_received_finance": auto_fund_finance,
+                        "daily_11_pct": auto_daily_11,
+                        "weekly_11_pct": auto_weekly_11,
+                        "savings_adj_no": 0,
+                        "savings_adj_amount": 0,
+                        "risk_premium_returns": 0,
+                        "passbook": auto_passbook,
+                        "app_fee": auto_app_fee,
+                        "asset_credit_sales": auto_asset_cr_sales,
+                        "cash_and_carry": auto_cash_carry,
+                        "contingency": auto_contingency,
+                        "credit_form": 0,
+                        "credit_form_damage": auto_credit_form_dmg,
+                        "bonus": auto_bonus,
+                        "misc_fees": auto_misc,
+                        "fund_transferred_other_branch": xfer_branch,
+                        "fund_transferred_ho": xfer_ho,
+                        "fund_to_other_area": xfer_area,
+                        "fund_to_asset_program": auto_fund_asset,
+                        "fund_to_product_finance": auto_fund_finance,
+                        "savings_withdrawal": auto_savings_wd,
+                        "staff_salaries": salaries,
+                        "office_expenses": auto_expenses,
+                        "laps_returns": auto_laps_ret,
+                        "bank_deposit": auto_bank_dep,
+                        "bank_withdrawal": auto_bank_wd,
+                        "product_withdrawal": auto_prod_wd,
+                        "total_inflows": total_inflows,
+                        "total_outflows": total_outflows,
+                        "closing_balance": closing_balance,
+                        "adjustment_in": adj_in_val,
+                        "adjustment_out": adj_out_val,
+                        "adjustment_reason": adj_reason_val.strip() if adj_reason_val else None
+                    }
+                    
+                    try:
+                        with SupabaseUnitOfWork() as uow:
+                            from services.treasury_service import TreasuryService
+                            branch_id = uow.cashbook._resolve_branch_id(BRANCH)
                             
-                        uow.cashbook.rebuild_projection(branch_id, view_date)
-                        
-                        if posted_any:
-                            st.success("Treasury transactions posted and Cashbook projection rebuilt successfully!")
-                        else:
-                            st.success("Cashbook projection updated and verified successfully!")
-                except Exception as e:
-                    st.error(f"Failed to save and post cashbook manual entries: {e}")
+                            posted_any = False
+                            if funds_ho > 0:
+                                TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_IN', funds_ho, BRANCH, USER, remarks=f"HO Funding: {funds_ho}", posting_date=view_date)
+                                posted_any = True
+                            if funds_branch > 0:
+                                TreasuryService.post_treasury_transaction(uow, 'INTER_BRANCH_IN', funds_branch, BRANCH, USER, remarks=f"Branch Funding: {funds_branch}", posting_date=view_date)
+                                posted_any = True
+                            if funds_area > 0:
+                                TreasuryService.post_treasury_transaction(uow, 'INTER_AREA_IN', funds_area, BRANCH, USER, remarks=f"Area Funding: {funds_area}", posting_date=view_date)
+                                posted_any = True
+                            if xfer_branch > 0:
+                                TreasuryService.post_treasury_transaction(uow, 'INTER_BRANCH_OUT', xfer_branch, BRANCH, USER, remarks=f"Transfer to Branch: {xfer_branch}", posting_date=view_date)
+                                posted_any = True
+                            if xfer_ho > 0:
+                                TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_OUT', xfer_ho, BRANCH, USER, remarks=f"Transfer to HO: {xfer_ho}", posting_date=view_date)
+                                posted_any = True
+                            if xfer_area > 0:
+                                TreasuryService.post_treasury_transaction(uow, 'INTER_AREA_OUT', xfer_area, BRANCH, USER, remarks=f"Transfer to Area: {xfer_area}", posting_date=view_date)
+                                posted_any = True
+                            if salaries > 0:
+                                TreasuryService.post_treasury_transaction(uow, 'SALARY', salaries, BRANCH, USER, remarks=f"Salary Payment: {salaries}", posting_date=view_date)
+                                posted_any = True
+                                
+                            uow.cashbook.rebuild_projection(branch_id, view_date)
+                            
+                            if posted_any:
+                                st.success("Treasury transactions posted and Cashbook projection rebuilt successfully!")
+                            else:
+                                st.success("Cashbook projection updated and verified successfully!")
+                    except Exception as e:
+                        st.error(f"Failed to save and post cashbook manual entries: {e}")
 
         # ========================================================
         # BM ERROR CORRECTION & REVERSAL HUB (FOUR-EYES BR-ERR-001)
@@ -9970,22 +10037,24 @@ elif page == "Master Cashbook":
                             b_act1, b_act2 = st.columns(2)
                             with b_act1:
                                 if st.button("✅ Approve", key=f"mc_app_{r_id}", type="primary", use_container_width=True):
-                                    try:
-                                        from services.correction_service import CorrectionService
-                                        CorrectionService.approve_correction(uow_bm_corr, r_id, approved_by=USER_ID if USER_ID else USER)
-                                        st.success("Reversal approved and executed atomically!")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Approval failed: {e}")
+                                    with st.spinner("Approving reversal and posting compensating ledger entry..."):
+                                        try:
+                                            from services.correction_service import CorrectionService
+                                            CorrectionService.approve_correction(uow_bm_corr, r_id, approved_by=USER_ID if USER_ID else USER)
+                                            st.success("Reversal approved and executed atomically!")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Approval failed: {e}")
                             with b_act2:
                                 if st.button("❌ Reject", key=f"mc_rej_{r_id}", use_container_width=True):
-                                    try:
-                                        from services.correction_service import CorrectionService
-                                        CorrectionService.reject_correction(uow_bm_corr, r_id, approved_by=USER_ID if USER_ID else USER)
-                                        st.info("Reversal rejected.")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Rejection failed: {e}")
+                                    with st.spinner("Rejecting correction request..."):
+                                        try:
+                                            from services.correction_service import CorrectionService
+                                            CorrectionService.reject_correction(uow_bm_corr, r_id, approved_by=USER_ID if USER_ID else USER)
+                                            st.info("Reversal rejected.")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Rejection failed: {e}")
             else:
                 st.success("✅ No pending reversal requests for this branch.")
 
@@ -10014,17 +10083,18 @@ elif page == "Master Cashbook":
                     bm_rev_reason = st.text_input("Reason for Reversal", placeholder="e.g., Wrong salary amount entered.", key="bm_rev_reason")
                     if st.button("Submit Treasury Reversal Request", type="primary", key="bm_submit_tx_rev_btn"):
                         if bm_rev_reason.strip():
-                            from services.correction_service import CorrectionService
-                            req_id = CorrectionService.request_correction(
-                                uow=uow_tx_list,
-                                record_id=tx_opts[sel_bm_tx],
-                                record_type="Treasury",
-                                reason=bm_rev_reason.strip(),
-                                requested_by=USER_ID if USER_ID else USER,
-                                branch_id=BRANCH_ID
-                            )
-                            st.success(f"✅ Treasury reversal request submitted! (Ref: #{req_id[:8]})")
-                            st.rerun()
+                            with st.spinner("Submitting treasury reversal request..."):
+                                from services.correction_service import CorrectionService
+                                req_id = CorrectionService.request_correction(
+                                    uow=uow_tx_list,
+                                    record_id=tx_opts[sel_bm_tx],
+                                    record_type="Treasury",
+                                    reason=bm_rev_reason.strip(),
+                                    requested_by=USER_ID if USER_ID else USER,
+                                    branch_id=BRANCH_ID
+                                )
+                                st.success(f"✅ Treasury reversal request submitted! (Ref: #{req_id[:8]})")
+                                st.rerun()
                         else:
                             st.warning("Please provide a reason.")
                 else:
@@ -10219,20 +10289,21 @@ elif page == "Master Cashbook":
                 st.info(f"**Operational Date**: `{date_str}`. Executing Day Close will freeze all entries for `{date_str}` and advance operational business date to the **Next Working Day**.")
             with eod_c2:
                 if st.button("🔒 Execute EOD Day Close", use_container_width=True, type="primary", key="btn_exec_eod"):
-                    try:
-                        from services.business_date_service import BusinessDateService
-                        with SupabaseUnitOfWork() as uow_eod:
-                            b_id = uow_eod.cashbook._resolve_branch_id(BRANCH)
-                            success = BusinessDateService.close_business_date(uow_eod, b_id, view_date, closed_by=USER)
-                            if success:
-                                st.success(f"Successfully executed Day Close for {date_str}! Operational date advanced to next working day.")
-                                import time
-                                time.sleep(1.5)
-                                st.rerun()
-                            else:
-                                st.error("Failed to execute EOD day close.")
-                    except Exception as ex:
-                        st.error(f"Error during EOD close: {ex}")
+                    with st.spinner("Finalizing daily cashbook and locking operational day..."):
+                        try:
+                            from services.business_date_service import BusinessDateService
+                            with SupabaseUnitOfWork() as uow_eod:
+                                b_id = uow_eod.cashbook._resolve_branch_id(BRANCH)
+                                success = BusinessDateService.close_business_date(uow_eod, b_id, view_date, closed_by=USER)
+                                if success:
+                                    st.success(f"Successfully executed Day Close for {date_str}! Operational date advanced to next working day.")
+                                    import time
+                                    time.sleep(1.5)
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to execute EOD day close.")
+                        except Exception as ex:
+                            st.error(f"Error during EOD close: {ex}")
 
 
     with mc_tab3:
@@ -11249,21 +11320,22 @@ elif page == "Portfolio":
                                     dos_reason = st.text_input("Reason for Reversal", placeholder="e.g. Wrong repayment posted", key=f"dossier_rev_reason_{cur_cid}")
                                     if st.button("Submit Reversal Request", type="primary", key=f"dossier_rev_btn_{cur_cid}"):
                                         if dos_reason.strip():
-                                            try:
-                                                from services.correction_service import CorrectionService
-                                                with SupabaseUnitOfWork() as uow_dos_corr:
-                                                    req_id = CorrectionService.request_correction(
-                                                        uow=uow_dos_corr,
-                                                        record_id=r_opts[sel_rx_label],
-                                                        record_type="Repayment",
-                                                        reason=dos_reason.strip(),
-                                                        requested_by=USER,
-                                                        branch_id=BRANCH_ID
-                                                    )
-                                                st.success(f"Reversal request #{req_id[:8]} submitted to Branch Manager!")
-                                                st.rerun()
-                                            except Exception as e:
-                                                st.error(f"Error submitting reversal: {e}")
+                                            with st.spinner("Submitting repayment reversal request..."):
+                                                try:
+                                                    from services.correction_service import CorrectionService
+                                                    with SupabaseUnitOfWork() as uow_dos_corr:
+                                                        req_id = CorrectionService.request_correction(
+                                                            uow=uow_dos_corr,
+                                                            record_id=r_opts[sel_rx_label],
+                                                            record_type="Repayment",
+                                                            reason=dos_reason.strip(),
+                                                            requested_by=USER,
+                                                            branch_id=BRANCH_ID
+                                                        )
+                                                    st.success(f"Reversal request #{req_id[:8]} submitted to Branch Manager!")
+                                                    st.rerun()
+                                                except Exception as e:
+                                                    st.error(f"Error submitting reversal: {e}")
                                         else:
                                             st.warning("Please provide a reason for the reversal.")
                                 else:
@@ -11443,19 +11515,20 @@ elif page == "Portfolio":
                             if not change_reason.strip():
                                 st.warning("Please provide a reason/note for this status change to maintain audit compliance.")
                             else:
-                                success = ClientStatusService.transition_status(
-                                    uow=uow_p,
-                                    client_id=str(cur_cid),
-                                    new_status_name=target_status,
-                                    changed_by=getattr(p_scope, "user_id", None),
-                                    reason=change_reason.strip(),
-                                    trigger_type="MANUAL"
-                                )
-                                if success:
-                                    st.success(f"Client lifecycle status updated to **{target_status}** successfully.")
-                                    st.rerun()
-                                else:
-                                    st.error("Failed to update status. Please try again.")
+                                with st.spinner(f"Transitioning client lifecycle status to {target_status}..."):
+                                    success = ClientStatusService.transition_status(
+                                        uow=uow_p,
+                                        client_id=str(cur_cid),
+                                        new_status_name=target_status,
+                                        changed_by=getattr(p_scope, "user_id", None),
+                                        reason=change_reason.strip(),
+                                        trigger_type="MANUAL"
+                                    )
+                                    if success:
+                                        st.success(f"Client lifecycle status updated to **{target_status}** successfully.")
+                                        st.rerun()
+                                    else:
+                                        st.error("Failed to update status. Please try again.")
 
                         st.divider()
                         st.markdown("###### Status Change History")
@@ -11528,11 +11601,6 @@ elif page == "Calculator":
     st.markdown("</div>", unsafe_allow_html=True)
 
 elif page in ["Reports", "Reports & Export"]:
-    st.markdown("<div class='dashboard-header'>", unsafe_allow_html=True)
-    st.markdown("<h1>Reports & Operational Exports</h1>", unsafe_allow_html=True)
-    st.markdown("<p>Comprehensive Double-Entry General Ledger, Savings Portfolio, Collections Performance, and Direct Data Exports.</p>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
     from services.report_service import ReportService
     from utils.reports import export_dataframe_to_excel_bytes, export_consolidated_report_to_excel
 
@@ -11547,24 +11615,136 @@ elif page in ["Reports", "Reports & Export"]:
 
     is_hq_or_admin = ROLE in [ROLE_ADMIN, "Admin", "Super Admin", ROLE_SUPER_ADMIN, "Director", "Board Director"]
     is_am = ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]
+    is_bm = ROLE in ["BM", "Branch Manager", ROLE_BRANCH_MANAGER]
 
-    if is_hq_or_admin:
-        branch_options = ["All Branches (Consolidated)"] + [b["name"] for b in branch_rows]
+    # Resolve Area Manager Assigned Branches
+    am_assigned_names = []
+    am_assigned_ids = []
+    if is_am:
+        if hasattr(scope, "assigned_branch_names") and scope.assigned_branch_names:
+            am_assigned_names = [n for n in scope.assigned_branch_names if n in branch_name_to_id]
+            am_assigned_ids = [branch_name_to_id[n] for n in am_assigned_names]
+        if not am_assigned_names and hasattr(scope, "assigned_branch_ids") and scope.assigned_branch_ids:
+            am_assigned_ids = scope.assigned_branch_ids
+            id_to_name = {v: k for k, v in branch_name_to_id.items()}
+            am_assigned_names = [id_to_name[bid] for bid in am_assigned_ids if bid in id_to_name]
+        if not am_assigned_names:
+            try:
+                with SupabaseUnitOfWork() as uow_am_lookup:
+                    am_records = uow_am_lookup.users.load_am_assignments(USER_ID)
+                    am_assigned_ids = [r["branch_id"] for r in am_records if r.get("branch_id")]
+                    am_assigned_names = [r["name"] for r in am_records if r.get("name")]
+            except Exception:
+                pass
+        if not am_assigned_names:
+            am_assigned_names = [b["name"] for b in branch_rows]
+            am_assigned_ids = [b["branch_id"] for b in branch_rows]
+
+    # Current single branch for BM
+    current_bm_branch = BRANCH if BRANCH else (branch_rows[0]["name"] if branch_rows else "Default Branch")
+
+    # 2. Render Role-Specific Header & Identity
+    st.markdown("<div class='dashboard-header'>", unsafe_allow_html=True)
+    if is_bm:
+        st.markdown(f"""
+            <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;'>
+                <div>
+                    <h1 style='margin: 0; color: #0F172A; font-size: 1.75rem; font-weight: 800;'>Branch Operational Reports — {current_bm_branch} Branch</h1>
+                    <p style='margin: 4px 0 0 0; color: #64748B; font-size: 0.92rem;'>Single-branch double-entry trial balance, officer supervision, savings portfolio, and collections.</p>
+                </div>
+                <div style='background: #EFF6FF; border: 1px solid #3B82F6; padding: 6px 14px; border-radius: 8px; text-align: right;'>
+                    <span style='font-size: 0.72rem; color: #1E40AF; font-weight: 700; text-transform: uppercase;'>Scope Level</span>
+                    <p style='margin: 0; font-weight: 800; color: #1E3A8A; font-size: 0.92rem;'>Single Branch ({current_bm_branch})</p>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
     elif is_am:
-        assigned_names = scope.assigned_branch_names if hasattr(scope, "assigned_branch_names") and scope.assigned_branch_names else [b["name"] for b in branch_rows]
-        branch_options = ["All Assigned Branches"] + assigned_names
+        st.markdown(f"""
+            <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;'>
+                <div>
+                    <h1 style='margin: 0; color: #0F172A; font-size: 1.75rem; font-weight: 800;'>Area Manager Regional Executive Reports</h1>
+                    <p style='margin: 4px 0 0 0; color: #64748B; font-size: 0.92rem;'>Multi-branch regional supervision, cross-branch comparative analysis, and operational performance.</p>
+                </div>
+                <div style='background: #F0FDF4; border: 1px solid #22C55E; padding: 6px 14px; border-radius: 8px; text-align: right;'>
+                    <span style='font-size: 0.72rem; color: #166534; font-weight: 700; text-transform: uppercase;'>Supervised Area</span>
+                    <p style='margin: 0; font-weight: 800; color: #14532D; font-size: 0.92rem;'>{len(am_assigned_names)} Supervised Branches</p>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
     else:
-        branch_options = [BRANCH] if BRANCH else ["Default Branch"]
+        st.markdown("""
+            <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;'>
+                <div>
+                    <h1 style='margin: 0; color: #0F172A; font-size: 1.75rem; font-weight: 800;'>Enterprise Financial & Operational Reports</h1>
+                    <p style='margin: 4px 0 0 0; color: #64748B; font-size: 0.92rem;'>Consolidated institutional double-entry trial balance, savings portfolios, collections, and multi-branch data exports.</p>
+                </div>
+                <div style='background: #FAF5FF; border: 1px solid #A855F7; padding: 6px 14px; border-radius: 8px; text-align: right;'>
+                    <span style='font-size: 0.72rem; color: #6B21A8; font-weight: 700; text-transform: uppercase;'>Scope Level</span>
+                    <p style='margin: 0; font-weight: 800; color: #581C87; font-size: 0.92rem;'>Institutional Scope</p>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    # 2. Universal Filter Header
+    # 3. Universal Filter Controls Header
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.markdown("### Filter Controls")
-    f_col1, f_col2, f_col3, f_col4 = st.columns([2, 1.2, 1.4, 1.4])
+
+    # Load active products
+    products_list = load_loan_products_list()
+    prod_names = sorted(list(set(p.get("name") for p in products_list if p.get("name"))))
+    prod_options = ["All Products"] + prod_names
+
+    f_col1, f_col2, f_col3, f_col4 = st.columns([1.8, 1.4, 1.5, 1.7])
 
     with f_col1:
-        selected_branch_label = st.selectbox("Branch Scope", branch_options, key="rep_branch_filter")
+        if is_bm:
+            st.selectbox("Branch Scope", [current_bm_branch], disabled=True, key="rep_branch_filter", help="Branch Managers have single-branch operational access.")
+            selected_branch_label = current_bm_branch
+        elif is_am:
+            am_branch_options = ["All Assigned Branches (Consolidated Area View)"] + am_assigned_names
+            selected_branch_label = st.selectbox("Branch Scope", am_branch_options, key="rep_branch_filter")
+        else:
+            admin_branch_options = ["All Branches (Consolidated)"] + [b["name"] for b in branch_rows]
+            selected_branch_label = st.selectbox("Branch Scope", admin_branch_options, key="rep_branch_filter")
 
     with f_col2:
+        selected_product = st.selectbox("Loan Product", prod_options, key="rep_product_filter")
+
+    # Determine resolved branch IDs for queries
+    resolved_branch_id = None
+    if is_bm:
+        resolved_branch_id = branch_name_to_id.get(current_bm_branch)
+    elif is_am:
+        if selected_branch_label == "All Assigned Branches (Consolidated Area View)":
+            resolved_branch_id = am_assigned_ids
+        else:
+            resolved_branch_id = branch_name_to_id.get(selected_branch_label)
+    else:
+        if selected_branch_label == "All Branches (Consolidated)":
+            resolved_branch_id = None
+        else:
+            resolved_branch_id = branch_name_to_id.get(selected_branch_label)
+
+    # Resolve active officers matching current branch scope
+    with SupabaseUnitOfWork() as uow_users:
+        all_app_users = uow_users.users.find_all()
+        co_users = [u for u in all_app_users if u.role in ["CO", "Officer", "Credit Officer"]]
+
+    if is_bm or (selected_branch_label not in ["All Branches (Consolidated)", "All Assigned Branches (Consolidated Area View)"]):
+        target_b_name = current_bm_branch if is_bm else selected_branch_label
+        relevant_officers = [u.full_name.strip() for u in co_users if (u.branch_name == target_b_name or u.branch_id == branch_name_to_id.get(target_b_name)) and u.full_name]
+    elif is_am and selected_branch_label == "All Assigned Branches (Consolidated Area View)":
+        relevant_officers = [u.full_name.strip() for u in co_users if (u.branch_name in am_assigned_names or u.branch_id in am_assigned_ids) and u.full_name]
+    else:
+        relevant_officers = [u.full_name.strip() for u in co_users if u.full_name]
+
+    officer_options = ["All Officers"] + sorted(list(set(relevant_officers)))
+
+    with f_col3:
+        selected_officer = st.selectbox("Credit Officer", officer_options, key="rep_officer_filter")
+
+    with f_col4:
         date_mode = st.selectbox("Date Mode", ["As of Date", "Date Range", "All Time"], key="rep_date_mode")
 
     start_date_filter = None
@@ -11572,36 +11752,65 @@ elif page in ["Reports", "Reports & Export"]:
     as_of_date_filter = None
 
     if date_mode == "As of Date":
-        with f_col3:
+        d_c1, d_c2 = st.columns([1, 1])
+        with d_c1:
             as_of_date_filter = st.date_input("As of Date", value=datetime.now().date(), key="rep_as_of")
     elif date_mode == "Date Range":
-        with f_col3:
+        d_c1, d_c2 = st.columns([1, 1])
+        with d_c1:
             start_date_filter = st.date_input("Start Date", value=datetime.now().date().replace(day=1), key="rep_start")
-        with f_col4:
+        with d_c2:
             end_date_filter = st.date_input("End Date", value=datetime.now().date(), key="rep_end")
     else:
-        with f_col3:
-            st.info("Full historical operational dataset selected.")
+        st.caption("Full cumulative dataset active.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Determine resolved branch ID for service queries
-    resolved_branch_id = None
-    if selected_branch_label in ["All Branches (Consolidated)", "All Assigned Branches"]:
-        resolved_branch_id = None
-    else:
-        resolved_branch_id = branch_name_to_id.get(selected_branch_label)
+    # 4. Filter loans and repayments DataFrames for Portfolio & Officer tabs
+    filtered_loans = all_loans.copy() if not all_loans.empty else pd.DataFrame()
+    filtered_reps = all_repayments.copy() if not all_repayments.empty else pd.DataFrame()
 
-    # Filter loans and repayments DataFrames for portfolio/officer tabs
-    filtered_loans = all_loans
-    filtered_reps = all_repayments
-    if resolved_branch_id and selected_branch_label in branch_name_to_id:
+    # Apply branch filtering to DataFrames
+    if is_bm:
+        if not filtered_loans.empty and "Branch" in filtered_loans.columns:
+            filtered_loans = filtered_loans[filtered_loans["Branch"] == current_bm_branch]
+        if not filtered_reps.empty and "Branch" in filtered_reps.columns:
+            filtered_reps = filtered_reps[filtered_reps["Branch"] == current_bm_branch]
+    elif is_am:
+        if selected_branch_label == "All Assigned Branches (Consolidated Area View)":
+            if not filtered_loans.empty and "Branch" in filtered_loans.columns:
+                filtered_loans = filtered_loans[filtered_loans["Branch"].isin(am_assigned_names)]
+            if not filtered_reps.empty and "Branch" in filtered_reps.columns:
+                filtered_reps = filtered_reps[filtered_reps["Branch"].isin(am_assigned_names)]
+        else:
+            if not filtered_loans.empty and "Branch" in filtered_loans.columns:
+                filtered_loans = filtered_loans[filtered_loans["Branch"] == selected_branch_label]
+            if not filtered_reps.empty and "Branch" in filtered_reps.columns:
+                filtered_reps = filtered_reps[filtered_reps["Branch"] == selected_branch_label]
+    elif not is_hq_or_admin or selected_branch_label != "All Branches (Consolidated)":
         if not filtered_loans.empty and "Branch" in filtered_loans.columns:
             filtered_loans = filtered_loans[filtered_loans["Branch"] == selected_branch_label]
         if not filtered_reps.empty and "Branch" in filtered_reps.columns:
             filtered_reps = filtered_reps[filtered_reps["Branch"] == selected_branch_label]
 
-    # Fetch live report datasets via ReportService
+    # Apply product filtering to DataFrames
+    if selected_product != "All Products":
+        if not filtered_loans.empty and "Loan Product" in filtered_loans.columns:
+            filtered_loans = filtered_loans[filtered_loans["Loan Product"] == selected_product]
+        if not filtered_reps.empty:
+            # Map product to repayments
+            prod_loan_ids = set(filtered_loans["id"].tolist()) if not filtered_loans.empty and "id" in filtered_loans.columns else set()
+            if prod_loan_ids and "loan_id" in filtered_reps.columns:
+                filtered_reps = filtered_reps[filtered_reps["loan_id"].isin(prod_loan_ids)]
+
+    # Apply officer filtering to DataFrames
+    if selected_officer != "All Officers":
+        if not filtered_loans.empty and "Officer" in filtered_loans.columns:
+            filtered_loans = filtered_loans[filtered_loans["Officer"].astype(str).str.strip().str.lower() == selected_officer.strip().lower()]
+        if not filtered_reps.empty and "Officer" in filtered_reps.columns:
+            filtered_reps = filtered_reps[filtered_reps["Officer"].astype(str).str.strip().str.lower() == selected_officer.strip().lower()]
+
+    # 5. Fetch live report datasets via ReportService
     with SupabaseUnitOfWork() as uow_rep:
         tb_data = ReportService.get_trial_balance(
             uow_rep,
@@ -11615,29 +11824,125 @@ elif page in ["Reports", "Reports & Export"]:
             branch_id=resolved_branch_id,
             start_date=start_date_filter,
             end_date=end_date_filter,
-            as_of_date=as_of_date_filter
+            as_of_date=as_of_date_filter,
+            officer_name=selected_officer if selected_officer != "All Officers" else None,
+            product_name=selected_product if selected_product != "All Products" else None
         )
         rep_data = ReportService.get_repayment_summary(
             uow_rep,
             branch_id=resolved_branch_id,
             start_date=start_date_filter,
-            end_date=end_date_filter
+            end_date=end_date_filter,
+            product_name=selected_product if selected_product != "All Products" else None,
+            officer_name=selected_officer if selected_officer != "All Officers" else None
         )
+        area_data = None
+        if is_am:
+            area_data = ReportService.get_area_branch_comparison(
+                uow_rep,
+                assigned_branch_ids=am_assigned_ids,
+                start_date=start_date_filter,
+                end_date=end_date_filter,
+                as_of_date=as_of_date_filter,
+                product_name=selected_product if selected_product != "All Products" else None
+            )
 
-    # 3. Clean Professional Tab Navigation (No unnecessary emojis)
-    tab_tb, tab_sav, tab_rep, tab_port, tab_export = st.tabs([
-        "General Ledger & Trial Balance",
-        "Savings Summary",
-        "Repayment Summary",
-        "Portfolio & Officer Performance",
-        "Data Exports & Downloads"
-    ])
+    # 6. Navigation Tabs
+    if is_am:
+        tab_area, tab_tb, tab_sav, tab_rep, tab_port, tab_export = st.tabs([
+            "Area Branches Comparison",
+            "General Ledger & Trial Balance",
+            "Savings Summary",
+            "Repayment Summary",
+            "Portfolio & Officer Performance",
+            "Data Exports & Downloads"
+        ])
+    else:
+        tab_tb, tab_sav, tab_rep, tab_port, tab_export = st.tabs([
+            "General Ledger & Trial Balance",
+            "Savings Summary",
+            "Repayment Summary",
+            "Portfolio & Officer Performance",
+            "Data Exports & Downloads"
+        ])
 
-    # --- TAB 1: GENERAL LEDGER & TRIAL BALANCE ---
+    # --- TAB 1 (AM EXCLUSIVE): AREA BRANCHES COMPARISON ---
+    if is_am and area_data:
+        with tab_area:
+            st.markdown("<div class='card'>", unsafe_allow_html=True)
+            st.subheader("Regional Area Performance Matrix")
+            st.caption("Side-by-side comparative analysis of all branches under your regional supervision. Identifies branch-level risk, portfolio size, collection efficiency, and savers engagement.")
+
+            a1, a2, a3, a4 = st.columns(4)
+            a1.metric("Supervised Branches", area_data["total_branches"])
+            a2.metric("People on Loan", f"{area_data['total_people_on_loan']:,} Clients")
+            a3.metric("Active Savers", f"{area_data['total_active_savers']:,} Savers")
+            a4.metric("Active Loans Count", f"{area_data['total_active_loans']:,} Loans")
+
+            a5, a6, a7, a8 = st.columns(4)
+            a5.metric("Regional Collections", f"₦{area_data['total_area_collections']:,.2f}")
+            a6.metric("Expected Collections", f"₦{area_data['total_area_expected']:,.2f}")
+            a7.metric("Area Efficiency", f"{area_data['overall_efficiency']:.1f}%")
+            a8.metric("Area Savings Portfolio", f"₦{area_data['total_area_savings']:,.2f}")
+
+            st.markdown("---")
+            st.markdown("#### Branch-by-Branch Comparative Matrix")
+
+            area_df = area_data["dataframe"]
+            if not area_df.empty:
+                display_area_df = area_df[[
+                    "Branch", "No. of People on Loan", "Active Loans", "No. of Active Savers",
+                    "Total Savings", "Collections Received", "Expected Collections",
+                    "Collection Efficiency", "Outstanding Portfolio", "PAR %", "Status"
+                ]].copy()
+
+                st.dataframe(
+                    display_area_df.style.format({
+                        "No. of People on Loan": "{:,}",
+                        "Active Loans": "{:,}",
+                        "No. of Active Savers": "{:,}",
+                        "Total Savings": "₦{:,.2f}",
+                        "Collections Received": "₦{:,.2f}",
+                        "Expected Collections": "₦{:,.2f}",
+                        "Outstanding Portfolio": "₦{:,.2f}"
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.info("No branch comparison data available for assigned area.")
+
+            st.markdown("---")
+            st.markdown("#### Direct Download: Area Comparison Report")
+            ad_col1, ad_col2 = st.columns(2)
+            with ad_col1:
+                area_csv = area_df.to_csv(index=False).encode('utf-8') if not area_df.empty else b""
+                st.download_button(
+                    label="Download Area Comparison (CSV)",
+                    data=area_csv,
+                    file_name=f"area_branch_comparison_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            with ad_col2:
+                area_excel = export_dataframe_to_excel_bytes(area_df, sheet_name="Area_Comparison") if not area_df.empty else b""
+                st.download_button(
+                    label="Download Area Comparison (Excel)",
+                    data=area_excel,
+                    file_name=f"area_branch_comparison_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- TAB: GENERAL LEDGER & TRIAL BALANCE ---
     with tab_tb:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.subheader("General Ledger Trial Balance")
         st.caption("Double-entry verification of all Chart of Accounts balances. Total Debits must mathematically equal Total Credits.")
+
+        if selected_product != "All Products" or selected_officer != "All Officers":
+            st.info("[INFO] General Ledger Trial Balance reflects double-entry account positions by Branch / Entity. Sub-ledger breakdowns by Loan Product and Officer are detailed in the Repayment Summary, Savings Summary, and Portfolio tabs.")
 
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Total Debits", f"₦{tb_data['total_debits']:,.2f}")
@@ -11673,7 +11978,7 @@ elif page in ["Reports", "Reports & Export"]:
         st.markdown("#### Direct Download: Trial Balance")
         d_col1, d_col2 = st.columns(2)
         with d_col1:
-            tb_csv = tb_df.to_csv(index=False).encode('utf-8')
+            tb_csv = tb_df.to_csv(index=False).encode('utf-8') if not tb_df.empty else b""
             st.download_button(
                 label="Download Trial Balance (CSV)",
                 data=tb_csv,
@@ -11682,7 +11987,7 @@ elif page in ["Reports", "Reports & Export"]:
                 use_container_width=True
             )
         with d_col2:
-            tb_excel = export_dataframe_to_excel_bytes(tb_df, sheet_name="Trial_Balance")
+            tb_excel = export_dataframe_to_excel_bytes(tb_df, sheet_name="Trial_Balance") if not tb_df.empty else b""
             st.download_button(
                 label="Download Trial Balance (Excel)",
                 data=tb_excel,
@@ -11692,7 +11997,7 @@ elif page in ["Reports", "Reports & Export"]:
             )
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- TAB 2: SAVINGS SUMMARY ---
+    # --- TAB: SAVINGS SUMMARY ---
     with tab_sav:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.subheader("Savings Portfolio & Savers Breakdown")
@@ -11748,7 +12053,7 @@ elif page in ["Reports", "Reports & Export"]:
             )
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- TAB 3: REPAYMENT SUMMARY ---
+    # --- TAB: REPAYMENT SUMMARY ---
     with tab_rep:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.subheader("Repayments & Collections Performance Summary")
@@ -11818,7 +12123,7 @@ elif page in ["Reports", "Reports & Export"]:
             )
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- TAB 4: PORTFOLIO & OFFICER PERFORMANCE ---
+    # --- TAB: PORTFOLIO & OFFICER PERFORMANCE ---
     with tab_port:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.subheader("Portfolio Summary & Health")
@@ -11832,15 +12137,15 @@ elif page in ["Reports", "Reports & Export"]:
 
         if ROLE in [ROLE_ADMIN, "Admin", "Super Admin", "BM", "AM", "Area Manager", "Director"]:
             st.markdown("<div class='card'>", unsafe_allow_html=True)
-            st.subheader("Officer Performance Reports")
+            st.subheader("Officer Performance Breakdown")
 
             officers = filtered_loans['Officer'].dropna().unique() if not filtered_loans.empty and 'Officer' in filtered_loans.columns else []
             display_options = ["All"] + [CO_DISPLAY_MAP.get(o, o) for o in officers]
-            selected_display = st.selectbox("Select Officer:", display_options, key="rep_officer_sel")
-            selected_officer = "All" if selected_display == "All" else CO_NAME_MAP.get(selected_display, selected_display)
+            selected_display = st.selectbox("Select Officer to Inspect:", display_options, key="rep_officer_inspect_sel")
+            selected_officer_inspect = "All" if selected_display == "All" else CO_NAME_MAP.get(selected_display, selected_display)
 
-            if selected_officer != "All":
-                officer_report = generate_officer_report(filtered_loans, filtered_reps, selected_officer)
+            if selected_officer_inspect != "All":
+                officer_report = generate_officer_report(filtered_loans, filtered_reps, selected_officer_inspect)
             else:
                 officer_report = generate_officer_report(filtered_loans, filtered_reps)
 
@@ -11868,7 +12173,7 @@ elif page in ["Reports", "Reports & Export"]:
             try:
                 with SupabaseUnitOfWork() as uow_risk:
                     from services.client_risk_rating_service import ClientRiskRatingService
-                    risk_target_branch = resolved_branch_id or BRANCH_ID
+                    risk_target_branch = resolved_branch_id if isinstance(resolved_branch_id, str) else (BRANCH_ID or branch_name_to_id.get(current_bm_branch))
                     risk_dist = ClientRiskRatingService.get_branch_risk_distribution(uow_risk, risk_target_branch)
 
                     r1, r2, r3, r4, r5 = st.columns(5)
@@ -11881,14 +12186,17 @@ elif page in ["Reports", "Reports & Export"]:
                 st.info("No active risk rating data available.")
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- TAB 5: DATA EXPORTS & DOWNLOADS ---
+    # --- TAB: DATA EXPORTS & DOWNLOADS ---
     with tab_export:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.subheader("Comprehensive Operational Data Exports")
         st.caption("Direct in-memory generation of full operational datasets. All files download directly to your browser without external cloud dependencies.")
 
         st.markdown("#### Master Operational Report (Excel)")
-        st.write("Contains synchronized worksheets: **Trial Balance**, **Savings Summary**, **Repayment Summary**, **Portfolio Summary**, and **Raw Loan Records**.")
+        if is_am:
+            st.write("Contains synchronized worksheets: **Area Branch Comparison**, **Trial Balance**, **Savings Summary**, **Repayment Summary**, **Portfolio Summary**, and **Raw Loan Records**.")
+        else:
+            st.write("Contains synchronized worksheets: **Trial Balance**, **Savings Summary**, **Repayment Summary**, **Portfolio Summary**, and **Raw Loan Records**.")
 
         portfolio_summary_for_export = generate_portfolio_summary(filtered_loans, filtered_reps)
         consolidated_excel_bytes = export_consolidated_report_to_excel(
@@ -11896,7 +12204,8 @@ elif page in ["Reports", "Reports & Export"]:
             savings_df=sav_data["savers_dataframe"],
             repayments_df=rep_data["repayments_dataframe"],
             loans_df=filtered_loans,
-            portfolio_summary=portfolio_summary_for_export
+            portfolio_summary=portfolio_summary_for_export,
+            area_comparison_df=area_data["dataframe"] if (is_am and area_data) else None
         )
 
         st.download_button(
@@ -12012,20 +12321,22 @@ elif page == "User Management":
                     col_a, col_d = st.columns(2)
                     with col_a:
                         if st.button("✅ Activate", key="activate_btn", use_container_width=True, disabled=current_status):
-                            result = UserService.activate_user(target_user_data['id'], current_user)
-                            if result['success']:
-                                st.session_state['user_mgmt_success'] = result['message']
-                                st.rerun()
-                            else:
-                                st.error(result['message'])
+                            with st.spinner(f"Activating user {target_username}..."):
+                                result = UserService.activate_user(target_user_data['id'], current_user)
+                                if result['success']:
+                                    st.session_state['user_mgmt_success'] = result['message']
+                                    st.rerun()
+                                else:
+                                    st.error(result['message'])
                     with col_d:
                         if st.button("❌ Deactivate", key="deactivate_btn", use_container_width=True, disabled=not current_status):
-                            result = UserService.deactivate_user(target_user_data['id'], current_user)
-                            if result['success']:
-                                st.session_state['user_mgmt_success'] = result['message']
-                                st.rerun()
-                            else:
-                                st.error(result['message'])
+                            with st.spinner(f"Deactivating user {target_username}..."):
+                                result = UserService.deactivate_user(target_user_data['id'], current_user)
+                                if result['success']:
+                                    st.session_state['user_mgmt_success'] = result['message']
+                                    st.rerun()
+                                else:
+                                    st.error(result['message'])
                                 
                     if is_admin:
                         st.markdown("<br>", unsafe_allow_html=True)
@@ -12033,12 +12344,13 @@ elif page == "User Management":
                             st.write("Deleting a user permanently removes them from the database. If this user has logged transactions, clients, or loans, their reference will be preserved as empty/null in historical audit logs.")
                             confirm_del = st.checkbox(f"Confirm I want to permanently delete the user '{target_username}'", key="confirm_del_check")
                             if st.button("🔥 Permanently Delete User", key="delete_user_btn", use_container_width=True, type="primary", disabled=not confirm_del):
-                                result = UserService.remove_user_permanently(target_user_data['id'], current_user)
-                                if result['success']:
-                                    st.session_state['user_mgmt_success'] = result['message']
-                                    st.rerun()
-                                else:
-                                    st.error(result['message'])
+                                with st.spinner(f"Permanently deleting user {target_username}..."):
+                                    result = UserService.remove_user_permanently(target_user_data['id'], current_user)
+                                    if result['success']:
+                                        st.session_state['user_mgmt_success'] = result['message']
+                                        st.rerun()
+                                    else:
+                                        st.error(result['message'])
         else:
             st.info("No users found.")
     
@@ -12056,19 +12368,20 @@ elif page == "User Management":
                 
                 submit_new = st.form_submit_button("Create User", use_container_width=True)
                 if submit_new:
-                    result = UserService.create_user(
-                        username=new_username,
-                        full_name=new_fullname,
-                        password=new_password,
-                        role=new_role,
-                        branch_name=new_branch,
-                        requesting_user=current_user,
-                    )
-                    if result['success']:
-                        st.session_state['user_mgmt_success'] = result['message']
-                        st.rerun()
-                    else:
-                        st.error(result['message'])
+                    with st.spinner(f"Creating user {new_username}..."):
+                        result = UserService.create_user(
+                            username=new_username,
+                            full_name=new_fullname,
+                            password=new_password,
+                            role=new_role,
+                            branch_name=new_branch,
+                            requesting_user=current_user,
+                        )
+                        if result['success']:
+                            st.session_state['user_mgmt_success'] = result['message']
+                            st.rerun()
+                        else:
+                            st.error(result['message'])
     
     # --- Tab: Reset Password (Admin + BM) ---
     if is_admin or is_bm:
@@ -12082,12 +12395,13 @@ elif page == "User Management":
                 reset_password = st.text_input("New Password", type="password")
                 submit_reset = st.form_submit_button("Reset Password", use_container_width=True)
                 if submit_reset:
-                    result = UserService.reset_password(reset_username, reset_password, current_user)
-                    if result['success']:
-                        st.session_state['user_mgmt_success'] = result['message']
-                        st.rerun()
-                    else:
-                        st.error(result['message'])
+                    with st.spinner(f"Resetting password for {reset_username}..."):
+                        result = UserService.reset_password(reset_username, reset_password, current_user)
+                        if result['success']:
+                            st.session_state['user_mgmt_success'] = result['message']
+                            st.rerun()
+                        else:
+                            st.error(result['message'])
     
     # --- Tab: Officer Turnover (Admin Only) ---
     if is_admin:
@@ -12112,12 +12426,13 @@ elif page == "User Management":
                 
                 submit_update = st.form_submit_button("Update Officer Name", use_container_width=True)
                 if submit_update:
-                    result = UserService.update_officer_name(update_username, new_officer_name, current_user)
-                    if result['success']:
-                        st.session_state['user_mgmt_success'] = result['message']
-                        st.rerun()
-                    else:
-                        st.error(result['message'])
+                    with st.spinner(f"Updating officer name for {update_username}..."):
+                        result = UserService.update_officer_name(update_username, new_officer_name, current_user)
+                        if result['success']:
+                            st.session_state['user_mgmt_success'] = result['message']
+                            st.rerun()
+                        else:
+                            st.error(result['message'])
     
     # --- Tab: Assign Products (Admin & BM) ---
     product_assign_idx = 4 if is_admin else 2
@@ -12163,18 +12478,19 @@ elif page == "User Management":
                         
                         submit_assign = st.form_submit_button("Save Assignments", use_container_width=True)
                         if submit_assign:
-                            try:
-                                # Update user extra_fields
-                                new_extra = dict(extra_fields)
-                                new_extra["allowed_products"] = selected_products
-                                
-                                with SupabaseUnitOfWork() as uow_update:
-                                    uow_update.client.table("app_users").update({"extra_fields": new_extra}).eq("id", selected_co["id"]).execute()
-                                
-                                st.session_state['user_mgmt_success'] = f"Successfully updated allowed products for {assign_username}."
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error updating products: {str(e)}")
+                            with st.spinner(f"Saving product assignments for {assign_username}..."):
+                                try:
+                                    # Update user extra_fields
+                                    new_extra = dict(extra_fields)
+                                    new_extra["allowed_products"] = selected_products
+                                    
+                                    with SupabaseUnitOfWork() as uow_update:
+                                        uow_update.client.table("app_users").update({"extra_fields": new_extra}).eq("id", selected_co["id"]).execute()
+                                    
+                                    st.session_state['user_mgmt_success'] = f"Successfully updated allowed products for {assign_username}."
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error updating products: {str(e)}")
             else:
                 st.warning("No Credit Officers found.")
 
@@ -12217,13 +12533,14 @@ elif page == "User Management":
                             
                             submit_am = st.form_submit_button("Save Assignments", use_container_width=True)
                             if submit_am:
-                                selected_ids = [branch_options[n] for n in selected_branches if n in branch_options]
-                                result = UserService.save_am_assignments(am_data['id'], selected_ids, current_user)
-                                if result['success']:
-                                    st.session_state['user_mgmt_success'] = result['message']
-                                    st.rerun()
-                                else:
-                                    st.error(result['message'])
+                                with st.spinner(f"Saving branch assignments for {selected_am}..."):
+                                    selected_ids = [branch_options[n] for n in selected_branches if n in branch_options]
+                                    result = UserService.save_am_assignments(am_data['id'], selected_ids, current_user)
+                                    if result['success']:
+                                        st.session_state['user_mgmt_success'] = result['message']
+                                        st.rerun()
+                                    else:
+                                        st.error(result['message'])
             else:
                 st.info("No Area Managers found. Create one first using the 'Create User' tab.")
     
@@ -12264,30 +12581,31 @@ elif page == "User Management":
                         if not closure_reason or len(closure_dates) != 2:
                             st.error("Please provide a reason and select a full date range (start and end).")
                         else:
-                            try:
-                                with SupabaseUnitOfWork() as uow:
-                                    closure = BranchClosure(
-                                        id=None, 
-                                        start_date=closure_dates[0], 
-                                        end_date=closure_dates[1], 
-                                        reason=closure_reason,
-                                        branch_id=selected_branch_id
-                                    )
-                                    uow.branch_closures.create(closure)
-                                    
-                                    # Auto-reschedule pending loan installments for the branch
-                                    from services.schedule_service import ScheduleService
-                                    ScheduleService.reschedule_branch_loans_on_closure(
-                                        uow=uow,
-                                        branch_id=selected_branch_id,
-                                        start_date=closure_dates[0],
-                                        end_date=closure_dates[1]
-                                    )
-                                st.success("Branch closure added and loan schedules rescheduled successfully!")
-                                get_custom_closures.clear()
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Failed to add closure: {e}")
+                            with st.spinner("Saving branch closure and updating repayment schedules..."):
+                                try:
+                                    with SupabaseUnitOfWork() as uow:
+                                        closure = BranchClosure(
+                                            id=None, 
+                                            start_date=closure_dates[0], 
+                                            end_date=closure_dates[1], 
+                                            reason=closure_reason,
+                                            branch_id=selected_branch_id
+                                        )
+                                        uow.branch_closures.create(closure)
+                                        
+                                        # Auto-reschedule pending loan installments for the branch
+                                        from services.schedule_service import ScheduleService
+                                        ScheduleService.reschedule_branch_loans_on_closure(
+                                            uow=uow,
+                                            branch_id=selected_branch_id,
+                                            start_date=closure_dates[0],
+                                            end_date=closure_dates[1]
+                                        )
+                                    st.success("Branch closure added and loan schedules rescheduled successfully!")
+                                    get_custom_closures.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Failed to add closure: {e}")
                 st.markdown("</div>", unsafe_allow_html=True)
                 
             with c4:

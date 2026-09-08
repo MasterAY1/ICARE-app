@@ -287,7 +287,7 @@ class RepaymentService:
                 "event_type": ev.event_type,
                 "version": ev.version,
                 "payload": ev.payload,
-                "status": "Posted"
+                "status": "Completed"
             }
         })
 

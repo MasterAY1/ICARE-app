@@ -316,6 +316,25 @@ class CoCashbookProjectionBuilder:
                             savings_deposit -= amount
                         else:
                             misc_fees -= amount
+                elif event_type in ["SavingsReversed", "SavingsDepositReversed"]:
+                    agg_type = entry.get("aggregate_type") or ev_store.get("aggregate_type")
+                    if agg_type == "LapsSavings":
+                        laps_reserve -= amount
+                    else:
+                        savings_deposit -= amount
+                elif event_type == "RepaymentReversed":
+                    payload = ev_store.get("payload") or {}
+                    p_name = str(payload.get("product_type") or narr).lower()
+                    if "24" in p_name or "24w" in p_name:
+                        rep_24_weeks -= amount
+                    elif "12" in p_name or "12w" in p_name:
+                        rep_12_weeks -= amount
+                    elif "120" in p_name or "120d" in p_name or "60" in p_name or "60d" in p_name or "daily" in p_name:
+                        rep_daily -= amount
+                    elif "month" in p_name:
+                        rep_monthly -= amount
+                    else:
+                        rep_12_weeks -= amount
                 elif event_type in ["SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION"]:
                     is_auto_deduction = (
                         "auto-deducted" in narr or
