@@ -214,6 +214,47 @@ class LoanService:
         # Execute all accumulated operations atomically
         uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
 
+        # 7a. Auto-deduct Upfront Fees / Downpayment from Savings at Disbursement (BR-LOAN-004)
+        try:
+            extra = loan.extra_fields or {}
+            total_upfront = float(extra.get("total_upfront_required") or 0.0)
+            upfront_interest = float(extra.get("upfront_interest") or 0.0)
+            gap_fee = float(loan.gap_fee or extra.get("gap_fee") or 0.0)
+            if total_upfront <= 0 and (upfront_interest > 0 or gap_fee > 0):
+                total_upfront = upfront_interest + gap_fee
+
+            if total_upfront > 0 and prod_cat == "Finance":
+                from services.savings_service import SavingsService
+                SavingsService.post_individual_savings(
+                    uow,
+                    client_id=loan.client_id,
+                    client_name=loan.client_name,
+                    branch=loan.branch,
+                    officer=loan.credit_officer,
+                    deposit_amount=0.0,
+                    withdrawal_amount=total_upfront,
+                    remarks=f"Auto-deducted Upfront Fees (Interest: {upfront_interest:,.2f}, Gap: {gap_fee:,.2f}) for Loan {loan.id[:8]}",
+                    posting_date=b_date
+                )
+
+            asset_sav_dp = float(extra.get("downpayment_savings") or 0.0)
+            if asset_sav_dp > 0 and prod_cat == "Asset":
+                from services.savings_service import SavingsService
+                SavingsService.post_loan_offset_from_savings(
+                    uow,
+                    client_id=loan.client_id,
+                    client_name=loan.client_name,
+                    loan_id=loan.id,
+                    source_savings_type="IndividualSavings",
+                    branch=loan.branch,
+                    officer=loan.credit_officer,
+                    amount=asset_sav_dp,
+                    remarks=f"Asset Downpayment deducted from Savings for loan {loan.id[:8]}",
+                    posting_date=b_date
+                )
+        except Exception as upd_err:
+            print(f"[LOAN TRACE] Upfront fee deduction warning: {upd_err}")
+
         # 7b. Update client lifecycle status to 'On Loan' (BR-CLI-003.2)
         try:
             from services.client_status_service import ClientStatusService

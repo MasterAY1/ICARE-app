@@ -379,107 +379,107 @@ class SavingsService:
             )
             uow.individual_savings.create(source_entity)
 
-            # Fetch target loan product details for projection routing
-            prod_name = ""
-            cycle = "Weekly"
-            is_asset = False
-            target_client_id = client_id
-            try:
-                res_l = uow.client.table("loans").select("loan_id, client_id, is_asset, product_category, loan_products(name, repayment_cycle)").eq("loan_id", loan_id).execute()
-                if res_l.data:
-                    l_row = res_l.data[0]
-                    target_client_id = l_row.get("client_id") or client_id
-                    is_asset = bool(l_row.get("is_asset") or ("asset" in str(l_row.get("product_category") or "").lower()))
-                    lp = l_row.get("loan_products") or {}
-                    prod_name = str(lp.get("name") or "").lower()
-                    cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in prod_name else ("Weekly" if "weekly" in prod_name else "Monthly"))
-            except Exception:
-                pass
+        # Fetch target loan product details for projection routing
+        prod_name = ""
+        cycle = "Weekly"
+        is_asset = False
+        target_client_id = client_id
+        try:
+            res_l = uow.client.table("loans").select("loan_id, client_id, is_asset, product_category, loan_products(name, repayment_cycle)").eq("loan_id", loan_id).execute()
+            if res_l.data:
+                l_row = res_l.data[0]
+                target_client_id = l_row.get("client_id") or client_id
+                is_asset = bool(l_row.get("is_asset") or ("asset" in str(l_row.get("product_category") or "").lower()))
+                lp = l_row.get("loan_products") or {}
+                prod_name = str(lp.get("name") or "").lower()
+                cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in prod_name else ("Weekly" if "weekly" in prod_name else "Monthly"))
+        except Exception:
+            pass
 
-            repayment_entity = Repayment(
-                id=str(uuid.uuid4()),
-                loan_id=loan_id,
-                client_id=target_client_id,
-                amount_paid=amount,
-                savings_amount=0.0,
-                loan_repayment_amount=amount,
-                withdrawal_amount=0.0,
-                others_amount=0.0,
-                recovery_amount=0.0,
-                initial_payment=0.0,
-                payment_date=p_dt.date() if hasattr(p_dt, 'date') and callable(p_dt.date) else p_dt,
-                transaction_type="LOAN_OFFSET",
-                branch=branch,
-                credit_officer=officer,
-                payment_status="PAID",
-                note=remarks or f"Loan offset of {amount} from {source_savings_type}"
-            )
-            uow.repayments.create(repayment_entity)
+        repayment_entity = Repayment(
+            id=str(uuid.uuid4()),
+            loan_id=loan_id,
+            client_id=target_client_id,
+            amount_paid=amount,
+            savings_amount=0.0,
+            loan_repayment_amount=amount,
+            withdrawal_amount=0.0,
+            others_amount=0.0,
+            recovery_amount=0.0,
+            initial_payment=0.0,
+            payment_date=p_dt.date() if hasattr(p_dt, 'date') and callable(p_dt.date) else p_dt,
+            transaction_type="LOAN_OFFSET",
+            branch=branch,
+            credit_officer=officer,
+            payment_status="PAID",
+            note=remarks or f"Loan offset of {amount} from {source_savings_type}"
+        )
+        uow.repayments.create(repayment_entity)
 
-            # Advance loan schedule chronologically
-            try:
-                from services.schedule_service import ScheduleService
-                p_date_only = p_dt.date() if hasattr(p_dt, 'date') and callable(p_dt.date) else p_dt
-                ScheduleService.record_repayment(uow, loan_id, amount, p_date_only)
-            except Exception as se:
-                print(f"[LOAN OFFSET TRACE] Schedule advancement warning: {se}")
+        # Advance loan schedule chronologically
+        try:
+            from services.schedule_service import ScheduleService
+            p_date_only = p_dt.date() if hasattr(p_dt, 'date') and callable(p_dt.date) else p_dt
+            ScheduleService.record_repayment(uow, loan_id, amount, p_date_only)
+        except Exception as se:
+            print(f"[LOAN OFFSET TRACE] Schedule advancement warning: {se}")
 
-            # Check if loan is fully paid and transition status
-            try:
-                from services.client_status_service import ClientStatusService
-                ClientStatusService.on_loan_repayment_check(uow, target_client_id, loan_id)
-            except Exception as ce:
-                print(f"[LOAN OFFSET TRACE] Client status update warning: {ce}")
+        # Check if loan is fully paid and transition status
+        try:
+            from services.client_status_service import ClientStatusService
+            ClientStatusService.on_loan_repayment_check(uow, target_client_id, loan_id)
+        except Exception as ce:
+            print(f"[LOAN OFFSET TRACE] Client status update warning: {ce}")
 
-            uow.audit.log_action(
-                officer,
-                "Credit Officer",
-                "Loan Offset From Savings",
-                "loans",
-                loan_id,
-                None,
-                {"amount": amount, "source": source_savings_type, "savings_id": source_entity.id}
-            )
+        uow.audit.log_action(
+            officer,
+            "Credit Officer",
+            "Loan Offset From Savings",
+            "loans",
+            loan_id,
+            None,
+            {"amount": amount, "source": source_savings_type, "savings_id": source_entity.id}
+        )
 
-            event = DomainEvent(
-                event_id=str(uuid.uuid4()),
-                aggregate_id=source_entity.id,
-                aggregate_type="LoanOffset",
-                event_type="LoanOffsetFromSavings",
-                payload={
-                    "client_id": target_client_id,
-                    "source_client_id": client_id,
-                    "loan_id": loan_id,
-                    "source_savings_type": source_savings_type,
-                    "branch": branch,
-                    "officer": officer,
-                    "amount": amount,
-                    "loan_product": prod_name,
-                    "cycle": cycle,
-                    "is_asset": is_asset,
-                    "reference": reference or source_entity.id,
-                    "classification": TransactionClassification.LOAN_OFFSET.value,
-                    "narration": remarks or f"Loan offset of {amount:,.2f} from {source_savings_type} for loan {loan_id}",
-                    "date": p_dt.isoformat() if hasattr(p_dt, 'isoformat') else str(p_dt)
-                }
-            )
-            uow.event_store.append(event)
-            try:
-                FinancialPostingEngine.post_event(uow, event)
-            except ValueError as ve:
-                if "No active posting rule found" in str(ve):
-                    pass
-                else:
-                    raise ve
-
-            return {
-                "status": "SUCCESS",
-                "event_id": event.event_id,
+        event = DomainEvent(
+            event_id=str(uuid.uuid4()),
+            aggregate_id=source_entity.id,
+            aggregate_type="LoanOffset",
+            event_type="LoanOffsetFromSavings",
+            payload={
+                "client_id": target_client_id,
+                "source_client_id": client_id,
+                "loan_id": loan_id,
+                "source_savings_type": source_savings_type,
+                "branch": branch,
+                "officer": officer,
                 "amount": amount,
-                "source_savings_id": source_entity.id,
-                "repayment_id": repayment_entity.id,
-                "affects_cash_vault": cls_info["affects_cash_vault"]
+                "loan_product": prod_name,
+                "cycle": cycle,
+                "is_asset": is_asset,
+                "reference": reference or source_entity.id,
+                "classification": TransactionClassification.LOAN_OFFSET.value,
+                "narration": remarks or f"Loan offset of {amount:,.2f} from {source_savings_type} for loan {loan_id}",
+                "date": p_dt.isoformat() if hasattr(p_dt, 'isoformat') else str(p_dt)
             }
+        )
+        uow.event_store.append(event)
+        try:
+            FinancialPostingEngine.post_event(uow, event)
+        except ValueError as ve:
+            if "No active posting rule found" in str(ve):
+                pass
+            else:
+                raise ve
+
+        return {
+            "status": "SUCCESS",
+            "event_id": event.event_id,
+            "amount": amount,
+            "source_savings_id": source_entity.id,
+            "repayment_id": repayment_entity.id,
+            "affects_cash_vault": cls_info["affects_cash_vault"]
+        }
 
     @staticmethod
     def post_fee_offset_from_savings(

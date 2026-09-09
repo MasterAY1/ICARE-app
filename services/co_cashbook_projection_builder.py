@@ -146,7 +146,12 @@ class CoCashbookProjectionBuilder:
                     product_withdrawal += amount
                     payload = ev_store.get("payload") or {}
                     fee_type = str(payload.get("fee_type") or "").lower()
-                    if "damage" in fee_type:
+                    if fee_type == "other" or "other" in fee_type:
+                        # User Rule: For "other" (prior payment clearance / shortfall),
+                        # only product_withdrawal on the Right side is increased.
+                        # The Left side (inflow) is NOT increased at all (0.0).
+                        pass
+                    elif "damage" in fee_type:
                         credit_form_damage += amount
                     elif "passbook" in fee_type:
                         passbook += amount

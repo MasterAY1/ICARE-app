@@ -4095,21 +4095,6 @@ elif page == "Loan Origination":
                                     st.stop()
 
                                 with st.spinner("Submitting loan application for BM approval..."):
-                                    # For Finance: auto-deduct upfront fees from savings
-                                    if product_category == "Finance" and total_upfront_required > 0:
-                                        from services.savings_service import SavingsService
-                                        SavingsService.post_individual_savings(
-                                            uow,
-                                            client_id=selected_client_id,
-                                            client_name=selected_client.name,
-                                            branch=branch_name,
-                                            officer=USER,
-                                            deposit_amount=0.0,
-                                            withdrawal_amount=total_upfront_required,
-                                            remarks=f"Auto-deducted Upfront Fees (Interest: {interest}, Gap: {gap_fee}) for Loan App",
-                                            posting_date=app_op_date
-                                        )
-
                                     from domain.entities.loan import Loan
                                     from domain.enums import LoanStatus
                                     
@@ -4122,22 +4107,6 @@ elif page == "Loan Origination":
                                         final_active_credit = (requested_amount + interest) - initial_downpayment
                                         final_total_payable = final_active_credit
                                         final_expected_installment = final_active_credit / duration if duration > 0 else 0.0
-
-                                    # For Asset with Savings Downpayment: register non-cash downpayment offset from savings
-                                    if product_category == "Asset" and sav_dp > 0:
-                                        from services.savings_service import SavingsService
-                                        SavingsService.post_loan_offset_from_savings(
-                                            uow,
-                                            client_id=selected_client_id,
-                                            client_name=selected_client.name,
-                                            loan_id=loan_id,
-                                            source_savings_type="IndividualSavings",
-                                            branch=branch_name,
-                                            officer=USER,
-                                            amount=sav_dp,
-                                            remarks=f"Asset Downpayment deducted from Savings for loan {loan_id}",
-                                            posting_date=app_op_date
-                                        )
 
                                     loan_entity = Loan(
                                         id=loan_id,
@@ -4167,7 +4136,10 @@ elif page == "Loan Origination":
                                             "initial_downpayment": initial_downpayment,
                                             "active_credit": final_active_credit,
                                             "loan_repay": final_expected_installment,
-                                            "total_due": final_active_credit
+                                            "total_due": final_active_credit,
+                                            "gap_fee": gap_fee,
+                                            "upfront_interest": interest if product_category == "Finance" else 0.0,
+                                            "total_upfront_required": total_upfront_required if product_category == "Finance" else 0.0
                                         }
                                     )
                                     uow.loans.create(loan_entity)
@@ -6290,12 +6262,37 @@ elif page == "Withdrawal Operations":
                     target_cname = other_client_opts[sel_other_lbl]["name"] if sel_other_lbl else ""
 
                 if target_cid:
-                    res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, product_category, extra_fields, loan_products(name)").eq("client_id", target_cid).in_("status", ["Active", "Pending"]).execute()
-                    loans_to_show = res_l.data or []
+                    res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, total_due, product_category, extra_fields, loan_products(name)").eq("client_id", target_cid).in_("status", ["Active", "Pending", "ACTIVE", "PENDING"]).execute()
+                    loans_raw = res_l.data or []
+                    loans_to_show = []
+                    loan_details_map = {}
+                    for l in loans_raw:
+                        lid = l["loan_id"]
+                        extra = l.get("extra_fields") or {}
+                        td_base = float(l.get("total_due") or extra.get("total_due") or l.get("active_credit") or l.get("loan_amount") or 0.0)
+                        res_reps = uow.client.table("repayments").select("amount_paid").eq("loan_id", lid).execute()
+                        tot_repaid = sum(float(r.get("amount_paid") or 0.0) for r in (res_reps.data or []))
+                        bal = max(0.0, td_base - tot_repaid)
+                        l_prod_name = str((l.get("loan_products") or {}).get("name", ""))
+                        is_asset_l = "asset" in str(l.get("product_category", "")).lower() or "asset" in l_prod_name.lower()
+                        prefix = "Asset " if is_asset_l else ""
+                        act_cred = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
+                        lbl = f"{prefix}Loan {lid[:8]} — Balance: ₦{bal:,.2f} (Active Credit: ₦{act_cred:,.0f})"
+                        loans_to_show.append((lbl, lid))
+                        loan_details_map[lid] = {
+                            "balance": bal,
+                            "active_credit": act_cred,
+                            "total_repaid": tot_repaid
+                        }
                     if loans_to_show:
-                        loan_opts = {f"{'Asset ' if 'asset' in str(l.get('product_category','')).lower() or 'asset' in str((l.get('loan_products') or {}).get('name','')).lower() else ''}Loan {l['loan_id'][:8]} — Active: ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in loans_to_show}
+                        loan_opts = {lbl: lid for lbl, lid in loans_to_show}
                         sel_loan = st.selectbox("Select Target Loan", list(loan_opts.keys()))
                         target_loan_id = loan_opts[sel_loan]
+                        cur_ld = loan_details_map.get(target_loan_id, {})
+                        c_m1, c_m2, c_m3 = st.columns(3)
+                        c_m1.metric("Outstanding Balance", f"₦{cur_ld.get('balance', 0.0):,.2f}")
+                        c_m2.metric("Active Credit", f"₦{cur_ld.get('active_credit', 0.0):,.2f}")
+                        c_m3.metric("Total Paid to Date", f"₦{cur_ld.get('total_repaid', 0.0):,.2f}")
                     else:
                         st.warning(f"No eligible loans found for {target_cname}.")
 
@@ -6304,10 +6301,13 @@ elif page == "Withdrawal Operations":
                     "Credit Form Damage Fee": "credit_form_damage",
                     "Passbook Fee": "passbook",
                     "Application Fee": "app_fee",
-                    "Misc Fee / Penalty": "misc_fees"
+                    "Misc Fee / Penalty": "misc_fees",
+                    "Other (Prior Payment Clearance / Shortfall)": "other"
                 }
                 sel_fee_label = st.selectbox("Select Fee Type", list(fee_map.keys()))
                 fee_code = fee_map[sel_fee_label]
+                if fee_code == "other":
+                    st.info("💡 **Other (Prior Payment Clearance / Shortfall)**: Deducts from savings to clear a previously recorded collection cash shortage. Only Product Withdrawal on the Right side is increased; the Left side (inflow) is not increased (₦0.00).")
 
             elif dest_op == "Another Member or Group Savings":
                 transfer_target_cat = st.radio("Transfer Destination", ["Individual Member", "Group Savings"], horizontal=True)
@@ -6564,12 +6564,37 @@ elif page == "Withdrawal Operations":
                     target_cid = sel_member["client_id"]
                     client_name_for_offset = sel_member["name"]
 
-                    res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, product_category, extra_fields, loan_products(name)").eq("client_id", target_cid).in_("status", ["Active", "Pending"]).execute()
-                    loans_to_show = res_l.data or []
+                    res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, total_due, product_category, extra_fields, loan_products(name)").eq("client_id", target_cid).in_("status", ["Active", "Pending", "ACTIVE", "PENDING"]).execute()
+                    loans_raw = res_l.data or []
+                    loans_to_show = []
+                    loan_details_map = {}
+                    for l in loans_raw:
+                        lid = l["loan_id"]
+                        extra = l.get("extra_fields") or {}
+                        td_base = float(l.get("total_due") or extra.get("total_due") or l.get("active_credit") or l.get("loan_amount") or 0.0)
+                        res_reps = uow.client.table("repayments").select("amount_paid").eq("loan_id", lid).execute()
+                        tot_repaid = sum(float(r.get("amount_paid") or 0.0) for r in (res_reps.data or []))
+                        bal = max(0.0, td_base - tot_repaid)
+                        l_prod_name = str((l.get("loan_products") or {}).get("name", ""))
+                        is_asset_l = "asset" in str(l.get("product_category", "")).lower() or "asset" in l_prod_name.lower()
+                        prefix = "Asset " if is_asset_l else ""
+                        act_cred = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
+                        lbl = f"{prefix}Loan {lid[:8]} — Balance: ₦{bal:,.2f} (Active Credit: ₦{act_cred:,.0f})"
+                        loans_to_show.append((lbl, lid))
+                        loan_details_map[lid] = {
+                            "balance": bal,
+                            "active_credit": act_cred,
+                            "total_repaid": tot_repaid
+                        }
                     if loans_to_show:
-                        loan_opts = {f"{'Asset ' if 'asset' in str(l.get('product_category','')).lower() or 'asset' in str((l.get('loan_products') or {}).get('name','')).lower() else ''}Loan {l['loan_id'][:8]} — Active: ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in loans_to_show}
+                        loan_opts = {lbl: lid for lbl, lid in loans_to_show}
                         sel_loan = st.selectbox("Select Loan", list(loan_opts.keys()), key="grp_sel_loan")
                         target_loan_id = loan_opts[sel_loan]
+                        cur_ld = loan_details_map.get(target_loan_id, {})
+                        c_m1, c_m2, c_m3 = st.columns(3)
+                        c_m1.metric("Outstanding Balance", f"₦{cur_ld.get('balance', 0.0):,.2f}")
+                        c_m2.metric("Active Credit", f"₦{cur_ld.get('active_credit', 0.0):,.2f}")
+                        c_m3.metric("Total Paid to Date", f"₦{cur_ld.get('total_repaid', 0.0):,.2f}")
                     else:
                         st.warning("No eligible loans found for this member.")
                 else:
@@ -6580,10 +6605,13 @@ elif page == "Withdrawal Operations":
                     "Credit Form Damage Fee": "credit_form_damage",
                     "Passbook Fee": "passbook",
                     "Application Fee": "app_fee",
-                    "Misc Fee / Penalty": "misc_fees"
+                    "Misc Fee / Penalty": "misc_fees",
+                    "Other (Prior Payment Clearance / Shortfall)": "other"
                 }
                 sel_fee_label = st.selectbox("Select Fee Type", list(fee_map.keys()), key="grp_sel_fee")
                 fee_code = fee_map[sel_fee_label]
+                if fee_code == "other":
+                    st.info("💡 **Other (Prior Payment Clearance / Shortfall)**: Deducts from savings to clear a previously recorded collection cash shortage. Only Product Withdrawal on the Right side is increased; the Left side (inflow) is not increased (₦0.00).")
                 if members:
                     member_opts = {f"{m['name']} ({m.get('client_code') or m['client_id'][:8]})": m for m in members}
                     sel_fee_mem_lbl = st.selectbox("Affected Member (Optional)", list(member_opts.keys()), key="grp_fee_mem")
@@ -6782,12 +6810,37 @@ elif page == "Withdrawal Operations":
                     if sel_loan_client_lbl:
                         target_cid = client_opts_all[sel_loan_client_lbl]["client_id"]
                         client_name_target = client_opts_all[sel_loan_client_lbl]["name"]
-                        res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, product_category, extra_fields, loan_products(name)").eq("client_id", target_cid).in_("status", ["Active", "Pending"]).execute()
-                        loans_to_show = res_l.data or []
+                        res_l = uow.client.table("loans").select("loan_id, loan_amount, active_credit, total_due, product_category, extra_fields, loan_products(name)").eq("client_id", target_cid).in_("status", ["Active", "Pending", "ACTIVE", "PENDING"]).execute()
+                        loans_raw = res_l.data or []
+                        loans_to_show = []
+                        loan_details_map = {}
+                        for l in loans_raw:
+                            lid = l["loan_id"]
+                            extra = l.get("extra_fields") or {}
+                            td_base = float(l.get("total_due") or extra.get("total_due") or l.get("active_credit") or l.get("loan_amount") or 0.0)
+                            res_reps = uow.client.table("repayments").select("amount_paid").eq("loan_id", lid).execute()
+                            tot_repaid = sum(float(r.get("amount_paid") or 0.0) for r in (res_reps.data or []))
+                            bal = max(0.0, td_base - tot_repaid)
+                            l_prod_name = str((l.get("loan_products") or {}).get("name", ""))
+                            is_asset_l = "asset" in str(l.get("product_category", "")).lower() or "asset" in l_prod_name.lower()
+                            prefix = "Asset " if is_asset_l else ""
+                            act_cred = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
+                            lbl = f"{prefix}Loan {lid[:8]} — Balance: ₦{bal:,.2f} (Active Credit: ₦{act_cred:,.0f})"
+                            loans_to_show.append((lbl, lid))
+                            loan_details_map[lid] = {
+                                "balance": bal,
+                                "active_credit": act_cred,
+                                "total_repaid": tot_repaid
+                            }
                         if loans_to_show:
-                            loan_opts = {f"{'Asset ' if 'asset' in str(l.get('product_category','')).lower() or 'asset' in str((l.get('loan_products') or {}).get('name','')).lower() else ''}Loan {l['loan_id'][:8]} — Active: ₦{float(l.get('active_credit') or 0):,.0f}": l["loan_id"] for l in loans_to_show}
+                            loan_opts = {lbl: lid for lbl, lid in loans_to_show}
                             sel_loan = st.selectbox("Select Loan", list(loan_opts.keys()), key="misc_loan_sel")
                             target_loan_id = loan_opts[sel_loan]
+                            cur_ld = loan_details_map.get(target_loan_id, {})
+                            c_m1, c_m2, c_m3 = st.columns(3)
+                            c_m1.metric("Outstanding Balance", f"₦{cur_ld.get('balance', 0.0):,.2f}")
+                            c_m2.metric("Active Credit", f"₦{cur_ld.get('active_credit', 0.0):,.2f}")
+                            c_m3.metric("Total Paid to Date", f"₦{cur_ld.get('total_repaid', 0.0):,.2f}")
                         else:
                             st.warning(f"No eligible loans found for {client_name_target}.")
 
@@ -6796,10 +6849,13 @@ elif page == "Withdrawal Operations":
                         "Credit Form Damage Fee": "credit_form_damage",
                         "Passbook Fee": "passbook",
                         "Application Fee": "app_fee",
-                        "Misc Fee / Penalty": "misc_fees"
+                        "Misc Fee / Penalty": "misc_fees",
+                        "Other (Prior Payment Clearance / Shortfall)": "other"
                     }
                     sel_fee_label = st.selectbox("Select Fee Type", list(fee_map.keys()), key="misc_fee_sel")
                     fee_code = fee_map[sel_fee_label]
+                    if fee_code == "other":
+                        st.info("💡 **Other (Prior Payment Clearance / Shortfall)**: Deducts from savings to clear a previously recorded collection cash shortage. Only Product Withdrawal on the Right side is increased; the Left side (inflow) is not increased (₦0.00).")
 
                 elif "Transfer to" in misc_dest_op:
                     transfer_target_cat = st.radio("Transfer Destination", ["Individual Member", "Group Savings"], horizontal=True, key="misc_trans_cat")

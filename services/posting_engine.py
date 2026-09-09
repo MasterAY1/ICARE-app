@@ -141,6 +141,8 @@ class FinancialPostingEngine:
             credit_acc = rule.credit_account
             if event.event_type == "LapsPaidOut" and not payload.get("cash_paid", True):
                 credit_acc = "1050"  # Bank account for non-cash payout
+            if event.event_type == "FeeOffsetFromSavings" and str(payload.get("fee_type", "")).lower() == "other":
+                credit_acc = "1000"  # Vault cash: clears prior recorded collection cash shortage without fee income
 
             debit = LedgerEntry(
                 entry_id=None,
