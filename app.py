@@ -1444,7 +1444,10 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
                 if active_loan_id and loan_repay > 0:
                     from services.schedule_service import ScheduleService
                     sch_rows = schedule_cache.get(active_loan_id) if schedule_cache else None
-                    ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date, cached_schedule_rows=sch_rows)
+                    try:
+                        ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date, cached_schedule_rows=sch_rows)
+                    except TypeError:
+                        ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date)
 
                 exp_amt = float(data.get('Expected Amount') or data.get('expected_amount') or db_data.get('expected_amount') or (loan_repay if loan_repay > 0 else 0.0))
                 overdue_val = float(data.get('Overdue Amount') or data.get('overdue_amount') or db_data.get('overdue_amount') or (exp_amt if is_marked_not_paid else 0.0))
