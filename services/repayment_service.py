@@ -199,7 +199,7 @@ class RepaymentService:
         # Check and record Full Payoff and Excess Payment in dedicated table (BR-DASH-005, BR-DASH-007)
         try:
             if repayment.loan_id and repayment.loan_repayment_amount > 0:
-                cls._record_payoff_and_excess_if_applicable(uow, repayment, preloaded_loan=preloaded_loan, preloaded_repayments=preloaded_repayments)
+                RepaymentService._record_payoff_and_excess_if_applicable(uow, repayment, preloaded_loan=preloaded_loan, preloaded_repayments=preloaded_repayments)
         except Exception as ex_pe:
             print(f"[REPAYMENT TRACE] Payoff/excess recording failed: {ex_pe}")
 
