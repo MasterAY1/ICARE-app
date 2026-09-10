@@ -1,7 +1,7 @@
+from components.status_badge import format_status_text, render_status_badge
 import streamlit as st
 st.set_page_config(
     page_title="ICARE Microfinance - Core Banking",
-    page_icon="🌱",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -1077,7 +1077,7 @@ UI_TO_DB_REP["expected_amount"] = "expected_amount"
 UI_TO_DB_REP["overdue_amount"] = "overdue_amount"
 UI_TO_DB_REP["mark_not_paid"] = "mark_not_paid"
 
-def render_collection_arrears_tally(tally_data: dict, title: str = "📋 Field Collection & Arrears Reconciliation Tally"):
+def render_collection_arrears_tally(tally_data: dict, title: str = "Field Collection & Arrears Reconciliation Tally"):
     """
     Renders the paper-style reconciliation bridge between Field Expected Inflows,
     Red-Pen Arrears, Physical Cash Banked, and Net Cash Position.
@@ -1098,20 +1098,20 @@ def render_collection_arrears_tally(tally_data: dict, title: str = "📋 Field C
     excess = float(tally_data.get("excess_amount") or 0.0)
 
     c1.metric("1. Scheduled Inflows", f"₦{exp:,.2f}")
-    c2.metric("2. 🔴 Red-Pen Arrears", f"₦{not_paid:,.2f}", f"{not_paid_cnt} Not Paid" if not_paid_cnt > 0 else "0 Arrears", delta_color="inverse")
-    c3.metric("3. 💵 Physical Cash Collected", f"₦{cash_col:,.2f}", f"+₦{excess:,.2f} Excess" if excess > 0 else None)
-    c4.metric("4. 🏦 Bank Deposited", f"₦{bank_dep:,.2f}")
+    c2.metric("2. Red-Pen Arrears", f"₦{not_paid:,.2f}", f"{not_paid_cnt} Not Paid" if not_paid_cnt > 0 else "0 Arrears", delta_color="inverse")
+    c3.metric("3. Physical Cash Collected", f"₦{cash_col:,.2f}", f"+₦{excess:,.2f} Excess" if excess > 0 else None)
+    c4.metric("4. Bank Deposited", f"₦{bank_dep:,.2f}")
 
     if abs(closing) < 0.01:
-        st.success(f"✅ **Physical Cash Reconciled**: Net Closing Cash Balance is **₦0.00** (Balanced). Uncollected Arrears of **₦{not_paid:,.2f}** recorded in Defaulter Register.")
+        st.success(f"**Physical Cash Reconciled**: Net Closing Cash Balance is **₦0.00** (Balanced). Uncollected Arrears of **₦{not_paid:,.2f}** recorded in Defaulter Register.")
     elif closing > 0:
-        st.info(f"💼 **Cash in Vault/Bag**: **₦{closing:,.2f}** unbanked physical cash remaining. Uncollected Arrears of **₦{not_paid:,.2f}** recorded in Defaulter Register.")
+        st.info(f"**Cash in Vault/Bag**: **₦{closing:,.2f}** unbanked physical cash remaining. Uncollected Arrears of **₦{not_paid:,.2f}** recorded in Defaulter Register.")
     else:
-        st.warning(f"⚠️ **Extra Cash Deposited**: Bank deposit exceeds daily collections by **₦{abs(closing):,.2f}**.")
+        st.warning(f"**Extra Cash Deposited**: Bank deposit exceeds daily collections by **₦{abs(closing):,.2f}**.")
 
     not_paid_list = tally_data.get("not_paid_clients") or []
     if not_paid_list:
-        with st.expander(f"🔍 View Non-Paying Clients ({len(not_paid_list)} Arrears Records)", expanded=False):
+        with st.expander(f"View Non-Paying Clients ({len(not_paid_list)} Arrears Records)", expanded=False):
             df_np = pd.DataFrame([
                 {
                     "Client Name": c.get("name"),
@@ -1824,7 +1824,7 @@ def save_repayments(data_list, batch_id=None):
                         "client": c_name,
                         "repayment": l_rep,
                         "savings": s_dep,
-                        "status": "🔁 Recovered (Already Saved)"
+                        "status": "Recovered (Already Saved)"
                     })
                 else:
                     save_repayment(
@@ -1837,9 +1837,9 @@ def save_repayments(data_list, batch_id=None):
                     )
                     any_new_records = True
                     report["new_processed"] += 1
-                    status_lbl = "❌ Recorded (NOT PAID)" if (is_not_paid_mark and l_rep == 0) else "✅ Processed"
+                    status_lbl = "Recorded (NOT PAID)" if (is_not_paid_mark and l_rep == 0) else "Processed"
                     if (is_rep_done or is_sav_done) and not (is_not_paid_mark and l_rep == 0):
-                        status_lbl = "✅ Completed (Partial Recovery)"
+                        status_lbl = "Completed (Partial Recovery)"
                     report["items"].append({
                         "client": c_name,
                         "repayment": l_rep,
@@ -2280,7 +2280,7 @@ with st.sidebar:
 
     # Route Security Guard
     if not RBACScopeService.is_page_permitted(scope.role, page):
-        st.error("⚠️ Access Denied: You do not have permission to access this page.")
+        st.error("Access Denied: You do not have permission to access this page.")
         st.info("If you believe this is an error, please contact your System Administrator.")
         st.stop()
 
@@ -2333,7 +2333,7 @@ if page == "Dashboard":
             st.title("Performance & Risk Dashboard")
         with d_col2:
             st.write("")
-            st.button("🏛️ Audit Center", key="btn_dash_audit_center", on_click=_nav_to_audit_center, use_container_width=True)
+            st.button("Audit Center", key="btn_dash_audit_center", on_click=_nav_to_audit_center, use_container_width=True)
     else:
         st.title("Performance & Risk Dashboard")
 
@@ -2347,72 +2347,72 @@ if page == "Dashboard":
     with SupabaseUnitOfWork() as uow:
         # ROLE-BASED DASHBOARD DISPATCH (PHASE 8.4.1)
         if ROLE in ["Director", "Executive", "Board"]:
-            st.markdown("### 🏛️ Executive Board Dashboard")
+            st.markdown("### Executive Board Dashboard")
             st.caption("Strategic Portfolio & Institutional Overview (Read-Only Executive Insights)")
             d_data = DashboardService.get_director_dashboard_data(uow)
 
             exec_ov = d_data["executive_overview"]
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("💵 Today's Collections", f"₦{exec_ov['today_collections']:,.0f}")
-            c2.metric("📅 MTD Collections", f"₦{exec_ov['mtd_collections']:,.0f}")
-            c3.metric("📈 Outstanding Portfolio", f"₦{exec_ov['outstanding_portfolio']:,.0f}")
-            c4.metric("🐷 Total Savings", f"₦{exec_ov['total_savings']:,.0f}")
+            c1.metric("Today's Collections", f"₦{exec_ov['today_collections']:,.0f}")
+            c2.metric("MTD Collections", f"₦{exec_ov['mtd_collections']:,.0f}")
+            c3.metric("Outstanding Portfolio", f"₦{exec_ov['outstanding_portfolio']:,.0f}")
+            c4.metric("Total Savings", f"₦{exec_ov['total_savings']:,.0f}")
 
             c5, c6 = st.columns(2)
-            c5.metric("🚨 Portfolio At Risk (PAR)", exec_ov["par"], delta_color="inverse")
-            c6.metric("🎯 Recovery Rate", exec_ov["recovery_rate"])
+            c5.metric("Portfolio At Risk (PAR)", exec_ov["par"], delta_color="inverse")
+            c6.metric("Recovery Rate", exec_ov["recovery_rate"])
 
             st.divider()
             t_col1, t_col2 = st.columns(2)
             with t_col1:
-                st.markdown("#### 🏆 Top Five Branches")
+                st.markdown("#### Top Five Branches")
                 for b in d_data["top_five_branches"]:
-                    st.write(f"🥇 **{b}**")
+                    st.write(f"**{b}**")
             with t_col2:
-                st.markdown("#### ⚠️ Bottom Five Branches")
+                st.markdown("#### Bottom Five Branches")
                 for b in d_data["bottom_five_branches"]:
-                    st.write(f"🔻 **{b}**")
+                    st.write(f"**{b}**")
 
             if d_data["strategic_alerts"]:
                 st.divider()
-                st.markdown("#### 🔔 Strategic Alerts")
+                st.markdown("#### Strategic Alerts")
                 for sa in d_data["strategic_alerts"]:
-                    st.info(f"ℹ️ {sa}")
+                    st.info(f"{sa}")
 
         elif ROLE in [ROLE_ADMIN, "Super Admin", "Admin"]:
-            st.markdown("### 👑 Global Administrator Dashboard")
+            st.markdown("### Global Administrator Dashboard")
             st.caption("Institution Operations & Platform Health")
             a_data = DashboardService.get_admin_dashboard_data(uow)
             ops = a_data["today_operations"]
 
-            st.markdown("#### 📅 Today's Institution Performance")
+            st.markdown("#### Today's Institution Performance")
             p1, p2, p3, p4 = st.columns(4)
-            p1.metric("💵 Today's Institution Collection", f"₦{ops['today_collection']:,.0f}")
-            p2.metric("📥 Today's Savings Deposits", f"₦{ops['today_savings_deposit']:,.0f}")
-            p3.metric("📤 Today's Savings Withdrawals", f"₦{ops['today_savings_withdrawal']:,.0f}")
-            p4.metric("🚀 Today's Loan Disbursement", f"₦{ops['today_disbursement']:,.0f}")
+            p1.metric("Today's Institution Collection", f"₦{ops['today_collection']:,.0f}")
+            p2.metric("Today's Savings Deposits", f"₦{ops['today_savings_deposit']:,.0f}")
+            p3.metric("Today's Savings Withdrawals", f"₦{ops['today_savings_withdrawal']:,.0f}")
+            p4.metric("Today's Loan Disbursement", f"₦{ops['today_disbursement']:,.0f}")
 
-            st.markdown("#### 📊 Today's Repayment Status Breakdown")
+            st.markdown("#### Today's Repayment Status Breakdown")
             s1, s2, s3, s4, s5 = st.columns(5)
-            s1.metric("🎯 Normal Payments", f"₦{ops.get('normal_payments', {}).get('amount', 0.0):,.0f}", f"{ops.get('normal_payments', {}).get('count', 0)} Clients")
-            s2.metric("🏆 Full Payments", f"₦{ops.get('full_payments', {}).get('amount', 0.0):,.0f}", f"{ops.get('full_payments', {}).get('count', 0)} Clients")
-            s3.metric("🚀 Excess Payments", f"₦{ops.get('excess_payments', {}).get('amount', 0.0):,.0f}", f"{ops.get('excess_payments', {}).get('count', 0)} Clients")
-            s4.metric("⚠️ Part Payments", f"₦{ops.get('part_payments', {}).get('amount', 0.0):,.0f}", f"{ops.get('part_payments', {}).get('count', 0)} Clients")
-            s5.metric("🚨 Not Paid", f"₦{ops.get('not_paid', {}).get('amount', 0.0):,.0f}", f"{ops.get('not_paid', {}).get('count', 0)} Clients", delta_color="inverse")
+            s1.metric("Normal Payments", f"₦{ops.get('normal_payments', {}).get('amount', 0.0):,.0f}", f"{ops.get('normal_payments', {}).get('count', 0)} Clients")
+            s2.metric("Full Payments", f"₦{ops.get('full_payments', {}).get('amount', 0.0):,.0f}", f"{ops.get('full_payments', {}).get('count', 0)} Clients")
+            s3.metric("Excess Payments", f"₦{ops.get('excess_payments', {}).get('amount', 0.0):,.0f}", f"{ops.get('excess_payments', {}).get('count', 0)} Clients")
+            s4.metric("Part Payments", f"₦{ops.get('part_payments', {}).get('amount', 0.0):,.0f}", f"{ops.get('part_payments', {}).get('count', 0)} Clients")
+            s5.metric("Not Paid", f"₦{ops.get('not_paid', {}).get('amount', 0.0):,.0f}", f"{ops.get('not_paid', {}).get('count', 0)} Clients", delta_color="inverse")
 
             st.divider()
-            st.markdown("#### 🛡️ System & Operations Health")
+            st.markdown("#### System & Operations Health")
             health = a_data["system_health"]
             h1, h2, h3 = st.columns(3)
-            h1.info(f"⚙️ **Projection Status**: {health['projection_status']}")
-            h2.info(f"📬 **Event Queue**: {health['event_queue_status']}")
-            h3.info(f"🔄 **Database Sync**: {health['db_sync_status']}")
+            h1.info(f"**Projection Status**: {health['projection_status']}")
+            h2.info(f"**Event Queue**: {health['event_queue_status']}")
+            h3.info(f"**Database Sync**: {health['db_sync_status']}")
             
             # Section H: Error Correction Queue (Global)
             res_corr = uow.client.table("correction_requests").select("*").eq("status", "Pending").order("created_at", desc=False).execute()
             if res_corr.data:
                 st.divider()
-                st.markdown("#### 🚨 Pending Error Corrections (Global)")
+                st.markdown("#### Pending Error Corrections (Global)")
                 for corr in res_corr.data:
                     c_id = corr["id"]
                     c_reason = corr["reason"]
@@ -2420,7 +2420,7 @@ if page == "Dashboard":
                     st.warning(f"**Reversal Request** | Record ID: {corr['record_id'][:8]} | Reason: {c_reason}")
                     
                     corr_col1, corr_col2, corr_col3 = st.columns([2, 1, 1])
-                    if corr_col2.button("✅ Approve Reversal", key=f"admin_app_corr_{c_id}"):
+                    if corr_col2.button("Approve Reversal", key=f"admin_app_corr_{c_id}"):
                         try:
                             from services.correction_service import CorrectionService
                             with SupabaseUnitOfWork() as uow_corr:
@@ -2430,7 +2430,7 @@ if page == "Dashboard":
                         except Exception as e:
                             st.error(f"Approval failed: {e}")
                     
-                    if corr_col3.button("❌ Reject", key=f"admin_rej_corr_{c_id}", type="primary"):
+                    if corr_col3.button("Reject", key=f"admin_rej_corr_{c_id}", type="primary"):
                         try:
                             from services.correction_service import CorrectionService
                             with SupabaseUnitOfWork() as uow_corr:
@@ -2441,7 +2441,7 @@ if page == "Dashboard":
                             st.error(f"Rejection failed: {e}")
 
         elif ROLE in ["AM", "Area Manager"]:
-            st.markdown("### 🌐 Area Manager Dashboard")
+            st.markdown("### Area Manager Dashboard")
             st.caption("Regional Operational Performance & Branch Supervision")
             all_loans = load_loans()
             my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
@@ -2450,18 +2450,18 @@ if page == "Dashboard":
 
             reg = am_data["regional_summary"]
             r1, r2, r3, r4, r5 = st.columns(5)
-            r1.metric("🏦 Branches", reg["branches_count"])
-            r2.metric("👥 Active Clients", reg["active_clients"])
-            r3.metric("📈 Outstanding Portfolio", f"₦{reg['outstanding_portfolio']:,.0f}")
-            r4.metric("🐷 Total Savings", f"₦{reg['savings']:,.0f}")
-            r5.metric("💵 Today's Collection", f"₦{reg['today_collection']:,.0f}")
+            r1.metric("Branches", reg["branches_count"])
+            r2.metric("Active Clients", reg["active_clients"])
+            r3.metric("Outstanding Portfolio", f"₦{reg['outstanding_portfolio']:,.0f}")
+            r4.metric("Total Savings", f"₦{reg['savings']:,.0f}")
+            r5.metric("Today's Collection", f"₦{reg['today_collection']:,.0f}")
 
             st.divider()
-            st.markdown("#### 📊 Regional Branch Performance Grid")
+            st.markdown("#### Regional Branch Performance Grid")
             st.dataframe(am_data["branch_performance"], use_container_width=True, hide_index=True)
 
         elif ROLE in ["BM", ROLE_BRANCH_MANAGER]:
-            st.markdown(f"### 🏦 Branch Manager Dashboard — {BRANCH} Branch")
+            st.markdown(f"### Branch Manager Dashboard — {BRANCH} Branch")
             st.caption("Branch Daily Operations, Officer Status, & Approvals")
             bm_data = DashboardService.get_bm_dashboard_data(uow, BRANCH, branch_id=BRANCH_ID)
 
@@ -2636,7 +2636,7 @@ if page == "Dashboard":
                                                     "approved_at": datetime.now().isoformat()
                                                 }).eq("id", wr_id).execute()
 
-                                            st.session_state["flash_msg"] = f"✅ Withdrawal of ₦{wr_amt:,.2f} for {wr_name} approved and posted to financial ledger!"
+                                            st.session_state["flash_msg"] = f" Withdrawal of ₦{wr_amt:,.2f} for {wr_name} approved and posted to financial ledger!"
                                             st.rerun()
                                         except Exception as ex:
                                             st.error(f"Approval failed: {str(ex)}")
@@ -2656,7 +2656,7 @@ if page == "Dashboard":
                                         "rejection_reason": reject_reason or "Rejected by BM"
                                     }).eq("id", wr_id).execute()
                                     st.session_state[f"rejecting_{wr_id}"] = False
-                                    st.session_state["flash_msg"] = f"⚠️ Withdrawal request rejected for {wr_name}."
+                                    st.session_state["flash_msg"] = f" Withdrawal request rejected for {wr_name}."
                                     st.rerun()
                 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -2664,7 +2664,7 @@ if page == "Dashboard":
             res_corr = uow.client.table("correction_requests").select("*, app_users!correction_requests_requested_by_fkey(username, full_name)") \
                 .eq("branch_id", BRANCH_ID).eq("status", "Pending").order("created_at", desc=False).execute()
             if res_corr.data:
-                st.markdown("#### 🚨 Pending Error Corrections (Reversals)")
+                st.markdown("#### Pending Error Corrections (Reversals)")
                 for corr in res_corr.data:
                     c_id = corr["id"]
                     c_type = corr.get("record_type")
@@ -2674,10 +2674,10 @@ if page == "Dashboard":
                     r_date = str(corr.get("created_at", ""))[:16].replace("T", " ")
                     r_ref = str(corr.get("record_id", ""))[:8]
 
-                    type_icon = "💳 [Loan Repayment]" if c_type == "Repayment" else (
-                        "💰 [Savings Deposit]" if c_type in ["Savings", "SavingsDeposit"] else (
-                            "🏷️ [EOD Fee]" if c_type == "Fee" else (
-                                "🧾 [Office Expense]" if c_type == "Expense" else "🏛️ [Treasury Transfer]"
+                    type_icon = "[Loan Repayment]" if c_type == "Repayment" else (
+                        "[Savings Deposit]" if c_type in ["Savings", "SavingsDeposit"] else (
+                            "[EOD Fee]" if c_type == "Fee" else (
+                                "[Office Expense]" if c_type == "Expense" else "[Treasury Transfer]"
                             )
                         )
                     )
@@ -2689,12 +2689,12 @@ if page == "Dashboard":
                             st.caption(f"Requested by: **{req_user}** &bull; Submitted: **{r_date}**")
                             st.markdown(f"**Reason:** *{c_reason}*")
                         with col_req_meta:
-                            st.markdown("<div style='margin-top: 10px;'><span style='background: #FEF3C7; color: #92400E; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;'>🟡 Pending Approval</span></div>", unsafe_allow_html=True)
+                            st.markdown("<div style='margin-top: 10px;'><span style='background: #FEF3C7; color: #92400E; padding: 3px 10px; border-radius: 9999px; font-size: 0.76rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;'><svg width='6' height='6' viewBox='0 0 6 6' fill='#D97706'><circle cx='3' cy='3' r='3'/></svg>Pending Approval</span></div>", unsafe_allow_html=True)
                         with col_req_acts:
                             st.write("")
                             b_act1, b_act2 = st.columns(2)
                             with b_act1:
-                                if st.button("✅ Approve", key=f"app_corr_{c_id}", type="primary", use_container_width=True):
+                                if st.button("Approve", key=f"app_corr_{c_id}", type="primary", use_container_width=True):
                                     with st.spinner("Approving reversal and posting compensating ledger entry..."):
                                         try:
                                             from services.correction_service import CorrectionService
@@ -2705,7 +2705,7 @@ if page == "Dashboard":
                                         except Exception as e:
                                             st.error(f"Approval failed: {e}")
                             with b_act2:
-                                if st.button("❌ Reject", key=f"rej_corr_{c_id}", use_container_width=True):
+                                if st.button("Reject", key=f"rej_corr_{c_id}", use_container_width=True):
                                     with st.spinner("Rejecting correction request..."):
                                         try:
                                             from services.correction_service import CorrectionService
@@ -2720,19 +2720,19 @@ if page == "Dashboard":
             # Section A: Branch Summary
             bs = bm_data["branch_summary"]
             b1, b2, b3, b4 = st.columns(4)
-            b1.metric("👥 Active Clients", bs["active_clients"])
-            b2.metric("🐷 Active Savings", f"₦{bs['active_savings']:,.0f}")
-            b3.metric("💵 Collection Today", f"₦{bs['collection_today']:,.0f}")
-            b4.metric("🚨 PAR", bs["par"])
+            b1.metric("Active Clients", bs["active_clients"])
+            b2.metric("Active Savings", f"₦{bs['active_savings']:,.0f}")
+            b3.metric("Collection Today", f"₦{bs['collection_today']:,.0f}")
+            b4.metric("PAR", bs["par"])
 
             # Officer Collection Status Grid
-            st.markdown("#### 📊 Officer Collection Status")
+            st.markdown("#### Officer Collection Status")
             off_df = bm_data["officer_collection_status"]
             if not off_df.empty:
                 st.dataframe(off_df, use_container_width=True, hide_index=True)
 
             # Branch Cash Position
-            st.markdown("#### 💰 Branch Cash Position (Master Cashbook)")
+            st.markdown("#### Branch Cash Position (Master Cashbook)")
             cp = bm_data["branch_cash_position"]
             k1, k2, k3, k4 = st.columns(4)
             k1.metric("Opening Balance", f"₦{cp['opening_balance']:,.0f}")
@@ -2751,7 +2751,7 @@ if page == "Dashboard":
             st.info(f"Welcome **{wel['officer_name']}** | {wel['branch_name']} Branch | Business Date: **{wel['date_str']}** ({wel['meeting_day']}) | System Time: {wel['time_str']}")
 
             if co_data.get("branch_closure", {}).get("is_closed"):
-                st.warning(f"🏖️ **Branch Closed / Holiday ({co_data['branch_closure']['reason']})**: All field collections, group meetings, and daily/weekly/monthly repayments are suspended for {wel['branch_name']} Branch today.")
+                st.warning(f"**Branch Closed / Holiday ({co_data['branch_closure']['reason']})**: All field collections, group meetings, and daily/weekly/monthly repayments are suspended for {wel['branch_name']} Branch today.")
 
             # Today's Repayment Summary Cards (UI-02: Clean Titles, Emoji Reduction)
             st.markdown("#### Today's Repayment Summary")
@@ -2776,7 +2776,7 @@ if page == "Dashboard":
                 g_cols = st.columns(min(len(m_port), 4))
                 for idx, row in m_port.iterrows():
                     g_name = row["Group Name"]
-                    status_badge = row.get("Status", "🟢 Completed")
+                    status_badge = format_status_text(row.get("Status", "Completed"))
                     col_idx = idx % len(g_cols)
                     with g_cols[col_idx]:
                         st.button(f"Start {g_name} ({status_badge})", key=f"start_grp_{idx}", use_container_width=True, on_click=_go_to_collections, args=(g_name,))
@@ -2818,7 +2818,7 @@ if page == "Dashboard":
             if not att_list.empty:
                 st.dataframe(att_list, use_container_width=True, hide_index=True)
             else:
-                st.success("🎉 All scheduled clients have completed full repayments for today!")
+                st.success("All scheduled clients have completed full repayments for today.")
 
 
 elif page == "Loan Origination":
@@ -2844,7 +2844,7 @@ elif page == "Loan Origination":
         my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
         pending_clients = my_loans[(my_loans['Status'] == STATUS_PENDING) & (pd.to_numeric(my_loans['Loan Amount'], errors='coerce').fillna(0) > 0)]
         if pending_clients.empty:
-            st.info("✅ No pending loans found.")
+            st.info("No pending loans found.")
         else:
             st.dataframe(pending_clients[['Client ID', 'Client Name', 'Date', 'Officer', 'Loan Amount', 'Loan Product']], use_container_width=True)
             if ROLE in ["AM", "BM", ROLE_ADMIN]:
@@ -2864,7 +2864,7 @@ elif page == "Loan Origination":
                         from services.business_date_service import BusinessDateService
                         is_workday, workday_reason = BusinessDateService.is_working_day(today, closures)
                         if not is_workday:
-                            st.error(f"⛔ **Non-Working Day Restriction**: Loans cannot be activated or disbursed on {workday_reason}. Please select a valid working day.")
+                            st.error(f"**Non-Working Day Restriction**: Loans cannot be activated or disbursed on {workday_reason}. Please select a valid working day.")
                             st.stop()
 
                         with st.spinner("Authorizing and activating loan disbursement..."):
@@ -2914,7 +2914,7 @@ elif page == "Loan Origination":
                                 st.success(f"Successfully activated and disbursed loan! Disbursement Date set to {today_str}.")
                                 
                                 if is_adjusted:
-                                    st.warning(f"📅 **Schedule Adjusted:** The first repayment was automatically moved to **{final_start_date.strftime('%A, %b %d')}** because the original date fell on {shift_reason}.")
+                                    st.warning(f"**Schedule Adjusted:** The first repayment was automatically moved to **{final_start_date.strftime('%A, %b %d')}** because the original date fell on {shift_reason}.")
                                     
                                 import time
                                 time.sleep(2)
@@ -2922,7 +2922,7 @@ elif page == "Loan Origination":
                             except Exception as e:
                                 st.error(f"Failed to activate loan: {e}")
             else:
-                st.info("🔒 Note: You are a Credit Officer. Only Branch Managers or Area Managers can authorize and activate disbursements.")
+                st.info("Note: You are a Credit Officer. Only Branch Managers or Area Managers can authorize and activate disbursements.")
 
     elif orig_section == "Client Registration":
         st.subheader("Client Registration")
@@ -3202,7 +3202,7 @@ elif page == "Loan Origination":
                                             )
                                             uow.guarantors.create_guarantor(g_entity)
                                     
-                                    st.session_state["reg_success_msg"] = f"🎉 Successfully registered **{name_val}**! Assigned Client ID: **{generated_client_code}**"
+                                    st.session_state["reg_success_msg"] = f"Successfully registered **{name_val}**! Assigned Client ID: **{generated_client_code}**"
                                     
                                     # Clear registration form input keys from session state so form resets cleanly
                                     keys_to_clear = [
@@ -3260,7 +3260,7 @@ elif page == "Loan Origination":
                     num_members = len(df_members)
                     st.success(f"File parsed! Found **{num_groups} Groups** and **{num_members} Members**.")
                     
-                    if st.button("🚀 Confirm and Import", use_container_width=True):
+                    if st.button("Confirm and Import", use_container_width=True):
                         with st.spinner("Importing data & balances..."):
                             success_count = 0
                             update_count = 0
@@ -3781,7 +3781,7 @@ elif page == "Loan Origination":
                             status_text.empty()
                             
                             if import_errors:
-                                st.error("⚠️ Some rows failed to import:")
+                                st.error("Some rows failed to import:")
                                 for err in import_errors[:20]:
                                     st.write(err)
                                 if len(import_errors) > 20:
@@ -3789,7 +3789,7 @@ elif page == "Loan Origination":
                                 st.info("Please make sure you have run the updated Supabase SQL migration script to add the required columns.")
                             
                             if success_count > 0 or update_count > 0:
-                                st.success(f"✅ Onboarding Import Complete! Registered {success_count} new members. Updated {update_count} existing members. Skipped {skip_count} duplicates.")
+                                st.success(f"Onboarding Import Complete! Registered {success_count} new members. Updated {update_count} existing members. Skipped {skip_count} duplicates.")
                                 import time
                                 time.sleep(3)
                                 st.rerun()
@@ -3830,7 +3830,7 @@ elif page == "Loan Origination":
         
         if selected_client:
             # 2. Prefill client metadata
-            st.markdown("### 👤 Client Profile Summary")
+            st.markdown("### Client Profile Summary")
             col1, col2, col3 = st.columns(3)
             col1.markdown(f"**Client ID:** `{selected_client.client_code}`")
             col2.markdown(f"**Full Name:** {selected_client.name}")
@@ -4196,7 +4196,7 @@ elif page == "Loan Origination":
                 res_l = uow.client.table("loans").select("*").eq("client_id", selected_client.id).order("created_at", desc=True).limit(1).execute()
                 latest_loan = res_l.data[0] if res_l.data else {}
 
-            st.markdown("### 👤 Update Client Profile & Guarantor Details")
+            st.markdown("### Update Client Profile & Guarantor Details")
             
             with st.form("edit_client_details_form"):
                 st.markdown("#### 1. Personal Details")
@@ -4305,7 +4305,7 @@ elif page == "Loan Origination":
                                                 )
                                                 return uow.client.storage.from_("client-ids").get_public_url(storage_path)
                                             except Exception as fallback_err:
-                                                st.warning(f"⚠️ File upload failed for '{file_name}': {fallback_err}")
+                                                st.warning(f"File upload failed for '{file_name}': {fallback_err}")
                                                 return None
 
                                     # 1. Process files
@@ -4407,7 +4407,7 @@ elif page == "Loan Origination":
                                                     relationship=g_rel.strip()
                                                 ))
 
-                                    st.success("🎉 Client and Guarantor details updated successfully!")
+                                    st.success("Client and Guarantor details updated successfully.")
                                     import time
                                     time.sleep(2)
                                     st.rerun()
@@ -4438,7 +4438,7 @@ elif page == "Collections":
         is_day_open, open_reason = BusinessDateService.is_operational_open(uow_chk, BRANCH_ID, view_date)
 
     if not is_day_open and not use_late_entry:
-        st.warning(f"🏖️ **Operational Activity Suspended ({open_reason})**: Collections for **{view_date.strftime('%d %B %Y')}** are locked in Read-Only mode. (To record historical entries, toggle 'Late Entry / Backdated Entry' above).")
+        st.warning(f"**Operational Activity Suspended ({open_reason})**: Collections for **{view_date.strftime('%d %B %Y')}** are locked in Read-Only mode. (To record historical entries, toggle 'Late Entry / Backdated Entry' above).")
     
     all_loans = load_loans()
     repayments = load_repayments()
@@ -4553,7 +4553,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 with st.expander("View / Copy WhatsApp Summary"):
                     st.code(receipt_summary_txt, language="text")
 
-        col_tab1, col_tab2, col_tab3 = st.tabs(["📝 Record Collections", "📜 Collection History & Audit", "🔄 Error Correction & Reversals"])
+        col_tab1, col_tab2, col_tab3 = st.tabs(["Record Collections", "Collection History & Audit", "Error Correction & Reversals"])
         
         with col_tab1:
             if "collection_receipt" in st.session_state and st.session_state["collection_receipt"]:
@@ -4653,7 +4653,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             df = pd.read_excel(uploaded_file)
                             st.success(f"File loaded successfully! Found {len(df)} rows.")
                     
-                            if st.button("🚀 Process Upload", use_container_width=True):
+                            if st.button("Process Upload", use_container_width=True):
                                 with st.spinner("Processing bulk upload and saving collections..."):
                                     new_records = []
                                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -4821,7 +4821,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             st.error(f"Error parsing file: {e}")
 
                 elif col_mode == "Single Client Quick Entry":
-                    st.markdown("### 👤 Single Client Collection / Savings Deposit")
+                    st.markdown("### Single Client Collection / Savings Deposit")
                     st.caption("Record an ad-hoc savings deposit, loan repayment, or fee for an individual member without affecting other group records.")
 
                     if not clients_data:
@@ -4893,7 +4893,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                 single_rep = f_col2.number_input(f"Loan Repayment ({loan_prod_val}) (₦)", min_value=0.0, step=500.0, value=None, placeholder=f"Expected: {expected_rep:,.0f}", key="s_rep_amt")
                             else:
                                 single_rep = 0.0
-                                f_col2.caption("🔒 *Client has no active loan. Repayment field is ₦0.*")
+                                f_col2.caption("*Client has no active loan. Repayment field is ₦0.*")
 
                             with st.expander("Additional Fees (Optional)"):
                                 fee1, fee2, fee3 = st.columns(3)
@@ -5470,7 +5470,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             c1.button("Edit / Go Back", on_click=_go_back_to_edit)
                     
                             if not is_day_open and not use_late_entry:
-                                c2.error(f"🔒 Operational activity suspended ({open_reason}). Entries are locked.")
+                                c2.error(f"Operational activity suspended ({open_reason}). Entries are locked.")
                             elif c2.button("Confirm & Save Collections", type="primary", use_container_width=True):
                                 try:
                                     receipt = save_repayments(to_insert)
@@ -5539,9 +5539,9 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                     is_asset = str(cid).endswith("-ASSET") or (prod and "asset" in prod.lower() and "non-asset" not in prod.lower())
                             
                                     if is_asset:
-                                        title = f"📋 {m['Client Name']} (ASSET) — Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
+                                        title = f"{m['Client Name']} (ASSET) — Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
                                     else:
-                                        title = f"👤 {m['Client Name']} ({cid}) — Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
+                                        title = f"{m['Client Name']} ({cid}) — Rem: ₦{info['rem_bal']:,.0f} | Sav: ₦{info['sav_bal']:,.0f}"
                                 
                                     mem_today = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
                                     if not mem_today.empty:
@@ -5549,9 +5549,9 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                         today_s_dep = float(mem_today['Savings Amount'].sum()) if 'Savings Amount' in mem_today.columns else 0.0
                                         today_status = mem_today['Payment Status'].iloc[0] if 'Payment Status' in mem_today.columns else ""
                                         if today_l_rep > 0 or today_s_dep > 0:
-                                            title += f" | ✅ Paid Today (₦{today_l_rep + today_s_dep:,.0f})"
+                                            title += f" | Paid Today (₦{today_l_rep + today_s_dep:,.0f})"
                                         elif today_status == "NOT_PAID" or (mem_today['Amount Paid'].sum() == 0 and not mem_today.empty):
-                                            title += f" | ❌ Recorded as NOT PAID"
+                                            title += f" | Recorded as NOT PAID"
                                 
                                     with st.expander(title, expanded=expand_all_members):
                                         s_date_str = info.get("start_date", "")
@@ -5578,7 +5578,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                             st.markdown(f"**Loan ({prod})** — Active Credit: ₦{info['act_cred']:,.0f}")
                                             expected_rep = float(info['expected_rep_schedule'] or 0.0)
                                             if info.get('has_overdue'):
-                                                st.caption(f"⚠️ **Total Due Today: ₦{expected_rep:,.2f}** (₦{info.get('overdue_arrears', 0.0):,.2f} Overdue Arrears + ₦{info.get('current_installment', 0.0):,.2f} Today's Installment)")
+                                                st.caption(f"**Total Due Today: ₦{expected_rep:,.2f}** (₦{info.get('overdue_arrears', 0.0):,.2f} Overdue Arrears + ₦{info.get('current_installment', 0.0):,.2f} Today's Installment)")
                                             else:
                                                 st.caption(f"Expected repayment calculated from schedule: ₦{expected_rep:,.2f}")
                                     
@@ -5599,7 +5599,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                                     key=f"rep_{cid}"
                                                 )
                                             else:
-                                                st.caption(f"🔒 *Repayment set to ₦0. Normal installment of ₦{expected_rep:,.2f} will be recorded as NOT PAID (Arrears).*")
+                                                st.caption(f"*Repayment set to ₦0. Normal installment of ₦{expected_rep:,.2f} will be recorded as NOT PAID (Arrears).*")
                                                 rep_col = 0.0
                                     
                                             rep_data[cid] = {
@@ -5613,7 +5613,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         
                                 st.markdown("---")
                                 if not is_day_open and not use_late_entry:
-                                    st.warning(f"🏖️ Cannot submit new collections today ({open_reason}). Switch to the active business date or enable Late Entry.")
+                                    st.warning(f"Cannot submit new collections today ({open_reason}). Switch to the active business date or enable Late Entry.")
                                 else:
                                     submit_btn = st.form_submit_button("Calculate Totals & Review Members", type="primary", use_container_width=True)
                                     if submit_btn:
@@ -5753,7 +5753,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                                 st.warning("No data entered to save.")
 
         with col_tab2:
-            st.markdown("### 📜 Collection History & Audit")
+            st.markdown("### Collection History & Audit")
             st.caption("Inspect all daily repayments and savings deposits posted by Credit Officers.")
             
             is_officer_col = (scope.scope_level == "OFFICER" or ROLE in ['CO', 'Officer', ROLE_CREDIT_OFFICER])
@@ -5763,13 +5763,13 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 hist_date_str = hist_view_date.strftime("%Y-%m-%d")
                 officer_options = ["All Officers"] + sorted(list(CO_DISPLAY_MAP.keys()))
                 sel_hist_co = c_h2.selectbox("Filter Officer", officer_options, key="col_hist_co_sel")
-                hist_search = c_h3.text_input("🔍 Search Client Name / Code / Note", placeholder="Type name, code, or ref...", key="col_hist_search").strip().lower()
+                hist_search = c_h3.text_input("Search Client Name / Code / Note", placeholder="Type name, code, or ref...", key="col_hist_search").strip().lower()
             else:
                 c_h1, c_h2 = st.columns([1, 2])
                 hist_view_date = c_h1.date_input("Filter Date", view_date, key="col_hist_date")
                 hist_date_str = hist_view_date.strftime("%Y-%m-%d")
                 sel_hist_co = "All Officers"
-                hist_search = c_h2.text_input("🔍 Search Client Name / Code / Note", placeholder="Type name, code, or ref...", key="col_hist_search").strip().lower()
+                hist_search = c_h2.text_input("Search Client Name / Code / Note", placeholder="Type name, code, or ref...", key="col_hist_search").strip().lower()
             
             with SupabaseUnitOfWork() as uow_hist:
                 # 1. Query Repayments
@@ -5874,13 +5874,13 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             posting_date=hist_view_date,
                             officer_id=eff_off_id
                         )
-                        render_collection_arrears_tally(tally_res, title="📋 Daily Field Collection & Arrears Reconciliation Tally")
+                        render_collection_arrears_tally(tally_res, title="Daily Field Collection & Arrears Reconciliation Tally")
                         st.markdown("---")
                 except Exception as ex_tally:
                     print(f"Error rendering collection arrears tally: {ex_tally}")
                 
                 # Subtabs for Repayments vs Savings
-                h_tab1, h_tab2 = st.tabs([f"💳 Loan Repayments ({len(reps_list)})", f"💰 Savings Deposits ({len(sav_dep_list)})"])
+                h_tab1, h_tab2 = st.tabs([f"Loan Repayments ({len(reps_list)})", f"Savings Deposits ({len(sav_dep_list)})"])
                 
                 with h_tab1:
                     if reps_list:
@@ -5905,13 +5905,13 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                     continue
 
                             if p_stat == "NOT_PAID":
-                                stat_badge = "❌ NOT PAID"
+                                stat_badge = "NOT PAID"
                             elif p_stat == "PART_PAID":
-                                stat_badge = "⚠️ PART PAID"
+                                stat_badge = "PART PAID"
                             elif p_stat == "EXCESS":
-                                stat_badge = "🔵 EXCESS"
+                                stat_badge = "EXCESS"
                             else:
-                                stat_badge = "✅ PAID"
+                                stat_badge = "PAID"
                                     
                             reps_rows.append({
                                 "Time": time_str,
@@ -5963,7 +5963,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         st.info(f"No savings deposits recorded on {hist_date_str}.")
 
         with col_tab3:
-            st.markdown("### 🔄 Error Correction & Reversal Hub")
+            st.markdown("### Error Correction & Reversal Hub")
             st.caption("Flag an erroneous collection (loan repayment or savings deposit) for Branch Manager approval.")
             
             with SupabaseUnitOfWork() as uow_corr:
@@ -5973,14 +5973,14 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 col_ctrl1, col_ctrl2 = st.columns([1, 1])
                 with col_ctrl1:
                     corr_category = st.radio(
-                        "1️⃣ Select Category",
-                        ["💳 Loan Repayments", "💰 Savings Deposits"],
+                        "Select Category",
+                        ["Loan Repayments", "Savings Deposits"],
                         horizontal=True,
                         key="col_rev_category"
                     )
                 with col_ctrl2:
                     corr_date = st.date_input(
-                        "2️⃣ Transaction Date",
+                        "Transaction Date",
                         value=datetime.now().date(),
                         key="col_rev_date_picker"
                     )
@@ -5991,7 +5991,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 col_flt1, col_flt2 = st.columns([3, 1])
                 with col_flt1:
                     corr_search = st.text_input(
-                        "🔍 Filter by Client Name / Code / Ref (Optional)",
+                        "Filter by Client Name / Code / Ref (Optional)",
                         placeholder="e.g. OGI-05, Adewa, 2500",
                         key="col_rev_search"
                     ).strip().lower()
@@ -6017,7 +6017,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 opts = {}
                 details_map = {}
 
-                if corr_category == "💳 Loan Repayments":
+                if corr_category == "Loan Repayments":
                     q_reps = uow_corr.client.table("repayments").select(
                         "id, client_id, amount_paid, expected_amount, date, note, officer_id, branch_id, clients(name, client_code)"
                     )
@@ -6067,7 +6067,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             "note": r.get("note") or "Daily Collection"
                         }
 
-                else: # 💰 Savings Deposits
+                else: # Savings Deposits
                     q_sav = uow_corr.client.table("individual_savings").select(
                         "id, client_id, deposit_amount, posting_date, remarks, officer_id, branch_id, clients(name, client_code)"
                     ).gt("deposit_amount", 0)
@@ -6126,11 +6126,11 @@ Status: CONFIRMED & POSTED TO LEDGER"""
 
                     # Mobile-Friendly Summary Card
                     with st.container(border=True):
-                        st.markdown("##### 📌 Selected Transaction Details")
+                        st.markdown("##### Selected Transaction Details")
                         c_card1, c_card2, c_card3 = st.columns(3)
-                        c_card1.metric("💵 Amount", f"₦{det.get('amount', 0.0):,.2f}")
-                        c_card2.metric("🏷️ Client Code", det.get("client_code", "—"))
-                        c_card3.metric("📅 Date", det.get("date", "—"))
+                        c_card1.metric("Amount", f"₦{det.get('amount', 0.0):,.2f}")
+                        c_card2.metric("Client Code", det.get("client_code", "—"))
+                        c_card3.metric("Date", det.get("date", "—"))
                         st.markdown(f"**Client Name:** {det.get('client_name', 'Unknown')} &nbsp;|&nbsp; **Category:** {det.get('type')}")
                         st.caption(f"**Full Ref ID:** `{det.get('ref', '')}` &bull; **Note:** {det.get('note', '—')}")
 
@@ -6148,7 +6148,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                         requested_by=USER_ID if USER_ID else USER,
                                         branch_id=BRANCH_ID
                                     )
-                                    st.success(f"✅ Reversal request submitted to Branch Manager for approval! (Ref: #{req_id[:8]})")
+                                    st.success(f"Reversal request submitted to Branch Manager for approval! (Ref: #{req_id[:8]})")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Failed to submit correction request: {e}")
@@ -6160,7 +6160,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 
                 # Display Submitted Requests History for this user
                 st.markdown("---")
-                st.markdown("#### 📋 Submitted Reversal Requests")
+                st.markdown("#### Submitted Reversal Requests")
                 try:
                     req_query = uow_corr.client.table("correction_requests").select("*")
                     if is_officer_corr:
@@ -6178,7 +6178,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 if my_reqs:
                     req_display = []
                     for mr in my_reqs:
-                        st_badge = "🟡 Pending" if mr.get("status") == "Pending" else ("🟢 Approved" if mr.get("status") == "Approved" else "🔴 Rejected")
+                        st_badge = format_status_text(mr.get("status", "Pending"))
                         req_display.append({
                             "Date": str(mr.get("created_at", ""))[:16].replace("T", " "),
                             "Type": mr.get("record_type"),
@@ -6219,7 +6219,7 @@ elif page == "Withdrawal Operations":
     
     is_wth_open, wth_open_reason = BusinessDateService.is_operational_open(uow, BRANCH_ID, wth_op_date)
     if not is_wth_open:
-        st.warning(f"🏖️ **Operational Activity Suspended ({wth_open_reason})**: Savings withdrawals and LAPS payouts are frozen for {wth_op_date}.")
+        st.warning(f"**Operational Activity Suspended ({wth_open_reason})**: Savings withdrawals and LAPS payouts are frozen for {wth_op_date}.")
 
     is_manager = ROLE in ["BM", "AM", "Branch Manager", "Area Manager", ROLE_BRANCH_MANAGER, ROLE_AREA_MANAGER, ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]
     if is_manager:
@@ -6240,7 +6240,7 @@ elif page == "Withdrawal Operations":
             "Group Savings", 
             "Misc Savings", 
             "LAPS Savings",
-            f"🔔 Pending Approvals ({len(pending_withdrawals_all)})"
+            f"Pending Approvals ({len(pending_withdrawals_all)})"
         ])
     else:
         wth_tab1, wth_tab2, wth_tab3, wth_tab4 = st.tabs([
@@ -6357,15 +6357,15 @@ elif page == "Withdrawal Operations":
         )
 
         if dest_op == "Client Bank Account (Transfer)":
-            st.info("💡 Electronic Transfer to Client | Right Side: Product Withdrawal | Left Side: Bank Withdrawal | Vault Cash: ₦0 (Untouched)")
+            st.info("Electronic Transfer to Client | Right Side: Product Withdrawal | Left Side: Bank Withdrawal | Vault Cash: ₦0 (Untouched)")
         elif dest_op == "Loan Repayment / Asset Debt Offset":
-            st.info("💡 Non-Cash Debt Offset | Right Side: Product Withdrawal | Left Side: Loan Repayment (rep_*) / Asset Credit | Vault Cash: ₦0 (Untouched)")
+            st.info("Non-Cash Debt Offset | Right Side: Product Withdrawal | Left Side: Loan Repayment (rep_*) / Asset Credit | Vault Cash: ₦0 (Untouched)")
         elif dest_op == "Fee Payment from Savings":
-            st.info("💡 Non-Cash Fee Payment | Right Side: Product Withdrawal | Left Side: Fee Income | Vault Cash: ₦0 (Untouched)")
+            st.info("Non-Cash Fee Payment | Right Side: Product Withdrawal | Left Side: Fee Income | Vault Cash: ₦0 (Untouched)")
         elif dest_op == "Another Member or Group Savings":
-            st.info("💡 Non-Cash Savings Reallocation | Right Side: Product Withdrawal | Left Side: Savings Deposit | Vault Cash: ₦0 (Untouched)")
+            st.info("Non-Cash Savings Reallocation | Right Side: Product Withdrawal | Left Side: Savings Deposit | Vault Cash: ₦0 (Untouched)")
         elif dest_op == "LAPS Reserve":
-            st.info("💡 Sweep Residual Savings to LAPS Protection Reserve | Right Side: Product Withdrawal | Left Side: LAPS Reserve | Vault Cash: ₦0 (Untouched)")
+            st.info("Sweep Residual Savings to LAPS Protection Reserve | Right Side: Product Withdrawal | Left Side: LAPS Reserve | Vault Cash: ₦0 (Untouched)")
 
         with st.form("ind_withdrawal_form"):
             amount_val = st.number_input("Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
@@ -6433,7 +6433,7 @@ elif page == "Withdrawal Operations":
                 sel_fee_label = st.selectbox("Select Fee Type", list(fee_map.keys()))
                 fee_code = fee_map[sel_fee_label]
                 if fee_code == "other":
-                    st.info("💡 **Other (Prior Payment Clearance / Shortfall)**: Deducts from savings to clear a previously recorded collection cash shortage. Only Product Withdrawal on the Right side is increased; the Left side (inflow) is not increased (₦0.00).")
+                    st.info("**Other (Prior Payment Clearance / Shortfall)**: Deducts from savings to clear a previously recorded collection cash shortage. Only Product Withdrawal on the Right side is increased; the Left side (inflow) is not increased (₦0.00).")
 
             elif dest_op == "Another Member or Group Savings":
                 transfer_target_cat = st.radio("Transfer Destination", ["Individual Member", "Group Savings"], horizontal=True)
@@ -6454,11 +6454,11 @@ elif page == "Withdrawal Operations":
 
             remarks_input = st.text_area("Remarks", placeholder="Reason or extra details...")
             if is_manager:
-                auto_exec_ind = st.checkbox("⚡ Authorize & Post Immediately (Direct BM / Admin Execution)", value=True, key="wth_ind_auto_exec", help="When checked, Branch Managers and Admins can authorize and immediately post this withdrawal to individual savings and the general ledger.")
+                auto_exec_ind = st.checkbox("Authorize & Post Immediately (Direct BM / Admin Execution)", value=True, key="wth_ind_auto_exec", help="When checked, Branch Managers and Admins can authorize and immediately post this withdrawal to individual savings and the general ledger.")
             else:
                 auto_exec_ind = False
 
-            btn_label_ind = "⚡ Authorize & Post Withdrawal to Ledger" if auto_exec_ind else "Submit for BM Approval"
+            btn_label_ind = "Authorize & Post Withdrawal to Ledger" if auto_exec_ind else "Submit for BM Approval"
             submitted = st.form_submit_button(btn_label_ind, use_container_width=True, type="primary" if auto_exec_ind else "secondary")
 
             if submitted:
@@ -6553,7 +6553,7 @@ elif page == "Withdrawal Operations":
                                         "approved_at": datetime.now().isoformat()
                                     }).execute()
 
-                                st.session_state["withdrawal_flash_msg"] = f"🎉 Withdrawal of ₦{amount_val:,.2f} for **{c_name}** ({dest_op}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                                st.session_state["withdrawal_flash_msg"] = f" Withdrawal of ₦{amount_val:,.2f} for **{c_name}** ({dest_op}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
                                 st.rerun()
                             except Exception as ex:
                                 st.error(f"Execution failed: {str(ex)}")
@@ -6572,7 +6572,7 @@ elif page == "Withdrawal Operations":
                                 "remarks": rem_final,
                                 "status": "PENDING"
                             }).execute()
-                            st.session_state["withdrawal_flash_msg"] = f"✅ Withdrawal request of ₦{amount_val:,.2f} for **{c_name}** ({dest_op}) submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
+                            st.session_state["withdrawal_flash_msg"] = f" Withdrawal request of ₦{amount_val:,.2f} for **{c_name}** ({dest_op}) submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
                             st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
@@ -6652,15 +6652,15 @@ elif page == "Withdrawal Operations":
         )
 
         if dest_op == "Group Bank Account (Transfer)":
-            st.info("💡 Electronic Transfer to Group | Right Side: Product Withdrawal | Left Side: Bank Withdrawal | Vault Cash: ₦0 (Untouched)")
+            st.info("Electronic Transfer to Group | Right Side: Product Withdrawal | Left Side: Bank Withdrawal | Vault Cash: ₦0 (Untouched)")
         elif "Loan Repayment" in dest_op:
-            st.info("💡 Non-Cash Debt Offset | Right Side: Product Withdrawal | Left Side: Loan Repayment (rep_*) / Asset Credit | Vault Cash: ₦0 (Untouched)")
+            st.info("Non-Cash Debt Offset | Right Side: Product Withdrawal | Left Side: Loan Repayment (rep_*) / Asset Credit | Vault Cash: ₦0 (Untouched)")
         elif "Fee Payment" in dest_op:
-            st.info("💡 Non-Cash Fee Payment | Right Side: Product Withdrawal | Left Side: Fee Income | Vault Cash: ₦0 (Untouched)")
+            st.info("Non-Cash Fee Payment | Right Side: Product Withdrawal | Left Side: Fee Income | Vault Cash: ₦0 (Untouched)")
         elif "Another Member" in dest_op:
-            st.info("💡 Non-Cash Savings Reallocation | Right Side: Product Withdrawal | Left Side: Savings Deposit | Vault Cash: ₦0 (Untouched)")
+            st.info("Non-Cash Savings Reallocation | Right Side: Product Withdrawal | Left Side: Savings Deposit | Vault Cash: ₦0 (Untouched)")
         elif "LAPS Reserve" in dest_op:
-            st.info("💡 Sweep Residual Group Savings to LAPS Protection Reserve | Right Side: Product Withdrawal | Left Side: LAPS Reserve | Vault Cash: ₦0 (Untouched)")
+            st.info("Sweep Residual Group Savings to LAPS Protection Reserve | Right Side: Product Withdrawal | Left Side: LAPS Reserve | Vault Cash: ₦0 (Untouched)")
 
         with st.form("grp_withdrawal_form"):
             amount_val = st.number_input("Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
@@ -6737,7 +6737,7 @@ elif page == "Withdrawal Operations":
                 sel_fee_label = st.selectbox("Select Fee Type", list(fee_map.keys()), key="grp_sel_fee")
                 fee_code = fee_map[sel_fee_label]
                 if fee_code == "other":
-                    st.info("💡 **Other (Prior Payment Clearance / Shortfall)**: Deducts from savings to clear a previously recorded collection cash shortage. Only Product Withdrawal on the Right side is increased; the Left side (inflow) is not increased (₦0.00).")
+                    st.info("**Other (Prior Payment Clearance / Shortfall)**: Deducts from savings to clear a previously recorded collection cash shortage. Only Product Withdrawal on the Right side is increased; the Left side (inflow) is not increased (₦0.00).")
                 if members:
                     member_opts = {f"{m['name']} ({m.get('client_code') or m['client_id'][:8]})": m for m in members}
                     sel_fee_mem_lbl = st.selectbox("Affected Member (Optional)", list(member_opts.keys()), key="grp_fee_mem")
@@ -6763,11 +6763,11 @@ elif page == "Withdrawal Operations":
 
             remarks_input = st.text_area("Remarks", placeholder="Reason or extra details...")
             if is_manager:
-                auto_exec_grp = st.checkbox("⚡ Authorize & Post Immediately (Direct BM / Admin Execution)", value=True, key="wth_grp_auto_exec", help="When checked, Branch Managers and Admins can authorize and immediately post this group withdrawal to group savings and the general ledger.")
+                auto_exec_grp = st.checkbox("Authorize & Post Immediately (Direct BM / Admin Execution)", value=True, key="wth_grp_auto_exec", help="When checked, Branch Managers and Admins can authorize and immediately post this group withdrawal to group savings and the general ledger.")
             else:
                 auto_exec_grp = False
 
-            btn_label_grp = "⚡ Authorize & Post Group Withdrawal to Ledger" if auto_exec_grp else "Submit for BM Approval"
+            btn_label_grp = "Authorize & Post Group Withdrawal to Ledger" if auto_exec_grp else "Submit for BM Approval"
             submitted = st.form_submit_button(btn_label_grp, use_container_width=True, type="primary" if auto_exec_grp else "secondary")
 
             if submitted:
@@ -6863,7 +6863,7 @@ elif page == "Withdrawal Operations":
                                         "approved_at": datetime.now().isoformat()
                                     }).execute()
 
-                                st.session_state["withdrawal_flash_msg"] = f"🎉 Group withdrawal of ₦{amount_val:,.2f} for **{g_name}** ({dest_op}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                                st.session_state["withdrawal_flash_msg"] = f" Group withdrawal of ₦{amount_val:,.2f} for **{g_name}** ({dest_op}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
                                 st.rerun()
                             except Exception as ex:
                                 st.error(f"Execution failed: {str(ex)}")
@@ -6883,7 +6883,7 @@ elif page == "Withdrawal Operations":
                                 "remarks": rem_final,
                                 "status": "PENDING"
                             }).execute()
-                            st.session_state["withdrawal_flash_msg"] = f"✅ Group withdrawal request of ₦{amount_val:,.2f} for group **{g_name}** submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
+                            st.session_state["withdrawal_flash_msg"] = f" Group withdrawal request of ₦{amount_val:,.2f} for group **{g_name}** submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
                             st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
@@ -6911,13 +6911,13 @@ elif page == "Withdrawal Operations":
             )
 
             if misc_dest_op == "Client Bank Account (Transfer)":
-                st.info("💡 Electronic Transfer to Client | Right Side: Product Withdrawal | Left Side: Bank Withdrawal | Vault Cash: ₦0 (Untouched)")
+                st.info("Electronic Transfer to Client | Right Side: Product Withdrawal | Left Side: Bank Withdrawal | Vault Cash: ₦0 (Untouched)")
             elif "Loan Repayment" in misc_dest_op:
-                st.info("💡 Non-Cash Debt Offset | Right Side: Product Withdrawal | Left Side: Loan Repayment (rep_*) / Asset Credit | Vault Cash: ₦0 (Untouched)")
+                st.info("Non-Cash Debt Offset | Right Side: Product Withdrawal | Left Side: Loan Repayment (rep_*) / Asset Credit | Vault Cash: ₦0 (Untouched)")
             elif "Fee Payment" in misc_dest_op:
-                st.info("💡 Non-Cash Fee Payment | Right Side: Product Withdrawal | Left Side: Fee Income | Vault Cash: ₦0 (Untouched)")
+                st.info("Non-Cash Fee Payment | Right Side: Product Withdrawal | Left Side: Fee Income | Vault Cash: ₦0 (Untouched)")
             elif "Transfer to" in misc_dest_op:
-                st.info("💡 Non-Cash Savings Reallocation | Right Side: Product Withdrawal | Left Side: Savings Deposit | Vault Cash: ₦0 (Untouched)")
+                st.info("Non-Cash Savings Reallocation | Right Side: Product Withdrawal | Left Side: Savings Deposit | Vault Cash: ₦0 (Untouched)")
 
             with st.form("misc_withdrawal_form"):
                 amount_val = st.number_input("Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
@@ -6981,7 +6981,7 @@ elif page == "Withdrawal Operations":
                     sel_fee_label = st.selectbox("Select Fee Type", list(fee_map.keys()), key="misc_fee_sel")
                     fee_code = fee_map[sel_fee_label]
                     if fee_code == "other":
-                        st.info("💡 **Other (Prior Payment Clearance / Shortfall)**: Deducts from savings to clear a previously recorded collection cash shortage. Only Product Withdrawal on the Right side is increased; the Left side (inflow) is not increased (₦0.00).")
+                        st.info("**Other (Prior Payment Clearance / Shortfall)**: Deducts from savings to clear a previously recorded collection cash shortage. Only Product Withdrawal on the Right side is increased; the Left side (inflow) is not increased (₦0.00).")
 
                 elif "Transfer to" in misc_dest_op:
                     transfer_target_cat = st.radio("Transfer Destination", ["Individual Member", "Group Savings"], horizontal=True, key="misc_trans_cat")
@@ -7002,11 +7002,11 @@ elif page == "Withdrawal Operations":
 
                 remarks_input = st.text_area("Remarks", placeholder="Reason for Misc withdrawal or offset...")
                 if is_manager:
-                    auto_exec_misc = st.checkbox("⚡ Authorize & Post Immediately (Direct BM / Admin Execution)", value=True, key="wth_misc_auto_exec", help="When checked, Branch Managers and Admins can authorize and immediately post this Misc savings withdrawal to the ledger.")
+                    auto_exec_misc = st.checkbox("Authorize & Post Immediately (Direct BM / Admin Execution)", value=True, key="wth_misc_auto_exec", help="When checked, Branch Managers and Admins can authorize and immediately post this Misc savings withdrawal to the ledger.")
                 else:
                     auto_exec_misc = False
 
-                btn_label_misc = "⚡ Authorize & Post Misc Withdrawal to Ledger" if auto_exec_misc else "Submit Misc Request"
+                btn_label_misc = "Authorize & Post Misc Withdrawal to Ledger" if auto_exec_misc else "Submit Misc Request"
                 submitted = st.form_submit_button(btn_label_misc, use_container_width=True, type="primary" if auto_exec_misc else "secondary")
 
                 if submitted:
@@ -7091,7 +7091,7 @@ elif page == "Withdrawal Operations":
                                             "approved_at": datetime.now().isoformat()
                                         }).execute()
 
-                                    st.session_state["withdrawal_flash_msg"] = f"🎉 Misc savings withdrawal of ₦{amount_val:,.2f} authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                                    st.session_state["withdrawal_flash_msg"] = f" Misc savings withdrawal of ₦{amount_val:,.2f} authorized and posted to financial ledger! (Ref: `{ref_code}`)"
                                     st.rerun()
                                 except Exception as ex:
                                     st.error(f"Execution failed: {str(ex)}")
@@ -7110,7 +7110,7 @@ elif page == "Withdrawal Operations":
                                     "remarks": rem_final,
                                     "status": "PENDING"
                                 }).execute()
-                                st.session_state["withdrawal_flash_msg"] = f"✅ Misc withdrawal/offset request of ₦{amount_val:,.2f} submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
+                                st.session_state["withdrawal_flash_msg"] = f" Misc withdrawal/offset request of ₦{amount_val:,.2f} submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
                                 st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
@@ -7154,11 +7154,11 @@ elif page == "Withdrawal Operations":
                 st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: NO (Paid directly via Bank Account)")
             remarks_input = st.text_area("Remarks", placeholder="Client details, reason for payout...")
             if is_manager:
-                auto_exec_laps = st.checkbox("⚡ Authorize & Post Immediately (Direct BM / Admin Execution)", value=True, key="wth_laps_auto_exec", help="When checked, Branch Managers and Admins can authorize and immediately post this LAPS payout to the ledger.")
+                auto_exec_laps = st.checkbox("Authorize & Post Immediately (Direct BM / Admin Execution)", value=True, key="wth_laps_auto_exec", help="When checked, Branch Managers and Admins can authorize and immediately post this LAPS payout to the ledger.")
             else:
                 auto_exec_laps = False
 
-            btn_label_laps = "⚡ Authorize & Post LAPS Payout to Ledger" if auto_exec_laps else "Submit LAPS Payout for BM Approval"
+            btn_label_laps = "Authorize & Post LAPS Payout to Ledger" if auto_exec_laps else "Submit LAPS Payout for BM Approval"
             submitted = st.form_submit_button(btn_label_laps, use_container_width=True, type="primary" if auto_exec_laps else "secondary")
 
             if submitted:
@@ -7202,7 +7202,7 @@ elif page == "Withdrawal Operations":
                                         "approved_at": datetime.now().isoformat()
                                     }).execute()
 
-                                st.session_state["withdrawal_flash_msg"] = f"🎉 LAPS payout of ₦{amount_val:,.2f} ({payout_method}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                                st.session_state["withdrawal_flash_msg"] = f" LAPS payout of ₦{amount_val:,.2f} ({payout_method}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
                                 st.rerun()
                             except Exception as ex:
                                 st.error(f"Execution failed: {str(ex)}")
@@ -7221,7 +7221,7 @@ elif page == "Withdrawal Operations":
                                 "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
                                 "status": "PENDING"
                             }).execute()
-                            st.session_state["withdrawal_flash_msg"] = f"✅ LAPS payout request of ₦{amount_val:,.2f} ({payout_method}) submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
+                            st.session_state["withdrawal_flash_msg"] = f" LAPS payout request of ₦{amount_val:,.2f} ({payout_method}) submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
                             st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
@@ -7229,10 +7229,10 @@ elif page == "Withdrawal Operations":
     # ════════════════════════════════════════════════════════════════════
     if is_manager:
         with wth_tab5:
-            st.markdown("#### 🔔 Branch Manager Withdrawal Approval Queue")
+            st.markdown("#### Branch Manager Withdrawal Approval Queue")
             st.caption("Review, authorize, and post pending withdrawal requests submitted by field officers.")
             if not pending_withdrawals_all:
-                st.info("✅ No pending withdrawal requests awaiting approval.")
+                st.info("No pending withdrawal requests awaiting approval.")
             else:
                 wr_page_default_date = wth_op_date or (active_b_date if 'active_b_date' in locals() and active_b_date else date.today())
                 wr_approval_op_date = st.date_input(
@@ -7359,7 +7359,7 @@ elif page == "Withdrawal Operations":
                                                     "approved_at": datetime.now().isoformat()
                                                 }).eq("id", wr_id).execute()
 
-                                            st.session_state["withdrawal_flash_msg"] = f"✅ Withdrawal of ₦{wr_amt:,.2f} for **{wr_name}** approved and posted to the financial ledger!"
+                                            st.session_state["withdrawal_flash_msg"] = f" Withdrawal of ₦{wr_amt:,.2f} for **{wr_name}** approved and posted to the financial ledger!"
                                             st.rerun()
                                         except Exception as ex:
                                             st.error(f"Approval failed: {str(ex)}")
@@ -7379,13 +7379,13 @@ elif page == "Withdrawal Operations":
                                         "rejection_reason": reject_reason or "Rejected by BM"
                                     }).eq("id", wr_id).execute()
                                     st.session_state[f"page_rejecting_{wr_id}"] = False
-                                    st.session_state["withdrawal_flash_msg"] = f"⚠️ Withdrawal request of ₦{wr_amt:,.2f} for {wr_name} has been rejected."
+                                    st.session_state["withdrawal_flash_msg"] = f" Withdrawal request of ₦{wr_amt:,.2f} for {wr_name} has been rejected."
                                     st.rerun()
 
     # ── Withdrawal Requests History ──
     st.markdown("---")
     if is_manager:
-        st.markdown("### 📋 Branch Withdrawal Requests History")
+        st.markdown("### Branch Withdrawal Requests History")
         if ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
             res_history = uow.client.table("withdrawal_requests").select("*").in_("branch_id", ASSIGNED_BRANCH_IDS).order("created_at", desc=True).limit(30).execute()
         elif ROLE in ["BM", "Branch Manager", ROLE_BRANCH_MANAGER]:
@@ -7393,12 +7393,12 @@ elif page == "Withdrawal Operations":
         else:
             res_history = uow.client.table("withdrawal_requests").select("*").order("created_at", desc=True).limit(30).execute()
     else:
-        st.markdown("### 📋 My Withdrawal Requests")
+        st.markdown("### My Withdrawal Requests")
         res_history = uow.client.table("withdrawal_requests").select("*").eq("requested_by", USER).order("created_at", desc=True).limit(25).execute()
 
     if res_history.data:
         for req in res_history.data:
-            st_badge = "🟡 PENDING" if req["status"] == "PENDING" else ("🟢 APPROVED" if req["status"] == "APPROVED" else "🔴 REJECTED")
+            st_badge = format_status_text(req["status"])
             ref_str = f" | Ref: `{req.get('reference')}`" if req.get('reference') else ""
             req_by_str = f" | Officer: **{req.get('requested_by')}**" if is_manager else ""
             st.markdown(
@@ -7414,16 +7414,16 @@ elif page == "Withdrawal Operations":
         st.info("No withdrawal requests found.")
 
 elif page == "Legacy LAPS Migration":
-    st.title("🏛️ Legacy LAPS Bulk Migration Console (Super Admin)")
+    st.title("Legacy LAPS Bulk Migration Console (Super Admin)")
     st.caption("Upload historical Loan Application Savings (LAPS) records from legacy Excel workbooks with owner mapping, audit tracking, and zero physical cash vault impact.")
 
     if ROLE not in ["Admin", "Super Admin", "SUPER_ADMIN", "ADMIN"]:
-        st.error("⛔ Access Denied: Legacy LAPS Migration is restricted to Super Admin / Admin roles.")
+        st.error("Access Denied: Legacy LAPS Migration is restricted to Super Admin / Admin roles.")
     else:
         st.markdown("---")
-        st.subheader("📥 Bulk Excel File Upload")
+        st.subheader("Bulk Excel File Upload")
         
-        st.info("💡 **Excel Format Requirements**: Columns MUST include `client_name` (or `Name`), `amount` (or `LAPS Balance`), `branch` (or `Branch`), `officer` (or `Officer`). Optional columns: `client_id`, `owner_known` ('Yes'/'No' or True/False), `remarks`.")
+        st.info("**Excel Format Requirements**: Columns MUST include `client_name` (or `Name`), `amount` (or `LAPS Balance`), `branch` (or `Branch`), `officer` (or `Officer`). Optional columns: `client_id`, `owner_known` ('Yes'/'No' or True/False), `remarks`.")
         
         uploaded_file = st.file_uploader("Upload Legacy LAPS Excel Sheet (.xlsx, .xls)", type=["xlsx", "xls"])
         source_name = st.text_input("Migration Source Identifier", value="EXCEL_MIGRATION_BATCH")
@@ -7436,7 +7436,7 @@ elif page == "Legacy LAPS Migration":
                 st.dataframe(df_mig.head(10), use_container_width=True)
                 st.caption(f"Total Rows Detected: {len(df_mig)}")
 
-                if st.button("🚀 Process Bulk LAPS Migration", type="primary"):
+                if st.button("Process Bulk LAPS Migration", type="primary"):
                     with st.spinner("Executing bulk LAPS migration..."):
                         records_to_migrate = []
                         for idx, row in df_mig.iterrows():
@@ -7461,21 +7461,21 @@ elif page == "Legacy LAPS Migration":
                             )
 
                         if res["success_count"] > 0:
-                            st.success(f"🎉 Successfully Migrated {res['success_count']} LAPS Records! (Total Value: ₦{res['total_amount_migrated']:,.2f})")
-                            st.info(f"🏷️ Batch ID: **{res['batch_id']}**")
-                            st.warning("🔄 Zero Physical Cash Movement: Opening equity ledger entries posted with ZERO vault cash impact.")
+                            st.success(f"Successfully Migrated {res['success_count']} LAPS Records! (Total Value: ₦{res['total_amount_migrated']:,.2f})")
+                            st.info(f"Batch ID: **{res['batch_id']}**")
+                            st.warning("Zero Physical Cash Movement: Opening equity ledger entries posted with ZERO vault cash impact.")
 
                         if res["failed_count"] > 0:
-                            st.error(f"⚠️ Failed Records: {res['failed_count']}")
+                            st.error(f"Failed Records: {res['failed_count']}")
                             with st.expander("View Error Details"):
                                 for err in res["errors"]:
                                     st.write(f"- {err}")
 
             except Exception as ex:
-                st.error(f"❌ Failed to parse Excel file: {str(ex)}")
+                st.error(f"Failed to parse Excel file: {str(ex)}")
 
         st.markdown("---")
-        st.subheader("📜 Historical LAPS Migration Batches")
+        st.subheader("Historical LAPS Migration Batches")
         try:
             with SupabaseUnitOfWork() as uow:
                 laps_records = uow.laps_savings.get_all()
@@ -7523,7 +7523,7 @@ elif page == "Daily Report":
         
         # --- MANAGERIAL DROPDOWN ---
         if ROLE in ["BM", "AM"]:
-            st.markdown("### 🏢 Managerial Controls")
+            st.markdown("### Managerial Controls")
             # Get unique officers for this branch today
             if ROLE == "BM":
                 daily_reps = daily_reps[daily_reps['Branch'] == BRANCH]
@@ -7548,7 +7548,7 @@ elif page == "Daily Report":
         if daily_reps.empty:
             st.info(f"No collections found for {date_str}.")
         else:
-            st.markdown(f"### 📊 Collection Summary for {date_str}")
+            st.markdown(f"### Collection Summary for {date_str}")
             
             # Sum up granular fields
             total_savings_dep = pd.to_numeric(daily_reps['Savings Amount'], errors='coerce').fillna(0).sum()
@@ -7588,7 +7588,7 @@ elif page == "Daily Report":
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.markdown("<div class='card'>", unsafe_allow_html=True)
-                st.subheader("🐷 Savings Summary")
+                st.subheader("Savings Summary")
                 st.write(f"**Total Savings Collected:** ₦{total_savings_dep:,.0f}")
                 st.write(f"**Total Savings Withdrawn:** ₦{total_savings_withdrawn:,.0f} (Withdrawal, Cash Return, Mgt Fees)")
                 st.markdown("---")
@@ -7597,7 +7597,7 @@ elif page == "Daily Report":
                 
             with c2:
                 st.markdown("<div class='card'>", unsafe_allow_html=True)
-                st.subheader("🏦 Credit Summary")
+                st.subheader("Credit Summary")
                 st.write(f"**New Active Loans Today:** ₦{new_active_loans:,.0f}")
                 st.write(f"**Actual Loan Collections:** ₦{actual_collections:,.0f} (Instalments, Overdue, Init, Rec)")
                 st.markdown("---")
@@ -7606,14 +7606,14 @@ elif page == "Daily Report":
                 
             with c3:
                 st.markdown("<div class='card' style='background-color: #f0fdf4; border: 1px solid #bbf7d0;'>", unsafe_allow_html=True)
-                st.subheader("💵 Cashbook (Teller)")
+                st.subheader("Cashbook (Teller)")
                 st.write(f"**Total Inflow (Cash In):** ₦{cashbook_inflow:,.0f}")
                 st.write(f"**Total Outflow (Cash Out):** ₦{cashbook_outflow:,.0f}")
                 st.markdown("---")
                 st.markdown(f"<h4 style='color: #166534;'>Closing Cash Balance: ₦{net_closing_balance:,.0f}</h4>", unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
             
-            st.markdown("### 📝 Detailed Client Breakdown")
+            st.markdown("### Detailed Client Breakdown")
             
             detailed_data = []
             client_savings_map = load_client_savings_map()
@@ -7693,7 +7693,7 @@ elif page == "Daily Report":
             
             # --- FLAG ERROR SECTION ---
             if not daily_reps.empty:
-                st.markdown("### 🚩 Request Error Correction")
+                st.markdown("### Request Error Correction")
                 with st.expander("Flag an Error / Request Reversal"):
                     st.info("Select a transaction from today to flag for reversal. The Branch Manager or Admin must approve the correction.")
                     opts = {}
@@ -7742,10 +7742,10 @@ elif page == "Daily Report":
         st.info("No records found in database.")
 
 elif page == "Audit Ledger Legacy":
-    st.title("📒 Audit Ledger")
+    st.title("Audit Ledger")
     st.caption("Complete transaction history — Loans & Repayments")
     
-    audit_section = st.radio("View", ["📋 Loans Ledger", "💰 Repayments Ledger", "🐷 Savings & Misc Fees Ledger", "⚖️ Double-Entry Ledger"], horizontal=True, label_visibility="collapsed")
+    audit_section = st.radio("View", ["Loans Ledger", "Repayments Ledger", "Savings & Misc Fees Ledger", "Double-Entry Ledger"], horizontal=True, label_visibility="collapsed")
     
     al1, al2, al3 = st.columns([1, 1, 2])
     audit_date_from = al1.date_input("From Date", date.today().replace(day=1), key="audit_from")
@@ -7757,9 +7757,9 @@ elif page == "Audit Ledger Legacy":
         co_list = ["All Officers"] + list(CO_NAME_MAP.keys())
         selected_co = al3.selectbox("Filter by Officer", co_list)
         
-    search_term = st.text_input("🔍 Search by Client Name, ID, or Officer", placeholder="Type to filter...", key="audit_search")
+    search_term = st.text_input("Search by Client Name, ID, or Officer", placeholder="Type to filter...", key="audit_search")
     
-    if audit_section == "📋 Loans Ledger":
+    if audit_section == "Loans Ledger":
         all_loans = load_loans()
         if all_loans.empty:
             st.info("No loan records found.")
@@ -7812,7 +7812,7 @@ elif page == "Audit Ledger Legacy":
                 }
             )
     
-    elif audit_section == "💰 Repayments Ledger":
+    elif audit_section == "Repayments Ledger":
         all_reps = load_repayments()
         if all_reps.empty:
             st.info("No repayment records found.")
@@ -7875,7 +7875,7 @@ elif page == "Audit Ledger Legacy":
             # Reversal Form (Only for Managers/Admins)
             if ROLE in ["BM", "AM", ROLE_ADMIN]:
                 st.markdown("---")
-                st.markdown("### 🔄 Reverse a Transaction")
+                st.markdown("### Reverse a Transaction")
                 st.warning("Reversing a transaction will post a negative entry today to correct cashbook balances and client savings.")
                 
                 with st.form("reverse_form"):
@@ -7935,7 +7935,7 @@ elif page == "Audit Ledger Legacy":
                                         st.rerun()
                                 except ValueError:
                                     st.error("Transaction ID must be a number.")
-    elif audit_section == "🐷 Savings & Misc Fees Ledger":
+    elif audit_section == "Savings & Misc Fees Ledger":
         try:
             with SupabaseUnitOfWork() as uow:
                 # 1. Fetch Individual Savings
@@ -8055,7 +8055,7 @@ elif page == "Audit Ledger Legacy":
         except Exception as ex:
             st.error(f"Error loading savings ledger: {ex}")
 
-    elif audit_section == "⚖️ Double-Entry Ledger":
+    elif audit_section == "Double-Entry Ledger":
         try:
             with SupabaseUnitOfWork() as uow:
                 branch_id = uow.cashbook._resolve_branch_id(BRANCH)
@@ -8145,7 +8145,7 @@ elif page == "Dashboard":
             st.title("Performance & Risk Dashboard")
         with d_head2:
             st.write("")
-            st.button("🏛️ Audit Center", key="btn_dash_audit_center", on_click=_nav_to_audit_center, use_container_width=True)
+            st.button("Audit Center", key="btn_dash_audit_center", on_click=_nav_to_audit_center, use_container_width=True)
     else:
         st.title("Performance & Risk Dashboard")
 
@@ -8165,8 +8165,8 @@ elif page == "Dashboard":
                     </p>
                 </div>
                 <div style="text-align: right; border-left: 1px solid #334155; padding-left: 20px;">
-                    <p style="margin: 0; color: #E2E8F0; font-size: 0.82rem; font-weight: 600;">📅 Business Date: <span style="color: #60A5FA;">{today_display_date}</span></p>
-                    <p style="margin: 4px 0 0 0; color: #94A3B8; font-size: 0.78rem;">🕒 Time: {today_time_str} &nbsp;&bull;&nbsp; 🔑 Last Login: Active Session</p>
+                    <p style="margin: 0; color: #E2E8F0; font-size: 0.82rem; font-weight: 600;">Business Date: <span style="color: #60A5FA;">{today_display_date}</span></p>
+                    <p style="margin: 4px 0 0 0; color: #94A3B8; font-size: 0.78rem;">Time: {today_time_str} &nbsp;&bull;&nbsp; Last Login: Active Session</p>
                 </div>
             </div>
         </div>
@@ -8314,7 +8314,7 @@ elif page == "Dashboard":
     except Exception:
         pass
 
-    st.markdown("### 📊 System Summary")
+    st.markdown("### System Summary")
     sb1, sb2, sb3, sb4, sb5, sb6 = st.columns(6)
     sb1.metric("Active Loans", active_loans_count)
     sb2.metric("Outstanding Portfolio", f"₦{total_active_credit:,.2f}")
@@ -8323,7 +8323,7 @@ elif page == "Dashboard":
     sb5.metric("Branches", 1 if BRANCH else 3)
     sb6.metric("Collection Today", f"₦{collected_today:,.2f}")
 
-    st.markdown("### ⚡ Operations Today")
+    st.markdown("### Operations Today")
     oc1, oc2, oc3, oc4 = st.columns(4)
     oc1.metric("Repayment Today", f"₦{collected_today:,.2f}")
     oc2.metric("Savings Deposit", f"₦{today_savings_deposited:,.2f}")
@@ -8342,7 +8342,7 @@ elif page == "Dashboard":
             with SupabaseUnitOfWork() as uow_bm_app:
                 p_loans = uow_bm_app.client.table("loans").select("*, clients(name, client_code), loan_products(name), app_users(username)").eq("branch_id", BRANCH_ID).eq("status", "Pending").gt("loan_amount", 0).execute()
                 if p_loans and p_loans.data:
-                    st.markdown("#### ⏳ Pending Loan Approvals Queue")
+                    st.markdown("#### Pending Loan Approvals Queue")
                     for pl in p_loans.data:
                         c_name = pl.get("clients", {}).get("name") if pl.get("clients") else pl.get("client_name", "Unknown Client")
                         c_code = pl.get("clients", {}).get("client_code") if pl.get("clients") and pl.get("clients").get("client_code") else pl.get("client_id", "")[:8]
@@ -8354,8 +8354,8 @@ elif page == "Dashboard":
                         with st.container(border=True):
                             col_info, col_amt, col_acts = st.columns([3, 2, 2])
                             with col_info:
-                                st.markdown(f"**👤 {c_name}** `{c_code}`")
-                                st.caption(f"🏷️ Product: **{prod}** &nbsp;|&nbsp; 🧑‍💼 Officer: **{officer}**")
+                                st.markdown(f"**{c_name}** `{c_code}`")
+                                st.caption(f"Product: **{prod}** &nbsp;|&nbsp; Officer: **{officer}**")
                             with col_amt:
                                 st.markdown(f"<div style='font-size: 1.15rem; font-weight: 700; color: #0f172a;'>₦{loan_amt:,.2f}</div>", unsafe_allow_html=True)
                                 st.caption("Requested Principal")
@@ -8364,19 +8364,19 @@ elif page == "Dashboard":
                                 disb_date = st.date_input("Disbursement Date", value=disb_default, key=f"leg_disb_{pl_id}")
                                 act_col1, act_col2 = st.columns(2)
                                 with act_col1:
-                                    if st.button("✅ Approve", key=f"app_leg_{pl_id}", type="primary", use_container_width=True):
+                                    if st.button("Approve", key=f"app_leg_{pl_id}", type="primary", use_container_width=True):
                                         try:
                                             from services.loan_service import LoanService
                                             with st.spinner(f"Approving & disbursing loan for {c_name}..."):
                                                 from services.loan_service import LoanService
                                                 with SupabaseUnitOfWork() as uow_app:
                                                     LoanService.approve_and_disburse_loan(uow_app, pl_id, USER, disbursement_date=disb_date)
-                                            st.success(f"✅ Loan approved & disbursed for {c_name}!")
+                                            st.success(f"Loan approved & disbursed for {c_name}!")
                                             st.rerun()
                                         except Exception as ex:
-                                            st.error(f"❌ Disbursement failed: {str(ex)}")
+                                            st.error(f"Disbursement failed: {str(ex)}")
                                 with act_col2:
-                                    if st.button("❌ Reject", key=f"rej_leg_{pl_id}", type="secondary", use_container_width=True):
+                                    if st.button("Reject", key=f"rej_leg_{pl_id}", type="secondary", use_container_width=True):
                                         try:
                                             with st.spinner(f"Rejecting loan for {c_name}..."):
                                                 from services.loan_service import LoanService
@@ -8385,11 +8385,11 @@ elif page == "Dashboard":
                                             st.success(f"Loan rejected for {c_name}.")
                                             st.rerun()
                                         except Exception as ex:
-                                            st.error(f"❌ Rejection failed: {str(ex)}")
+                                            st.error(f"Rejection failed: {str(ex)}")
         except Exception:
             pass
 
-    st.markdown("### 🛡️ Portfolio Health & Risk Metrics")
+    st.markdown("### Portfolio Health & Risk Metrics")
     par_pct = (total_overdue / total_active_credit * 100) if total_active_credit > 0 else 0.0
     ph1, ph2, ph3 = st.columns(3)
     ph1.metric("PAR % (Overdue Ratio)", f"{par_pct:.1f}%", delta_color="inverse" if par_pct > 5.0 else "normal")
@@ -8401,13 +8401,13 @@ elif page == "Dashboard":
     ph5.metric("Average Compliance", "96.4%")
     ph6.metric("Upgrade Eligible Clients", len(my_loans[my_loans['Status'] == STATUS_COMPLETED]))
 
-    st.markdown("### 🏦 Branch Summary")
+    st.markdown("### Branch Summary")
     branch_summary_data = [
-        {"Branch": BRANCH or "Head Office", "Portfolio": f"₦{total_active_credit:,.2f}", "Savings": f"₦{real_total_savings:,.2f}", "Repayment Today": f"₦{collected_today:,.2f}", "PAR": f"{par_pct:.1f}%", "Status": "🟢 Operational"}
+        {"Branch": BRANCH or "Head Office", "Portfolio": f"₦{total_active_credit:,.2f}", "Savings": f"₦{real_total_savings:,.2f}", "Repayment Today": f"₦{collected_today:,.2f}", "PAR": f"{par_pct:.1f}%", "Status": "Operational"}
     ]
     st.dataframe(pd.DataFrame(branch_summary_data), use_container_width=True, hide_index=True)
 
-    st.markdown("### 📜 Recent Activities")
+    st.markdown("### Recent Activities")
     try:
         with SupabaseUnitOfWork() as uow_act:
             q_act = uow_act.client.table("user_audit_logs").select("*")
@@ -8691,16 +8691,16 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 f6.metric("6. Reports", f"₦{rec_result['reports_total']:,.2f}")
     
                 if rec_result["variances"]:
-                    st.markdown("#### 🚨 Itemized Variance Breakdown Table")
+                    st.markdown("#### Itemized Variance Breakdown Table")
                     var_df = pd.DataFrame(rec_result["variances"])
                     st.dataframe(var_df, use_container_width=True, hide_index=True)
     
         # ---------------------------------------------------------------------
-        # TAB 2: 📊 Fee Audit
+        # TAB 2: Fee Audit
         # ---------------------------------------------------------------------
         if audit_tab2:
             with audit_tab2:
-                st.subheader("📊 Fee Audit Ledgers")
+                st.subheader("Fee Audit Ledgers")
                 st.caption("Itemized audit trail of loan origination fees, passbooks, and processing charges.")
     
                 # SINGLE-LINE HORIZONTAL FILTER BAR
@@ -8718,7 +8718,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     fee_officer_disp = st.selectbox("Officer", list(fee_officer_map.keys()), key="fee_officer_sel")
                     fee_officer_val = fee_officer_map.get(fee_officer_disp)
                 with fb6:
-                    fee_search = st.text_input("🔍 Search", "", placeholder="Client / Ref", key="fee_search")
+                    fee_search = st.text_input("Search", "", placeholder="Client / Ref", key="fee_search")
     
                 fee_target_branch_id = branch_map_name_to_id.get(fee_branch) if fee_branch != "All Branches" else None
                 raw_fee_records = audit_views.get_fee_ledger(
@@ -8755,30 +8755,30 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     clean_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_fees])
                     st.dataframe(clean_df, use_container_width=True, hide_index=True)
     
-                    with st.expander("🔍 View Transaction Details"):
+                    with st.expander("View Transaction Details"):
                         idx = st.selectbox("Select Transaction to Inspect:", range(len(enriched_fees)), format_func=lambda i: f"{enriched_fees[i]['Client Code']} — {enriched_fees[i]['Client Name']} ({enriched_fees[i]['Amount']})", key="sb_fee_idx")
                         sel = enriched_fees[idx]
-                        st.markdown("### 📄 Transaction Information")
+                        st.markdown("### Transaction Information")
                         c1, c2, c3 = st.columns(3)
                         c1.markdown(f"**Posting Date:** {sel['Date']}\n\n**Fee Bucket:** {sel['Fee Type']}")
                         c2.markdown(f"**Customer:** {sel['Client Code']} ({sel['Client Name']})\n\n**Financial Amount:** {sel['Amount']}")
                         c3.markdown(f"**Officer:** {sel['Officer']}\n\n**Branch:** {sel['Branch']}")
                         st.markdown(f"**Reference:** `{sel['Reference']}` &nbsp;&bull;&nbsp; **Status:** {sel['Status']}")
     
-                        if st.checkbox("🛠️ Show Advanced Technical Details", key="show_raw_fee_tech"):
+                        if st.checkbox("Show Advanced Technical Details", key="show_raw_fee_tech"):
                             st.json(sel["_raw_record"])
     
                     csv_data = clean_df.to_csv(index=False).encode('utf-8')
-                    st.download_button(f"📥 Export {fee_sub} CSV", data=csv_data, file_name=f"audit_{fee_sub.lower()}.csv", mime="text/csv")
+                    st.download_button(f"Export {fee_sub} CSV", data=csv_data, file_name=f"audit_{fee_sub.lower()}.csv", mime="text/csv")
                 else:
                     st.info("No records found for the selected filters. Try changing the date range or search criteria.")
     
         # ---------------------------------------------------------------------
-        # TAB 3: 🏦 Treasury Audit
+        # TAB 3: Treasury Audit
         # ---------------------------------------------------------------------
         if audit_tab3:
             with audit_tab3:
-                st.subheader("🏦 Treasury Audit Ledgers")
+                st.subheader("Treasury Audit Ledgers")
                 st.caption("Audit trail of bank deposits, withdrawals, staff salaries, and inter-branch cash transfers.")
     
                 tb1, tb2, tb3, tb4, tb5, tb6 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.8])
@@ -8795,7 +8795,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     tr_officer_disp = st.selectbox("Officer", list(tr_officer_map.keys()), key="tr_officer_sel")
                     tr_officer_val = tr_officer_map.get(tr_officer_disp)
                 with tb6:
-                    tr_search = st.text_input("🔍 Search", "", placeholder="Category / Ref", key="tr_search")
+                    tr_search = st.text_input("Search", "", placeholder="Category / Ref", key="tr_search")
     
                 tr_target_branch_id = branch_map_name_to_id.get(tr_branch) if tr_branch != "All Branches" else None
                 raw_tr_records = audit_views.get_treasury_ledger(
@@ -8832,30 +8832,30 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     clean_tr_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_tr])
                     st.dataframe(clean_tr_df, use_container_width=True, hide_index=True)
     
-                    with st.expander("🔍 View Transaction Details"):
+                    with st.expander("View Transaction Details"):
                         t_idx = st.selectbox("Select Transaction to Inspect:", range(len(enriched_tr)), format_func=lambda i: f"{enriched_tr[i]['Category']} — {enriched_tr[i]['Amount']} ({enriched_tr[i]['Date']})", key="sb_tr_idx")
                         t_sel = enriched_tr[t_idx]
-                        st.markdown("### 📄 Transaction Information")
+                        st.markdown("### Transaction Information")
                         tc1, tc2, tc3 = st.columns(3)
                         tc1.markdown(f"**Date:** {t_sel['Date']}\n\n**Category:** {t_sel['Category']}")
                         tc2.markdown(f"**Amount:** {t_sel['Amount']}\n\n**Reference:** `{t_sel['Reference']}`")
                         tc3.markdown(f"**Officer:** {t_sel['Officer']}\n\n**Branch:** {t_sel['Branch']}")
                         st.caption(f"**Narration:** {t_sel['Narration']}")
     
-                        if st.checkbox("🛠️ Show Advanced Technical Details", key="show_raw_tr_tech"):
+                        if st.checkbox("Show Advanced Technical Details", key="show_raw_tr_tech"):
                             st.json(t_sel["_raw_record"])
     
                     csv_tr = clean_tr_df.to_csv(index=False).encode('utf-8')
-                    st.download_button(f"📥 Export {tr_sub} CSV", data=csv_tr, file_name=f"audit_treasury_{tr_sub.lower()}.csv", mime="text/csv")
+                    st.download_button(f"Export {tr_sub} CSV", data=csv_tr, file_name=f"audit_treasury_{tr_sub.lower()}.csv", mime="text/csv")
                 else:
                     st.info("No records found for the selected filters. Try changing the date range or search criteria.")
     
         # ---------------------------------------------------------------------
-        # TAB 4: 🐷 Savings Audit
+        # TAB 4: Savings Audit
         # ---------------------------------------------------------------------
         if audit_tab4:
             with audit_tab4:
-                st.subheader("🐷 Savings Audit Ledgers")
+                st.subheader("Savings Audit Ledgers")
                 st.caption("Audit trail of voluntary individual deposits, group collateral savings, and laps reserves.")
     
                 sb_1, sb_2, sb_3, sb_4, sb_5, sb_6 = st.columns([1, 1, 1.2, 1.2, 1.2, 1.8])
@@ -8877,7 +8877,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         sav_officer_disp = st.selectbox("Officer", list(sav_officer_map.keys()), key="sav_officer_sel")
                         sav_officer_val = sav_officer_map.get(sav_officer_disp)
                 with sb_6:
-                    sav_search = st.text_input("🔍 Search", "", placeholder="Client / Code", key="sav_search")
+                    sav_search = st.text_input("Search", "", placeholder="Client / Code", key="sav_search")
     
                 tbl_map = {
                     "ALL": "ALL",
@@ -8936,29 +8936,29 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     clean_sav_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_sav])
                     st.dataframe(clean_sav_df, use_container_width=True, hide_index=True)
     
-                    with st.expander("🔍 View Transaction Details"):
+                    with st.expander("View Transaction Details"):
                         s_idx = st.selectbox("Select Transaction to Inspect:", range(len(enriched_sav)), format_func=lambda i: f"{enriched_sav[i]['Client Code']} — {enriched_sav[i]['Client Name']} (Dep: {enriched_sav[i]['Deposit']})", key="sb_sav_idx")
                         s_sel = enriched_sav[s_idx]
-                        st.markdown("### 📄 Transaction Information")
+                        st.markdown("### Transaction Information")
                         sc1_d, sc2_d, sc3_d = st.columns(3)
                         sc1_d.markdown(f"**Date:** {s_sel['Date']}\n\n**Client Code:** {s_sel['Client Code']}")
                         sc2_d.markdown(f"**Client Name:** {s_sel['Client Name']}\n\n**Deposit:** {s_sel['Deposit']}")
                         sc3_d.markdown(f"**Remarks:** {s_sel['Remarks']}\n\n**Withdrawal:** {s_sel['Withdrawal']}\n\n**Balance:** {s_sel['Balance']}")
     
-                        if st.checkbox("🛠️ Show Advanced Technical Details", key="show_raw_sav_tech"):
+                        if st.checkbox("Show Advanced Technical Details", key="show_raw_sav_tech"):
                             st.json(s_sel["_raw_record"])
     
                     csv_sav = clean_sav_df.to_csv(index=False).encode('utf-8')
-                    st.download_button(f"📥 Export {sav_sub} CSV", data=csv_sav, file_name=f"audit_savings_{sav_sub.lower()}.csv", mime="text/csv")
+                    st.download_button(f"Export {sav_sub} CSV", data=csv_sav, file_name=f"audit_savings_{sav_sub.lower()}.csv", mime="text/csv")
                 else:
                     st.info("No records found for the selected filters. Try changing the date range or search criteria.")
     
         # ---------------------------------------------------------------------
-        # TAB 5: 💵 Loan Audit
+        # TAB 5: Loan Audit
         # ---------------------------------------------------------------------
         if audit_tab5:
             with audit_tab5:
-                st.subheader("💵 Loan Audit Ledgers")
+                st.subheader("Loan Audit Ledgers")
                 st.caption("Audit trail of approved principal disbursements and loan repayment collections.")
     
                 loan_prods_list = load_loan_products_list()
@@ -8986,7 +8986,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         loan_officer_disp = st.selectbox("Officer", list(loan_officer_map.keys()), key="loan_officer_sel")
                         loan_officer_val = loan_officer_map.get(loan_officer_disp)
                 with lb7:
-                    loan_search = st.text_input("🔍 Search", "", placeholder="Loan No / Client / Product", key="loan_search")
+                    loan_search = st.text_input("Search", "", placeholder="Loan No / Client / Product", key="loan_search")
     
                 loan_target_branch_id = branch_map_name_to_id.get(loan_branch) if loan_branch != "All Branches" else None
                 loan_target_prod_id = loan_prod_map.get(loan_prod_sel) if loan_prod_sel != "All Products" else None
@@ -9040,20 +9040,20 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         clean_l_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_loans])
                         st.dataframe(clean_l_df, use_container_width=True, hide_index=True)
     
-                        with st.expander("🔍 View Transaction Details"):
+                        with st.expander("View Transaction Details"):
                             l_idx = st.selectbox("Select Loan to Inspect:", range(len(enriched_loans)), format_func=lambda i: f"{enriched_loans[i]['Loan Number']} — {enriched_loans[i]['Client Name']} ({enriched_loans[i]['Principal']})", key="sb_loan_idx")
                             l_sel = enriched_loans[l_idx]
-                            st.markdown("### 📄 Transaction Information")
+                            st.markdown("### Transaction Information")
                             lc1_d, lc2_d, lc3_d = st.columns(3)
                             lc1_d.markdown(f"**Loan Number:** `{l_sel['Loan Number']}`\n\n**Disbursement Date:** {l_sel['Disbursement Date']}")
                             lc2_d.markdown(f"**Client:** {l_sel['Client Code']} ({l_sel['Client Name']})\n\n**Principal:** {l_sel['Principal']}")
                             lc3_d.markdown(f"**Product:** {l_sel['Product']}\n\n**Status:** {l_sel['Status']}")
     
-                            if st.checkbox("🛠️ Show Advanced Technical Details", key="show_raw_loan_tech"):
+                            if st.checkbox("Show Advanced Technical Details", key="show_raw_loan_tech"):
                                 st.json(l_sel["_raw_record"])
     
                         csv_l = clean_l_df.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Export Loan Disbursements CSV", data=csv_l, file_name="audit_loan_disbursements.csv", mime="text/csv")
+                        st.download_button("Export Loan Disbursements CSV", data=csv_l, file_name="audit_loan_disbursements.csv", mime="text/csv")
                     else:
                         st.info("No records found for the selected filters. Try changing the date range or search criteria.")
                 else:
@@ -9101,29 +9101,29 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         clean_r_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_reps])
                         st.dataframe(clean_r_df, use_container_width=True, hide_index=True)
     
-                        with st.expander("🔍 View Transaction Details"):
+                        with st.expander("View Transaction Details"):
                             r_idx = st.selectbox("Select Repayment to Inspect:", range(len(enriched_reps)), format_func=lambda i: f"{enriched_reps[i]['Loan Number']} — {enriched_reps[i]['Client Name']} ({enriched_reps[i]['Amount Paid']})", key="sb_rep_idx")
                             r_sel = enriched_reps[r_idx]
-                            st.markdown("### 📄 Transaction Information")
+                            st.markdown("### Transaction Information")
                             rc1_d, rc2_d, rc3_d = st.columns(3)
                             rc1_d.markdown(f"**Repayment Date:** {r_sel['Repayment Date']}\n\n**Loan Number:** `{r_sel['Loan Number']}`\n\n**Client Code:** {r_sel['Client Code']}")
                             rc2_d.markdown(f"**Client Name:** {r_sel['Client Name']}\n\n**Product:** {r_sel['Product']}\n\n**Amount Paid:** {r_sel['Amount Paid']}")
                             rc3_d.markdown(f"**Officer:** {r_sel['Officer']}\n\n**Branch:** {r_sel['Branch']}")
     
-                            if st.checkbox("🛠️ Show Advanced Technical Details", key="show_raw_rep_tech"):
+                            if st.checkbox("Show Advanced Technical Details", key="show_raw_rep_tech"):
                                 st.json(r_sel["_raw_record"])
     
                         csv_r = clean_r_df.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Export Repayments CSV", data=csv_r, file_name="audit_loan_repayments.csv", mime="text/csv")
+                        st.download_button("Export Repayments CSV", data=csv_r, file_name="audit_loan_repayments.csv", mime="text/csv")
                     else:
                         st.info("No records found for the selected filters. Try changing the date range or search criteria.")
     
         # ---------------------------------------------------------------------
-        # TAB 6: 🎯 Collection Performance
+        # TAB 6: Collection Performance
         # ---------------------------------------------------------------------
         if audit_tab6:
             with audit_tab6:
-                st.subheader("🎯 Collection Performance Audit")
+                st.subheader("Collection Performance Audit")
                 st.caption("Meeting compliance matrix comparing expected collections against actual payments.")
 
                 # Filter Controls Row
@@ -9146,7 +9146,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                 with cp_c5:
                     cp_status_sel = st.selectbox("Compliance Status", ["ALL", "PAID", "PART_PAYMENT", "NOT_PAID"], key="cp_status_sel")
                 with cp_c6:
-                    cp_search = st.text_input("🔍 Search", "", placeholder="Client / Code / Group", key="cp_search")
+                    cp_search = st.text_input("Search", "", placeholder="Client / Code / Group", key="cp_search")
 
                 cp_target_branch_id = branch_map_name_to_id.get(cp_branch) if cp_branch != "All Branches" else None
                 if is_officer_ac:
@@ -9213,7 +9213,7 @@ elif page in ["Audit Center", "Audit Ledger"]:
                         clean_cp_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in enriched_cp])
                         st.dataframe(clean_cp_df, use_container_width=True, hide_index=True)
 
-                        with st.expander("🔍 View Meeting Collection Details"):
+                        with st.expander("View Meeting Collection Details"):
                             cp_idx = st.selectbox(
                                 "Select Meeting Record to Inspect:",
                                 range(len(enriched_cp)),
@@ -9221,46 +9221,46 @@ elif page in ["Audit Center", "Audit Ledger"]:
                                 key="sb_cp_idx"
                             )
                             cp_sel = enriched_cp[cp_idx]
-                            st.markdown("### 📄 Meeting Performance Detail")
+                            st.markdown("### Meeting Performance Detail")
                             cpc1, cpc2, cpc3 = st.columns(3)
                             cpc1.markdown(f"**Meeting Date:** {cp_sel['Meeting Date']}\n\n**Client Code:** {cp_sel['Client Code']}\n\n**Client Name:** {cp_sel['Client Name']}")
                             cpc2.markdown(f"**Group:** {cp_sel['Group']}\n\n**Expected Amount:** {cp_sel['Expected']}\n\n**Actual Paid:** {cp_sel['Paid']}")
                             cpc3.markdown(f"**Compliance:** {cp_sel['Compliance %']}\n\n**Status:** {cp_sel['Status']}\n\n**Officer:** {cp_sel['Officer']}")
 
-                            if st.checkbox("🛠️ Show Advanced Technical Details", key="show_raw_cp_tech"):
+                            if st.checkbox("Show Advanced Technical Details", key="show_raw_cp_tech"):
                                 st.json(cp_sel["_raw_record"])
 
                         csv_cp = clean_cp_df.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Export Collection Performance CSV", data=csv_cp, file_name="audit_collection_performance.csv", mime="text/csv")
+                        st.download_button("Export Collection Performance CSV", data=csv_cp, file_name="audit_collection_performance.csv", mime="text/csv")
                     else:
                         st.info("No records found for the selected filters. Try changing the date range or search criteria.")
                 except Exception as ex_cp:
                     st.error(f"Error loading collection performance: {ex_cp}")
     
         # ---------------------------------------------------------------------
-        # TAB 7: 🚨 15 Exception Reports
+        # TAB 7: 15 Exception Reports
         # ---------------------------------------------------------------------
         if audit_tab7:
             with audit_tab7:
-                st.subheader("🚨 15 Automated Audit Exception Reports")
+                st.subheader("15 Automated Audit Exception Reports")
                 st.caption("Scans core database for compliance breaches, unposted transactions, or projection anomalies.")
     
                 ex_data = _cached_run_15_exception_reports(BRANCH_ID if ROLE not in [ROLE_ADMIN, 'Super Admin', 'Admin'] else None)
                 st.metric("Total Exceptions Detected", ex_data["total_exceptions"], delta=f"{ex_data['exception_rules_evaluated']} Rules Evaluated")
     
                 for rule_name, rule_records in ex_data["details"].items():
-                    with st.expander(f"📌 Rule: {rule_name.replace('_', ' ').title()} ({len(rule_records)} issues)"):
+                    with st.expander(f"Rule: {rule_name.replace('_', ' ').title()} ({len(rule_records)} issues)"):
                         if rule_records:
                             st.dataframe(pd.DataFrame(rule_records), use_container_width=True, hide_index=True)
                         else:
-                            st.success("✔ Zero exceptions detected for this rule.")
+                            st.success("Zero exceptions detected for this rule.")
     
         # ---------------------------------------------------------------------
-        # TAB 8: 🔎 360° Universal Explorer & Timeline
+        # TAB 8: 360° Universal Explorer & Timeline
         # ---------------------------------------------------------------------
         if audit_tab8:
             with audit_tab8:
-                st.subheader("🔎 360° Universal Search & Audit Timeline")
+                st.subheader("360° Universal Search & Audit Timeline")
                 st.caption("Search by Client Code (e.g. OGI-12-005), Customer Name, Officer, Loan Number, or Reference ID.")
                 search_tx = st.text_input("Enter Search Term:", placeholder="e.g. OGI-12-005, Adewale, Ayomide, REF-00382", key="ac_explorer_input")
     
@@ -9268,12 +9268,12 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     explorer_b_id = BRANCH_ID if ROLE in ['BM', ROLE_BRANCH_MANAGER, ROLE_CREDIT_OFFICER, 'CO', 'Officer'] else None
                     exp_res = TransactionExplorerService.explore_transaction(uow_ac, search_tx, branch_id=explorer_b_id)
                     if exp_res["found"]:
-                        st.success(f"✔ Audit records matched '{search_tx}' across sub-systems")
+                        st.success(f"Audit records matched '{search_tx}' across sub-systems")
                         if exp_res["loans"]:
-                            st.markdown("#### 💵 Loans")
+                            st.markdown("#### Loans")
                             st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["loans"]]), use_container_width=True, hide_index=True)
 
-                            with st.expander("⏱️ View Loan Lifecycle Audit Timelines", expanded=False):
+                            with st.expander("View Loan Lifecycle Audit Timelines", expanded=False):
                                 for l_row in exp_res["loans"][:5]:
                                     raw_l = l_row.get("_raw_record", {})
                                     lid = raw_l.get("loan_id") or raw_l.get("id")
@@ -9284,27 +9284,27 @@ elif page in ["Audit Center", "Audit Ledger"]:
                                             st.dataframe(pd.DataFrame(tline), use_container_width=True, hide_index=True)
 
                         if exp_res["repayments"]:
-                            st.markdown("#### 💰 Repayments")
+                            st.markdown("#### Repayments")
                             st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["repayments"]]), use_container_width=True, hide_index=True)
 
                         if exp_res["savings"]:
-                            st.markdown("#### 🐷 Savings Ledger")
+                            st.markdown("#### Savings Ledger")
                             st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["savings"]]), use_container_width=True, hide_index=True)
 
                         if exp_res["fees"]:
-                            st.markdown("#### 📊 Fee Ledger")
+                            st.markdown("#### Fee Ledger")
                             st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["fees"]]), use_container_width=True, hide_index=True)
 
                         if exp_res["treasury_transactions"]:
-                            st.markdown("#### 🏦 Treasury Ledger")
+                            st.markdown("#### Treasury Ledger")
                             st.dataframe(pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["treasury_transactions"]]), use_container_width=True, hide_index=True)
 
                         if exp_res["ledger_transactions"]:
-                            st.markdown("#### ⚖️ General Ledger Journals")
+                            st.markdown("#### General Ledger Journals")
                             clean_jnl_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["ledger_transactions"]])
                             st.dataframe(clean_jnl_df, use_container_width=True, hide_index=True)
 
-                            with st.expander("🔍 Inspect Journal Double-Entry Legs", expanded=False):
+                            with st.expander("Inspect Journal Double-Entry Legs", expanded=False):
                                 for jnl in exp_res["ledger_transactions"]:
                                     entries = jnl.get("_entries") or []
                                     if entries:
@@ -9323,18 +9323,18 @@ elif page in ["Audit Center", "Audit Ledger"]:
                                             st.dataframe(pd.DataFrame(leg_rows), use_container_width=True, hide_index=True)
 
                         if exp_res.get("audit_logs"):
-                            st.markdown("#### 📜 Audit Logs")
+                            st.markdown("#### Audit Logs")
                             clean_al_df = pd.DataFrame([{k: v for k, v in row.items() if not k.endswith("_Raw") and not k.startswith("_")} for row in exp_res["audit_logs"]])
                             st.dataframe(clean_al_df, use_container_width=True, hide_index=True)
                     else:
                         st.info("No records found for the selected filters. Try changing the date range or search criteria.")
     
             # ---------------------------------------------------------------------
-            # TAB 9: 📈 Performance Insights
+            # TAB 9: Performance Insights
             # ---------------------------------------------------------------------
         if audit_tab9:
             with audit_tab9:
-                st.subheader("📈 Executive Performance Insights")
+                st.subheader("Executive Performance Insights")
                 st.caption("System Performance & Portfolio Quality Insights")
                 try:
                     from services.client_risk_rating_service import ClientRiskRatingService
@@ -9344,24 +9344,24 @@ elif page in ["Audit Center", "Audit Ledger"]:
                     st.caption("Performance insights calculated dynamically.")
     
             # ---------------------------------------------------------------------
-            # TAB 10: 🧙 Reconciliation Wizard
+            # TAB 10: Reconciliation Wizard
             # ---------------------------------------------------------------------
         if audit_tab10:
             with audit_tab10:
-                st.subheader("🧙 Guided Self-Healing Reconciliation Wizard")
+                st.subheader("Guided Reconciliation Wizard")
                 st.caption("Interactive wizard to verify balance, locate discrepancies, and trigger automated projection repair.")
     
                 rw_date = st.date_input("Select Reconciliation Date:", date.today(), key="rw_date_input")
     
-                if st.button("🚀 Start Guided Projection Repair", type="primary"):
+                if st.button("Start Guided Projection Repair", type="primary"):
                     with st.spinner("Executing guided self-healing repair..."):
                         repair_res = FinancialReconciliationService.run_reconciliation_wizard_repair(uow_ac, BRANCH_ID, rw_date)
-                        st.success(f"✔ Self-healing complete! Rebuilt {repair_res['rebuilt_officer_count']} officer cashbooks & Master Cashbook.")
+                        st.success(f"Reconciliation repair complete. Rebuilt {repair_res['rebuilt_officer_count']} officer cashbooks & Master Cashbook.")
                         st.json(repair_res["verification_after_repair"])
     
 
 elif page == "CO Cashbook":
-    st.title("📖 Credit Officer Daily Cashbook")
+    st.title("Credit Officer Daily Cashbook")
     st.caption("Daily T-Account Ledger — Reconciled against Account 1000 Vault Cash")
     
     from services.business_date_service import BusinessDateService
@@ -9377,7 +9377,7 @@ elif page == "CO Cashbook":
         is_co_cb_open, co_open_reason = BusinessDateService.is_operational_open(uow_cb_chk, BRANCH_ID, view_date)
 
     if not is_co_cb_open:
-        st.warning(f"🏖️ **Operational Activity Suspended ({co_open_reason})**: Operations for **{view_date.strftime('%d %B %Y')}** are in **Read-Only** mode.")
+        st.warning(f"**Operational Activity Suspended ({co_open_reason})**: Operations for **{view_date.strftime('%d %B %Y')}** are in **Read-Only** mode.")
     
     # Officer Selection based on RBAC
     target_co = USER
@@ -9486,7 +9486,7 @@ elif page == "CO Cashbook":
     # ========================================================
     # END OF DAY & GLOBAL COLLECTIONS INPUT FORM (COLLAPSIBLE)
     # ========================================================
-    with st.expander("📤 End of Day / Global Outflows & Additional Collections", expanded=False):
+    with st.expander("End of Day / Global Outflows & Additional Collections", expanded=False):
         st.caption("Log your daily branch expenses, bank deposits, passbook fees, credit form fees, and cash adjustments.")
         
         # Scoped key suffix to isolate widget state by date and officer
@@ -9499,7 +9499,7 @@ elif page == "CO Cashbook":
             global_bank_dep = out_2.number_input("Bank Deposited", min_value=0.0, step=500.0, value=float(t_bdep) if t_bdep > 0 else None, placeholder="0", key=f"co_eod_bank_dep_{k_sfx}")
             
             st.markdown("---")
-            st.markdown("##### 💳 Additional Collections & Fees")
+            st.markdown("##### Additional Collections & Fees")
             fee_1, fee_2, fee_3 = st.columns(3)
             global_app_fee = fee_1.number_input("Credit Form / App Fee", min_value=0.0, step=500.0, value=float(t_app) if t_app > 0 else None, placeholder="0", key=f"co_eod_app_fee_{k_sfx}", help="Unified Processing Fee and Credit Form fee")
             global_passbook = fee_2.number_input("Pass Book", min_value=0.0, step=500.0, value=float(t_pb) if t_pb > 0 else None, placeholder="0", key=f"co_eod_passbook_{k_sfx}")
@@ -9510,11 +9510,11 @@ elif page == "CO Cashbook":
             global_bonus = fee_5.number_input("Bonus", min_value=0.0, step=500.0, value=float(t_bon) if t_bon > 0 else None, placeholder="0", key=f"co_eod_bonus_{k_sfx}")
             
             st.markdown("---")
-            submit_eod = st.form_submit_button("💾 Save End of Day Outflows & Fees", type="primary", use_container_width=True)
+            submit_eod = st.form_submit_button("Save End of Day Outflows & Fees", type="primary", use_container_width=True)
             
             if submit_eod:
                 if not is_co_cb_open:
-                    st.error(f"🔒 Cannot update End of Day inputs today ({co_open_reason}).")
+                    st.error(f"Cannot update End of Day inputs today ({co_open_reason}).")
                 else:
                     with st.spinner("Posting EOD expenses and updating CO cashbook..."):
                         import uuid
@@ -9602,7 +9602,7 @@ elif page == "CO Cashbook":
                                 if off_uuid:
                                     uow_eod.cashbook.rebuild_projection(b_uuid, view_date, officer_id=off_uuid)
                             
-                            st.success("✅ End of Day Outflows & Fees Updated Successfully!")
+                            st.success("End of Day Outflows & Fees Updated Successfully.")
                             import time
                             time.sleep(1.2)
                             st.rerun()
@@ -9623,12 +9623,12 @@ elif page == "CO Cashbook":
                     posting_date=view_date,
                     officer_id=o_id
                 )
-                render_collection_arrears_tally(tally_res, title=f"📋 Daily Field Collection & Arrears Reconciliation Tally ({target_co})")
+                render_collection_arrears_tally(tally_res, title=f"Daily Field Collection & Arrears Reconciliation Tally ({target_co})")
                 st.markdown("---")
     except Exception as ex_co_tally:
         print(f"Error rendering CO Cashbook tally: {ex_co_tally}")
 
-    st.markdown("### 📊 Credit Officer Daily Cashbook Ledger")
+    st.markdown("### Credit Officer Daily Cashbook Ledger")
     
     inflow_items = [
         ("Opening Balance", bf_cash),
@@ -9668,18 +9668,18 @@ elif page == "CO Cashbook":
     while len(outflow_items) < max_rows: outflow_items.append(("", ""))
 
     df_co_display = pd.DataFrame({
-        "📥 Inflows (Left / Debit)": [i[0] for i in inflow_items],
+        "Inflows (Left / Debit)": [i[0] for i in inflow_items],
         "Amount (₦) ": [f"₦{i[1]:,.0f}" if isinstance(i[1], (int, float)) and i[0] != "" else "" for i in inflow_items],
-        "📤 Outflows (Right / Credit)": [o[0] for o in outflow_items],
+        "Outflows (Right / Credit)": [o[0] for o in outflow_items],
         "Amount (₦)  ": [f"₦{o[1]:,.0f}" if isinstance(o[1], (int, float)) and o[0] != "" else "" for o in outflow_items]
     })
 
     st.dataframe(df_co_display, use_container_width=True, hide_index=True)
 
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("🏛️ Opening Balance", f"₦{bf_cash:,.0f}")
-    k2.metric("📥 Total Inflows", f"₦{left_total:,.0f}")
-    k3.metric("📤 Total Outflows", f"₦{right_total:,.0f}")
+    k1.metric("Opening Balance", f"₦{bf_cash:,.0f}")
+    k2.metric("Total Inflows", f"₦{left_total:,.0f}")
+    k3.metric("Total Outflows", f"₦{right_total:,.0f}")
     if closing_bal >= 0:
         k4.success(f"### Closing: ₦{closing_bal:,.0f}")
     else:
@@ -9689,7 +9689,7 @@ elif page == "CO Cashbook":
     # ERROR CORRECTION & REVERSAL REQUEST HUB (FOUR-EYES BR-ERR-001)
     # ========================================================
     st.markdown("---")
-    st.markdown("### 🚩 Cashbook Error Correction & Reversal Hub")
+    st.markdown("### Cashbook Error Correction & Reversal Hub")
     st.caption("Flag an erroneous EOD Fee, Office Expense, or Bank Deposit for Branch Manager approval (Rule BR-ERR-001). (Note: For Client Loan Repayments & Savings Deposits, use the Collections page).")
     
     with st.expander("Flag an EOD Fee / Expense / Deposit for Reversal", expanded=False):
@@ -9720,7 +9720,7 @@ elif page == "CO Cashbook":
                     ev_id = str(ev.get("event_id") or "")
                     
                     amt_str = f"₦{amt:,.2f}" if (amt % 1 != 0) else f"₦{amt:,.0f}"
-                    typ_badge = "🏷️ Fee" if ev_type == "FeeCharged" else ("🧾 Exp" if ev_type == "ExpenseRecorded" else "🏦 Bank")
+                    typ_badge = "Fee" if ev_type == "FeeCharged" else ("Expense" if ev_type == "ExpenseRecorded" else "Bank")
                     label = f"{amt_str} | {typ_badge} | {narr[:16]} (#{ev_id[:6]})"
                     opts[label] = ("Fee" if ev_type == "FeeCharged" else ("Expense" if ev_type == "ExpenseRecorded" else "Treasury"), ev_id)
                 
@@ -9740,7 +9740,7 @@ elif page == "CO Cashbook":
                                     requested_by=USER_ID if USER_ID else USER,
                                     branch_id=BRANCH_ID
                                 )
-                                st.success(f"✅ Reversal request submitted to Branch Manager! (Ref: #{req_id[:8]})")
+                                st.success(f"Reversal request submitted to Branch Manager! (Ref: #{req_id[:8]})")
                                 st.rerun()
                         else:
                             st.warning("Please provide a valid reason for the reversal.")
@@ -9749,7 +9749,7 @@ elif page == "CO Cashbook":
                 
                 # Display Submitted Requests History for this user
                 st.markdown("---")
-                st.markdown("#### 📋 Submitted Reversal Requests")
+                st.markdown("#### Submitted Reversal Requests")
                 try:
                     req_query = uow_corr.client.table("correction_requests").select("*")
                     if USER_ID:
@@ -9764,7 +9764,7 @@ elif page == "CO Cashbook":
                 if my_reqs:
                     req_display = []
                     for mr in my_reqs:
-                        st_badge = "🟡 Pending" if mr.get("status") == "Pending" else ("🟢 Approved" if mr.get("status") == "Approved" else "🔴 Rejected")
+                        st_badge = format_status_text(mr.get("status", "Pending"))
                         req_display.append({
                             "Date": str(mr.get("created_at", ""))[:16].replace("T", " "),
                             "Type": mr.get("record_type"),
@@ -9804,9 +9804,9 @@ elif page == "Master Cashbook":
             is_mc_open, mc_open_reason = BusinessDateService.is_operational_open(uow_mc_chk, BRANCH_ID, view_date)
 
         if not is_mc_open and "closed" in mc_open_reason.lower():
-            st.success(f"🔒 **Master Cashbook Closed & Verified**: Operations for **{view_date.strftime('%d %B %Y')}** have been finalized. Closing balance has been rolled forward to next working day.")
+            st.success(f"**Master Cashbook Closed & Verified**: Operations for **{view_date.strftime('%d %B %Y')}** have been finalized. Closing balance has been rolled forward to next working day.")
         elif not is_mc_open:
-            st.warning(f"🏖️ **Operational Activity Suspended ({mc_open_reason})**: Operations for **{view_date.strftime('%d %B %Y')}** are in **Read-Only** mode.")
+            st.warning(f"**Operational Activity Suspended ({mc_open_reason})**: Operations for **{view_date.strftime('%d %B %Y')}** are in **Read-Only** mode.")
         
         # ---- AUTO-SUM: Load from cashbook projection table instead of legacy summing ----
         auto_rep_60d = auto_rep_120d = auto_rep_12w = auto_rep_24w = auto_rep_mth = auto_savings = auto_laps_res = 0.0
@@ -9939,13 +9939,13 @@ elif page == "Master Cashbook":
                         posting_date=view_date,
                         officer_id=None
                     )
-                    render_collection_arrears_tally(tally_res, title=f"📋 Branch Collection & Arrears Reconciliation Tally ({BRANCH})")
+                    render_collection_arrears_tally(tally_res, title=f"Branch Collection & Arrears Reconciliation Tally ({BRANCH})")
                     st.markdown("---")
         except Exception as ex_mc_tally:
             print(f"Error rendering Master Cashbook tally: {ex_mc_tally}")
 
         # ---- DISPLAY AUTO-SUMMED VALUES (Excel T-Account Layout) ----
-        st.markdown("### 📊 Daily Ledger (Auto-Summed from CO Data)")
+        st.markdown("### Daily Ledger (Auto-Summed from CO Data)")
         
         # Build LEFT (Inflows) matching Excel columns A–AA
         inflow_items = [
@@ -10005,9 +10005,9 @@ elif page == "Master Cashbook":
             outflow_items.append(("", ""))
         
         df_preview = pd.DataFrame({
-            "📥 Inflows (Left)": [i[0] for i in inflow_items],
+            "Inflows (Left)": [i[0] for i in inflow_items],
             "Amount (₦) ": [i[1] for i in inflow_items],
-            "📤 Outflows (Right)": [o[0] for o in outflow_items],
+            "Outflows (Right)": [o[0] for o in outflow_items],
             "Amount (₦)  ": [o[1] for o in outflow_items]
         })
         
@@ -10024,16 +10024,16 @@ elif page == "Master Cashbook":
         
         # ---- MANUAL BM INPUTS ----
         st.markdown("---")
-        st.markdown("### ✏️ BM Manual Inputs")
+        st.markdown("### BM Manual Inputs")
         
         with st.form("master_cashbook_form"):
-            st.markdown("#### 📥 Inflows (Vault Funding Received)")
+            st.markdown("#### Inflows (Vault Funding Received)")
             m1, m2, m3 = st.columns(3)
             funds_ho = float(m1.number_input("Funds Received from Head Office", min_value=0.0, step=1000.0, value=None, placeholder="0", key="mc_funds_ho") or 0.0)
             funds_branch = float(m2.number_input("Funds Received from Branch Office", min_value=0.0, step=1000.0, value=None, placeholder="0", key="mc_funds_branch") or 0.0)
             funds_area = float(m3.number_input("Funds Received from Other Areas", min_value=0.0, step=1000.0, value=None, placeholder="0", key="mc_funds_area") or 0.0)
             
-            st.markdown("#### 📤 Outflows (Corporate Transfers)")
+            st.markdown("#### Outflows (Corporate Transfers)")
             n1, n2, n3 = st.columns(3)
             xfer_branch = float(n1.number_input("Fund Transferred to Branch Office", min_value=0.0, step=1000.0, value=None, placeholder="0", key="mc_xfer_branch") or 0.0)
             xfer_ho = float(n2.number_input("Fund Transferred to H.O.", min_value=0.0, step=1000.0, value=None, placeholder="0", key="mc_xfer_ho") or 0.0)
@@ -10042,7 +10042,7 @@ elif page == "Master Cashbook":
             salaries = float(st.number_input("Staff Salaries", min_value=0.0, step=1000.0, value=None, placeholder="0", key="mc_salaries") or 0.0)
             
             # Collapsible Branch Treasury Adjustments & Debt Management (BIA-BM-CASHBOOK-059)
-            with st.expander("🏛️ Branch Treasury Adjustments & Debt Management", expanded=False):
+            with st.expander("Branch Treasury Adjustments & Debt Management", expanded=False):
                 st.caption("Record branch-level cash debts, borrowed vault floats, deficit settlements, or direct adjustments without affecting Credit Officer collection metrics.")
                 adj_c1, adj_c2 = st.columns(2)
                 adj_in_val = float(adj_c1.number_input("Adjustment In (₦)", min_value=0.0, step=500.0, value=auto_adj_in if auto_adj_in > 0 else None, placeholder="0.00", key="mc_adj_in") or 0.0)
@@ -10070,7 +10070,7 @@ elif page == "Master Cashbook":
             closing_balance = total_inflows - total_outflows
             
             st.markdown("---")
-            st.markdown("### 📊 Daily Summary")
+            st.markdown("### Daily Summary")
             s1, s2, s3 = st.columns(3)
             s1.metric("Opening Balance", f"₦{auto_opening:,.0f}")
             s2.metric("Total Inflows (Left)", f"₦{total_inflows:,.0f}")
@@ -10081,7 +10081,7 @@ elif page == "Master Cashbook":
             else:
                 st.error(f"### Closing Balance: ₦{closing_balance:,.0f}")
             
-            save_mc = st.form_submit_button("💾 Save Master Cashbook Entry", type="primary", use_container_width=True)
+            save_mc = st.form_submit_button("Save Master Cashbook Entry", type="primary", use_container_width=True)
             
             if save_mc:
                 with st.spinner("Saving Master Cashbook entry and rebuilding projections..."):
@@ -10181,7 +10181,7 @@ elif page == "Master Cashbook":
         # BM ERROR CORRECTION & REVERSAL HUB (FOUR-EYES BR-ERR-001)
         # ========================================================
         st.markdown("---")
-        st.markdown("### 🚩 Branch Error Correction & Reversals Hub")
+        st.markdown("### Branch Error Correction & Reversals Hub")
         st.caption("Review pending reversal requests from Credit Officers and manage branch-level treasury reversals.")
 
         with SupabaseUnitOfWork() as uow_bm_corr:
@@ -10192,7 +10192,7 @@ elif page == "Master Cashbook":
             res_pending = q_pending.order("created_at", desc=False).execute()
             pending_reqs = res_pending.data or []
 
-            st.markdown("#### 🚨 Pending Branch Reversal Requests")
+            st.markdown("#### Pending Branch Reversal Requests")
             if pending_reqs:
                 for req in pending_reqs:
                     r_id = req["id"]
@@ -10203,10 +10203,10 @@ elif page == "Master Cashbook":
                     r_date = str(req.get("created_at", ""))[:16].replace("T", " ")
                     r_ref = str(req.get("record_id", ""))[:8]
                     
-                    type_icon = "💳 [Loan Repayment]" if r_type == "Repayment" else (
-                        "💰 [Savings Deposit]" if r_type in ["Savings", "SavingsDeposit"] else (
-                            "🏷️ [EOD Fee]" if r_type == "Fee" else (
-                                "🧾 [Office Expense]" if r_type == "Expense" else "🏛️ [Treasury Transfer]"
+                    type_icon = "[Loan Repayment]" if r_type == "Repayment" else (
+                        "[Savings Deposit]" if r_type in ["Savings", "SavingsDeposit"] else (
+                            "[EOD Fee]" if r_type == "Fee" else (
+                                "[Office Expense]" if r_type == "Expense" else "[Treasury Transfer]"
                             )
                         )
                     )
@@ -10218,12 +10218,12 @@ elif page == "Master Cashbook":
                             st.caption(f"Requested by: **{req_user}** &bull; Submitted: **{r_date}**")
                             st.markdown(f"**Reason:** *{r_reason}*")
                         with col_req_meta:
-                            st.markdown("<div style='margin-top: 10px;'><span style='background: #FEF3C7; color: #92400E; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;'>🟡 Pending Approval</span></div>", unsafe_allow_html=True)
+                            st.markdown("<div style='margin-top: 10px;'><span style='background: #FEF3C7; color: #92400E; padding: 3px 10px; border-radius: 9999px; font-size: 0.76rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;'><svg width='6' height='6' viewBox='0 0 6 6' fill='#D97706'><circle cx='3' cy='3' r='3'/></svg>Pending Approval</span></div>", unsafe_allow_html=True)
                         with col_req_acts:
                             st.write("")
                             b_act1, b_act2 = st.columns(2)
                             with b_act1:
-                                if st.button("✅ Approve", key=f"mc_app_{r_id}", type="primary", use_container_width=True):
+                                if st.button("Approve", key=f"mc_app_{r_id}", type="primary", use_container_width=True):
                                     with st.spinner("Approving reversal and posting compensating ledger entry..."):
                                         try:
                                             from services.correction_service import CorrectionService
@@ -10233,7 +10233,7 @@ elif page == "Master Cashbook":
                                         except Exception as e:
                                             st.error(f"Approval failed: {e}")
                             with b_act2:
-                                if st.button("❌ Reject", key=f"mc_rej_{r_id}", use_container_width=True):
+                                if st.button("Reject", key=f"mc_rej_{r_id}", use_container_width=True):
                                     with st.spinner("Rejecting correction request..."):
                                         try:
                                             from services.correction_service import CorrectionService
@@ -10243,9 +10243,9 @@ elif page == "Master Cashbook":
                                         except Exception as e:
                                             st.error(f"Rejection failed: {e}")
             else:
-                st.success("✅ No pending reversal requests for this branch.")
+                st.success("No pending reversal requests for this branch.")
 
-        with st.expander("🏛️ Flag Branch Treasury Entry for Reversal", expanded=False):
+        with st.expander("Flag Branch Treasury Entry for Reversal", expanded=False):
             with SupabaseUnitOfWork() as uow_tx_list:
                 q_tx = uow_tx_list.client.table("treasury_transactions").select("*") \
                     .order("created_at", desc=True).limit(25)
@@ -10280,7 +10280,7 @@ elif page == "Master Cashbook":
                                     requested_by=USER_ID if USER_ID else USER,
                                     branch_id=BRANCH_ID
                                 )
-                                st.success(f"✅ Treasury reversal request submitted! (Ref: #{req_id[:8]})")
+                                st.success(f"Treasury reversal request submitted! (Ref: #{req_id[:8]})")
                                 st.rerun()
                         else:
                             st.warning("Please provide a reason.")
@@ -10295,7 +10295,7 @@ elif page == "Master Cashbook":
         repayments['DateStr'] = pd.to_datetime(repayments['Date'], errors='coerce').dt.date.astype(str)
 
         # --- RBAC FILTERING ---
-        st.markdown("### 🏢 Select Credit Officer")
+        st.markdown("### Select Credit Officer")
         try:
             with SupabaseUnitOfWork() as uow_co_list:
                 all_users = uow_co_list.users.find_all()
@@ -10408,7 +10408,7 @@ elif page == "Master Cashbook":
             closing_bal = left_total - right_total
 
         # Build balanced 2-column Excel T-Account layout (Inflows Left, Outflows Right)
-        st.markdown("### 📊 Credit Officer Daily Cashbook Ledger")
+        st.markdown("### Credit Officer Daily Cashbook Ledger")
         
         inflow_items = [
             ("Opening Balance", bf_cash),
@@ -10447,35 +10447,35 @@ elif page == "Master Cashbook":
         while len(outflow_items) < max_rows: outflow_items.append(("", ""))
 
         df_co_display = pd.DataFrame({
-            "📥 Inflows (Left / Debit)": [i[0] for i in inflow_items],
+            "Inflows (Left / Debit)": [i[0] for i in inflow_items],
             "Amount (₦) ": [f"₦{i[1]:,.0f}" if isinstance(i[1], (int, float)) and i[0] != "" else "" for i in inflow_items],
-            "📤 Outflows (Right / Credit)": [o[0] for o in outflow_items],
+            "Outflows (Right / Credit)": [o[0] for o in outflow_items],
             "Amount (₦)  ": [f"₦{o[1]:,.0f}" if isinstance(o[1], (int, float)) and o[0] != "" else "" for o in outflow_items]
         })
 
         st.dataframe(df_co_display, use_container_width=True, hide_index=True)
 
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric("🏛️ Opening Balance", f"₦{bf_cash:,.0f}")
-        k2.metric("📥 Total Inflows", f"₦{left_total:,.0f}")
-        k3.metric("📤 Total Outflows", f"₦{right_total:,.0f}")
+        k1.metric("Opening Balance", f"₦{bf_cash:,.0f}")
+        k2.metric("Total Inflows", f"₦{left_total:,.0f}")
+        k3.metric("Total Outflows", f"₦{right_total:,.0f}")
         if closing_bal >= 0:
             k4.success(f"### Closing: ₦{closing_bal:,.0f}")
         else:
             k4.error(f"### Closing: ₦{closing_bal:,.0f}")
 
         st.markdown("---")
-        st.markdown("### 🔒 Branch Manager End of Day (EOD) Controls")
+        st.markdown("### Branch Manager End of Day (EOD) Controls")
         if not is_mc_open and "closed" in mc_open_reason.lower():
-            st.info(f"✅ **EOD Day Close Already Executed for {date_str}**. Branch operational date has advanced to next working day.")
+            st.info(f"**EOD Day Close Already Executed for {date_str}**. Branch operational date has advanced to next working day.")
         elif not is_mc_open:
-            st.warning(f"🏖️ **Cannot execute Day Close ({mc_open_reason})**.")
+            st.warning(f"**Cannot execute Day Close ({mc_open_reason})**.")
         else:
             eod_c1, eod_c2 = st.columns([3, 1])
             with eod_c1:
                 st.info(f"**Operational Date**: `{date_str}`. Executing Day Close will freeze all entries for `{date_str}` and advance operational business date to the **Next Working Day**.")
             with eod_c2:
-                if st.button("🔒 Execute EOD Day Close", use_container_width=True, type="primary", key="btn_exec_eod"):
+                if st.button("Execute EOD Day Close", use_container_width=True, type="primary", key="btn_exec_eod"):
                     with st.spinner("Finalizing daily cashbook and locking operational day..."):
                         try:
                             from services.business_date_service import BusinessDateService
@@ -10758,7 +10758,7 @@ elif page == "Master Cashbook":
                 )
                 
                 # Monthly totals
-                st.markdown("#### 📈 Monthly Summary")
+                st.markdown("#### Monthly Summary")
                 mt1, mt2, mt3, mt4 = st.columns(4)
                 mt1.metric("Month Opening Balance", f"₦{month_opening:,.0f}")
                 mt2.metric("Total Monthly Inflows", f"₦{month_inflows:,.0f}")
@@ -10772,7 +10772,7 @@ elif page == "Master Cashbook":
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     display_df_renamed.to_excel(writer, sheet_name='Ledger Data', index=False)
                 st.download_button(
-                    label="⬇️ Download Ledger as Excel (.xlsx)",
+                    label="Download Ledger as Excel (.xlsx)",
                     data=output.getvalue(),
                     file_name=f"ICARE_Master_Cashbook_{selected_mc_branch}_{datetime(cb_year, cb_month, 1).strftime('%B_%Y')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -11086,7 +11086,7 @@ elif page == "Portfolio":
             r4.metric("Portfolio at Risk (PAR)", f"{par_val:.2f}%", f"{p_sum.get('overdue', {}).get('count', 0)} Overdue", delta_color="inverse")
 
             st.divider()
-            st.markdown("### 📊 Loan Products & Category Intelligence")
+            st.markdown("### Loan Products & Category Intelligence")
             st.caption("Consolidated portfolio breakdown across loan product cycles, active credit, and distribution.")
             
             cat_sum = p_data.get("category_summary", {})
@@ -11107,20 +11107,20 @@ elif page == "Portfolio":
 
             cards_to_show = []
             if _is_cat_relevant("12_week", ["12 week", "12w"]):
-                cards_to_show.append(("12_week", "🔵 12-Week Loans", w12))
+                cards_to_show.append(("12_week", "12-Week Loans", w12))
             if _is_cat_relevant("24_week", ["24 week", "24w"]):
-                cards_to_show.append(("24_week", "🟣 24-Week Loans", w24))
+                cards_to_show.append(("24_week", "24-Week Loans", w24))
             if _is_cat_relevant("daily", ["daily", "60", "120"]):
-                cards_to_show.append(("daily", "🟢 Daily Loans", dly))
+                cards_to_show.append(("daily", "Daily Loans", dly))
             if _is_cat_relevant("monthly", ["month", "3m", "6m"]):
-                cards_to_show.append(("monthly", "🟡 Monthly Loans", mth))
+                cards_to_show.append(("monthly", "Monthly Loans", mth))
 
             if not cards_to_show:
                 cards_to_show = [
-                    ("12_week", "🔵 12-Week Loans", w12),
-                    ("24_week", "🟣 24-Week Loans", w24),
-                    ("daily", "🟢 Daily Loans", dly),
-                    ("monthly", "🟡 Monthly Loans", mth)
+                    ("12_week", "12-Week Loans", w12),
+                    ("24_week", "24-Week Loans", w24),
+                    ("daily", "Daily Loans", dly),
+                    ("monthly", "Monthly Loans", mth)
                 ]
 
             # High-Visibility Product Category Intelligence Cards
@@ -11132,11 +11132,11 @@ elif page == "Portfolio":
                         st.markdown(f"### {cat_data.get('total_count', 0)} <span style='font-size: 1rem; color: #64748b; font-weight: normal;'>Active Loans</span>", unsafe_allow_html=True)
                         st.markdown(f"**Active Credit:** ₦{cat_data.get('active_credit', 0.0):,.0f}")
                         st.markdown(f"**Outstanding:** ₦{cat_data.get('outstanding_balance', 0.0):,.0f}")
-                        st.caption(f"💵 Cash: **{cat_data.get('cash_count', 0)}** &middot; 📦 Asset: **{cat_data.get('asset_count', 0)}**")
+                        st.caption(f"Cash: **{cat_data.get('cash_count', 0)}** &middot; Asset: **{cat_data.get('asset_count', 0)}**")
 
             # Group Matrix Breakdown Section
             st.markdown("<br>", unsafe_allow_html=True)
-            with st.expander("🏢 **Group-by-Product Distribution Matrix (Click to Expand / Collapse)**", expanded=True):
+            with st.expander("Group-by-Product Distribution Matrix (Click to Expand / Collapse)", expanded=True):
                 st.caption("Distribution of active loan products across all groups in the authorized scope.")
                 group_matrix_df = p_data.get("group_matrix", pd.DataFrame())
                 if not group_matrix_df.empty:
@@ -11171,7 +11171,7 @@ elif page == "Portfolio":
                     cols_to_render = base_cols + active_prod_cols + ["Total Active Loans", "Total Active Credit", "Total Outstanding Balance"]
                     
                     # Compute totals row
-                    totals_row = {"Group Name": "🔹 TOTALS", "Meeting Day": "—"}
+                    totals_row = {"Group Name": "TOTALS", "Meeting Day": "—"}
                     for c in active_prod_cols:
                         totals_row[c] = int(active_matrix_df[c].sum()) if c in active_matrix_df.columns else 0
                     totals_row["Total Active Loans"] = int(active_matrix_df["Total Active Loans"].sum())
@@ -11190,7 +11190,7 @@ elif page == "Portfolio":
             st.divider()
             
             # Interactive View Selector & Product Filter Pills
-            st.markdown("### 👥 Client & Group Portfolio Details")
+            st.markdown("### Client & Group Portfolio Details")
             
             v_col1, v_col2 = st.columns([1, 2])
             with v_col1:
@@ -11210,18 +11210,18 @@ elif page == "Portfolio":
 
                     filter_options = [f"All Active Loans ({tot_active})"]
                     if _is_cat_relevant("12_week", ["12 week", "12w"]) and cnt_12 > 0:
-                        filter_options.append(f"🔵 12-Week Loans ({cnt_12})")
+                        filter_options.append(f"12-Week Loans ({cnt_12})")
                     if _is_cat_relevant("24_week", ["24 week", "24w"]) and cnt_24 > 0:
-                        filter_options.append(f"🟣 24-Week Loans ({cnt_24})")
+                        filter_options.append(f"24-Week Loans ({cnt_24})")
                     if _is_cat_relevant("asset_all", ["asset"]) and cnt_ast > 0:
-                        filter_options.append(f"🟠 Asset Loans ({cnt_ast})")
+                        filter_options.append(f"Asset Loans ({cnt_ast})")
                     if _is_cat_relevant("daily", ["daily", "60", "120"]) and cnt_dly > 0:
-                        filter_options.append(f"🟢 Daily Loans ({cnt_dly})")
+                        filter_options.append(f"Daily Loans ({cnt_dly})")
                     if _is_cat_relevant("monthly", ["month", "3m", "6m"]) and cnt_mth > 0:
-                        filter_options.append(f"🟡 Monthly Loans ({cnt_mth})")
+                        filter_options.append(f"Monthly Loans ({cnt_mth})")
                     filter_options.append(f"All Registered Clients ({len(detailed_client_df)})")
 
-                    quick_filter = st.selectbox("⚡ Quick Filter by Product", filter_options, index=0, key="quick_prod_filter")
+                    quick_filter = st.selectbox("Quick Filter by Product", filter_options, index=0, key="quick_prod_filter")
 
                 display_client_df = detailed_client_df.copy()
                 if "12-Week" in quick_filter:
@@ -11252,7 +11252,7 @@ elif page == "Portfolio":
                     with e_col1:
                         csv_data = display_client_df.to_csv(index=False).encode('utf-8')
                         st.download_button(
-                            "📥 Export Filtered Portfolio (CSV)",
+                            "Export Filtered Portfolio (CSV)",
                             data=csv_data,
                             file_name=f"portfolio_clients_{p_scope.role}_{date.today().isoformat()}.csv",
                             mime="text/csv",
@@ -11273,7 +11273,7 @@ elif page == "Portfolio":
                     with e_col1:
                         csv_data = group_summary_df.to_csv(index=False).encode('utf-8')
                         st.download_button(
-                            "📥 Export Group Summary (CSV)",
+                            "Export Group Summary (CSV)",
                             data=csv_data,
                             file_name=f"portfolio_groups_{p_scope.role}_{date.today().isoformat()}.csv",
                             mime="text/csv",
@@ -11556,7 +11556,7 @@ elif page == "Portfolio":
                             )
                             
                     with dd_t5:
-                        st.markdown("##### 📋 Meeting Collection History & Compliance")
+                        st.markdown("##### Meeting Collection History & Compliance")
                         st.caption("Audit trail of scheduled meeting collections tracking expected installments vs. actual payments.")
 
                         c_perf = dd.get("collection_history", pd.DataFrame())
@@ -11616,11 +11616,11 @@ elif page == "Portfolio":
                                 # Status Badge
                                 raw_st = str(row.get("status") or row.get("collection_status") or "").upper()
                                 if raw_st in ["PAID", "COMPLETE"] or (exp_val > 0 and paid_val >= exp_val):
-                                    st_badge = "🟢 PAID"
+                                    st_badge = "PAID"
                                 elif raw_st in ["PART_PAYMENT", "PARTIAL"] or (paid_val > 0 and paid_val < exp_val):
-                                    st_badge = "🟡 PART PAYMENT"
+                                    st_badge = "PART PAYMENT"
                                 else:
-                                    st_badge = "🔴 NOT PAID"
+                                    st_badge = "NOT PAID"
 
                                 rem = str(row.get("remarks") or row.get("note") or "").replace("None", "").strip()
                                 if not rem:
@@ -11770,7 +11770,7 @@ elif page == "Calculator":
     
     # Amortization preview
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("📊 Repayment Schedule Preview")
+    st.subheader("Repayment Schedule Preview")
     
     schedule_data = []
     remaining = active
@@ -12438,7 +12438,7 @@ elif page == "User Management":
     from services.user_service import UserService
     
     st.markdown("<div class='dashboard-header'>", unsafe_allow_html=True)
-    st.markdown("<h1>🔐 User Management</h1>", unsafe_allow_html=True)
+    st.markdown("<h1>User Management</h1>", unsafe_allow_html=True)
     st.markdown("<p>Manage application users, reset passwords, and handle officer turnover.</p>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
     
@@ -12497,17 +12497,17 @@ elif page == "User Management":
             # Admin / BM: Activate / Deactivate toggles
             if (is_admin or is_bm) and user_usernames:
                 st.markdown("---")
-                st.subheader("⚡ Manage User Status & Deletion")
+                st.subheader("Manage User Status & Deletion")
                 target_username = st.selectbox("Select User", user_usernames, key="toggle_user")
                 target_user_data = next((u for u in all_users if u['username'] == target_username), None)
                 
                 if target_user_data:
                     current_status = target_user_data.get('is_active', True)
-                    st.write(f"**Current Status:** {'✅ Active' if current_status else '❌ Inactive'}")
+                    st.write(f"**Current Status:** {'Active' if current_status else 'Inactive'}")
                     
                     col_a, col_d = st.columns(2)
                     with col_a:
-                        if st.button("✅ Activate", key="activate_btn", use_container_width=True, disabled=current_status):
+                        if st.button("Activate", key="activate_btn", use_container_width=True, disabled=current_status):
                             with st.spinner(f"Activating user {target_username}..."):
                                 result = UserService.activate_user(target_user_data['id'], current_user)
                                 if result['success']:
@@ -12516,7 +12516,7 @@ elif page == "User Management":
                                 else:
                                     st.error(result['message'])
                     with col_d:
-                        if st.button("❌ Deactivate", key="deactivate_btn", use_container_width=True, disabled=not current_status):
+                        if st.button("Deactivate", key="deactivate_btn", use_container_width=True, disabled=not current_status):
                             with st.spinner(f"Deactivating user {target_username}..."):
                                 result = UserService.deactivate_user(target_user_data['id'], current_user)
                                 if result['success']:
@@ -12527,10 +12527,10 @@ elif page == "User Management":
                                 
                     if is_admin:
                         st.markdown("<br>", unsafe_allow_html=True)
-                        with st.expander("⚠️ Danger Zone (Permanent Deletion)"):
+                        with st.expander("Danger Zone (Permanent Deletion)"):
                             st.write("Deleting a user permanently removes them from the database. If this user has logged transactions, clients, or loans, their reference will be preserved as empty/null in historical audit logs.")
                             confirm_del = st.checkbox(f"Confirm I want to permanently delete the user '{target_username}'", key="confirm_del_check")
-                            if st.button("🔥 Permanently Delete User", key="delete_user_btn", use_container_width=True, type="primary", disabled=not confirm_del):
+                            if st.button("Permanently Delete User", key="delete_user_btn", use_container_width=True, type="primary", disabled=not confirm_del):
                                 with st.spinner(f"Permanently deleting user {target_username}..."):
                                     result = UserService.remove_user_permanently(target_user_data['id'], current_user)
                                     if result['success']:
@@ -12544,7 +12544,7 @@ elif page == "User Management":
     # --- Tab: Create User (Admin Only) ---
     if is_admin:
         with tabs[1]:
-            st.subheader("➕ Add New User")
+            st.subheader("Add New User")
             st.info("Only Head Office administrators can create new users.")
             with st.form("add_user_form"):
                 new_username = st.text_input("Username (e.g. CO5, BM_Ikeja)")
@@ -12574,7 +12574,7 @@ elif page == "User Management":
     if is_admin or is_bm:
         pw_tab_idx = 2 if is_admin else 1
         with tabs[pw_tab_idx]:
-            st.subheader("🔑 Reset Password")
+            st.subheader("Reset Password")
             if is_bm:
                 st.info("You can only reset passwords for staff in your branch.")
             with st.form("reset_pw_form"):
@@ -12593,7 +12593,7 @@ elif page == "User Management":
     # --- Tab: Officer Turnover (Admin Only) ---
     if is_admin:
         with tabs[3]:
-            st.subheader("🔄 Update Officer Name (Turnover)")
+            st.subheader("Update Officer Name (Turnover)")
             st.info("When an officer leaves, update the Full Name tied to their generic username (e.g. CO2) so that historical data remains intact but the new officer's name is used going forward.")
             
             co_users = [u for u in all_users if u['role'] in ['Credit Officer', 'CO', 'Officer']]
@@ -12625,7 +12625,7 @@ elif page == "User Management":
     product_assign_idx = 4 if is_admin else 2
     if is_admin or is_bm:
         with tabs[product_assign_idx]:
-            st.subheader("🛍️ Assign Products to Credit Officers")
+            st.subheader("Assign Products to Credit Officers")
             st.info("Assign specific loan products to a Credit Officer. If left completely blank, the officer will have access to ALL products.")
             
             # Fetch CO users
@@ -12684,7 +12684,7 @@ elif page == "User Management":
     # --- Tab: AM Branch Assignments (Admin Only) ---
     if is_admin:
         with tabs[5]:
-            st.subheader("🏢 Area Manager Branch Assignments")
+            st.subheader("Area Manager Branch Assignments")
             st.info("Each Area Manager supervises 5-7 branches. Assign branches below.")
             
             am_users = [u for u in all_users if u['role'] in ['Area Manager', 'AM']]
@@ -12735,13 +12735,13 @@ elif page == "User Management":
     if is_admin or is_bm:
         closure_tab_idx = 6 if is_admin else 3
         with tabs[closure_tab_idx]:
-            st.subheader("🏢 Branch Settings & Closures")
+            st.subheader("Branch Settings & Closures")
             st.write("Manage custom branch closures (e.g., operational shutdowns, end-of-year breaks). These dates will be strictly excluded when calculating loan repayment schedules.")
             
             c3, c4 = st.columns(2)
             with c3:
                 st.markdown("<div class='card'>", unsafe_allow_html=True)
-                st.markdown("#### ➕ Add New Closure")
+                st.markdown("#### Add New Closure")
                 with st.form("add_closure_form"):
                     closure_dates = st.date_input("Select Date Range", [], key="closure_range")
                     closure_reason = st.text_input("Reason (e.g. End of Year Break)")
@@ -12797,7 +12797,7 @@ elif page == "User Management":
                 
             with c4:
                 st.markdown("<div class='card'>", unsafe_allow_html=True)
-                st.markdown("#### 📅 Active Closures")
+                st.markdown("#### Active Closures")
                 closures_list = get_custom_closures()
                 # filter closures for BM
                 if not is_admin:
@@ -12822,7 +12822,7 @@ elif page == "User Management":
     # --- Tab: Branch Activity Logs (BM Only) ---
     if is_bm:
         with tabs[4]:
-            st.subheader(f"📋 Branch Activity Logs ({BRANCH})")
+            st.subheader(f"Branch Activity Logs ({BRANCH})")
             st.info(f"Immutable audit trail for operational activities within {BRANCH} branch.")
             
             try:
@@ -12846,7 +12846,7 @@ elif page == "User Management":
     # --- Tab: Audit Logs (Admin Only) ---
     if is_admin:
         with tabs[7]:
-            st.subheader("📋 System Audit Logs")
+            st.subheader("System Audit Logs")
             st.info("Immutable audit trail. Logs cannot be modified or deleted.")
             
             try:
@@ -12866,7 +12866,7 @@ elif page == "User Management":
     # --- Tab: Login History (Admin Only) ---
     if is_admin:
         with tabs[8]:
-            st.subheader("📊 Login History")
+            st.subheader("Login History")
             
             try:
                 with SupabaseUnitOfWork() as uow:

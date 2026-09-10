@@ -12,6 +12,6 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
 DEFAULT_PAGE_CONFIG = {
     "page_title": f"{COMPANY_NAME} | Core System",
-    "page_icon": "🏛️",
+    "page_icon": None,
     "layout": "wide"
 }
