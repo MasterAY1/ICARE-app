@@ -5967,48 +5967,173 @@ Status: CONFIRMED & POSTED TO LEDGER"""
             st.caption("Flag an erroneous collection (loan repayment or savings deposit) for Branch Manager approval.")
             
             with SupabaseUnitOfWork() as uow_corr:
-                # 1. Fetch recent repayments
-                q_reps = uow_corr.client.table("repayments").select("id, client_id, amount_paid, date, note, officer_id, clients(name, client_code)")
-                # 2. Fetch recent savings deposits
-                q_sav = uow_corr.client.table("individual_savings").select("id, client_id, deposit_amount, posting_date, remarks, officer_id, clients(name, client_code)")
-                
                 is_officer_corr = (scope.scope_level == "OFFICER" or ROLE in ['CO', 'Officer', ROLE_CREDIT_OFFICER])
-                if is_officer_corr:
-                    q_reps = q_reps.eq("officer_id", USER_ID)
-                    q_sav = q_sav.eq("officer_id", USER_ID)
-                elif scope.scope_level == "BRANCH" and BRANCH_ID:
-                    q_reps = q_reps.eq("branch_id", BRANCH_ID)
-                    q_sav = q_sav.eq("branch_id", BRANCH_ID)
-                
-                res_reps = q_reps.order("created_at", desc=True).limit(40).execute()
-                res_sav = q_sav.gt("deposit_amount", 0).order("created_at", desc=True).limit(40).execute()
-                
-                recent_reps = res_reps.data or []
-                recent_sav = res_sav.data or []
-                
+
+                # 1. Category Separation & Date Picker
+                col_ctrl1, col_ctrl2 = st.columns([1, 1])
+                with col_ctrl1:
+                    corr_category = st.radio(
+                        "1️⃣ Select Category",
+                        ["💳 Loan Repayments", "💰 Savings Deposits"],
+                        horizontal=True,
+                        key="col_rev_category"
+                    )
+                with col_ctrl2:
+                    corr_date = st.date_input(
+                        "2️⃣ Transaction Date",
+                        value=datetime.now().date(),
+                        key="col_rev_date_picker"
+                    )
+
+                corr_date_str = corr_date.isoformat()
+
+                # 2. Search & Range Filters
+                col_flt1, col_flt2 = st.columns([3, 1])
+                with col_flt1:
+                    corr_search = st.text_input(
+                        "🔍 Filter by Client Name / Code / Ref (Optional)",
+                        placeholder="e.g. OGI-05, Adewa, 2500",
+                        key="col_rev_search"
+                    ).strip().lower()
+                with col_flt2:
+                    show_all_recent = st.checkbox(
+                        "All Recent (Last 14 Days)",
+                        value=False,
+                        key="col_rev_all_recent"
+                    )
+
+                def _short_name_mobile(full_name: str, max_chars: int = 14) -> str:
+                    if not full_name:
+                        return "Unknown"
+                    parts = full_name.strip().split()
+                    if len(parts) >= 2:
+                        res = f"{parts[0]} {parts[1][0]}."
+                    else:
+                        res = parts[0]
+                    if len(res) > max_chars:
+                        res = res[:max_chars - 1] + "…"
+                    return res
+
                 opts = {}
-                # Add Repayments
-                for r in recent_reps:
-                    tx_id = str(r.get("id", ""))
-                    c_name = (r.get("clients") or {}).get("name") if isinstance(r.get("clients"), dict) else (r.get("client_id") or "Unknown")
-                    l_rep = float(r.get("amount_paid") or 0.0)
-                    tx_date = str(r.get("date", ""))[:10]
-                    label = f"💳 [Repayment] {tx_date} | {c_name} — ₦{l_rep:,.2f} | Ref: {tx_id[:8]}"
-                    opts[label] = ("Repayment", tx_id)
-                
-                # Add Savings Deposits
-                for s in recent_sav:
-                    tx_id = str(s.get("id", ""))
-                    c_name = (s.get("clients") or {}).get("name") if isinstance(s.get("clients"), dict) else (s.get("client_id") or "Unknown")
-                    s_dep = float(s.get("deposit_amount") or 0.0)
-                    tx_date = str(s.get("posting_date", ""))[:10]
-                    label = f"💰 [Savings Deposit] {tx_date} | {c_name} — ₦{s_dep:,.2f} | Ref: {tx_id[:8]}"
-                    opts[label] = ("Savings", tx_id)
-                
+                details_map = {}
+
+                if corr_category == "💳 Loan Repayments":
+                    q_reps = uow_corr.client.table("repayments").select(
+                        "id, client_id, amount_paid, expected_amount, date, note, officer_id, branch_id, clients(name, client_code)"
+                    )
+                    if is_officer_corr:
+                        q_reps = q_reps.eq("officer_id", USER_ID)
+                    elif scope.scope_level == "BRANCH" and BRANCH_ID:
+                        q_reps = q_reps.eq("branch_id", BRANCH_ID)
+
+                    if not show_all_recent:
+                        q_reps = q_reps.gte("date", f"{corr_date_str} 00:00:00").lte("date", f"{corr_date_str} 23:59:59")
+                    else:
+                        fourteen_days_ago = (datetime.now().date() - timedelta(days=14)).isoformat()
+                        q_reps = q_reps.gte("date", f"{fourteen_days_ago} 00:00:00")
+
+                    # Removed restrictive 40-row limit so all daily program clients appear
+                    res_reps = q_reps.order("date", desc=True).limit(1000).execute()
+                    records = res_reps.data or []
+
+                    for r in records:
+                        tx_id = str(r.get("id", ""))
+                        c_dict = r.get("clients") or {} if isinstance(r.get("clients"), dict) else {}
+                        c_name = c_dict.get("name") or str(r.get("client_id") or "Unknown")
+                        c_code = c_dict.get("client_code") or "NO-CODE"
+                        amt = float(r.get("amount_paid") or 0.0)
+                        tx_date = str(r.get("date", ""))[:10]
+
+                        if corr_search:
+                            match = (corr_search in c_name.lower() or 
+                                     corr_search in c_code.lower() or 
+                                     corr_search in tx_id.lower() or 
+                                     corr_search in str(amt))
+                            if not match:
+                                continue
+
+                        short_n = _short_name_mobile(c_name)
+                        amt_str = f"₦{amt:,.2f}" if (amt % 1 != 0) else f"₦{amt:,.0f}"
+                        # Mobile-First Label: Amount FIRST, Code SECOND, Short Name THIRD
+                        label = f"{amt_str} | {c_code} | {short_n} (#{tx_id[:6]})"
+                        opts[label] = ("Repayment", tx_id)
+                        details_map[label] = {
+                            "type": "Loan Repayment",
+                            "amount": amt,
+                            "client_name": c_name,
+                            "client_code": c_code,
+                            "date": tx_date,
+                            "ref": tx_id,
+                            "note": r.get("note") or "Daily Collection"
+                        }
+
+                else: # 💰 Savings Deposits
+                    q_sav = uow_corr.client.table("individual_savings").select(
+                        "id, client_id, deposit_amount, posting_date, remarks, officer_id, branch_id, clients(name, client_code)"
+                    ).gt("deposit_amount", 0)
+
+                    if is_officer_corr:
+                        q_sav = q_sav.eq("officer_id", USER_ID)
+                    elif scope.scope_level == "BRANCH" and BRANCH_ID:
+                        q_sav = q_sav.eq("branch_id", BRANCH_ID)
+
+                    if not show_all_recent:
+                        q_sav = q_sav.eq("posting_date", corr_date_str)
+                    else:
+                        fourteen_days_ago = (datetime.now().date() - timedelta(days=14)).isoformat()
+                        q_sav = q_sav.gte("posting_date", fourteen_days_ago)
+
+                    # Removed restrictive 40-row limit so all daily program clients appear
+                    res_sav = q_sav.order("posting_date", desc=True).limit(1000).execute()
+                    records = res_sav.data or []
+
+                    for s in records:
+                        tx_id = str(s.get("id", ""))
+                        c_dict = s.get("clients") or {} if isinstance(s.get("clients"), dict) else {}
+                        c_name = c_dict.get("name") or str(s.get("client_id") or "Unknown")
+                        c_code = c_dict.get("client_code") or "NO-CODE"
+                        amt = float(s.get("deposit_amount") or 0.0)
+                        tx_date = str(s.get("posting_date", ""))[:10]
+
+                        if corr_search:
+                            match = (corr_search in c_name.lower() or 
+                                     corr_search in c_code.lower() or 
+                                     corr_search in tx_id.lower() or 
+                                     corr_search in str(amt))
+                            if not match:
+                                continue
+
+                        short_n = _short_name_mobile(c_name)
+                        amt_str = f"₦{amt:,.2f}" if (amt % 1 != 0) else f"₦{amt:,.0f}"
+                        # Mobile-First Label: Amount FIRST, Code SECOND, Short Name THIRD
+                        label = f"{amt_str} | {c_code} | {short_n} (#{tx_id[:6]})"
+                        opts[label] = ("Savings", tx_id)
+                        details_map[label] = {
+                            "type": "Savings Deposit",
+                            "amount": amt,
+                            "client_name": c_name,
+                            "client_code": c_code,
+                            "date": tx_date,
+                            "ref": tx_id,
+                            "note": s.get("remarks") or "Member Deposit"
+                        }
+
                 if opts:
+                    st.caption(f"Showing **{len(opts)}** {corr_category.lower()} record(s). Select one to flag:")
                     sel_tx_label = st.selectbox("Select Transaction to Flag for Reversal", list(opts.keys()), key="col_rev_tx_select")
                     rec_type, rec_id = opts[sel_tx_label]
-                    
+                    det = details_map.get(sel_tx_label, {})
+
+                    # Mobile-Friendly Summary Card
+                    with st.container(border=True):
+                        st.markdown("##### 📌 Selected Transaction Details")
+                        c_card1, c_card2, c_card3 = st.columns(3)
+                        c_card1.metric("💵 Amount", f"₦{det.get('amount', 0.0):,.2f}")
+                        c_card2.metric("🏷️ Client Code", det.get("client_code", "—"))
+                        c_card3.metric("📅 Date", det.get("date", "—"))
+                        st.markdown(f"**Client Name:** {det.get('client_name', 'Unknown')} &nbsp;|&nbsp; **Category:** {det.get('type')}")
+                        st.caption(f"**Full Ref ID:** `{det.get('ref', '')}` &bull; **Note:** {det.get('note', '—')}")
+
                     req_reason = st.text_input("Reason for Reversal", placeholder="e.g., Wrong payment entered. Typed 50000 instead of 5000.", key="col_rev_reason")
                     if st.button("Submit Reversal Request to BM", type="primary", key="col_submit_rev_btn"):
                         if req_reason.strip():
@@ -6030,7 +6155,8 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         else:
                             st.warning("Please provide a valid reason for the reversal.")
                 else:
-                    st.info("No recent repayments or savings deposits available to flag.")
+                    date_lbl = "all recent dates (last 14 days)" if show_all_recent else f"{corr_date_str}"
+                    st.info(f"No {corr_category.lower()} found for {date_lbl} matching your criteria.")
                 
                 # Display Submitted Requests History for this user
                 st.markdown("---")
@@ -7580,7 +7706,11 @@ elif page == "Daily Report":
                         amt_paid = float(r.get('Loan Repayment Amount') or 0)
                         sav_amt = float(r.get('Savings Amount') or 0)
                         c_name = r.get('Client Name', 'Unknown')
-                        label = f"{c_name} (Loan: ₦{amt_paid:,.0f}, Sav: ₦{sav_amt:,.0f}) | ID: {tx_id[:8]}"
+                        tot_amt = amt_paid if amt_paid > 0 else sav_amt
+                        typ_str = "Loan" if amt_paid > 0 else "Sav"
+                        parts_n = str(c_name).strip().split()
+                        s_name = f"{parts_n[0]} {parts_n[1][0]}." if len(parts_n) >= 2 else str(c_name)[:12]
+                        label = f"₦{tot_amt:,.0f} ({typ_str}) | {s_name} (#{tx_id[:6]})"
                         opts[label] = tx_id
                     
                     if opts:
@@ -9589,8 +9719,9 @@ elif page == "CO Cashbook":
                     narr = p.get("narration") or p.get("remarks") or ev_type
                     ev_id = str(ev.get("event_id") or "")
                     
-                    badge = "🏷️ [Fee]" if ev_type == "FeeCharged" else ("🧾 [Expense]" if ev_type == "ExpenseRecorded" else "🏦 [Bank Transfer]")
-                    label = f"{badge} {dt} | ₦{amt:,.2f} — {narr[:40]} | Ref: {ev_id[:8]}"
+                    amt_str = f"₦{amt:,.2f}" if (amt % 1 != 0) else f"₦{amt:,.0f}"
+                    typ_badge = "🏷️ Fee" if ev_type == "FeeCharged" else ("🧾 Exp" if ev_type == "ExpenseRecorded" else "🏦 Bank")
+                    label = f"{amt_str} | {typ_badge} | {narr[:16]} (#{ev_id[:6]})"
                     opts[label] = ("Fee" if ev_type == "FeeCharged" else ("Expense" if ev_type == "ExpenseRecorded" else "Treasury"), ev_id)
                 
                 if opts:
