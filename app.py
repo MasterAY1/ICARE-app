@@ -5472,24 +5472,25 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             if not is_day_open and not use_late_entry:
                                 c2.error(f"Operational activity suspended ({open_reason}). Entries are locked.")
                             elif c2.button("Confirm & Save Collections", type="primary", use_container_width=True):
-                                try:
-                                    receipt = save_repayments(to_insert)
-                                    if receipt:
-                                        receipt["group_name"] = selected_group
-                                        receipt["officer"] = target_co
-                                        receipt["branch"] = BRANCH
-                                        receipt["date"] = date_str
-                                        receipt["timestamp"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
-                                        st.session_state["collection_receipt"] = receipt
-                                    if 'pending_collections' in st.session_state:
-                                        del st.session_state['pending_collections']
-                                    if 'collections_batch_id' in st.session_state:
-                                        del st.session_state['collections_batch_id']
-                                    if 'edit_collections_mode' in st.session_state:
-                                        del st.session_state['edit_collections_mode']
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Error saving: {e}")
+                                with st.spinner("Posting collections to financial ledger and updating cashbooks..."):
+                                    try:
+                                        receipt = save_repayments(to_insert)
+                                        if receipt:
+                                            receipt["group_name"] = selected_group
+                                            receipt["officer"] = target_co
+                                            receipt["branch"] = BRANCH
+                                            receipt["date"] = date_str
+                                            receipt["timestamp"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
+                                            st.session_state["collection_receipt"] = receipt
+                                        if 'pending_collections' in st.session_state:
+                                            del st.session_state['pending_collections']
+                                        if 'collections_batch_id' in st.session_state:
+                                            del st.session_state['collections_batch_id']
+                                        if 'edit_collections_mode' in st.session_state:
+                                            del st.session_state['edit_collections_mode']
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error saving: {e}")
                         else:
                             with st.form("collections_form"):
                                 sav_data = {}
