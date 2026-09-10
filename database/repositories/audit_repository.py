@@ -4,14 +4,25 @@ from domain.entities.audit_event import AuditEvent
 from interfaces.audit_repository import AuditRepository
 from database.repositories.base_repository import BaseRepository
 
+_officer_id_cache = {}
+
 def resolve_officer_id(client, username: str) -> str:
+    if not username:
+        return "00000000-0000-0000-0000-000000000000"
+    u_key = str(username).strip().lower()
+    if u_key in _officer_id_cache:
+        return _officer_id_cache[u_key]
     try:
         res = client.table("app_users").select("id").eq("username", username).execute()
         if res.data:
-            return res.data[0]["id"]
+            oid = res.data[0]["id"]
+            _officer_id_cache[u_key] = oid
+            return oid
         res_f = client.table("app_users").select("id").eq("full_name", username).execute()
         if res_f.data:
-            return res_f.data[0]["id"]
+            oid = res_f.data[0]["id"]
+            _officer_id_cache[u_key] = oid
+            return oid
     except Exception:
         pass
     return "00000000-0000-0000-0000-000000000000"

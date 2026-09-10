@@ -248,14 +248,19 @@ class DashboardService:
             "cash_in": 0.0,
             "cash_out": 0.0,
             "closing_balance": 0.0,
-            "status": "🟢 Balanced",
+            "status": "Balanced",
             "difference": 0.0
         }
 
         # 1. Cash Position (CO Cashbook Projection)
         if branch_id and officer_id:
             try:
-                cb = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, officer_id, target_date)
+                p_date_str = target_date.isoformat()
+                res_cb = uow.client.table("co_cashbooks").select("*").eq("branch_id", branch_id).eq("officer_id", officer_id).eq("date", p_date_str).execute()
+                if res_cb.data:
+                    cb = res_cb.data[0]
+                else:
+                    cb = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, officer_id, target_date)
                 if cb:
                     op_bal = float(cb.get("opening_balance") or 0.0)
                     tot_left = float(cb.get("total_inflows") or 0.0)
@@ -269,7 +274,7 @@ class DashboardService:
                         "cash_in": today_in,
                         "cash_out": c_out,
                         "closing_balance": cl_bal,
-                        "status": "🟢 Balanced" if diff == 0.0 else "🔴 Unbalanced",
+                        "status": "Balanced" if diff == 0.0 else "Unbalanced",
                         "difference": diff
                     }
             except Exception:
@@ -594,7 +599,7 @@ class DashboardService:
                         part_paid_count += 1
                         part_paid_amt += c_paid
                         issue_msg = "Arrears Shortfall" if has_arrears_flag else "Part Payment"
-                        risk_tag = "🔴 Arrears" if has_arrears_flag else "🟡 Shortfall"
+                        risk_tag = "Arrears" if has_arrears_flag else "Shortfall"
                         attention_rows.append({
                             "Client Name": c_name, "Client Code": c_code, "Group": g_name,
                             "Expected (₦)": repay_amt, "Paid (₦)": c_paid, "Shortfall (₦)": round(repay_amt - c_paid, 2),
@@ -612,7 +617,7 @@ class DashboardService:
                         not_paid_count += 1
                         not_paid_amt += repay_amt
                         issue_type = "Overdue Arrears + Current" if has_arrears_flag else "Pending"
-                        risk_lvl = "🔴 Overdue Arrears" if has_arrears_flag else "⚪ Pending"
+                        risk_lvl = "Overdue Arrears" if has_arrears_flag else "Pending"
                         action_msg = f"Collect ₦{overdue_arrears_amt:,.0f} arrears + ₦{curr_inst_amt:,.0f} today" if has_arrears_flag else "Collect at Group Meeting"
                         attention_rows.append({
                             "Client Name": c_name, "Client Code": c_code, "Group": g_name,
@@ -633,14 +638,14 @@ class DashboardService:
             
             if is_branch_closed:
                 g_data["Compliance %"] = 100.0
-                g_data["Status"] = f"🏖️ Closed ({closure_reason})"
+                g_data["Status"] = f"Closed ({closure_reason})"
             elif exp_c > 0:
                 comp = round((col_c / exp_c) * 100.0, 1)
                 g_data["Compliance %"] = min(100.0, comp)
-                g_data["Status"] = "🟢 Completed" if col_c >= exp_c else ("🟡 In Progress" if col_c > 0 else "🔴 Pending")
+                g_data["Status"] = "Completed" if col_c >= exp_c else ("In Progress" if col_c > 0 else "Pending")
             else:
                 g_data["Compliance %"] = 100.0 if col_c > 0 else 100.0
-                g_data["Status"] = "🟢 Completed" if col_c > 0 else "⚪ Scheduled"
+                g_data["Status"] = "Completed" if col_c > 0 else "Scheduled"
             
             meeting_portfolio_rows.append(g_data)
 
@@ -738,7 +743,12 @@ class DashboardService:
         }
         if branch_id:
             try:
-                mb = MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, target_date)
+                p_date_str = target_date.isoformat()
+                res_mc = uow.client.table("master_cashbook").select("*").eq("branch_id", branch_id).eq("date", p_date_str).execute()
+                if res_mc.data:
+                    mb = res_mc.data[0]
+                else:
+                    mb = MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, target_date)
                 if mb:
                     op_bal = float(mb.get("opening_balance") or 0.0)
                     tot_left = float(mb.get("total_inflows") or 0.0)
@@ -754,7 +764,7 @@ class DashboardService:
                         "bank_deposit": float(mb.get("bank_deposit") or 0.0),
                         "bank_withdrawal": float(mb.get("bank_withdrawal") or 0.0),
                         "closing_balance": cl_bal,
-                        "status": "🟢 Balanced" if diff == 0.0 else "🔴 Unbalanced",
+                        "status": "Balanced" if diff == 0.0 else "Unbalanced",
                         "difference": diff
                     }
             except Exception:
@@ -835,7 +845,7 @@ class DashboardService:
                     else:
                         comp = 100.0 if is_branch_closed or grps_count == 0 else 0.0
 
-                    status_str = f"🏖️ Closed ({closure_reason})" if is_branch_closed else ("Normal" if comp >= 80 else "Requires Attention")
+                    status_str = f"Closed ({closure_reason})" if is_branch_closed else ("Normal" if comp >= 80 else "Requires Attention")
                     if grps_count == 0 and exp == 0 and col == 0:
                         status_str = "Normal"
 
@@ -915,7 +925,7 @@ class DashboardService:
             "branch_cash_position": cash_position,
             "approval_queue": pending_approvals,
             "branch_alerts": [
-                f"🏖️ Branch is closed today for {closure_reason}." if is_branch_closed else "All officer cashbooks balanced for today.",
+                f"Branch is closed today for {closure_reason}." if is_branch_closed else "All officer cashbooks balanced for today.",
                 "Zero projection mismatches detected."
             ]
         }
@@ -1018,7 +1028,7 @@ class DashboardService:
                 comp = float(summary.get("compliance_pct", 100.0)) if not is_b_closed else 100.0
                 b_par = DashboardService.calculate_par_pct(uow, b_id)
 
-                status_str = f"🏖️ Closed ({b_closure_reason})" if is_b_closed else ("Normal" if comp >= 80 else "Requires Attention")
+                status_str = f"Closed ({b_closure_reason})" if is_b_closed else ("Normal" if comp >= 80 else "Requires Attention")
 
                 b_row = {
                     "Branch": b_name,

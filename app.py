@@ -1304,8 +1304,8 @@ def save_new_loan(data):
         st.error(f"Error saving loan: {e}")
 
 
-def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, skip_repayment=False, skip_savings=False):
-    """Save repayment and route savings to respective buckets with idempotency skip support"""
+def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, skip_repayment=False, skip_savings=False, known_exists=None, loan_data_cache=None, repayments_cache=None, schedule_cache=None):
+    """Save repayment and route savings to respective buckets with idempotency skip support and pre-cached lookups"""
     try:
         from database.repositories.unit_of_work import SupabaseUnitOfWork
         from services.savings_service import SavingsService
@@ -1443,7 +1443,8 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
 
                 if active_loan_id and loan_repay > 0:
                     from services.schedule_service import ScheduleService
-                    ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date)
+                    sch_rows = schedule_cache.get(active_loan_id) if schedule_cache else None
+                    ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date, cached_schedule_rows=sch_rows)
 
                 exp_amt = float(data.get('Expected Amount') or data.get('expected_amount') or db_data.get('expected_amount') or (loan_repay if loan_repay > 0 else 0.0))
                 overdue_val = float(data.get('Overdue Amount') or data.get('overdue_amount') or db_data.get('overdue_amount') or (exp_amt if is_marked_not_paid else 0.0))
@@ -1474,7 +1475,15 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
 
                 try:
                     from services.repayment_service import RepaymentService
-                    RepaymentService.post_repayment(uow, rep)
+                    l_data = loan_data_cache.get(active_loan_id) if loan_data_cache else None
+                    r_data = repayments_cache.get(active_loan_id) if repayments_cache else None
+                    RepaymentService.post_repayment(
+                        uow,
+                        rep,
+                        known_exists=known_exists,
+                        preloaded_loan=l_data,
+                        preloaded_repayments=r_data
+                    )
                 except Exception as re:
                     print(f"[ERROR] Error inserting repayment for {client_id}: {re}")
                     st.error(f"Error inserting repayment for {client_id}: {re}")
@@ -1754,6 +1763,7 @@ def save_repayments(data_list, batch_id=None):
                     pass
 
             loan_cache = {}
+            loan_data_cache = {}
             all_resolved_cids = []
             for d in data_list:
                 cid = d.get('Client ID') or d.get('client_id')
@@ -1762,10 +1772,31 @@ def save_repayments(data_list, batch_id=None):
                     all_resolved_cids.append(str(resolved))
             if all_resolved_cids:
                 try:
-                    res_l = uow.client.table("loans").select("loan_id, client_id, active_credit").in_("client_id", list(set(all_resolved_cids))).eq("status", "Active").execute()
+                    res_l = uow.client.table("loans").select("loan_id, client_id, active_credit, total_due, loan_amount, loan_repay, branch_id, officer_id, status").in_("client_id", list(set(all_resolved_cids))).eq("status", "Active").execute()
                     for row in (res_l.data or []):
                         loan_cache[row["client_id"]] = row["loan_id"]
+                        loan_data_cache[row["loan_id"]] = row
                 except Exception:
+                    pass
+
+            # Pre-fetch loan schedules and repayments in batch for all active loans
+            all_active_loan_ids = list(set([lid for lid in loan_cache.values() if lid]))
+            schedule_cache = {}
+            repayments_cache = {}
+            if all_active_loan_ids:
+                try:
+                    res_sch = uow.client.table("loan_schedule").select("*").in_("loan_id", all_active_loan_ids).order("installment_number").execute()
+                    for s_row in (res_sch.data or []):
+                        lid = s_row["loan_id"]
+                        schedule_cache.setdefault(lid, []).append(s_row)
+                except Exception as ex_sch:
+                    pass
+                try:
+                    res_pr = uow.client.table("repayments").select("loan_id, id, amount_paid").in_("loan_id", all_active_loan_ids).execute()
+                    for r_row in (res_pr.data or []):
+                        lid = r_row["loan_id"]
+                        repayments_cache.setdefault(lid, []).append(r_row)
+                except Exception as ex_pr:
                     pass
 
             # 2. Idempotency Check: Pre-fetch existing records in repayments, individual_savings, and group_savings
@@ -1833,7 +1864,11 @@ def save_repayments(data_list, batch_id=None):
                         client_cache=client_cache,
                         loan_cache=loan_cache,
                         skip_repayment=is_rep_done,
-                        skip_savings=is_sav_done
+                        skip_savings=is_sav_done,
+                        known_exists=is_rep_done,
+                        loan_data_cache=loan_data_cache,
+                        repayments_cache=repayments_cache,
+                        schedule_cache=schedule_cache
                     )
                     any_new_records = True
                     report["new_processed"] += 1
@@ -2465,256 +2500,542 @@ if page == "Dashboard":
             st.caption("Branch Daily Operations, Officer Status, & Approvals")
             bm_data = DashboardService.get_bm_dashboard_data(uow, BRANCH, branch_id=BRANCH_ID)
 
-            # Section F: Approval Queue (Pending Loan Approvals)
+            # --- SECTION: BRANCH APPROVALS HUB ---
             p_loans = bm_data.get("approval_queue", [])
-            if p_loans:
-                st.markdown("#### Pending Loan Approvals")
-                for pl in p_loans:
-                    c_name = pl.get("clients", {}).get("name", "Unknown Client") if pl.get("clients") else pl.get("client_name", "Unknown Client")
-                    c_code = pl.get("clients", {}).get("client_code") if pl.get("clients") and pl.get("clients").get("client_code") else pl.get("client_id", "")[:8]
-                    loan_amt = float(pl.get("loan_amount", 0))
-                    prod = pl.get("loan_products", {}).get("name", "Standard") if pl.get("loan_products") else pl.get("loan_product", "Standard")
-                    officer = pl.get("app_users", {}).get("username", "Unknown Officer") if pl.get("app_users") else "Unknown Officer"
-                    pl_id = pl["loan_id"]
-
-                    with st.container(border=True):
-                        col_info, col_amt, col_acts = st.columns([3, 2, 3])
-                        with col_info:
-                            st.markdown(f"**{c_name}** (`{c_code}`)")
-                            st.caption(f"Product: **{prod}** | Officer: **{officer}**")
-                        with col_amt:
-                            st.markdown(f"<div style='font-size: 1.15rem; font-weight: 700; color: #0f172a;'>₦{loan_amt:,.2f}</div>", unsafe_allow_html=True)
-                            st.caption("Requested Principal")
-                        with col_acts:
-                            disb_date = st.date_input("Disbursement Date", value=datetime.now().date(), key=f"disb_date_{pl_id}")
-                            act_col1, act_col2 = st.columns(2)
-                            with act_col1:
-                                if st.button("Approve & Disburse", key=f"app_{pl_id}", type="primary", use_container_width=True):
-                                    try:
-                                        with st.spinner(f"Approving & disbursing loan for {c_name}..."):
-                                            from services.loan_service import LoanService
-                                            with SupabaseUnitOfWork() as uow_app:
-                                                LoanService.approve_and_disburse_loan(uow_app, pl_id, USER, disbursement_date=disb_date)
-                                        st.success(f"Loan approved & disbursed for {c_name} on {disb_date.strftime('%d %B %Y')}!")
-                                        st.rerun()
-                                    except Exception as ex:
-                                        st.error(f"Disbursement failed: {str(ex)}")
-                            with act_col2:
-                                if st.button("Reject", key=f"rej_{pl_id}", type="secondary", use_container_width=True):
-                                    try:
-                                        with st.spinner(f"Rejecting loan for {c_name}..."):
-                                            from services.loan_service import LoanService
-                                            with SupabaseUnitOfWork() as uow_app:
-                                                LoanService.reject_loan(uow_app, pl_id, USER, "Rejected by BM")
-                                        st.success(f"Loan rejected for {c_name}.")
-                                        st.rerun()
-                                    except Exception as ex:
-                                        st.error(f"Rejection failed: {str(ex)}")
-                st.markdown("<br>", unsafe_allow_html=True)
-
-            # Section G: Withdrawal Approval Queue
             res_wr = uow.client.table("withdrawal_requests").select("*").eq("branch_id", BRANCH_ID).eq("status", "PENDING").order("created_at", desc=False).execute()
             pending_withdrawals = res_wr.data or []
-            if pending_withdrawals:
-                st.markdown("#### Pending Withdrawal Approvals")
-                wr_default_date = active_b_date if 'active_b_date' in locals() and active_b_date else date.today()
-                wr_approval_date = st.date_input("Operational Date for Withdrawal Approvals", value=wr_default_date, key="bm_wr_approval_date", help="Set the backdated operational date if approving historical transactions.")
-                for wr in pending_withdrawals:
-                    wr_id = wr["id"]
-                    wr_type = wr["savings_type"]
-                    wr_op = wr["operation_type"]
-                    wr_amt = float(wr["amount"])
-                    wr_name = wr["client_name"]
-                    wr_by = wr["requested_by"]
-                    wr_remarks = wr.get("remarks") or ""
-                    wr_date = str(wr.get("operational_date") or wr.get("created_at", ""))[:10]
-
-                    with st.container(border=True):
-                        wcol_info, wcol_amt, wcol_acts = st.columns([3, 2, 2])
-                        with wcol_info:
-                            st.markdown(f"**{wr_name}** — `{wr_type}`")
-                            st.caption(f"Op: **{wr_op}** | Req By: **{wr_by}** | Date: **{wr_date}**")
-                            if wr_remarks:
-                                st.caption(f"*{wr_remarks}*")
-                        with wcol_amt:
-                            st.markdown(f"<div style='font-size: 1.15rem; font-weight: 700; color: #b91c1c;'>₦{wr_amt:,.2f}</div>", unsafe_allow_html=True)
-                            st.caption("Withdrawal Amount")
-                        with wcol_acts:
-                            wact_col1, wact_col2 = st.columns(2)
-                            with wact_col1:
-                                if st.button("Approve", key=f"approve_wr_{wr_id}", type="primary", use_container_width=True):
-                                    with st.spinner(f"Approving withdrawal for {wr_name}..."):
-                                        try:
-                                            from services.savings_service import SavingsService
-                                            effective_op_date = wr.get("operational_date") or wr_approval_date
-                                            if isinstance(effective_op_date, str):
-                                                effective_op_date = date.fromisoformat(effective_op_date[:10])
-                                            with SupabaseUnitOfWork() as uow_wr:
-                                                source_type = "GroupSavings" if wr_type == "Group" else ("MiscSavings" if wr_type == "Misc" else "IndividualSavings")
-                                                if wr_op in ["Cash Withdrawal", "Bank Transfer", "Client Bank Account (Transfer)", "Group Bank Account (Transfer)"]:
-                                                    if wr_type == "Individual":
-                                                        SavingsService.post_individual_savings(
-                                                            uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                            branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
-                                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
-                                                            posting_date=effective_op_date
-                                                        )
-                                                    elif wr_type == "Group":
-                                                        SavingsService.post_group_savings(
-                                                            uow=uow_wr, group_name=wr.get("group_name") or wr_name, branch=BRANCH,
-                                                            officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
-                                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
-                                                            posting_date=effective_op_date
-                                                        )
-                                                    elif wr_type == "Misc":
-                                                        SavingsService.post_misc_savings(
-                                                            uow=uow_wr, client_id=wr.get("client_id") or "", client_name=wr_name,
-                                                            branch=BRANCH, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
-                                                            reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
-                                                            posting_date=effective_op_date
-                                                        )
-                                                elif wr_op in ["Loan Offset", "Asset Downpayment", "Loan Repayment / Asset Debt Offset"]:
-                                                    SavingsService.post_loan_offset_from_savings(
-                                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                        loan_id=wr.get("loan_id"), source_savings_type=source_type,
-                                                        branch=BRANCH, officer=wr_by, amount=wr_amt,
-                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED {wr_op.upper()}] {wr_remarks}",
-                                                        posting_date=effective_op_date
-                                                    )
-                                                elif wr_op in ["Fee Offset", "Fee Payment from Savings"]:
-                                                    fee_code = "misc_fees"
-                                                    if "[FEE:" in wr_remarks:
-                                                        try:
-                                                            fee_code = wr_remarks.split("[FEE:")[1].split("]")[0].strip()
-                                                        except Exception:
-                                                            pass
-                                                    SavingsService.post_fee_offset_from_savings(
-                                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                        source_savings_type=source_type, branch=BRANCH, officer=wr_by,
-                                                        fee_type=fee_code, amount=wr_amt,
-                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED FEE OFFSET] {wr_remarks}",
-                                                        posting_date=effective_op_date
-                                                    )
-                                                elif wr_op in ["Savings Transfer", "Transfer to Another Savings", "Another Member or Group Savings"]:
-                                                    dest_id = wr.get("client_id")
-                                                    dest_name = wr_name
-                                                    dest_type = "IndividualSavings"
-                                                    if "[DEST_ID:" in wr_remarks:
-                                                        try:
-                                                            dest_id = wr_remarks.split("[DEST_ID:")[1].split("]")[0].strip()
-                                                            dest_name = wr_remarks.split("[DEST_NAME:")[1].split("]")[0].strip()
-                                                            dest_type = wr_remarks.split("[DEST_TYPE:")[1].split("]")[0].strip()
-                                                        except Exception:
-                                                            pass
-                                                    SavingsService.transfer_savings(
-                                                        uow=uow_wr, source_id=wr.get("client_id"), source_name=wr_name,
-                                                        source_type=source_type, destination_id=dest_id,
-                                                        destination_name=dest_name, destination_type=dest_type,
-                                                        branch=BRANCH, officer=wr_by, amount=wr_amt,
-                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED TRANSFER] {wr_remarks}",
-                                                        posting_date=effective_op_date
-                                                    )
-                                                elif wr_op == "LAPS Transfer":
-                                                    SavingsService.transfer_to_laps(
-                                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                        source_savings_type=source_type, branch=BRANCH, officer=wr_by, amount=wr_amt,
-                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
-                                                        posting_date=effective_op_date
-                                                    )
-                                                elif wr_op == "LAPS Payout":
-                                                    cash_paid = (wr.get("payout_method") or "Cash") == "Cash"
-                                                    SavingsService.pay_laps(
-                                                        uow=uow_wr, client_id=wr.get("client_id"), client_name=wr_name,
-                                                        branch=BRANCH, officer=wr_by, amount=wr_amt, cash_paid=cash_paid,
-                                                        reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
-                                                        posting_date=effective_op_date
-                                                    )
-
-                                                uow_wr.client.table("withdrawal_requests").update({
-                                                    "status": "APPROVED",
-                                                    "approved_by": USER,
-                                                    "approved_at": datetime.now().isoformat()
-                                                }).eq("id", wr_id).execute()
-
-                                            st.session_state["flash_msg"] = f" Withdrawal of ₦{wr_amt:,.2f} for {wr_name} approved and posted to financial ledger!"
-                                            st.rerun()
-                                        except Exception as ex:
-                                            st.error(f"Approval failed: {str(ex)}")
-                            with wact_col2:
-                                if st.button("Reject", key=f"reject_wr_{wr_id}", type="secondary", use_container_width=True):
-                                    st.session_state[f"rejecting_{wr_id}"] = True
-
-                        if st.session_state.get(f"rejecting_{wr_id}"):
-                            st.divider()
-                            reject_reason = st.text_input("Rejection Reason", key=f"rej_reason_{wr_id}", placeholder="Why is this being rejected?")
-                            if st.button("Confirm Rejection", key=f"confirm_rej_{wr_id}", type="primary"):
-                                with st.spinner("Rejecting withdrawal request..."):
-                                    uow.client.table("withdrawal_requests").update({
-                                        "status": "REJECTED",
-                                        "approved_by": USER,
-                                        "approved_at": datetime.now().isoformat(),
-                                        "rejection_reason": reject_reason or "Rejected by BM"
-                                    }).eq("id", wr_id).execute()
-                                    st.session_state[f"rejecting_{wr_id}"] = False
-                                    st.session_state["flash_msg"] = f" Withdrawal request rejected for {wr_name}."
-                                    st.rerun()
-                st.markdown("<br>", unsafe_allow_html=True)
-
-            # Section H: Error Correction Queue
             res_corr = uow.client.table("correction_requests").select("*, app_users!correction_requests_requested_by_fkey(username, full_name)") \
                 .eq("branch_id", BRANCH_ID).eq("status", "Pending").order("created_at", desc=False).execute()
-            if res_corr.data:
-                st.markdown("#### Pending Error Corrections (Reversals)")
-                for corr in res_corr.data:
-                    c_id = corr["id"]
-                    c_type = corr.get("record_type")
-                    c_reason = corr.get("reason")
-                    u_data = corr.get("app_users")
-                    req_user = (u_data.get("full_name") or u_data.get("username")) if isinstance(u_data, dict) else "Officer"
-                    r_date = str(corr.get("created_at", ""))[:16].replace("T", " ")
-                    r_ref = str(corr.get("record_id", ""))[:8]
+            pending_corrections = res_corr.data or []
 
-                    type_icon = "[Loan Repayment]" if c_type == "Repayment" else (
-                        "[Savings Deposit]" if c_type in ["Savings", "SavingsDeposit"] else (
-                            "[EOD Fee]" if c_type == "Fee" else (
-                                "[Office Expense]" if c_type == "Expense" else "[Treasury Transfer]"
-                            )
+            has_p_loans = bool(p_loans)
+            has_p_wr = bool(pending_withdrawals)
+            has_p_corr = bool(pending_corrections)
+
+            from services.business_date_service import BusinessDateService
+            bm_b_date = BusinessDateService.get_business_date(uow, BRANCH) if BRANCH else date.today()
+
+            if has_p_loans or has_p_wr or has_p_corr:
+                st.markdown("### Branch Approvals Hub")
+                st.caption("Filter by officer, configure operational disbursement dates, and process batch or individual approvals.")
+
+                tab_labels = []
+                if has_p_loans: tab_labels.append(f"Loan Disbursements ({len(p_loans)})")
+                if has_p_wr: tab_labels.append(f"Withdrawals ({len(pending_withdrawals)})")
+                if has_p_corr: tab_labels.append(f"Error Corrections ({len(pending_corrections)})")
+
+                app_tabs = st.tabs(tab_labels)
+                curr_tab_idx = 0
+
+                # 1. TAB: LOAN DISBURSEMENTS
+                if has_p_loans:
+                    with app_tabs[curr_tab_idx]:
+                        curr_tab_idx += 1
+
+                        raw_loan_officers = set()
+                        for pl in p_loans:
+                            u_data = pl.get("app_users")
+                            o_name = (u_data.get("username") or u_data.get("full_name")) if isinstance(u_data, dict) else pl.get("officer")
+                            if o_name: raw_loan_officers.add(str(o_name))
+                        loan_officer_list = ["All Officers"] + sorted(list(raw_loan_officers))
+
+                        fltr_col1, fltr_col2, fltr_col3 = st.columns([1.5, 1.5, 2])
+                        sel_loan_off = fltr_col1.selectbox("Filter Officer", loan_officer_list, key="bm_fltr_loan_off")
+
+                        raw_loan_prods = set()
+                        for pl in p_loans:
+                            p_data = pl.get("loan_products")
+                            pr_name = p_data.get("name") if isinstance(p_data, dict) else pl.get("loan_product")
+                            if pr_name: raw_loan_prods.add(str(pr_name))
+                        loan_prod_list = ["All Products"] + sorted(list(raw_loan_prods))
+                        sel_loan_prod = fltr_col2.selectbox("Filter Product", loan_prod_list, key="bm_fltr_loan_prod")
+                        search_loan = fltr_col3.text_input("Search Client Name / Code", placeholder="Type name or code...", key="bm_fltr_loan_search").strip().lower()
+
+                        filtered_loans = []
+                        for pl in p_loans:
+                            c_dict = pl.get("clients") or {}
+                            c_name = c_dict.get("name") or pl.get("client_name", "Unknown Client")
+                            c_code = c_dict.get("client_code") or pl.get("client_id", "")[:8]
+                            u_dict = pl.get("app_users") or {}
+                            officer = (u_dict.get("username") or u_dict.get("full_name")) if isinstance(u_dict, dict) else (pl.get("officer") or "Unknown")
+                            p_dict = pl.get("loan_products") or {}
+                            prod = p_dict.get("name") if isinstance(p_dict, dict) else (pl.get("loan_product") or "Standard")
+
+                            if sel_loan_off != "All Officers" and officer != sel_loan_off:
+                                continue
+                            if sel_loan_prod != "All Products" and prod != sel_loan_prod:
+                                continue
+                            if search_loan and (search_loan not in c_name.lower() and search_loan not in str(c_code).lower()):
+                                continue
+                            filtered_loans.append(pl)
+
+                        st.markdown("---")
+                        b_c1, b_c2, b_c3 = st.columns([2, 1.2, 1.8])
+                        master_loan_date = b_c1.date_input(
+                            "Batch Operational Disbursement Date",
+                            value=bm_b_date,
+                            key="bm_master_loan_disb_date",
+                            help="Default disbursement date applied to approved loans."
                         )
-                    )
-
-                    with st.container(border=True):
-                        col_req_info, col_req_meta, col_req_acts = st.columns([4, 2, 2])
-                        with col_req_info:
-                            st.markdown(f"**{type_icon}** &nbsp; `Ref: #{r_ref}`")
-                            st.caption(f"Requested by: **{req_user}** &bull; Submitted: **{r_date}**")
-                            st.markdown(f"**Reason:** *{c_reason}*")
-                        with col_req_meta:
-                            st.markdown("<div style='margin-top: 10px;'><span style='background: #FEF3C7; color: #92400E; padding: 3px 10px; border-radius: 9999px; font-size: 0.76rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;'><svg width='6' height='6' viewBox='0 0 6 6' fill='#D97706'><circle cx='3' cy='3' r='3'/></svg>Pending Approval</span></div>", unsafe_allow_html=True)
-                        with col_req_acts:
+                        sel_all_loans = b_c2.checkbox(f"Select All ({len(filtered_loans)})", value=False, key="bm_sel_all_loans_chk")
+                        with b_c3:
                             st.write("")
-                            b_act1, b_act2 = st.columns(2)
-                            with b_act1:
-                                if st.button("Approve", key=f"app_corr_{c_id}", type="primary", use_container_width=True):
-                                    with st.spinner("Approving reversal and posting compensating ledger entry..."):
-                                        try:
-                                            from services.correction_service import CorrectionService
-                                            with SupabaseUnitOfWork() as uow_corr:
-                                                CorrectionService.approve_correction(uow_corr, c_id, approved_by=USER_ID if USER_ID else USER)
-                                            st.success("Reversal approved and executed atomically!")
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"Approval failed: {e}")
-                            with b_act2:
-                                if st.button("Reject", key=f"rej_corr_{c_id}", use_container_width=True):
-                                    with st.spinner("Rejecting correction request..."):
-                                        try:
-                                            from services.correction_service import CorrectionService
-                                            with SupabaseUnitOfWork() as uow_corr:
-                                                CorrectionService.reject_correction(uow_corr, c_id, approved_by=USER_ID if USER_ID else USER)
-                                            st.info("Reversal rejected.")
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"Rejection failed: {e}")
+                            batch_app_loan_btn = st.button(
+                                "Approve Selected Loans",
+                                type="primary",
+                                key="btn_exec_batch_app_loans",
+                                use_container_width=True,
+                                disabled=(len(filtered_loans) == 0)
+                            )
+
+                        selected_loan_ids = []
+                        loan_dates_map = {}
+
+                        if not filtered_loans:
+                            st.info("No pending loan applications matching the selected filters.")
+                        else:
+                            for pl in filtered_loans:
+                                pl_id = pl["loan_id"]
+                                c_dict = pl.get("clients") or {}
+                                c_name = c_dict.get("name") or pl.get("client_name", "Unknown Client")
+                                c_code = c_dict.get("client_code") or pl.get("client_id", "")[:8]
+                                u_dict = pl.get("app_users") or {}
+                                officer = (u_dict.get("username") or u_dict.get("full_name")) if isinstance(u_dict, dict) else (pl.get("officer") or "Unknown")
+                                p_dict = pl.get("loan_products") or {}
+                                prod = p_dict.get("name") if isinstance(p_dict, dict) else (pl.get("loan_product") or "Standard")
+                                loan_amt = float(pl.get("loan_amount", 0))
+
+                                with st.container(border=True):
+                                    c_chk, c_info, c_amt, c_acts = st.columns([0.4, 2.8, 1.8, 2.5])
+                                    with c_chk:
+                                        st.write("")
+                                        is_chk = st.checkbox("", value=sel_all_loans, key=f"chk_loan_{pl_id}")
+                                        if is_chk:
+                                            selected_loan_ids.append(pl_id)
+                                    with c_info:
+                                        st.markdown(f"**{c_name}** (`{c_code}`)")
+                                        st.caption(f"Product: **{prod}** | Officer: **{officer}**")
+                                    with c_amt:
+                                        st.markdown(f"<div style='font-size: 1.15rem; font-weight: 700; color: #0f172a;'>₦{loan_amt:,.2f}</div>", unsafe_allow_html=True)
+                                        st.caption("Requested Principal")
+                                    with c_acts:
+                                        card_date = st.date_input(
+                                            "Disbursement Date",
+                                            value=master_loan_date,
+                                            key=f"disb_date_{pl_id}"
+                                        )
+                                        loan_dates_map[pl_id] = card_date
+                                        act_b1, act_b2 = st.columns(2)
+                                        with act_b1:
+                                            if st.button("Approve", key=f"app_{pl_id}", type="primary", use_container_width=True):
+                                                with st.spinner(f"Approving loan for {c_name}..."):
+                                                    try:
+                                                        from services.loan_service import LoanService
+                                                        with SupabaseUnitOfWork() as uow_app:
+                                                            LoanService.approve_and_disburse_loan(uow_app, pl_id, USER, disbursement_date=card_date)
+                                                        st.session_state["flash_msg"] = f"Loan approved & disbursed for {c_name} on {card_date.strftime('%d %B %Y')}!"
+                                                        st.rerun()
+                                                    except Exception as ex:
+                                                        st.error(f"Disbursement failed: {str(ex)}")
+                                        with act_b2:
+                                            if st.button("Reject", key=f"rej_{pl_id}", type="secondary", use_container_width=True):
+                                                with st.spinner(f"Rejecting loan for {c_name}..."):
+                                                    try:
+                                                        from services.loan_service import LoanService
+                                                        with SupabaseUnitOfWork() as uow_app:
+                                                            LoanService.reject_loan(uow_app, pl_id, USER, "Rejected by BM")
+                                                        st.session_state["flash_msg"] = f"Loan rejected for {c_name}."
+                                                        st.rerun()
+                                                    except Exception as ex:
+                                                        st.error(f"Rejection failed: {str(ex)}")
+
+                        if batch_app_loan_btn:
+                            if not selected_loan_ids:
+                                st.warning("Please select at least one loan application using the checkboxes.")
+                            else:
+                                with st.spinner(f"Approving {len(selected_loan_ids)} loan disbursement(s) and posting to financial ledger..."):
+                                    from services.loan_service import LoanService
+                                    s_cnt = 0
+                                    f_cnt = 0
+                                    err_list = []
+                                    with SupabaseUnitOfWork() as uow_batch:
+                                        for lid in selected_loan_ids:
+                                            try:
+                                                use_d = loan_dates_map.get(lid, master_loan_date)
+                                                LoanService.approve_and_disburse_loan(uow_batch, lid, USER, disbursement_date=use_d)
+                                                s_cnt += 1
+                                            except Exception as ex:
+                                                f_cnt += 1
+                                                err_list.append(f"Loan #{lid[:8]}: {str(ex)}")
+                                    if s_cnt > 0:
+                                        st.session_state["flash_msg"] = f"Successfully approved and disbursed {s_cnt} loan(s) to the financial ledger!"
+                                    if f_cnt > 0:
+                                        st.error(f"Failed to disburse {f_cnt} loan(s): {', '.join(err_list)}")
+                                    st.rerun()
+
+                # 2. TAB: WITHDRAWALS
+                if has_p_wr:
+                    with app_tabs[curr_tab_idx]:
+                        curr_tab_idx += 1
+
+                        def _execute_withdrawal_approval(uow_exec, wr_item, op_date):
+                            from services.savings_service import SavingsService
+                            w_id = wr_item["id"]
+                            w_type = wr_item.get("savings_type")
+                            w_op = wr_item.get("operation_type")
+                            w_amt = float(wr_item.get("amount", 0))
+                            w_name = wr_item.get("client_name", "")
+                            w_by = wr_item.get("requested_by", USER)
+                            w_remarks = wr_item.get("remarks") or ""
+
+                            s_type = "GroupSavings" if w_type == "Group" else ("MiscSavings" if w_type == "Misc" else "IndividualSavings")
+                            if w_op in ["Cash Withdrawal", "Bank Transfer", "Client Bank Account (Transfer)", "Group Bank Account (Transfer)"]:
+                                if w_type == "Individual":
+                                    SavingsService.post_individual_savings(
+                                        uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
+                                        branch=BRANCH, officer=w_by, deposit_amount=0.0, withdrawal_amount=w_amt,
+                                        reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
+                                        posting_date=op_date
+                                    )
+                                elif w_type == "Group":
+                                    SavingsService.post_group_savings(
+                                        uow=uow_exec, group_name=wr_item.get("group_name") or w_name, branch=BRANCH,
+                                        officer=w_by, deposit_amount=0.0, withdrawal_amount=w_amt,
+                                        reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
+                                        posting_date=op_date
+                                    )
+                                elif w_type == "Misc":
+                                    SavingsService.post_misc_savings(
+                                        uow=uow_exec, client_id=wr_item.get("client_id") or "", client_name=w_name,
+                                        branch=BRANCH, officer=w_by, deposit_amount=0.0, withdrawal_amount=w_amt,
+                                        reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
+                                        posting_date=op_date
+                                    )
+                            elif w_op in ["Loan Offset", "Asset Downpayment", "Loan Repayment / Asset Debt Offset"]:
+                                SavingsService.post_loan_offset_from_savings(
+                                    uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
+                                    loan_id=wr_item.get("loan_id"), source_savings_type=s_type,
+                                    branch=BRANCH, officer=w_by, amount=w_amt,
+                                    reference=wr_item.get("reference"), remarks=f"[BM APPROVED {w_op.upper()}] {w_remarks}",
+                                    posting_date=op_date
+                                )
+                            elif w_op in ["Fee Offset", "Fee Payment from Savings"]:
+                                fee_code = "misc_fees"
+                                if "[FEE:" in w_remarks:
+                                    try: fee_code = w_remarks.split("[FEE:")[1].split("]")[0].strip()
+                                    except Exception: pass
+                                SavingsService.post_fee_offset_from_savings(
+                                    uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
+                                    source_savings_type=s_type, branch=BRANCH, officer=w_by,
+                                    fee_type=fee_code, amount=w_amt,
+                                    reference=wr_item.get("reference"), remarks=f"[BM APPROVED FEE OFFSET] {w_remarks}",
+                                    posting_date=op_date
+                                )
+                            elif w_op in ["Savings Transfer", "Transfer to Another Savings", "Another Member or Group Savings"]:
+                                dest_id = wr_item.get("client_id")
+                                dest_name = w_name
+                                dest_type = "IndividualSavings"
+                                if "[DEST_ID:" in w_remarks:
+                                    try:
+                                        dest_id = w_remarks.split("[DEST_ID:")[1].split("]")[0].strip()
+                                        dest_name = w_remarks.split("[DEST_NAME:")[1].split("]")[0].strip()
+                                        dest_type = w_remarks.split("[DEST_TYPE:")[1].split("]")[0].strip()
+                                    except Exception: pass
+                                SavingsService.transfer_savings(
+                                    uow=uow_exec, source_id=wr_item.get("client_id"), source_name=w_name,
+                                    source_type=s_type, destination_id=dest_id,
+                                    destination_name=dest_name, destination_type=dest_type,
+                                    branch=BRANCH, officer=w_by, amount=w_amt,
+                                    reference=wr_item.get("reference"), remarks=f"[BM APPROVED TRANSFER] {w_remarks}",
+                                    posting_date=op_date
+                                )
+                            elif w_op == "LAPS Transfer":
+                                SavingsService.transfer_to_laps(
+                                    uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
+                                    source_savings_type=s_type, branch=BRANCH, officer=w_by, amount=w_amt,
+                                    reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
+                                    posting_date=op_date
+                                )
+                            elif w_op == "LAPS Payout":
+                                cash_paid = (wr_item.get("payout_method") or "Cash") == "Cash"
+                                SavingsService.pay_laps(
+                                    uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
+                                    branch=BRANCH, officer=w_by, amount=w_amt, cash_paid=cash_paid,
+                                    reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
+                                    posting_date=op_date
+                                )
+
+                            uow_exec.client.table("withdrawal_requests").update({
+                                "status": "APPROVED",
+                                "approved_by": USER,
+                                "approved_at": datetime.now().isoformat()
+                            }).eq("id", w_id).execute()
+
+                        raw_wr_officers = set(str(w.get("requested_by") or "") for w in pending_withdrawals if w.get("requested_by"))
+                        wr_off_list = ["All Officers"] + sorted(list(raw_wr_officers))
+
+                        raw_wr_types = set(str(w.get("savings_type") or "") for w in pending_withdrawals if w.get("savings_type"))
+                        wr_type_list = ["All Types"] + sorted(list(raw_wr_types))
+
+                        w_fltr1, w_fltr2, w_fltr3 = st.columns([1.5, 1.5, 2])
+                        sel_wr_off = w_fltr1.selectbox("Filter Officer", wr_off_list, key="bm_fltr_wr_off")
+                        sel_wr_type = w_fltr2.selectbox("Filter Savings Type", wr_type_list, key="bm_fltr_wr_type")
+                        search_wr = w_fltr3.text_input("Search Client / Reference", placeholder="Type name or ref...", key="bm_fltr_wr_search").strip().lower()
+
+                        filtered_wrs = []
+                        for wr in pending_withdrawals:
+                            w_name = wr.get("client_name") or ""
+                            w_ref = wr.get("reference") or ""
+                            w_by = wr.get("requested_by") or ""
+                            w_type = wr.get("savings_type") or ""
+
+                            if sel_wr_off != "All Officers" and w_by != sel_wr_off:
+                                continue
+                            if sel_wr_type != "All Types" and w_type != sel_wr_type:
+                                continue
+                            if search_wr and (search_wr not in w_name.lower() and search_wr not in w_ref.lower()):
+                                continue
+                            filtered_wrs.append(wr)
+
+                        st.markdown("---")
+                        wb_c1, wb_c2, wb_c3 = st.columns([2, 1.2, 1.8])
+                        master_wr_date = wb_c1.date_input(
+                            "Batch Operational Withdrawal Date",
+                            value=bm_b_date,
+                            key="bm_master_wr_date",
+                            help="Default operational date applied to approved withdrawals."
+                        )
+                        sel_all_wrs = wb_c2.checkbox(f"Select All ({len(filtered_wrs)})", value=False, key="bm_sel_all_wrs_chk")
+                        with wb_c3:
+                            st.write("")
+                            batch_app_wr_btn = st.button(
+                                "Approve Selected Withdrawals",
+                                type="primary",
+                                key="btn_exec_batch_app_wrs",
+                                use_container_width=True,
+                                disabled=(len(filtered_wrs) == 0)
+                            )
+
+                        selected_wr_ids = []
+                        wr_dates_map = {}
+
+                        if not filtered_wrs:
+                            st.info("No pending withdrawal requests matching the selected filters.")
+                        else:
+                            for wr in filtered_wrs:
+                                wr_id = wr["id"]
+                                wr_type = wr.get("savings_type") or "Individual"
+                                wr_op = wr.get("operation_type") or "Cash Withdrawal"
+                                wr_amt = float(wr.get("amount", 0))
+                                wr_name = wr.get("client_name", "")
+                                wr_by = wr.get("requested_by", "Officer")
+                                wr_remarks = wr.get("remarks") or ""
+
+                                with st.container(border=True):
+                                    w_chk, w_info, w_amt, w_acts = st.columns([0.4, 2.8, 1.8, 2.5])
+                                    with w_chk:
+                                        st.write("")
+                                        is_w_chk = st.checkbox("", value=sel_all_wrs, key=f"chk_wr_{wr_id}")
+                                        if is_w_chk:
+                                            selected_wr_ids.append(wr_id)
+                                    with w_info:
+                                        st.markdown(f"**{wr_name}** &bull; `{wr_type}`")
+                                        st.caption(f"Op: **{wr_op}** | Requested by: **{wr_by}**")
+                                        if wr_remarks:
+                                            st.caption(f"*{wr_remarks}*")
+                                    with w_amt:
+                                        st.markdown(f"<div style='font-size: 1.15rem; font-weight: 700; color: #b91c1c;'>₦{wr_amt:,.2f}</div>", unsafe_allow_html=True)
+                                        st.caption("Withdrawal Amount")
+                                    with w_acts:
+                                        init_w_date = master_wr_date
+                                        if wr.get("operational_date"):
+                                            try: init_w_date = date.fromisoformat(str(wr["operational_date"])[:10])
+                                            except Exception: pass
+
+                                        card_w_date = st.date_input("Operational Date", value=init_w_date, key=f"wr_date_{wr_id}")
+                                        wr_dates_map[wr_id] = card_w_date
+
+                                        w_act1, w_act2 = st.columns(2)
+                                        with w_act1:
+                                            if st.button("Approve", key=f"approve_wr_{wr_id}", type="primary", use_container_width=True):
+                                                with st.spinner(f"Approving withdrawal for {wr_name}..."):
+                                                    try:
+                                                        with SupabaseUnitOfWork() as uow_single_wr:
+                                                            _execute_withdrawal_approval(uow_single_wr, wr, card_w_date)
+                                                        st.session_state["flash_msg"] = f"Withdrawal of ₦{wr_amt:,.2f} for {wr_name} approved and posted to ledger!"
+                                                        st.rerun()
+                                                    except Exception as ex:
+                                                        st.error(f"Approval failed: {str(ex)}")
+                                        with w_act2:
+                                            if st.button("Reject", key=f"reject_wr_{wr_id}", type="secondary", use_container_width=True):
+                                                st.session_state[f"rejecting_{wr_id}"] = True
+
+                                    if st.session_state.get(f"rejecting_{wr_id}"):
+                                        st.divider()
+                                        rej_reason = st.text_input("Rejection Reason", key=f"rej_reason_{wr_id}", placeholder="Why is this being rejected?")
+                                        if st.button("Confirm Rejection", key=f"confirm_rej_{wr_id}", type="primary"):
+                                            with st.spinner("Rejecting withdrawal request..."):
+                                                uow.client.table("withdrawal_requests").update({
+                                                    "status": "REJECTED",
+                                                    "approved_by": USER,
+                                                    "approved_at": datetime.now().isoformat(),
+                                                    "rejection_reason": rej_reason or "Rejected by BM"
+                                                }).eq("id", wr_id).execute()
+                                                st.session_state[f"rejecting_{wr_id}"] = False
+                                                st.session_state["flash_msg"] = f"Withdrawal request rejected for {wr_name}."
+                                                st.rerun()
+
+                        if batch_app_wr_btn:
+                            if not selected_wr_ids:
+                                st.warning("Please select at least one withdrawal request using the checkboxes.")
+                            else:
+                                with st.spinner(f"Approving {len(selected_wr_ids)} withdrawal request(s) and posting to financial ledger..."):
+                                    w_s_cnt = 0
+                                    w_f_cnt = 0
+                                    w_err_list = []
+                                    id_to_wr = {w["id"]: w for w in filtered_wrs}
+                                    with SupabaseUnitOfWork() as uow_batch_wr:
+                                        for wid in selected_wr_ids:
+                                            wr_item = id_to_wr.get(wid)
+                                            if not wr_item: continue
+                                            try:
+                                                use_d = wr_dates_map.get(wid, master_wr_date)
+                                                _execute_withdrawal_approval(uow_batch_wr, wr_item, use_d)
+                                                w_s_cnt += 1
+                                            except Exception as ex:
+                                                w_f_cnt += 1
+                                                w_err_list.append(f"Withdrawal #{wid[:8]}: {str(ex)}")
+                                    if w_s_cnt > 0:
+                                        st.session_state["flash_msg"] = f"Successfully approved {w_s_cnt} withdrawal(s) and posted to ledger!"
+                                    if w_f_cnt > 0:
+                                        st.error(f"Failed to approve {w_f_cnt} withdrawal(s): {', '.join(w_err_list)}")
+                                    st.rerun()
+
+                # 3. TAB: ERROR CORRECTIONS (REVERSALS)
+                if has_p_corr:
+                    with app_tabs[curr_tab_idx]:
+                        curr_tab_idx += 1
+
+                        raw_corr_users = set()
+                        for c in pending_corrections:
+                            u_data = c.get("app_users")
+                            u_name = (u_data.get("username") or u_data.get("full_name")) if isinstance(u_data, dict) else "Officer"
+                            raw_corr_users.add(str(u_name))
+                        corr_user_list = ["All Officers"] + sorted(list(raw_corr_users))
+
+                        raw_corr_types = set(str(c.get("record_type") or "") for c in pending_corrections if c.get("record_type"))
+                        corr_type_list = ["All Types"] + sorted(list(raw_corr_types))
+
+                        c_fltr1, c_fltr2, c_fltr3 = st.columns([1.5, 1.5, 2])
+                        sel_corr_user = c_fltr1.selectbox("Filter Requester", corr_user_list, key="bm_fltr_corr_user")
+                        sel_corr_type = c_fltr2.selectbox("Filter Transaction Type", corr_type_list, key="bm_fltr_corr_type")
+                        search_corr = c_fltr3.text_input("Search Ref / Reason", placeholder="Type reference or note...", key="bm_fltr_corr_search").strip().lower()
+
+                        filtered_corrs = []
+                        for corr in pending_corrections:
+                            u_data = corr.get("app_users")
+                            u_name = (u_data.get("username") or u_data.get("full_name")) if isinstance(u_data, dict) else "Officer"
+                            c_type = corr.get("record_type") or ""
+                            c_reason = corr.get("reason") or ""
+                            c_ref = str(corr.get("record_id") or "")
+
+                            if sel_corr_user != "All Officers" and u_name != sel_corr_user:
+                                continue
+                            if sel_corr_type != "All Types" and c_type != sel_corr_type:
+                                continue
+                            if search_corr and (search_corr not in c_reason.lower() and search_corr not in c_ref.lower()):
+                                continue
+                            filtered_corrs.append(corr)
+
+                        st.markdown("---")
+                        cb_c1, cb_c2 = st.columns([2, 2])
+                        sel_all_corrs = cb_c1.checkbox(f"Select All ({len(filtered_corrs)})", value=False, key="bm_sel_all_corrs_chk")
+                        batch_app_corr_btn = cb_c2.button(
+                            "Approve Selected Reversals",
+                            type="primary",
+                            key="btn_exec_batch_app_corrs",
+                            use_container_width=True,
+                            disabled=(len(filtered_corrs) == 0)
+                        )
+
+                        selected_corr_ids = []
+
+                        if not filtered_corrs:
+                            st.info("No pending error correction requests matching the selected filters.")
+                        else:
+                            for corr in filtered_corrs:
+                                c_id = corr["id"]
+                                c_type = corr.get("record_type") or "Transaction"
+                                c_reason = corr.get("reason") or ""
+                                u_data = corr.get("app_users")
+                                req_user = (u_data.get("full_name") or u_data.get("username")) if isinstance(u_data, dict) else "Officer"
+                                r_date = str(corr.get("created_at", ""))[:16].replace("T", " ")
+                                r_ref = str(corr.get("record_id", ""))[:8]
+
+                                type_label = f"[{c_type}]"
+
+                                with st.container(border=True):
+                                    c_chk, col_req_info, col_req_meta, col_req_acts = st.columns([0.4, 3.8, 1.8, 2])
+                                    with c_chk:
+                                        st.write("")
+                                        is_c_chk = st.checkbox("", value=sel_all_corrs, key=f"chk_corr_{c_id}")
+                                        if is_c_chk:
+                                            selected_corr_ids.append(c_id)
+                                    with col_req_info:
+                                        st.markdown(f"**{type_label}** &nbsp; `Ref: #{r_ref}`")
+                                        st.caption(f"Requested by: **{req_user}** &bull; Submitted: **{r_date}**")
+                                        st.markdown(f"**Reason:** *{c_reason}*")
+                                    with col_req_meta:
+                                        st.markdown("<div style='margin-top: 10px;'><span style='background: #FEF3C7; color: #92400E; padding: 3px 10px; border-radius: 9999px; font-size: 0.76rem; font-weight: 600;'>Pending Approval</span></div>", unsafe_allow_html=True)
+                                    with col_req_acts:
+                                        st.write("")
+                                        b_act1, b_act2 = st.columns(2)
+                                        with b_act1:
+                                            if st.button("Approve", key=f"app_corr_{c_id}", type="primary", use_container_width=True):
+                                                with st.spinner("Approving reversal and posting compensating ledger entry..."):
+                                                    try:
+                                                        from services.correction_service import CorrectionService
+                                                        with SupabaseUnitOfWork() as uow_corr:
+                                                            CorrectionService.approve_correction(uow_corr, c_id, approved_by=USER_ID if USER_ID else USER)
+                                                        st.session_state["flash_msg"] = "Reversal approved and executed atomically!"
+                                                        st.rerun()
+                                                    except Exception as e:
+                                                        st.error(f"Approval failed: {e}")
+                                        with b_act2:
+                                            if st.button("Reject", key=f"rej_corr_{c_id}", use_container_width=True):
+                                                with st.spinner("Rejecting correction request..."):
+                                                    try:
+                                                        from services.correction_service import CorrectionService
+                                                        with SupabaseUnitOfWork() as uow_corr:
+                                                            CorrectionService.reject_correction(uow_corr, c_id, approved_by=USER_ID if USER_ID else USER)
+                                                        st.session_state["flash_msg"] = "Reversal rejected."
+                                                        st.rerun()
+                                                    except Exception as e:
+                                                        st.error(f"Rejection failed: {e}")
+
+                        if batch_app_corr_btn:
+                            if not selected_corr_ids:
+                                st.warning("Please select at least one error correction request.")
+                            else:
+                                with st.spinner(f"Approving {len(selected_corr_ids)} reversal(s) and posting compensating ledger entries..."):
+                                    from services.correction_service import CorrectionService
+                                    c_s_cnt = 0
+                                    c_f_cnt = 0
+                                    c_err_list = []
+                                    with SupabaseUnitOfWork() as uow_batch_corr:
+                                        for cid in selected_corr_ids:
+                                            try:
+                                                CorrectionService.approve_correction(uow_batch_corr, cid, approved_by=USER_ID if USER_ID else USER)
+                                                c_s_cnt += 1
+                                            except Exception as ex:
+                                                c_f_cnt += 1
+                                                c_err_list.append(f"Correction #{cid[:8]}: {str(ex)}")
+                                    if c_s_cnt > 0:
+                                        st.session_state["flash_msg"] = f"Successfully approved {c_s_cnt} reversal(s)!"
+                                    if c_f_cnt > 0:
+                                        st.error(f"Failed to approve {c_f_cnt} reversal(s): {', '.join(c_err_list)}")
+                                    st.rerun()
+
                 st.markdown("<br>", unsafe_allow_html=True)
 
             # Section A: Branch Summary

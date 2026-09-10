@@ -14,6 +14,10 @@ class SupabaseSavingsRepository(BaseRepository):
         else:
             self.select_columns = "*, branches(name), app_users(username), clients(name)"
 
+    _branch_cache = {}
+    _officer_cache = {}
+    _group_cache = {}
+
     def _resolve_branch_id(self, branch_name: str) -> Optional[str]:
         if not branch_name:
             return None
@@ -25,13 +29,20 @@ class SupabaseSavingsRepository(BaseRepository):
             return None
         except (ValueError, TypeError, AttributeError):
             pass
+        b_key = str(branch_name).strip().lower()
+        if b_key in self._branch_cache:
+            return self._branch_cache[b_key]
         try:
             res = self.client.table("branches").select("branch_id").eq("name", branch_name).execute()
             if res.data:
-                return res.data[0]["branch_id"]
+                bid = res.data[0]["branch_id"]
+                self._branch_cache[b_key] = bid
+                return bid
             res_ci = self.client.table("branches").select("branch_id").ilike("name", branch_name).execute()
             if res_ci.data:
-                return res_ci.data[0]["branch_id"]
+                bid = res_ci.data[0]["branch_id"]
+                self._branch_cache[b_key] = bid
+                return bid
         except Exception:
             pass
         return None
@@ -47,13 +58,20 @@ class SupabaseSavingsRepository(BaseRepository):
             return None
         except (ValueError, TypeError, AttributeError):
             pass
+        u_key = str(username).strip().lower()
+        if u_key in self._officer_cache:
+            return self._officer_cache[u_key]
         try:
             res = self.client.table("app_users").select("id").eq("username", username).execute()
             if res.data:
-                return res.data[0]["id"]
+                oid = res.data[0]["id"]
+                self._officer_cache[u_key] = oid
+                return oid
             res_ci = self.client.table("app_users").select("id").ilike("username", username).execute()
             if res_ci.data:
-                return res_ci.data[0]["id"]
+                oid = res_ci.data[0]["id"]
+                self._officer_cache[u_key] = oid
+                return oid
         except Exception:
             pass
         return None
@@ -72,6 +90,10 @@ class SupabaseSavingsRepository(BaseRepository):
         except (ValueError, TypeError, AttributeError):
             pass
 
+        g_key = str_name.lower()
+        if g_key in self._group_cache:
+            return self._group_cache[g_key]
+
         # Check for disambiguated label: "GroupName (#Number - MeetingDay)" or "GroupName (#Number)"
         m = re.match(r"^(.+?)\s*\(\s*#(\d+)(?:\s*-\s*[^)]+)?\s*\)$", str_name)
         if m:
@@ -80,10 +102,14 @@ class SupabaseSavingsRepository(BaseRepository):
             try:
                 res = self.client.table("groups").select("group_id").eq("group_number", group_num).ilike("name", base_name).execute()
                 if res.data:
-                    return res.data[0]["group_id"]
+                    gid = res.data[0]["group_id"]
+                    self._group_cache[g_key] = gid
+                    return gid
                 res_num = self.client.table("groups").select("group_id").eq("group_number", group_num).execute()
                 if res_num.data:
-                    return res_num.data[0]["group_id"]
+                    gid = res_num.data[0]["group_id"]
+                    self._group_cache[g_key] = gid
+                    return gid
             except Exception:
                 pass
             str_name = base_name
@@ -92,20 +118,28 @@ class SupabaseSavingsRepository(BaseRepository):
             # 1. Exact name match
             res = self.client.table("groups").select("group_id").eq("name", str_name).execute()
             if res.data:
-                return res.data[0]["group_id"]
+                gid = res.data[0]["group_id"]
+                self._group_cache[g_key] = gid
+                return gid
             # 2. Case-insensitive name match
             res_ci = self.client.table("groups").select("group_id").ilike("name", str_name).execute()
             if res_ci.data:
-                return res_ci.data[0]["group_id"]
+                gid = res_ci.data[0]["group_id"]
+                self._group_cache[g_key] = gid
+                return gid
             # 3. Fallback to group_number check if numeric
             if str_name.isdigit():
                 res_num = self.client.table("groups").select("group_id").eq("group_number", str_name).execute()
                 if res_num.data:
-                    return res_num.data[0]["group_id"]
+                    gid = res_num.data[0]["group_id"]
+                    self._group_cache[g_key] = gid
+                    return gid
             # 4. Partial substring match
             res_part = self.client.table("groups").select("group_id").ilike("name", f"%{str_name}%").execute()
             if res_part.data:
-                return res_part.data[0]["group_id"]
+                gid = res_part.data[0]["group_id"]
+                self._group_cache[g_key] = gid
+                return gid
         except Exception:
             pass
         return None

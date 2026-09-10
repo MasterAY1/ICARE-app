@@ -160,7 +160,7 @@ class ClientStatusService:
         )
 
     @classmethod
-    def on_loan_repayment_check(cls, uow: UnitOfWork, client_id: str, loan_id: str, defer_operations: Optional[List[Dict[str, Any]]] = None):
+    def on_loan_repayment_check(cls, uow: UnitOfWork, client_id: str, loan_id: str, defer_operations: Optional[List[Dict[str, Any]]] = None, preloaded_loan: Optional[Dict[str, Any]] = None, preloaded_repayments: Optional[List[Dict[str, Any]]] = None):
         """
         Checks if loan is fully paid (outstanding <= 0).
         If fully paid, auto transitions:
@@ -170,17 +170,23 @@ class ClientStatusService:
         """
         try:
             # 1. Fetch the loan details
-            l_res = uow.client.table("loans").select("active_credit, total_due, loan_amount").eq("loan_id", loan_id).execute()
-            if not l_res.data:
-                return
+            if preloaded_loan:
+                l = preloaded_loan
+            else:
+                l_res = uow.client.table("loans").select("active_credit, total_due, loan_amount").eq("loan_id", loan_id).execute()
+                if not l_res.data:
+                    return
+                l = l_res.data[0]
 
-            l = l_res.data[0]
             act_cred = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
             tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
 
             # 2. Fetch all repayments for this loan
-            rep_res = uow.client.table("repayments").select("amount_paid").eq("loan_id", loan_id).execute()
-            tot_paid = sum(float(r.get("amount_paid") or 0.0) for r in (rep_res.data or []))
+            if preloaded_repayments is not None:
+                tot_paid = sum(float(r.get("amount_paid") or 0.0) for r in preloaded_repayments)
+            else:
+                rep_res = uow.client.table("repayments").select("amount_paid").eq("loan_id", loan_id).execute()
+                tot_paid = sum(float(r.get("amount_paid") or 0.0) for r in (rep_res.data or []))
             outstanding = max(0.0, tot_due_base - tot_paid)
 
             if outstanding <= 0.0 and act_cred > 0:

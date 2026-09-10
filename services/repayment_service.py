@@ -8,7 +8,7 @@ from services.posting_engine import FinancialPostingEngine
 
 class RepaymentService:
     @staticmethod
-    def post_repayment(uow: SupabaseUnitOfWork, repayment: Repayment) -> Repayment:
+    def post_repayment(uow: SupabaseUnitOfWork, repayment: Repayment, known_exists: Optional[bool] = None, preloaded_loan: Optional[dict] = None, preloaded_repayments: Optional[list] = None) -> Repayment:
         # Check Business Date Freeze & Working Day (BR-DATE-002)
         from services.business_date_service import BusinessDateService
         rep_date = getattr(repayment, 'payment_date', None) or getattr(repayment, 'date', None)
@@ -21,7 +21,9 @@ class RepaymentService:
 
         # 1. Persist operational data
         exists = False
-        if repayment.id:
+        if known_exists is not None:
+            exists = known_exists
+        elif repayment.id:
             try:
                 check_res = uow.client.table("repayments").select("id").eq("id", repayment.id).execute()
                 if check_res.data:
@@ -190,14 +192,14 @@ class RepaymentService:
         try:
             if repayment.client_id and repayment.loan_id:
                 from services.client_status_service import ClientStatusService
-                ClientStatusService.on_loan_repayment_check(uow, repayment.client_id, repayment.loan_id)
+                ClientStatusService.on_loan_repayment_check(uow, repayment.client_id, repayment.loan_id, preloaded_loan=preloaded_loan, preloaded_repayments=preloaded_repayments)
         except Exception as ex:
             print(f"[REPAYMENT TRACE] Client status lifecycle check failed: {ex}")
 
         # Check and record Full Payoff and Excess Payment in dedicated table (BR-DASH-005, BR-DASH-007)
         try:
             if repayment.loan_id and repayment.loan_repayment_amount > 0:
-                cls._record_payoff_and_excess_if_applicable(uow, repayment)
+                cls._record_payoff_and_excess_if_applicable(uow, repayment, preloaded_loan=preloaded_loan, preloaded_repayments=preloaded_repayments)
         except Exception as ex_pe:
             print(f"[REPAYMENT TRACE] Payoff/excess recording failed: {ex_pe}")
 
@@ -341,7 +343,7 @@ class RepaymentService:
         if amt <= 0.0:
             return {
                 "status": "NOT_PAID",
-                "status_badge": "❌ NOT PAID",
+                "status_badge": "NOT PAID",
                 "overdue_shortfall": due,
                 "true_excess": 0.0,
                 "arrears_recovered": 0.0,
@@ -352,7 +354,7 @@ class RepaymentService:
             # If nothing was currently due (e.g. advance prepayment)
             return {
                 "status": "EXCESS",
-                "status_badge": "🔵 EXCESS",
+                "status_badge": "EXCESS",
                 "overdue_shortfall": 0.0,
                 "true_excess": amt,
                 "arrears_recovered": 0.0,
@@ -361,7 +363,7 @@ class RepaymentService:
 
         diff = amt - due
         if abs(diff) < 0.01:
-            badge = "✅ PAID (ARREARS CLEARED)" if has_overdue else "✅ PAID"
+            badge = "PAID (ARREARS CLEARED)" if has_overdue else "PAID"
             return {
                 "status": "PAID",
                 "status_badge": badge,
@@ -373,7 +375,7 @@ class RepaymentService:
         elif diff > 0.01:
             return {
                 "status": "EXCESS",
-                "status_badge": "🔵 EXCESS",
+                "status_badge": "EXCESS",
                 "overdue_shortfall": 0.0,
                 "true_excess": round(diff, 2),
                 "arrears_recovered": max(0.0, due - current_installment) if has_overdue else 0.0,
@@ -382,7 +384,7 @@ class RepaymentService:
         else: # amt < due
             return {
                 "status": "PART_PAID",
-                "status_badge": "⚠️ PART PAID",
+                "status_badge": "PART PAID",
                 "overdue_shortfall": round(due - amt, 2),
                 "true_excess": 0.0,
                 "arrears_recovered": min(amt, max(0.0, due - current_installment)) if has_overdue else 0.0,
@@ -390,19 +392,22 @@ class RepaymentService:
             }
 
     @classmethod
-    def _record_payoff_and_excess_if_applicable(cls, uow: SupabaseUnitOfWork, repayment: Repayment):
+    def _record_payoff_and_excess_if_applicable(cls, uow: SupabaseUnitOfWork, repayment: Repayment, preloaded_loan: Optional[dict] = None, preloaded_repayments: Optional[list] = None):
         """
-        Determines if a repayment triggers a Full Payoff (outstanding balance = 0)
+        Detects if a repayment triggered a Full Loan Payoff (remaining balance reaches ₦0)
         and/or an Excess Payment (amount_paid > expected_installment), and persists
         the authoritative record in public.loan_payoff_excess_records (BR-DASH-005).
         """
         from domain.entities.payoff_excess_record import LoanPayoffExcessRecord
         from services.posting_engine import FinancialPostingEngine
 
-        l_res = uow.client.table("loans").select("loan_id, client_id, active_credit, total_due, loan_amount, loan_repay, branch_id, officer_id, status").eq("loan_id", repayment.loan_id).execute()
-        if not l_res.data:
-            return
-        loan = l_res.data[0]
+        if preloaded_loan:
+            loan = preloaded_loan
+        else:
+            l_res = uow.client.table("loans").select("loan_id, client_id, active_credit, total_due, loan_amount, loan_repay, branch_id, officer_id, status").eq("loan_id", repayment.loan_id).execute()
+            if not l_res.data:
+                return
+            loan = l_res.data[0]
 
         act_cred = float(loan.get("active_credit") or loan.get("loan_amount") or 0.0)
         tot_due_base = float(loan.get("total_due") if loan.get("total_due") is not None else act_cred)
@@ -412,8 +417,11 @@ class RepaymentService:
             exp_inst = loan_repay
 
         # Query all repayments for this loan to determine lifetime total paid
-        rep_res = uow.client.table("repayments").select("id, amount_paid").eq("loan_id", repayment.loan_id).execute()
-        all_reps = rep_res.data or []
+        if preloaded_repayments is not None:
+            all_reps = preloaded_repayments
+        else:
+            rep_res = uow.client.table("repayments").select("id, amount_paid").eq("loan_id", repayment.loan_id).execute()
+            all_reps = rep_res.data or []
         tot_paid_all = sum(float(r.get("amount_paid") or 0.0) for r in all_reps)
 
         paid_amt = float(repayment.loan_repayment_amount or repayment.amount_paid or 0.0)

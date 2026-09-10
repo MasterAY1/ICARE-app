@@ -343,7 +343,7 @@ class ScheduleService:
         return (sum(float(row["paid_amount"] or 0) for row in res.data), True)
 
     @staticmethod
-    def record_repayment(uow: SupabaseUnitOfWork, loan_id: str, amount: float, paid_date: date = None) -> float:
+    def record_repayment(uow: SupabaseUnitOfWork, loan_id: str, amount: float, paid_date: date = None, cached_schedule_rows: list = None) -> float:
         """
         Applies a manual repayment amount to the loan schedule in chronological sequence.
         Returns the excess amount (if any) that can reduce outstanding principal.
@@ -351,14 +351,19 @@ class ScheduleService:
         if not paid_date:
             paid_date = date.today()
 
-        # Load schedule sorted by installment_number
-        res = uow.client.table("loan_schedule").select("*").eq("loan_id", loan_id).order("installment_number").execute()
-        if not res.data:
+        # Load schedule sorted by installment_number (from cache if provided)
+        if cached_schedule_rows is not None:
+            schedule_rows = sorted(cached_schedule_rows, key=lambda r: int(r.get("installment_number") or 0))
+        else:
+            res = uow.client.table("loan_schedule").select("*").eq("loan_id", loan_id).order("installment_number").execute()
+            schedule_rows = res.data or []
+
+        if not schedule_rows:
             return amount
 
         remaining_repayment = amount
 
-        for row in res.data:
+        for row in schedule_rows:
             if remaining_repayment <= 0:
                 break
 
