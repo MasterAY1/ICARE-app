@@ -1875,6 +1875,16 @@ def save_repayments(data_list, batch_id=None):
                     )
                     any_new_records = True
                     report["new_processed"] += 1
+                    if repayments_cache is not None and not is_rep_done and l_rep > 0:
+                        cid_raw = data.get('Client ID') or data.get('client_id')
+                        c_uuid = client_cache.get(str(cid_raw).strip(), cid_raw) if client_cache else cid_raw
+                        a_lid = loan_cache.get(c_uuid) if loan_cache else None
+                        if a_lid:
+                            repayments_cache.setdefault(a_lid, []).append({
+                                'id': data.get('tx_id'),
+                                'amount_paid': l_rep,
+                                'loan_id': a_lid
+                            })
                     status_lbl = "Recorded (NOT PAID)" if (is_not_paid_mark and l_rep == 0) else "Processed"
                     if (is_rep_done or is_sav_done) and not (is_not_paid_mark and l_rep == 0):
                         status_lbl = "Completed (Partial Recovery)"
@@ -4404,8 +4414,20 @@ elif page == "Loan Origination":
                                 is_blocked = False
                                 for L in res_existing.data + res_active.data:
                                     if L.get("product_category", "Finance") == check_prod_cat and float(L.get("loan_amount", 0)) > 0:
+                                        # If it's marked Active, verify whether it truly has an outstanding balance (BR-CLI-005)
+                                        if L.get("status") == "Active":
+                                            lid = L.get("loan_id")
+                                            act_c = float(L.get("active_credit") or L.get("loan_amount") or 0.0)
+                                            tot_d = float(L.get("total_due") if L.get("total_due") is not None else act_c)
+                                            rep_res = uow.client.table("repayments").select("amount_paid").eq("loan_id", lid).execute()
+                                            tot_p = sum(float(r.get("amount_paid") or 0.0) for r in (rep_res.data or []))
+                                            if max(0.0, tot_d - tot_p) <= 0.0:
+                                                # Auto-heal: loan is fully paid, transition loan and client to Completed
+                                                from services.client_status_service import ClientStatusService
+                                                ClientStatusService.on_loan_repayment_check(uow, selected_client_id, lid)
+                                                continue
                                         is_blocked = True
-                                        
+
                                 if is_blocked:
                                     st.error(f"Cannot submit: This client already has an Active or Pending {product_category} loan!")
                                     st.stop()

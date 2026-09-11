@@ -192,7 +192,16 @@ class RepaymentService:
         try:
             if repayment.client_id and repayment.loan_id:
                 from services.client_status_service import ClientStatusService
-                ClientStatusService.on_loan_repayment_check(uow, repayment.client_id, repayment.loan_id, preloaded_loan=preloaded_loan, preloaded_repayments=preloaded_repayments)
+                cur_rep_amt = float(repayment.loan_repayment_amount or repayment.amount_paid or 0.0)
+                ClientStatusService.on_loan_repayment_check(
+                    uow,
+                    repayment.client_id,
+                    repayment.loan_id,
+                    preloaded_loan=preloaded_loan,
+                    preloaded_repayments=preloaded_repayments,
+                    current_repayment_amount=cur_rep_amt,
+                    current_repayment_id=getattr(repayment, 'id', None)
+                )
         except Exception as ex:
             print(f"[REPAYMENT TRACE] Client status lifecycle check failed: {ex}")
 
@@ -422,10 +431,18 @@ class RepaymentService:
         else:
             rep_res = uow.client.table("repayments").select("id, amount_paid").eq("loan_id", repayment.loan_id).execute()
             all_reps = rep_res.data or []
-        tot_paid_all = sum(float(r.get("amount_paid") or 0.0) for r in all_reps)
 
         paid_amt = float(repayment.loan_repayment_amount or repayment.amount_paid or 0.0)
-        prior_paid = max(0.0, tot_paid_all - paid_amt)
+        rep_id = getattr(repayment, 'id', None)
+        has_current = any(str(r.get("id")) == str(rep_id) for r in all_reps if r.get("id")) and rep_id is not None
+
+        if has_current:
+            tot_paid_all = sum(float(r.get("amount_paid") or 0.0) for r in all_reps)
+            prior_paid = max(0.0, tot_paid_all - paid_amt)
+        else:
+            prior_paid = sum(float(r.get("amount_paid") or 0.0) for r in all_reps)
+            tot_paid_all = prior_paid + paid_amt
+
         rem_before = max(0.0, tot_due_base - prior_paid)
         rem_after = max(0.0, tot_due_base - tot_paid_all)
 

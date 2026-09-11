@@ -99,6 +99,7 @@ class ClientStatusService:
         }
 
         client_update_record = {
+            "status": new_status_name,
             "status_id": target_status_id,
             "status_changed_at": now_str,
             "status_changed_by": changed_by,
@@ -160,12 +161,22 @@ class ClientStatusService:
         )
 
     @classmethod
-    def on_loan_repayment_check(cls, uow: UnitOfWork, client_id: str, loan_id: str, defer_operations: Optional[List[Dict[str, Any]]] = None, preloaded_loan: Optional[Dict[str, Any]] = None, preloaded_repayments: Optional[List[Dict[str, Any]]] = None):
+    def on_loan_repayment_check(
+        cls,
+        uow: UnitOfWork,
+        client_id: str,
+        loan_id: str,
+        defer_operations: Optional[List[Dict[str, Any]]] = None,
+        preloaded_loan: Optional[Dict[str, Any]] = None,
+        preloaded_repayments: Optional[List[Dict[str, Any]]] = None,
+        current_repayment_amount: float = 0.0,
+        current_repayment_id: Optional[str] = None
+    ):
         """
         Checks if loan is fully paid (outstanding <= 0).
         If fully paid, auto transitions:
           1. loans.status -> 'Completed'
-          2. clients.status_id -> 'Completed' (if no other active loans exist)
+          2. clients.status_id & clients.status -> 'Completed' (if no other active loans exist)
         (BR-CLI-003.3 & BR-CLI-005)
         """
         try:
@@ -183,10 +194,17 @@ class ClientStatusService:
 
             # 2. Fetch all repayments for this loan
             if preloaded_repayments is not None:
+                has_cur = any(str(r.get("id")) == str(current_repayment_id) for r in preloaded_repayments if r.get("id")) if current_repayment_id else False
                 tot_paid = sum(float(r.get("amount_paid") or 0.0) for r in preloaded_repayments)
+                if not has_cur and current_repayment_amount > 0:
+                    tot_paid += current_repayment_amount
             else:
-                rep_res = uow.client.table("repayments").select("amount_paid").eq("loan_id", loan_id).execute()
-                tot_paid = sum(float(r.get("amount_paid") or 0.0) for r in (rep_res.data or []))
+                rep_res = uow.client.table("repayments").select("id, amount_paid").eq("loan_id", loan_id).execute()
+                all_r = rep_res.data or []
+                has_cur = any(str(r.get("id")) == str(current_repayment_id) for r in all_r if r.get("id")) if current_repayment_id else False
+                tot_paid = sum(float(r.get("amount_paid") or 0.0) for r in all_r)
+                if not has_cur and current_repayment_amount > 0:
+                    tot_paid += current_repayment_amount
             outstanding = max(0.0, tot_due_base - tot_paid)
 
             if outstanding <= 0.0 and act_cred > 0:
