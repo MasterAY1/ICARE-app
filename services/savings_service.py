@@ -1043,13 +1043,23 @@ class SavingsService:
         orig = res.data[0]
         operations = []
 
+        dep_amt = float(orig.get("deposit_amount") or 0.0)
+        wd_amt = float(orig.get("withdrawal_amount") or 0.0)
+
+        # Guard: Cannot reverse a transaction with zero or negative amount, or an existing reversal
+        if dep_amt <= 0 and wd_amt <= 0:
+            raise ValueError(f"Cannot reverse savings record {original_savings_id}: transaction has no positive amount or is already a reversal.")
+
+        # Guard: Prevent duplicate reversals
+        negs = uow.client.table(table_name).select("id, remarks").lt("deposit_amount", 0).execute().data or []
+        existing_rev = [r for r in negs if str(original_savings_id) in str(r.get("remarks") or "")]
+        if existing_rev:
+            raise ValueError(f"Savings transaction {original_savings_id} has already been reversed by record #{existing_rev[0]['id'][:8]}.")
+
         # 1. Operational data: Compensating negative record
         new_id = str(uuid.uuid4())
         comp_record = orig.copy()
         comp_record["id"] = new_id
-
-        dep_amt = float(comp_record.get("deposit_amount") or 0.0)
-        wd_amt = float(comp_record.get("withdrawal_amount") or 0.0)
 
         if dep_amt > 0:
             comp_record["deposit_amount"] = -abs(dep_amt)

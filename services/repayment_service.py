@@ -236,15 +236,24 @@ class RepaymentService:
         if not res.data:
             raise ValueError(f"Repayment {original_repayment_id} not found.")
         orig = res.data[0]
-
         operations = []
+
+        orig_amount = float(orig.get("amount_paid") or 0.0)
+
+        # Guard: Cannot reverse a transaction with zero or negative amount, or an existing reversal
+        if orig_amount <= 0:
+            raise ValueError(f"Cannot reverse repayment {original_repayment_id}: amount must be positive and cannot be an existing reversal.")
+
+        # Guard: Prevent duplicate reversals
+        negs = uow.client.table("repayments").select("id, note").lt("amount_paid", 0).execute().data or []
+        existing_rev = [r for r in negs if str(original_repayment_id) in str(r.get("note") or "")]
+        if existing_rev:
+            raise ValueError(f"Repayment {original_repayment_id} has already been reversed by record #{existing_rev[0]['id'][:8]}.")
 
         # 1. Operational data: Compensating negative record
         new_id = str(uuid.uuid4())
         comp_record = orig.copy()
         comp_record["id"] = new_id
-        
-        orig_amount = float(comp_record.get("amount_paid") or 0.0)
         comp_record["amount_paid"] = -abs(orig_amount)
         
         if comp_record.get("savings_amount"):

@@ -6175,10 +6175,93 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 sav_list = res_sav.data or []
                 gsav_list = res_gsav.data or []
                 
-                # Filter deposits (ignore pure withdrawals here)
-                sav_dep_list = [s for s in sav_list if float(s.get("deposit_amount") or 0) > 0]
+                # Fetch all reversed IDs and reversal entry IDs to ensure reversed transactions are omitted
+                approved_reversed_ids = set()
+                reversal_entry_ids = set()
+                
+                try:
+                    res_app_corr = uow_hist.client.table("correction_requests").select("record_id").eq("status", "Approved").execute()
+                    for c in (res_app_corr.data or []):
+                        if c.get("record_id"):
+                            approved_reversed_ids.add(str(c["record_id"]))
+                except Exception:
+                    pass
+
+                try:
+                    res_neg_sav = uow_hist.client.table("individual_savings").select("id, remarks").lt("deposit_amount", 0).execute()
+                    for r in (res_neg_sav.data or []):
+                        reversal_entry_ids.add(str(r["id"]))
+                        rem = str(r.get("remarks") or "")
+                        if "REVERSAL of " in rem:
+                            try:
+                                target_id = rem.split("REVERSAL of ")[1].split(".")[0].split(" ")[0].strip()
+                                if target_id:
+                                    approved_reversed_ids.add(target_id)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+                try:
+                    res_neg_reps = uow_hist.client.table("repayments").select("id, note").lt("amount_paid", 0).execute()
+                    for r in (res_neg_reps.data or []):
+                        reversal_entry_ids.add(str(r["id"]))
+                        note_text = str(r.get("note") or "")
+                        if "REVERSAL of " in note_text:
+                            try:
+                                target_id = note_text.split("REVERSAL of ")[1].split(".")[0].split(" ")[0].strip()
+                                if target_id:
+                                    approved_reversed_ids.add(target_id)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+                # Filter repayments: exclude reversed records, negative reversals, and correction records
+                clean_reps_list = []
+                reversed_reps_list = []
+                for r in reps_list:
+                    r_id = str(r.get("id") or "")
+                    r_note = str(r.get("note") or "")
+                    amt_paid = float(r.get("amount_paid") or 0)
+                    is_rev = (
+                        r_id in approved_reversed_ids or
+                        r_id in reversal_entry_ids or
+                        amt_paid < 0 or
+                        "REVERSAL of" in r_note or
+                        "CORRECTION:" in r_note
+                    )
+                    if is_rev:
+                        reversed_reps_list.append(r)
+                    else:
+                        clean_reps_list.append(r)
+                reps_list = clean_reps_list
+
+                # Filter savings: exclude reversed deposits, negative reversals, and correction records
+                clean_sav_list = []
+                reversed_sav_list = []
+                for s in sav_list:
+                    s_id = str(s.get("id") or "")
+                    s_rem = str(s.get("remarks") or "")
+                    dep_amt = float(s.get("deposit_amount") or 0)
+                    is_rev = (
+                        s_id in approved_reversed_ids or
+                        s_id in reversal_entry_ids or
+                        dep_amt <= 0 or
+                        "REVERSAL of" in s_rem or
+                        "CORRECTION:" in s_rem
+                    )
+                    if is_rev:
+                        reversed_sav_list.append(s)
+                    else:
+                        clean_sav_list.append(s)
+
+                sav_dep_list = clean_sav_list
                 for g in gsav_list:
-                    if float(g.get("deposit_amount") or 0) > 0:
+                    g_id = str(g.get("id") or "")
+                    g_rem = str(g.get("remarks") or "")
+                    dep_amt = float(g.get("deposit_amount") or 0)
+                    if dep_amt > 0 and g_id not in approved_reversed_ids and g_id not in reversal_entry_ids and "REVERSAL of" not in g_rem and "CORRECTION:" not in g_rem:
                         g_name = (g.get("groups") or {}).get("name") if isinstance(g.get("groups"), dict) else "Group"
                         sav_dep_list.append({
                             "id": g.get("id"),
@@ -6190,11 +6273,11 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             "remarks": g.get("remarks") or "Group Communal Savings",
                             "reference": g.get("reference")
                         })
-                
+
                 tot_reps_amt = sum(float(r.get("amount_paid") or 0) for r in reps_list)
                 tot_sav_amt = sum(float(s.get("deposit_amount") or 0) for s in sav_dep_list)
                 grand_total_cash = tot_reps_amt + tot_sav_amt
-                
+
                 # Summary KPIs
                 paid_reps_cnt = sum(1 for r in reps_list if float(r.get("amount_paid") or 0) > 0)
                 not_paid_reps_cnt = sum(1 for r in reps_list if str(r.get("payment_status")).upper() == "NOT_PAID" or float(r.get("amount_paid") or 0) == 0)
@@ -6309,6 +6392,39 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                     else:
                         st.info(f"No savings deposits recorded on {hist_date_str}.")
 
+            # Collapsed audit expander: Shows reversed transactions on this date for transparency without affecting collection totals
+            tot_rev_on_date = len(reversed_reps_list) + len(reversed_sav_list)
+            if tot_rev_on_date > 0:
+                with st.expander(f"Reversed Records on this Date (Audit Trail: {tot_rev_on_date})", expanded=False):
+                    st.caption("These transactions were reversed and are omitted from active collections and daily totals.")
+                    rev_display_rows = []
+                    for rr in reversed_reps_list:
+                        c_dict = rr.get("clients") or {} if isinstance(rr.get("clients"), dict) else {}
+                        c_name = c_dict.get("name") or "Unknown"
+                        c_code = c_dict.get("client_code") or ""
+                        rev_display_rows.append({
+                            "Type": "Loan Repayment",
+                            "Client": f"{c_name} ({c_code})",
+                            "Amount": f"₦{abs(float(rr.get('amount_paid') or 0)):,.2f}",
+                            "Status": "Reversed",
+                            "Ref ID": str(rr.get("id", ""))[:8],
+                            "Note / Reason": rr.get("note") or ""
+                        })
+                    for rs in reversed_sav_list:
+                        c_dict = rs.get("clients") or {} if isinstance(rs.get("clients"), dict) else {}
+                        c_name = c_dict.get("name") or "Unknown"
+                        c_code = c_dict.get("client_code") or ""
+                        rev_display_rows.append({
+                            "Type": "Savings Deposit",
+                            "Client": f"{c_name} ({c_code})",
+                            "Amount": f"₦{abs(float(rs.get('deposit_amount') or 0)):,.2f}",
+                            "Status": "Reversed",
+                            "Ref ID": str(rs.get("id", ""))[:8],
+                            "Note / Reason": rs.get("remarks") or ""
+                        })
+                    if rev_display_rows:
+                        st.dataframe(pd.DataFrame(rev_display_rows), use_container_width=True, hide_index=True)
+
         with col_tab3:
             st.markdown("### Error Correction & Reversal Hub")
             st.caption("Flag an erroneous collection (loan repayment or savings deposit) for Branch Manager approval.")
@@ -6364,6 +6480,46 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 opts = {}
                 details_map = {}
 
+                # Fetch all record IDs that already have a pending or approved correction request, or are reversed
+                blocked_corr_ids = set()
+                try:
+                    res_active_reqs = uow_corr.client.table("correction_requests").select("record_id").in_("status", ["Pending", "Approved"]).execute()
+                    for r_req in (res_active_reqs.data or []):
+                        if r_req.get("record_id"):
+                            blocked_corr_ids.add(str(r_req["record_id"]))
+                except Exception:
+                    pass
+
+                try:
+                    res_neg_s = uow_corr.client.table("individual_savings").select("id, remarks").lt("deposit_amount", 0).execute()
+                    for ns in (res_neg_s.data or []):
+                        blocked_corr_ids.add(str(ns["id"]))
+                        rem_t = str(ns.get("remarks") or "")
+                        if "REVERSAL of " in rem_t:
+                            try:
+                                target_id = rem_t.split("REVERSAL of ")[1].split(".")[0].split(" ")[0].strip()
+                                if target_id:
+                                    blocked_corr_ids.add(target_id)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+                try:
+                    res_neg_r = uow_corr.client.table("repayments").select("id, note").lt("amount_paid", 0).execute()
+                    for nr in (res_neg_r.data or []):
+                        blocked_corr_ids.add(str(nr["id"]))
+                        note_t = str(nr.get("note") or "")
+                        if "REVERSAL of " in note_t:
+                            try:
+                                target_id = note_t.split("REVERSAL of ")[1].split(".")[0].split(" ")[0].strip()
+                                if target_id:
+                                    blocked_corr_ids.add(target_id)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
                 if corr_category == "Loan Repayments":
                     q_reps = uow_corr.client.table("repayments").select(
                         "id, client_id, amount_paid, expected_amount, date, note, officer_id, branch_id, clients(name, client_code)"
@@ -6385,10 +6541,16 @@ Status: CONFIRMED & POSTED TO LEDGER"""
 
                     for r in records:
                         tx_id = str(r.get("id", ""))
+                        amt = float(r.get("amount_paid") or 0.0)
+                        r_note = str(r.get("note") or "")
+
+                        # Skip already requested, already reversed, or negative/zero records
+                        if tx_id in blocked_corr_ids or amt <= 0 or "REVERSAL of" in r_note or "CORRECTION:" in r_note:
+                            continue
+
                         c_dict = r.get("clients") or {} if isinstance(r.get("clients"), dict) else {}
                         c_name = c_dict.get("name") or str(r.get("client_id") or "Unknown")
                         c_code = c_dict.get("client_code") or "NO-CODE"
-                        amt = float(r.get("amount_paid") or 0.0)
                         tx_date = str(r.get("date", ""))[:10]
 
                         if corr_search:
@@ -6436,10 +6598,16 @@ Status: CONFIRMED & POSTED TO LEDGER"""
 
                     for s in records:
                         tx_id = str(s.get("id", ""))
+                        amt = float(s.get("deposit_amount") or 0.0)
+                        s_rem = str(s.get("remarks") or "")
+
+                        # Skip already requested, already reversed, or negative/zero records
+                        if tx_id in blocked_corr_ids or amt <= 0 or "REVERSAL of" in s_rem or "CORRECTION:" in s_rem:
+                            continue
+
                         c_dict = s.get("clients") or {} if isinstance(s.get("clients"), dict) else {}
                         c_name = c_dict.get("name") or str(s.get("client_id") or "Unknown")
                         c_code = c_dict.get("client_code") or "NO-CODE"
-                        amt = float(s.get("deposit_amount") or 0.0)
                         tx_date = str(s.get("posting_date", ""))[:10]
 
                         if corr_search:
@@ -7616,7 +7784,7 @@ elif page == "Withdrawal Operations":
                                     with st.spinner(f"Approving withdrawal for {wr_name}..."):
                                         try:
                                             from services.savings_service import SavingsService
-                                            effective_op_date = wr.get("operational_date") or wr_approval_op_date
+                                            effective_op_date = wr_approval_op_date or wr.get("operational_date")
                                             if isinstance(effective_op_date, str):
                                                 effective_op_date = date.fromisoformat(effective_op_date[:10])
                                             with SupabaseUnitOfWork() as uow_wr:
@@ -10044,12 +10212,28 @@ elif page == "CO Cashbook":
         try:
             with SupabaseUnitOfWork() as uow_corr:
                 # Query recent EOD events for this officer/branch
-                q_events = uow_corr.client.table("event_store").select("*")                     .in_("event_type", ["FeeCharged", "ExpenseRecorded", "BankDeposited", "BankWithdrawn"])                     .order("created_at", desc=True).limit(30)
+                q_events = uow_corr.client.table("event_store").select("*") \
+                    .in_("event_type", ["FeeCharged", "ExpenseRecorded", "BankDeposited", "BankWithdrawn"]) \
+                    .order("created_at", desc=True).limit(30)
                 res_events = q_events.execute()
                 raw_events = res_events.data or []
                 
+                # Fetch active/approved requests to block duplicate flags
+                cb_blocked = set()
+                try:
+                    res_c_req = uow_corr.client.table("correction_requests").select("record_id").in_("status", ["Pending", "Approved"]).execute()
+                    for cr in (res_c_req.data or []):
+                        if cr.get("record_id"):
+                            cb_blocked.add(str(cr["record_id"]))
+                except Exception:
+                    pass
+
                 opts = {}
                 for ev in raw_events:
+                    ev_id = str(ev.get("event_id") or "")
+                    if ev_id in cb_blocked:
+                        continue
+
                     p = ev.get("payload") or {}
                     ev_off = str(p.get("officer") or p.get("officer_id") or "")
                     ev_br = str(p.get("branch") or p.get("branch_id") or "")
@@ -10064,7 +10248,6 @@ elif page == "CO Cashbook":
                     amt = float(p.get("amount") or 0.0)
                     dt = str(p.get("date") or ev.get("created_at") or "")[:10]
                     narr = p.get("narration") or p.get("remarks") or ev_type
-                    ev_id = str(ev.get("event_id") or "")
                     
                     amt_str = f"₦{amt:,.2f}" if (amt % 1 != 0) else f"₦{amt:,.0f}"
                     typ_badge = "Fee" if ev_type == "FeeCharged" else ("Expense" if ev_type == "ExpenseRecorded" else "Bank")
