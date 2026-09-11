@@ -218,7 +218,7 @@ def load_co_mapping():
     try:
         with SupabaseUnitOfWork() as uow:
             users = uow.users.find_all()
-            co_users = [u for u in users if u.role in ['CO', 'Officer', 'Credit Officer']]
+            co_users = [u for u in users if (getattr(u, 'role', None) in ['CO', 'Officer', 'Credit Officer'] or (getattr(u, 'username', '') and getattr(u, 'username', '').upper().startswith('CO')))]
             name_map = {u.full_name.strip(): u.username for u in co_users if u.full_name}
             display_map = {v: k for k, v in name_map.items()}
             return name_map, display_map
@@ -5338,7 +5338,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         st.info("No registered active clients found for this officer.")
                     else:
                         co_clients_df = pd.DataFrame(clients_data)
-                        groups = ["Ungrouped"] + sorted(co_clients_df[co_clients_df['Group Name'] != "Ungrouped"]['Group Name'].unique().tolist())
+                        groups = ["All Groups (Officer Manifest)", "Ungrouped"] + sorted(co_clients_df[co_clients_df['Group Name'] != "Ungrouped"]['Group Name'].unique().tolist())
                 
                         # Resolve requested group from navigation / deep-linking
                         if "sel_group" in st.session_state:
@@ -5365,7 +5365,9 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         selected_group = col_g1.selectbox("Select Group", groups, key="collections_selected_group")
                         expand_all_members = col_g2.checkbox("Expand All Members", value=st.session_state.get('chk_expand_all', False), key="chk_expand_all")
                 
-                        if selected_group == "Ungrouped":
+                        if selected_group == "All Groups (Officer Manifest)":
+                            group_clients = co_clients_df
+                        elif selected_group == "Ungrouped":
                             group_clients = co_clients_df[co_clients_df['Group Name'] == "Ungrouped"]
                         else:
                             group_clients = co_clients_df[co_clients_df['Group Name'] == selected_group]
@@ -5459,8 +5461,11 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                     overdue_arrears_amt = float(due_info.get("overdue_arrears") or 0.0)
                                     current_inst_amt = float(due_info.get("current_installment") or 0.0)
 
-                                    if expected_rep_schedule <= 0.0 and rem_bal > 0:
-                                        inst_repay = float(loan_row.get('Loan Repay', 0.0) or loan_row.get('expected_installment', 0.0) or 0.0)
+                                    inst_repay = float(loan_row.get('Loan Repay', 0.0) or loan_row.get('loan_repay', 0.0) or loan_row.get('expected_installment', 0.0) or 0.0)
+                                    if inst_repay > 0:
+                                        expected_rep_schedule = min(inst_repay, rem_bal) if rem_bal > 0 else 0.0
+                                        current_inst_amt = expected_rep_schedule
+                                    elif expected_rep_schedule <= 0.0 and rem_bal > 0:
                                         if inst_repay == 0.0 and act_cred > 0:
                                             duration_val = float(loan_row.get('Duration', 0) or loan_row.get('duration', 0) or 1)
                                             inst_repay = (total_due_base / duration_val) if duration_val > 0 else total_due_base
@@ -5550,34 +5555,67 @@ Status: CONFIRMED & POSTED TO LEDGER"""
 
                         # 1. Download Editable Manifest CSV
                         manifest_rows = []
-                        # Group communal savings row if grouped
-                        if selected_group != "Ungrouped":
+                        if selected_group == "All Groups (Officer Manifest)":
+                            unique_grps = sorted([g for g in co_clients_df['Group Name'].unique() if g != "Ungrouped" and g != "All Groups (Officer Manifest)"])
+                            for ug in unique_grps:
+                                manifest_rows.append({
+                                    "Date": date_str,
+                                    "Officer": target_co,
+                                    "Group Name": ug,
+                                    "Client ID": f"GROUP-{ug}",
+                                    "Client Name": f"{ug} Communal Savings",
+                                    "Savings Balance": 0,
+                                    "Remaining Balance": 0,
+                                    "Expected Repayment": 0,
+                                    "Amount Collected": 0,
+                                    "Savings Deposit": 0,
+                                    "Status": "PAID"
+                                })
+                        elif selected_group != "Ungrouped":
                             manifest_rows.append({
+                                "Date": date_str,
+                                "Officer": target_co,
+                                "Group Name": selected_group,
                                 "Client ID": f"GROUP-{selected_group}",
                                 "Client Name": f"{selected_group} Communal Savings",
-                                "Savings Balance": round(float(group_savings_balance), 2),
-                                "Remaining Balance": 0.0,
-                                "Expected Repayment": 0.0,
-                                "Amount Collected": 0.0,
-                                "Savings Deposit": 0.0
+                                "Savings Balance": int(group_savings_balance) if float(group_savings_balance).is_integer() else round(float(group_savings_balance), 2),
+                                "Remaining Balance": 0,
+                                "Expected Repayment": 0,
+                                "Amount Collected": 0,
+                                "Savings Deposit": 0,
+                                "Status": "PAID"
                             })
+
                         for cid, info in member_info.items():
                             m = info['member']
+                            g_name = m.get('Group Name') or (selected_group if selected_group != "All Groups (Officer Manifest)" else "Ungrouped")
+                            exp_v = float(info.get('expected_rep_schedule') or 0.0)
+                            exp_formatted = int(exp_v) if exp_v.is_integer() else round(exp_v, 2)
+                            rem_v = float(info.get('rem_bal') or 0.0)
+                            rem_formatted = int(rem_v) if rem_v.is_integer() else round(rem_v, 2)
+                            sav_v = float(info.get('sav_bal') or 0.0)
+                            sav_formatted = int(sav_v) if sav_v.is_integer() else round(sav_v, 2)
+
                             manifest_rows.append({
+                                "Date": date_str,
+                                "Officer": target_co,
+                                "Group Name": g_name,
                                 "Client ID": cid,
                                 "Client Name": m['Client Name'],
-                                "Savings Balance": round(float(info['sav_bal']), 2),
-                                "Remaining Balance": round(float(info['rem_bal']), 2),
-                                "Expected Repayment": round(float(info['expected_rep_schedule']), 2),
-                                "Amount Collected": 0.0,
-                                "Savings Deposit": 0.0
+                                "Savings Balance": sav_formatted,
+                                "Remaining Balance": rem_formatted,
+                                "Expected Repayment": exp_formatted,
+                                "Amount Collected": exp_formatted,
+                                "Savings Deposit": 0,
+                                "Status": "PAID"
                             })
                         manifest_df = pd.DataFrame(manifest_rows)
                         csv_data = manifest_df.to_csv(index=False)
+                        dl_filename = f"manifest_{target_co}_all_groups_{date_str}.csv" if selected_group == "All Groups (Officer Manifest)" else f"manifest_{selected_group}_{date_str}.csv"
                         col_csv1.download_button(
-                            label="Download Manifest CSV",
+                            label=f"Download {'Full CO' if selected_group == 'All Groups (Officer Manifest)' else selected_group} Manifest CSV",
                             data=csv_data,
-                            file_name=f"manifest_{selected_group}_{date_str}.csv",
+                            file_name=dl_filename,
                             mime="text/csv",
                             key=f"btn_dl_manifest_{selected_group}_{date_str}",
                             use_container_width=True
@@ -5585,7 +5623,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         import base64
                         b64_csv = base64.b64encode(csv_data.encode('utf-8')).decode()
                         col_csv1.markdown(
-                            f'<div style="text-align:center; margin-top:4px;"><a href="data:text/csv;base64,{b64_csv}" download="manifest_{selected_group}_{date_str}.csv" style="font-size:12px; color:#0284c7; text-decoration:none;">Direct CSV Download Link</a></div>',
+                            f'<div style="text-align:center; margin-top:4px;"><a href="data:text/csv;base64,{b64_csv}" download="{dl_filename}" style="font-size:12px; color:#0284c7; text-decoration:none;">Direct CSV Download Link</a></div>',
                             unsafe_allow_html=True
                         )
 
@@ -5615,11 +5653,18 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                                 # Check if this row is Group Communal Savings
                                                 is_group_row = (
                                                     raw_cid.startswith("GROUP-") or
-                                                    "group" in str(u_row.get("Client Name", "")).lower() or
                                                     "communal" in str(u_row.get("Client Name", "")).lower() or
-                                                    raw_cid.lower() == selected_group.lower()
+                                                    (selected_group != "All Groups (Officer Manifest)" and (raw_cid.lower() == selected_group.lower() or "group" in str(u_row.get("Client Name", "")).lower()))
                                                 )
                                                 if is_group_row:
+                                                    target_grp_name = selected_group
+                                                    if raw_cid.startswith("GROUP-"):
+                                                        target_grp_name = raw_cid.replace("GROUP-", "").strip()
+                                                    elif u_row.get("Group Name") and pd.notna(u_row.get("Group Name")):
+                                                        target_grp_name = str(u_row.get("Group Name")).strip()
+                                                    elif "communal" in str(u_row.get("Client Name", "")).lower():
+                                                        target_grp_name = str(u_row.get("Client Name", "")).replace("Communal Savings", "").strip()
+
                                                     grp_sav = 0.0
                                                     if sav_col_name and pd.notna(u_row.get(sav_col_name)):
                                                         try: grp_sav = float(str(u_row.get(sav_col_name)).replace(',', '').strip() or 0.0)
@@ -5631,8 +5676,8 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                                     if grp_sav > 0:
                                                         g_data = {
                                                             "Date": date_str,
-                                                            "Client ID": f"GROUP-{selected_group}",
-                                                            "Client Name": f"{selected_group} Meeting",
+                                                            "Client ID": f"GROUP-{target_grp_name}",
+                                                            "Client Name": f"{target_grp_name} Meeting",
                                                             "Officer": target_co,
                                                             "Branch": BRANCH,
                                                             "Amount Paid": grp_sav,
@@ -5844,7 +5889,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         
                                 # ---- GROUP-LEVEL SAVINGS ----
                                 group_savings_balance = 0.0
-                                if selected_group != "Ungrouped":
+                                if selected_group not in ["Ungrouped", "All Groups (Officer Manifest)"]:
                                     try:
                                         g_id = group_clients['Group ID'].dropna().iloc[0] if 'Group ID' in group_clients.columns and not group_clients['Group ID'].dropna().empty else None
                                         if not g_id:
@@ -5858,24 +5903,28 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                     except Exception:
                                         pass
                                 
-                                st.markdown(f"### Group-Level Savings (Available: ₦{group_savings_balance:,.0f})")
-                                st.caption("Input communal group savings and withdrawal amounts.")
-                        
-                                # Load previous group values if any
-                                pending_list = st.session_state.get('pending_collections', [])
-                                pending_g = next((tx for tx in pending_list if tx["Client ID"] == f"GROUP-{selected_group}"), None)
-                                if pending_g:
-                                    prev_g_dep = float(pending_g.get("Savings Amount") or 0.0)
-                                    prev_g_wd = float(pending_g.get("Withdrawal Amount") or 0.0)
-                                    prev_laps = float(pending_g.get("Laps Reserved") or 0.0)
-                                else:
-                                    prev_g_dep = 0.0
-                                    prev_g_wd = 0.0
-                                    prev_laps = 0.0
+                                if selected_group not in ["Ungrouped", "All Groups (Officer Manifest)"]:
+                                    st.markdown(f"### Group-Level Savings (Available: ₦{group_savings_balance:,.0f})")
+                                    st.caption("Input communal group savings and withdrawal amounts.")
                             
-                                global_group_savings = st.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=prev_g_dep if prev_g_dep > 0 else None, placeholder="0", key="global_grp_sav")
-                                global_group_wd = 0.0
-                                st.markdown("---")
+                                    # Load previous group values if any
+                                    pending_list = st.session_state.get('pending_collections', [])
+                                    pending_g = next((tx for tx in pending_list if tx["Client ID"] == f"GROUP-{selected_group}"), None)
+                                    if pending_g:
+                                        prev_g_dep = float(pending_g.get("Savings Amount") or 0.0)
+                                        prev_g_wd = float(pending_g.get("Withdrawal Amount") or 0.0)
+                                        prev_laps = float(pending_g.get("Laps Reserved") or 0.0)
+                                    else:
+                                        prev_g_dep = 0.0
+                                        prev_g_wd = 0.0
+                                        prev_laps = 0.0
+                                
+                                    global_group_savings = st.number_input("Group Savings Deposit", min_value=0.0, step=500.0, value=prev_g_dep if prev_g_dep > 0 else None, placeholder="0", key="global_grp_sav")
+                                    global_group_wd = 0.0
+                                    st.markdown("---")
+                                else:
+                                    global_group_savings = 0.0
+                                    global_group_wd = 0.0
                         
                                 # ---- PER-CLIENT COLLECTIONS ----
                                 st.markdown("### Client Collections (Savings & Repayments)")
@@ -6309,6 +6358,16 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 except Exception as ex_tally:
                     print(f"Error rendering collection arrears tally: {ex_tally}")
                 
+                # Officer cache for display and search
+                hist_user_cache = {}
+                try:
+                    for u in uow_hist.users.find_all():
+                        u_nm = getattr(u, 'username', '') or ""
+                        f_nm = getattr(u, 'full_name', '') or ""
+                        hist_user_cache[u.id] = f"{u_nm} ({f_nm})" if u_nm and f_nm else (f_nm or u_nm or "Officer")
+                except Exception:
+                    pass
+
                 # Subtabs for Repayments vs Savings
                 h_tab1, h_tab2 = st.tabs([f"Loan Repayments ({len(reps_list)})", f"Savings Deposits ({len(sav_dep_list)})"])
                 
@@ -6327,10 +6386,19 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             p_stat = str(r.get("payment_status") or ("PAID" if amt > 0 else "NOT_PAID")).upper()
                             time_str = str(r.get("created_at") or r.get("date") or "")[11:16]
                             note_val = str(r.get("note") or "")
+                            off_id = r.get("officer_id")
+                            off_name_disp = hist_user_cache.get(off_id, "")
                             
                             # Filter search
                             if hist_search:
-                                match = (hist_search in c_name.lower() or hist_search in c_code.lower() or hist_search in note_val.lower() or hist_search in str(r.get("id")).lower() or hist_search in p_stat.lower())
+                                match = (
+                                    hist_search in c_name.lower() or
+                                    hist_search in c_code.lower() or
+                                    hist_search in note_val.lower() or
+                                    hist_search in str(r.get("id")).lower() or
+                                    hist_search in p_stat.lower() or
+                                    hist_search in off_name_disp.lower()
+                                )
                                 if not match:
                                     continue
 
@@ -6345,6 +6413,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                     
                             reps_rows.append({
                                 "Time": time_str,
+                                "Officer": off_name_disp,
                                 "Client Name": c_name,
                                 "Client Code": c_code,
                                 "Product": p_name,
@@ -6371,14 +6440,23 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             amt = float(s.get("deposit_amount") or 0)
                             time_str = str(s.get("created_at") or s.get("posting_date") or "")[11:16]
                             rem_val = str(s.get("remarks") or s.get("reference") or "")
+                            off_id = s.get("officer_id")
+                            off_name_disp = hist_user_cache.get(off_id, "")
                             
                             if hist_search:
-                                match = (hist_search in c_name.lower() or hist_search in c_code.lower() or hist_search in rem_val.lower() or hist_search in str(s.get("id")).lower())
+                                match = (
+                                    hist_search in c_name.lower() or
+                                    hist_search in c_code.lower() or
+                                    hist_search in rem_val.lower() or
+                                    hist_search in str(s.get("id")).lower() or
+                                    hist_search in off_name_disp.lower()
+                                )
                                 if not match:
                                     continue
                                     
                             sav_rows.append({
                                 "Time": time_str,
+                                "Officer": off_name_disp,
                                 "Client Name": c_name,
                                 "Client Code": c_code,
                                 "Deposit Amount (₦)": f"₦{amt:,.2f}",
@@ -10115,7 +10193,11 @@ elif page == "CO Cashbook":
 
                                 # 4. Rebuild projection
                                 if off_uuid:
-                                    uow_eod.cashbook.rebuild_projection(b_uuid, view_date, officer_id=off_uuid)
+                                    if global_opening is not None and global_opening_val > 0:
+                                        uow_eod.cashbook.rebuild_projection(b_uuid, view_date, officer_id=off_uuid, manual_opening_balance=global_opening_val)
+                                        uow_eod.cashbook.cascade_co_projection(b_uuid, off_uuid, view_date, date.today())
+                                    else:
+                                        uow_eod.cashbook.rebuild_projection(b_uuid, view_date, officer_id=off_uuid)
                             
                             st.success("End of Day Outflows & Fees Updated Successfully.")
                             import time

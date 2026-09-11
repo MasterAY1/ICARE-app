@@ -74,7 +74,7 @@ class SupabaseCashbookRepository(BaseRepository[CashbookEntry], CashbookReposito
         res = self._execute(query)
         return [CashbookMapper.to_domain(d) for d in res.data]
 
-    def rebuild_projection(self, arg1, arg2=None, arg3=None, officer_id: str = None) -> None:
+    def rebuild_projection(self, arg1, arg2=None, arg3=None, officer_id: str = None, manual_opening_balance: Optional[float] = None) -> None:
         if hasattr(arg1, "client"):
             uow = arg1
             branch_id = str(arg2)
@@ -108,10 +108,38 @@ class SupabaseCashbookRepository(BaseRepository[CashbookEntry], CashbookReposito
 
         # 2. Rebuild CO projections for each officer
         for o_id in officers:
-            CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, o_id, posting_date)
+            co_manual = manual_opening_balance if (officer_id and str(o_id) == str(officer_id)) else None
+            CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, o_id, posting_date, manual_opening_balance=co_manual)
 
         # 3. Aggregate Master Cashbook projection
         MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, posting_date)
+
+    def cascade_co_projection(self, branch_id: str, officer_id: str, from_date, to_date=None) -> None:
+        """
+        Sequentially recalculates daily projections from from_date up to to_date
+        ensuring closing balances roll forward into each subsequent day's opening balance.
+        """
+        from datetime import timedelta
+        from services.business_date_service import BusinessDateService
+
+        if isinstance(from_date, str):
+            from_date = date.fromisoformat(from_date)
+        elif hasattr(from_date, "date"):
+            from_date = from_date.date()
+
+        if to_date is None:
+            to_date = date.today()
+        elif isinstance(to_date, str):
+            to_date = date.fromisoformat(to_date)
+        elif hasattr(to_date, "date"):
+            to_date = to_date.date()
+
+        curr_d = from_date
+        while curr_d <= to_date:
+            is_work, _ = BusinessDateService.is_working_day(curr_d)
+            if is_work:
+                self.rebuild_projection(branch_id, curr_d, officer_id=officer_id)
+            curr_d += timedelta(days=1)
 
     def _prepare_db_data(self, entity: CashbookEntry) -> dict:
         data = CashbookMapper.to_database(entity)

@@ -5,7 +5,7 @@ from interfaces.unit_of_work import UnitOfWork
 
 class CoCashbookProjectionBuilder:
     @staticmethod
-    def rebuild_co_projection(uow: UnitOfWork, branch_id: str, officer_id: str, posting_date: date) -> Optional[dict]:
+    def rebuild_co_projection(uow: UnitOfWork, branch_id: str, officer_id: str, posting_date: date, manual_opening_balance: Optional[float] = None) -> Optional[dict]:
         """
         Rebuilds the officer-level daily cashbook projection row in co_cashbooks.
         Strictly contains Credit Officer originated transactions in accordance with ICARE Constitutional Rules (BR-CASH-001 to BR-CASH-005).
@@ -22,35 +22,44 @@ class CoCashbookProjectionBuilder:
         
         # 1. Opening balance from previous business day's CO Cashbook closing balance (BR-CASH-002)
         opening_bal = 0.0
-        try:
-            from services.business_date_service import BusinessDateService
-            prev_work_date = BusinessDateService.get_previous_working_day(posting_date)
-            prev_work_str = prev_work_date.isoformat()
-            
-            res_prev = uow.client.table("co_cashbooks").select("closing_balance") \
-                .eq("branch_id", branch_id).eq("officer_id", officer_id).eq("date", prev_work_str).execute()
-            if res_prev.data and res_prev.data[0].get("closing_balance") is not None:
-                opening_bal = float(res_prev.data[0]["closing_balance"] or 0.0)
-            else:
-                # Query the most recent operational date prior to posting_date (ordered by date desc)
-                res_recent = uow.client.table("co_cashbooks").select("date, closing_balance") \
-                    .eq("branch_id", branch_id).eq("officer_id", officer_id).lt("date", p_date_str) \
-                    .order("date", desc=True).limit(5).execute()
-                found = False
-                if res_recent.data:
-                    for row in res_recent.data:
-                        r_date_str = row.get("date")
-                        if r_date_str:
-                            r_d = date.fromisoformat(r_date_str)
-                            is_work, _ = BusinessDateService.is_working_day(r_d)
-                            if is_work and row.get("closing_balance") is not None:
-                                opening_bal = float(row["closing_balance"] or 0.0)
-                                found = True
-                                break
-                if not found:
-                    opening_bal = 0.0
-        except Exception:
-            opening_bal = 0.0
+        if manual_opening_balance is not None and manual_opening_balance > 0:
+            opening_bal = float(manual_opening_balance)
+        else:
+            try:
+                from services.business_date_service import BusinessDateService
+                prev_work_date = BusinessDateService.get_previous_working_day(posting_date)
+                prev_work_str = prev_work_date.isoformat()
+                
+                res_prev = uow.client.table("co_cashbooks").select("closing_balance") \
+                    .eq("branch_id", branch_id).eq("officer_id", officer_id).eq("date", prev_work_str).execute()
+                if res_prev.data and res_prev.data[0].get("closing_balance") is not None:
+                    opening_bal = float(res_prev.data[0]["closing_balance"] or 0.0)
+                else:
+                    # Query the most recent operational date prior to posting_date (ordered by date desc)
+                    res_recent = uow.client.table("co_cashbooks").select("date, closing_balance") \
+                        .eq("branch_id", branch_id).eq("officer_id", officer_id).lt("date", p_date_str) \
+                        .order("date", desc=True).limit(5).execute()
+                    found = False
+                    if res_recent.data:
+                        for row in res_recent.data:
+                            r_date_str = row.get("date")
+                            if r_date_str:
+                                r_d = date.fromisoformat(r_date_str)
+                                is_work, _ = BusinessDateService.is_working_day(r_d)
+                                if is_work and row.get("closing_balance") is not None:
+                                    opening_bal = float(row["closing_balance"] or 0.0)
+                                    found = True
+                                    break
+                    if not found:
+                        # Inception / Beginning of Period: Check if current row in co_cashbooks already has a non-zero opening balance
+                        res_cur = uow.client.table("co_cashbooks").select("opening_balance") \
+                            .eq("branch_id", branch_id).eq("officer_id", officer_id).eq("date", p_date_str).execute()
+                        if res_cur.data and res_cur.data[0].get("opening_balance") is not None and float(res_cur.data[0]["opening_balance"]) > 0:
+                            opening_bal = float(res_cur.data[0]["opening_balance"])
+                        else:
+                            opening_bal = 0.0
+            except Exception:
+                opening_bal = 0.0
 
         # 2. Determine if this officer is the designated Misc Savings officer for the branch (BR-SAV-002)
         from services.savings_service import SavingsService

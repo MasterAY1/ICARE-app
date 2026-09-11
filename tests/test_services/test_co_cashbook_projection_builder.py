@@ -167,6 +167,39 @@ class TestCoCashbookProjectionBuilder(unittest.TestCase):
         self.assertEqual(result["bank_withdrawal"], 0.0)
         self.assertEqual(result["fund_to_product_finance"], 48000.0)
 
+    def test_manual_opening_balance_applied(self):
+        # When manual_opening_balance is provided, it is applied directly
+        result = CoCashbookProjectionBuilder.rebuild_co_projection(
+            self.mock_uow, "branch-01", "off-01", date(2026, 9, 1), manual_opening_balance=25000.0
+        )
+        self.assertEqual(result["opening_balance"], 25000.0)
+        self.assertEqual(result["total_inflows"], 25000.0)
+        self.assertEqual(result["closing_balance"], 25000.0)
+
+    def test_inception_opening_balance_preserved(self):
+        # When no manual_opening_balance is provided and no prior day exists,
+        # but co_cashbooks already has a non-zero opening balance for this date, preserve it
+        mock_table = MagicMock()
+        mock_select = MagicMock()
+        mock_eq1 = MagicMock()
+        mock_eq2 = MagicMock()
+        mock_eq3 = MagicMock()
+        
+        # Setup mock return for co_cashbooks select
+        self.mock_uow.client.table.return_value = mock_table
+        mock_table.select.return_value = mock_select
+        mock_select.eq.return_value = mock_eq1
+        mock_eq1.eq.return_value = mock_eq2
+        mock_eq2.eq.return_value = mock_eq3
+        mock_eq3.execute.return_value.data = [{"opening_balance": 35000.0}]
+
+        result = CoCashbookProjectionBuilder.rebuild_co_projection(
+            self.mock_uow, "branch-01", "off-01", date(2026, 9, 1)
+        )
+        self.assertEqual(result["opening_balance"], 35000.0)
+        self.assertEqual(result["total_inflows"], 35000.0)
+        self.assertEqual(result["closing_balance"], 35000.0)
+
 if __name__ == "__main__":
     unittest.main()
 
