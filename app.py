@@ -1339,14 +1339,18 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
                     return False
             
             resolved_client_id = client_id
+            clean_client_code = str(client_id).replace('-ASSET', '').strip()
             if client_id and not is_valid_uuid(client_id) and not str(client_id).startswith('GROUP-') and not str(client_id).startswith('GLOBAL-'):
-                if client_cache and str(client_id).strip() in client_cache:
+                if client_cache and clean_client_code in client_cache:
+                    resolved_client_id = client_cache[clean_client_code]
+                elif client_cache and str(client_id).strip() in client_cache:
                     resolved_client_id = client_cache[str(client_id).strip()]
                 else:
-                    res_c = uow.client.table("clients").select("client_id").eq("client_code", client_id).execute()
+                    res_c = uow.client.table("clients").select("client_id").eq("client_code", clean_client_code).execute()
                     if res_c.data:
                         resolved_client_id = res_c.data[0]["client_id"]
                         if client_cache is not None:
+                            client_cache[clean_client_code] = resolved_client_id
                             client_cache[str(client_id).strip()] = resolved_client_id
             
             db_data['client_id'] = resolved_client_id
@@ -1431,15 +1435,26 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
             is_marked_not_paid = bool(data.get('mark_not_paid') or (raw_p_status == "NOT_PAID" and str(data.get('Transaction Type') or db_data.get('transaction_type')) != "Individual Savings Deposit"))
 
             if not skip_repayment and (loan_repay > 0 or is_marked_not_paid):
-                active_loan_id = None
-                if loan_cache and client_id in loan_cache:
-                    active_loan_id = loan_cache[client_id]
-                else:
-                    res_l = uow.client.table("loans").select("loan_id, active_credit").eq("client_id", client_id).eq("status", "Active").execute()
-                    if res_l.data:
-                        active_loan_id = res_l.data[0]["loan_id"]
-                        if loan_cache is not None:
-                            loan_cache[client_id] = active_loan_id
+                active_loan_id = data.get('loan_id') or db_data.get('loan_id')
+                is_asset_target = str(data.get('Client ID') or '').endswith('-ASSET') or 'asset' in str(data.get('Loan Product') or '').lower()
+                
+                if not active_loan_id:
+                    if loan_cache:
+                        if is_asset_target and (client_id, "Asset") in loan_cache:
+                            active_loan_id = loan_cache[(client_id, "Asset")]
+                        elif not is_asset_target and (client_id, "Finance") in loan_cache:
+                            active_loan_id = loan_cache[(client_id, "Finance")]
+                        else:
+                            active_loan_id = loan_cache.get(client_id)
+                    if not active_loan_id:
+                        res_l = uow.client.table("loans").select("loan_id, is_asset, product_category, active_credit").eq("client_id", client_id).eq("status", "Active").execute()
+                        if res_l.data:
+                            matching = [l for l in res_l.data if (is_asset_target and (l.get('is_asset') or 'asset' in str(l.get('product_category') or '').lower())) or (not is_asset_target and not (l.get('is_asset') or 'asset' in str(l.get('product_category') or '').lower()))]
+                            active_loan_id = matching[0]["loan_id"] if matching else res_l.data[0]["loan_id"]
+                            if loan_cache is not None:
+                                loan_cache[(client_id, "Asset" if is_asset_target else "Finance")] = active_loan_id
+                                if not is_asset_target:
+                                    loan_cache[client_id] = active_loan_id
 
                 if active_loan_id and loan_repay > 0:
                     from services.schedule_service import ScheduleService
@@ -1756,12 +1771,14 @@ def save_repayments(data_list, batch_id=None):
             for d in data_list:
                 cid = d.get('Client ID') or d.get('client_id')
                 if cid and not is_valid_uuid(cid) and not str(cid).startswith('GROUP-') and not str(cid).startswith('GLOBAL-'):
-                    clean_codes.append(str(cid).strip())
+                    clean_code = str(cid).replace('-ASSET', '').strip()
+                    clean_codes.append(clean_code)
             if clean_codes:
                 try:
                     res_c = uow.client.table("clients").select("client_id, client_code").in_("client_code", list(set(clean_codes))).execute()
                     for row in (res_c.data or []):
                         client_cache[row["client_code"]] = row["client_id"]
+                        client_cache[f"{row['client_code']}-ASSET"] = row["client_id"]
                 except Exception:
                     pass
 
@@ -1770,20 +1787,26 @@ def save_repayments(data_list, batch_id=None):
             all_resolved_cids = []
             for d in data_list:
                 cid = d.get('Client ID') or d.get('client_id')
-                resolved = client_cache.get(str(cid).strip(), cid)
+                resolved = client_cache.get(str(cid).strip(), client_cache.get(str(cid).replace('-ASSET', '').strip(), cid))
                 if resolved and is_valid_uuid(resolved):
                     all_resolved_cids.append(str(resolved))
             if all_resolved_cids:
                 try:
-                    res_l = uow.client.table("loans").select("loan_id, client_id, active_credit, total_due, loan_amount, loan_repay, branch_id, officer_id, status").in_("client_id", list(set(all_resolved_cids))).eq("status", "Active").execute()
+                    res_l = uow.client.table("loans").select("loan_id, client_id, is_asset, product_category, active_credit, total_due, loan_amount, loan_repay, branch_id, officer_id, status").in_("client_id", list(set(all_resolved_cids))).eq("status", "Active").execute()
                     for row in (res_l.data or []):
-                        loan_cache[row["client_id"]] = row["loan_id"]
+                        is_asset_l = bool(row.get('is_asset') or 'asset' in str(row.get('product_category') or '').lower())
+                        cat_key = "Asset" if is_asset_l else "Finance"
+                        loan_cache[(row["client_id"], cat_key)] = row["loan_id"]
+                        loan_cache[f"{row['client_id']}-ASSET" if is_asset_l else row["client_id"]] = row["loan_id"]
+                        if not is_asset_l:
+                            loan_cache[row["client_id"]] = row["loan_id"]
                         loan_data_cache[row["loan_id"]] = row
                 except Exception:
                     pass
 
             # Pre-fetch loan schedules and repayments in batch for all active loans
-            all_active_loan_ids = list(set([lid for lid in loan_cache.values() if lid]))
+            explicit_lids = [d.get('loan_id') for d in data_list if d.get('loan_id')]
+            all_active_loan_ids = list(set([lid for lid in loan_cache.values() if isinstance(lid, str)] + explicit_lids))
             schedule_cache = {}
             repayments_cache = {}
             if all_active_loan_ids:
@@ -5408,8 +5431,8 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                 cid = member['Client ID']
                                 uuid_id = member['ID']
                                 active_loan_rows = all_loans[((all_loans['Client ID'] == cid) | (all_loans['Client ID'] == uuid_id)) & (all_loans['Status'] == 'Active')]
-                                if not active_loan_rows.empty:
-                                    lid = active_loan_rows.iloc[0].get('id') or active_loan_rows.iloc[0].get('loan_id') or active_loan_rows.iloc[0].get('Loan ID')
+                                for _, l_row in active_loan_rows.iterrows():
+                                    lid = l_row.get('id') or l_row.get('loan_id') or l_row.get('Loan ID')
                                     if lid and isinstance(lid, str) and len(lid) > 10:
                                         group_lids.append(str(lid).strip())
 
@@ -5431,106 +5454,148 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                 uuid_id = member['ID']
                                 mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
                                 sav_bal = group_sav_map.get(uuid_id, 0.0)
-                                # Find if there is an active loan in all_loans
                                 active_loan_rows = all_loans[((all_loans['Client ID'] == cid) | (all_loans['Client ID'] == uuid_id)) & (all_loans['Status'] == 'Active')]
-                                if not active_loan_rows.empty:
-                                    loan_row = active_loan_rows.iloc[0]
-                                    active_loan_id = loan_row.get('id') or loan_row.get('loan_id') or loan_row.get('Loan ID')
-                                    act_cred = float(loan_row.get('Active Credit', 0) or loan_row.get('active_credit', 0))
-                                    total_due_base = float(loan_row.get('Total Due', 0) or loan_row.get('total_due', 0)) or act_cred
-                            
-                                    # Baseline remaining balance is Total Due from loans table minus repayments posted
-                                    if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
-                                        if active_loan_id in group_has_sched_set:
-                                            active_loan_total_paid = group_sched_paid_map.get(active_loan_id, 0.0)
+
+                                if active_loan_rows.empty:
+                                    pending_list = st.session_state.get('pending_collections', [])
+                                    pending_tx = next((tx for tx in pending_list if tx["Client ID"] == cid), None)
+                                    today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
+
+                                    if pending_tx:
+                                        prev_dep = float(pending_tx.get("Savings Amount") or 0.0)
+                                        prev_wd = float(pending_tx.get("Withdrawal Amount") or 0.0)
+                                    else:
+                                        prev_dep = float(today_paid['Savings Amount'].sum()) if not today_paid.empty and 'Savings Amount' in today_paid.columns else 0.0
+                                        prev_wd = 0.0
+
+                                    member_dict = member.to_dict()
+                                    member_dict.update({
+                                        "Client ID": cid,
+                                        "Active Credit": 0.0,
+                                        "Remaining Balance": 0.0,
+                                        "Expected Repayment": 0.0,
+                                        "Loan Product": "None",
+                                        "Start Date": ""
+                                    })
+                                    member_info[cid] = {
+                                        "member": pd.Series(member_dict),
+                                        "loan_id": None,
+                                        "sav_bal": sav_bal,
+                                        "rem_bal": 0.0,
+                                        "act_cred": 0.0,
+                                        "expected_rep_schedule": 0.0,
+                                        "has_overdue": False,
+                                        "overdue_arrears": 0.0,
+                                        "current_installment": 0.0,
+                                        "prev_dep": prev_dep,
+                                        "prev_wd": prev_wd,
+                                        "prev_rep": 0.0,
+                                        "prev_status": "NOT_PAID",
+                                        "start_date": ""
+                                    }
+                                else:
+                                    sorted_loan_rows = sorted(
+                                        [r for _, r in active_loan_rows.iterrows()],
+                                        key=lambda r: 1 if bool(r.get('is_asset') or 'asset' in str(r.get('product_category') or r.get('Loan Product') or '').lower()) else 0
+                                    )
+
+                                    for l_idx, loan_row in enumerate(sorted_loan_rows):
+                                        is_asset_l = bool(loan_row.get('is_asset') or 'asset' in str(loan_row.get('product_category') or loan_row.get('Loan Product') or '').lower())
+                                        if l_idx == 0:
+                                            row_cid = cid
+                                            row_cname = member['Client Name']
+                                            row_sav = sav_bal
                                         else:
-                                            active_loan_total_paid, has_schedule = ScheduleService.get_total_paid(uow, active_loan_id)
-                                            if not has_schedule:
-                                                active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
-                                    else:
-                                        active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
-                                
-                                    rem_bal = max(0.0, total_due_base - active_loan_total_paid)
-                                    loan_prod_val = loan_row.get('Loan Product') or "Daily Loan"
-                            
-                                    # Fetch authoritative loan due breakdown from ScheduleService (Zero UI Calculation)
-                                    from services.schedule_service import ScheduleService
-                                    due_info = ScheduleService.get_loan_due_breakdown(uow, active_loan_id, view_date, client_id=cid)
-                                    expected_rep_schedule = float(due_info.get("total_due_today") or 0.0)
-                                    has_overdue_flag = bool(due_info.get("has_overdue", False))
-                                    overdue_arrears_amt = float(due_info.get("overdue_arrears") or 0.0)
-                                    current_inst_amt = float(due_info.get("current_installment") or 0.0)
+                                            suffix = "-ASSET" if is_asset_l else f"-L{l_idx+1}"
+                                            row_cid = f"{cid}{suffix}"
+                                            row_cname = f"{member['Client Name']} ({'ASSET' if is_asset_l else f'LOAN {l_idx+1}'})"
+                                            row_sav = 0.0
 
-                                    inst_repay = float(loan_row.get('Loan Repay', 0.0) or loan_row.get('loan_repay', 0.0) or loan_row.get('expected_installment', 0.0) or 0.0)
-                                    if inst_repay > 0:
-                                        expected_rep_schedule = min(inst_repay, rem_bal) if rem_bal > 0 else 0.0
-                                        current_inst_amt = expected_rep_schedule
-                                    elif expected_rep_schedule <= 0.0 and rem_bal > 0:
-                                        if inst_repay == 0.0 and act_cred > 0:
-                                            duration_val = float(loan_row.get('Duration', 0) or loan_row.get('duration', 0) or 1)
-                                            inst_repay = (total_due_base / duration_val) if duration_val > 0 else total_due_base
-                                        expected_rep_schedule = min(inst_repay, rem_bal) if rem_bal > 0 else 0.0
-                                        current_inst_amt = expected_rep_schedule
+                                        active_loan_id = loan_row.get('id') or loan_row.get('loan_id') or loan_row.get('Loan ID')
+                                        act_cred = float(loan_row.get('Active Credit', 0) or loan_row.get('active_credit', 0))
+                                        total_due_base = float(loan_row.get('Total Due', 0) or loan_row.get('total_due', 0)) or act_cred
 
-                                    start_date_val = str(loan_row.get('Start Date', ''))
-                                else:
-                                    active_loan_id = None
-                                    act_cred = 0.0
-                                    total_paid = 0.0
-                                    rem_bal = 0.0
-                                    loan_prod_val = "None"
-                                    expected_rep_schedule = 0.0
-                                    has_overdue_flag = False
-                                    overdue_arrears_amt = 0.0
-                                    current_inst_amt = 0.0
-                                    start_date_val = ""
+                                        if active_loan_id and isinstance(active_loan_id, str) and len(active_loan_id) > 10:
+                                            if active_loan_id in group_has_sched_set:
+                                                active_loan_total_paid = group_sched_paid_map.get(active_loan_id, 0.0)
+                                            else:
+                                                active_loan_total_paid, has_schedule = ScheduleService.get_total_paid(uow, active_loan_id)
+                                                if not has_schedule:
+                                                    active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
+                                        else:
+                                            active_loan_total_paid = float(mem_reps['Loan Repayment Amount'].sum()) if not mem_reps.empty and 'Loan Repayment Amount' in mem_reps.columns else 0.0
 
-                                # Check if user has a pending collection in session state
-                                pending_list = st.session_state.get('pending_collections', [])
-                                pending_tx = next((tx for tx in pending_list if tx["Client ID"] == cid), None)
+                                        rem_bal = max(0.0, total_due_base - active_loan_total_paid)
+                                        loan_prod_val = loan_row.get('Loan Product') or ("Asset Loan" if is_asset_l else "Daily Loan")
 
-                                today_paid = today_reps[today_reps['Client ID'] == cid] if not today_reps.empty else pd.DataFrame()
+                                        from services.schedule_service import ScheduleService
+                                        due_info = ScheduleService.get_loan_due_breakdown(uow, active_loan_id, view_date, client_id=cid)
+                                        expected_rep_schedule = float(due_info.get("total_due_today") or 0.0)
+                                        has_overdue_flag = bool(due_info.get("has_overdue", False))
+                                        overdue_arrears_amt = float(due_info.get("overdue_arrears") or 0.0)
+                                        current_inst_amt = float(due_info.get("current_installment") or 0.0)
 
-                                if pending_tx:
-                                    prev_dep = float(pending_tx.get("Savings Amount") or 0.0)
-                                    prev_wd = float(pending_tx.get("Withdrawal Amount") or 0.0)
-                                    prev_rep = float(pending_tx.get("Loan Repayment Amount") or 0.0)
-                                    prev_status = str(pending_tx.get("Payment Status") or "PAID").upper()
-                                else:
-                                    prev_dep = 0.0
-                                    prev_wd = 0.0
-                                    if not today_paid.empty:
-                                        prev_rep = float(today_paid['Loan Repayment Amount'].sum()) if 'Loan Repayment Amount' in today_paid.columns else float(today_paid['Amount Paid'].sum())
-                                        prev_status = str(today_paid['Payment Status'].iloc[0] if 'Payment Status' in today_paid.columns else "PAID").upper()
-                                    else:
-                                        prev_rep = expected_rep_schedule
-                                        prev_status = "PAID" if expected_rep_schedule > 0 else "NOT_PAID"
+                                        inst_repay = float(loan_row.get('Loan Repay', 0.0) or loan_row.get('loan_repay', 0.0) or loan_row.get('expected_installment', 0.0) or 0.0)
+                                        if inst_repay > 0:
+                                            expected_rep_schedule = min(inst_repay, rem_bal) if rem_bal > 0 else 0.0
+                                            current_inst_amt = expected_rep_schedule
+                                        elif expected_rep_schedule <= 0.0 and rem_bal > 0:
+                                            if inst_repay == 0.0 and act_cred > 0:
+                                                duration_val = float(loan_row.get('Duration', 0) or loan_row.get('duration', 0) or 1)
+                                                inst_repay = (total_due_base / duration_val) if duration_val > 0 else total_due_base
+                                            expected_rep_schedule = min(inst_repay, rem_bal) if rem_bal > 0 else 0.0
+                                            current_inst_amt = expected_rep_schedule
 
-                                # Pack member details
-                                member_dict = member.to_dict()
-                                member_dict.update({
-                                    "Active Credit": act_cred,
-                                    "Remaining Balance": rem_bal,
-                                    "Expected Repayment": expected_rep_schedule,
-                                    "Loan Product": loan_prod_val,
-                                    "Start Date": start_date_val
-                                })
+                                        start_date_val = str(loan_row.get('Start Date', ''))
 
-                                member_info[cid] = {
-                                    "member": pd.Series(member_dict),
-                                    "sav_bal": sav_bal,
-                                    "rem_bal": rem_bal,
-                                    "act_cred": act_cred,
-                                    "expected_rep_schedule": expected_rep_schedule,
-                                    "has_overdue": has_overdue_flag,
-                                    "overdue_arrears": overdue_arrears_amt,
-                                    "current_installment": current_inst_amt,
-                                    "prev_dep": prev_dep,
-                                    "prev_wd": prev_wd,
-                                    "prev_rep": prev_rep,
-                                    "prev_status": prev_status,
-                                    "start_date": start_date_val
-                                }
+                                        pending_list = st.session_state.get('pending_collections', [])
+                                        pending_tx = next((tx for tx in pending_list if tx.get("Client ID") == row_cid or (tx.get("loan_id") == active_loan_id)), None)
+
+                                        today_paid = today_reps[((today_reps['Client ID'] == row_cid) | (today_reps.get('loan_id', pd.Series()) == active_loan_id))] if not today_reps.empty else pd.DataFrame()
+
+                                        if pending_tx:
+                                            prev_dep = float(pending_tx.get("Savings Amount") or 0.0) if l_idx == 0 else 0.0
+                                            prev_wd = float(pending_tx.get("Withdrawal Amount") or 0.0) if l_idx == 0 else 0.0
+                                            prev_rep = float(pending_tx.get("Loan Repayment Amount") or 0.0)
+                                            prev_status = str(pending_tx.get("Payment Status") or "PAID").upper()
+                                        else:
+                                            prev_dep = float(today_paid['Savings Amount'].sum()) if (not today_paid.empty and 'Savings Amount' in today_paid.columns and l_idx == 0) else 0.0
+                                            prev_wd = 0.0
+                                            if not today_paid.empty:
+                                                prev_rep = float(today_paid['Loan Repayment Amount'].sum()) if 'Loan Repayment Amount' in today_paid.columns else float(today_paid['Amount Paid'].sum())
+                                                prev_status = str(today_paid['Payment Status'].iloc[0] if 'Payment Status' in today_paid.columns else "PAID").upper()
+                                            else:
+                                                prev_rep = expected_rep_schedule
+                                                prev_status = "PAID" if expected_rep_schedule > 0 else "NOT_PAID"
+
+                                        member_dict = member.to_dict()
+                                        member_dict.update({
+                                            "Client ID": row_cid,
+                                            "Client Name": row_cname,
+                                            "Active Credit": act_cred,
+                                            "Remaining Balance": rem_bal,
+                                            "Expected Repayment": expected_rep_schedule,
+                                            "Loan Product": loan_prod_val,
+                                            "Start Date": start_date_val,
+                                            "Loan ID": active_loan_id
+                                        })
+
+                                        member_info[row_cid] = {
+                                            "member": pd.Series(member_dict),
+                                            "loan_id": active_loan_id,
+                                            "sav_bal": row_sav,
+                                            "rem_bal": rem_bal,
+                                            "act_cred": act_cred,
+                                            "expected_rep_schedule": expected_rep_schedule,
+                                            "has_overdue": has_overdue_flag,
+                                            "overdue_arrears": overdue_arrears_amt,
+                                            "current_installment": current_inst_amt,
+                                            "prev_dep": prev_dep,
+                                            "prev_wd": prev_wd,
+                                            "prev_rep": prev_rep,
+                                            "prev_status": prev_status,
+                                            "start_date": start_date_val
+                                        }
 
                             # Fetch Group-Level Savings Balance
                             group_savings_balance = 0.0
@@ -5743,6 +5808,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                                         "Client Name": m['Client Name'],
                                                         "Officer": target_co,
                                                         "Branch": m.get('Branch', BRANCH),
+                                                        "loan_id": info.get("loan_id"),
                                                         "Amount Paid": rep_val,
                                                         "Transaction Type": "Loan",
                                                         "Note": "Daily Collection (CSV Upload)",
@@ -6076,6 +6142,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                                     "Client Name": m['Client Name'],
                                                     "Officer": target_co,
                                                     "Branch": m['Branch'],
+                                                    "loan_id": info.get("loan_id"),
                                                     "Amount Paid": rep,
                                                     "Transaction Type": "Loan",
                                                     "Note": "Daily Collection" if not is_marked_not_paid else "Marked NOT PAID (₦0 Collection)",

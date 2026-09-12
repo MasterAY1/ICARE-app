@@ -503,12 +503,12 @@ class PortfolioService:
             cid_str = str(l.get("client_id") or "")
             lid_str = str(l.get("loan_id") or "")
             if st in ["ACTIVE", "APPROVED"]:
-                active_loans_by_client[cid_str] = l
+                active_loans_by_client.setdefault(cid_str, []).append(l)
             elif st in ["COMPLETED", "CLOSED"]:
                 # Check if repayment was received for THIS specific loan in the selected period
                 c_reps = [r for r in repayments_today if str(r.get("loan_id")) == lid_str]
                 if c_reps:
-                    completed_loans_today_by_client[cid_str] = l
+                    completed_loans_today_by_client.setdefault(cid_str, []).append(l)
 
         # Pre-fetch loan schedules in batch to prevent sequential HTTP request bottlenecks
         all_loan_ids = [str(l.get("loan_id")) for l in loans_raw if l.get("loan_id")]
@@ -535,131 +535,153 @@ class PortfolioService:
             group_name = group_map.get(cid_str, "Individual")
             c_savings = savings_map.get(cid_str, {}).get('bal', 0.0)
 
-            l = active_loans_by_client.get(cid_str)
-            comp_l = completed_loans_today_by_client.get(cid_str)
+            loans_for_client = active_loans_by_client.get(cid_str, [])
+            comp_loans_for_client = completed_loans_today_by_client.get(cid_str, [])
             
-            act_cred = 0.0
-            repay_fixed = 0.0
-            disbursed = 0.0
-            outstanding_bal = 0.0
-            tot_paid_lifetime = 0.0
-            status_str = c_lifecycle_status
+            if not loans_for_client and comp_loans_for_client:
+                loans_for_client = comp_loans_for_client
 
-            if not l and comp_l:
-                l = comp_l
-            
-            if l:
-                # Active Credit is the static contract total due (Principal - Gap)
-                act_cred = float(l.get("active_credit") or 0.0)
-                repay_fixed = float(l.get("loan_repay") or 0.0)
-                disbursed = float(l.get("loan_amount") or 0.0)
-                tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
-                pre_paid = max(0.0, act_cred - tot_due_base)
-                
-                loan_id = str(l.get("loan_id")) if l.get("loan_id") else None
-                if loan_id and loan_id in sched_has_map:
-                    tot_paid_loan = sched_paid_map.get(loan_id, 0.0)
-                else:
-                    tot_paid_loan = lifetime_repayments_map.get(loan_id, 0.0)
-                
-                outstanding_bal = max(0.0, tot_due_base - tot_paid_loan)
-                tot_paid_lifetime = pre_paid + tot_paid_loan
+            if not loans_for_client:
+                client_rows.append({
+                    "Client ID": cid_str,
+                    "Client Code": c_code,
+                    "Client Name": c_name,
+                    "Group": group_name,
+                    "Loan Product": "None",
+                    "Loan Category": "None",
+                    "Savings Balance": c_savings,
+                    "Principal Loan": 0.0,
+                    "Active Loan": 0.0,
+                    "Outstanding Balance": 0.0,
+                    "Fixed Repayment": 0.0,
+                    "Total Paid": 0.0,
+                    "Status": c_lifecycle_status,
+                    "Lifecycle Status": c_lifecycle_status
+                })
+            else:
+                sorted_loans = sorted(
+                    loans_for_client,
+                    key=lambda item: 1 if bool(item.get('is_asset') or 'asset' in str(item.get('product_category') or (item.get('loan_products') or {}).get('name') or '').lower()) else 0
+                )
+                for l_idx, l in enumerate(sorted_loans):
+                    is_asset_l = bool(l.get('is_asset') or 'asset' in str(l.get('product_category') or (l.get('loan_products') or {}).get('name') or '').lower())
+                    if l_idx == 0:
+                        row_code = c_code
+                        row_name = c_name
+                        row_savings = c_savings
+                    else:
+                        suffix = "-ASSET" if is_asset_l else f"-L{l_idx+1}"
+                        row_code = f"{c_code}{suffix}"
+                        row_name = f"{c_name} ({'ASSET' if is_asset_l else f'LOAN {l_idx+1}'})"
+                        row_savings = 0.0
 
-                prod_info = l.get("loan_products") or {}
-                prod_name = prod_info.get("name") or "Unknown"
+                    act_cred = float(l.get("active_credit") or 0.0)
+                    repay_fixed = float(l.get("loan_repay") or 0.0)
+                    disbursed = float(l.get("loan_amount") or 0.0)
+                    tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
+                    pre_paid = max(0.0, act_cred - tot_due_base)
+                    
+                    loan_id = str(l.get("loan_id")) if l.get("loan_id") else None
+                    if loan_id and loan_id in sched_has_map:
+                        tot_paid_loan = sched_paid_map.get(loan_id, 0.0)
+                    else:
+                        tot_paid_loan = lifetime_repayments_map.get(loan_id, 0.0)
+                    
+                    outstanding_bal = max(0.0, tot_due_base - tot_paid_loan)
+                    tot_paid_lifetime = pre_paid + tot_paid_loan
 
-                if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]:
-                    if prod_name not in product_summary:
-                        product_summary[prod_name] = {"active_credit": 0.0, "loan_balance": 0.0, "count": 0}
-                    product_summary[prod_name]["active_credit"] += act_cred
-                    product_summary[prod_name]["loan_balance"] += outstanding_bal
-                    product_summary[prod_name]["count"] += 1
+                    prod_info = l.get("loan_products") or {}
+                    prod_name = prod_info.get("name") or l.get("product_category") or ("Asset Loan" if is_asset_l else "Unknown")
 
-                # Due date check for overdue status
-                exp_end = l.get("expected_end_date") or l.get("end_date")
-                is_past_due = False
-                if exp_end:
-                    try:
-                        exp_date = date.fromisoformat(str(exp_end)[:10])
-                        if exp_date < end_date and outstanding_bal > 0:
-                            is_past_due = True
-                    except Exception:
-                        pass
+                    if str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]:
+                        if prod_name not in product_summary:
+                            product_summary[prod_name] = {"active_credit": 0.0, "loan_balance": 0.0, "count": 0}
+                        product_summary[prod_name]["active_credit"] += act_cred
+                        product_summary[prod_name]["loan_balance"] += outstanding_bal
+                        product_summary[prod_name]["count"] += 1
 
-                # Check period expected for this loan
-                p_name_l = prod_name.lower()
-                is_daily_l = "daily" in p_name_l or "60" in p_name_l or "120" in p_name_l
-                g_mday_l = group_mday_map.get(group_name) or l.get("meeting_day") or "Daily"
-                l_start_str = str(l.get("start_date") or "")[:10]
-                l_start_d = date.fromisoformat(l_start_str) if l_start_str else start_date
-                eff_s = max(start_date, l_start_d)
-                occ_l = PortfolioService._count_meeting_occurrences(eff_s, end_date, g_mday_l, is_daily_l)
-                exp_in_period_l = repay_fixed * occ_l
+                    # Due date check for overdue status
+                    exp_end = l.get("expected_end_date") or l.get("end_date")
+                    is_past_due = False
+                    if exp_end:
+                        try:
+                            exp_date = date.fromisoformat(str(exp_end)[:10])
+                            if exp_date < end_date and outstanding_bal > 0:
+                                is_past_due = True
+                        except Exception:
+                            pass
 
-                # Repayments in period for this specific loan
-                c_reps_l = [r for r in repayments_today if str(r.get("loan_id")) == loan_id] if loan_id else []
-                paid_period_l = sum(float(r.get("amount_paid") or 0.0) for r in c_reps_l)
+                    # Check period expected for this loan
+                    p_name_l = prod_name.lower()
+                    is_daily_l = "daily" in p_name_l or "60" in p_name_l or "120" in p_name_l
+                    g_mday_l = group_mday_map.get(group_name) or l.get("meeting_day") or "Daily"
+                    l_start_str = str(l.get("start_date") or "")[:10]
+                    l_start_d = date.fromisoformat(l_start_str) if l_start_str else start_date
+                    eff_s = max(start_date, l_start_d)
+                    occ_l = PortfolioService._count_meeting_occurrences(eff_s, end_date, g_mday_l, is_daily_l)
+                    exp_in_period_l = repay_fixed * occ_l
 
-                disb_dt_str = str(l.get("disbursement_date") or l.get("date") or "")[:10]
-                start_dt_str = str(l.get("start_date") or "")[:10]
-                target_dt_str = end_date.isoformat()
-                is_disbursed_today = (disb_dt_str == target_dt_str)
-                is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
+                    # Repayments in period for this specific loan
+                    c_reps_l = [r for r in repayments_today if str(r.get("loan_id")) == loan_id] if loan_id else []
+                    paid_period_l = sum(float(r.get("amount_paid") or 0.0) for r in c_reps_l)
 
-                # Status label assignment for UI
-                if comp_l and (paid_period_l > 0 or str(comp_l.get("status")).upper() in ["COMPLETED", "CLOSED"]):
-                    status_str = "Completed (Paid Off)"
-                elif paid_period_l > 0:
-                    if exp_in_period_l > 0 and paid_period_l > exp_in_period_l:
-                        status_str = "Excess Paid"
+                    disb_dt_str = str(l.get("disbursement_date") or l.get("date") or "")[:10]
+                    start_dt_str = str(l.get("start_date") or "")[:10]
+                    target_dt_str = end_date.isoformat()
+                    is_disbursed_today = (disb_dt_str == target_dt_str)
+                    is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
+
+                    # Status label assignment for UI
+                    is_comp_loan = str(l.get("status") or "").upper() in ["COMPLETED", "CLOSED"]
+                    if is_comp_loan and (paid_period_l > 0 or str(l.get("status")).upper() in ["COMPLETED", "CLOSED"]):
+                        status_str = "Completed (Paid Off)"
+                    elif paid_period_l > 0:
+                        if exp_in_period_l > 0 and paid_period_l > exp_in_period_l:
+                            status_str = "Excess Paid"
+                        else:
+                            status_str = "Active Loan"
+                    elif is_past_due:
+                        overdue_count += 1
+                        overdue_amt += outstanding_bal
+                        status_str = "Overdue"
+                    elif is_disbursed_today or is_future_start:
+                        status_str = "Active Loan (New)"
+                    elif is_comp_loan:
+                        status_str = "Completed"
                     else:
                         status_str = "Active Loan"
-                elif is_past_due:
-                    overdue_count += 1
-                    overdue_amt += outstanding_bal
-                    status_str = "Overdue"
-                elif is_disbursed_today or is_future_start:
-                    status_str = "Active Loan (New)"
-                elif comp_l:
-                    status_str = "Completed"
-                else:
-                    status_str = "Active Loan"
 
-            prod_name_val = "None"
-            prod_cat_val = "None"
-            if l:
-                prod_info = l.get("loan_products") or {}
-                prod_name_val = prod_info.get("name") or l.get("product_category") or "Standard"
-                p_low = prod_name_val.lower()
-                if "12 week" in p_low or "12w" in p_low:
-                    prod_cat_val = "12-Week Loans"
-                elif "24 week" in p_low or "24w" in p_low:
-                    prod_cat_val = "24-Week Loans"
-                elif "daily" in p_low or "60" in p_low or "120" in p_low:
-                    prod_cat_val = "Daily Loans"
-                elif "month" in p_low:
-                    prod_cat_val = "Monthly Loans"
-                elif "asset" in p_low:
-                    prod_cat_val = "Asset Loans"
-                else:
-                    prod_cat_val = "Other Loans"
+                    prod_cat_val = "None"
+                    p_low = prod_name.lower()
+                    if "12 week" in p_low or "12w" in p_low:
+                        prod_cat_val = "12-Week Loans"
+                    elif "24 week" in p_low or "24w" in p_low:
+                        prod_cat_val = "24-Week Loans"
+                    elif "daily" in p_low or "60" in p_low or "120" in p_low:
+                        prod_cat_val = "Daily Loans"
+                    elif "month" in p_low:
+                        prod_cat_val = "Monthly Loans"
+                    elif "asset" in p_low or is_asset_l:
+                        prod_cat_val = "Asset Loans"
+                    else:
+                        prod_cat_val = "Other Loans"
 
-            client_rows.append({
-                "Client ID": cid_str,
-                "Client Code": c_code,
-                "Client Name": c_name,
-                "Group": group_name,
-                "Loan Product": prod_name_val,
-                "Loan Category": prod_cat_val,
-                "Savings Balance": c_savings,
-                "Principal Loan": disbursed,
-                "Active Loan": act_cred,
-                "Outstanding Balance": outstanding_bal,
-                "Fixed Repayment": repay_fixed,
-                "Total Paid": tot_paid_lifetime,
-                "Status": status_str,
-                "Lifecycle Status": c_lifecycle_status
-            })
+                    client_rows.append({
+                        "Client ID": cid_str,
+                        "Client Code": row_code,
+                        "Client Name": row_name,
+                        "Group": group_name,
+                        "Loan Product": prod_name,
+                        "Loan Category": prod_cat_val,
+                        "Savings Balance": row_savings,
+                        "Principal Loan": disbursed,
+                        "Active Loan": act_cred,
+                        "Outstanding Balance": outstanding_bal,
+                        "Fixed Repayment": repay_fixed,
+                        "Total Paid": tot_paid_lifetime,
+                        "Status": status_str,
+                        "Lifecycle Status": c_lifecycle_status
+                    })
 
         detailed_client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client ID", "Client Code", "Client Name", "Group", "Loan Product", "Loan Category", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Status", "Lifecycle Status"])
         raw_client_codes = sorted(list(set([r["Client Code"] for r in client_rows if r.get("Client Code") and str(r.get("Client Code")).strip() not in ["", "N/A", "None"]]))) if client_rows else []
@@ -667,7 +689,7 @@ class PortfolioService:
         # 1. Build Group Summary DataFrame
         if not detailed_client_df.empty:
             group_df = detailed_client_df.groupby("Group").agg(
-                Clients=("Client Code", "count"),
+                Clients=("Client ID", "nunique"),
                 Savings_Balance=("Savings Balance", "sum"),
                 Active_Loan=("Active Loan", "sum"),
                 Outstanding_Balance=("Outstanding Balance", "sum"),
@@ -834,9 +856,9 @@ class PortfolioService:
         matrix_rows.sort(key=lambda x: (x["Total Active Loans"], x["Total Active Credit"]), reverse=True)
         group_matrix_df = pd.DataFrame(matrix_rows) if matrix_rows else pd.DataFrame(columns=["Group Name", "Meeting Day", "12W Cash", "12W Asset", "24W Cash", "24W Asset", "Daily", "Monthly", "Total Active Loans", "Total Active Credit", "Total Outstanding Balance"])
 
-        expected_repay_clients = sum(1 for l in active_loans_by_client.values() if float(l.get("loan_repay") or 0.0) > 0)
+        expected_repay_clients = sum(1 for loans in active_loans_by_client.values() if any(float(l.get("loan_repay") or 0.0) > 0 for l in loans))
         paying_clients_count = len(set(str(r.get("client_id")) for r in repayments_today if float(r.get("amount_paid") or 0.0) > 0))
-        outstanding_clients_count = sum(1 for r in client_rows if float(r.get("Outstanding Balance", 0.0)) > 0)
+        outstanding_clients_count = len(set(r["Client ID"] for r in client_rows if float(r.get("Outstanding Balance", 0.0)) > 0))
         par_pct = round((overdue_amt / total_outstanding_balance * 100.0), 2) if total_outstanding_balance > 0 else 0.0
 
         return {
