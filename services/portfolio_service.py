@@ -549,6 +549,7 @@ class PortfolioService:
                     "Group": group_name,
                     "Loan Product": "None",
                     "Loan Category": "None",
+                    "Loan ID": None,
                     "Savings Balance": c_savings,
                     "Principal Loan": 0.0,
                     "Active Loan": 0.0,
@@ -673,6 +674,7 @@ class PortfolioService:
                         "Group": group_name,
                         "Loan Product": prod_name,
                         "Loan Category": prod_cat_val,
+                        "Loan ID": loan_id,
                         "Savings Balance": row_savings,
                         "Principal Loan": disbursed,
                         "Active Loan": act_cred,
@@ -683,7 +685,7 @@ class PortfolioService:
                         "Lifecycle Status": c_lifecycle_status
                     })
 
-        detailed_client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client ID", "Client Code", "Client Name", "Group", "Loan Product", "Loan Category", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Status", "Lifecycle Status"])
+        detailed_client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client ID", "Client Code", "Client Name", "Group", "Loan Product", "Loan Category", "Loan ID", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Status", "Lifecycle Status"])
         raw_client_codes = sorted(list(set([r["Client Code"] for r in client_rows if r.get("Client Code") and str(r.get("Client Code")).strip() not in ["", "N/A", "None"]]))) if client_rows else []
         
         # 1. Build Group Summary DataFrame
