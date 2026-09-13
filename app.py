@@ -1185,7 +1185,11 @@ def load_loans():
             
             # Fetch actual group names and meeting days from clients table to cover newly registered clients
             try:
-                res_c = uow.client.table("clients").select("client_id, client_code, meeting_day, groups(name, meeting_day), app_users(full_name)").execute()
+                res_c = uow.client.table("clients").select(
+                    "client_id, client_code, group_id, groups(name, meeting_day), "
+                    "client_memberships(group_id, groups(name, meeting_day)), "
+                    "app_users!clients_officer_id_fkey(full_name)"
+                ).execute()
                 if res_c.data:
                     code_to_group = {}
                     code_to_meeting = {}
@@ -1194,9 +1198,17 @@ def load_loans():
                         cid_uuid = c.get("client_id")
                         code = c.get("client_code")
                         g_name = c.get("groups", {}).get("name") if c.get("groups") else None
-                        m_day = c.get("meeting_day")
-                        if not m_day and c.get("groups"):
+                        if not g_name and c.get("client_memberships"):
+                            m_list = c.get("client_memberships")
+                            if isinstance(m_list, list) and len(m_list) > 0:
+                                g_name = (m_list[0].get("groups") or {}).get("name")
+                        m_day = None
+                        if c.get("groups"):
                             m_day = c.get("groups", {}).get("meeting_day")
+                        if not m_day and c.get("client_memberships"):
+                            m_list = c.get("client_memberships")
+                            if isinstance(m_list, list) and len(m_list) > 0:
+                                m_day = (m_list[0].get("groups") or {}).get("meeting_day")
                         o_name = c.get("app_users", {}).get("full_name") if c.get("app_users") else None
                         if cid_uuid:
                             if g_name: code_to_group[cid_uuid] = g_name
@@ -1206,9 +1218,15 @@ def load_loans():
                             if g_name: code_to_group[code] = g_name
                             if m_day: code_to_meeting[code] = m_day
                             if o_name: code_to_officer[code] = o_name
-                    df['Group Name'] = df['Client ID'].map(code_to_group).fillna(df['Group Name'])
-                    df['Meeting Day'] = df['Client ID'].map(code_to_meeting).fillna(df['Meeting Day'])
-                    df['Officer'] = df['Client ID'].map(code_to_officer).fillna(df['Officer'])
+                    c_col = 'Client Code' if 'Client Code' in df.columns else ('client_code' if 'client_code' in df.columns else None)
+                    if c_col:
+                        df['Group Name'] = df['Client ID'].map(code_to_group).fillna(df[c_col].map(code_to_group)).fillna(df['Group Name'] if 'Group Name' in df.columns else None)
+                        df['Meeting Day'] = df['Client ID'].map(code_to_meeting).fillna(df[c_col].map(code_to_meeting)).fillna(df['Meeting Day'] if 'Meeting Day' in df.columns else None)
+                        df['Officer'] = df['Client ID'].map(code_to_officer).fillna(df[c_col].map(code_to_officer)).fillna(df['Officer'] if 'Officer' in df.columns else None)
+                    else:
+                        df['Group Name'] = df['Client ID'].map(code_to_group).fillna(df['Group Name'] if 'Group Name' in df.columns else None)
+                        df['Meeting Day'] = df['Client ID'].map(code_to_meeting).fillna(df['Meeting Day'] if 'Meeting Day' in df.columns else None)
+                        df['Officer'] = df['Client ID'].map(code_to_officer).fillna(df['Officer'] if 'Officer' in df.columns else None)
             except Exception:
                 pass
 
@@ -3209,6 +3227,8 @@ elif page == "Loan Origination":
             disp_cols = ['Client Name', 'Group Name', 'Date', 'Officer', 'Loan Amount', 'Loan Product']
             available_cols = [c for c in disp_cols if c in pending_clients.columns]
             pending_display = pending_clients[available_cols].copy()
+            if 'Group Name' in pending_display.columns:
+                pending_display['Group Name'] = pending_display['Group Name'].fillna('-').replace('None', '-')
             if 'Loan Amount' in pending_display.columns:
                 pending_display['Loan Amount'] = pending_display['Loan Amount'].apply(lambda v: f"₦{float(v or 0):,.2f}")
             st.dataframe(pending_display, use_container_width=True, hide_index=True)
@@ -6417,6 +6437,14 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 reps_list = res_reps.data or []
                 sav_list = res_sav.data or []
                 gsav_list = res_gsav.data or []
+
+                # Preload group id -> group name map to guarantee bulletproof group resolution
+                all_groups_map = {}
+                try:
+                    g_res = uow_hist.client.table("groups").select("group_id, name").execute()
+                    all_groups_map = {g["group_id"]: g["name"] for g in (g_res.data or []) if g.get("group_id") and g.get("name")}
+                except Exception:
+                    pass
                 
                 # Fetch all reversed IDs and reversal entry IDs to ensure reversed transactions are omitted
                 approved_reversed_ids = set()
@@ -6499,22 +6527,31 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                     else:
                         clean_sav_list.append(s)
 
-                sav_dep_list = clean_sav_list
+                sav_dep_list = list(clean_sav_list)
                 for g in gsav_list:
                     g_id = str(g.get("id") or "")
                     g_rem = str(g.get("remarks") or "")
                     dep_amt = float(g.get("deposit_amount") or 0)
                     if dep_amt > 0 and g_id not in approved_reversed_ids and g_id not in reversal_entry_ids and "REVERSAL of" not in g_rem and "CORRECTION:" not in g_rem:
-                        g_name = (g.get("groups") or {}).get("name") if isinstance(g.get("groups"), dict) else "Group"
+                        g_name = (g.get("groups") or {}).get("name") if isinstance(g.get("groups"), dict) else None
+                        if not g_name and g.get("group_id"):
+                            g_name = all_groups_map.get(g.get("group_id"))
+                        if not g_name:
+                            g_name = "Group Communal"
                         sav_dep_list.append({
                             "id": g.get("id"),
                             "client_id": f"GROUP-{g_name}",
-                            "clients": {"name": f"{g_name} (Communal)", "client_code": "GROUP"},
+                            "clients": {
+                                "name": f"{g_name} (Communal)",
+                                "client_code": "GROUP",
+                                "groups": {"name": g_name}
+                            },
                             "deposit_amount": g.get("deposit_amount"),
                             "posting_date": g.get("posting_date"),
                             "created_at": g.get("created_at"),
                             "remarks": g.get("remarks") or "Group Communal Savings",
-                            "reference": g.get("reference")
+                            "reference": g.get("reference"),
+                            "officer_id": g.get("officer_id")
                         })
 
                 tot_reps_amt = sum(float(r.get("amount_paid") or 0) for r in reps_list)
@@ -6635,7 +6672,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 for r in reps_list:
                     c_dict = r.get("clients") or {} if isinstance(r.get("clients"), dict) else {}
                     g_dict = c_dict.get("groups") or {} if isinstance(c_dict.get("groups"), dict) else {}
-                    g_name = g_dict.get("name") or "Ungrouped"
+                    g_name = g_dict.get("name") or all_groups_map.get(c_dict.get("group_id")) or "Ungrouped"
                     amt = float(r.get("amount_paid") or 0.0)
                     exp_amt = float(r.get("expected_amount") or 0.0)
                     cid = str(r.get("client_id") or "")
@@ -6674,7 +6711,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 for s in clean_sav_list:
                     c_dict = s.get("clients") or {} if isinstance(s.get("clients"), dict) else {}
                     g_dict = c_dict.get("groups") or {} if isinstance(c_dict.get("groups"), dict) else {}
-                    g_name = g_dict.get("name") or "Ungrouped"
+                    g_name = g_dict.get("name") or all_groups_map.get(c_dict.get("group_id")) or "Ungrouped"
                     amt = float(s.get("deposit_amount") or 0.0)
                     cid = str(s.get("client_id") or "")
                     
@@ -6710,7 +6747,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                     dep_amt = float(g.get("deposit_amount") or 0.0)
                     if dep_amt > 0 and g_id not in approved_reversed_ids and g_id not in reversal_entry_ids and "REVERSAL of" not in g_rem and "CORRECTION:" not in g_rem:
                         g_dict = g.get("groups") or {} if isinstance(g.get("groups"), dict) else {}
-                        g_name = g_dict.get("name") or "Group Communal"
+                        g_name = g_dict.get("name") or all_groups_map.get(g.get("group_id")) or "Group Communal"
                         if g_name not in groups_agg:
                             groups_agg[g_name] = {
                                 "total_repayment": 0.0,
