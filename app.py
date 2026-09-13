@@ -3203,13 +3203,26 @@ elif page == "Loan Origination":
         if pending_clients.empty:
             st.info("No pending loans found.")
         else:
-            st.dataframe(pending_clients[['Client ID', 'Client Name', 'Date', 'Officer', 'Loan Amount', 'Loan Product']], use_container_width=True)
+            # Prepare clean presentation columns without raw database UUID
+            disp_cols = ['Client Name', 'Group Name', 'Date', 'Officer', 'Loan Amount', 'Loan Product']
+            available_cols = [c for c in disp_cols if c in pending_clients.columns]
+            pending_display = pending_clients[available_cols].copy()
+            if 'Loan Amount' in pending_display.columns:
+                pending_display['Loan Amount'] = pending_display['Loan Amount'].apply(lambda v: f"₦{float(v or 0):,.2f}")
+            st.dataframe(pending_display, use_container_width=True, hide_index=True)
             if ROLE in ["AM", "BM", ROLE_ADMIN]:
                 st.markdown("### Checker Action: Activate Loan")
                 with st.form("activate_loan_form"):
                     opts = pending_clients['Client ID'].tolist()
                     def format_func(x):
-                        return f"{x} - {pending_clients[pending_clients['Client ID'] == x].iloc[0]['Client Name']}"
+                        matched = pending_clients[pending_clients['Client ID'] == x]
+                        if not matched.empty:
+                            row = matched.iloc[0]
+                            c_name = row.get('Client Name', 'Unknown')
+                            c_prod = row.get('Loan Product', 'Loan')
+                            c_amt = float(row.get('Loan Amount', 0) or 0)
+                            return f"{c_name} — {c_prod} (₦{c_amt:,.2f})"
+                        return str(x)
                     selected_client_id = st.selectbox("Select Client to Activate", opts, format_func=format_func)
                     disbursement_date = st.date_input("Actual Disbursement Date", value=datetime.now().date(), help="Select the planned date cash was disbursed.")
                     submitted_activate = st.form_submit_button("Authorize & Activate Disbursement", use_container_width=True)
@@ -4844,7 +4857,7 @@ elif page == "Collections":
             st.markdown("""
                 <div style="background-color: #f0fdf4; border: 2px solid #22c55e; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
                     <div style="display: flex; align-items: center; gap: 14px;">
-                        <span style="font-size: 36px;">\u2705</span>
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                         <div>
                             <h2 style="color: #15803d; margin: 0; padding: 0; font-size: 22px;">COLLECTION SAVED & CONFIRMED IN GENERAL LEDGER</h2>
                             <p style="color: #166534; margin: 4px 0 0 0; font-size: 14px;">
@@ -4878,7 +4891,7 @@ elif page == "Collections":
                 st.metric("Members Processed", f"{receipt.get('total_submitted', 0)} records")
 
             if receipt.get("already_saved", 0) > 0:
-                st.info(f"\U0001f501 **Idempotency Protection Active**: {receipt.get('already_saved')} records were safely identified from an earlier network attempt and skipped to guarantee zero double-posting.")
+                st.info(f"**Idempotency Protection Active**: {receipt.get('already_saved')} records were safely identified from an earlier network attempt and skipped to guarantee zero double-posting.")
 
             items = receipt.get("items", [])
             if items:
@@ -4944,13 +4957,13 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 with SupabaseUnitOfWork() as uow:
                     target_officer_id = uow.loans._resolve_officer_id(target_co)
                     if ROLE in ["BM", ROLE_BRANCH_MANAGER]:
-                        res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").eq("branch_id", BRANCH_ID).execute()
+                        res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(group_id, groups(name)), client_statuses(name)").eq("branch_id", BRANCH_ID).execute()
                     elif ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
-                        res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").in_("branch_id", ASSIGNED_BRANCH_IDS).execute()
+                        res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(group_id, groups(name)), client_statuses(name)").in_("branch_id", ASSIGNED_BRANCH_IDS).execute()
                     elif ROLE in [ROLE_ADMIN, ROLE_SUPER_ADMIN, "Admin", "Super Admin"]:
-                        res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").execute()
+                        res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(group_id, groups(name)), client_statuses(name)").execute()
                     else:
-                        res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(groups(name)), client_statuses(name)").eq("officer_id", target_officer_id).execute()
+                        res_c = uow.client.table("clients").select("client_id, client_code, name, status, status_id, group_id, groups(name), client_memberships(group_id, groups(name)), client_statuses(name)").eq("officer_id", target_officer_id).execute()
                 
                 clients_data = []
                 # Pre-load all groups with meeting_day for disambiguating same-named groups
@@ -4985,10 +4998,14 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                 for m in m_list:
                                     if m.get("groups") and m["groups"].get("name"):
                                         g_name = m["groups"]["name"]
+                                        if not c_group_id and m.get("group_id"):
+                                            c_group_id = m.get("group_id")
                                         break
                             elif isinstance(m_list, dict):
                                 if m_list.get("groups") and m_list["groups"].get("name"):
                                     g_name = m_list["groups"]["name"]
+                                    if not c_group_id and m_list.get("group_id"):
+                                        c_group_id = m_list.get("group_id")
                 
                         if not g_name:
                             g_name = "Ungrouped"
@@ -5001,6 +5018,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             "ID": c["client_id"],
                             "Client Name": c["name"],
                             "Group Name": g_label,
+                            "Raw Group Name": g_name,
                             "Group ID": c_group_id,
                             "Officer": target_co,
                             "Branch": BRANCH
@@ -5207,17 +5225,36 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         s_uuid = sel_client_obj["ID"]
                         s_name = sel_client_obj["Client Name"]
                         s_gname = sel_client_obj["Group Name"]
+                        s_raw_gname = sel_client_obj.get("Raw Group Name") or s_gname
+                        target_gid = sel_client_obj.get("Group ID")
                         sel_client_id = s_cid
 
                         from services.schedule_service import ScheduleService
                         with SupabaseUnitOfWork() as uow:
-                            # 1. Fetch current savings balance
+                            # 1. Fetch current individual savings balance
                             try:
                                 res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", s_uuid).execute()
                                 res_wd = uow.client.table("individual_savings").select("withdrawal_amount").eq("client_id", s_uuid).execute()
                                 client_sav_bal = sum(float(d.get("deposit_amount") or 0) for d in (res_dep.data or [])) - sum(float(w.get("withdrawal_amount") or 0) for w in (res_wd.data or []))
                             except Exception:
                                 client_sav_bal = 0.0
+
+                            # 1b. Fetch communal group savings balance if client belongs to a group
+                            grp_sav_bal = 0.0
+                            is_in_group = bool(s_gname and s_gname != "Ungrouped" and s_raw_gname != "Ungrouped")
+                            if is_in_group:
+                                try:
+                                    if not target_gid and s_raw_gname:
+                                        res_grp = uow.client.table("groups").select("group_id").ilike("name", s_raw_gname).execute()
+                                        if res_grp.data:
+                                            target_gid = res_grp.data[0]["group_id"]
+                                            sel_client_obj["Group ID"] = target_gid
+
+                                    if target_gid:
+                                        res_gs = uow.client.table("group_savings").select("deposit_amount, withdrawal_amount").eq("group_id", target_gid).execute()
+                                        grp_sav_bal = sum(float(d.get("deposit_amount") or 0) for d in (res_gs.data or [])) - sum(float(w.get("withdrawal_amount") or 0) for w in (res_gs.data or []))
+                                except Exception:
+                                    grp_sav_bal = 0.0
 
                             # 2. Fetch active loan
                             active_loan_rows = all_loans[((all_loans['Client ID'] == s_cid) | (all_loans['Client ID'] == s_uuid)) & (all_loans['Status'] == 'Active')]
@@ -5249,20 +5286,37 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                 expected_rep = 0.0
 
                         # Display client overview cards
-                        sc1, sc2, sc3 = st.columns(3)
-                        sc1.metric("Group Name", s_gname)
-                        sc2.metric("Savings Balance", f"₦{client_sav_bal:,.2f}")
-                        sc3.metric("Outstanding Loan", f"₦{rem_bal:,.2f}" if active_loan_id else "No Active Loan")
+                        if is_in_group:
+                            sc1, sc2, sc3, sc4 = st.columns(4)
+                            sc1.metric("Group Name", s_gname)
+                            sc2.metric("Personal Savings", f"₦{client_sav_bal:,.2f}")
+                            sc3.metric("Group Savings Fund", f"₦{grp_sav_bal:,.2f}")
+                            sc4.metric("Outstanding Loan", f"₦{rem_bal:,.2f}" if active_loan_id else "No Active Loan")
+                        else:
+                            sc1, sc2, sc3 = st.columns(3)
+                            sc1.metric("Membership", "Individual (Ungrouped)")
+                            sc2.metric("Personal Savings", f"₦{client_sav_bal:,.2f}")
+                            sc3.metric("Outstanding Loan", f"₦{rem_bal:,.2f}" if active_loan_id else "No Active Loan")
 
                         with st.form("single_client_collection_form"):
-                            f_col1, f_col2 = st.columns(2)
-                            single_sav = f_col1.number_input("Savings Deposit (₦)", min_value=0.0, step=500.0, value=None, placeholder="0", key="s_sav_amt")
-                        
-                            if active_loan_id:
-                                single_rep = f_col2.number_input(f"Loan Repayment ({loan_prod_val}) (₦)", min_value=0.0, step=500.0, value=None, placeholder=f"Expected: {expected_rep:,.0f}", key="s_rep_amt")
+                            if is_in_group:
+                                f_col1, f_col2, f_col3 = st.columns(3)
+                                single_sav = f_col1.number_input("Personal Savings Deposit (₦)", min_value=0.0, step=500.0, value=None, placeholder="0", key="s_sav_amt", help=f"Personal savings deposited for {s_name}")
+                                single_grp_sav = f_col2.number_input("Group Savings Deposit (₦)", min_value=0.0, step=500.0, value=None, placeholder="0", key="s_grp_sav_amt", help=f"Communal savings contribution for {s_gname}")
+                                if active_loan_id:
+                                    single_rep = f_col3.number_input(f"Loan Repayment ({loan_prod_val}) (₦)", min_value=0.0, step=500.0, value=None, placeholder=f"Expected: {expected_rep:,.0f}", key="s_rep_amt")
+                                else:
+                                    single_rep = 0.0
+                                    f_col3.caption("*Client has no active loan. Repayment field is ₦0.*")
                             else:
-                                single_rep = 0.0
-                                f_col2.caption("*Client has no active loan. Repayment field is ₦0.*")
+                                f_col1, f_col2 = st.columns(2)
+                                single_sav = f_col1.number_input("Personal Savings Deposit (₦)", min_value=0.0, step=500.0, value=None, placeholder="0", key="s_sav_amt", help=f"Personal savings deposited for {s_name}")
+                                single_grp_sav = 0.0
+                                if active_loan_id:
+                                    single_rep = f_col2.number_input(f"Loan Repayment ({loan_prod_val}) (₦)", min_value=0.0, step=500.0, value=None, placeholder=f"Expected: {expected_rep:,.0f}", key="s_rep_amt")
+                                else:
+                                    single_rep = 0.0
+                                    f_col2.caption("*Client has no active loan. Repayment field is ₦0.*")
 
                             with st.expander("Additional Fees (Optional)"):
                                 fee1, fee2, fee3 = st.columns(3)
@@ -5276,13 +5330,14 @@ Status: CONFIRMED & POSTED TO LEDGER"""
 
                             if single_submit:
                                 sav_val = float(single_sav or 0.0)
+                                grp_sav_val = float(single_grp_sav or 0.0)
                                 rep_val = float(single_rep or 0.0)
                                 app_val = float(single_app or 0.0)
                                 pb_val = float(single_pb or 0.0)
                                 misc_val = float(single_misc or 0.0)
 
-                                if sav_val == 0 and rep_val == 0 and app_val == 0 and pb_val == 0 and misc_val == 0:
-                                    st.error("Please enter a Savings Deposit, Loan Repayment, or Fee amount greater than ₦0.")
+                                if sav_val == 0 and grp_sav_val == 0 and rep_val == 0 and app_val == 0 and pb_val == 0 and misc_val == 0:
+                                    st.error("Please enter a Personal Savings Deposit, Group Savings Deposit, Loan Repayment, or Fee amount greater than ₦0.")
                                 else:
                                     with st.spinner("Posting client collection to financial ledger..."):
                                         prod_low = str(loan_prod_val).lower()
@@ -5294,58 +5349,121 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                         elif "month" in prod_low: rep_mth = rep_val
                                         else: rep_60d = rep_val
 
-                                        single_tx = {
-                                            "Date": date_str,
-                                            "Client ID": s_cid,
-                                            "Client Name": s_name,
-                                            "Group Name": s_gname,
-                                            "Group ID": sel_client_obj.get("Group ID"),
-                                            "Officer": target_co,
-                                            "Branch": BRANCH,
-                                            "client_id": s_uuid,
-                                            "id": s_uuid,
-                                            "Amount Paid": rep_val,
-                                            "Transaction Type": "Loan" if rep_val > 0 else "Individual Savings Deposit",
-                                            "Note": single_note.strip() or "Single Client Collection",
-                                            "Savings Amount": sav_val,
-                                            "Withdrawal Amount": 0.0,
-                                            "Loan Repayment Amount": rep_val,
-                                            "Repayment 12 Weeks": rep_12w,
-                                            "Repayment 24 Weeks": rep_24w,
-                                            "Repayment 60 Days": rep_60d,
-                                            "Repayment 120 Days": rep_120d,
-                                            "Monthly": rep_mth,
-                                            "Bank Withdrawal": 0,
-                                            "Asset Sales": 0,
-                                            "App Fee": app_val,
-                                            "Pass Book Bonus": pb_val,
-                                            "Misc Fees": misc_val,
-                                            "Asset Credit Sales": 0,
-                                            "Cash and Carry": 0,
-                                            "Credit Form": 0,
-                                            "Credit Form Damage": 0,
-                                            "Bonus": 0,
-                                            "Contingency": 0,
-                                            "Daily 11%": 0,
-                                            "Daily 20%": 0,
-                                            "Weekly 11%": 0,
-                                            "Weekly 20%": 0,
-                                            "Monthly 11%/20%": 0,
-                                            "Product Withdrawal": 0,
-                                            "Expenses": 0,
-                                            "Bank Deposited": 0,
-                                            "Payment Status": "PAID" if rep_val > 0 else "NOT_PAID",
-                                            "Overdue Amount": 0.0,
-                                            "Expected Amount": expected_rep
-                                        }
+                                        sc_batch_id = f"COL-SC-{date_str}-{uuid.uuid4().hex[:6].upper()}"
+                                        records_to_insert = []
+
+                                        # 1. Individual Member Transaction (Personal Savings, Loan Repayment, Fees)
+                                        if sav_val > 0 or rep_val > 0 or app_val > 0 or pb_val > 0 or misc_val > 0 or grp_sav_val == 0:
+                                            single_tx = {
+                                                "batch_id": sc_batch_id,
+                                                "tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{s_cid}_rep")),
+                                                "savings_tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{s_cid}_sav")),
+                                                "Date": date_str,
+                                                "Client ID": s_cid,
+                                                "Client Name": s_name,
+                                                "Group Name": s_gname,
+                                                "Group ID": target_gid,
+                                                "group_id": target_gid,
+                                                "Officer": target_co,
+                                                "Branch": BRANCH,
+                                                "client_id": s_uuid,
+                                                "id": s_uuid,
+                                                "Amount Paid": rep_val,
+                                                "Transaction Type": "Loan" if rep_val > 0 else "Individual Savings Deposit",
+                                                "Note": single_note.strip() or "Single Client Collection",
+                                                "Savings Amount": sav_val,
+                                                "Withdrawal Amount": 0.0,
+                                                "Loan Repayment Amount": rep_val,
+                                                "Repayment 12 Weeks": rep_12w,
+                                                "Repayment 24 Weeks": rep_24w,
+                                                "Repayment 60 Days": rep_60d,
+                                                "Repayment 120 Days": rep_120d,
+                                                "Monthly": rep_mth,
+                                                "Bank Withdrawal": 0,
+                                                "Asset Sales": 0,
+                                                "App Fee": app_val,
+                                                "Pass Book Bonus": pb_val,
+                                                "Misc Fees": misc_val,
+                                                "Asset Credit Sales": 0,
+                                                "Cash and Carry": 0,
+                                                "Credit Form": 0,
+                                                "Credit Form Damage": 0,
+                                                "Bonus": 0,
+                                                "Contingency": 0,
+                                                "Daily 11%": 0,
+                                                "Daily 20%": 0,
+                                                "Weekly 11%": 0,
+                                                "Weekly 20%": 0,
+                                                "Monthly 11%/20%": 0,
+                                                "Product Withdrawal": 0,
+                                                "Expenses": 0,
+                                                "Bank Deposited": 0,
+                                                "Group Savings Deposit": 0.0,
+                                                "Group Savings Withdrawal": 0.0,
+                                                "Payment Status": "PAID" if rep_val > 0 else "NOT_PAID",
+                                                "Overdue Amount": 0.0,
+                                                "Expected Amount": expected_rep
+                                            }
+                                            records_to_insert.append(single_tx)
+
+                                        # 2. Communal Group Savings Transaction
+                                        if grp_sav_val > 0 and is_in_group:
+                                            grp_tx_name = s_raw_gname if s_raw_gname else s_gname
+                                            grp_tx = {
+                                                "batch_id": sc_batch_id,
+                                                "tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_group_{s_cid}_rep")),
+                                                "savings_tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_group_{s_cid}_sav")),
+                                                "Date": date_str,
+                                                "Client ID": f"GROUP-{grp_tx_name}",
+                                                "Client Name": f"{s_gname} (Group Savings from {s_name})",
+                                                "Officer": target_co,
+                                                "Branch": BRANCH,
+                                                "Amount Paid": 0.0,
+                                                "Transaction Type": "Group Meeting",
+                                                "Note": f"Group Savings Deposit from {s_name} ({single_note.strip() or 'Single Client Quick Entry'})",
+                                                "Savings Amount": grp_sav_val,
+                                                "Withdrawal Amount": 0.0,
+                                                "group_id": target_gid,
+                                                "Group ID": target_gid,
+                                                "Laps Reserved": 0,
+                                                "Loan Repayment Amount": 0.0,
+                                                "Repayment 12 Weeks": 0,
+                                                "Repayment 24 Weeks": 0,
+                                                "Repayment 60 Days": 0,
+                                                "Repayment 120 Days": 0,
+                                                "Monthly": 0,
+                                                "Bank Withdrawal": 0,
+                                                "Asset Sales": 0,
+                                                "App Fee": 0,
+                                                "Pass Book Bonus": 0,
+                                                "Misc Fees": 0,
+                                                "Asset Credit Sales": 0,
+                                                "Cash and Carry": 0,
+                                                "Credit Form": 0,
+                                                "Credit Form Damage": 0,
+                                                "Bonus": 0,
+                                                "Contingency": 0,
+                                                "Daily 11%": 0,
+                                                "Daily 20%": 0,
+                                                "Weekly 11%": 0,
+                                                "Weekly 20%": 0,
+                                                "Monthly 11%/20%": 0,
+                                                "Product Withdrawal": 0,
+                                                "Expenses": 0,
+                                                "Bank Deposited": 0,
+                                                "Laps Transferred": 0,
+                                                "Group Savings Deposit": grp_sav_val,
+                                                "Group Savings Withdrawal": 0.0,
+                                                "Payment Status": "PAID",
+                                                "Expected Amount": 0.0,
+                                                "Overdue Amount": 0.0
+                                            }
+                                            records_to_insert.append(grp_tx)
+
                                         try:
-                                            sc_batch_id = f"COL-SC-{date_str}-{uuid.uuid4().hex[:6].upper()}"
-                                            single_tx["batch_id"] = sc_batch_id
-                                            single_tx["tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{s_cid}_rep"))
-                                            single_tx["savings_tx_id"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{s_cid}_sav"))
-                                            receipt = save_repayments([single_tx], batch_id=sc_batch_id)
+                                            receipt = save_repayments(records_to_insert, batch_id=sc_batch_id)
                                             if receipt:
-                                                receipt["group_name"] = f"Single Client: {s_name}"
+                                                receipt["group_name"] = f"Single Client: {s_name} ({s_gname})" if is_in_group else f"Single Client: {s_name}"
                                                 receipt["officer"] = target_co
                                                 receipt["branch"] = BRANCH
                                                 receipt["date"] = date_str
