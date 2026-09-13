@@ -1022,7 +1022,7 @@ st.markdown("""
 
 # Mapping dictionaries to bridge UI names to SQL column names
 DB_TO_UI_LOANS = {
-    "client_id": "Client ID", "date": "Date", "branch": "Branch", "officer": "Officer",
+    "client_id": "Client ID", "client_code": "Client Code", "date": "Date", "branch": "Branch", "officer": "Officer",
     "client_name": "Client Name", "phone": "Phone", "address": "Address", "business_type": "Business Type",
     "group_name": "Group Name", "meeting_day": "Meeting Day", "loan_product": "Loan Product",
     "loan_amount": "Loan Amount", "active_credit": "Active Credit", "loan_repay": "Loan Repay",
@@ -1185,25 +1185,27 @@ def load_loans():
             
             # Fetch actual group names and meeting days from clients table to cover newly registered clients
             try:
-                res_c = uow.client.table("clients").select("client_code, meeting_day, groups(name, meeting_day), app_users(full_name)").execute()
+                res_c = uow.client.table("clients").select("client_id, client_code, meeting_day, groups(name, meeting_day), app_users(full_name)").execute()
                 if res_c.data:
                     code_to_group = {}
                     code_to_meeting = {}
                     code_to_officer = {}
                     for c in res_c.data:
+                        cid_uuid = c.get("client_id")
                         code = c.get("client_code")
                         g_name = c.get("groups", {}).get("name") if c.get("groups") else None
                         m_day = c.get("meeting_day")
                         if not m_day and c.get("groups"):
                             m_day = c.get("groups", {}).get("meeting_day")
                         o_name = c.get("app_users", {}).get("full_name") if c.get("app_users") else None
+                        if cid_uuid:
+                            if g_name: code_to_group[cid_uuid] = g_name
+                            if m_day: code_to_meeting[cid_uuid] = m_day
+                            if o_name: code_to_officer[cid_uuid] = o_name
                         if code:
-                            if g_name:
-                                code_to_group[code] = g_name
-                            if m_day:
-                                code_to_meeting[code] = m_day
-                            if o_name:
-                                code_to_officer[code] = o_name
+                            if g_name: code_to_group[code] = g_name
+                            if m_day: code_to_meeting[code] = m_day
+                            if o_name: code_to_officer[code] = o_name
                     df['Group Name'] = df['Client ID'].map(code_to_group).fillna(df['Group Name'])
                     df['Meeting Day'] = df['Client ID'].map(code_to_meeting).fillna(df['Meeting Day'])
                     df['Officer'] = df['Client ID'].map(code_to_officer).fillna(df['Officer'])
@@ -1214,8 +1216,8 @@ def load_loans():
             for c in num_cols:
                 if c in df.columns:
                     df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-            if not df.empty and 'Date' in df.columns and 'Client ID' in df.columns:
-                df = df.sort_values('Date').groupby('Client ID').last().reset_index()
+            if not df.empty and 'Date' in df.columns:
+                df = df.sort_values('Date', ascending=True).reset_index(drop=True)
             return df
     except Exception as e:
         st.error(f"Database Error: {e}")
@@ -5257,9 +5259,17 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                     grp_sav_bal = 0.0
 
                             # 2. Fetch active loan
-                            active_loan_rows = all_loans[((all_loans['Client ID'] == s_cid) | (all_loans['Client ID'] == s_uuid)) & (all_loans['Status'] == 'Active')]
+                            active_loan_rows = all_loans[((all_loans['Client ID'] == s_cid) | (all_loans['Client ID'] == s_uuid) | (all_loans.get('Client Code', pd.Series()) == s_cid)) & (all_loans['Status'] == 'Active')]
                             if not active_loan_rows.empty:
-                                loan_row = active_loan_rows.iloc[0]
+                                if len(active_loan_rows) > 1:
+                                    loan_options = {
+                                        f"{r.get('Loan Product', 'Loan')} — Active Credit: ₦{float(r.get('Active Credit', 0)):,.0f} (#{str(r.get('id', ''))[:8]})": r
+                                        for _, r in active_loan_rows.iterrows()
+                                    }
+                                    sel_loan_lbl = st.selectbox("Select Active Loan to Repay", list(loan_options.keys()), key=f"sc_loan_sel_{s_cid}")
+                                    loan_row = loan_options[sel_loan_lbl]
+                                else:
+                                    loan_row = active_loan_rows.iloc[0]
                                 active_loan_id = loan_row.get('id') or loan_row.get('loan_id') or loan_row.get('Loan ID')
                                 act_cred = float(loan_row.get('Active Credit', 0) or loan_row.get('active_credit', 0))
                                 total_due_base = float(loan_row.get('Total Due', 0) or loan_row.get('total_due', 0)) or act_cred
@@ -5550,7 +5560,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             for _, member in group_clients.iterrows():
                                 cid = member['Client ID']
                                 uuid_id = member['ID']
-                                active_loan_rows = all_loans[((all_loans['Client ID'] == cid) | (all_loans['Client ID'] == uuid_id)) & (all_loans['Status'] == 'Active')]
+                                active_loan_rows = all_loans[((all_loans['Client ID'] == cid) | (all_loans['Client ID'] == uuid_id) | (all_loans.get('Client Code', pd.Series()) == cid)) & (all_loans['Status'] == 'Active')]
                                 for _, l_row in active_loan_rows.iterrows():
                                     lid = l_row.get('id') or l_row.get('loan_id') or l_row.get('Loan ID')
                                     if lid and isinstance(lid, str) and len(lid) > 10:
@@ -5574,7 +5584,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                 uuid_id = member['ID']
                                 mem_reps = repayments[repayments['Client ID'] == cid] if not repayments.empty else pd.DataFrame()
                                 sav_bal = group_sav_map.get(uuid_id, 0.0)
-                                active_loan_rows = all_loans[((all_loans['Client ID'] == cid) | (all_loans['Client ID'] == uuid_id)) & (all_loans['Status'] == 'Active')]
+                                active_loan_rows = all_loans[((all_loans['Client ID'] == cid) | (all_loans['Client ID'] == uuid_id) | (all_loans.get('Client Code', pd.Series()) == cid)) & (all_loans['Status'] == 'Active')]
 
                                 if active_loan_rows.empty:
                                     pending_list = st.session_state.get('pending_collections', [])
@@ -9648,7 +9658,7 @@ elif page == "Dashboard":
     sb1.metric("Active Loans", active_loans_count)
     sb2.metric("Outstanding Portfolio", f"₦{total_active_credit:,.2f}")
     sb3.metric("Active Savings", f"₦{real_total_savings:,.2f}")
-    sb4.metric("Clients", len(my_loans) if not my_loans.empty else 0)
+    sb4.metric("Clients", my_loans['Client ID'].nunique() if not my_loans.empty and 'Client ID' in my_loans.columns else 0)
     sb5.metric("Branches", 1 if BRANCH else 3)
     sb6.metric("Collection Today", f"₦{collected_today:,.2f}")
 

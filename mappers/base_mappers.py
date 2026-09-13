@@ -52,6 +52,7 @@ class LoanMapper:
 
         # Build extra_fields with fallback client columns
         extra = {
+            "client_code": c_dto.get("client_code") or dto.get("client_code", ""),
             "nickname": c_dto.get("nickname") or dto.get("nickname", ""),
             "phone": c_dto.get("phone") or dto.get("phone", ""),
             "address": c_dto.get("address") or dto.get("address", ""),
@@ -127,6 +128,7 @@ class LoanMapper:
         db_dict = {
             "id": entity.id,
             "client_id": entity.client_id,
+            "client_code": entity.extra_fields.get("client_code", ""),
             "client_name": entity.client_name,
             "loan_product": entity.product_type,
             "loan_amount": entity.amount,
