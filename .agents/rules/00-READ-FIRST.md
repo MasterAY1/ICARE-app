@@ -47,6 +47,7 @@
 6. **Schedule Correctness**: First repayment date begins on the NEXT valid meeting/collection day after disbursement. Disbursement date ≠ first repayment date.
 7. **Projection Integrity**: Cashbooks derive 100% of physical cash movements from Account 1000. Master Cashbook MUST NOT query operational tables (`loans`, `treasury_transactions`) independently.
 8. **Dashboard & Report Integrity**: All dashboards and reports must query authoritative sources. No hardcoded financial metrics or faked reconciliation totals.
+9. **Strict Zero-Emoji Directive (SVG Icons Only)**: Emojis are strictly forbidden anywhere in the system UI (tab headers, buttons, cards, expanders, tables, alerts, dialogs, form controls, or markdown text). Do NOT use emoji characters. Use clean, professional corporate typography or SVG icons instead.
 
 ---
 

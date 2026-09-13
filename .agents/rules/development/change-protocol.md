@@ -83,7 +83,7 @@ Only after approval, implement the approved changes.
    - [ ] Verify tab routing and session state keys match exact string literals.
    - [ ] Verify form controls, inputs, validation error alerts, and submit buttons.
    - [ ] Verify dropdowns, filters, and dynamic selections update reactively.
-   - [ ] Verify typography, formatting (`₦{:,.2f}`), and emoji compliance (`👤` preserved, buttons clean).
+   - [ ] Verify typography, formatting (`₦{:,.2f}`), and strict zero-emoji compliance (emojis forbidden; use clean text or SVG icons instead).
    - [ ] Verify cross-role UI visibility (CO vs BM vs AM vs Admin).
 6. Test the ORIGINAL reported scenario.
 7. Test at least TWO adjacent scenarios (e.g., different product types, different branches).

@@ -400,7 +400,7 @@ Whenever a bug fix, metric correction, or feature implementation is executed, th
    - Ensure external interactive controls (e.g., "Expand All") operate outside form barriers to preserve instant reactivity.
 4. **Typography & Corporate Styling**:
    - Enforce clean corporate typography across headers, buttons, and badges.
-   - Strictly adhere to the emoji governance: keep `👤` (Client/Officer profile) and `📋` (Asset/Documentation) indicators where specified, while eliminating informal emoji clutter from action buttons and operational forms.
+   - Strictly enforce the Zero-Emoji governance: Emojis are strictly prohibited anywhere in the system UI (tab titles, buttons, expanders, headers, cards, dialogs, form controls, markdown). Use clean corporate typography or SVG icons instead.
 5. **Cross-Role UI Confirmation**:
    - Verify that the rendered UI aligns strictly with the role's RBAC scope (e.g. Credit Officer sees field collection views; Branch Manager sees branch approvals and oversight; Area Manager and Admin see multi-branch aggregation).
 

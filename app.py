@@ -1080,13 +1080,13 @@ UI_TO_DB_REP["mark_not_paid"] = "mark_not_paid"
 def render_collection_arrears_tally(tally_data: dict, title: str = "Field Collection & Arrears Reconciliation Tally"):
     """
     Renders the paper-style reconciliation bridge between Field Expected Inflows,
-    Red-Pen Arrears, Physical Cash Banked, and Net Cash Position.
+    Overdue Arrears, Physical Cash Banked, and Net Cash Position.
     """
     if not tally_data:
         return
 
     st.markdown(f"#### {title}")
-    st.caption("Reconciles Field Collections & Red-Pen Arrears against EOD Bank Deposits")
+    st.caption("Reconciles Field Collections & Overdue Arrears against EOD Bank Deposits")
 
     c1, c2, c3, c4 = st.columns(4)
     exp = float(tally_data.get("scheduled_expected") or 0.0)
@@ -1097,10 +1097,10 @@ def render_collection_arrears_tally(tally_data: dict, title: str = "Field Collec
     closing = float(tally_data.get("closing_cash_balance") or 0.0)
     excess = float(tally_data.get("excess_amount") or 0.0)
 
-    c1.metric("1. Scheduled Inflows", f"₦{exp:,.2f}")
-    c2.metric("2. Red-Pen Arrears", f"₦{not_paid:,.2f}", f"{not_paid_cnt} Not Paid" if not_paid_cnt > 0 else "0 Arrears", delta_color="inverse")
-    c3.metric("3. Physical Cash Collected", f"₦{cash_col:,.2f}", f"+₦{excess:,.2f} Excess" if excess > 0 else None)
-    c4.metric("4. Bank Deposited", f"₦{bank_dep:,.2f}")
+    c1.metric("Scheduled Inflows", f"₦{exp:,.2f}")
+    c2.metric("Overdue Arrears", f"₦{not_paid:,.2f}", f"{not_paid_cnt} Not Paid" if not_paid_cnt > 0 else "0 Arrears", delta_color="inverse")
+    c3.metric("Physical Cash Collected", f"₦{cash_col:,.2f}", f"+₦{excess:,.2f} Excess" if excess > 0 else None)
+    c4.metric("Bank Deposited", f"₦{bank_dep:,.2f}")
 
     if abs(closing) < 0.01:
         st.success(f"**Physical Cash Reconciled**: Net Closing Cash Balance is **₦0.00** (Balanced). Uncollected Arrears of **₦{not_paid:,.2f}** recorded in Defaulter Register.")
@@ -6223,12 +6223,12 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 # 1. Query Repayments
                 q_reps = uow_hist.client.table("repayments").select(
                     "id, client_id, amount_paid, transaction_type, date, created_at, note, officer_id, loan_id, payment_status, expected_amount, overdue_amount, "
-                    "clients(name, nickname, client_code), loans(loan_amount, active_credit, loan_products(name))"
+                    "clients(name, nickname, client_code, group_id, groups(name)), loans(loan_amount, active_credit, loan_products(name))"
                 )
                 # 2. Query Savings Deposits
                 q_sav = uow_hist.client.table("individual_savings").select(
                     "id, client_id, deposit_amount, withdrawal_amount, posting_date, created_at, reference, remarks, officer_id, "
-                    "clients(name, nickname, client_code)"
+                    "clients(name, nickname, client_code, group_id, groups(name))"
                 )
                 # 3. Query Group Savings Deposits
                 q_gsav = uow_hist.client.table("group_savings").select(
@@ -6420,9 +6420,247 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 except Exception:
                     pass
 
-                # Subtabs for Repayments vs Savings
-                h_tab1, h_tab2 = st.tabs([f"Loan Repayments ({len(reps_list)})", f"Savings Deposits ({len(sav_dep_list)})"])
-                
+                # 4. End of Day (EOD) Inputs & Fee Summary
+                try:
+                    q_eod = uow_hist.client.table("co_cashbooks").select("*").eq("date", hist_date_str)
+                    if eff_b_id:
+                        q_eod = q_eod.eq("branch_id", eff_b_id)
+                    if eff_off_id:
+                        q_eod = q_eod.eq("officer_id", eff_off_id)
+                    res_eod = q_eod.execute()
+                    eod_rows = res_eod.data or []
+                    
+                    eod_opening = sum(float(r.get("opening_balance") or 0.0) for r in eod_rows)
+                    eod_expenses = sum(float(r.get("office_expenses") or 0.0) for r in eod_rows)
+                    eod_bank_dep = sum(float(r.get("bank_deposit") or 0.0) for r in eod_rows)
+                    eod_app_fee = sum(float(r.get("app_fee") or 0.0) for r in eod_rows)
+                    eod_passbook = sum(float(r.get("passbook") or 0.0) for r in eod_rows)
+                    eod_misc = sum(float(r.get("misc_fees") or 0.0) for r in eod_rows)
+                    eod_cfd = sum(float(r.get("credit_form_damage") or 0.0) for r in eod_rows)
+                    eod_bonus = sum(float(r.get("bonus") or 0.0) for r in eod_rows)
+                    
+                    st.markdown("#### End of Day (EOD) Inputs & Fee Summary")
+                    st.caption(f"Operational EOD cashbook inputs & auxiliary fees recorded for {hist_date_str}")
+                    
+                    e_col1, e_col2, e_col3, e_col4 = st.columns(4)
+                    e_col1.metric("B/F Opening Cash", f"₦{eod_opening:,.2f}")
+                    e_col2.metric("Bank Deposited", f"₦{eod_bank_dep:,.2f}")
+                    e_col3.metric("Office Expenses", f"₦{eod_expenses:,.2f}")
+                    e_col4.metric("Credit Form / App Fee", f"₦{eod_app_fee:,.2f}")
+                    
+                    e_col5, e_col6, e_col7, e_col8 = st.columns(4)
+                    e_col5.metric("Passbook Fees", f"₦{eod_passbook:,.2f}")
+                    e_col6.metric("Misc Fees", f"₦{eod_misc:,.2f}")
+                    e_col7.metric("Credit Form Damage", f"₦{eod_cfd:,.2f}")
+                    e_col8.metric("Staff Bonus", f"₦{eod_bonus:,.2f}")
+                    
+                    with st.expander("Daily EOD Inputs History Log", expanded=False):
+                        st.caption("Historical log of daily EOD cashbook inputs and reconciliation submissions.")
+                        q_eod_hist = uow_hist.client.table("co_cashbooks").select("*")
+                        if eff_b_id:
+                            q_eod_hist = q_eod_hist.eq("branch_id", eff_b_id)
+                        if eff_off_id:
+                            q_eod_hist = q_eod_hist.eq("officer_id", eff_off_id)
+                        res_eod_hist = q_eod_hist.order("date", desc=True).limit(30).execute()
+                        hist_eod_entries = res_eod_hist.data or []
+                        if hist_eod_entries:
+                            df_eod_log = pd.DataFrame([
+                                {
+                                    "Date": h.get("date"),
+                                    "Officer": hist_user_cache.get(h.get("officer_id"), "Officer"),
+                                    "B/F Cash": f"₦{float(h.get('opening_balance') or 0.0):,.2f}",
+                                    "Bank Deposit": f"₦{float(h.get('bank_deposit') or 0.0):,.2f}",
+                                    "Expenses": f"₦{float(h.get('office_expenses') or 0.0):,.2f}",
+                                    "App Fee": f"₦{float(h.get('app_fee') or 0.0):,.2f}",
+                                    "Passbook": f"₦{float(h.get('passbook') or 0.0):,.2f}",
+                                    "Misc Fees": f"₦{float(h.get('misc_fees') or 0.0):,.2f}",
+                                    "Form Damage": f"₦{float(h.get('credit_form_damage') or 0.0):,.2f}",
+                                    "Bonus": f"₦{float(h.get('bonus') or 0.0):,.2f}",
+                                    "Closing Cash": f"₦{float(h.get('closing_balance') or 0.0):,.2f}"
+                                }
+                                for h in hist_eod_entries
+                            ])
+                            st.dataframe(df_eod_log, use_container_width=True, hide_index=True)
+                        else:
+                            st.info("No historical EOD inputs found for this filter.")
+                    st.markdown("---")
+                except Exception as ex_eod:
+                    print(f"Error rendering EOD inputs summary: {ex_eod}")
+
+                # 5. Group Collections Aggregation
+                groups_agg = {}
+
+                for r in reps_list:
+                    c_dict = r.get("clients") or {} if isinstance(r.get("clients"), dict) else {}
+                    g_dict = c_dict.get("groups") or {} if isinstance(c_dict.get("groups"), dict) else {}
+                    g_name = g_dict.get("name") or "Ungrouped"
+                    amt = float(r.get("amount_paid") or 0.0)
+                    exp_amt = float(r.get("expected_amount") or 0.0)
+                    cid = str(r.get("client_id") or "")
+                    
+                    if g_name not in groups_agg:
+                        groups_agg[g_name] = {
+                            "total_repayment": 0.0,
+                            "member_savings": 0.0,
+                            "group_savings": 0.0,
+                            "paying_clients": set(),
+                            "members_detail": []
+                        }
+                    groups_agg[g_name]["total_repayment"] += amt
+                    if amt > 0 and cid:
+                        groups_agg[g_name]["paying_clients"].add(cid)
+                    
+                    c_name = c_dict.get("name") or str(r.get("client_id") or "Unknown")
+                    c_code = c_dict.get("client_code") or ""
+                    p_stat = str(r.get("payment_status") or ("PAID" if amt > 0 else "NOT_PAID")).upper()
+                    l_dict = r.get("loans") or {} if isinstance(r.get("loans"), dict) else {}
+                    p_dict = l_dict.get("loan_products") or {} if isinstance(l_dict.get("loan_products"), dict) else {}
+                    p_name = p_dict.get("name") or "Standard Loan"
+                    
+                    groups_agg[g_name]["members_detail"].append({
+                        "Client Name": c_name,
+                        "Client Code": c_code,
+                        "Type": "Loan Repayment",
+                        "Product": p_name,
+                        "Expected (₦)": exp_amt,
+                        "Amount Paid (₦)": amt,
+                        "Status": p_stat,
+                        "Time": str(r.get("created_at") or r.get("date") or "")[11:16],
+                        "Officer": hist_user_cache.get(r.get("officer_id"), "")
+                    })
+
+                for s in clean_sav_list:
+                    c_dict = s.get("clients") or {} if isinstance(s.get("clients"), dict) else {}
+                    g_dict = c_dict.get("groups") or {} if isinstance(c_dict.get("groups"), dict) else {}
+                    g_name = g_dict.get("name") or "Ungrouped"
+                    amt = float(s.get("deposit_amount") or 0.0)
+                    cid = str(s.get("client_id") or "")
+                    
+                    if g_name not in groups_agg:
+                        groups_agg[g_name] = {
+                            "total_repayment": 0.0,
+                            "member_savings": 0.0,
+                            "group_savings": 0.0,
+                            "paying_clients": set(),
+                            "members_detail": []
+                        }
+                    groups_agg[g_name]["member_savings"] += amt
+                    if amt > 0 and cid:
+                        groups_agg[g_name]["paying_clients"].add(cid)
+                        
+                    c_name = c_dict.get("name") or str(s.get("client_id") or "Unknown")
+                    c_code = c_dict.get("client_code") or ""
+                    groups_agg[g_name]["members_detail"].append({
+                        "Client Name": c_name,
+                        "Client Code": c_code,
+                        "Type": "Member Savings",
+                        "Product": "Individual Savings",
+                        "Expected (₦)": 0.0,
+                        "Amount Paid (₦)": amt,
+                        "Status": "SAVINGS DEPOSIT",
+                        "Time": str(s.get("created_at") or s.get("posting_date") or "")[11:16],
+                        "Officer": hist_user_cache.get(s.get("officer_id"), "")
+                    })
+
+                for g in gsav_list:
+                    g_id = str(g.get("id") or "")
+                    g_rem = str(g.get("remarks") or "")
+                    dep_amt = float(g.get("deposit_amount") or 0.0)
+                    if dep_amt > 0 and g_id not in approved_reversed_ids and g_id not in reversal_entry_ids and "REVERSAL of" not in g_rem and "CORRECTION:" not in g_rem:
+                        g_dict = g.get("groups") or {} if isinstance(g.get("groups"), dict) else {}
+                        g_name = g_dict.get("name") or "Group Communal"
+                        if g_name not in groups_agg:
+                            groups_agg[g_name] = {
+                                "total_repayment": 0.0,
+                                "member_savings": 0.0,
+                                "group_savings": 0.0,
+                                "paying_clients": set(),
+                                "members_detail": []
+                            }
+                        groups_agg[g_name]["group_savings"] += dep_amt
+                        groups_agg[g_name]["members_detail"].append({
+                            "Client Name": f"{g_name} (Communal)",
+                            "Client Code": "GROUP",
+                            "Type": "Group Savings",
+                            "Product": "Group Communal",
+                            "Expected (₦)": 0.0,
+                            "Amount Paid (₦)": dep_amt,
+                            "Status": "GROUP SAVINGS",
+                            "Time": str(g.get("created_at") or g.get("posting_date") or "")[11:16],
+                            "Officer": hist_user_cache.get(g.get("officer_id"), "")
+                        })
+
+                group_summary_rows = []
+                for g_name, g_info in sorted(groups_agg.items(), key=lambda x: x[0]):
+                    tot_rep = g_info["total_repayment"]
+                    mem_sav = g_info["member_savings"]
+                    grp_sav = g_info["group_savings"]
+                    tot_sav = mem_sav + grp_sav
+                    tot_col = tot_rep + tot_sav
+                    paying_cnt = len(g_info["paying_clients"])
+                    
+                    if hist_search:
+                        match_grp = (hist_search in g_name.lower()) or any(
+                            hist_search in str(m.get("Client Name", "")).lower() or
+                            hist_search in str(m.get("Client Code", "")).lower()
+                            for m in g_info["members_detail"]
+                        )
+                        if not match_grp:
+                            continue
+
+                    group_summary_rows.append({
+                        "Group Name": g_name,
+                        "Total Repayment (₦)": f"₦{tot_rep:,.2f}",
+                        "Member Savings (₦)": f"₦{mem_sav:,.2f}",
+                        "Group Savings (₦)": f"₦{grp_sav:,.2f}" if grp_sav > 0 else "-",
+                        "Total Savings (₦)": f"₦{tot_sav:,.2f}",
+                        "Grand Total Collected (₦)": f"₦{tot_col:,.2f}",
+                        "Paying Members": f"{paying_cnt} Clients",
+                        "_raw_rep": tot_rep,
+                        "_raw_sav": tot_sav,
+                        "_raw_col": tot_col,
+                        "_name": g_name,
+                        "_details": g_info["members_detail"]
+                    })
+
+                # Subtabs for Group Collections vs Loan Repayments vs Savings Deposits
+                h_tab0, h_tab1, h_tab2 = st.tabs([
+                    f"Group Collections ({len(group_summary_rows)})",
+                    f"Loan Repayments ({len(reps_list)})",
+                    f"Savings Deposits ({len(sav_dep_list)})"
+                ])
+
+                with h_tab0:
+                    if group_summary_rows:
+                        sum_grp_reps = sum(r["_raw_rep"] for r in group_summary_rows)
+                        sum_grp_sav = sum(r["_raw_sav"] for r in group_summary_rows)
+                        sum_grp_tot = sum(r["_raw_col"] for r in group_summary_rows)
+                        
+                        gk1, gk2, gk3, gk4 = st.columns(4)
+                        gk1.metric("Total Group Repayments", f"₦{sum_grp_reps:,.2f}", f"{len(reps_list)} Loan Records")
+                        gk2.metric("Total Group Savings", f"₦{sum_grp_sav:,.2f}", f"{len(sav_dep_list)} Savings Records")
+                        gk3.metric("Grand Total Collections", f"₦{sum_grp_tot:,.2f}", "Total Group Inflow")
+                        gk4.metric("Active Groups", f"{len(group_summary_rows)} Groups", "With Activity Today")
+                        
+                        st.markdown("---")
+                        disp_grp_df = pd.DataFrame([
+                            {k: v for k, v in r.items() if not k.startswith("_")}
+                            for r in group_summary_rows
+                        ])
+                        st.dataframe(disp_grp_df, use_container_width=True, hide_index=True)
+                        
+                        st.markdown("##### Group Itemized Breakdown")
+                        for r in group_summary_rows:
+                            grp_n = r["_name"]
+                            grp_det = r["_details"]
+                            with st.expander(f"{grp_n} — Total: {r['Grand Total Collected (₦)']} ({len(grp_det)} Records)", expanded=False):
+                                det_df = pd.DataFrame(grp_det)
+                                det_df["Expected (₦)"] = det_df["Expected (₦)"].apply(lambda x: f"₦{float(x):,.2f}" if float(x) > 0 else "-")
+                                det_df["Amount Paid (₦)"] = det_df["Amount Paid (₦)"].apply(lambda x: f"₦{float(x):,.2f}" if float(x) > 0 else "-")
+                                st.dataframe(det_df, use_container_width=True, hide_index=True)
+                    else:
+                        st.info(f"No group collections found for {hist_date_str}.")
+
                 with h_tab1:
                     if reps_list:
                         reps_rows = []
@@ -6880,19 +7118,21 @@ elif page == "Withdrawal Operations":
 
     # ── Savings Type Selector ──
     if is_manager:
+        wth_tab1, wth_tab2, wth_tab3, wth_tab4, wth_tab5, wth_tab6 = st.tabs([
+            "Individual Savings", 
+            "Group Savings", 
+            "Misc Savings", 
+            "LAPS Savings",
+            f"Pending Approvals ({len(pending_withdrawals_all)})",
+            "Daily Withdrawals"
+        ])
+    else:
         wth_tab1, wth_tab2, wth_tab3, wth_tab4, wth_tab5 = st.tabs([
             "Individual Savings", 
             "Group Savings", 
             "Misc Savings", 
             "LAPS Savings",
-            f"Pending Approvals ({len(pending_withdrawals_all)})"
-        ])
-    else:
-        wth_tab1, wth_tab2, wth_tab3, wth_tab4 = st.tabs([
-            "Individual Savings", 
-            "Group Savings", 
-            "Misc Savings", 
-            "LAPS Savings"
+            "Daily Withdrawals"
         ])
 
     # ════════════════════════════════════════════════════════════════════
@@ -8027,36 +8267,348 @@ elif page == "Withdrawal Operations":
                                     st.session_state["withdrawal_flash_msg"] = f" Withdrawal request of ₦{wr_amt:,.2f} for {wr_name} has been rejected."
                                     st.rerun()
 
-    # ── Withdrawal Requests History ──
-    st.markdown("---")
-    if is_manager:
-        st.markdown("### Branch Withdrawal Requests History")
-        if ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
-            res_history = uow.client.table("withdrawal_requests").select("*").in_("branch_id", ASSIGNED_BRANCH_IDS).order("created_at", desc=True).limit(30).execute()
-        elif ROLE in ["BM", "Branch Manager", ROLE_BRANCH_MANAGER]:
-            res_history = uow.client.table("withdrawal_requests").select("*").eq("branch_id", BRANCH_ID).order("created_at", desc=True).limit(30).execute()
-        else:
-            res_history = uow.client.table("withdrawal_requests").select("*").order("created_at", desc=True).limit(30).execute()
-    else:
-        st.markdown("### My Withdrawal Requests")
-        res_history = uow.client.table("withdrawal_requests").select("*").eq("requested_by", USER).order("created_at", desc=True).limit(25).execute()
+    # ════════════════════════════════════════════════════════════════════
+    # DAILY WITHDRAWALS TAB
+    # ════════════════════════════════════════════════════════════════════
+    dw_tab_target = wth_tab6 if is_manager else wth_tab5
+    with dw_tab_target:
+        st.subheader("Daily Withdrawals")
+        st.caption("Review all savings withdrawals, upfront loan fee deductions, and request status for your clients.")
 
-    if res_history.data:
-        for req in res_history.data:
-            st_badge = format_status_text(req["status"])
-            ref_str = f" | Ref: `{req.get('reference')}`" if req.get('reference') else ""
-            req_by_str = f" | Officer: **{req.get('requested_by')}**" if is_manager else ""
-            st.markdown(
-                f"**{req['savings_type']} — {req['operation_type']}** | "
-                f"**₦{float(req['amount']):,.2f}** | Client: **{req['client_name']}**{req_by_str} | "
-                f"Status: **{st_badge}** | Date: **{str(req.get('operational_date') or req['created_at'])[:10]}**{ref_str}"
+        # Officer & Date Selection
+        if is_manager:
+            if "officers_map" in locals() and officers_map:
+                dw_co_map = officers_map
+            else:
+                res_u = uow.client.table("app_users").select("id, username, full_name").execute()
+                dw_co_map = {"All Officers": None}
+                for u in (res_u.data or []):
+                    lbl = f"{u.get('username')} - {u.get('full_name')}" if u.get('full_name') else u.get('username')
+                    dw_co_map[lbl] = u.get('id')
+
+            col_hdr1, col_hdr2, col_hdr3 = st.columns([2, 1.5, 1.5])
+            with col_hdr1:
+                dw_co_filter = st.selectbox("Credit Officer", list(dw_co_map.keys()), key="dw_co_filter_select")
+                dw_target_officer_id = dw_co_map[dw_co_filter]
+                dw_target_username = dw_co_filter.split(" - ")[0].strip() if dw_target_officer_id else None
+            with col_hdr2:
+                dw_show_all = st.checkbox("Show all dates", value=False, key="dw_all_dates_chk")
+            with col_hdr3:
+                if not dw_show_all:
+                    dw_date_val = st.date_input("Operational Date", value=wth_op_date, key="dw_date_picker")
+                    dw_date_str = dw_date_val.isoformat()
+                else:
+                    dw_date_str = None
+        else:
+            dw_target_officer_id = uow.loans._resolve_officer_id(USER) or getattr(current_user, 'id', USER_ID)
+            dw_target_username = USER
+            col_hdr1, col_hdr2 = st.columns([2, 2])
+            with col_hdr1:
+                dw_show_all = st.checkbox("Show all dates", value=False, key="dw_all_dates_chk")
+            with col_hdr2:
+                if not dw_show_all:
+                    dw_date_val = st.date_input("Operational Date", value=wth_op_date, key="dw_date_picker")
+                    dw_date_str = dw_date_val.isoformat()
+                else:
+                    dw_date_str = None
+
+        # Fetch clients belonging to officer
+        c_q = uow.client.table("clients").select("client_id, client_code, name, nickname, officer_id, branch_id")
+        if dw_target_officer_id:
+            c_q = c_q.eq("officer_id", dw_target_officer_id)
+        elif is_manager:
+            if ROLE in ["AM", "Area Manager", ROLE_AREA_MANAGER]:
+                c_q = c_q.in_("branch_id", ASSIGNED_BRANCH_IDS)
+            elif ROLE in ["BM", "Branch Manager", ROLE_BRANCH_MANAGER]:
+                c_q = c_q.eq("branch_id", BRANCH_ID)
+        dw_clients_res = c_q.execute()
+        dw_clients = dw_clients_res.data or []
+        dw_c_map = {c["client_id"]: c for c in dw_clients}
+        dw_cids = list(dw_c_map.keys())
+
+        # Client memberships for group names
+        dw_cm_res = uow.client.table("client_memberships").select("client_id, groups(group_id, name)").execute()
+        dw_group_map = {}
+        for m in (dw_cm_res.data or []):
+            cid = m.get("client_id")
+            if cid and m.get("groups"):
+                dw_group_map[cid] = m["groups"].get("name", "Individual")
+
+        # Query individual_savings withdrawals
+        dw_sav_q = uow.client.table("individual_savings").select("*").gt("withdrawal_amount", 0)
+        if dw_date_str:
+            dw_sav_q = dw_sav_q.eq("posting_date", dw_date_str)
+        else:
+            dw_sav_q = dw_sav_q.order("posting_date", desc=True).limit(500)
+        if BRANCH_ID and not (ROLE in ["Admin", "Super Admin", ROLE_ADMIN, ROLE_SUPER_ADMIN]):
+            dw_sav_q = dw_sav_q.eq("branch_id", BRANCH_ID)
+        dw_sav_res = dw_sav_q.execute()
+        raw_sav_w = dw_sav_res.data or []
+
+        if dw_target_officer_id:
+            filtered_sav_w = [
+                r for r in raw_sav_w
+                if r.get("officer_id") == dw_target_officer_id or r.get("client_id") in dw_cids
+            ]
+        else:
+            filtered_sav_w = raw_sav_w
+
+        parsed_records = []
+        import re
+        for r in filtered_sav_w:
+            remarks = r.get("remarks") or ""
+            amt = float(r.get("withdrawal_amount") or 0.0)
+            cid = r.get("client_id")
+            c_info = dw_c_map.get(cid, {})
+            c_name = c_info.get("name") or "Unknown Client"
+            c_code = c_info.get("client_code") or (cid[:8] if cid else "-")
+            g_name = dw_group_map.get(cid, "Individual")
+            p_date = str(r.get("posting_date") or "")[:10]
+            ref = r.get("reference") or "-"
+
+            is_upfront = "Auto-deducted Upfront Fees" in remarks or "Upfront" in remarks or "Downpayment deducted" in remarks
+            is_offset = "loan offset" in remarks.lower() or "debt offset" in remarks.lower()
+            is_fee = "fee offset" in remarks.lower() or "fee" in remarks.lower()
+            is_bank = "bank transfer" in remarks.lower() or "client bank account" in remarks.lower()
+
+            if is_upfront:
+                category = "Loan Fee Deduction"
+                int_m = re.search(r"Interest:\s*([0-9,.]+)", remarks)
+                gap_m = re.search(r"Gap:\s*([0-9,.]+)", remarks)
+                loan_m = re.search(r"Loan\s+([A-Za-z0-9\-]+)", remarks)
+                u_int = float(int_m.group(1).replace(",", "")) if int_m else 0.0
+                u_gap = float(gap_m.group(1).replace(",", "")) if gap_m else 0.0
+                l_ref = loan_m.group(1) if loan_m else "Loan"
+                details = f"Interest: ₦{u_int:,.2f} + Gap: ₦{u_gap:,.2f}"
+            elif is_offset:
+                category = "Loan Offset"
+                u_int, u_gap, l_ref = 0.0, 0.0, "-"
+                details = remarks.replace("[BM APPROVED]", "").strip() or "Loan debt offset from savings"
+            elif is_fee:
+                category = "Fee Payment"
+                u_int, u_gap, l_ref = 0.0, 0.0, "-"
+                details = remarks.replace("[BM APPROVED]", "").strip() or "Fee payment from savings"
+            elif is_bank:
+                category = "Bank Transfer"
+                u_int, u_gap, l_ref = 0.0, 0.0, "-"
+                details = remarks.replace("[BM APPROVED]", "").strip() or "Bank transfer payout"
+            else:
+                category = "Cash Payout"
+                u_int, u_gap, l_ref = 0.0, 0.0, "-"
+                details = remarks.replace("[BM APPROVED]", "").strip() or "Cash payout to member"
+
+            parsed_records.append({
+                "date": p_date,
+                "client_name": c_name,
+                "client_code": c_code,
+                "group": g_name,
+                "category": category,
+                "amount": amt,
+                "details": details,
+                "loan_ref": l_ref,
+                "interest": u_int,
+                "gap": u_gap,
+                "reference": ref,
+                "remarks": remarks
+            })
+
+        # Query group_savings withdrawals
+        gw_q = uow.client.table("group_savings").select("*, groups(name, branch_id, officer_id)").gt("withdrawal_amount", 0)
+        if dw_date_str:
+            gw_q = gw_q.eq("posting_date", dw_date_str)
+        else:
+            gw_q = gw_q.order("posting_date", desc=True).limit(100)
+        gw_res = gw_q.execute()
+        for gr in (gw_res.data or []):
+            grp = gr.get("groups") or {}
+            if dw_target_officer_id and grp.get("officer_id") != dw_target_officer_id:
+                continue
+            g_amt = float(gr.get("withdrawal_amount") or 0.0)
+            parsed_records.append({
+                "date": str(gr.get("posting_date") or "")[:10],
+                "client_name": f"{grp.get('name', 'Group')} (Group Account)",
+                "client_code": "-",
+                "group": grp.get("name", "Group"),
+                "category": "Group Withdrawal",
+                "amount": g_amt,
+                "details": gr.get("remarks") or "Group communal savings withdrawal",
+                "loan_ref": "-",
+                "interest": 0.0,
+                "gap": 0.0,
+                "reference": gr.get("reference") or "-",
+                "remarks": gr.get("remarks") or ""
+            })
+
+        # Sort parsed_records by date descending
+        parsed_records.sort(key=lambda x: x["date"], reverse=True)
+
+        # Query withdrawal_requests
+        wr_q = uow.client.table("withdrawal_requests").select("*")
+        if not is_manager:
+            wr_q = wr_q.eq("requested_by", USER)
+        elif dw_target_username:
+            wr_q = wr_q.eq("requested_by", dw_target_username)
+        elif dw_target_officer_id and is_manager:
+            for lbl, uid in dw_co_map.items():
+                if uid == dw_target_officer_id:
+                    un = lbl.split(" - ")[0].strip()
+                    wr_q = wr_q.eq("requested_by", un)
+                    break
+        if dw_date_str:
+            wr_q = wr_q.or_(f"operational_date.eq.{dw_date_str},created_at.gte.{dw_date_str}T00:00:00")
+        else:
+            wr_q = wr_q.order("created_at", desc=True).limit(100)
+        dw_reqs_res = wr_q.execute()
+        dw_reqs = dw_reqs_res.data or []
+
+        # Totals and metrics
+        total_withdrawn = sum(p["amount"] for p in parsed_records)
+        upfront_total = sum(p["amount"] for p in parsed_records if p["category"] == "Loan Fee Deduction")
+        payout_total = sum(p["amount"] for p in parsed_records if p["category"] in ["Cash Payout", "Bank Transfer", "Group Withdrawal"])
+        offset_total = sum(p["amount"] for p in parsed_records if p["category"] in ["Loan Offset", "Fee Payment"])
+
+        pending_reqs = [r for r in dw_reqs if r.get("status") == "PENDING"]
+        pending_amt = sum(float(r.get("amount") or 0.0) for r in pending_reqs)
+
+        st.markdown("---")
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("Total Withdrawn Today" if dw_date_str else "Total Withdrawn", f"₦{total_withdrawn:,.2f}")
+        m2.metric("Loan Fees Deducted", f"₦{upfront_total:,.2f}")
+        m3.metric("Cash & Bank Paid", f"₦{payout_total:,.2f}")
+        m4.metric("Debt & Fee Offsets", f"₦{offset_total:,.2f}")
+        m5.metric("Waiting for Approval", f"{len(pending_reqs)} requests", f"₦{pending_amt:,.2f}")
+
+        st.markdown("---")
+        f1, f2 = st.columns([2, 3])
+        with f1:
+            cat_filter = st.selectbox(
+                "Filter by Type",
+                ["All Types", "Loan Fee Deductions", "Cash & Bank Payouts", "Loan & Fee Offsets", "Group Withdrawals"],
+                key="dw_cat_filter"
             )
-            if req["status"] == "REJECTED" and req.get("rejection_reason"):
-                st.caption(f"  ↳ Rejection Reason: {req['rejection_reason']}")
-            elif req["status"] == "APPROVED" and req.get("approved_by"):
-                st.caption(f"  ↳ Authorized by: {req['approved_by']} at {str(req.get('approved_at', ''))[:19]}")
-    else:
-        st.info("No withdrawal requests found.")
+        with f2:
+            search_kw = st.text_input("Search records", placeholder="Type client name, code, or loan ID...", key="dw_search_kw")
+
+        display_records = parsed_records
+        if cat_filter == "Loan Fee Deductions":
+            display_records = [p for p in display_records if p["category"] == "Loan Fee Deduction"]
+        elif cat_filter == "Cash & Bank Payouts":
+            display_records = [p for p in display_records if p["category"] in ["Cash Payout", "Bank Transfer"]]
+        elif cat_filter == "Loan & Fee Offsets":
+            display_records = [p for p in display_records if p["category"] in ["Loan Offset", "Fee Payment"]]
+        elif cat_filter == "Group Withdrawals":
+            display_records = [p for p in display_records if p["category"] == "Group Withdrawal"]
+
+        if search_kw:
+            sk = search_kw.lower().strip()
+            display_records = [
+                p for p in display_records
+                if sk in p["client_name"].lower() or sk in p["client_code"].lower() or sk in p["loan_ref"].lower() or sk in p["reference"].lower()
+            ]
+
+        dw_sub1, dw_sub2, dw_sub3, dw_sub4 = st.tabs([
+            f"All Today's Withdrawals ({len(display_records)})" if dw_date_str else f"All Withdrawals ({len(display_records)})",
+            f"Loan Fee Deductions ({len([p for p in display_records if p['category'] == 'Loan Fee Deduction'])})",
+            f"Cash & Bank Payouts ({len([p for p in display_records if p['category'] in ['Cash Payout', 'Bank Transfer', 'Group Withdrawal']])})",
+            f"My Requests & Status ({len(dw_reqs)})"
+        ])
+
+        with dw_sub1:
+            if not display_records:
+                st.info("No withdrawals found for the selected criteria.")
+            else:
+                df_all = pd.DataFrame([
+                    {
+                        "Date": p["date"],
+                        "Client Name": p["client_name"],
+                        "Client Code": p["client_code"],
+                        "Group": p["group"],
+                        "Type": p["category"],
+                        "Amount": f"₦{p['amount']:,.2f}",
+                        "Details": p["details"],
+                        "Reference": p["reference"]
+                    }
+                    for p in display_records
+                ])
+                st.dataframe(df_all, use_container_width=True, hide_index=True)
+
+        with dw_sub2:
+            upfront_records = [p for p in display_records if p["category"] == "Loan Fee Deduction"]
+            if not upfront_records:
+                st.info("No loan fee deductions found for the selected criteria.")
+            else:
+                st.caption("When a loan is disbursed, markup interest and gap fees are automatically deducted from the borrower's savings.")
+                df_upfront = pd.DataFrame([
+                    {
+                        "Date": p["date"],
+                        "Client Name": p["client_name"],
+                        "Client Code": p["client_code"],
+                        "Loan Reference": p["loan_ref"],
+                        "Interest Deducted": f"₦{p['interest']:,.2f}" if p["interest"] > 0 else "-",
+                        "Gap Fee Deducted": f"₦{p['gap']:,.2f}" if p["gap"] > 0 else "-",
+                        "Total Deducted": f"₦{p['amount']:,.2f}",
+                        "Status": "Auto-deducted on Disbursement"
+                    }
+                    for p in upfront_records
+                ])
+                st.dataframe(df_upfront, use_container_width=True, hide_index=True)
+
+        with dw_sub3:
+            payout_records = [p for p in display_records if p["category"] in ["Cash Payout", "Bank Transfer", "Group Withdrawal"]]
+            if not payout_records:
+                st.info("No cash or bank payouts found for the selected criteria.")
+            else:
+                df_payout = pd.DataFrame([
+                    {
+                        "Date": p["date"],
+                        "Client / Group": p["client_name"],
+                        "Group": p["group"],
+                        "Payment Type": p["category"],
+                        "Amount": f"₦{p['amount']:,.2f}",
+                        "Approval Notes": p["details"],
+                        "Reference": p["reference"]
+                    }
+                    for p in payout_records
+                ])
+                st.dataframe(df_payout, use_container_width=True, hide_index=True)
+
+        with dw_sub4:
+            if not dw_reqs:
+                st.info("No withdrawal requests found.")
+            else:
+                for req in dw_reqs:
+                    st_status = req.get("status", "PENDING")
+                    req_amt = float(req.get("amount") or 0.0)
+                    req_name = req.get("client_name") or "Unknown"
+                    req_type = req.get("savings_type") or "Savings"
+                    req_op = req.get("operation_type") or "Withdrawal"
+                    req_date = str(req.get("operational_date") or req.get("created_at", ""))[:10]
+                    req_ref = req.get("reference") or "-"
+
+                    if st_status == "APPROVED":
+                        badge = "[Approved & Posted]"
+                        badge_color = "#15803d"
+                    elif st_status == "REJECTED":
+                        badge = "[Rejected]"
+                        badge_color = "#b91c1c"
+                    else:
+                        badge = "[Waiting for Approval]"
+                        badge_color = "#b45309"
+
+                    with st.container(border=True):
+                        c_req1, c_req2 = st.columns([3, 1])
+                        with c_req1:
+                            st.markdown(f"**{req_name}** | `{req_type} — {req_op}` | Ref: `{req_ref}`")
+                            st.caption(f"Requested by: **{req.get('requested_by')}** | Date: **{req_date}**")
+                            if req.get("remarks"):
+                                st.caption(f"Notes: *{req['remarks']}*")
+                            if st_status == "REJECTED" and req.get("rejection_reason"):
+                                st.markdown(f"**Reason from Manager**: {req['rejection_reason']}")
+                            elif st_status == "APPROVED" and req.get("approved_by"):
+                                st.caption(f"Authorized by {req['approved_by']} at {str(req.get('approved_at', ''))[:19]}")
+                        with c_req2:
+                            st.markdown(f"<div style='font-size: 1.15rem; font-weight: 700; color: {badge_color}; text-align: right;'>₦{req_amt:,.2f}</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='font-size: 0.85rem; font-weight: 600; color: {badge_color}; text-align: right;'>{badge}</div>", unsafe_allow_html=True)
 
 elif page == "Legacy LAPS Migration":
     st.title("Legacy LAPS Bulk Migration Console (Super Admin)")
