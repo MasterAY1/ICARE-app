@@ -113,17 +113,23 @@ def align_portfolio(file_path: str, dry_run: bool = True):
 
     all_lids = list(loans_by_id.keys())
     repayments_by_loan = {}
+    schedules_by_loan = {}
     if all_lids:
         for l_chunk in [all_lids[i:i+500] for i in range(0, len(all_lids), 500)]:
             r_res = client.table("repayments").select("loan_id, amount_paid").in_("loan_id", l_chunk).execute()
             for r in (r_res.data or []):
                 repayments_by_loan.setdefault(r["loan_id"], []).append(r)
 
+            sc_res = client.table("loan_schedule").select("*").in_("loan_id", l_chunk).order("installment_number").execute()
+            for sc in (sc_res.data or []):
+                schedules_by_loan.setdefault(sc["loan_id"], []).append(sc)
+
     # Tracking counters
     savings_updated = 0
     loans_updated = 0
     schedules_realigned = 0
     clients_completed = 0
+    statuses_updated = 0
     skipped_rows = 0
 
     plan_summary = []
@@ -226,20 +232,31 @@ def align_portfolio(file_path: str, dry_run: bool = True):
                 else:
                     fin_loans = [l for l in active_client_loans if "asset" not in str((l.get("loan_products") or {}).get("name") or "").lower()]
                     target_loan = fin_loans[0] if fin_loans else active_client_loans[0]
+            elif client_loans:
+                # Fallback to most recent completed loan if balance is being revived
+                target_loan = client_loans[0]
 
+        new_bal = None
         if target_loan and (target_act is not None or target_bal is not None):
             lid = target_loan["loan_id"]
             curr_act = float(target_loan.get("active_credit") or 0.0)
             curr_due = float(target_loan.get("total_due") if target_loan.get("total_due") is not None else curr_act)
+            curr_stat = str(target_loan.get("status") or "").upper()
             
             # Fetch lifetime repayments for this loan from in-memory cache
             reps_q = repayments_by_loan.get(lid, [])
             tot_repaid = sum(float(r.get("amount_paid") or 0.0) for r in reps_q)
             curr_out_bal = max(0.0, curr_due - tot_repaid)
 
-            new_act = target_act if (target_act is not None and target_act > 0) else curr_act
             new_bal = target_bal if target_bal is not None else curr_out_bal
             new_due = new_bal + tot_repaid
+
+            if target_act is not None and target_act > 0:
+                new_act = target_act
+            elif new_bal <= 0.0 and target_act == 0.0:
+                new_act = 0.0
+            else:
+                new_act = curr_act
 
             needs_loan_update = (abs(curr_act - new_act) > 0.01 or abs(curr_out_bal - new_bal) > 0.01)
 
@@ -263,14 +280,17 @@ def align_portfolio(file_path: str, dry_run: bool = True):
                     }
                     if new_bal <= 0.0:
                         loan_update["status"] = "Completed"
+                    elif curr_stat in ["COMPLETED", "CLOSED"] and new_bal > 0.0:
+                        loan_update["status"] = "Active"
                     client.table("loans").update(loan_update).eq("loan_id", lid).execute()
 
-                    # Rebalance loan_schedule unpaid installments
-                    sched_rows = client.table("loan_schedule").select("*").eq("loan_id", lid).order("installment_number").execute().data or []
-                    if sched_rows:
-                        unpaid_sched = [s for s in sched_rows if float(s.get("paid_amount") or 0.0) < float(s.get("total_due") or 0.0)]
-                        if unpaid_sched:
-                            schedules_realigned += 1
+                # Rebalance loan_schedule unpaid installments
+                sched_rows = schedules_by_loan.get(lid, [])
+                if sched_rows:
+                    unpaid_sched = [s for s in sched_rows if float(s.get("paid_amount") or 0.0) < float(s.get("total_due") or 0.0)]
+                    if unpaid_sched:
+                        schedules_realigned += 1
+                        if not dry_run:
                             if new_bal <= 0.0:
                                 for s in unpaid_sched:
                                     client.table("loan_schedule").update({
@@ -288,22 +308,41 @@ def align_portfolio(file_path: str, dry_run: bool = True):
                                         "status": "Pending"
                                     }).eq("id", s["id"]).execute()
 
-                    # Handle Client Status completion
-                    if new_bal <= 0.0:
-                        # Check other active loans
-                        remaining_active = [
-                            l for l in loans_by_client.get(cid, [])
-                            if l["loan_id"] != lid and str(l.get("status")).upper() in ["ACTIVE", "APPROVED"]
-                        ]
-                        if not remaining_active:
-                            clients_completed += 1
-                            c_stat = "Completed"
-                            stat_id = status_id_map.get("completed", "11111111-1111-1111-1111-111111110003")
-                            client.table("clients").update({
-                                "status": c_stat,
-                                "status_id": stat_id,
-                                "status_changed_at": datetime.now().isoformat()
-                            }).eq("client_id", cid).execute()
+        # ----------------------------------------------------
+        # 3. CLIENT LIFECYCLE STATUS ALIGNMENT
+        # ----------------------------------------------------
+        raw_stat = str(row.get(status_col) or '').strip() if status_col else ''
+        lifecycle_col = next((c for c in df.columns if 'lifecycle' in c.lower()), None)
+        raw_lifecycle = str(row.get(lifecycle_col) or '').strip() if lifecycle_col else ''
+
+        target_status_name = raw_lifecycle or raw_stat
+        if target_status_name and target_status_name.lower() in ['active loan', 'on loan', 'active']:
+            target_status_name = 'On Loan'
+
+        # Auto-detect if completed and not explicitly given
+        if not target_status_name and new_bal is not None and new_bal <= 0.0:
+            target_status_name = 'Completed'
+            clients_completed += 1
+
+        if target_status_name and target_status_name.lower() in status_id_map:
+            target_stat_id = status_id_map[target_status_name.lower()]
+            curr_c_stat = c_obj.get("status")
+            curr_c_stat_id = c_obj.get("status_id")
+            if curr_c_stat != target_status_name or curr_c_stat_id != target_stat_id:
+                statuses_updated += 1
+                plan_summary.append({
+                    "Client Code": clean_code,
+                    "Client Name": c_obj["name"],
+                    "Action": "CLIENT_STATUS_ALIGNMENT",
+                    "Current Status": curr_c_stat,
+                    "Target Status": target_status_name
+                })
+                if not dry_run:
+                    client.table("clients").update({
+                        "status": target_status_name,
+                        "status_id": target_stat_id,
+                        "status_changed_at": datetime.now().isoformat()
+                    }).eq("client_id", cid).execute()
 
     print("==================================================")
     print(" ALIGNMENT EXECUTION SUMMARY")
@@ -311,7 +350,7 @@ def align_portfolio(file_path: str, dry_run: bool = True):
     print(f" Savings Balances Aligned:   {savings_updated}")
     print(f" Loans Aligned:              {loans_updated}")
     print(f" Loan Schedules Realigned:   {schedules_realigned}")
-    print(f" Clients Completed:          {clients_completed}")
+    print(f" Client Statuses Aligned:    {statuses_updated}")
     print(f" Skipped / Unmatched Rows:   {skipped_rows}")
     print("==================================================\n")
 

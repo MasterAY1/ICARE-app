@@ -5361,7 +5361,11 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         st.info("No registered active clients found for this officer.")
                     else:
                         co_clients_df = pd.DataFrame(clients_data)
-                        groups = ["All Groups (Officer Manifest)", "Ungrouped"] + sorted(co_clients_df[co_clients_df['Group Name'] != "Ungrouped"]['Group Name'].unique().tolist())
+                        active_grps = sorted(co_clients_df[co_clients_df['Group Name'] != "Ungrouped"]['Group Name'].unique().tolist())
+                        has_ungrouped = "Ungrouped" in co_clients_df['Group Name'].values
+                        groups = active_grps + (["Ungrouped"] if (has_ungrouped or not active_grps) else [])
+                        if not groups:
+                            groups = ["Ungrouped"]
                 
                         # Resolve requested group from navigation / deep-linking
                         if "sel_group" in st.session_state:
@@ -5388,9 +5392,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         selected_group = col_g1.selectbox("Select Group", groups, key="collections_selected_group")
                         expand_all_members = col_g2.checkbox("Expand All Members", value=st.session_state.get('chk_expand_all', False), key="chk_expand_all")
                 
-                        if selected_group == "All Groups (Officer Manifest)":
-                            group_clients = co_clients_df
-                        elif selected_group == "Ungrouped":
+                        if selected_group == "Ungrouped":
                             group_clients = co_clients_df[co_clients_df['Group Name'] == "Ungrouped"]
                         else:
                             group_clients = co_clients_df[co_clients_df['Group Name'] == selected_group]
@@ -5620,23 +5622,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
 
                         # 1. Download Editable Manifest CSV
                         manifest_rows = []
-                        if selected_group == "All Groups (Officer Manifest)":
-                            unique_grps = sorted([g for g in co_clients_df['Group Name'].unique() if g != "Ungrouped" and g != "All Groups (Officer Manifest)"])
-                            for ug in unique_grps:
-                                manifest_rows.append({
-                                    "Date": date_str,
-                                    "Officer": target_co,
-                                    "Group Name": ug,
-                                    "Client ID": f"GROUP-{ug}",
-                                    "Client Name": f"{ug} Communal Savings",
-                                    "Savings Balance": 0,
-                                    "Remaining Balance": 0,
-                                    "Expected Repayment": 0,
-                                    "Amount Collected": 0,
-                                    "Savings Deposit": 0,
-                                    "Status": "PAID"
-                                })
-                        elif selected_group != "Ungrouped":
+                        if selected_group != "Ungrouped":
                             manifest_rows.append({
                                 "Date": date_str,
                                 "Officer": target_co,
@@ -5653,7 +5639,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
 
                         for cid, info in member_info.items():
                             m = info['member']
-                            g_name = m.get('Group Name') or (selected_group if selected_group != "All Groups (Officer Manifest)" else "Ungrouped")
+                            g_name = m.get('Group Name') or selected_group
                             exp_v = float(info.get('expected_rep_schedule') or 0.0)
                             exp_formatted = int(exp_v) if exp_v.is_integer() else round(exp_v, 2)
                             rem_v = float(info.get('rem_bal') or 0.0)
@@ -5676,9 +5662,9 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             })
                         manifest_df = pd.DataFrame(manifest_rows)
                         csv_data = manifest_df.to_csv(index=False)
-                        dl_filename = f"manifest_{target_co}_all_groups_{date_str}.csv" if selected_group == "All Groups (Officer Manifest)" else f"manifest_{selected_group}_{date_str}.csv"
+                        dl_filename = f"manifest_{selected_group}_{date_str}.csv"
                         col_csv1.download_button(
-                            label=f"Download {'Full CO' if selected_group == 'All Groups (Officer Manifest)' else selected_group} Manifest CSV",
+                            label=f"Download {selected_group} Manifest CSV",
                             data=csv_data,
                             file_name=dl_filename,
                             mime="text/csv",
@@ -5715,11 +5701,10 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                                 raw_cid = str(u_row.get(id_col, '')).strip()
                                                 if not raw_cid or raw_cid == 'nan': continue
                                         
-                                                # Check if this row is Group Communal Savings
                                                 is_group_row = (
                                                     raw_cid.startswith("GROUP-") or
                                                     "communal" in str(u_row.get("Client Name", "")).lower() or
-                                                    (selected_group != "All Groups (Officer Manifest)" and (raw_cid.lower() == selected_group.lower() or "group" in str(u_row.get("Client Name", "")).lower()))
+                                                    (selected_group != "Ungrouped" and (raw_cid.lower() == selected_group.lower() or "group" in str(u_row.get("Client Name", "")).lower()))
                                                 )
                                                 if is_group_row:
                                                     target_grp_name = selected_group
@@ -5955,7 +5940,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         
                                 # ---- GROUP-LEVEL SAVINGS ----
                                 group_savings_balance = 0.0
-                                if selected_group not in ["Ungrouped", "All Groups (Officer Manifest)"]:
+                                if selected_group != "Ungrouped":
                                     try:
                                         g_id = group_clients['Group ID'].dropna().iloc[0] if 'Group ID' in group_clients.columns and not group_clients['Group ID'].dropna().empty else None
                                         if not g_id:
@@ -5969,7 +5954,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                     except Exception:
                                         pass
                                 
-                                if selected_group not in ["Ungrouped", "All Groups (Officer Manifest)"]:
+                                if selected_group != "Ungrouped":
                                     st.markdown(f"### Group-Level Savings (Available: ₦{group_savings_balance:,.0f})")
                                     st.caption("Input communal group savings and withdrawal amounts.")
                             
@@ -11747,7 +11732,7 @@ elif page == "Portfolio":
             d1, d2 = st.columns(2)
             d_sum = p_sum.get('disbursement_summary', {'count': 0, 'amount': 0.0, 'client_count': 0})
             d1.metric("Loans Disbursed", f"{d_sum['count']} Loans", f"{d_sum.get('client_count', d_sum['count'])} Clients")
-            d2.metric("Total Amount Disbursed", f"₦{d_sum['amount']:,.0f}", f"{d_sum['count']} Loans")
+            d2.metric("Total Amount Disbursed", f"₦{d_sum['amount']:,.0f}", f"{d_sum['count']} Loans (Incl. Assets)")
 
             st.caption("Row 4: Loan & Collection Summary")
             l1, l2, l3, l4 = st.columns(4)
