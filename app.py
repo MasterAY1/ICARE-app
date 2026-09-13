@@ -1447,9 +1447,9 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
                         else:
                             active_loan_id = loan_cache.get(client_id)
                     if not active_loan_id:
-                        res_l = uow.client.table("loans").select("loan_id, is_asset, product_category, active_credit").eq("client_id", client_id).eq("status", "Active").execute()
+                        res_l = uow.client.table("loans").select("loan_id, product_category, active_credit, extra_fields").eq("client_id", client_id).eq("status", "Active").execute()
                         if res_l.data:
-                            matching = [l for l in res_l.data if (is_asset_target and (l.get('is_asset') or 'asset' in str(l.get('product_category') or '').lower())) or (not is_asset_target and not (l.get('is_asset') or 'asset' in str(l.get('product_category') or '').lower()))]
+                            matching = [l for l in res_l.data if (is_asset_target and (l.get('product_category') == 'Asset' or 'asset' in str(l.get('product_category') or '').lower() or (l.get('extra_fields') or {}).get('is_asset'))) or (not is_asset_target and not (l.get('product_category') == 'Asset' or 'asset' in str(l.get('product_category') or '').lower() or (l.get('extra_fields') or {}).get('is_asset')))]
                             active_loan_id = matching[0]["loan_id"] if matching else res_l.data[0]["loan_id"]
                             if loan_cache is not None:
                                 loan_cache[(client_id, "Asset" if is_asset_target else "Finance")] = active_loan_id
@@ -1792,9 +1792,9 @@ def save_repayments(data_list, batch_id=None):
                     all_resolved_cids.append(str(resolved))
             if all_resolved_cids:
                 try:
-                    res_l = uow.client.table("loans").select("loan_id, client_id, is_asset, product_category, active_credit, total_due, loan_amount, loan_repay, branch_id, officer_id, status").in_("client_id", list(set(all_resolved_cids))).eq("status", "Active").execute()
+                    res_l = uow.client.table("loans").select("loan_id, client_id, product_category, active_credit, total_due, loan_amount, loan_repay, branch_id, officer_id, status, extra_fields").in_("client_id", list(set(all_resolved_cids))).eq("status", "Active").execute()
                     for row in (res_l.data or []):
-                        is_asset_l = bool(row.get('is_asset') or 'asset' in str(row.get('product_category') or '').lower())
+                        is_asset_l = bool(row.get('product_category') == 'Asset' or 'asset' in str(row.get('product_category') or '').lower() or (row.get('extra_fields') or {}).get('is_asset'))
                         cat_key = "Asset" if is_asset_l else "Finance"
                         loan_cache[(row["client_id"], cat_key)] = row["loan_id"]
                         loan_cache[f"{row['client_id']}-ASSET" if is_asset_l else row["client_id"]] = row["loan_id"]

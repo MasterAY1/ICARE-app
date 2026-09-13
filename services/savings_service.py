@@ -385,12 +385,12 @@ class SavingsService:
         is_asset = False
         target_client_id = client_id
         try:
-            res_l = uow.client.table("loans").select("loan_id, client_id, is_asset, product_category, loan_products(name, repayment_cycle)").eq("loan_id", loan_id).execute()
+            res_l = uow.client.table("loans").select("loan_id, client_id, product_category, extra_fields, loan_products(name, repayment_cycle)").eq("loan_id", loan_id).execute()
             if res_l.data:
                 l_row = res_l.data[0]
                 target_client_id = l_row.get("client_id") or client_id
-                is_asset = bool(l_row.get("is_asset") or ("asset" in str(l_row.get("product_category") or "").lower()))
                 lp = l_row.get("loan_products") or {}
+                is_asset = bool(l_row.get("product_category") == "Asset" or ("asset" in str(l_row.get("product_category") or "").lower()) or (l_row.get("extra_fields") or {}).get("is_asset") or ("asset" in str(lp.get("name") or "").lower()))
                 prod_name = str(lp.get("name") or "").lower()
                 cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in prod_name else ("Weekly" if "weekly" in prod_name else "Monthly"))
         except Exception:
