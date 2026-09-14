@@ -6567,29 +6567,14 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 kpi2.metric("Total Savings Deposited", f"₦{tot_sav_amt:,.2f}", f"{len(sav_dep_list)} Deposits")
                 kpi3.metric("Grand Total Cash Collected", f"₦{grand_total_cash:,.2f}", "Total Physical Inflow")
                 
-                st.markdown("---")
-                # Daily Field Collection & Arrears Reconciliation Tally
-                try:
-                    from services.financial_reconciliation_service import FinancialReconciliationService
-                    eff_b_id = BRANCH_ID
-                    if not eff_b_id and reps_list:
-                        eff_b_id = reps_list[0].get("branch_id")
-                    if not eff_b_id:
-                        eff_b_id = uow_hist.loans._resolve_branch_id(BRANCH)
-                    if eff_b_id:
-                        eff_off_id = USER_ID if is_officer_col else (target_uid if sel_hist_co != "All Officers" and 'target_uid' in locals() else None)
-                        tally_res = FinancialReconciliationService.get_daily_collection_arrears_tally(
-                            uow=uow_hist,
-                            branch_id=eff_b_id,
-                            posting_date=hist_view_date,
-                            officer_id=eff_off_id
-                        )
-                        render_collection_arrears_tally(tally_res, title="Daily Field Collection & Arrears Reconciliation Tally")
-                        st.markdown("---")
-                except Exception as ex_tally:
-                    print(f"Error rendering collection arrears tally: {ex_tally}")
-                
                 # Officer cache for display and search
+                eff_b_id = BRANCH_ID
+                if not eff_b_id and reps_list:
+                    eff_b_id = reps_list[0].get("branch_id")
+                if not eff_b_id:
+                    eff_b_id = uow_hist.loans._resolve_branch_id(BRANCH)
+                eff_off_id = USER_ID if is_officer_col else (target_uid if sel_hist_co != "All Officers" and 'target_uid' in locals() else None)
+
                 hist_user_cache = {}
                 try:
                     for u in uow_hist.users.find_all():
@@ -6599,72 +6584,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 except Exception:
                     pass
 
-                # 4. End of Day (EOD) Inputs & Fee Summary
-                try:
-                    q_eod = uow_hist.client.table("co_cashbooks").select("*").eq("date", hist_date_str)
-                    if eff_b_id:
-                        q_eod = q_eod.eq("branch_id", eff_b_id)
-                    if eff_off_id:
-                        q_eod = q_eod.eq("officer_id", eff_off_id)
-                    res_eod = q_eod.execute()
-                    eod_rows = res_eod.data or []
-                    
-                    eod_opening = sum(float(r.get("opening_balance") or 0.0) for r in eod_rows)
-                    eod_expenses = sum(float(r.get("office_expenses") or 0.0) for r in eod_rows)
-                    eod_bank_dep = sum(float(r.get("bank_deposit") or 0.0) for r in eod_rows)
-                    eod_app_fee = sum(float(r.get("app_fee") or 0.0) for r in eod_rows)
-                    eod_passbook = sum(float(r.get("passbook") or 0.0) for r in eod_rows)
-                    eod_misc = sum(float(r.get("misc_fees") or 0.0) for r in eod_rows)
-                    eod_cfd = sum(float(r.get("credit_form_damage") or 0.0) for r in eod_rows)
-                    eod_bonus = sum(float(r.get("bonus") or 0.0) for r in eod_rows)
-                    
-                    st.markdown("#### End of Day (EOD) Inputs & Fee Summary")
-                    st.caption(f"Operational EOD cashbook inputs & auxiliary fees recorded for {hist_date_str}")
-                    
-                    e_col1, e_col2, e_col3, e_col4 = st.columns(4)
-                    e_col1.metric("B/F Opening Cash", f"₦{eod_opening:,.2f}")
-                    e_col2.metric("Bank Deposited", f"₦{eod_bank_dep:,.2f}")
-                    e_col3.metric("Office Expenses", f"₦{eod_expenses:,.2f}")
-                    e_col4.metric("Credit Form / App Fee", f"₦{eod_app_fee:,.2f}")
-                    
-                    e_col5, e_col6, e_col7, e_col8 = st.columns(4)
-                    e_col5.metric("Passbook Fees", f"₦{eod_passbook:,.2f}")
-                    e_col6.metric("Misc Fees", f"₦{eod_misc:,.2f}")
-                    e_col7.metric("Credit Form Damage", f"₦{eod_cfd:,.2f}")
-                    e_col8.metric("Staff Bonus", f"₦{eod_bonus:,.2f}")
-                    
-                    with st.expander("Daily EOD Inputs History Log", expanded=False):
-                        st.caption("Historical log of daily EOD cashbook inputs and reconciliation submissions.")
-                        q_eod_hist = uow_hist.client.table("co_cashbooks").select("*")
-                        if eff_b_id:
-                            q_eod_hist = q_eod_hist.eq("branch_id", eff_b_id)
-                        if eff_off_id:
-                            q_eod_hist = q_eod_hist.eq("officer_id", eff_off_id)
-                        res_eod_hist = q_eod_hist.order("date", desc=True).limit(30).execute()
-                        hist_eod_entries = res_eod_hist.data or []
-                        if hist_eod_entries:
-                            df_eod_log = pd.DataFrame([
-                                {
-                                    "Date": h.get("date"),
-                                    "Officer": hist_user_cache.get(h.get("officer_id"), "Officer"),
-                                    "B/F Cash": f"₦{float(h.get('opening_balance') or 0.0):,.2f}",
-                                    "Bank Deposit": f"₦{float(h.get('bank_deposit') or 0.0):,.2f}",
-                                    "Expenses": f"₦{float(h.get('office_expenses') or 0.0):,.2f}",
-                                    "App Fee": f"₦{float(h.get('app_fee') or 0.0):,.2f}",
-                                    "Passbook": f"₦{float(h.get('passbook') or 0.0):,.2f}",
-                                    "Misc Fees": f"₦{float(h.get('misc_fees') or 0.0):,.2f}",
-                                    "Form Damage": f"₦{float(h.get('credit_form_damage') or 0.0):,.2f}",
-                                    "Bonus": f"₦{float(h.get('bonus') or 0.0):,.2f}",
-                                    "Closing Cash": f"₦{float(h.get('closing_balance') or 0.0):,.2f}"
-                                }
-                                for h in hist_eod_entries
-                            ])
-                            st.dataframe(df_eod_log, use_container_width=True, hide_index=True)
-                        else:
-                            st.info("No historical EOD inputs found for this filter.")
-                    st.markdown("---")
-                except Exception as ex_eod:
-                    print(f"Error rendering EOD inputs summary: {ex_eod}")
+                st.markdown("---")
 
                 # 5. Group Collections Aggregation
                 groups_agg = {}
@@ -6839,6 +6759,74 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                 st.dataframe(det_df, use_container_width=True, hide_index=True)
                     else:
                         st.info(f"No group collections found for {hist_date_str}.")
+
+                    # End of Day (EOD) Inputs & Fee Summary (Positioned after Group itemized tables)
+                    try:
+                        q_eod = uow_hist.client.table("co_cashbooks").select("*").eq("date", hist_date_str)
+                        if eff_b_id:
+                            q_eod = q_eod.eq("branch_id", eff_b_id)
+                        if eff_off_id:
+                            q_eod = q_eod.eq("officer_id", eff_off_id)
+                        res_eod = q_eod.execute()
+                        eod_rows = res_eod.data or []
+                        
+                        if eod_rows:
+                            eod_opening = sum(float(r.get("opening_balance") or 0.0) for r in eod_rows)
+                            eod_expenses = sum(float(r.get("office_expenses") or 0.0) for r in eod_rows)
+                            eod_bank_dep = sum(float(r.get("bank_deposit") or 0.0) for r in eod_rows)
+                            eod_app_fee = sum(float(r.get("app_fee") or 0.0) for r in eod_rows)
+                            eod_passbook = sum(float(r.get("passbook") or 0.0) for r in eod_rows)
+                            eod_misc = sum(float(r.get("misc_fees") or 0.0) for r in eod_rows)
+                            eod_cfd = sum(float(r.get("credit_form_damage") or 0.0) for r in eod_rows)
+                            eod_bonus = sum(float(r.get("bonus") or 0.0) for r in eod_rows)
+                            
+                            st.markdown("---")
+                            st.markdown("#### End of Day (EOD) Inputs & Fee Summary")
+                            st.caption(f"Operational EOD cashbook inputs & auxiliary fees recorded for {hist_date_str}")
+                            
+                            e_col1, e_col2, e_col3, e_col4 = st.columns(4)
+                            e_col1.metric("B/F Opening Cash", f"₦{eod_opening:,.2f}")
+                            e_col2.metric("Bank Deposited", f"₦{eod_bank_dep:,.2f}")
+                            e_col3.metric("Office Expenses", f"₦{eod_expenses:,.2f}")
+                            e_col4.metric("Credit Form / App Fee", f"₦{eod_app_fee:,.2f}")
+                            
+                            e_col5, e_col6, e_col7, e_col8 = st.columns(4)
+                            e_col5.metric("Passbook Fees", f"₦{eod_passbook:,.2f}")
+                            e_col5.metric("Misc Fees", f"₦{eod_misc:,.2f}")
+                            e_col7.metric("Credit Form Damage", f"₦{eod_cfd:,.2f}")
+                            e_col8.metric("Staff Bonus", f"₦{eod_bonus:,.2f}")
+                            
+                            with st.expander("Daily EOD Inputs History Log", expanded=False):
+                                st.caption("Historical log of daily EOD cashbook inputs and reconciliation submissions.")
+                                q_eod_hist = uow_hist.client.table("co_cashbooks").select("*")
+                                if eff_b_id:
+                                    q_eod_hist = q_eod_hist.eq("branch_id", eff_b_id)
+                                if eff_off_id:
+                                    q_eod_hist = q_eod_hist.eq("officer_id", eff_off_id)
+                                res_eod_hist = q_eod_hist.order("date", desc=True).limit(30).execute()
+                                hist_eod_entries = res_eod_hist.data or []
+                                if hist_eod_entries:
+                                    df_eod_log = pd.DataFrame([
+                                        {
+                                            "Date": h.get("date"),
+                                            "Officer": hist_user_cache.get(h.get("officer_id"), "Officer"),
+                                            "B/F Cash": f"₦{float(h.get('opening_balance') or 0.0):,.2f}",
+                                            "Bank Deposit": f"₦{float(h.get('bank_deposit') or 0.0):,.2f}",
+                                            "Expenses": f"₦{float(h.get('office_expenses') or 0.0):,.2f}",
+                                            "App Fee": f"₦{float(h.get('app_fee') or 0.0):,.2f}",
+                                            "Passbook": f"₦{float(h.get('passbook') or 0.0):,.2f}",
+                                            "Misc Fees": f"₦{float(h.get('misc_fees') or 0.0):,.2f}",
+                                            "Form Damage": f"₦{float(h.get('credit_form_damage') or 0.0):,.2f}",
+                                            "Bonus": f"₦{float(h.get('bonus') or 0.0):,.2f}",
+                                            "Closing Cash": f"₦{float(h.get('closing_balance') or 0.0):,.2f}"
+                                        }
+                                        for h in hist_eod_entries
+                                    ])
+                                    st.dataframe(df_eod_log, use_container_width=True, hide_index=True)
+                                else:
+                                    st.info("No historical EOD inputs found for this filter.")
+                    except Exception as ex_eod:
+                        print(f"Error rendering EOD inputs summary: {ex_eod}")
 
                 with h_tab1:
                     if reps_list:
