@@ -352,12 +352,55 @@ class PortfolioService:
         except Exception:
             lifetime_repayments_map = {}
 
+        # Build client active loans map for dynamic lifecycle synchronization (BR-CLI-003, BR-CLI-005)
+        clients_with_active_loans = set()
+        for l in loans_raw:
+            st_raw = str(l.get("status") or "").upper()
+            if st_raw in ["ACTIVE", "APPROVED"]:
+                lid_s = str(l.get("loan_id") or "")
+                cid_s = str(l.get("client_id") or "")
+                act_cred = float(l.get("active_credit") or 0.0)
+                tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
+                tot_paid = lifetime_repayments_map.get(lid_s, 0.0)
+                out_bal = max(0.0, tot_due_base - tot_paid)
+                if out_bal > 0:
+                    clients_with_active_loans.add(cid_s)
+                elif out_bal <= 0 and act_cred > 0:
+                    # Self-heal loan status to Completed if zero balance
+                    l["status"] = "Completed"
+                    try:
+                        from services.client_status_service import ClientStatusService
+                        ClientStatusService.on_loan_repayment_check(uow, cid_s, lid_s)
+                    except Exception:
+                        pass
+
         # 5. Aggregations & Summary Calculations from Authoritative Client Statuses & Dynamic Balances (BR-CLI-006)
         total_clients_count = len(clients_raw)
         status_map = {}
+        resolved_client_status = {}
         for c in clients_raw:
+            cid_str = str(c.get("client_id") or c.get("id"))
             cs = c.get("client_statuses")
             s_name = cs.get("name") if isinstance(cs, dict) else (c.get("status") or "Registered")
+            
+            # Read-through self-healing guard when viewing overall scope
+            if (not selected_product or selected_product == "All") and (not selected_group or selected_group == "All"):
+                if s_name == "On Loan" and cid_str not in clients_with_active_loans:
+                    s_name = "Completed"
+                    try:
+                        from services.client_status_service import ClientStatusService
+                        ClientStatusService.transition_status(uow, cid_str, "Completed", reason="Dynamic loan payoff (Outstanding = ₦0)", trigger_type="SYSTEM")
+                    except Exception:
+                        pass
+                elif s_name in ["Registered", "Pending Loan", "Completed"] and cid_str in clients_with_active_loans:
+                    s_name = "On Loan"
+                    try:
+                        from services.client_status_service import ClientStatusService
+                        ClientStatusService.transition_status(uow, cid_str, "On Loan", reason="Active loan with balance > 0", trigger_type="SYSTEM")
+                    except Exception:
+                        pass
+
+            resolved_client_status[cid_str] = s_name
             status_map[s_name] = status_map.get(s_name, 0) + 1
 
         registered_clients_count = status_map.get("Registered", 0)
@@ -673,7 +716,7 @@ class PortfolioService:
             c_name = c.get("name") or "N/A"
             c_code = c.get("client_code") or "N/A"
             cs_obj = c.get("client_statuses") or {}
-            c_lifecycle_status = cs_obj.get("name") if isinstance(cs_obj, dict) else (c.get("status") or "Registered")
+            c_lifecycle_status = resolved_client_status.get(cid_str, cs_obj.get("name") if isinstance(cs_obj, dict) else (c.get("status") or "Registered"))
             
             group_name = group_map.get(cid_str, "Individual")
             c_savings = savings_map.get(cid_str, {}).get('bal', 0.0)
