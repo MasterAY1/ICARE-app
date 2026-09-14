@@ -215,9 +215,14 @@ class MasterCashbookProjectionBuilder:
         elif branch_treasury_asset > 0 and totals.get("loan_received_asset", 0.0) == 0.0:
             totals["loan_received_asset"] = branch_treasury_asset
 
-        # Ensure Bank Withdrawal for branch treasury disbursements is not double-counted with loan_received_finance
-        if branch_treasury_finance > 0 and totals.get("bank_withdrawal", 0.0) >= totals.get("loan_received_finance", 0.0):
-            totals["bank_withdrawal"] = max(0.0, totals.get("bank_withdrawal", 0.0) - totals.get("loan_received_finance", 0.0))
+        # Ensure Bank Withdrawal is not double-counted with loan_received_finance (BIA-BM-CASHBOOK-061)
+        loan_fin_funding = totals.get("loan_received_finance", 0.0) or totals.get("fund_to_product_finance", 0.0)
+        if loan_fin_funding > 0 and totals.get("bank_withdrawal", 0.0) > 0:
+            totals["bank_withdrawal"] = max(0.0, totals.get("bank_withdrawal", 0.0) - loan_fin_funding)
+
+        # Ensure Asset Credit Sales is not double-counted with loan_received_asset
+        if totals.get("asset_credit_sales", 0.0) > 0 and totals.get("loan_received_asset", 0.0) > 0:
+            totals["loan_received_asset"] = max(0.0, totals.get("loan_received_asset", 0.0) - totals.get("asset_credit_sales", 0.0))
 
         # Corrected Master Cashbook Formulas (ICARE Business Rules)
         total_inflows = (

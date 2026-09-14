@@ -188,5 +188,44 @@ class TestMasterCashbookProjectionBuilder(unittest.TestCase):
         self.assertEqual(month_closing, 125000.0)
         self.assertEqual(month_opening + month_inflows - month_outflows, month_closing)
 
+    def test_bank_withdrawal_deduplication_with_loan_received_finance(self):
+        """Test BIA-BM-CASHBOOK-061: Bank Withdrawal from CO cashbook is not double-counted with loan_received_finance"""
+        co_data = [{
+            "officer_id": "co-1",
+            "rep_daily": 30000.0,
+            "bank_withdrawal": 105000.0,  # 100k loan disbursement + 5k savings withdrawal
+            "fund_to_product_finance": 100000.0,
+            "product_withdrawal": 5000.0,
+            "bank_deposit": 30000.0
+        }]
+
+        def table_side_effect(table_name):
+            mock_table = MagicMock()
+            if table_name == "co_cashbooks":
+                mock_table.select().eq().eq().execute().data = co_data
+            else:
+                mock_table.select().eq().eq().eq().execute().data = []
+                mock_table.select().eq().eq().execute().data = []
+                mock_table.select().eq().execute().data = []
+                mock_table.select().lt().order().limit().execute().data = []
+            return mock_table
+
+        self.mock_uow.client.table.side_effect = table_side_effect
+
+        result = MasterCashbookProjectionBuilder.rebuild_master_projection(
+            self.mock_uow, "branch-01", date(2026, 7, 31)
+        )
+
+        self.assertEqual(result["fund_to_product_finance"], 100000.0)
+        self.assertEqual(result["loan_received_finance"], 100000.0)
+        # Bank withdrawal must be deduplicated from 105k down to 5k (for product_withdrawal)
+        self.assertEqual(result["bank_withdrawal"], 5000.0)
+        # Inflows: 30k (rep) + 100k (loan_received_finance) + 5k (bank_wd) = 135,000
+        self.assertEqual(result["total_inflows"], 135000.0)
+        # Outflows: 100k (fund_to_product_finance) + 5k (product_wd) + 30k (bank_dep) = 135,000
+        self.assertEqual(result["total_outflows"], 135000.0)
+        # Perfectly balanced to 0.0 variance!
+        self.assertEqual(result["closing_balance"], 0.0)
+
 if __name__ == "__main__":
     unittest.main()
