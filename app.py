@@ -3116,7 +3116,13 @@ if page == "Dashboard":
             st.markdown("#### Officer Collection Status")
             off_df = bm_data["officer_collection_status"]
             if not off_df.empty:
-                st.dataframe(off_df, use_container_width=True, hide_index=True)
+                fmt_off_df = off_df.copy()
+                for num_col in ["Expected", "Collected", "Outstanding", "Closing Balance"]:
+                    if num_col in fmt_off_df.columns:
+                        fmt_off_df[num_col] = fmt_off_df[num_col].apply(lambda v: f"₦{float(v):,.0f}" if pd.notnull(v) else "₦0")
+                if "Compliance %" in fmt_off_df.columns:
+                    fmt_off_df["Compliance %"] = fmt_off_df["Compliance %"].apply(lambda v: f"{float(v):.1f}%" if pd.notnull(v) else "0.0%")
+                st.dataframe(fmt_off_df, use_container_width=True, hide_index=True)
 
             # Branch Cash Position
             st.markdown("#### Branch Cash Position (Master Cashbook)")

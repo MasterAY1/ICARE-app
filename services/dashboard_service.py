@@ -803,13 +803,23 @@ class DashboardService:
                     if oid_s:
                         reps_by_off[oid_s] = reps_by_off.get(oid_s, 0.0) + float(r.get("amount_paid") or 0.0)
 
-                # 2. Batch fetch groups scheduled for the meeting day
-                grp_res = uow.client.table("groups").select("group_id, officer_id").eq("branch_id", branch_id).eq("meeting_day", meeting_day).execute()
+                # 2. Batch fetch groups scheduled for the meeting day (including weekday Daily groups)
+                is_weekday = (target_date.weekday() < 5) and (not is_branch_closed)
+                grp_res = uow.client.table("groups").select("group_id, name, group_number, meeting_day, officer_id").eq("branch_id", branch_id).execute()
+                all_branch_grps = grp_res.data or []
+
                 grps_by_off = {}
-                for g in (grp_res.data or []):
+                grp_names_by_off = {}
+                for g in all_branch_grps:
                     oid_s = str(g.get("officer_id") or "")
-                    if oid_s:
+                    m_day_raw = str(g.get("meeting_day") or "").strip().lower()
+                    is_scheduled = (m_day_raw == meeting_day.lower()) or (is_weekday and m_day_raw == "daily")
+                    if is_scheduled and oid_s:
                         grps_by_off[oid_s] = grps_by_off.get(oid_s, 0) + 1
+                        g_lbl = g.get("name") or "Group"
+                        if g.get("group_number"):
+                            g_lbl = f"{g_lbl} (#{g.get('group_number')})"
+                        grp_names_by_off.setdefault(oid_s, []).append(g_lbl)
 
                 # 3. Batch fetch expected collections from loan_schedule
                 loans_res = uow.client.table("loans").select("loan_id, officer_id").eq("branch_id", branch_id).in_("status", ["Active", "Approved", "ACTIVE"]).execute()
@@ -837,6 +847,8 @@ class DashboardService:
                     exp = exp_by_off.get(oid, 0.0)
                     col = reps_by_off.get(oid, 0.0)
                     grps_count = grps_by_off.get(oid, 0)
+                    grp_names_list = grp_names_by_off.get(oid, [])
+                    grp_names_str = ", ".join(grp_names_list) if grp_names_list else "None Scheduled"
 
                     if exp > 0:
                         comp = round((col / exp * 100), 1)
@@ -853,6 +865,7 @@ class DashboardService:
                         "Officer": oname,
                         "Officer Name": off.full_name or oname,
                         "Groups Scheduled": grps_count,
+                        "Scheduled Groups": grp_names_str,
                         "Expected": exp,
                         "Collected": col,
                         "Outstanding": max(0.0, exp - col),
@@ -863,7 +876,7 @@ class DashboardService:
         except Exception:
             pass
 
-        officer_df = pd.DataFrame(officer_stats) if officer_stats else pd.DataFrame(columns=["Officer", "Officer Name", "Groups Scheduled", "Expected", "Collected", "Outstanding", "Compliance %", "Closing Balance", "Status"])
+        officer_df = pd.DataFrame(officer_stats) if officer_stats else pd.DataFrame(columns=["Officer", "Officer Name", "Groups Scheduled", "Scheduled Groups", "Expected", "Collected", "Outstanding", "Compliance %", "Closing Balance", "Status"])
 
         pending_approvals = []
         try:
