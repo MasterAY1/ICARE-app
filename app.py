@@ -1484,7 +1484,13 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
                     except TypeError:
                         ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date)
 
-                exp_amt = float(data.get('Expected Amount') or data.get('expected_amount') or db_data.get('expected_amount') or (loan_repay if loan_repay > 0 else 0.0))
+                exp_amt = float(data.get('Expected Amount') or data.get('expected_amount') or db_data.get('expected_amount') or 0.0)
+                if exp_amt <= 0 and active_loan_id:
+                    l_cached = loan_data_cache.get(active_loan_id) if loan_data_cache else None
+                    if l_cached:
+                        exp_amt = float(l_cached.get('loan_repay') or 0.0)
+                if exp_amt <= 0:
+                    exp_amt = (loan_repay if loan_repay > 0 else 0.0)
                 overdue_val = float(data.get('Overdue Amount') or data.get('overdue_amount') or db_data.get('overdue_amount') or (exp_amt if is_marked_not_paid else 0.0))
                 final_p_status = "NOT_PAID" if is_marked_not_paid else raw_p_status
 
@@ -12477,6 +12483,30 @@ elif page == "Portfolio":
             par_val = float(str(p_sum.get('par', '0.00%')).replace('%', '') or 0.0)
             r4.metric("Portfolio at Risk (PAR)", f"{par_val:.2f}%", f"{p_sum.get('overdue', {}).get('count', 0)} Overdue", delta_color="inverse")
 
+            # Itemized Excess Payments & Full Payoffs Audit Ledger (BR-DASH-005, BR-DASH-007)
+            payoff_excess_df = p_data.get("payoff_excess_table", pd.DataFrame())
+            has_excess_or_payoffs = not payoff_excess_df.empty and (p_sum.get('excess_payments', {}).get('count', 0) > 0 or p_sum.get('full_payments', {}).get('count', 0) > 0)
+            
+            with st.expander("Itemized Excess Payments & Payoff Audit Ledger (Click to Expand / Collapse)", expanded=has_excess_or_payoffs):
+                st.caption("Authoritative breakdown of surplus cash collections and full loan payoff settlements within the selected period (BR-DASH-005).")
+                if not payoff_excess_df.empty:
+                    fmt_pe_df = payoff_excess_df.copy()
+                    for num_col in ["Amount Paid", "Expected Installment", "Excess Amount", "Active Credit Settled", "Remaining Balance"]:
+                        if num_col in fmt_pe_df.columns:
+                            fmt_pe_df[num_col] = fmt_pe_df[num_col].apply(lambda v: f"₦{float(v):,.0f}" if pd.notnull(v) and float(v) > 0 else ("₦0" if pd.notnull(v) else "—"))
+                    st.dataframe(fmt_pe_df, use_container_width=True, hide_index=True)
+                    
+                    csv_pe = payoff_excess_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        "Export Excess Payments & Payoffs Audit (CSV)",
+                        data=csv_pe,
+                        file_name=f"excess_payments_audit_{p_scope.role}_{date.today().isoformat()}.csv",
+                        mime="text/csv",
+                        key="btn_dl_excess_audit_csv"
+                    )
+                else:
+                    st.info("No excess payments or full loan payoffs recorded within the selected period and filter scope.")
+
             st.divider()
             st.markdown("### Loan Products & Category Intelligence")
             st.caption("Consolidated portfolio breakdown across loan product cycles, active credit, and distribution.")
@@ -12611,6 +12641,8 @@ elif page == "Portfolio":
                         filter_options.append(f"Daily Loans ({cnt_dly})")
                     if _is_cat_relevant("monthly", ["month", "3m", "6m"]) and cnt_mth > 0:
                         filter_options.append(f"Monthly Loans ({cnt_mth})")
+                    if p_sum.get('excess_payments', {}).get('count', 0) > 0:
+                        filter_options.append(f"Excess Payers ({p_sum.get('excess_payments', {}).get('count', 0)})")
                     filter_options.append(f"All Registered Clients ({len(detailed_client_df)})")
 
                     quick_filter = st.selectbox("Quick Filter by Product", filter_options, index=0, key="quick_prod_filter")
@@ -12626,15 +12658,17 @@ elif page == "Portfolio":
                     display_client_df = display_client_df[display_client_df["Loan Category"] == "Daily Loans"]
                 elif "Monthly" in quick_filter:
                     display_client_df = display_client_df[display_client_df["Loan Category"] == "Monthly Loans"]
+                elif "Excess Payers" in quick_filter:
+                    display_client_df = display_client_df[display_client_df["Period Excess Paid"] > 0]
                 elif "All Active Loans" in quick_filter:
                     display_client_df = display_client_df[display_client_df["Active Loan"] > 0]
 
                 if not display_client_df.empty:
-                    cols_to_show = ["Client Code", "Client Name", "Group", "Loan Product", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Total Paid", "Status", "Lifecycle Status"]
+                    cols_to_show = ["Client Code", "Client Name", "Group", "Loan Product", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Total Paid", "Period Excess Paid", "Status", "Lifecycle Status"]
                     avail_cols = [c for c in cols_to_show if c in display_client_df.columns]
                     formatted_df = display_client_df[avail_cols].copy()
                     
-                    for col in ["Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Total Paid"]:
+                    for col in ["Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Total Paid", "Period Excess Paid"]:
                         if col in formatted_df.columns:
                             formatted_df[col] = formatted_df[col].apply(lambda v: f"₦{float(v):,.0f}" if pd.notnull(v) and float(v) > 0 else ("₦0" if pd.notnull(v) else "-"))
                     

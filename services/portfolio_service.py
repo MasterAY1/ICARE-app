@@ -477,8 +477,12 @@ class PortfolioService:
 
         # Authoritative Full Payoffs and Excess Payments from loan_payoff_excess_records (BR-DASH-005)
         has_authoritative_payoffs = False
+        payoff_records = []
+        loans_by_id_map = {str(l.get("loan_id")): l for l in loans_raw if l.get("loan_id")}
+        clients_by_id_map = {str(c.get("client_id") or c.get("id")): c for c in clients_raw if (c.get("client_id") or c.get("id"))}
+
         try:
-            payoff_q = uow.client.table("loan_payoff_excess_records").select("*, loans(loan_products(name))").gte("date", s_d_str_iso).lte("date", e_d_str_iso)
+            payoff_q = uow.client.table("loan_payoff_excess_records").select("*, loans(loan_products(name)), clients(name, client_code), app_users(username, full_name)").gte("date", s_d_str_iso).lte("date", e_d_str_iso)
             if scope.scope_level == "OFFICER" and scope.user_id:
                 payoff_q = payoff_q.eq("officer_id", scope.user_id)
             elif scope.scope_level == "BRANCH" and scope.branch_id:
@@ -510,52 +514,127 @@ class PortfolioService:
                     or not r.get("loan_id")
                 ]
 
-            if payoff_records:
-                has_authoritative_payoffs = True
-                fp_recs = [r for r in payoff_records if str(r.get("record_type", "")).upper() in ["FULL_PAYOFF", "FULL_PAYOFF_WITH_EXCESS", "FULL_PAYOFF_AND_EXCESS"]]
-                full_payments_count = len(fp_recs)
-                full_payments_amt = sum(float(r.get("active_credit_settled") or r.get("amount_paid") or 0.0) for r in fp_recs)
+            if selected_group and selected_group != "All":
+                payoff_records = [
+                    r for r in payoff_records 
+                    if group_map.get(str(r.get("client_id") or ""), "Individual") == selected_group
+                ]
 
-                ep_recs = [r for r in payoff_records if float(r.get("excess_amount") or 0.0) > 0 or str(r.get("record_type", "")).upper() in ["EXCESS_PAYMENT", "FULL_PAYOFF_WITH_EXCESS", "FULL_PAYOFF_AND_EXCESS"]]
-                excess_payments_count = len(ep_recs)
-                excess_payments_amt = sum(float(r.get("excess_amount") or 0.0) for r in ep_recs)
+            # Enrich authoritative records with client, group, and product details
+            for r in payoff_records:
+                cid_str = str(r.get("client_id") or "")
+                c_obj = clients_by_id_map.get(cid_str, {})
+                c_join = r.get("clients") or {}
+                r["client_name"] = c_join.get("name") or c_obj.get("name") or r.get("client_name") or "Unknown"
+                r["client_code"] = c_join.get("client_code") or c_obj.get("client_code") or r.get("client_code") or "Unknown"
+                r["group_name"] = group_map.get(cid_str, "Individual")
+
+                l_join = r.get("loans") or {}
+                lp_join = (l_join.get("loan_products") or {}) if isinstance(l_join, dict) else {}
+                prod_n = lp_join.get("name")
+                if not prod_n:
+                    l_obj = loans_by_id_map.get(str(r.get("loan_id") or ""), {})
+                    prod_n = (l_obj.get("loan_products") or {}).get("name") or l_obj.get("product_category") or "General"
+                r["loan_product"] = prod_n
+
+                u_join = r.get("app_users") or {}
+                off_n = u_join.get("full_name") or u_join.get("username")
+                r["officer_name"] = off_n or "Credit Officer"
+
+            has_authoritative_payoffs = True
         except Exception:
+            payoff_records = []
             has_authoritative_payoffs = False
 
-        if not has_authoritative_payoffs:
-            # Fallback to dynamic calculation from repayments_today (BR-DASH-007)
-            loans_by_id_map = {str(l.get("loan_id")): l for l in loans_raw if l.get("loan_id")}
+        # Hybrid reconciliation: merge period repayments exceeding expected installment not yet in payoff_records
+        existing_rep_ids = {str(r.get("repayment_id")) for r in payoff_records if r.get("repayment_id")}
+        for r in repayments_today:
+            rep_id_s = str(r.get("id") or "")
+            if rep_id_s and rep_id_s in existing_rep_ids:
+                continue
+            lid_s = str(r.get("loan_id") or "")
+            amt = float(r.get("amount_paid") or 0.0)
+            l = loans_by_id_map.get(lid_s)
+            repay_target = float(r.get("expected_amount") or 0.0)
+            if repay_target <= 0 and l:
+                repay_target = float(l.get("loan_repay") or 0.0)
+            if repay_target > 0 and amt > repay_target:
+                surplus = amt - repay_target
+                cid_s = str(r.get("client_id") or (l.get("client_id") if l else "") or "")
+                c_obj = clients_by_id_map.get(cid_s, {})
+                syn_rec = {
+                    "id": f"syn-{rep_id_s}",
+                    "repayment_id": rep_id_s,
+                    "loan_id": lid_s,
+                    "client_id": cid_s,
+                    "client_name": c_obj.get("name") or "Unknown",
+                    "client_code": c_obj.get("client_code") or "Unknown",
+                    "group_name": group_map.get(cid_s, "Individual"),
+                    "loan_product": (l.get("loan_products") or {}).get("name") or "General" if l else "General",
+                    "officer_id": r.get("officer_id") or (l.get("officer_id") if l else None),
+                    "branch_id": r.get("branch_id") or (l.get("branch_id") if l else None),
+                    "date": str(r.get("date"))[:10],
+                    "record_type": "EXCESS_PAYMENT",
+                    "amount_paid": amt,
+                    "expected_installment": repay_target,
+                    "active_credit_settled": 0.0,
+                    "excess_amount": surplus,
+                    "remaining_balance_before": 0.0,
+                    "remaining_balance_after": 0.0,
+                    "notes": r.get("note") or "Dynamic in-period excess repayment"
+                }
+                payoff_records.append(syn_rec)
 
-            paid_loans_in_period = {}
-            for r in repayments_today:
-                lid = str(r.get("loan_id") or "")
-                paid_loans_in_period[lid] = paid_loans_in_period.get(lid, 0.0) + float(r.get("amount_paid") or 0.0)
+        fp_recs = [r for r in payoff_records if str(r.get("record_type", "")).upper() in ["FULL_PAYOFF", "FULL_PAYOFF_WITH_EXCESS", "FULL_PAYOFF_AND_EXCESS"]]
+        full_payments_count = len(fp_recs)
+        full_payments_amt = sum(float(r.get("active_credit_settled") or r.get("amount_paid") or 0.0) for r in fp_recs)
 
-            for lid, p_amt in paid_loans_in_period.items():
-                l = loans_by_id_map.get(lid)
-                if l:
-                    st = str(l.get("status") or "").upper()
-                    if st in ["COMPLETED", "CLOSED"] and p_amt > 0:
-                        full_payments_count += 1
-                        full_payments_amt += float(l.get("active_credit") or l.get("loan_amount") or 0.0)
+        ep_recs = [r for r in payoff_records if float(r.get("excess_amount") or 0.0) > 0 or str(r.get("record_type", "")).upper() in ["EXCESS_PAYMENT", "FULL_PAYOFF_WITH_EXCESS", "FULL_PAYOFF_AND_EXCESS"]]
+        excess_payments_count = len(ep_recs)
+        excess_payments_amt = sum(float(r.get("excess_amount") or 0.0) for r in ep_recs)
 
-            excess_clients_set = set()
-            for r in repayments_today:
-                lid = str(r.get("loan_id") or "")
-                amt = float(r.get("amount_paid") or 0.0)
-                l = loans_by_id_map.get(lid)
-                repay_target = float(r.get("expected_amount") or 0.0)
-                if repay_target <= 0 and l:
-                    repay_target = float(l.get("loan_repay") or 0.0)
+        # Build Per-Loan and Per-Client Excess Payment Maps for the Detailed Client List
+        ep_by_loan_id = {}
+        ep_by_client_id = {}
+        for r in ep_recs:
+            lid_str = str(r.get("loan_id") or "")
+            cid_str = str(r.get("client_id") or "")
+            x_amt = float(r.get("excess_amount") or 0.0)
+            if lid_str:
+                ep_by_loan_id[lid_str] = ep_by_loan_id.get(lid_str, 0.0) + x_amt
+            if cid_str:
+                ep_by_client_id[cid_str] = ep_by_client_id.get(cid_str, 0.0) + x_amt
 
-                if repay_target > 0 and amt > repay_target:
-                    surplus = amt - repay_target
-                    excess_payments_amt += surplus
-                    cid_val = str(r.get("client_id") or (l.get("client_id") if l else "") or "")
-                    if cid_val:
-                        excess_clients_set.add(cid_val)
+        # Build Itemized Payoff & Excess Audit DataFrame
+        payoff_excess_rows = []
+        for r in sorted(payoff_records, key=lambda x: str(x.get("date") or ""), reverse=True):
+            r_type = str(r.get("record_type") or "").upper()
+            if r_type == "FULL_PAYOFF_AND_EXCESS":
+                type_lbl = "Full Payoff & Excess"
+            elif r_type == "FULL_PAYOFF":
+                type_lbl = "Full Payoff"
+            elif r_type == "EXCESS_PAYMENT":
+                type_lbl = "Excess Payment"
+            else:
+                type_lbl = r_type.title()
 
-            excess_payments_count = len(excess_clients_set)
+            payoff_excess_rows.append({
+                "Date": str(r.get("date") or "")[:10],
+                "Client Code": r.get("client_code") or "Unknown",
+                "Client Name": r.get("client_name") or "Unknown",
+                "Group": r.get("group_name") or "Individual",
+                "Loan Product": r.get("loan_product") or "General",
+                "Type": type_lbl,
+                "Amount Paid": float(r.get("amount_paid") or 0.0),
+                "Expected Installment": float(r.get("expected_installment") or 0.0),
+                "Excess Amount": float(r.get("excess_amount") or 0.0),
+                "Active Credit Settled": float(r.get("active_credit_settled") or 0.0),
+                "Remaining Balance": float(r.get("remaining_balance_after") or 0.0),
+                "Notes": r.get("notes") or "—"
+            })
+        payoff_excess_df = pd.DataFrame(payoff_excess_rows) if payoff_excess_rows else pd.DataFrame(
+            columns=["Date", "Client Code", "Client Name", "Group", "Loan Product", "Type", "Amount Paid", "Expected Installment", "Excess Amount", "Active Credit Settled", "Remaining Balance", "Notes"]
+        )
 
         product_summary = {}
         client_rows = []
@@ -620,6 +699,7 @@ class PortfolioService:
                     "Outstanding Balance": 0.0,
                     "Fixed Repayment": 0.0,
                     "Total Paid": 0.0,
+                    "Period Excess Paid": 0.0,
                     "Status": c_lifecycle_status,
                     "Lifecycle Status": c_lifecycle_status
                 })
@@ -698,8 +778,11 @@ class PortfolioService:
 
                     # Status label assignment for UI
                     is_comp_loan = str(l.get("status") or "").upper() in ["COMPLETED", "CLOSED"]
+                    client_excess = ep_by_loan_id.get(loan_id, ep_by_client_id.get(cid_str, 0.0))
                     if is_comp_loan and (paid_period_l > 0 or str(l.get("status")).upper() in ["COMPLETED", "CLOSED"]):
                         status_str = "Completed (Paid Off)"
+                    elif client_excess > 0:
+                        status_str = "Excess Paid"
                     elif paid_period_l > 0:
                         if exp_in_period_l > 0 and paid_period_l > exp_in_period_l:
                             status_str = "Excess Paid"
@@ -745,11 +828,12 @@ class PortfolioService:
                         "Outstanding Balance": outstanding_bal,
                         "Fixed Repayment": repay_fixed,
                         "Total Paid": tot_paid_lifetime,
+                        "Period Excess Paid": client_excess,
                         "Status": status_str,
                         "Lifecycle Status": c_lifecycle_status
                     })
 
-        detailed_client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client ID", "Client Code", "Client Name", "Group", "Loan Product", "Loan Category", "Loan ID", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Status", "Lifecycle Status"])
+        detailed_client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client ID", "Client Code", "Client Name", "Group", "Loan Product", "Loan Category", "Loan ID", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Period Excess Paid", "Status", "Lifecycle Status"])
         raw_client_codes = sorted(list(set([r["Client Code"] for r in client_rows if r.get("Client Code") and str(r.get("Client Code")).strip() not in ["", "N/A", "None"]]))) if client_rows else []
         
         # 1. Build Group Summary DataFrame
@@ -776,7 +860,7 @@ class PortfolioService:
         category_summary = {
             "12_week": {
                 "title": "12-Week Loans",
-                "badge": "🔵 Weekly 12W",
+                "badge": "Weekly 12W",
                 "cash_count": 0,
                 "asset_count": 0,
                 "total_count": 0,
@@ -786,7 +870,7 @@ class PortfolioService:
             },
             "24_week": {
                 "title": "24-Week Loans",
-                "badge": "🟣 Weekly 24W",
+                "badge": "Weekly 24W",
                 "cash_count": 0,
                 "asset_count": 0,
                 "total_count": 0,
@@ -796,7 +880,7 @@ class PortfolioService:
             },
             "daily": {
                 "title": "Daily Loans (60D / 120D)",
-                "badge": "🟢 Daily",
+                "badge": "Daily",
                 "cash_count": 0,
                 "asset_count": 0,
                 "total_count": 0,
@@ -806,7 +890,7 @@ class PortfolioService:
             },
             "monthly": {
                 "title": "Monthly Loans",
-                "badge": "🟡 Monthly",
+                "badge": "Monthly",
                 "cash_count": 0,
                 "asset_count": 0,
                 "total_count": 0,
@@ -816,7 +900,7 @@ class PortfolioService:
             },
             "asset_all": {
                 "title": "Asset Loans (All)",
-                "badge": "🟠 Asset Loans",
+                "badge": "Asset Loans",
                 "total_count": 0,
                 "active_credit": 0.0,
                 "outstanding_balance": 0.0,
@@ -973,7 +1057,9 @@ class PortfolioService:
             "group_table": group_df,
             "client_table": detailed_client_df,
             "client_codes": raw_client_codes,
-            "client_lookup": {r["Client Code"]: f"{r['Client Code']} — {r.get('Client Name', '')} ({r.get('Group', 'Individual')})" for r in client_rows if r.get("Client Code")}
+            "client_lookup": {r["Client Code"]: f"{r['Client Code']} — {r.get('Client Name', '')} ({r.get('Group', 'Individual')})" for r in client_rows if r.get("Client Code")},
+            "payoff_excess_records": payoff_records,
+            "payoff_excess_table": payoff_excess_df
         }
 
     @staticmethod
