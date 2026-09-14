@@ -2737,6 +2737,10 @@ if page == "Dashboard":
                         def _execute_withdrawal_approval(uow_exec, wr_item, op_date):
                             from services.savings_service import SavingsService
                             w_id = wr_item["id"]
+                            # Idempotency check: ensure request hasn't already been approved
+                            chk = uow_exec.client.table("withdrawal_requests").select("status").eq("id", w_id).execute()
+                            if chk.data and chk.data[0].get("status") == "APPROVED":
+                                return
                             w_type = wr_item.get("savings_type")
                             w_op = wr_item.get("operation_type")
                             w_amt = float(wr_item.get("amount", 0))
@@ -8181,100 +8185,100 @@ elif page == "Withdrawal Operations":
                     laps_data[cid] = {"client_id": cid, "balance": 0.0, "remarks": lr.get("remarks") or ""}
                 laps_data[cid]["balance"] += float(lr.get("deposit_amount") or 0) - float(lr.get("withdrawal_amount") or 0)
 
+        sel_laps = None
         if not laps_data:
             st.info("No LAPS savings records found.")
-            st.stop()
-
-        laps_list = [v for v in laps_data.values() if v["balance"] > 0]
-        if not laps_list:
-            st.info("No LAPS balances available for payout.")
-            st.stop()
-
-        laps_opts = {f"{l['client_id'][:12]}... — Balance: ₦{l['balance']:,.2f}": l for l in laps_list}
-        sel_laps_label = st.selectbox("Select LAPS Record", list(laps_opts.keys()))
-        sel_laps = laps_opts[sel_laps_label]
-
-        st.metric("LAPS Balance", f"₦{sel_laps['balance']:,.2f}")
-
-        with st.form("laps_payout_form"):
-            amount_val = st.number_input("Payout Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
-            payout_method = st.radio("Payout Method", ["Cash", "Bank Transfer"], horizontal=True)
-
-            if payout_method == "Cash":
-                st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: YES (Vault Cash paid out to client)")
+        else:
+            laps_list = [v for v in laps_data.values() if v["balance"] > 0]
+            if not laps_list:
+                st.info("No LAPS balances available for payout.")
             else:
-                st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: NO (Paid directly via Bank Account)")
-            remarks_input = st.text_area("Remarks", placeholder="Client details, reason for payout...")
-            if is_manager:
-                auto_exec_laps = st.checkbox("Authorize & Post Immediately (Direct BM / Admin Execution)", value=True, key="wth_laps_auto_exec", help="When checked, Branch Managers and Admins can authorize and immediately post this LAPS payout to the ledger.")
-            else:
-                auto_exec_laps = False
+                laps_opts = {f"{l['client_id'][:12]}... — Balance: ₦{l['balance']:,.2f}": l for l in laps_list}
+                sel_laps_label = st.selectbox("Select LAPS Record", list(laps_opts.keys()))
+                sel_laps = laps_opts[sel_laps_label]
 
-            btn_label_laps = "Authorize & Post LAPS Payout to Ledger" if auto_exec_laps else "Submit LAPS Payout for BM Approval"
-            submitted = st.form_submit_button(btn_label_laps, use_container_width=True, type="primary" if auto_exec_laps else "secondary")
+        if sel_laps:
+            st.metric("LAPS Balance", f"₦{sel_laps['balance']:,.2f}")
 
-            if submitted:
-                if not amount_val or amount_val <= 0:
-                    st.error("Amount must be greater than zero.")
-                elif amount_val > sel_laps["balance"]:
-                    st.error(f"Insufficient LAPS balance. Available: ₦{sel_laps['balance']:,.2f}")
+            with st.form("laps_payout_form"):
+                amount_val = st.number_input("Payout Amount (₦)", min_value=0.0, step=500.0, value=None, placeholder="Enter amount...", format="%.2f")
+                payout_method = st.radio("Payout Method", ["Cash", "Bank Transfer"], horizontal=True)
+
+                if payout_method == "Cash":
+                    st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: YES (Vault Cash paid out to client)")
                 else:
-                    spin_msg = "Authorizing and posting LAPS payout to ledger..." if auto_exec_laps else "Submitting LAPS payout for BM approval..."
-                    with st.spinner(spin_msg):
-                        ref_code = f"REF-LAPS-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                        c_name_laps = remarks_input.split('\n')[0][:50] if remarks_input else f"LAPS Client {sel_laps['client_id'][:8]}"
+                    st.info("Product Withdrawal Value: Reduced | Physical Cash Outflow: NO (Paid directly via Bank Account)")
+                remarks_input = st.text_area("Remarks", placeholder="Client details, reason for payout...")
+                if is_manager:
+                    auto_exec_laps = st.checkbox("Authorize & Post Immediately (Direct BM / Admin Execution)", value=True, key="wth_laps_auto_exec", help="When checked, Branch Managers and Admins can authorize and immediately post this LAPS payout to the ledger.")
+                else:
+                    auto_exec_laps = False
 
-                        if auto_exec_laps:
-                            try:
-                                from services.savings_service import SavingsService
-                                effective_op_date = wth_op_date
-                                cash_paid = payout_method == "Cash"
-                                with SupabaseUnitOfWork() as uow_direct:
-                                    SavingsService.pay_laps(
-                                        uow=uow_direct, client_id=sel_laps["client_id"], client_name=c_name_laps,
-                                        branch=BRANCH, officer=USER, amount=float(amount_val), cash_paid=cash_paid,
-                                        reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {remarks_input or 'LAPS Payout'}",
-                                        posting_date=effective_op_date
-                                    )
+                btn_label_laps = "Authorize & Post LAPS Payout to Ledger" if auto_exec_laps else "Submit LAPS Payout for BM Approval"
+                submitted = st.form_submit_button(btn_label_laps, use_container_width=True, type="primary" if auto_exec_laps else "secondary")
 
-                                    uow_direct.client.table("withdrawal_requests").insert({
-                                        "savings_type": "LAPS",
-                                        "operation_type": "LAPS Payout",
-                                        "client_id": sel_laps["client_id"],
-                                        "client_name": c_name_laps,
-                                        "branch_id": BRANCH_ID,
-                                        "requested_by": USER,
-                                        "amount": float(amount_val),
-                                        "payout_method": payout_method,
-                                        "operational_date": wth_date_str,
-                                        "reference": ref_code,
-                                        "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
-                                        "status": "APPROVED",
-                                        "approved_by": USER,
-                                        "approved_at": datetime.now().isoformat()
-                                    }).execute()
+                if submitted:
+                    if not amount_val or amount_val <= 0:
+                        st.error("Amount must be greater than zero.")
+                    elif amount_val > sel_laps["balance"]:
+                        st.error(f"Insufficient LAPS balance. Available: ₦{sel_laps['balance']:,.2f}")
+                    else:
+                        spin_msg = "Authorizing and posting LAPS payout to ledger..." if auto_exec_laps else "Submitting LAPS payout for BM approval..."
+                        with st.spinner(spin_msg):
+                            ref_code = f"REF-LAPS-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                            c_name_laps = remarks_input.split('\n')[0][:50] if remarks_input else f"LAPS Client {sel_laps['client_id'][:8]}"
 
-                                st.session_state["withdrawal_flash_msg"] = f" LAPS payout of ₦{amount_val:,.2f} ({payout_method}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                            if auto_exec_laps:
+                                try:
+                                    from services.savings_service import SavingsService
+                                    effective_op_date = wth_op_date
+                                    cash_paid = payout_method == "Cash"
+                                    with SupabaseUnitOfWork() as uow_direct:
+                                        SavingsService.pay_laps(
+                                            uow=uow_direct, client_id=sel_laps["client_id"], client_name=c_name_laps,
+                                            branch=BRANCH, officer=USER, amount=float(amount_val), cash_paid=cash_paid,
+                                            reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {remarks_input or 'LAPS Payout'}",
+                                            posting_date=effective_op_date
+                                        )
+
+                                        uow_direct.client.table("withdrawal_requests").insert({
+                                            "savings_type": "LAPS",
+                                            "operation_type": "LAPS Payout",
+                                            "client_id": sel_laps["client_id"],
+                                            "client_name": c_name_laps,
+                                            "branch_id": BRANCH_ID,
+                                            "requested_by": USER,
+                                            "amount": float(amount_val),
+                                            "payout_method": payout_method,
+                                            "operational_date": wth_date_str,
+                                            "reference": ref_code,
+                                            "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
+                                            "status": "APPROVED",
+                                            "approved_by": USER,
+                                            "approved_at": datetime.now().isoformat()
+                                        }).execute()
+
+                                    st.session_state["withdrawal_flash_msg"] = f" LAPS payout of ₦{amount_val:,.2f} ({payout_method}) authorized and posted to financial ledger! (Ref: `{ref_code}`)"
+                                    st.rerun()
+                                except Exception as ex:
+                                    st.error(f"Execution failed: {str(ex)}")
+                            else:
+                                uow.client.table("withdrawal_requests").insert({
+                                    "savings_type": "LAPS",
+                                    "operation_type": "LAPS Payout",
+                                    "client_id": sel_laps["client_id"],
+                                    "client_name": c_name_laps,
+                                    "branch_id": BRANCH_ID,
+                                    "requested_by": USER,
+                                    "amount": float(amount_val),
+                                    "payout_method": payout_method,
+                                    "operational_date": wth_date_str,
+                                    "reference": ref_code,
+                                    "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
+                                    "status": "PENDING"
+                                }).execute()
+                                st.session_state["withdrawal_flash_msg"] = f" LAPS payout request of ₦{amount_val:,.2f} ({payout_method}) submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
                                 st.rerun()
-                            except Exception as ex:
-                                st.error(f"Execution failed: {str(ex)}")
-                        else:
-                            uow.client.table("withdrawal_requests").insert({
-                                "savings_type": "LAPS",
-                                "operation_type": "LAPS Payout",
-                                "client_id": sel_laps["client_id"],
-                                "client_name": c_name_laps,
-                                "branch_id": BRANCH_ID,
-                                "requested_by": USER,
-                                "amount": float(amount_val),
-                                "payout_method": payout_method,
-                                "operational_date": wth_date_str,
-                                "reference": ref_code,
-                                "remarks": remarks_input or f"LAPS payout for {sel_laps['client_id'][:8]}",
-                                "status": "PENDING"
-                            }).execute()
-                            st.session_state["withdrawal_flash_msg"] = f" LAPS payout request of ₦{amount_val:,.2f} ({payout_method}) submitted successfully! (Reference: `{ref_code}`). Status: **PENDING BM Approval**."
-                            st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
     # PENDING APPROVALS QUEUE (BM / AM / Admin)
@@ -8325,6 +8329,11 @@ elif page == "Withdrawal Operations":
                                             if isinstance(effective_op_date, str):
                                                 effective_op_date = date.fromisoformat(effective_op_date[:10])
                                             with SupabaseUnitOfWork() as uow_wr:
+                                                # Idempotency check: ensure request hasn't already been approved
+                                                chk_wr = uow_wr.client.table("withdrawal_requests").select("status").eq("id", wr_id).execute()
+                                                if chk_wr.data and chk_wr.data[0].get("status") == "APPROVED":
+                                                    st.warning(f"Withdrawal request for {wr_name} has already been approved.")
+                                                    st.rerun()
                                                 source_type = "GroupSavings" if wr_type == "Group" else ("MiscSavings" if wr_type == "Misc" else "IndividualSavings")
                                                 if wr_op in ["Cash Withdrawal", "Bank Transfer", "Client Bank Account (Transfer)", "Group Bank Account (Transfer)"]:
                                                     if wr_type == "Individual":
