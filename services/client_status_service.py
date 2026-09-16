@@ -86,12 +86,26 @@ class ClientStatusService:
         now_str = datetime.now().isoformat()
         history_id = str(uuid.uuid4())
 
+        # Resolve changed_by to valid UUID if username or non-UUID string was provided
+        valid_changed_by = None
+        if changed_by:
+            try:
+                uuid.UUID(str(changed_by))
+                valid_changed_by = str(changed_by)
+            except ValueError:
+                try:
+                    u_res = uow.client.table("app_users").select("id").eq("username", str(changed_by)).execute()
+                    if u_res.data:
+                        valid_changed_by = u_res.data[0]["id"]
+                except Exception:
+                    valid_changed_by = None
+
         history_record = {
             "id": history_id,
             "client_id": client_id,
             "old_status_id": old_status_id,
             "new_status_id": target_status_id,
-            "changed_by": changed_by,
+            "changed_by": valid_changed_by,
             "changed_at": now_str,
             "reason": reason or f"Transition to {new_status_name}",
             "trigger_type": trigger_type,
@@ -102,7 +116,7 @@ class ClientStatusService:
             "status": new_status_name,
             "status_id": target_status_id,
             "status_changed_at": now_str,
-            "status_changed_by": changed_by,
+            "status_changed_by": valid_changed_by,
             "status_note": reason or f"Transition to {new_status_name}"
         }
 
