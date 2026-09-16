@@ -310,10 +310,19 @@ class LoanService:
             cid = res.data[0]["client_id"]
             try:
                 from services.client_status_service import ClientStatusService
+                target_status = "Registered"
+                act_loans = uow.client.table("loans").select("loan_id").eq("client_id", cid).in_("status", ["Active", "ACTIVE", "Approved"]).neq("loan_id", loan_id).execute().data
+                if act_loans:
+                    target_status = "On Loan"
+                else:
+                    comp_loans = uow.client.table("loans").select("loan_id").eq("client_id", cid).eq("status", "Completed").execute().data
+                    if comp_loans:
+                        target_status = "Completed"
+
                 ClientStatusService.transition_status(
                     uow=uow,
                     client_id=cid,
-                    new_status_name="Registered",
+                    new_status_name=target_status,
                     changed_by=rejected_by,
                     reason=f"Loan application rejected by BM: {reason or 'Not approved'}",
                     trigger_type="MANUAL"
