@@ -279,12 +279,22 @@ class RepaymentService:
 
         # 2. Reversal Domain Event
         # Ensure we pass POSITIVE amount to posting engine because the Rule swaps Debits/Credits
+        product_type = ""
+        if orig.get("loan_id"):
+            try:
+                l_res = uow.client.table("loans").select("product_id, loan_products(name)").eq("loan_id", orig.get("loan_id")).execute()
+                if l_res.data and l_res.data[0].get("loan_products"):
+                    product_type = l_res.data[0]["loan_products"].get("name", "")
+            except Exception:
+                pass
+
         event_payload = {
             "branch": orig.get("branch_id"),
             "officer": orig.get("officer_id"),
             "amount": abs(orig_amount),
             "reference": new_id,
             "loan_id": orig.get("loan_id"),
+            "product_type": product_type,
             "narration": f"Reversal of repayment {original_repayment_id}",
             "date": rev_dt_str
         }

@@ -338,14 +338,29 @@ class CoCashbookProjectionBuilder:
                         savings_deposit -= amount
                 elif event_type == "RepaymentReversed":
                     payload = ev_store.get("payload") or {}
-                    p_name = str(payload.get("product_type") or narr).lower()
-                    if "24" in p_name or "24w" in p_name:
+                    loan_id = payload.get("loan_id") or entry.get("loan_id") or ev_store.get("aggregate_id")
+                    prod_name = str(payload.get("product_type") or "").lower()
+                    cycle = "Weekly"
+                    if not prod_name and loan_id:
+                        try:
+                            res_l = uow.client.table("loans").select("loan_id, product_id, loan_products(name, repayment_cycle, installments)").eq("loan_id", loan_id).execute()
+                            if not res_l.data:
+                                res_l = uow.client.table("loans").select("loan_id, product_id, loan_products(name, repayment_cycle, installments)").eq("client_id", loan_id).execute()
+                            if res_l.data:
+                                row_l = res_l.data[0]
+                                lp = row_l.get("loan_products") or {}
+                                prod_name = str(lp.get("name") or "").lower()
+                                cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in prod_name else ("Weekly" if "weekly" in prod_name else "Monthly"))
+                        except Exception:
+                            pass
+
+                    if "24" in prod_name or "24w" in prod_name or "24wk" in prod_name:
                         rep_24_weeks -= amount
-                    elif "12" in p_name or "12w" in p_name:
+                    elif "12" in prod_name or "12w" in prod_name or "12wk" in prod_name:
                         rep_12_weeks -= amount
-                    elif "120" in p_name or "120d" in p_name or "60" in p_name or "60d" in p_name or "daily" in p_name:
+                    elif "120" in prod_name or "120d" in prod_name or "60" in prod_name or "60d" in prod_name or "daily" in prod_name or cycle == "Daily":
                         rep_daily -= amount
-                    elif "month" in p_name:
+                    elif "month" in prod_name or cycle == "Monthly":
                         rep_monthly -= amount
                     else:
                         rep_12_weeks -= amount
