@@ -264,3 +264,12 @@ If the agent is unsure what Streamlit does:
 DO NOT GUESS.
 
 READ MORE CODE.
+
+==================================================
+AUTHORITATIVE SKILL REFERENCE
+==================================================
+
+For complete responsive breakpoints, metric card financial formatting,
+shared component rules, and presentation-layer governance, see:
+[.agents/skills/icare-flutter-design/SKILL.md](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/skills/icare-flutter-design/SKILL.md)
+

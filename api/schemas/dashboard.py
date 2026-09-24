@@ -50,6 +50,7 @@ class RepaymentStatus(BaseModel):
     part_payment: PaymentStatusBucket = Field(default_factory=PaymentStatusBucket)
     excess_payment: PaymentStatusBucket = Field(default_factory=PaymentStatusBucket)
     not_paid: PaymentStatusBucket = Field(default_factory=PaymentStatusBucket)
+    overdue_arrears: Optional[PaymentStatusBucket] = Field(default_factory=PaymentStatusBucket)
 
 
 class CashPosition(BaseModel):
@@ -70,3 +71,4 @@ class CoDashboardResponse(BaseModel):
     repayment_status: RepaymentStatus
     cash_position: CashPosition
     attention_list: List[Dict[str, Any]] = Field(default_factory=list)
+    overdue_portfolio: Optional[Dict[str, Any]] = Field(default_factory=dict)

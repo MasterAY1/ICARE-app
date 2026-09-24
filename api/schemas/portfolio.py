@@ -1,5 +1,6 @@
 """
-Portfolio schemas.
+Portfolio & 360° Client Dossier Schemas.
+Authoritative models for hierarchical portfolio analytics and client drilldowns (app.py L12192–13178).
 """
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
@@ -37,7 +38,51 @@ class ClientPortfolioItem(BaseModel):
     status: str
 
 
-class PortfolioResponse(BaseModel):
-    metrics: PortfolioMetrics
+class FilterOptions(BaseModel):
+    available_branches: List[str] = []
+    available_officers: List[Dict[str, str]] = []
+    allowed_products: List[str] = []
+    available_groups: List[str] = []
+    time_periods: List[str] = ["Today", "Yesterday", "Current Month", "Last Month", "Custom Date Range"]
+
+
+class PortfolioOverviewResponse(BaseModel):
+    # Core Streamlit PortfolioService data structures (1:1 parity)
+    summary: Dict[str, Any] = {}
+    category_summary: Dict[str, Any] = {}
+    group_matrix: List[Dict[str, Any]] = []
+    client_table: List[Dict[str, Any]] = []
+    group_table: List[Dict[str, Any]] = []
+    payoff_excess_table: List[Dict[str, Any]] = []
+    client_codes: List[str] = []
+    client_lookup: Dict[str, str] = {}
+    filter_options: FilterOptions = FilterOptions()
+
+    # Backward-compatible fields
+    metrics: PortfolioMetrics = PortfolioMetrics()
     groups: List[GroupPortfolioItem] = []
     clients: List[ClientPortfolioItem] = []
+
+
+class ClientDossierResponse(BaseModel):
+    client_code: str
+    customer_info: Dict[str, Any] = {}
+    guarantor_info: Dict[str, Any] = {}
+    executive_banner: Dict[str, Any] = {}
+    loan_history: List[Dict[str, Any]] = []
+    repayment_ledger: List[Dict[str, Any]] = []
+    savings_ledger: List[Dict[str, Any]] = []
+    collection_compliance: Dict[str, Any] = {}
+    lifecycle_status: Dict[str, Any] = {}
+    audit_history: List[Dict[str, Any]] = []
+
+
+class ChangeClientStatusRequest(BaseModel):
+    client_id: str
+    target_status: str
+    reason: str
+
+
+class DossierReversalRequest(BaseModel):
+    record_id: str
+    reason: str

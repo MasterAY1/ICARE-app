@@ -36,9 +36,12 @@ All authoritative rules are stored under `.agents/rules/`. Before modifying any 
 - **[CLIENT_STATUS_RULES.md](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/rules/business-rules/CLIENT_STATUS_RULES.md)**: Client lifecycle status invariants (BR-CLI-001 to BR-CLI-007): statuses, transitions, audit trail, and dashboard metrics.
 
 ### D. Development & Verification Protocols (`.agents/rules/development/`)
+- **[ZERO_REDESIGN_CONSTITUTION.md](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/rules/development/ZERO_REDESIGN_CONSTITUTION.md)**: Zero-redesign constitution, Streamlit replication authority, and page specification protocols.
 - **[change-protocol.md](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/rules/development/change-protocol.md)**: The mandatory 12-step pre-implementation analysis and flow tracing.
 - **[forbidden-patterns.md](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/rules/development/forbidden-patterns.md)**: "THE AGENT MUST NEVER GUESS" and forbidden antipatterns (`FP-001` to `FP-010`).
 - **[regression-protocol.md](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/rules/development/regression-protocol.md)**: Post-implementation verification checklist and downstream invariant testing.
+- **[icare-flutter-design](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/skills/icare-flutter-design/SKILL.md)**: Authoritative frontend design, presentation-layer, responsiveness, and metric card formatting skill for ICARE Flutter.
+- **[dual-frontend-parity](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/skills/dual-frontend-parity/SKILL.md)**: Authoritative dual-frontend parity, zero-merge governance, and single-officer pilot testing protocol.
 
 ---
 

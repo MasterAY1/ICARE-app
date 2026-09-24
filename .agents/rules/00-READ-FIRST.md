@@ -48,6 +48,7 @@
 7. **Projection Integrity**: Cashbooks derive 100% of physical cash movements from Account 1000. Master Cashbook MUST NOT query operational tables (`loans`, `treasury_transactions`) independently.
 8. **Dashboard & Report Integrity**: All dashboards and reports must query authoritative sources. No hardcoded financial metrics or faked reconciliation totals.
 9. **Strict Zero-Emoji Directive (SVG Icons Only)**: Emojis are strictly forbidden anywhere in the system UI (tab headers, buttons, cards, expanders, tables, alerts, dialogs, form controls, or markdown text). Do NOT use emoji characters. Use clean, professional corporate typography or SVG icons instead.
+10. **Dual-Frontend Parity & Zero-Merge Governance**: When modifying business logic, calculations, or workflows, changes MUST apply simultaneously to both Streamlit (production) and Flutter (pilot) while strictly forbidding any git branch merges between `main` and migration branches without explicit user approval. See [dual-frontend-parity](file:///c:/Users/DELL/Desktop/Master_%20AY%20Projects/trustmicro-credit/.agents/skills/dual-frontend-parity/SKILL.md).
 
 ---
 

@@ -31,7 +31,8 @@ class DashboardService:
         uow: UnitOfWork,
         target_date: date,
         branch_id: Optional[str] = None,
-        officer_id: Optional[str] = None
+        officer_id: Optional[str] = None,
+        schedules_by_loan: Optional[Dict[str, List[Dict[str, Any]]]] = None
     ) -> Dict[str, Any]:
         """
         Authoritative engine for payment categorization per BR-DASH-002.
@@ -128,6 +129,23 @@ class DashboardService:
         norm_count, norm_amt = 0, 0.0
         part_count, part_amt = 0, 0.0
         not_paid_count, not_paid_amt = 0, 0.0
+        overdue_count, overdue_amt = 0, 0.0
+
+        if schedules_by_loan is None:
+            schedules_by_loan = {}
+            active_lids = [str(l.get("loan_id")) for l in all_loans if l.get("loan_id")]
+            chunk_size = 30
+            for i in range(0, len(active_lids), chunk_size):
+                chunk = active_lids[i:i + chunk_size]
+                try:
+                    res_sch = uow.client.table("loan_schedule").select("*").in_("loan_id", chunk).order("installment_number").limit(1000).execute()
+                    for row in (res_sch.data or []):
+                        lid_k = str(row.get("loan_id"))
+                        if lid_k not in schedules_by_loan:
+                            schedules_by_loan[lid_k] = []
+                        schedules_by_loan[lid_k].append(row)
+                except Exception:
+                    pass
 
         full_paid_clients = set()
 
@@ -194,14 +212,30 @@ class DashboardService:
                         excess_amt += (c_paid_today - repay_amt)
 
             elif l.get("status") in ["Active", "Approved", "ACTIVE"]:
+                from services.schedule_service import ScheduleService
+                sched_rows = schedules_by_loan.get(lid_s, []) if schedules_by_loan else []
+                due_info = ScheduleService.get_loan_due_breakdown(
+                    uow, lid_s, target_date, client_id=cid,
+                    loan_data=l, schedule_rows=sched_rows, meeting_day_str=g_mday
+                )
+                has_ov = bool(due_info.get("has_overdue", False))
+                ov_arr = float(due_info.get("overdue_arrears") or 0.0)
+                tot_due_today = float(due_info.get("total_due_today") or 0.0)
+
+                if has_ov and ov_arr > 0:
+                    overdue_count += 1
+                    overdue_amt += ov_arr
+
                 if not is_expected_today and c_paid_today == 0:
                     continue
 
-                repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0) if is_expected_today else 0.0
+                repay_amt = tot_due_today if is_expected_today else 0.0
                 if is_expected_today and repay_amt <= 0:
-                    dur = int(l.get("duration") or 0)
-                    if dur > 0 and act_cred > 0:
-                        repay_amt = round(act_cred / dur, 2)
+                    repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0)
+                    if repay_amt <= 0:
+                        dur = int(l.get("duration") or 0)
+                        if dur > 0 and act_cred > 0:
+                            repay_amt = round(act_cred / dur, 2)
 
                 if c_paid_today > repay_amt and repay_amt > 0:
                     excess_count += 1
@@ -221,7 +255,8 @@ class DashboardService:
             "normal_payments": {"count": norm_count, "amount": norm_amt},
             "excess_payments": {"count": excess_count, "amount": excess_amt},
             "part_payments": {"count": part_count, "amount": part_amt},
-            "not_paid": {"count": not_paid_count, "amount": not_paid_amt}
+            "not_paid": {"count": not_paid_count, "amount": not_paid_amt},
+            "overdue_arrears": {"count": overdue_count, "amount": overdue_amt}
         }
 
     @staticmethod
@@ -403,7 +438,7 @@ class DashboardService:
         active_loans = []
         try:
             if branch_id and officer_id:
-                loans_res = uow.client.table("loans").select("*, clients(name, client_code)").eq("branch_id", branch_id).eq("officer_id", officer_id).execute()
+                loans_res = uow.client.table("loans").select("*, clients(name, client_code), loan_products(name, repayment_cycle, installments)").eq("branch_id", branch_id).eq("officer_id", officer_id).execute()
                 l_data = loans_res.data or []
                 active_loans = [
                     l for l in l_data 
@@ -429,6 +464,7 @@ class DashboardService:
         group_map = {}
         group_mday_map = {}
         co_lifetime_reps_map = {}
+        schedules_by_loan: Dict[str, List[dict]] = {}
         try:
             # Query all groups to detect duplicate names and disambiguate identically to Collections
             all_groups_res = uow.client.table("groups").select("group_id, name, meeting_day, group_number").execute()
@@ -462,6 +498,20 @@ class DashboardService:
                 for r in (all_rep_res.data or []):
                     lid_s = str(r.get("loan_id"))
                     co_lifetime_reps_map[lid_s] = co_lifetime_reps_map.get(lid_s, 0.0) + float(r.get("amount_paid") or 0.0)
+
+                # Batch pre-fetch schedules in chunks of 30 to prevent N+1 query loop and timeouts
+                chunk_size = 30
+                for i in range(0, len(loan_ids), chunk_size):
+                    chunk = loan_ids[i:i + chunk_size]
+                    try:
+                        res_sch_chunk = uow.client.table("loan_schedule").select("*").in_("loan_id", chunk).order("installment_number").limit(1000).execute()
+                        for row in (res_sch_chunk.data or []):
+                            lid_k = str(row.get("loan_id"))
+                            if lid_k not in schedules_by_loan:
+                                schedules_by_loan[lid_k] = []
+                            schedules_by_loan[lid_k].append(row)
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -532,8 +582,30 @@ class DashboardService:
                     # Monthly fallback: expected if meeting day matches today
                     is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower())
 
-                # Only include in Today's Meeting Portfolio if expected today OR if payment was received today
+                # Fetch authoritative loan due breakdown from ScheduleService
+                from services.schedule_service import ScheduleService
+                due_info = ScheduleService.get_loan_due_breakdown(
+                    uow, lid, target_date, client_id=cid,
+                    loan_data=l,
+                    schedule_rows=schedules_by_loan.get(str(lid), []),
+                    meeting_day_str=g_mday
+                )
+                has_arrears_flag = due_info.get("has_overdue", False)
+                overdue_arrears_amt = float(due_info.get("overdue_arrears") or 0.0)
+                curr_inst_amt = float(due_info.get("current_installment") or 0.0)
+
+                # If not scheduled today and paid nothing, record past-meeting arrears in Attention List
                 if not is_expected_today and c_paid == 0:
+                    if has_arrears_flag and overdue_arrears_amt > 0:
+                        c_info = l.get("clients") or {}
+                        c_name = c_info.get("name") or l.get("client_name") or "Unknown Client"
+                        c_code = c_info.get("client_code") or l.get("client_code") or "N/A"
+                        attention_rows.append({
+                            "Client Name": c_name, "Client Code": c_code, "Group": g_name,
+                            "Expected (₦)": overdue_arrears_amt, "Paid (₦)": 0.0, "Shortfall (₦)": overdue_arrears_amt,
+                            "Issue Type": "Past Meeting Overdue", "Risk Level": "Overdue Arrears",
+                            "Action": f"Follow Up with Group Leader ({g_name}) - ₦{overdue_arrears_amt:,.0f} overdue"
+                        })
                     continue
 
                 if g_name not in grp_map:
@@ -548,13 +620,6 @@ class DashboardService:
                         "Clients Paid": 0,
                         "Clients Not Paid": 0
                     }
-
-                # Fetch authoritative loan due breakdown from ScheduleService
-                from services.schedule_service import ScheduleService
-                due_info = ScheduleService.get_loan_due_breakdown(uow, lid, target_date, client_id=cid)
-                has_arrears_flag = due_info.get("has_overdue", False)
-                overdue_arrears_amt = float(due_info.get("overdue_arrears") or 0.0)
-                curr_inst_amt = float(due_info.get("current_installment") or 0.0)
 
                 repay_amt = float(due_info.get("total_due_today") or 0.0) if is_expected_today else 0.0
                 if is_expected_today and repay_amt <= 0 and not is_branch_closed:
@@ -658,7 +723,9 @@ class DashboardService:
         )
 
         # Fetch Authoritative Payment Breakdown from RepaymentStatusEngine
-        payment_breakdown = DashboardService._calculate_payment_breakdown(uow, target_date, branch_id, officer_id)
+        payment_breakdown = DashboardService._calculate_payment_breakdown(
+            uow, target_date, branch_id, officer_id, schedules_by_loan=schedules_by_loan
+        )
 
         return {
             "welcome": {
@@ -691,10 +758,16 @@ class DashboardService:
                 "full_payment": payment_breakdown["full_payments"],
                 "part_payment": payment_breakdown["part_payments"],
                 "excess_payment": payment_breakdown["excess_payments"],
-                "not_paid": payment_breakdown["not_paid"]
+                "not_paid": payment_breakdown["not_paid"],
+                "overdue_arrears": payment_breakdown.get("overdue_arrears", {"count": 0, "amount": 0.0})
             },
             "cash_position": cash_position,
-            "attention_list": attention_df
+            "attention_list": attention_df,
+            "overdue_portfolio": {
+                "total_overdue_amt": payment_breakdown.get("overdue_arrears", {}).get("amount", 0.0),
+                "overdue_clients_count": payment_breakdown.get("overdue_arrears", {}).get("count", 0),
+                "overdue_groups_count": len(set(r["Group"] for r in attention_rows if "Overdue" in str(r.get("Issue Type", ""))))
+            }
         }
 
     @staticmethod

@@ -336,6 +336,15 @@ class RepaymentService:
         except Exception as ex_del:
             print(f"[REPAYMENT REVERSAL] Cleanup payoff/excess record failed: {ex_del}")
 
+        # 3.5 Revert schedule installment(s) if loan repayment
+        target_loan_id = orig.get("loan_id")
+        if target_loan_id and orig_amount > 0:
+            try:
+                from services.schedule_service import ScheduleService
+                ScheduleService.reverse_repayment_schedule(uow, target_loan_id, orig_amount)
+            except Exception as ex_sched:
+                print(f"[REPAYMENT REVERSAL] Schedule reversal failed: {ex_sched}")
+
         # 4. Rebuild projection
         try:
             branch_val = orig.get("branch_id")

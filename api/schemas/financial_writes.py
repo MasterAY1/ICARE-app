@@ -38,10 +38,12 @@ class BatchCollectionResponse(BaseModel):
     total_savings: float
     items_processed: int
     message: str
+    receipt: Optional[dict] = None
 
 
 class EodAdjustmentsInput(BaseModel):
     date: Optional[str] = Field(None, description="ISO Date (YYYY-MM-DD)")
+    officer: Optional[str] = Field(None, description="Credit Officer username")
     opening_balance: Optional[float] = None
     office_expenses: Optional[float] = None
     bank_deposit: Optional[float] = None

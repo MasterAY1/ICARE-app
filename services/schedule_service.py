@@ -1,4 +1,5 @@
 import uuid
+from typing import Optional, Any
 from datetime import date, datetime, timedelta
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from domain.entities.loan import Loan
@@ -18,14 +19,19 @@ class ScheduleService:
         is_asset = "asset" in str(prod_cat).lower() or (loan.product_type and "asset" in str(loan.product_type).lower())
         cycle = setup.get("freq", "Weekly")
         installments = setup.get("duration", loan.duration) or loan.duration
-        inst_total = float(setup.get("loan_repayment", 0.0))
-        
-        if is_asset:
-            inst_interest = float(setup.get("interest", 0.0) / installments) if installments > 0 else 0.0
-            inst_principal = inst_total - inst_interest
+
+        # In ICARE, active_credit is already derived at origination and strictly divisible by duration.
+        # Prefer the established loan_repay, or active_credit / installments.
+        loan_repay = float(getattr(loan, 'loan_repay', 0.0) or 0.0)
+        if loan_repay > 0:
+            inst_total = loan_repay
+        elif getattr(loan, 'active_credit', 0.0) and installments > 0:
+            inst_total = float(loan.active_credit / installments)
         else:
-            inst_principal = inst_total
-            inst_interest = 0.0
+            inst_total = float(setup.get("loan_repayment", 0.0))
+
+        inst_principal = inst_total
+        inst_interest = 0.0
         gap = 0
 
         # 2. Create schedule rows
@@ -169,7 +175,11 @@ class ScheduleService:
         uow: SupabaseUnitOfWork,
         loan_id: str,
         evaluation_date: date = None,
-        client_id: str = None
+        client_id: str = None,
+        loan_data: Optional[dict] = None,
+        schedule_rows: Optional[list] = None,
+        meeting_day_str: Optional[str] = None,
+        total_paid_sch: Optional[float] = None
     ) -> dict:
         """
         Authoritative calculation of loan repayment obligations for an evaluation date per BR-DASH-007.
@@ -189,27 +199,27 @@ class ScheduleService:
         eval_weekday_str = evaluation_date.strftime("%A")
 
         # 1. Fetch loan and product details
-        loan_data = None
-        if loan_id:
-            try:
-                res_l = uow.client.table("loans").select(
-                    "loan_id, client_id, active_credit, duration, status, amount, extra_fields, loan_products(name, repayment_cycle, installments)"
-                ).eq("loan_id", loan_id).execute()
-                if res_l.data:
-                    loan_data = res_l.data[0]
-            except Exception:
-                pass
+        if loan_data is None:
+            if loan_id:
+                try:
+                    res_l = uow.client.table("loans").select(
+                        "loan_id, client_id, active_credit, total_due, loan_repay, status, loan_amount, extra_fields, loan_products(name, repayment_cycle, installments)"
+                    ).eq("loan_id", loan_id).execute()
+                    if res_l.data:
+                        loan_data = res_l.data[0]
+                except Exception:
+                    pass
 
-        if not loan_data and client_id:
-            try:
-                res_l = uow.client.table("loans").select(
-                    "loan_id, client_id, active_credit, duration, status, amount, extra_fields, loan_products(name, repayment_cycle, installments)"
-                ).eq("client_id", client_id).eq("status", "Active").execute()
-                if res_l.data:
-                    loan_data = res_l.data[0]
-                    loan_id = loan_data.get("loan_id")
-            except Exception:
-                pass
+            if not loan_data and client_id:
+                try:
+                    res_l = uow.client.table("loans").select(
+                        "loan_id, client_id, active_credit, total_due, loan_repay, status, loan_amount, extra_fields, loan_products(name, repayment_cycle, installments)"
+                    ).eq("client_id", client_id).eq("status", "Active").execute()
+                    if res_l.data:
+                        loan_data = res_l.data[0]
+                        loan_id = loan_data.get("loan_id")
+                except Exception:
+                    pass
 
         if not loan_data:
             return {
@@ -232,8 +242,7 @@ class ScheduleService:
         cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in p_name else ("Weekly" if "weekly" in p_name else "Monthly"))
 
         # 2. Fetch Group Meeting Day
-        meeting_day_str = None
-        if resolved_client_id:
+        if meeting_day_str is None and resolved_client_id:
             try:
                 res_mem = uow.client.table("client_memberships").select("groups(meeting_day)").eq("client_id", resolved_client_id).execute()
                 if res_mem.data and res_mem.data[0].get("groups"):
@@ -258,11 +267,19 @@ class ScheduleService:
             is_meeting_today = True
 
         # 4. Fetch schedule rows
-        res_sch = uow.client.table("loan_schedule").select("*").eq("loan_id", loan_id).order("installment_number").execute()
-        schedule_rows = res_sch.data or []
+        if schedule_rows is None:
+            try:
+                res_sch = uow.client.table("loan_schedule").select("*").eq("loan_id", loan_id).order("installment_number").execute()
+                schedule_rows = res_sch.data or []
+            except Exception:
+                schedule_rows = []
 
-        total_due_base = float(loan_data.get("active_credit") or loan_data.get("amount") or 0.0)
-        total_paid_sch, has_sch = ScheduleService.get_total_paid(uow, loan_id)
+        total_due_base = float(loan_data.get("total_due") if loan_data.get("total_due") is not None else (loan_data.get("active_credit") or loan_data.get("loan_amount") or 0.0))
+        if total_paid_sch is None:
+            if schedule_rows:
+                total_paid_sch = sum(float(row.get("paid_amount") or 0.0) for row in schedule_rows)
+            else:
+                total_paid_sch, has_sch = ScheduleService.get_total_paid(uow, loan_id)
         rem_bal = max(0.0, total_due_base - total_paid_sch)
 
         overdue_arrears = 0.0
@@ -393,6 +410,58 @@ class ScheduleService:
         # The user requested: excess goes to reduce principal/outstanding balance, do NOT skip meetings,
         # but next Expected Repayments are reduced.
         return remaining_repayment
+
+    @staticmethod
+    def reverse_repayment_schedule(
+        uow: SupabaseUnitOfWork,
+        loan_id: str,
+        amount: float,
+        reversal_date: Optional[date] = None
+    ) -> float:
+        """
+        Reverses an amount previously applied to a loan schedule (BR-ERR-002).
+        Walks schedule rows in descending order of installment_number, deducting paid_amount
+        and transitioning status from Paid -> Partial -> Pending.
+        Returns any remaining unreversed amount.
+        """
+        if not loan_id or amount <= 0:
+            return amount
+
+        res = uow.client.table("loan_schedule").select("*").eq("loan_id", loan_id).order("installment_number", desc=True).execute()
+        schedule_rows = res.data or []
+        if not schedule_rows:
+            return amount
+
+        remaining_to_reverse = amount
+
+        for row in schedule_rows:
+            if remaining_to_reverse <= 0:
+                break
+
+            paid_amount = float(row.get("paid_amount") or 0.0)
+            if paid_amount <= 0:
+                continue
+
+            if remaining_to_reverse >= paid_amount:
+                deduct = paid_amount
+                new_paid_amount = 0.0
+                status = "Pending"
+                new_paid_date = None
+                remaining_to_reverse -= deduct
+            else:
+                deduct = remaining_to_reverse
+                new_paid_amount = paid_amount - deduct
+                status = "Partial"
+                new_paid_date = row.get("paid_date")
+                remaining_to_reverse = 0.0
+
+            uow.client.table("loan_schedule").update({
+                "paid_amount": new_paid_amount,
+                "status": status,
+                "paid_date": new_paid_date
+            }).eq("id", row["id"]).execute()
+
+        return remaining_to_reverse
 
     @staticmethod
     def reschedule_branch_loans_on_closure(

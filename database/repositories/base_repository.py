@@ -9,12 +9,16 @@ class BaseRepository(Generic[T]):
         self.table_name = ""
 
     def _execute(self, query):
-        try:
-            res = query.execute()
-            # Postgrest exceptions might also raise inherently in execute()
-            return res
-        except Exception as e:
-            raise RepositoryError(f"Database operation failed: {str(e)}")
+        for attempt in range(2):
+            try:
+                res = query.execute()
+                # Postgrest exceptions might also raise inherently in execute()
+                return res
+            except Exception as e:
+                err_msg = str(e).lower()
+                if attempt == 0 and any(k in err_msg for k in ("disconnected", "connection", "protocol", "remoteprotocolerror")):
+                    continue
+                raise RepositoryError(f"Database operation failed: {str(e)}")
 
     def _single_or_none(self, data: List[dict]) -> Optional[dict]:
         if not data:

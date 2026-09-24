@@ -1,7 +1,7 @@
 """
 CO Cashbook schemas.
 """
-from typing import Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 
 
@@ -38,6 +38,52 @@ class CashbookOutflows(BaseModel):
     laps_returns: float = 0.0
 
 
+class TallyNotPaidClient(BaseModel):
+    name: str
+    code: str
+    expected: float
+    shortfall: float
+    is_partial: bool = False
+
+
+class CollectionArrearsTally(BaseModel):
+    scheduled_expected: float = 0.0
+    not_paid_amount: float = 0.0
+    not_paid_count: int = 0
+    not_paid_clients: List[TallyNotPaidClient] = []
+    excess_amount: float = 0.0
+    excess_count: int = 0
+    actual_repayments: float = 0.0
+    actual_savings: float = 0.0
+    actual_cash_collected: float = 0.0
+    bank_deposited: float = 0.0
+    closing_cash_balance: float = 0.0
+    is_cash_balanced: bool = True
+    arrears_float: float = 0.0
+    total_reps_count: int = 0
+
+
+class OfficerOption(BaseModel):
+    username: str
+    full_name: str
+    display: str
+
+
+class ReversalOption(BaseModel):
+    label: str
+    record_type: str
+    record_id: str
+
+
+class SubmittedReversalRequest(BaseModel):
+    date: str
+    record_type: str
+    record_id: str
+    reason: str
+    status: str
+    approved_by: Optional[str] = None
+
+
 class CoCashbookResponse(BaseModel):
     date: str
     branch: str
@@ -49,3 +95,9 @@ class CoCashbookResponse(BaseModel):
     total_inflows: float
     total_outflows: float
     closing_balance: float
+    tally: Optional[CollectionArrearsTally] = None
+    officers: List[OfficerOption] = []
+    can_select_officer: bool = False
+    reversal_options: List[ReversalOption] = []
+    submitted_reversals: List[SubmittedReversalRequest] = []
+    active_loan_breakdown: Optional[Dict[str, float]] = None

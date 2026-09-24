@@ -3185,13 +3185,15 @@ if page == "Dashboard":
             s3.metric("Net Savings", f"₦{sav['net_savings']:,.0f}")
 
             # Today's Repayment Status Cards
-            st.markdown("#### Today's Repayment Status")
+            st.markdown("#### Today's Repayment Status & Overdue Arrears")
             st_cards = co_data["repayment_status"]
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("Full Payment", f"₦{st_cards['full_payment']['amount']:,.0f}", f"{st_cards['full_payment']['count']} Loans Settled")
             c2.metric("Excess Payment", f"₦{st_cards['excess_payment']['amount']:,.0f}", f"{st_cards['excess_payment']['count']} Surplus Payers")
             c3.metric("Part Payment", f"₦{st_cards.get('part_payment', {}).get('amount', 0.0):,.0f}", f"{st_cards.get('part_payment', {}).get('count', 0)} Underpayers")
-            c4.metric("Not Paid", f"₦{st_cards['not_paid']['amount']:,.0f}", f"{st_cards['not_paid']['count']} Non-Payers", delta_color="inverse")
+            c4.metric("Not Paid (Today)", f"₦{st_cards['not_paid']['amount']:,.0f}", f"{st_cards['not_paid']['count']} Non-Payers", delta_color="inverse")
+            ov_c = st_cards.get("overdue_arrears", {"amount": 0.0, "count": 0})
+            c5.metric("Overdue Arrears", f"₦{ov_c['amount']:,.0f}", f"{ov_c['count']} Past Due Clients", delta_color="inverse")
 
             # Cash Position (CO Cashbook)
             st.markdown("#### Cash Position (CO Cashbook)")
@@ -5702,14 +5704,18 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                                         current_inst_amt = float(due_info.get("current_installment") or 0.0)
 
                                         inst_repay = float(loan_row.get('Loan Repay', 0.0) or loan_row.get('loan_repay', 0.0) or loan_row.get('expected_installment', 0.0) or 0.0)
-                                        if inst_repay > 0:
-                                            expected_rep_schedule = min(inst_repay, rem_bal) if rem_bal > 0 else 0.0
-                                            current_inst_amt = expected_rep_schedule
-                                        elif expected_rep_schedule <= 0.0 and rem_bal > 0:
-                                            if inst_repay == 0.0 and act_cred > 0:
-                                                duration_val = float(loan_row.get('Duration', 0) or loan_row.get('duration', 0) or 1)
-                                                inst_repay = (total_due_base / duration_val) if duration_val > 0 else total_due_base
-                                            expected_rep_schedule = min(inst_repay, rem_bal) if rem_bal > 0 else 0.0
+                                        if expected_rep_schedule > 0.0:
+                                            expected_rep_schedule = min(expected_rep_schedule, rem_bal) if rem_bal > 0 else 0.0
+                                            if current_inst_amt <= 0.0 and not has_overdue_flag:
+                                                current_inst_amt = min(inst_repay, expected_rep_schedule) if inst_repay > 0 else expected_rep_schedule
+                                        elif rem_bal > 0:
+                                            if inst_repay > 0:
+                                                expected_rep_schedule = min(inst_repay, rem_bal)
+                                            else:
+                                                if inst_repay == 0.0 and act_cred > 0:
+                                                    duration_val = float(loan_row.get('Duration', 0) or loan_row.get('duration', 0) or 1)
+                                                    inst_repay = (total_due_base / duration_val) if duration_val > 0 else total_due_base
+                                                expected_rep_schedule = min(inst_repay, rem_bal)
                                             current_inst_amt = expected_rep_schedule
 
                                         start_date_val = str(loan_row.get('Start Date', ''))
@@ -10833,11 +10839,14 @@ elif page == "CO Cashbook":
                     closing_bal = float(c.get("closing_balance") or 0)
 
                 # Fetch active disbursements originated today for breakdown (excluding legacy onboarding)
-                res_l = uow.client.table("loans").select("loan_amount, active_credit, extra_fields, loan_products(name, repayment_cycle)") \
+                res_l = uow.client.table("loans").select("loan_amount, active_credit, disbursement_date, date, extra_fields, loan_products(name, repayment_cycle)") \
                     .eq("officer_id", o_id).eq("branch_id", branch_id).or_(f"disbursement_date.eq.{date_str},date.eq.{date_str}") \
                     .in_("status", ["Active", "Approved", "Completed"]).execute()
                 for l in (res_l.data or []):
                     if isinstance(l.get("extra_fields"), dict) and l["extra_fields"].get("is_legacy") is True:
+                        continue
+                    effective_disb_date = l.get("disbursement_date") or l.get("date")
+                    if effective_disb_date != date_str:
                         continue
                     act_cr = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
                     lp = l.get("loan_products") or {}
