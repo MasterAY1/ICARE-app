@@ -167,7 +167,12 @@ def _resolve_scope_and_branches(
 
     if is_bm:
         scope_level = "BRANCH"
-        branch_name = current_user.branch or (branch_rows[0]["name"] if branch_rows else "Default Branch")
+        branch_name = current_user.branch
+        if not branch_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Authenticated Branch Manager has no assigned branch."
+            )
         branch_id = branch_name_to_id.get(branch_name) or current_user.branch_id
         return scope_level, branch_id, [branch_name], branch_name_to_id
 
@@ -181,12 +186,17 @@ def _resolve_scope_and_branches(
                 assigned_ids = [r["branch_id"] for r in am_recs if r.get("branch_id")]
                 assigned_names = [r["name"] for r in am_recs if r.get("name")]
             except Exception:
-                assigned_names = [b["name"] for b in branch_rows]
-                assigned_ids = [b["branch_id"] for b in branch_rows]
+                assigned_names = []
+                assigned_ids = []
 
         if not requested_branch_name or requested_branch_name in ["All Assigned Branches (Consolidated Area View)", "All Branches", "All"]:
             return scope_level, assigned_ids, assigned_names, branch_name_to_id
         else:
+            if requested_branch_name not in assigned_names:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Forbidden: Branch '{requested_branch_name}' is outside your assigned supervisory area."
+                )
             single_id = branch_name_to_id.get(requested_branch_name)
             return scope_level, single_id, [requested_branch_name], branch_name_to_id
 

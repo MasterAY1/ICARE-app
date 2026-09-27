@@ -68,7 +68,7 @@ def _resolve_scope(
 
     if is_officer:
         final_branch_id = current_user.branch_id
-        final_officer_id = current_user.user_id
+        final_officer_id = current_user.id
     elif is_bm:
         final_branch_id = current_user.branch_id
         if requested_officer_id in ["All", "All Officers", ""]:
@@ -76,6 +76,11 @@ def _resolve_scope(
     elif is_am:
         if requested_branch_id in ["All", "All Branches", ""]:
             final_branch_id = current_user.branch_id
+        else:
+            allowed_bids = getattr(current_user, "assigned_branch_ids", [current_user.branch_id])
+            if requested_branch_id not in allowed_bids:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: Requested branch is outside your assigned area.")
+            final_branch_id = requested_branch_id
         if requested_officer_id in ["All", "All Officers", ""]:
             final_officer_id = None
     else:  # Admin / Director
@@ -280,7 +285,7 @@ def get_6way_integrity(
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """Automated 6-Way mathematical balance verification (app.py L10057-10082)."""
-    target_b_id = branch_id or current_user.branch_id
+    target_b_id, _ = _resolve_scope(current_user, branch_id)
     p_date_iso = posting_date or date.today().isoformat()
     try:
         p_date = date.fromisoformat(p_date_iso)

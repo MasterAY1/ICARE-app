@@ -45,12 +45,15 @@ def login(payload: LoginRequest, uow: SupabaseUnitOfWork = Depends(get_uow)):
 
     # Load Area Manager assigned branches if applicable
     assigned_branches = []
+    assigned_branch_ids = []
     if user.role == "Area Manager":
         try:
             assignments = uow.users.load_am_assignments(user.id)
             assigned_branches = [a["name"] for a in assignments]
+            assigned_branch_ids = [a["branch_id"] for a in assignments]
         except Exception:
             assigned_branches = []
+            assigned_branch_ids = []
 
     # Update last login
     try:
@@ -71,7 +74,8 @@ def login(payload: LoginRequest, uow: SupabaseUnitOfWork = Depends(get_uow)):
         role=user.role,
         branch=user.branch_name or 'Unknown',
         branch_id=user.branch_id or '',
-        assigned_branches=assigned_branches
+        assigned_branches=assigned_branches,
+        assigned_branch_ids=assigned_branch_ids
     )
 
     return LoginResponse(

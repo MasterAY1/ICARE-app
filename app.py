@@ -280,6 +280,8 @@ st.markdown("""
         color: #1B4F72 !important; 
         font-size: clamp(1.15rem, 3.2vw, 1.65rem) !important; 
         font-weight: 800 !important; 
+        font-feature-settings: 'tnum' 1 !important;
+        font-variant-numeric: tabular-nums !important;
         white-space: normal !important;
         word-break: break-word !important;
         overflow: visible !important;

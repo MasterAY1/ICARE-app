@@ -539,6 +539,8 @@ class AuditEnricher:
                 })
 
             enriched.append({
+                "transaction_id": tx_id,
+                "reference": ref_raw,
                 "Posting Date": p_date,
                 "Journal Ref": ref_disp,
                 "Narration": tx.get("narration") or "General Ledger Journal Entry",

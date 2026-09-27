@@ -9,7 +9,7 @@ import re
 import uuid
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from database.repositories.unit_of_work import SupabaseUnitOfWork
-from api.dependencies import get_uow, get_current_user, require_role
+from api.dependencies import get_uow, get_current_user, require_role, check_branch_access
 from api.schemas.withdrawals import (
     IndividualOptionsResponse, ClientWithdrawalOption, EligibleLoan,
     GroupOptionsResponse, GroupWithdrawalOption, GroupMemberOption,
@@ -23,6 +23,19 @@ from api.schemas.withdrawals import (
 )
 from models.user import CurrentUser
 from services.business_date_service import BusinessDateService
+from services.savings_service import SavingsService
+
+
+def _resolve_branch_name(uow: SupabaseUnitOfWork, branch_id: Optional[str]) -> str:
+    if not branch_id:
+        return ""
+    try:
+        res = uow.client.table("branches").select("name").eq("branch_id", branch_id).execute()
+        if res.data and len(res.data) > 0:
+            return res.data[0].get("name", "")
+    except Exception:
+        pass
+    return ""
 from services.schedule_service import ScheduleService
 from services.savings_service import SavingsService
 
@@ -46,7 +59,8 @@ def get_individual_options(
         "client_id, client_code, name, status, status_id, client_memberships(group_id, groups(group_id, name, group_number, meeting_day)), client_statuses(name)"
     )
     if current_user.role in ["AM", "Area Manager"]:
-        query = query.in_("branch_id", getattr(current_user, "assigned_branches", [current_user.branch_id]))
+        allowed_bids = getattr(current_user, "assigned_branch_ids", [current_user.branch_id])
+        query = query.in_("branch_id", allowed_bids) if allowed_bids else query
     elif is_manager:
         query = query.eq("branch_id", current_user.branch_id)
     else:
@@ -201,7 +215,8 @@ def get_group_options(
 
     query = uow.client.table("groups").select("group_id, name, group_number, meeting_day, officer_id")
     if current_user.role in ["AM", "Area Manager"]:
-        query = query.in_("branch_id", getattr(current_user, "assigned_branches", [current_user.branch_id]))
+        allowed_bids = getattr(current_user, "assigned_branch_ids", [current_user.branch_id])
+        query = query.in_("branch_id", allowed_bids) if allowed_bids else query
     elif is_manager:
         query = query.eq("branch_id", current_user.branch_id)
     else:
@@ -459,10 +474,17 @@ def create_withdrawal_request(
     ref_code = f"REF-{prefix_code}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
     # 3. Type-specific validation and balance verification
+    target_branch_id = current_user.branch_id
     if stype == "Individual":
         if not payload.client_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Client ID is required for Individual withdrawal.")
-        
+
+        res_c = uow.client.table("clients").select("name, branch_id").eq("client_id", payload.client_id).execute()
+        if not res_c.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
+        target_branch_id = res_c.data[0].get("branch_id")
+        check_branch_access(current_user, target_branch_id, "request withdrawal for this client")
+
         ind_bal = uow.individual_savings.get_total_balance(client_id=payload.client_id)
         if payload.amount > ind_bal:
             raise HTTPException(
@@ -475,18 +497,15 @@ def create_withdrawal_request(
                 detail="Select an eligible loan for offset."
             )
 
-        client_name = payload.client_name or "Client"
-        if not payload.client_name:
-            res_c = uow.client.table("clients").select("name").eq("client_id", payload.client_id).execute()
-            if res_c.data:
-                client_name = res_c.data[0]["name"]
+        client_name = payload.client_name or res_c.data[0].get("name") or "Client"
+        posting_branch = _resolve_branch_name(uow, target_branch_id) or current_user.branch
 
         if can_auto_exec:
             # Direct BM execution
             if "Bank Account" in op_type or op_type == "Bank Transfer":
                 SavingsService.post_individual_savings(
                     uow=uow, client_id=payload.client_id, client_name=client_name,
-                    branch=current_user.branch, officer=current_user.username, deposit_amount=0.0, withdrawal_amount=float(payload.amount),
+                    branch=posting_branch, officer=current_user.username, deposit_amount=0.0, withdrawal_amount=float(payload.amount),
                     reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {payload.remarks or ''}",
                     posting_date=target_dt
                 )
@@ -494,7 +513,7 @@ def create_withdrawal_request(
                 SavingsService.post_loan_offset_from_savings(
                     uow=uow, client_id=payload.client_id, client_name=client_name,
                     loan_id=payload.loan_id, source_savings_type="IndividualSavings",
-                    branch=current_user.branch, officer=current_user.username, amount=float(payload.amount),
+                    branch=posting_branch, officer=current_user.username, amount=float(payload.amount),
                     reference=ref_code, remarks=f"[BM DIRECT LOAN OFFSET] {payload.remarks or ''}",
                     posting_date=target_dt
                 )
@@ -505,7 +524,7 @@ def create_withdrawal_request(
                     except Exception: pass
                 SavingsService.post_fee_offset_from_savings(
                     uow=uow, client_id=payload.client_id, client_name=client_name,
-                    source_savings_type="IndividualSavings", branch=current_user.branch, officer=current_user.username,
+                    source_savings_type="IndividualSavings", branch=posting_branch, officer=current_user.username,
                     fee_type=fee_code, amount=float(payload.amount),
                     reference=ref_code, remarks=f"[BM DIRECT FEE OFFSET] {payload.remarks or ''}",
                     posting_date=target_dt
@@ -513,7 +532,7 @@ def create_withdrawal_request(
             elif "LAPS Reserve" in op_type or op_type == "LAPS Transfer":
                 SavingsService.transfer_to_laps(
                     uow=uow, client_id=payload.client_id, client_name=client_name,
-                    source_savings_type="IndividualSavings", branch=current_user.branch, officer=current_user.username, amount=float(payload.amount),
+                    source_savings_type="IndividualSavings", branch=posting_branch, officer=current_user.username, amount=float(payload.amount),
                     reference=ref_code, remarks=f"[BM DIRECT LAPS] {payload.remarks or ''}",
                     posting_date=target_dt
                 )
@@ -524,7 +543,7 @@ def create_withdrawal_request(
             "client_id": payload.client_id,
             "client_name": client_name,
             "loan_id": payload.loan_id,
-            "branch_id": current_user.branch_id,
+            "branch_id": target_branch_id,
             "requested_by": current_user.username,
             "amount": float(payload.amount),
             "operational_date": target_dt.isoformat(),
@@ -539,6 +558,18 @@ def create_withdrawal_request(
         if not payload.group_name:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group name is required for Group withdrawal.")
 
+        if payload.group_id:
+            res_g = uow.client.table("groups").select("branch_id").eq("group_id", payload.group_id).execute()
+            if res_g.data:
+                target_branch_id = res_g.data[0].get("branch_id")
+        elif payload.group_name:
+            res_g = uow.client.table("groups").select("branch_id").eq("name", payload.group_name).execute()
+            if res_g.data:
+                target_branch_id = res_g.data[0].get("branch_id")
+
+        check_branch_access(current_user, target_branch_id, "request group withdrawal")
+        posting_branch = _resolve_branch_name(uow, target_branch_id) or current_user.branch
+
         grp_bal = uow.group_savings.get_total_balance(group_id=payload.group_name)
         if payload.amount > grp_bal:
             raise HTTPException(
@@ -550,7 +581,7 @@ def create_withdrawal_request(
             if "Bank Account" in op_type or op_type == "Bank Transfer":
                 SavingsService.post_group_savings(
                     uow=uow, group_name=payload.group_name,
-                    branch=current_user.branch, officer=current_user.username, deposit_amount=0.0, withdrawal_amount=float(payload.amount),
+                    branch=posting_branch, officer=current_user.username, deposit_amount=0.0, withdrawal_amount=float(payload.amount),
                     reference=ref_code, remarks=f"[BM DIRECT EXECUTION] {payload.remarks or ''}",
                     posting_date=target_dt
                 )
@@ -562,7 +593,7 @@ def create_withdrawal_request(
             "client_name": payload.client_name or payload.group_name,
             "group_name": payload.group_name,
             "loan_id": payload.loan_id,
-            "branch_id": current_user.branch_id,
+            "branch_id": target_branch_id,
             "requested_by": current_user.username,
             "amount": float(payload.amount),
             "operational_date": target_dt.isoformat(),
@@ -663,7 +694,8 @@ def get_daily_withdrawals(
         c_q = c_q.eq("officer_id", officer_id)
     else:
         if current_user.role in ["AM", "Area Manager"]:
-            c_q = c_q.in_("branch_id", getattr(current_user, "assigned_branches", [current_user.branch_id]))
+            allowed_bids = getattr(current_user, "assigned_branch_ids", [current_user.branch_id])
+            c_q = c_q.in_("branch_id", allowed_bids) if allowed_bids else c_q
         else:
             c_q = c_q.eq("branch_id", current_user.branch_id)
 
@@ -919,7 +951,8 @@ def get_pending_approvals(
     """
     query = uow.client.table("withdrawal_requests").select("*").eq("status", "PENDING").order("created_at", desc=False)
     if current_user.role in ["AM", "Area Manager"]:
-        query = query.in_("branch_id", getattr(current_user, "assigned_branches", [current_user.branch_id]))
+        allowed_bids = getattr(current_user, "assigned_branch_ids", [current_user.branch_id])
+        query = query.in_("branch_id", allowed_bids) if allowed_bids else query
     elif current_user.role in ["BM", "Branch Manager"]:
         query = query.eq("branch_id", current_user.branch_id)
 
@@ -959,6 +992,10 @@ def approve_withdrawal(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Withdrawal request not found.")
 
     wr = res.data[0]
+    wr_branch_id = wr.get("branch_id")
+    check_branch_access(current_user, wr_branch_id, "approve withdrawals")
+    posting_branch = _resolve_branch_name(uow, wr_branch_id) or current_user.branch
+
     if wr.get("status") == "APPROVED":
         return WithdrawalActionResponse(success=True, message="Request has already been approved.")
 
@@ -983,13 +1020,13 @@ def approve_withdrawal(
             if wr_type == "Individual":
                 SavingsService.post_individual_savings(
                     uow=uow, client_id=wr.get("client_id"), client_name=wr_name,
-                    branch=current_user.branch, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                    branch=posting_branch, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
                     reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
                     posting_date=effective_op_date
                 )
             elif wr_type == "Group":
                 SavingsService.post_group_savings(
-                    uow=uow, group_name=wr.get("group_name") or wr_name, branch=current_user.branch,
+                    uow=uow, group_name=wr.get("group_name") or wr_name, branch=posting_branch,
                     officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
                     reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
                     posting_date=effective_op_date
@@ -997,7 +1034,7 @@ def approve_withdrawal(
             elif wr_type == "Misc":
                 SavingsService.post_misc_savings(
                     uow=uow, client_id=wr.get("client_id") or "", client_name=wr_name,
-                    branch=current_user.branch, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
+                    branch=posting_branch, officer=wr_by, deposit_amount=0.0, withdrawal_amount=wr_amt,
                     reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
                     posting_date=effective_op_date
                 )
@@ -1005,7 +1042,7 @@ def approve_withdrawal(
             SavingsService.post_loan_offset_from_savings(
                 uow=uow, client_id=wr.get("client_id"), client_name=wr_name,
                 loan_id=wr.get("loan_id"), source_savings_type=source_type,
-                branch=current_user.branch, officer=wr_by, amount=wr_amt,
+                branch=posting_branch, officer=wr_by, amount=wr_amt,
                 reference=wr.get("reference"), remarks=f"[BM APPROVED {wr_op.upper()}] {wr_remarks}",
                 posting_date=effective_op_date
             )
@@ -1016,7 +1053,7 @@ def approve_withdrawal(
                 except Exception: pass
             SavingsService.post_fee_offset_from_savings(
                 uow=uow, client_id=wr.get("client_id"), client_name=wr_name,
-                source_savings_type=source_type, branch=current_user.branch, officer=wr_by,
+                source_savings_type=source_type, branch=posting_branch, officer=wr_by,
                 fee_type=fee_code, amount=wr_amt,
                 reference=wr.get("reference"), remarks=f"[BM APPROVED FEE OFFSET] {wr_remarks}",
                 posting_date=effective_op_date
@@ -1035,7 +1072,7 @@ def approve_withdrawal(
                 uow=uow, source_id=wr.get("client_id"), source_name=wr_name,
                 source_type=source_type, destination_id=dest_id,
                 destination_name=dest_name, destination_type=dest_type,
-                branch=current_user.branch, officer=wr_by, amount=wr_amt,
+                branch=posting_branch, officer=wr_by, amount=wr_amt,
                 reference=wr.get("reference"), remarks=f"[BM APPROVED TRANSFER] {wr_remarks}",
                 posting_date=effective_op_date
             )
@@ -1043,7 +1080,7 @@ def approve_withdrawal(
             cash_paid = (wr.get("payout_method") or "Cash") == "Cash"
             SavingsService.pay_laps(
                 uow=uow, client_id=wr.get("client_id"), client_name=wr_name,
-                branch=current_user.branch, officer=wr_by, amount=wr_amt, cash_paid=cash_paid,
+                branch=posting_branch, officer=wr_by, amount=wr_amt, cash_paid=cash_paid,
                 reference=wr.get("reference"), remarks=f"[BM APPROVED] {wr_remarks}",
                 posting_date=effective_op_date
             )
@@ -1058,6 +1095,8 @@ def approve_withdrawal(
             success=True,
             message=f"Withdrawal of ₦{wr_amt:,.2f} for {wr_name} approved and posted to the financial ledger!"
         )
+    except HTTPException:
+        raise
     except Exception as ex:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Approval execution failed: {str(ex)}")
 
@@ -1071,6 +1110,12 @@ def reject_withdrawal(
     """
     Rejects a withdrawal request with an audit reason (app.py L8440-8456).
     """
+    res = uow.client.table("withdrawal_requests").select("branch_id").eq("id", payload.request_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Withdrawal request not found.")
+    wr_branch_id = res.data[0].get("branch_id")
+    check_branch_access(current_user, wr_branch_id, "reject withdrawals")
+
     uow.client.table("withdrawal_requests").update({
         "status": "REJECTED",
         "approved_by": current_user.username,

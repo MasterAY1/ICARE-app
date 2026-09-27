@@ -276,7 +276,7 @@ class ScheduleService:
 
         total_due_base = float(loan_data.get("total_due") if loan_data.get("total_due") is not None else (loan_data.get("active_credit") or loan_data.get("loan_amount") or 0.0))
         if total_paid_sch is None:
-            if schedule_rows:
+            if schedule_rows is not None:
                 total_paid_sch = sum(float(row.get("paid_amount") or 0.0) for row in schedule_rows)
             else:
                 total_paid_sch, has_sch = ScheduleService.get_total_paid(uow, loan_id)

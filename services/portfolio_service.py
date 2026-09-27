@@ -257,20 +257,22 @@ class PortfolioService:
         period_misc_wth = 0.0
         try:
             from services.savings_service import SavingsService
-            active_branch_name = selected_branch if (selected_branch and selected_branch != "All") else (getattr(scope, "branch_name", None) or "Ogijo")
-            m_off_id, m_off_name = SavingsService.get_branch_misc_savings_officer(uow, active_branch_name)
+            active_branch_name = selected_branch if (selected_branch and selected_branch != "All") else getattr(scope, "branch_name", None)
+            m_off_id, m_off_name = SavingsService.get_branch_misc_savings_officer(uow, active_branch_name) if active_branch_name else ("", "")
             
             should_include_misc = True
             if selected_group and selected_group != "All":
                 should_include_misc = False
             elif selected_officer and selected_officer != "All":
                 officer_sel_clean = str(selected_officer).strip().lower()
-                should_include_misc = (officer_sel_clean == m_off_name.lower() or officer_sel_clean == str(m_off_id).lower() or "co3" in officer_sel_clean)
+                should_include_misc = bool(m_off_name and (officer_sel_clean == m_off_name.lower() or officer_sel_clean == str(m_off_id).lower() or "co3" in officer_sel_clean))
             elif scope.scope_level == "OFFICER" and scope.user_id:
-                should_include_misc = (str(scope.user_id) == str(m_off_id) or str(scope.username).lower() == m_off_name.lower() or "co3" in str(scope.username).lower())
+                should_include_misc = bool(m_off_name and (str(scope.user_id) == str(m_off_id) or str(scope.username).lower() == m_off_name.lower() or "co3" in str(scope.username).lower()))
 
             if should_include_misc:
-                misc_q = uow.client.table("internal_savings").select("deposit_amount, withdrawal_amount, posting_date").lte("posting_date", end_date_str)
+                misc_q = uow.client.table("internal_savings").select("deposit_amount, withdrawal_amount, posting_date, branch").lte("posting_date", end_date_str)
+                if active_branch_name:
+                    misc_q = misc_q.ilike("branch", f"%{active_branch_name}%")
                 misc_res = misc_q.execute()
                 for ms in (misc_res.data or []):
                     dep = float(ms.get("deposit_amount") or 0.0)

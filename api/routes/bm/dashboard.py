@@ -15,6 +15,7 @@ from services.business_date_service import BusinessDateService
 from services.loan_service import LoanService
 from services.savings_service import SavingsService
 from services.correction_service import CorrectionService
+from services.rbac_scope_service import RBACScopeService
 
 from api.schemas.bm_dashboard import (
     BmDashboardResponse,
@@ -39,12 +40,68 @@ from api.schemas.bm_dashboard import (
 router = APIRouter(prefix="/api/v1/bm", tags=["Branch Manager Dashboard"])
 
 
+def _resolve_branch_name(uow: SupabaseUnitOfWork, branch_id: Optional[str]) -> str:
+    """Resolves branch name from branch_id UUID."""
+    if not branch_id:
+        return ""
+    try:
+        res = uow.client.table("branches").select("name").eq("branch_id", branch_id).execute()
+        if res.data and len(res.data) > 0:
+            return res.data[0].get("name", "")
+    except Exception:
+        pass
+    return ""
+
+
+def _check_branch_access(current_user: CurrentUser, target_branch_id: Optional[str], action_desc: str = "manage records"):
+    """
+    Strict multi-branch authorization guard:
+    - Admin / Super Admin / Director: allowed across all branches
+    - Branch Manager: target_branch_id must match current_user.branch_id exactly
+    - Area Manager: target_branch_id must be in current_user.assigned_branch_ids
+    - Any other role: 403 Forbidden
+    """
+    norm_role = RBACScopeService.normalize_role(current_user.role)
+    if norm_role in ["Admin", "Director"]:
+        return
+
+    if not target_branch_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Target record has no valid branch assignment; cannot {action_desc}."
+        )
+
+    if norm_role == "Branch Manager":
+        if target_branch_id != current_user.branch_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Forbidden: You cannot {action_desc} belonging to another branch."
+            )
+    elif norm_role == "Area Manager":
+        allowed_ids = getattr(current_user, "assigned_branch_ids", [])
+        if target_branch_id not in allowed_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Forbidden: You cannot {action_desc} belonging to a branch outside your supervisory area."
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: Insufficient privileges to {action_desc}."
+        )
+
+
 def _execute_withdrawal_approval(uow_exec: SupabaseUnitOfWork, wr_item: dict, op_date: date, branch: str, user: str):
     w_id = wr_item["id"]
     # Idempotency check: ensure request hasn't already been approved
     chk = uow_exec.client.table("withdrawal_requests").select("status").eq("id", w_id).execute()
     if chk.data and chk.data[0].get("status") == "APPROVED":
         return
+
+    # Authoritative branch resolution: ensure ledger postings target the withdrawal's actual branch vault
+    wr_branch_id = wr_item.get("branch_id")
+    resolved_branch = _resolve_branch_name(uow_exec, wr_branch_id) if wr_branch_id else ""
+    posting_branch = resolved_branch or branch
 
     w_type = wr_item.get("savings_type")
     w_op = wr_item.get("operation_type")
@@ -58,13 +115,13 @@ def _execute_withdrawal_approval(uow_exec: SupabaseUnitOfWork, wr_item: dict, op
         if w_type == "Individual":
             SavingsService.post_individual_savings(
                 uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
-                branch=branch, officer=w_by, deposit_amount=0.0, withdrawal_amount=w_amt,
+                branch=posting_branch, officer=w_by, deposit_amount=0.0, withdrawal_amount=w_amt,
                 reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
                 posting_date=op_date
             )
         elif w_type == "Group":
             SavingsService.post_group_savings(
-                uow=uow_exec, group_name=wr_item.get("group_name") or w_name, branch=branch,
+                uow=uow_exec, group_name=wr_item.get("group_name") or w_name, branch=posting_branch,
                 officer=w_by, deposit_amount=0.0, withdrawal_amount=w_amt,
                 reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
                 posting_date=op_date
@@ -72,7 +129,7 @@ def _execute_withdrawal_approval(uow_exec: SupabaseUnitOfWork, wr_item: dict, op
         elif w_type == "Misc":
             SavingsService.post_misc_savings(
                 uow=uow_exec, client_id=wr_item.get("client_id") or "", client_name=w_name,
-                branch=branch, officer=w_by, deposit_amount=0.0, withdrawal_amount=w_amt,
+                branch=posting_branch, officer=w_by, deposit_amount=0.0, withdrawal_amount=w_amt,
                 reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
                 posting_date=op_date
             )
@@ -80,7 +137,7 @@ def _execute_withdrawal_approval(uow_exec: SupabaseUnitOfWork, wr_item: dict, op
         SavingsService.post_loan_offset_from_savings(
             uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
             loan_id=wr_item.get("loan_id"), source_savings_type=s_type,
-            branch=branch, officer=w_by, amount=w_amt,
+            branch=posting_branch, officer=w_by, amount=w_amt,
             reference=wr_item.get("reference"), remarks=f"[BM APPROVED {w_op.upper()}] {w_remarks}",
             posting_date=op_date
         )
@@ -91,7 +148,7 @@ def _execute_withdrawal_approval(uow_exec: SupabaseUnitOfWork, wr_item: dict, op
             except Exception: pass
         SavingsService.post_fee_offset_from_savings(
             uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
-            source_savings_type=s_type, branch=branch, officer=w_by,
+            source_savings_type=s_type, branch=posting_branch, officer=w_by,
             fee_type=fee_code, amount=w_amt,
             reference=wr_item.get("reference"), remarks=f"[BM APPROVED FEE OFFSET] {w_remarks}",
             posting_date=op_date
@@ -110,14 +167,14 @@ def _execute_withdrawal_approval(uow_exec: SupabaseUnitOfWork, wr_item: dict, op
             uow=uow_exec, source_id=wr_item.get("client_id"), source_name=w_name,
             source_type=s_type, destination_id=dest_id,
             destination_name=dest_name, destination_type=dest_type,
-            branch=branch, officer=w_by, amount=w_amt,
+            branch=posting_branch, officer=w_by, amount=w_amt,
             reference=wr_item.get("reference"), remarks=f"[BM APPROVED TRANSFER] {w_remarks}",
             posting_date=op_date
         )
     elif w_op == "LAPS Transfer":
         SavingsService.transfer_to_laps(
             uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
-            source_savings_type=s_type, branch=branch, officer=w_by, amount=w_amt,
+            source_savings_type=s_type, branch=posting_branch, officer=w_by, amount=w_amt,
             reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
             posting_date=op_date
         )
@@ -125,7 +182,7 @@ def _execute_withdrawal_approval(uow_exec: SupabaseUnitOfWork, wr_item: dict, op
         cash_paid = (wr_item.get("payout_method") or "Cash") == "Cash"
         SavingsService.pay_laps(
             uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
-            branch=branch, officer=w_by, amount=w_amt, cash_paid=cash_paid,
+            branch=posting_branch, officer=w_by, amount=w_amt, cash_paid=cash_paid,
             reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
             posting_date=op_date
         )
@@ -297,6 +354,11 @@ def approve_loan(
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
+    res_l = uow.client.table("loans").select("branch_id").eq("loan_id", payload.loan_id).execute()
+    if not res_l.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan not found.")
+    _check_branch_access(current_user, res_l.data[0].get("branch_id"), "approve loans")
+
     try:
         d_date = date.fromisoformat(payload.disbursement_date)
         res = LoanService.approve_and_disburse_loan(
@@ -309,6 +371,8 @@ def approve_loan(
             success=True,
             message=f"Loan #{payload.loan_id[:8]} approved and disbursed on {d_date.isoformat()}."
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -319,6 +383,11 @@ def reject_loan(
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
+    res_l = uow.client.table("loans").select("branch_id").eq("loan_id", payload.loan_id).execute()
+    if not res_l.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan not found.")
+    _check_branch_access(current_user, res_l.data[0].get("branch_id"), "reject loans")
+
     try:
         LoanService.reject_loan(
             uow=uow,
@@ -330,6 +399,8 @@ def reject_loan(
             success=True,
             message=f"Loan #{payload.loan_id[:8]} rejected."
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -340,6 +411,12 @@ def batch_approve_loans(
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
+    if not payload.loan_ids:
+        return ActionResponse(success=True, message="No loans provided.")
+
+    res_l = uow.client.table("loans").select("loan_id, branch_id").in_("loan_id", payload.loan_ids).execute()
+    loans_map = {row["loan_id"]: row.get("branch_id") for row in (res_l.data or [])}
+
     s_cnt = 0
     f_cnt = 0
     errors = []
@@ -347,7 +424,13 @@ def batch_approve_loans(
     dates_map = payload.loan_dates_map or {}
 
     for lid in payload.loan_ids:
+        if lid not in loans_map:
+            f_cnt += 1
+            errors.append(f"Loan #{lid[:8]}: Loan not found.")
+            continue
+        target_branch_id = loans_map[lid]
         try:
+            _check_branch_access(current_user, target_branch_id, "approve loans")
             cur_d = date.fromisoformat(dates_map[lid]) if lid in dates_map else default_d
             LoanService.approve_and_disburse_loan(
                 uow=uow,
@@ -377,17 +460,22 @@ def approve_withdrawal(
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
+    res = uow.client.table("withdrawal_requests").select("*").eq("id", payload.withdrawal_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Withdrawal request not found.")
+    wr = res.data[0]
+    wr_branch_id = wr.get("branch_id")
+    _check_branch_access(current_user, wr_branch_id, "approve withdrawals")
+
     try:
-        res = uow.client.table("withdrawal_requests").select("*").eq("id", payload.withdrawal_id).execute()
-        if not res.data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Withdrawal request not found.")
-        wr = res.data[0]
         op_d = date.fromisoformat(payload.operational_date)
         _execute_withdrawal_approval(uow, wr, op_d, current_user.branch, current_user.username)
         return ActionResponse(
             success=True,
             message=f"Withdrawal of ₦{float(wr.get('amount', 0)):,.2f} for {wr.get('client_name')} approved and posted to ledger."
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -398,6 +486,12 @@ def reject_withdrawal(
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
+    res = uow.client.table("withdrawal_requests").select("branch_id").eq("id", payload.withdrawal_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Withdrawal request not found.")
+    wr_branch_id = res.data[0].get("branch_id")
+    _check_branch_access(current_user, wr_branch_id, "reject withdrawals")
+
     try:
         uow.client.table("withdrawal_requests").update({
             "status": "REJECTED",
@@ -409,6 +503,8 @@ def reject_withdrawal(
             success=True,
             message=f"Withdrawal request #{payload.withdrawal_id[:8]} rejected."
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -419,6 +515,9 @@ def batch_approve_withdrawals(
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
+    if not payload.withdrawal_ids:
+        return ActionResponse(success=True, message="No withdrawals provided.")
+
     s_cnt = 0
     f_cnt = 0
     errors = []
@@ -431,8 +530,12 @@ def batch_approve_withdrawals(
     for wid in payload.withdrawal_ids:
         wr_item = wr_map.get(wid)
         if not wr_item:
+            f_cnt += 1
+            errors.append(f"Withdrawal #{wid[:8]}: Request not found.")
             continue
         try:
+            wr_branch_id = wr_item.get("branch_id")
+            _check_branch_access(current_user, wr_branch_id, "approve withdrawals")
             cur_d = date.fromisoformat(dates_map[wid]) if wid in dates_map else default_d
             _execute_withdrawal_approval(uow, wr_item, cur_d, current_user.branch, current_user.username)
             s_cnt += 1
@@ -457,6 +560,11 @@ def approve_correction(
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
+    res_c = uow.client.table("correction_requests").select("branch_id").eq("id", payload.correction_id).execute()
+    if not res_c.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Correction request not found.")
+    _check_branch_access(current_user, res_c.data[0].get("branch_id"), "approve correction requests")
+
     try:
         user_identifier = current_user.id or current_user.username
         CorrectionService.approve_correction(uow, payload.correction_id, approved_by=user_identifier)
@@ -464,6 +572,8 @@ def approve_correction(
             success=True,
             message="Reversal approved and executed atomically."
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -474,6 +584,11 @@ def reject_correction(
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
+    res_c = uow.client.table("correction_requests").select("branch_id").eq("id", payload.correction_id).execute()
+    if not res_c.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Correction request not found.")
+    _check_branch_access(current_user, res_c.data[0].get("branch_id"), "reject correction requests")
+
     try:
         user_identifier = current_user.id or current_user.username
         CorrectionService.reject_correction(uow, payload.correction_id, approved_by=user_identifier)
@@ -481,6 +596,8 @@ def reject_correction(
             success=True,
             message="Reversal rejected."
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -491,13 +608,24 @@ def batch_approve_corrections(
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
+    if not payload.correction_ids:
+        return ActionResponse(success=True, message="No corrections provided.")
+
+    res_c = uow.client.table("correction_requests").select("id, branch_id").in_("id", payload.correction_ids).execute()
+    corr_map = {row["id"]: row.get("branch_id") for row in (res_c.data or [])}
+
     s_cnt = 0
     f_cnt = 0
     errors = []
     user_identifier = current_user.id or current_user.username
 
     for cid in payload.correction_ids:
+        if cid not in corr_map:
+            f_cnt += 1
+            errors.append(f"Correction #{cid[:8]}: Request not found.")
+            continue
         try:
+            _check_branch_access(current_user, corr_map[cid], "approve correction requests")
             CorrectionService.approve_correction(uow, cid, approved_by=user_identifier)
             s_cnt += 1
         except Exception as ex:

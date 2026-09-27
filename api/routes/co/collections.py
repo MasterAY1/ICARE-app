@@ -8,7 +8,8 @@ from datetime import date, datetime, timedelta
 import uuid
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from database.repositories.unit_of_work import SupabaseUnitOfWork
-from api.dependencies import get_uow, get_current_user, require_role
+from api.dependencies import get_uow, get_current_user, require_role, check_branch_access
+from services.rbac_scope_service import RBACScopeService
 from api.schemas.collections import (
     CollectionSheetResponse,
     CollectionSheetMember,
@@ -79,8 +80,11 @@ def get_collection_sheet(
     ).eq("officer_id", officer_id).execute()
     raw_clients = res_c.data or []
 
-    _all_groups_res = uow.client.table("groups").select("group_id, name, meeting_day, group_number").execute()
-    _groups_by_id = {g["group_id"]: g for g in (_all_groups_res.data or [])}
+    _groups_q = uow.client.table("groups").select("group_id, name, meeting_day, group_number")
+    if current_user.branch_id:
+        _groups_q = _groups_q.eq("branch_id", current_user.branch_id)
+    _all_groups_res = _groups_q.execute()
+    _groups_by_id = {(g.get("group_id") or g.get("id")): g for g in (_all_groups_res.data or []) if (g.get("group_id") or g.get("id"))}
     _group_name_counts = {}
     for _gv in _groups_by_id.values():
         _gn = _gv.get("name", "")
@@ -464,6 +468,13 @@ def submit_single_client(
         except ValueError:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use YYYY-MM-DD.")
 
+    # Verify client exists and user is authorized for client's branch
+    res_c = uow.client.table("clients").select("branch_id").eq("client_id", payload.client_id).execute()
+    if not res_c.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
+    target_branch_id = res_c.data[0].get("branch_id")
+    check_branch_access(current_user, target_branch_id, "submit collections for this client")
+
     date_str = target_date.isoformat()
     sc_batch_id = f"COL-SC-{date_str}-{uuid.uuid4().hex[:6].upper()}"
 
@@ -571,6 +582,19 @@ def submit_batch_collections(
 
     date_str = target_date.isoformat()
     batch_id = f"COL-{date_str}-{uuid.uuid4().hex[:6].upper()}"
+
+    # Guard: verify all submitted clients belong to an authorized branch
+    submitted_client_ids = [item.client_id for item in payload.collections if item.client_id]
+    if submitted_client_ids:
+        res_c = uow.client.table("clients").select("client_id, branch_id").in_("client_id", submitted_client_ids).execute()
+        if res_c.data and isinstance(res_c.data, list) and len(res_c.data) > 0 and isinstance(res_c.data[0], dict):
+            cid_branch_map = {r["client_id"]: r.get("branch_id") for r in res_c.data}
+            for item in payload.collections:
+                if item.client_id:
+                    if item.client_id not in cid_branch_map:
+                        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Client {item.client_id} not found.")
+                    check_branch_access(current_user, cid_branch_map[item.client_id], "submit collections for this client")
+
     to_insert = []
 
     for item in payload.collections:
@@ -672,9 +696,17 @@ def submit_batch_collections(
         receipt["date"] = date_str
         receipt["timestamp"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
 
-    tot_cash_in = float(receipt.get("total_cash", 0.0)) if receipt else 0.0
+    tot_fees = sum(
+        float(item.app_fee or 0.0) +
+        float(item.passbook_bonus or 0.0) +
+        float(item.misc_fees or 0.0)
+        for item in payload.collections
+    )
     tot_rep = float(receipt.get("total_repayment", 0.0)) if receipt else 0.0
     tot_sav = float(receipt.get("total_savings", 0.0)) if receipt else 0.0
+    tot_cash_in = (float(receipt.get("total_cash", 0.0)) if receipt else (tot_rep + tot_sav)) + tot_fees
+    if receipt:
+        receipt["total_cash"] = tot_cash_in
 
     return BatchCollectionResponse(
         success=True,
@@ -752,10 +784,11 @@ def get_collections_history(
         q_gsav = q_gsav.eq("officer_id", officer_id)
     else:
         if current_user.role in ["AM", "Area Manager"]:
-            assigned_branches = getattr(current_user, "assigned_branches", [current_user.branch_id])
-            q_reps = q_reps.in_("branch_id", assigned_branches)
-            q_sav = q_sav.in_("branch_id", assigned_branches)
-            q_gsav = q_gsav.in_("branch_id", assigned_branches)
+            assigned_branch_ids = getattr(current_user, "assigned_branch_ids", [current_user.branch_id])
+            if assigned_branch_ids:
+                q_reps = q_reps.in_("branch_id", assigned_branch_ids)
+                q_sav = q_sav.in_("branch_id", assigned_branch_ids)
+                q_gsav = q_gsav.in_("branch_id", assigned_branch_ids)
         elif current_user.branch_id:
             q_reps = q_reps.eq("branch_id", current_user.branch_id)
             q_sav = q_sav.eq("branch_id", current_user.branch_id)

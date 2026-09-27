@@ -213,14 +213,14 @@ def get_portfolio_overview(
             time_periods=["Today", "Yesterday", "Current Month", "Last Month", "Custom Date Range"]
         ),
         metrics=PortfolioMetrics(
-            total_clients=int(p_sum.get("total_clients") or 0),
-            total_active_credit=float(p_sum.get("total_active_credit") or 0.0),
-            total_outstanding=float(p_sum.get("total_outstanding_balance") or 0.0),
-            total_fixed_repayment=float(p_sum.get("total_expected_repayment") or 0.0),
-            total_paid=float(p_sum.get("total_savings_deposit") or 0.0),
-            collection_rate=0.0,
-            par_30_amount=float(p_sum.get("overdue", {}).get("amount") or 0.0),
-            par_30_count=int(p_sum.get("overdue", {}).get("count") or 0)
+            total_clients=int(p_sum.get("total_clients") or (p_data.get("metrics", {}).get("total_clients") if isinstance(p_data.get("metrics"), dict) else 0) or 0),
+            total_active_credit=float(p_sum.get("total_active_credit") or (p_data.get("metrics", {}).get("total_active_credit") if isinstance(p_data.get("metrics"), dict) else 0.0) or 0.0),
+            total_outstanding=float(p_sum.get("total_outstanding_balance") or (p_data.get("metrics", {}).get("total_outstanding") if isinstance(p_data.get("metrics"), dict) else 0.0) or 0.0),
+            total_fixed_repayment=float(p_sum.get("total_expected_repayment") or (p_data.get("metrics", {}).get("total_fixed_repayment") if isinstance(p_data.get("metrics"), dict) else 0.0) or 0.0),
+            total_paid=float(p_sum.get("total_savings_deposit") or (p_data.get("metrics", {}).get("total_paid") if isinstance(p_data.get("metrics"), dict) else 0.0) or 0.0),
+            collection_rate=float((p_data.get("metrics", {}).get("collection_rate") if isinstance(p_data.get("metrics"), dict) else 0.0) or 0.0),
+            par_30_amount=float(p_sum.get("overdue", {}).get("amount") or (p_data.get("metrics", {}).get("par_30_amount") if isinstance(p_data.get("metrics"), dict) else 0.0) or 0.0),
+            par_30_count=int(p_sum.get("overdue", {}).get("count") or (p_data.get("metrics", {}).get("par_30_count") if isinstance(p_data.get("metrics"), dict) else 0) or 0)
         ),
         groups=group_items,
         clients=client_items

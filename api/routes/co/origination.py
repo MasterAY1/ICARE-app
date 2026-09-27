@@ -9,7 +9,8 @@ import re
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from database.repositories.unit_of_work import SupabaseUnitOfWork
-from api.dependencies import get_uow, get_current_user, require_role
+from api.dependencies import get_uow, get_current_user, require_role, check_branch_access
+from services.rbac_scope_service import RBACScopeService
 from api.schemas.origination import (
     GroupOption, ClientSearchItem, ClientProfileDetails, GuarantorDetails,
     RegisterClientInput, RegisterClientResponse,
@@ -99,11 +100,16 @@ def search_clients_for_origination(
     found_clients = uow.clients.search_by_name_or_code(q)
 
     # RBAC hierarchy filtering
-    if current_user.role in ['CO', 'Officer', 'Credit Officer']:
+    norm_role = RBACScopeService.normalize_role(current_user.role)
+    if norm_role == "CO":
         user_id = uow.loans._resolve_officer_id(current_user.username) or current_user.id
         found_clients = [c for c in found_clients if c.officer_id == user_id]
-    elif current_user.role in ['BM', 'Branch Manager'] and current_user.branch_id:
+    elif norm_role == "Branch Manager" and current_user.branch_id:
         found_clients = [c for c in found_clients if c.branch_id == current_user.branch_id]
+    elif norm_role == "Area Manager":
+        allowed_branch_ids = getattr(current_user, "assigned_branch_ids", [])
+        if allowed_branch_ids:
+            found_clients = [c for c in found_clients if c.branch_id in allowed_branch_ids]
 
     items: List[ClientSearchItem] = []
     for c in found_clients:
@@ -150,6 +156,9 @@ def get_client_origination_details(
     client = uow.clients.find_by_id(client_id)
     if not client:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
+
+    # Guard: verify user is authorized to access client's branch
+    check_branch_access(current_user, client.branch_id, "view client origination details")
 
     # Branch name
     res_b = uow.client.table("branches").select("name").eq("branch_id", client.branch_id).execute() if client.branch_id else None
@@ -251,15 +260,28 @@ def register_client(
     if not name_val or not phone_val:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Name and Phone are required!")
 
-    # Resolve branch
-    branch_name = current_user.branch or "Ogijo"
-    res_b = uow.client.table("branches").select("branch_id, code").eq("name", branch_name).execute()
-    if res_b.data:
-        branch_id = res_b.data[0]["branch_id"]
-        branch_code = res_b.data[0]["code"] or branch_name[:3].upper()
+    # Resolve branch (Fail closed: never fallback to hardcoded strings)
+    branch_name = current_user.branch
+    branch_id = current_user.branch_id
+    if not branch_id and branch_name:
+        res_b = uow.client.table("branches").select("branch_id, code").eq("name", branch_name).execute()
+        if res_b.data:
+            branch_id = res_b.data[0]["branch_id"]
+            branch_code = res_b.data[0]["code"] or branch_name[:3].upper()
+        else:
+            branch_code = branch_name[:3].upper()
+    elif branch_id:
+        res_b = uow.client.table("branches").select("name, code").eq("branch_id", branch_id).execute()
+        if res_b.data:
+            branch_name = res_b.data[0].get("name") or branch_name
+            branch_code = res_b.data[0].get("code") or (branch_name or "BRN")[:3].upper()
+        else:
+            branch_code = (branch_name or "BRN")[:3].upper()
     else:
-        branch_id = current_user.branch_id
-        branch_code = branch_name[:3].upper()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Authenticated user has no valid branch assignment. Cannot register client."
+        )
 
     officer_id = uow.loans._resolve_officer_id(current_user.username) or current_user.id
 
@@ -413,6 +435,9 @@ def apply_for_loan(
     if not client:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
 
+    # Guard: ensure officer is authorized for this client's branch
+    check_branch_access(current_user, client.branch_id, "submit loan application for this client")
+
     # 2. Check savings balance
     res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", payload.client_id).execute()
     res_wd = uow.client.table("individual_savings").select("withdrawal_amount").eq("client_id", payload.client_id).execute()
@@ -512,6 +537,10 @@ def apply_for_loan(
     loan_id = str(uuid.uuid4())
     app_date = date.fromisoformat(payload.application_date) if payload.application_date else date.today()
 
+    res_b = uow.client.table("branches").select("name").eq("branch_id", client.branch_id).execute() if client.branch_id else None
+    loan_branch_name = res_b.data[0]["name"] if res_b and res_b.data else current_user.branch
+    loan_branch_id = client.branch_id or current_user.branch_id
+
     loan_entity = Loan(
         id=loan_id,
         client_id=payload.client_id,
@@ -524,10 +553,10 @@ def apply_for_loan(
         expected_installment=final_expected_installment,
         total_payable=final_total_payable,
         status=LoanStatus.PENDING,
-        branch=current_user.branch or "Ogijo",
+        branch=loan_branch_name,
         credit_officer=current_user.username,
         officer_id=client.officer_id or current_user.id,
-        branch_id=client.branch_id or current_user.branch_id,
+        branch_id=loan_branch_id,
         start_date=app_date,
         is_asset=(payload.product_category == "Asset"),
         extra_fields={
@@ -585,10 +614,15 @@ def get_pending_disbursements(
         "loan_id, client_id, loan_amount, active_credit, date, status, officer_id, branch_id, extra_fields, clients(name, client_code, group_id), app_users(username, full_name), loan_products(name)"
     ).eq("status", "Pending")
 
-    if current_user.role in ["CO", "Credit Officer", "Officer"]:
+    norm_role = RBACScopeService.normalize_role(current_user.role)
+    if norm_role == "CO":
         query = query.eq("officer_id", officer_id)
-    elif branch_id:
+    elif norm_role == "Branch Manager" and branch_id:
         query = query.eq("branch_id", branch_id)
+    elif norm_role == "Area Manager":
+        allowed_ids = getattr(current_user, "assigned_branch_ids", [])
+        if allowed_ids:
+            query = query.in_("branch_id", allowed_ids)
 
     res = query.order("created_at", desc=True).limit(100).execute()
     loans: List[PendingLoanItem] = []
@@ -656,12 +690,13 @@ def disburse_loan(
             detail=f"Non-Working Day Restriction: Loans cannot be activated or disbursed on {workday_reason}. Please select a valid working day."
         )
 
-    # 2. Find target loan
+    # 2. Find target loan and verify branch access
     res_l = uow.client.table("loans").select("*").eq("loan_id", payload.loan_id).execute()
     if not res_l.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan not found.")
 
     loan_row = res_l.data[0]
+    check_branch_access(current_user, loan_row.get("branch_id"), "disburse loans")
     product = str(loan_row.get("product_type", ""))
 
     # Find meeting day from group
@@ -739,6 +774,12 @@ def update_client_and_guarantor(
     c_name = payload.name.strip()
     if not c_name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Client Name is required.")
+
+    # Guard: verify client exists and user has branch access
+    client = uow.clients.find_by_id(client_id)
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
+    check_branch_access(current_user, client.branch_id, "update client details")
 
     # 1. Update Client Record
     client_update_data = {

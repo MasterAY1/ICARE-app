@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 import pandas as pd
 
 from database.repositories.unit_of_work import SupabaseUnitOfWork
-from api.dependencies import get_uow, get_current_user, require_role
+from api.dependencies import get_uow, get_current_user, require_role, check_branch_access
 from models.user import CurrentUser
 from domain.queries import CashbookFilter
 from mappers.base_mappers import CashbookMapper
@@ -67,9 +67,10 @@ def get_daily_master_cashbook(
     Returns live Master Cashbook daily projection backed by Account 1000,
     along with Branch Reconciliation Tally and Pending Reversals.
     """
-    # 1. Resolve Target Branch
+    # 1. Resolve Target Branch & Guard
     target_branch = branch if (branch and current_user.role in ["AM", "Area Manager", "Admin", "Super Admin", "Director", "Executive"]) else current_user.branch
     branch_id = uow.cashbook._resolve_branch_id(target_branch)
+    check_branch_access(current_user, branch_id, "view master cashbook")
 
     # 2. Resolve Target Date
     if date_str:
@@ -847,9 +848,9 @@ def _resolve_available_branches(current_user: CurrentUser, uow: SupabaseUnitOfWo
     if scope.scope_level == "INSTITUTION" or current_user.role in ["Admin", "Super Admin", "Director"]:
         return all_operational_branches
     elif scope.scope_level == "REGION" or current_user.role in ["Area Manager", "AM"]:
-        return [b for b in (scope.assigned_branch_names or []) if b in all_operational_branches] or all_operational_branches
+        return [b for b in (scope.assigned_branch_names or []) if b in all_operational_branches]
     else:
-        return [current_user.branch] if (current_user.branch and current_user.branch != "Head Office") else all_operational_branches
+        return [current_user.branch] if (current_user.branch and current_user.branch != "Head Office") else []
 
 
 @router.get("/monthly", response_model=MonthlyLedgerResponse)
@@ -991,13 +992,17 @@ def approve_correction(
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
-    """
-    Approves pending correction request under Four-Eyes rule BR-ERR-001 (app.py L11630-11638).
-    """
+    res = uow.client.table("correction_requests").select("branch_id").eq("id", payload.request_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Correction request not found.")
+    check_branch_access(current_user, res.data[0].get("branch_id"), "approve correction requests")
+
     try:
         approver = current_user.id or current_user.username
         CorrectionService.approve_correction(uow, payload.request_id, approved_by=approver)
         return {"success": True, "message": "Reversal approved and executed atomically!"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Approval failed: {e}")
 
@@ -1011,10 +1016,17 @@ def reject_correction(
     """
     Rejects pending correction request (app.py L11640-11648).
     """
+    res = uow.client.table("correction_requests").select("branch_id").eq("id", payload.request_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Correction request not found.")
+    check_branch_access(current_user, res.data[0].get("branch_id"), "reject correction requests")
+
     try:
         approver = current_user.id or current_user.username
         CorrectionService.reject_correction(uow, payload.request_id, approved_by=approver)
         return {"success": True, "message": "Reversal rejected successfully."}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Rejection failed: {e}")
 

@@ -138,7 +138,9 @@ class SavingsService:
         """
         # Default map for known branches
         branch_lower = (branch or "").strip().lower()
-        if "ogijo" in branch_lower or not branch:
+        if not branch_lower:
+            return ("", "")
+        if "ogijo" in branch_lower:
             # Ogijo branch designated officer is CO3 (Miss. Olajumoke)
             return ("60fa48a4-16a2-4ab8-b9c5-d13d72a040cc", "CO3")
         
@@ -158,9 +160,8 @@ class SavingsService:
                         return (u["id"], u["username"])
         except Exception:
             pass
-        return ("60fa48a4-16a2-4ab8-b9c5-d13d72a040cc", "CO3")
+        return ("", "")
 
-    @staticmethod
     @staticmethod
     def post_misc_savings(uow: SupabaseUnitOfWork, client_id: str, client_name: str, branch: str, officer: str, deposit_amount: float, withdrawal_amount: float = 0.0, reference: str = None, remarks: str = None, posting_date: Optional[Any] = None):
         if deposit_amount == 0 and withdrawal_amount == 0:

@@ -87,8 +87,10 @@ class DashboardService:
         s_d_str = f"{date_str}T00:00:00"
         e_d_str = f"{date_str}T23:59:59"
         q_rep = uow.client.table("repayments").select("loan_id, client_id, amount_paid").gte("date", s_d_str).lte("date", e_d_str)
-        if branch_id:
-            pass
+        if branch_id and branch_id != "All":
+            q_rep = q_rep.eq("branch_id", branch_id)
+        if officer_id:
+            q_rep = q_rep.eq("officer_id", officer_id)
         
         try:
             rep_res = q_rep.execute()

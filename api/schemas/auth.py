@@ -18,6 +18,7 @@ class UserInfo(BaseModel):
     branch: str
     branch_id: str
     assigned_branches: List[str] = []
+    assigned_branch_ids: List[str] = []
 
 
 class LoginResponse(BaseModel):

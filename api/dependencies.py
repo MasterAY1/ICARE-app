@@ -88,7 +88,8 @@ def get_current_scope(current_user: CurrentUser = Depends(get_current_user)) -> 
         "role": current_user.role,
         "branch": current_user.branch,
         "branch_id": current_user.branch_id,
-        "assigned_branches": getattr(current_user, "assigned_branch_ids", [])
+        "assigned_branches": getattr(current_user, "assigned_branches", []),
+        "assigned_branch_ids": getattr(current_user, "assigned_branch_ids", [])
     }
     return RBACScopeService.resolve_scope(user_dict)
 
@@ -105,3 +106,42 @@ def require_role(allowed_roles: List[str]):
             )
         return current_user
     return role_checker
+
+
+def check_branch_access(current_user: CurrentUser, target_branch_id: Optional[str], action_desc: str = "manage records") -> None:
+    """
+    Enforces strict multi-branch authorization:
+    - Admin / Super Admin / Director: allowed across all branches
+    - Branch Manager / Credit Officer: target_branch_id must match current_user.branch_id
+    - Area Manager: target_branch_id must be in current_user.assigned_branch_ids
+    - Missing target_branch_id fails closed with 400 Bad Request
+    """
+    norm_role = RBACScopeService.normalize_role(current_user.role)
+    if norm_role in ["Admin", "Director"]:
+        return
+
+    if not target_branch_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Target record has no valid branch assignment; cannot {action_desc}."
+        )
+
+    if norm_role in ["Branch Manager", "CO"]:
+        if target_branch_id != current_user.branch_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Forbidden: You cannot {action_desc} belonging to another branch."
+            )
+    elif norm_role == "Area Manager":
+        allowed_ids = getattr(current_user, "assigned_branch_ids", [])
+        if target_branch_id not in allowed_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Forbidden: You cannot {action_desc} belonging to a branch outside your supervisory area."
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: Insufficient privileges to {action_desc}."
+        )
+
