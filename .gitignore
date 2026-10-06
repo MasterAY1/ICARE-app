@@ -4,7 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
+/build/
 develop-eggs/
 dist/
 downloads/
@@ -67,7 +67,9 @@ scratch/
 *.apk
 *.aab
 frontend_flutter/releases/
-frontend_flutter/build/
+frontend_flutter/build/*
+!frontend_flutter/build/web/
+frontend_flutter/build/web/.vercel/
 frontend_flutter/.dart_tool/
 frontend_flutter/.flutter-plugins
 frontend_flutter/.flutter-plugins-dependencies
