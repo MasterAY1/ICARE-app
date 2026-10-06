@@ -560,7 +560,7 @@ def get_user_audit_logs(
         if _is_bm(current_user):
             branch_name = current_user.branch or ""
             if branch_name:
-                query = query.ilike("branch", f"%{branch_name}%")
+                query = query.ilike("branch", f"*{branch_name}*")
         res = query.order("timestamp", desc=True).limit(limit).execute()
         rows = res.data or []
 

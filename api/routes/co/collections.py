@@ -194,15 +194,43 @@ def get_collection_sheet(
     # Pre-fetch active loans for these clients
     client_ids = [c["client_id"] for c in group_clients]
     loans_by_client = {}
+    all_grp_loans = []
     if client_ids:
         res_l = uow.client.table("loans").select(
-            "loan_id, client_id, loan_amount, active_credit, total_due, product_category, start_date, loan_repay, extra_fields, loan_products(name)"
+            "loan_id, client_id, loan_amount, active_credit, total_due, product_category, start_date, loan_repay, extra_fields, loan_products(name, repayment_cycle, installments)"
         ).in_("client_id", client_ids).in_("status", ["Active", "Approved", "ACTIVE"]).execute()
         for l in (res_l.data or []):
             cid = l.get("client_id")
             if cid not in loans_by_client:
                 loans_by_client[cid] = []
             loans_by_client[cid].append(l)
+            all_grp_loans.append(l)
+
+    # Bulk pre-fetch loan schedules for all group loans in ONE batched query
+    grp_loan_ids = [l["loan_id"] for l in all_grp_loans if l.get("loan_id")]
+    schedules_by_lid = {}
+    if grp_loan_ids:
+        for i in range(0, len(grp_loan_ids), 100):
+            chunk = grp_loan_ids[i:i+100]
+            try:
+                res_sch = uow.client.table("loan_schedule").select("*").in_("loan_id", chunk).order("installment_number").execute()
+                for row in (res_sch.data or []):
+                    lid = row.get("loan_id")
+                    schedules_by_lid.setdefault(lid, []).append(row)
+            except Exception:
+                pass
+
+    # Bulk pre-fetch repayments for unscheduled loans in ONE batched query
+    unscheduled_grp_lids = [lid for lid in grp_loan_ids if lid not in schedules_by_lid]
+    grp_reps_by_lid = {}
+    if unscheduled_grp_lids:
+        try:
+            res_r = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", unscheduled_grp_lids).execute()
+            for r in (res_r.data or []):
+                lid = r.get("loan_id")
+                grp_reps_by_lid[lid] = grp_reps_by_lid.get(lid, 0.0) + float(r.get("amount_paid") or 0.0)
+        except Exception:
+            pass
 
     # Pre-fetch individual savings balances
     group_sav_map = {}
@@ -216,6 +244,13 @@ def get_collection_sheet(
                 group_sav_map[cid] = group_sav_map.get(cid, 0.0) + (d_amt - w_amt)
         except Exception:
             pass
+
+    # Determine group meeting day string once for the group
+    grp_meeting_day = None
+    if group_clients and group_clients[0].get("group_id"):
+        g_meta = _groups_by_id.get(group_clients[0]["group_id"])
+        if g_meta:
+            grp_meeting_day = g_meta.get("meeting_day")
 
     members: List[CollectionSheetMember] = []
     for c in group_clients:
@@ -253,18 +288,29 @@ def get_collection_sheet(
                 act_cred = float(loan_row.get('active_credit') or loan_row.get('loan_amount') or 0.0)
                 tot_due = float(loan_row.get('total_due') if loan_row.get('total_due') is not None else act_cred)
 
-                # Total paid & remaining balance via ScheduleService (app.py L5684-5694)
-                paid_amt, has_sched = ScheduleService.get_total_paid(uow, lid)
-                if not has_sched:
-                    res_r = uow.client.table("repayments").select("amount_paid").eq("loan_id", lid).execute()
-                    paid_amt = sum(float(r.get("amount_paid") or 0.0) for r in (res_r.data or []))
+                # In-memory total paid & remaining balance (zero HTTP queries!)
+                has_sched = lid in schedules_by_lid
+                loan_sch_rows = schedules_by_lid.get(lid, [])
+                if has_sched:
+                    paid_amt = sum(float(row.get("paid_amount") or 0.0) for row in loan_sch_rows)
+                else:
+                    paid_amt = grp_reps_by_lid.get(lid, 0.0)
                 rem_bal = max(0.0, tot_due - paid_amt)
 
                 lp = loan_row.get('loan_products') or {}
                 prod_name = str(lp.get('name') or ("Asset Loan" if is_asset_l else "Daily Loan"))
 
-                # Schedule due breakdown (app.py L5698-5714)
-                due_info = ScheduleService.get_loan_due_breakdown(uow, lid, target_date, client_id=cid)
+                # In-memory schedule due breakdown (zero HTTP queries!)
+                due_info = ScheduleService.get_loan_due_breakdown(
+                    uow=uow,
+                    loan_id=lid,
+                    evaluation_date=target_date,
+                    client_id=cid,
+                    loan_data=loan_row,
+                    schedule_rows=loan_sch_rows,
+                    meeting_day_str=grp_meeting_day,
+                    total_paid_sch=paid_amt if has_sched else None
+                )
                 exp_rep = float(due_info.get("total_due_today") or 0.0)
                 has_ov = bool(due_info.get("has_overdue", False))
                 ov_arrears = float(due_info.get("overdue_arrears") or 0.0)
@@ -367,6 +413,7 @@ def get_single_client_options(
         pass
 
     loans_by_cid = {}
+    all_active_loans = []
     try:
         res_l = uow.client.table("loans").select(
             "loan_id, client_id, loan_amount, active_credit, total_due, loan_repay, extra_fields, loan_products(name)"
@@ -376,8 +423,38 @@ def get_single_client_options(
             if cid not in loans_by_cid:
                 loans_by_cid[cid] = []
             loans_by_cid[cid].append(l)
+            all_active_loans.append(l)
     except Exception:
         pass
+
+    # Bulk pre-fetch schedules and repayments for all officer's active loans in chunks of 100
+    all_loan_ids = [l.get("loan_id") for l in all_active_loans if l.get("loan_id")]
+    sched_paid_by_lid = {}
+    has_sched_set = set()
+    if all_loan_ids:
+        for i in range(0, len(all_loan_ids), 100):
+            chunk = all_loan_ids[i:i+100]
+            try:
+                res_sch = uow.client.table("loan_schedule").select("loan_id, paid_amount").in_("loan_id", chunk).execute()
+                for row in (res_sch.data or []):
+                    lid = row.get("loan_id")
+                    has_sched_set.add(lid)
+                    sched_paid_by_lid[lid] = sched_paid_by_lid.get(lid, 0.0) + float(row.get("paid_amount") or 0.0)
+            except Exception:
+                pass
+
+    unscheduled_lids = [lid for lid in all_loan_ids if lid not in has_sched_set]
+    reps_by_lid = {}
+    if unscheduled_lids:
+        for i in range(0, len(unscheduled_lids), 100):
+            chunk = unscheduled_lids[i:i+100]
+            try:
+                res_r = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", chunk).execute()
+                for r in (res_r.data or []):
+                    lid = r.get("loan_id")
+                    reps_by_lid[lid] = reps_by_lid.get(lid, 0.0) + float(r.get("amount_paid") or 0.0)
+            except Exception:
+                pass
 
     all_grp_ids = list({c.get("group_id") for c in all_c if c.get("group_id")})
     grp_sav_map = {}
@@ -415,10 +492,10 @@ def get_single_client_options(
             lid = l.get("id") or l.get("loan_id")
             act_cred = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
             tot_due = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
-            paid_amt, has_sched = ScheduleService.get_total_paid(uow, lid)
-            if not has_sched:
-                res_r = uow.client.table("repayments").select("amount_paid").eq("loan_id", lid).execute()
-                paid_amt = sum(float(r.get("amount_paid") or 0.0) for r in (res_r.data or []))
+            if lid in has_sched_set:
+                paid_amt = sched_paid_by_lid.get(lid, 0.0)
+            else:
+                paid_amt = reps_by_lid.get(lid, 0.0)
             rem_bal = max(0.0, tot_due - paid_amt)
             lp = l.get("loan_products") or {}
             p_name = str(lp.get("name") or "Standard Loan")
@@ -577,23 +654,47 @@ def submit_batch_collections(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use YYYY-MM-DD.")
 
     is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id, target_date)
-    if not is_open:
+    # If this is an offline queued batch (idempotency_key provided), collection was already
+    # recorded in the field; allow syncing to post atomically to Account 1000.
+    if not is_open and not payload.idempotency_key:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Cannot submit new collections today ({open_reason}).")
 
     date_str = target_date.isoformat()
-    batch_id = f"COL-{date_str}-{uuid.uuid4().hex[:6].upper()}"
+    batch_id = payload.batch_id or payload.idempotency_key or f"COL-{date_str}-{uuid.uuid4().hex[:6].upper()}"
 
-    # Guard: verify all submitted clients belong to an authorized branch
+    # Guard: verify all submitted clients belong to an authorized branch (supporting UUIDs and client_codes)
     submitted_client_ids = [item.client_id for item in payload.collections if item.client_id]
     if submitted_client_ids:
-        res_c = uow.client.table("clients").select("client_id, branch_id").in_("client_id", submitted_client_ids).execute()
-        if res_c.data and isinstance(res_c.data, list) and len(res_c.data) > 0 and isinstance(res_c.data[0], dict):
-            cid_branch_map = {r["client_id"]: r.get("branch_id") for r in res_c.data}
+        def _is_uuid(val):
+            try:
+                uuid.UUID(str(val))
+                return True
+            except (ValueError, TypeError, AttributeError):
+                return False
+
+        uuid_cids = [cid for cid in submitted_client_ids if _is_uuid(cid)]
+        code_cids = [cid for cid in submitted_client_ids if not _is_uuid(cid) and not str(cid).startswith("GROUP-")]
+
+        cid_branch_map = {}
+        if uuid_cids:
+            res_u = uow.client.table("clients").select("client_id, branch_id").in_("client_id", uuid_cids).execute()
+            if res_u.data and isinstance(res_u.data, list) and len(res_u.data) > 0 and isinstance(res_u.data[0], dict):
+                for r in res_u.data:
+                    cid_branch_map[r["client_id"]] = r.get("branch_id")
+        if code_cids:
+            res_c = uow.client.table("clients").select("client_id, client_code, branch_id").in_("client_code", code_cids).execute()
+            if res_c.data and isinstance(res_c.data, list) and len(res_c.data) > 0 and isinstance(res_c.data[0], dict):
+                for r in res_c.data:
+                    cid_branch_map[r.get("client_code")] = r.get("branch_id")
+                    cid_branch_map[r.get("client_id")] = r.get("branch_id")
+
+        if cid_branch_map:
             for item in payload.collections:
-                if item.client_id:
-                    if item.client_id not in cid_branch_map:
+                if item.client_id and not item.client_id.startswith("GROUP-"):
+                    b_id = cid_branch_map.get(item.client_id)
+                    if not b_id:
                         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Client {item.client_id} not found.")
-                    check_branch_access(current_user, cid_branch_map[item.client_id], "submit collections for this client")
+                    check_branch_access(current_user, b_id, "submit collections for this client")
 
     to_insert = []
 
@@ -690,6 +791,9 @@ def submit_batch_collections(
     from app import save_repayments
     receipt = save_repayments(to_insert, batch_id=batch_id)
     if receipt:
+        receipt["batch_id"] = batch_id
+        if payload.idempotency_key:
+            receipt["idempotency_key"] = payload.idempotency_key
         receipt["group_name"] = payload.group_name
         receipt["officer"] = current_user.username
         receipt["branch"] = current_user.branch
@@ -707,6 +811,14 @@ def submit_batch_collections(
     tot_cash_in = (float(receipt.get("total_cash", 0.0)) if receipt else (tot_rep + tot_sav)) + tot_fees
     if receipt:
         receipt["total_cash"] = tot_cash_in
+
+    try:
+        branch_id = current_user.branch_id or (uow.cashbook._resolve_branch_id(current_user.branch) if hasattr(uow, 'cashbook') else None)
+        officer_id = (uow.loans._resolve_officer_id(current_user.username) if hasattr(uow, 'loans') else None) or current_user.id
+        if branch_id and hasattr(uow, 'cashbook') and hasattr(uow.cashbook, 'rebuild_projection'):
+            uow.cashbook.rebuild_projection(branch_id, target_date, officer_id=officer_id)
+    except Exception:
+        pass
 
     return BatchCollectionResponse(
         success=True,
@@ -758,12 +870,13 @@ def get_collections_history(
             u_nm = getattr(u, 'username', '') or ""
             f_nm = getattr(u, 'full_name', '') or ""
             hist_user_cache[u.id] = f"{u_nm} ({f_nm})" if u_nm and f_nm else (f_nm or u_nm or "Officer")
-            if u_nm and getattr(u, 'role', '') in ["CO", "Credit Officer", "Officer"] and getattr(u, 'branch_id', None) == current_user.branch_id:
+            if is_manager and u_nm and getattr(u, 'role', '') in ["CO", "Credit Officer", "Officer"] and getattr(u, 'branch_id', None) == current_user.branch_id:
                 if u_nm not in available_officers:
                     available_officers.append(u_nm)
     except Exception:
         pass
-    available_officers.sort()
+    if is_manager:
+        available_officers.sort()
 
     q_reps = uow.client.table("repayments").select(
         "id, client_id, amount_paid, transaction_type, date, created_at, note, officer_id, loan_id, payment_status, expected_amount, overdue_amount, "
@@ -801,13 +914,16 @@ def get_collections_history(
                 q_sav = q_sav.eq("officer_id", target_uid)
                 q_gsav = q_gsav.eq("officer_id", target_uid)
 
-    res_reps = q_reps.gte("date", f"{hist_date_str}T00:00:00").lte("date", f"{hist_date_str}T23:59:59").order("created_at", desc=True).execute()
-    res_sav = q_sav.eq("posting_date", hist_date_str).order("created_at", desc=True).execute()
-    res_gsav = q_gsav.eq("posting_date", hist_date_str).order("created_at", desc=True).execute()
+    from concurrent.futures import ThreadPoolExecutor
 
-    reps_list = res_reps.data or []
-    sav_list = res_sav.data or []
-    gsav_list = res_gsav.data or []
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        f_reps = executor.submit(lambda: q_reps.gte("date", f"{hist_date_str}T00:00:00").lte("date", f"{hist_date_str}T23:59:59").order("created_at", desc=True).execute().data or [])
+        f_sav = executor.submit(lambda: q_sav.eq("posting_date", hist_date_str).order("created_at", desc=True).execute().data or [])
+        f_gsav = executor.submit(lambda: q_gsav.eq("posting_date", hist_date_str).order("created_at", desc=True).execute().data or [])
+
+        reps_list = f_reps.result()
+        sav_list = f_sav.result()
+        gsav_list = f_gsav.result()
 
     approved_reversed_ids = set()
     reversal_entry_ids = set()
@@ -819,7 +935,7 @@ def get_collections_history(
         pass
 
     try:
-        res_neg_sav = uow.client.table("individual_savings").select("id, remarks").lt("deposit_amount", 0).execute()
+        res_neg_sav = uow.client.table("individual_savings").select("id, remarks").eq("posting_date", hist_date_str).lt("deposit_amount", 0).execute()
         for r in (res_neg_sav.data or []):
             reversal_entry_ids.add(str(r["id"]))
             rem = str(r.get("remarks") or "")
@@ -833,7 +949,7 @@ def get_collections_history(
         pass
 
     try:
-        res_neg_reps = uow.client.table("repayments").select("id, note").lt("amount_paid", 0).execute()
+        res_neg_reps = uow.client.table("repayments").select("id, note").gte("date", f"{hist_date_str}T00:00:00").lte("date", f"{hist_date_str}T23:59:59").lt("amount_paid", 0).execute()
         for r in (res_neg_reps.data or []):
             reversal_entry_ids.add(str(r["id"]))
             note_text = str(r.get("note") or "")
@@ -876,6 +992,15 @@ def get_collections_history(
         if gid not in approved_reversed_ids and gid not in reversal_entry_ids and dep > 0 and "REVERSAL of" not in rem and "CORRECTION:" not in rem:
             clean_gsav.append(g)
 
+    # Build client-level savings timestamp map to inherit real posting time for repayments
+    client_sav_time_map: Dict[str, str] = {}
+    for s in clean_sav:
+        cid = str(s.get("client_id") or "")
+        raw_created = s.get("created_at")
+        c_time = str(raw_created)[11:16] if raw_created else ""
+        if cid and c_time and c_time != "00:00" and cid not in client_sav_time_map:
+            client_sav_time_map[cid] = c_time
+
     groups_agg = {}
     for r in clean_reps:
         c_dict = r.get("clients") or {} if isinstance(r.get("clients"), dict) else {}
@@ -897,7 +1022,11 @@ def get_collections_history(
         p_dict = l_dict.get("loan_products") or {} if isinstance(l_dict.get("loan_products"), dict) else {}
         p_name = p_dict.get("name") or "Standard Loan"
         off_disp = hist_user_cache.get(r.get("officer_id"), current_user.username)
-        t_str = str(r.get("created_at") or r.get("date") or "")[11:16]
+        raw_r_time = str(r.get("created_at") or "")[11:16]
+        if not raw_r_time or raw_r_time == "00:00":
+            t_str = client_sav_time_map.get(cid, "—")
+        else:
+            t_str = raw_r_time
 
         item_row = {
             "client_name": c_name, "client_code": c_code, "type": "Loan Repayment", "product": p_name,
@@ -923,8 +1052,8 @@ def get_collections_history(
 
         c_name = c_dict.get("name") or cid
         c_code = c_dict.get("client_code") or ""
-        off_disp = hist_user_cache.get(s.get("officer_id"), current_user.username)
-        t_str = str(s.get("created_at") or s.get("posting_date") or "")[11:16]
+        raw_s_time = str(s.get("created_at") or "")[11:16]
+        t_str = raw_s_time if raw_s_time and raw_s_time != "00:00" else "—"
 
         item_row = {
             "client_name": c_name, "client_code": c_code, "type": "Member Savings", "product": "Individual Savings",
@@ -1002,8 +1131,15 @@ def get_collections_history(
             if not (search_term in c_name.lower() or search_term in c_code.lower() or search_term in ref_id.lower() or search_term in p_stat.lower() or search_term in off_disp.lower()):
                 continue
 
+        raw_r_time = str(r.get("created_at") or "")[11:16]
+        cid_r = str(r.get("client_id") or "")
+        if not raw_r_time or raw_r_time == "00:00":
+            rep_time = client_sav_time_map.get(cid_r, "—")
+        else:
+            rep_time = raw_r_time
+
         repayment_rows.append(RepaymentHistoryRow(
-            time=str(r.get("created_at") or r.get("date") or "")[11:16],
+            time=rep_time,
             officer=off_disp,
             client_name=c_name,
             client_code=c_code,
@@ -1029,8 +1165,11 @@ def get_collections_history(
             if not (search_term in c_name.lower() or search_term in c_code.lower() or search_term in ref_id.lower() or search_term in rem.lower() or search_term in off_disp.lower()):
                 continue
 
+        raw_s_time = str(s.get("created_at") or "")[11:16]
+        sav_time = raw_s_time if raw_s_time and raw_s_time != "00:00" else "—"
+
         savings_rows.append(SavingsHistoryRow(
-            time=str(s.get("created_at") or s.get("posting_date") or "")[11:16],
+            time=sav_time,
             officer=off_disp,
             client_name=c_name,
             client_code=c_code,

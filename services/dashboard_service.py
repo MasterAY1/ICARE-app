@@ -13,6 +13,7 @@ Strictly adheres to the Presentation First Principle & Banking Operations Comple
 """
 from typing import Dict, Any, List, Optional
 from datetime import date, datetime
+from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 
 from interfaces.unit_of_work import UnitOfWork
@@ -806,17 +807,19 @@ class DashboardService:
         except Exception:
             is_branch_closed = False
 
-        cash_position = {
-            "opening_balance": 0.0,
-            "cash_in": 0.0,
-            "cash_out": 0.0,
-            "bank_deposit": 0.0,
-            "bank_withdrawal": 0.0,
-            "closing_balance": 0.0,
-            "status": "Balanced",
-            "difference": 0.0
-        }
-        if branch_id:
+        def _get_cash_position():
+            cp = {
+                "opening_balance": 0.0,
+                "cash_in": 0.0,
+                "cash_out": 0.0,
+                "bank_deposit": 0.0,
+                "bank_withdrawal": 0.0,
+                "closing_balance": 0.0,
+                "status": "Balanced",
+                "difference": 0.0
+            }
+            if not branch_id:
+                return cp
             try:
                 p_date_str = target_date.isoformat()
                 res_mc = uow.client.table("master_cashbook").select("*").eq("branch_id", branch_id).eq("date", p_date_str).execute()
@@ -831,8 +834,7 @@ class DashboardService:
                     c_out = float(mb.get("total_outflows") or 0.0)
                     cl_bal = float(mb.get("closing_balance") or 0.0)
                     diff = abs(round(op_bal + today_in - c_out - cl_bal, 2))
-
-                    cash_position = {
+                    return {
                         "opening_balance": op_bal,
                         "cash_in": today_in,
                         "cash_out": c_out,
@@ -844,45 +846,66 @@ class DashboardService:
                     }
             except Exception:
                 pass
+            return cp
 
-        summary = {}
-        if branch_id and not is_branch_closed:
+        def _get_summary():
+            if branch_id and not is_branch_closed:
+                try:
+                    return CollectionPerformanceService.get_branch_meeting_summary(uow, branch_id, target_date)
+                except Exception:
+                    pass
+            return {}
+
+        def _get_active_savings():
             try:
-                summary = CollectionPerformanceService.get_branch_meeting_summary(
-                    uow, branch_id, target_date
-                )
+                sav_totals = SavingsService.get_branch_totals(uow, branch_name)
+                return sav_totals.get("total_active_savings", 0.0)
             except Exception:
-                summary = {}
+                return 0.0
 
-        active_savings = 0.0
-        try:
-            sav_totals = SavingsService.get_branch_totals(uow, branch_name)
-            active_savings = sav_totals.get("total_active_savings", 0.0)
-        except Exception:
-            active_savings = 0.0
-
-        officer_stats = []
-        try:
-            if branch_id:
+        def _get_officer_stats():
+            stats = []
+            try:
+                if not branch_id:
+                    return pd.DataFrame(columns=["Officer", "Officer Name", "Groups Scheduled", "Scheduled Groups", "Expected", "Collected", "Outstanding", "Compliance %", "Closing Balance", "Status"])
                 branch_users = uow.users.find_by_branch_id(branch_id)
                 officers = [u for u in branch_users if u.role in ["CO", "Officer", "Credit Officer"]]
 
                 date_str = target_date.isoformat()
                 meeting_day = target_date.strftime("%A")
 
-                # 1. Batch fetch repayments for the date
-                rep_res = uow.client.table("repayments").select("officer_id, amount_paid").gte("date", f"{date_str}T00:00:00").lte("date", f"{date_str}T23:59:59").execute()
+                # Concurrently fetch repayments, groups, loans, and co_cashbooks
+                def _q_reps():
+                    return uow.client.table("repayments").select("officer_id, amount_paid").gte("date", f"{date_str}T00:00:00").lte("date", f"{date_str}T23:59:59").execute()
+
+                def _q_grps():
+                    return uow.client.table("groups").select("group_id, name, group_number, meeting_day, officer_id").eq("branch_id", branch_id).execute()
+
+                def _q_loans():
+                    return uow.client.table("loans").select("loan_id, officer_id").eq("branch_id", branch_id).in_("status", ["Active", "Approved", "ACTIVE"]).execute()
+
+                def _q_cb():
+                    return uow.client.table("co_cashbooks").select("officer_id, closing_balance").eq("branch_id", branch_id).eq("date", date_str).execute()
+
+                with ThreadPoolExecutor(max_workers=4) as inner_exec:
+                    f_reps = inner_exec.submit(_q_reps)
+                    f_grps = inner_exec.submit(_q_grps)
+                    f_loans = inner_exec.submit(_q_loans)
+                    f_cb = inner_exec.submit(_q_cb)
+
+                    rep_res = f_reps.result()
+                    grp_res = f_grps.result()
+                    loans_res = f_loans.result()
+                    cb_res = f_cb.result()
+
                 reps_by_off = {}
                 for r in (rep_res.data or []):
                     oid_s = str(r.get("officer_id") or "")
                     if oid_s:
                         reps_by_off[oid_s] = reps_by_off.get(oid_s, 0.0) + float(r.get("amount_paid") or 0.0)
 
-                # 2. Batch fetch groups scheduled for the meeting day (including weekday Daily groups)
                 is_weekday = (target_date.weekday() < 5) and (not is_branch_closed)
-                grp_res = uow.client.table("groups").select("group_id, name, group_number, meeting_day, officer_id").eq("branch_id", branch_id).execute()
                 all_branch_grps = grp_res.data or []
-
                 grps_by_off = {}
                 grp_names_by_off = {}
                 for g in all_branch_grps:
@@ -896,8 +919,6 @@ class DashboardService:
                             g_lbl = f"{g_lbl} (#{g.get('group_number')})"
                         grp_names_by_off.setdefault(oid_s, []).append(g_lbl)
 
-                # 3. Batch fetch expected collections from loan_schedule
-                loans_res = uow.client.table("loans").select("loan_id, officer_id").eq("branch_id", branch_id).in_("status", ["Active", "Approved", "ACTIVE"]).execute()
                 loan_to_off = {str(l["loan_id"]): str(l.get("officer_id") or "") for l in (loans_res.data or []) if l.get("loan_id")}
                 loan_ids = list(loan_to_off.keys())
 
@@ -910,8 +931,6 @@ class DashboardService:
                         if oid_s:
                             exp_by_off[oid_s] = exp_by_off.get(oid_s, 0.0) + float(s.get("total_due") or 0.0)
 
-                # 4. Batch fetch saved co_cashbooks closing balances
-                cb_res = uow.client.table("co_cashbooks").select("officer_id, closing_balance").eq("branch_id", branch_id).eq("date", date_str).execute()
                 cb_by_off = {str(c["officer_id"]): float(c.get("closing_balance") or 0.0) for c in (cb_res.data or []) if c.get("officer_id")}
 
                 for off in officers:
@@ -936,7 +955,7 @@ class DashboardService:
                     if grps_count == 0 and exp == 0 and col == 0:
                         status_str = "Normal"
 
-                    officer_stats.append({
+                    stats.append({
                         "Officer": oname,
                         "Officer Name": off.full_name or oname,
                         "Groups Scheduled": grps_count,
@@ -948,48 +967,73 @@ class DashboardService:
                         "Closing Balance": o_cb_close,
                         "Status": status_str
                     })
-        except Exception:
-            pass
+            except Exception:
+                pass
+            return pd.DataFrame(stats) if stats else pd.DataFrame(columns=["Officer", "Officer Name", "Groups Scheduled", "Scheduled Groups", "Expected", "Collected", "Outstanding", "Compliance %", "Closing Balance", "Status"])
 
-        officer_df = pd.DataFrame(officer_stats) if officer_stats else pd.DataFrame(columns=["Officer", "Officer Name", "Groups Scheduled", "Scheduled Groups", "Expected", "Collected", "Outstanding", "Compliance %", "Closing Balance", "Status"])
-
-        pending_approvals = []
-        try:
+        def _get_pending_approvals():
             if branch_id:
-                p_res = uow.client.table("loans").select("*, clients(name, client_code), loan_products(name), app_users(username)").eq("branch_id", branch_id).eq("status", "Pending").gt("loan_amount", 0).execute()
-                pending_approvals = p_res.data or []
-        except Exception:
-            pending_approvals = []
+                try:
+                    p_res = uow.client.table("loans").select("*, clients(name, client_code), loan_products(name), app_users(username)").eq("branch_id", branch_id).eq("status", "Pending").gt("loan_amount", 0).execute()
+                    return p_res.data or []
+                except Exception:
+                    pass
+            return []
 
-        total_active_clients = 0
-        try:
+        def _get_active_clients_count():
             if branch_id:
-                ac_res = uow.client.table("loans").select("client_id").eq("branch_id", branch_id).in_("status", ["ACTIVE", "Active", "Approved"]).execute()
-                total_active_clients = len(ac_res.data or [])
-        except Exception:
-            total_active_clients = 0
+                try:
+                    ac_res = uow.client.table("loans").select("client_id").eq("branch_id", branch_id).in_("status", ["ACTIVE", "Active", "Approved"]).execute()
+                    return len(ac_res.data or [])
+                except Exception:
+                    pass
+            return 0
 
-        par_val = DashboardService.calculate_par_pct(uow, branch_id)
+        def _get_par():
+            return DashboardService.calculate_par_pct(uow, branch_id)
 
-        # Fetch Authoritative Payment Breakdown for the Branch
-        payment_breakdown = DashboardService._calculate_payment_breakdown(uow, target_date, branch_id)
+        def _get_payment_breakdown():
+            return DashboardService._calculate_payment_breakdown(uow, target_date, branch_id)
 
-        # Authoritative branch collection today from repayments table (BR-DASH-001)
-        branch_coll_today = 0.0
-        try:
+        def _get_branch_coll():
             if branch_id:
-                t_str = target_date.isoformat()
-                s_t_str = f"{t_str}T00:00:00"
-                e_t_str = f"{t_str}T23:59:59"
-                rep_bm = uow.client.table("repayments").select("amount_paid, transaction_type, note").eq("branch_id", branch_id).gte("date", s_t_str).lte("date", e_t_str).execute()
-                valid_bm_reps = [
-                    r for r in (rep_bm.data or [])
-                    if str(r.get("transaction_type", "")).upper() != "ONBOARDING_LEGACY"
-                    and str(r.get("note", "")).strip() != "Legacy Repayments Onboarded"
-                ]
-                branch_coll_today = sum(float(r.get("amount_paid") or 0.0) for r in valid_bm_reps)
-        except Exception:
-            branch_coll_today = summary.get("total_collected", 0.0)
+                try:
+                    t_str = target_date.isoformat()
+                    s_t_str = f"{t_str}T00:00:00"
+                    e_t_str = f"{t_str}T23:59:59"
+                    rep_bm = uow.client.table("repayments").select("amount_paid, transaction_type, note").eq("branch_id", branch_id).gte("date", s_t_str).lte("date", e_t_str).execute()
+                    valid_bm_reps = [
+                        r for r in (rep_bm.data or [])
+                        if str(r.get("transaction_type", "")).upper() != "ONBOARDING_LEGACY"
+                        and str(r.get("note", "")).strip() != "Legacy Repayments Onboarded"
+                    ]
+                    return sum(float(r.get("amount_paid") or 0.0) for r in valid_bm_reps)
+                except Exception:
+                    pass
+            return 0.0
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            fut_cash = executor.submit(_get_cash_position)
+            fut_summary = executor.submit(_get_summary)
+            fut_sav = executor.submit(_get_active_savings)
+            fut_off = executor.submit(_get_officer_stats)
+            fut_pend = executor.submit(_get_pending_approvals)
+            fut_ac = executor.submit(_get_active_clients_count)
+            fut_par = executor.submit(_get_par)
+            fut_pb = executor.submit(_get_payment_breakdown)
+            fut_coll = executor.submit(_get_branch_coll)
+
+            cash_position = fut_cash.result()
+            summary = fut_summary.result()
+            active_savings = fut_sav.result()
+            officer_df = fut_off.result()
+            pending_approvals = fut_pend.result()
+            total_active_clients = fut_ac.result()
+            par_val = fut_par.result()
+            payment_breakdown = fut_pb.result()
+            branch_coll_today = fut_coll.result()
+            if branch_coll_today == 0.0 and summary.get("total_collected"):
+                branch_coll_today = summary.get("total_collected", 0.0)
 
         return {
             "branch_summary": {

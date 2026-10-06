@@ -1,4 +1,5 @@
 from typing import List, Optional
+from datetime import datetime
 from domain.entities.repayment import Repayment
 from domain.queries import RepaymentFilter
 from mappers.base_mappers import RepaymentMapper
@@ -122,10 +123,17 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
         
         start = (filters.page - 1) * filters.size
         end = start + filters.size - 1
-        query = query.range(start, end).order("date", desc=True)
+        query = query.order("date", desc=True)
         
-        res = self._execute(query)
-        return [RepaymentMapper.to_domain(d) for d in res.data]
+        if filters.size <= 1000:
+            query = query.range(start, end)
+            res = self._execute(query)
+            return [RepaymentMapper.to_domain(d) for d in res.data]
+        else:
+            from database.query_utils import fetch_all_paginated
+            all_records = fetch_all_paginated(query, step=1000)
+            sliced = all_records[start:end+1]
+            return [RepaymentMapper.to_domain(d) for d in sliced]
 
     def _prepare_db_data(self, entity: Repayment) -> dict:
         import uuid
@@ -165,8 +173,18 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
         c_id_clean = clean_uuid(c_id)
         resolved_loan_clean = clean_uuid(resolved_loan)
 
+        created_at_val = None
+        if getattr(entity, "created_at", None):
+            if isinstance(entity.created_at, str):
+                created_at_val = entity.created_at
+            elif hasattr(entity.created_at, "isoformat"):
+                created_at_val = entity.created_at.isoformat()
+        if not created_at_val:
+            created_at_val = datetime.now().isoformat()
+
         db_dict = {
             "date": entity.payment_date.isoformat() if entity.payment_date else None,
+            "created_at": created_at_val,
             "loan_id": resolved_loan_clean,
             "client_id": c_id_clean,
             "amount_paid": amt,

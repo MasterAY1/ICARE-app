@@ -4,6 +4,7 @@ Provides presentation-ready dashboard dataset and approval endpoints for BM / Su
 """
 from typing import Optional, List, Dict, Any
 from datetime import date, datetime
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 import pandas as pd
 
@@ -217,12 +218,31 @@ def get_bm_dashboard(
             )
 
     try:
-        bm_data = DashboardService.get_bm_dashboard_data(
-            uow=uow,
-            branch_name=branch_name,
-            branch_id=branch_id,
-            target_date=target_date
-        )
+        def _fetch_bm_data():
+            return DashboardService.get_bm_dashboard_data(
+                uow=uow,
+                branch_name=branch_name,
+                branch_id=branch_id,
+                target_date=target_date
+            )
+
+        def _fetch_withdrawals():
+            return uow.client.table("withdrawal_requests").select("*") \
+                .eq("branch_id", branch_id).eq("status", "PENDING").order("created_at", desc=False).execute()
+
+        def _fetch_corrections():
+            return uow.client.table("correction_requests") \
+                .select("*, app_users!correction_requests_requested_by_fkey(username, full_name)") \
+                .eq("branch_id", branch_id).eq("status", "Pending").order("created_at", desc=False).execute()
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            fut_bm = executor.submit(_fetch_bm_data)
+            fut_wr = executor.submit(_fetch_withdrawals)
+            fut_corr = executor.submit(_fetch_corrections)
+
+            bm_data = fut_bm.result()
+            res_wr = fut_wr.result()
+            res_corr = fut_corr.result()
 
         bs = bm_data.get("branch_summary", {})
         branch_summary = BranchSummary(
@@ -287,8 +307,6 @@ def get_bm_dashboard(
                 disbursement_date=str(pl.get("date"))[:10] if pl.get("date") else None
             ))
 
-        res_wr = uow.client.table("withdrawal_requests").select("*") \
-            .eq("branch_id", branch_id).eq("status", "PENDING").order("created_at", desc=False).execute()
         pending_wr_items: List[PendingWithdrawalApprovalItem] = []
         for wr in (res_wr.data or []):
             pending_wr_items.append(PendingWithdrawalApprovalItem(
@@ -306,9 +324,6 @@ def get_bm_dashboard(
                 created_at=str(wr.get("created_at")) if wr.get("created_at") else None
             ))
 
-        res_corr = uow.client.table("correction_requests") \
-            .select("*, app_users!correction_requests_requested_by_fkey(username, full_name)") \
-            .eq("branch_id", branch_id).eq("status", "Pending").order("created_at", desc=False).execute()
         pending_corr_items: List[PendingCorrectionApprovalItem] = []
         for corr in (res_corr.data or []):
             u_data = corr.get("app_users")

@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional, Union
 from datetime import date, datetime
 import pandas as pd
 from interfaces.unit_of_work import UnitOfWork
+from database.query_utils import fetch_all_paginated
 
 
 class ReportService:
@@ -50,8 +51,7 @@ class ReportService:
         elif as_of_date:
             query = query.lte("financial_transactions.posting_date", as_of_date.isoformat())
 
-        res_entries = query.execute()
-        entries = res_entries.data or []
+        entries = fetch_all_paginated(query)
 
         # 3. Aggregate Debits & Credits per Account
         totals = {}
@@ -180,7 +180,7 @@ class ReportService:
 
         # 2. Query individual_savings
         q_ind = uow.client.table("individual_savings") \
-            .select("id, posting_date, client_id, branch_id, deposit_amount, withdrawal_amount, remarks, created_at")
+            .select("id, posting_date, client_id, branch_id, deposit_amount, withdrawal_amount, remarks, created_at, reference")
 
         if branch_id and branch_id != "ALL":
             if isinstance(branch_id, list):
@@ -193,8 +193,7 @@ class ReportService:
         elif as_of_date:
             q_ind = q_ind.lte("posting_date", as_of_date.isoformat())
 
-        res_ind = q_ind.execute()
-        ind_records = res_ind.data or []
+        ind_records = fetch_all_paginated(q_ind)
 
         # 3. Query group_savings
         grp_records = []
@@ -217,8 +216,7 @@ class ReportService:
             elif as_of_date:
                 q_grp = q_grp.lte("posting_date", as_of_date.isoformat())
 
-            res_grp = q_grp.execute()
-            grp_records = res_grp.data or []
+            grp_records = fetch_all_paginated(q_grp)
 
         # 4. Aggregate Individual Savings per Client
         client_savings_agg = {}
@@ -226,6 +224,12 @@ class ReportService:
         total_ind_withdrawals = 0.0
 
         for r in ind_records:
+            ref = str(r.get("reference") or "")
+            rem = str(r.get("remarks") or "").lower()
+            p_date_s = str(r.get("posting_date") or "")[:10]
+            if ref.startswith("ONBOARDING") or "onboarding" in rem or p_date_s == "1970-01-01":
+                continue
+
             cid = r.get("client_id")
             c_meta = clients_map.get(cid, {})
 
@@ -359,8 +363,7 @@ class ReportService:
             e_d_str = f"{end_date.isoformat()}T23:59:59"
             q_rep = q_rep.gte("date", s_d_str).lte("date", e_d_str)
 
-        res_rep = q_rep.order("date", desc=True).execute()
-        rep_records = res_rep.data or []
+        rep_records = fetch_all_paginated(q_rep.order("date", desc=True))
 
         # 3. Query loan_payoff_excess_records for full payoffs and excess cash in period
         q_pe = uow.client.table("loan_payoff_excess_records").select("*, loans(loan_products(name))")
@@ -371,8 +374,7 @@ class ReportService:
                 q_pe = q_pe.eq("branch_id", branch_id)
         if start_date and end_date:
             q_pe = q_pe.gte("date", start_date.isoformat()).lte("date", end_date.isoformat())
-        res_pe = q_pe.execute()
-        pe_records = res_pe.data or []
+        pe_records = fetch_all_paginated(q_pe)
 
         full_payoff_amount = 0.0
         full_payoff_count = 0

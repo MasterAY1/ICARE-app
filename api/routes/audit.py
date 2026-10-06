@@ -217,10 +217,26 @@ def get_audit_metadata(
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """Returns branches, officers, and loan products for dropdown filters."""
+    role = (current_user.role or "").strip()
+    is_admin = role in ["Admin", "System Admin", "Director", "Auditor", "Super Admin"]
+    is_am = role in ["Area Manager", "AM"]
+    is_co = role in ["CO", "Officer", "Credit Officer", "CREDIT_OFFICER"]
+
+    effective_branch_id = branch_id
+    if not is_admin and not is_am and current_user.branch_id:
+        effective_branch_id = current_user.branch_id
+
     # 1. Branches
     branches: List[BranchOption] = []
     try:
-        res_b = uow.client.table("branches").select("branch_id, name, code").eq("is_active", True).execute()
+        q_b = uow.client.table("branches").select("branch_id, name, code").eq("is_active", True)
+        if not is_admin and not is_am:
+            if current_user.branch_id:
+                q_b = q_b.eq("branch_id", current_user.branch_id)
+        elif is_am and current_user.assigned_branch_ids:
+            allowed_bids = list(set([current_user.branch_id] + current_user.assigned_branch_ids))
+            q_b = q_b.in_("branch_id", allowed_bids)
+        res_b = q_b.execute()
         for b in (res_b.data or []):
             branches.append(BranchOption(
                 branch_id=str(b.get("branch_id")),
@@ -230,6 +246,13 @@ def get_audit_metadata(
     except Exception:
         pass
 
+    if not is_admin and not branches and current_user.branch:
+        branches.append(BranchOption(
+            branch_id=current_user.branch_id or "default",
+            name=current_user.branch,
+            code=None
+        ))
+
     # 2. Officers
     officers: List[OfficerOption] = []
     try:
@@ -237,8 +260,14 @@ def get_audit_metadata(
         user_role_map = {r["user_id"]: ((r.get("roles") or {}).get("name") or "") for r in (res_ur.data or []) if r.get("user_id")}
 
         q_off = uow.client.table("app_users").select("id, username, full_name, branch_id").eq("is_active", True)
-        if branch_id and branch_id not in ["All", "All Branches"]:
-            q_off = q_off.eq("branch_id", branch_id)
+        if effective_branch_id and effective_branch_id not in ["All", "All Branches"]:
+            q_off = q_off.eq("branch_id", effective_branch_id)
+        elif not is_admin and not is_am and current_user.branch_id:
+            q_off = q_off.eq("branch_id", current_user.branch_id)
+        elif is_am and current_user.assigned_branch_ids:
+            allowed_bids = list(set([current_user.branch_id] + current_user.assigned_branch_ids))
+            q_off = q_off.in_("branch_id", allowed_bids)
+
         res_o = q_off.execute()
         for u in (res_o.data or []):
             uid = str(u.get("id") or "")
@@ -255,6 +284,9 @@ def get_audit_metadata(
                     display_name=disp,
                     role=role_name or None
                 ))
+
+        if is_co:
+            officers = [o for o in officers if str(o.id) == str(current_user.id) or o.username == current_user.username]
     except Exception:
         pass
 

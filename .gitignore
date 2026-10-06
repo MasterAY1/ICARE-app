@@ -10,8 +10,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -50,6 +50,7 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+scratch/
 
 # Environment files
 .env*
@@ -61,3 +62,22 @@ temp/
 !.agents/skills/
 
 
+
+# Flutter binaries & build artifacts
+*.apk
+*.aab
+frontend_flutter/releases/
+frontend_flutter/build/
+frontend_flutter/.dart_tool/
+frontend_flutter/.flutter-plugins
+frontend_flutter/.flutter-plugins-dependencies
+
+# Database backups
+storage/backups/*.json
+
+# Android build artifacts
+.gradle/
+**/android/.gradle/
+**/android/build/
+**/android/.kotlin/
+**/android/local.properties

@@ -29,6 +29,8 @@ class BatchCollectionInput(BaseModel):
     collections: List[BatchCollectionItem]
     group_savings_deposit: float = 0.0
     group_savings_withdrawal: float = 0.0
+    idempotency_key: Optional[str] = Field(None, description="Unique client transaction key for offline synchronization idempotency")
+    batch_id: Optional[str] = Field(None, description="Batch identifier for idempotent submission")
 
 
 class BatchCollectionResponse(BaseModel):

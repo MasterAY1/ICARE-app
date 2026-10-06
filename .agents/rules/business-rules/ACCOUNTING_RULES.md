@@ -23,7 +23,7 @@
   - LapsPaidOut with cash_paid=False touching Account 1000.
 - **Related Entities:** financial_ledger_entries, Account 1000
 - **Status:** CONFIRMED
-- **Implementation Location:** `services/posting_engine.py`, `core_banking_schema.sql` posting_rules
+- **Implementation Location:** `services/posting_engine.py`, `database/schemas/core_banking_schema.sql` posting_rules
 
 ## BR-ACCT-003: Ledger Immutability
 - **Rule ID:** BR-ACCT-003
@@ -43,7 +43,7 @@
 - **Prohibited Behavior:** Hardcoding account numbers in service code. Ignoring the posting_rules table.
 - **Related Entities:** posting_rules, posting_engine
 - **Status:** CONFIRMED
-- **Implementation Location:** `services/posting_engine.py`, `core_banking_schema.sql`
+- **Implementation Location:** `services/posting_engine.py`, `database/schemas/core_banking_schema.sql`
 
 ## BR-ACCT-005: Event Payload Completeness for Accounting
 - **Rule ID:** BR-ACCT-005

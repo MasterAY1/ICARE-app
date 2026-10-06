@@ -5067,8 +5067,8 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         })
 
                 if col_mode == "Bulk Upload (Excel Template)":
-                    st.markdown("### Bulk Upload (Excel Template)")
-                    with open("Master_Balancing_Template_V2.xlsx", "rb") as template_file:
+                    template_path = "storage/workbooks/Master_Balancing_Template_V2.xlsx" if os.path.exists("storage/workbooks/Master_Balancing_Template_V2.xlsx") else "Master_Balancing_Template_V2.xlsx"
+                    with open(template_path, "rb") as template_file:
                         st.download_button(
                             label="Download Master Balancing Template",
                             data=template_file,
@@ -6611,6 +6611,14 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                 st.markdown("---")
 
                 # 5. Group Collections Aggregation
+                client_sav_time_map = {}
+                for s in clean_sav_list:
+                    cid_s = str(s.get("client_id") or "")
+                    raw_s_created = s.get("created_at")
+                    s_t = str(raw_s_created)[11:16] if raw_s_created else ""
+                    if cid_s and s_t and s_t != "00:00" and cid_s not in client_sav_time_map:
+                        client_sav_time_map[cid_s] = s_t
+
                 groups_agg = {}
 
                 for r in reps_list:
@@ -6639,6 +6647,8 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                     l_dict = r.get("loans") or {} if isinstance(r.get("loans"), dict) else {}
                     p_dict = l_dict.get("loan_products") or {} if isinstance(l_dict.get("loan_products"), dict) else {}
                     p_name = p_dict.get("name") or "Standard Loan"
+                    raw_r_time = str(r.get("created_at") or "")[11:16]
+                    t_disp = raw_r_time if raw_r_time and raw_r_time != "00:00" else client_sav_time_map.get(cid, "—")
                     
                     groups_agg[g_name]["members_detail"].append({
                         "Client Name": c_name,
@@ -6648,7 +6658,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         "Expected (₦)": exp_amt,
                         "Amount Paid (₦)": amt,
                         "Status": p_stat,
-                        "Time": str(r.get("created_at") or r.get("date") or "")[11:16],
+                        "Time": t_disp,
                         "Officer": hist_user_cache.get(r.get("officer_id"), "")
                     })
 
@@ -6673,6 +6683,8 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         
                     c_name = c_dict.get("name") or str(s.get("client_id") or "Unknown")
                     c_code = c_dict.get("client_code") or ""
+                    raw_s_time = str(s.get("created_at") or "")[11:16]
+                    s_disp = raw_s_time if raw_s_time and raw_s_time != "00:00" else "—"
                     groups_agg[g_name]["members_detail"].append({
                         "Client Name": c_name,
                         "Client Code": c_code,
@@ -6681,7 +6693,7 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                         "Expected (₦)": 0.0,
                         "Amount Paid (₦)": amt,
                         "Status": "SAVINGS DEPOSIT",
-                        "Time": str(s.get("created_at") or s.get("posting_date") or "")[11:16],
+                        "Time": s_disp,
                         "Officer": hist_user_cache.get(s.get("officer_id"), "")
                     })
 
@@ -6865,7 +6877,8 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             amt = float(r.get("amount_paid") or 0)
                             exp_amt = float(r.get("expected_amount") or 0)
                             p_stat = str(r.get("payment_status") or ("PAID" if amt > 0 else "NOT_PAID")).upper()
-                            time_str = str(r.get("created_at") or r.get("date") or "")[11:16]
+                            raw_r_time = str(r.get("created_at") or "")[11:16]
+                            time_str = raw_r_time if raw_r_time and raw_r_time != "00:00" else client_sav_time_map.get(str(r.get("client_id") or ""), "—")
                             note_val = str(r.get("note") or "")
                             off_id = r.get("officer_id")
                             off_name_disp = hist_user_cache.get(off_id, "")
@@ -6919,7 +6932,8 @@ Status: CONFIRMED & POSTED TO LEDGER"""
                             c_name = c_dict.get("name") or str(s.get("client_id") or "Unknown")
                             c_code = c_dict.get("client_code") or ""
                             amt = float(s.get("deposit_amount") or 0)
-                            time_str = str(s.get("created_at") or s.get("posting_date") or "")[11:16]
+                            raw_s_time = str(s.get("created_at") or "")[11:16]
+                            time_str = raw_s_time if raw_s_time and raw_s_time != "00:00" else "—"
                             rem_val = str(s.get("remarks") or s.get("reference") or "")
                             off_id = s.get("officer_id")
                             off_name_disp = hist_user_cache.get(off_id, "")
@@ -14272,7 +14286,7 @@ elif page == "User Management":
                 with SupabaseUnitOfWork() as uow:
                     query = uow.client.table("user_audit_logs").select("*")
                     if BRANCH:
-                        query = query.ilike("branch", f"%{BRANCH}%")
+                        query = query.ilike("branch", f"*{BRANCH}*")
                     res_bm_audit = query.order("timestamp", desc=True).limit(200).execute()
                     audit_entries = res_bm_audit.data or []
                 

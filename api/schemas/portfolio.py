@@ -42,6 +42,7 @@ class FilterOptions(BaseModel):
     available_branches: List[str] = []
     available_officers: List[Dict[str, str]] = []
     allowed_products: List[str] = []
+    available_products: List[str] = []
     available_groups: List[str] = []
     time_periods: List[str] = ["Today", "Yesterday", "Current Month", "Last Month", "Custom Date Range"]
 

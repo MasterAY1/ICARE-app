@@ -348,8 +348,108 @@ class AuditEnricher:
         return enriched
 
     def enrich_savings_records(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Enrich raw savings records for executive reporting."""
+        """Enrich raw savings records for executive reporting with real cumulative running balances."""
         self.load_lookups()
+        db_client = getattr(self.uow, 'client', None) if hasattr(self.uow, 'client') else None
+
+        # Build chronological running balances per client/group across their historical transactions
+        tx_running_bal: Dict[str, float] = {}
+
+        if db_client and records:
+            from collections import defaultdict
+
+            # 1. Individual Savings clients
+            client_ids = list({str(r["client_id"]) for r in records if r.get("client_id")})
+            if client_ids:
+                try:
+                    client_txs = defaultdict(list)
+                    for chunk in [client_ids[i:i + 50] for i in range(0, len(client_ids), 50)]:
+                        res = db_client.table("individual_savings").select("id, posting_date, created_at, client_id, deposit_amount, withdrawal_amount").in_("client_id", chunk).execute()
+                        for tx in (res.data or []):
+                            cid = str(tx.get("client_id") or "")
+                            if cid:
+                                client_txs[cid].append(tx)
+
+                    for cid, tx_list in client_txs.items():
+                        tx_list.sort(key=lambda x: (str(x.get("posting_date") or ""), str(x.get("created_at") or ""), str(x.get("id") or "")))
+                        running = 0.0
+                        for t in tx_list:
+                            dep = float(t.get("deposit_amount") or 0.0)
+                            wth = float(t.get("withdrawal_amount") or 0.0)
+                            running += (dep - wth)
+                            tx_running_bal[str(t.get("id"))] = running
+                except Exception:
+                    pass
+
+            # 2. Group Savings
+            group_ids = list({str(r["group_id"]) for r in records if r.get("group_id")})
+            if group_ids:
+                try:
+                    grp_txs = defaultdict(list)
+                    for chunk in [group_ids[i:i + 50] for i in range(0, len(group_ids), 50)]:
+                        res = db_client.table("group_savings").select("id, posting_date, created_at, group_id, deposit_amount, withdrawal_amount").in_("group_id", chunk).execute()
+                        for tx in (res.data or []):
+                            gid = str(tx.get("group_id") or "")
+                            if gid:
+                                grp_txs[gid].append(tx)
+
+                    for gid, tx_list in grp_txs.items():
+                        tx_list.sort(key=lambda x: (str(x.get("posting_date") or ""), str(x.get("created_at") or ""), str(x.get("id") or "")))
+                        running = 0.0
+                        for t in tx_list:
+                            dep = float(t.get("deposit_amount") or 0.0)
+                            wth = float(t.get("withdrawal_amount") or 0.0)
+                            running += (dep - wth)
+                            tx_running_bal[str(t.get("id"))] = running
+                except Exception:
+                    pass
+
+            # 3. Laps Savings
+            has_laps = any(r.get("_ledger_type") == "Laps Savings" for r in records)
+            if has_laps and client_ids:
+                try:
+                    laps_txs = defaultdict(list)
+                    for chunk in [client_ids[i:i + 50] for i in range(0, len(client_ids), 50)]:
+                        res = db_client.table("laps_savings").select("id, posting_date, created_at, client_id, deposit_amount, withdrawal_amount").in_("client_id", chunk).execute()
+                        for tx in (res.data or []):
+                            cid = str(tx.get("client_id") or "")
+                            if cid:
+                                laps_txs[cid].append(tx)
+
+                    for cid, tx_list in laps_txs.items():
+                        tx_list.sort(key=lambda x: (str(x.get("posting_date") or ""), str(x.get("created_at") or ""), str(x.get("id") or "")))
+                        running = 0.0
+                        for t in tx_list:
+                            dep = float(t.get("deposit_amount") or 0.0)
+                            wth = float(t.get("withdrawal_amount") or 0.0)
+                            running += (dep - wth)
+                            tx_running_bal[str(t.get("id"))] = running
+                except Exception:
+                    pass
+
+            # 4. Misc Savings (Internal Savings)
+            misc_branch_ids = list({str(r["branch_id"]) for r in records if r.get("_ledger_type") == "Misc Savings" and r.get("branch_id")})
+            if misc_branch_ids:
+                try:
+                    misc_txs = defaultdict(list)
+                    for chunk in [misc_branch_ids[i:i + 50] for i in range(0, len(misc_branch_ids), 50)]:
+                        res = db_client.table("internal_savings").select("id, posting_date, created_at, branch_id, deposit_amount, withdrawal_amount").in_("branch_id", chunk).execute()
+                        for tx in (res.data or []):
+                            bid = str(tx.get("branch_id") or "")
+                            if bid:
+                                misc_txs[bid].append(tx)
+
+                    for bid, tx_list in misc_txs.items():
+                        tx_list.sort(key=lambda x: (str(x.get("posting_date") or ""), str(x.get("created_at") or ""), str(x.get("id") or "")))
+                        running = 0.0
+                        for t in tx_list:
+                            dep = float(t.get("deposit_amount") or 0.0)
+                            wth = float(t.get("withdrawal_amount") or 0.0)
+                            running += (dep - wth)
+                            tx_running_bal[str(t.get("id"))] = running
+                except Exception:
+                    pass
+
         enriched = []
         for r in records:
             ledger_type = r.get("_ledger_type") or "Savings"
@@ -370,7 +470,9 @@ class AuditEnricher:
 
             dep = float(r.get("deposit_amount") or 0)
             wth = float(r.get("withdrawal_amount") or 0)
-            bal = float(r.get("balance") or (dep - wth))
+            r_id = str(r.get("id") or "")
+            bal = tx_running_bal.get(r_id, float(r.get("balance") or (dep - wth)))
+
             row = {
                 "Date": self.format_date(r.get("posting_date") or r.get("created_at")),
                 "Ledger": ledger_type,
@@ -382,8 +484,11 @@ class AuditEnricher:
                 "Deposit": self.format_currency(dep),
                 "Withdrawal": self.format_currency(wth),
                 "Balance": self.format_currency(bal),
+                "Available Balance": self.format_currency(bal),
                 "Deposit_Raw": dep,
                 "Withdrawal_Raw": wth,
+                "Balance_Raw": bal,
+                "Available_Balance_Raw": bal,
                 "Status": self.format_status_badge("ACTIVE"),
                 "_raw_record": r
             }

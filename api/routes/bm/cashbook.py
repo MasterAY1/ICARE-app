@@ -6,6 +6,7 @@ Backed directly by Account 1000 journal projection and MasterCashbookProjectionB
 from typing import Optional, List, Dict, Any
 from datetime import date, datetime, timedelta
 from calendar import monthrange
+from concurrent.futures import ThreadPoolExecutor
 import json
 import io
 from fastapi import APIRouter, Depends, Query, HTTPException, status
@@ -60,6 +61,7 @@ def _is_legacy_loan(val: Any) -> bool:
 def get_daily_master_cashbook(
     date_str: Optional[str] = Query(None, alias="date", description="Target ISO date (YYYY-MM-DD)"),
     branch: Optional[str] = Query(None, description="Branch name override for regional/admin roles"),
+    force_rebuild: bool = Query(False, description="Force recomputation of projections"),
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin", "Director", "Executive"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
@@ -84,14 +86,14 @@ def get_daily_master_cashbook(
     iso_date = target_date.isoformat()
     is_open, open_reason = BusinessDateService.is_operational_open(uow, branch_id, target_date)
 
-    # 3. Rebuild projection (app.py L11227)
-    try:
-        uow.cashbook.rebuild_projection(branch_id, target_date)
-    except Exception as ex:
-        print(f"Error rebuilding projection: {ex}")
-
-    # 4. Fetch Projected Row from master_cashbook
+    # 3. Read Projected Row from master_cashbook (or rebuild if absent / explicitly requested)
     cb_entry = uow.cashbook.find_by_date_and_branch(iso_date, target_branch)
+    if not cb_entry or force_rebuild:
+        try:
+            uow.cashbook.rebuild_projection(branch_id, target_date)
+            cb_entry = uow.cashbook.find_by_date_and_branch(iso_date, target_branch)
+        except Exception as ex:
+            print(f"Error rebuilding projection: {ex}")
 
     auto_rep_60d = cb_entry.rep_daily if cb_entry else 0.0
     auto_rep_120d = getattr(cb_entry, "rep_120_days", 0.0) if cb_entry else 0.0
@@ -132,7 +134,69 @@ def get_daily_master_cashbook(
     xfer_area = float(getattr(cb_entry, "fund_to_other_area", 0.0) or 0.0) if cb_entry else 0.0
     salaries = float(getattr(cb_entry, "staff_salaries", 0.0) or 0.0) if cb_entry else 0.0
 
-    # 5. Loan Disbursements for Today (app.py L11275-11319)
+    # 5-10. Concurrently Fetch Today Loans, Reconciliation Tally, Pending Reversals, and Treasury Transactions
+    def _fetch_today_loans():
+        try:
+            res_l = uow.client.table("loans") \
+                .select("loan_amount, active_credit, extra_fields, product_category, loan_products(name, repayment_cycle)") \
+                .eq("branch_id", branch_id) \
+                .or_(f"disbursement_date.eq.{iso_date},date.eq.{iso_date}") \
+                .in_("status", ["Active", "Approved", "Completed"]) \
+                .execute()
+            return res_l.data or []
+        except Exception as ex_loans:
+            print(f"Error fetching today loans: {ex_loans}")
+            return []
+
+    def _fetch_tally():
+        try:
+            return FinancialReconciliationService.get_daily_collection_arrears_tally(
+                uow=uow,
+                branch_id=branch_id,
+                posting_date=target_date,
+                officer_id=None
+            )
+        except Exception as ex_tally:
+            print(f"Error getting reconciliation tally: {ex_tally}")
+            return None
+
+    def _fetch_pending_reversals():
+        try:
+            q_pending = uow.client.table("correction_requests") \
+                .select("*, app_users!correction_requests_requested_by_fkey(username, full_name)") \
+                .eq("status", "Pending") \
+                .eq("branch_id", branch_id) \
+                .order("created_at", desc=False) \
+                .execute()
+            return q_pending.data or []
+        except Exception as ex_rev:
+            print(f"Error fetching pending reversals: {ex_rev}")
+            return []
+
+    def _fetch_treasury_tx():
+        try:
+            res_tx = uow.client.table("treasury_transactions") \
+                .select("*") \
+                .eq("branch_id", branch_id) \
+                .order("created_at", desc=True) \
+                .limit(25) \
+                .execute()
+            return res_tx.data or []
+        except Exception as ex_tx:
+            print(f"Error fetching treasury transactions: {ex_tx}")
+            return []
+
+    with ThreadPoolExecutor(max_workers=4) as cb_exec:
+        fut_loans = cb_exec.submit(_fetch_today_loans)
+        fut_tally = cb_exec.submit(_fetch_tally)
+        fut_rev = cb_exec.submit(_fetch_pending_reversals)
+        fut_tx = cb_exec.submit(_fetch_treasury_tx)
+
+        raw_loans_today = fut_loans.result()
+        raw_tally = fut_tally.result()
+        raw_pending_rev = fut_rev.result()
+        raw_treasury_tx = fut_tx.result()
+
     auto_fund_asset = 0.0
     auto_fund_finance = 0.0
     auto_disb_60d = 0.0
@@ -141,41 +205,32 @@ def get_daily_master_cashbook(
     auto_disb_24w = 0.0
     auto_disb_mth = 0.0
 
-    try:
-        res_l = uow.client.table("loans") \
-            .select("loan_amount, active_credit, extra_fields, product_category, loan_products(name, repayment_cycle)") \
-            .eq("branch_id", branch_id) \
-            .or_(f"disbursement_date.eq.{iso_date},date.eq.{iso_date}") \
-            .in_("status", ["Active", "Approved", "Completed"]) \
-            .execute()
-        for loan in (res_l.data or []):
-            if _is_legacy_loan(loan.get("extra_fields")):
-                continue
-            principal = float(loan.get("loan_amount") or 0.0)
-            active_cr = float(loan.get("active_credit") or principal)
-            cat = str(loan.get("product_category") or "Finance")
-            lp = loan.get("loan_products") or {}
-            prod = str(lp.get("name") or "").lower()
+    for loan in raw_loans_today:
+        if _is_legacy_loan(loan.get("extra_fields")):
+            continue
+        principal = float(loan.get("loan_amount") or 0.0)
+        active_cr = float(loan.get("active_credit") or principal)
+        cat = str(loan.get("product_category") or "Finance")
+        lp = loan.get("loan_products") or {}
+        prod = str(lp.get("name") or "").lower()
 
-            if "Asset" in cat or "asset" in prod:
-                auto_fund_asset += principal
-            else:
-                auto_fund_finance += principal
+        if "Asset" in cat or "asset" in prod:
+            auto_fund_asset += principal
+        else:
+            auto_fund_finance += principal
 
-            if "120" in prod:
-                auto_disb_120d += active_cr
-            elif "60" in prod:
-                auto_disb_60d += active_cr
-            elif "24w" in prod or "24" in prod:
-                auto_disb_24w += active_cr
-            elif "12w" in prod or "12" in prod:
-                auto_disb_12w += active_cr
-            elif "3m" in prod or "6m" in prod or "month" in prod:
-                auto_disb_mth += active_cr
-            else:
-                auto_disb_12w += active_cr
-    except Exception as ex_loans:
-        print(f"Error fetching today loans: {ex_loans}")
+        if "120" in prod:
+            auto_disb_120d += active_cr
+        elif "60" in prod:
+            auto_disb_60d += active_cr
+        elif "24w" in prod or "24" in prod:
+            auto_disb_24w += active_cr
+        elif "12w" in prod or "12" in prod:
+            auto_disb_12w += active_cr
+        elif "3m" in prod or "6m" in prod or "month" in prod:
+            auto_disb_mth += active_cr
+        else:
+            auto_disb_12w += active_cr
 
     # 6. Opening Balance Resolution (app.py L11321-11333)
     auto_opening = float(cb_entry.opening_balance) if cb_entry and cb_entry.opening_balance is not None else 0.0
@@ -212,94 +267,67 @@ def get_daily_master_cashbook(
 
     # 8. Branch Collection & Arrears Reconciliation Tally (app.py L11335-11350)
     tally_model: Optional[BranchReconciliationTally] = None
-    try:
-        raw_tally = FinancialReconciliationService.get_daily_collection_arrears_tally(
-            uow=uow,
-            branch_id=branch_id,
-            posting_date=target_date,
-            officer_id=None
-        )
-        if raw_tally:
-            np_clients = [
-                TallyNotPaidClient(
-                    name=c.get("name", "Unknown"),
-                    code=c.get("code", ""),
-                    expected=float(c.get("expected") or 0.0),
-                    shortfall=float(c.get("shortfall") or 0.0),
-                    is_partial=bool(c.get("is_partial", False))
-                )
-                for c in (raw_tally.get("not_paid_clients") or [])
-            ]
-            tally_model = BranchReconciliationTally(
-                scheduled_expected=float(raw_tally.get("scheduled_expected") or 0.0),
-                not_paid_amount=float(raw_tally.get("not_paid_amount") or 0.0),
-                not_paid_count=int(raw_tally.get("not_paid_count") or 0),
-                not_paid_clients=np_clients,
-                excess_amount=float(raw_tally.get("excess_amount") or 0.0),
-                excess_count=int(raw_tally.get("excess_count") or 0),
-                actual_repayments=float(raw_tally.get("actual_repayments") or 0.0),
-                actual_savings=float(raw_tally.get("actual_savings") or 0.0),
-                actual_cash_collected=float(raw_tally.get("actual_cash_collected") or 0.0),
-                bank_deposited=float(raw_tally.get("bank_deposited") or 0.0),
-                closing_cash_balance=float(raw_tally.get("closing_cash_balance") or 0.0),
-                is_cash_balanced=bool(raw_tally.get("is_cash_balanced", True)),
-                arrears_float=float(raw_tally.get("arrears_float") or 0.0),
-                total_reps_count=int(raw_tally.get("total_reps_count") or 0)
+    if raw_tally:
+        np_clients = [
+            TallyNotPaidClient(
+                name=c.get("name", "Unknown"),
+                code=c.get("code", ""),
+                expected=float(c.get("expected") or 0.0),
+                shortfall=float(c.get("shortfall") or 0.0),
+                is_partial=bool(c.get("is_partial", False))
             )
-    except Exception as ex_tally:
-        print(f"Error getting reconciliation tally: {ex_tally}")
+            for c in (raw_tally.get("not_paid_clients") or [])
+        ]
+        tally_model = BranchReconciliationTally(
+            scheduled_expected=float(raw_tally.get("scheduled_expected") or 0.0),
+            not_paid_amount=float(raw_tally.get("not_paid_amount") or 0.0),
+            not_paid_count=int(raw_tally.get("not_paid_count") or 0),
+            not_paid_clients=np_clients,
+            excess_amount=float(raw_tally.get("excess_amount") or 0.0),
+            excess_count=int(raw_tally.get("excess_count") or 0),
+            actual_repayments=float(raw_tally.get("actual_repayments") or 0.0),
+            actual_savings=float(raw_tally.get("actual_savings") or 0.0),
+            actual_cash_collected=float(raw_tally.get("actual_cash_collected") or 0.0),
+            bank_deposited=float(raw_tally.get("bank_deposited") or 0.0),
+            closing_cash_balance=float(raw_tally.get("closing_cash_balance") or 0.0),
+            is_cash_balanced=bool(raw_tally.get("is_cash_balanced", True)),
+            arrears_float=float(raw_tally.get("arrears_float") or 0.0),
+            total_reps_count=int(raw_tally.get("total_reps_count") or 0)
+        )
 
     # 9. Pending Branch Reversal Requests (app.py L11591-11609)
     pending_reversals: List[PendingReversalItem] = []
-    try:
-        q_pending = uow.client.table("correction_requests") \
-            .select("*, app_users!correction_requests_requested_by_fkey(username, full_name)") \
-            .eq("status", "Pending") \
-            .eq("branch_id", branch_id) \
-            .order("created_at", desc=False) \
-            .execute()
-        for req in (q_pending.data or []):
-            u_data = req.get("app_users")
-            req_user = (u_data.get("full_name") or u_data.get("username")) if isinstance(u_data, dict) else "Officer"
-            pending_reversals.append(PendingReversalItem(
-                id=str(req.get("id")),
-                record_id=str(req.get("record_id")),
-                record_type=str(req.get("record_type")),
-                reason=str(req.get("reason") or ""),
-                requested_by=str(req.get("requested_by") or ""),
-                requested_by_name=req_user,
-                created_at=str(req.get("created_at") or ""),
-                status=str(req.get("status") or "Pending")
-            ))
-    except Exception as ex_rev:
-        print(f"Error fetching pending reversals: {ex_rev}")
+    for req in raw_pending_rev:
+        u_data = req.get("app_users")
+        req_user = (u_data.get("full_name") or u_data.get("username")) if isinstance(u_data, dict) else "Officer"
+        pending_reversals.append(PendingReversalItem(
+            id=str(req.get("id")),
+            record_id=str(req.get("record_id")),
+            record_type=str(req.get("record_type")),
+            reason=str(req.get("reason") or ""),
+            requested_by=str(req.get("requested_by") or ""),
+            requested_by_name=req_user,
+            created_at=str(req.get("created_at") or ""),
+            status=str(req.get("status") or "Pending")
+        ))
 
     # 10. Recent Treasury Transactions for Flagging (app.py L11652-11671)
     treasury_tx_options: List[TreasuryTransactionOption] = []
-    try:
-        res_tx = uow.client.table("treasury_transactions") \
-            .select("*") \
-            .eq("branch_id", branch_id) \
-            .order("created_at", desc=True) \
-            .limit(25) \
-            .execute()
-        for t in (res_tx.data or []):
-            t_id = str(t.get("id", ""))
-            t_type = str(t.get("transaction_type") or "")
-            t_amt = float(t.get("amount") or 0.0)
-            t_dt = str(t.get("posting_date") or t.get("created_at") or "")[:10]
-            t_rem = str(t.get("remarks") or "")
-            lbl = f"[{t_type}] {t_dt} | ₦{t_amt:,.2f} — {t_rem[:30]} | Ref: {t_id[:8]}"
-            treasury_tx_options.append(TreasuryTransactionOption(
-                id=t_id,
-                transaction_type=t_type,
-                amount=t_amt,
-                posting_date=t_dt,
-                remarks=t_rem,
-                label=lbl
-            ))
-    except Exception as ex_tx:
-        print(f"Error fetching treasury transactions: {ex_tx}")
+    for t in raw_treasury_tx:
+        t_id = str(t.get("id", ""))
+        t_type = str(t.get("transaction_type") or "")
+        t_amt = float(t.get("amount") or 0.0)
+        t_dt = str(t.get("posting_date") or t.get("created_at") or "")[:10]
+        t_rem = str(t.get("remarks") or "")
+        lbl = f"[{t_type}] {t_dt} | ₦{t_amt:,.2f} — {t_rem[:30]} | Ref: {t_id[:8]}"
+        treasury_tx_options.append(TreasuryTransactionOption(
+            id=t_id,
+            transaction_type=t_type,
+            amount=t_amt,
+            posting_date=t_dt,
+            remarks=t_rem,
+            label=lbl
+        ))
 
     inflows = MasterCashbookInflows(
         opening_balance=auto_opening,
@@ -442,6 +470,7 @@ def save_master_cashbook_manual_entries(
 def get_co_aggregation(
     date_str: Optional[str] = Query(None, alias="date", description="Target ISO date (YYYY-MM-DD)"),
     officer: Optional[str] = Query(None, description="Target Credit Officer username"),
+    force_rebuild: bool = Query(False, description="Force recomputation of officer projection"),
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
@@ -495,8 +524,10 @@ def get_co_aggregation(
 
     if officer_uuid and branch_id:
         try:
-            uow.cashbook.rebuild_projection(branch_id, target_date, officer_id=officer_uuid)
             res_co = uow.client.table("co_cashbooks").select("*").eq("date", iso_date).eq("branch_id", branch_id).eq("officer_id", officer_uuid).execute()
+            if not res_co.data or force_rebuild:
+                uow.cashbook.rebuild_projection(branch_id, target_date, officer_id=officer_uuid)
+                res_co = uow.client.table("co_cashbooks").select("*").eq("date", iso_date).eq("branch_id", branch_id).eq("officer_id", officer_uuid).execute()
             if res_co.data:
                 c = res_co.data[0]
                 bf_cash = float(c.get("opening_balance") or 0)

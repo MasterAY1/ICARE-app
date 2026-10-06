@@ -147,9 +147,20 @@ def get_portfolio_overview(
         pass
 
     try:
+        # Resolve target officer to filter assigned products (Streamlit app.py L12384-12400)
+        target_username = sel_officer if (sel_officer and sel_officer != "All") else (scope.username if scope.role in ["CO", "Credit Officer", "Officer"] else None)
+        allowed_p = []
+        if target_username:
+            u_res = uow.client.table("app_users").select("extra_fields").eq("username", target_username).execute()
+            if u_res.data:
+                extra = u_res.data[0].get("extra_fields") or {}
+                allowed_p = extra.get("allowed_products", [])
+
         # Products
         p_res = uow.client.table("loan_products").select("name").execute()
         prods = sorted(list(set(p["name"] for p in (p_res.data or []) if p.get("name"))))
+        if allowed_p and isinstance(allowed_p, list) and len(allowed_p) > 0:
+            prods = [p for p in prods if p in allowed_p]
         allowed_products += prods
     except Exception:
         pass
@@ -209,6 +220,7 @@ def get_portfolio_overview(
             available_branches=available_branches,
             available_officers=available_officers,
             allowed_products=allowed_products,
+            available_products=allowed_products,
             available_groups=available_groups,
             time_periods=["Today", "Yesterday", "Current Month", "Last Month", "Custom Date Range"]
         ),
@@ -328,8 +340,10 @@ def get_client_dossier(
     repayment_rows = []
     if isinstance(r_hist, pd.DataFrame) and not r_hist.empty:
         for _, row in r_hist.iterrows():
+            rid = str(row.get("id") or "")
             repayment_rows.append({
-                "id": str(row.get("id") or ""),
+                "id": rid,
+                "repayment_id": rid,
                 "date": str(row.get("date") or "")[:10],
                 "amount_collected": float(row.get("amount_paid") or 0.0),
                 "status": str(row.get("payment_status") or "PAID"),

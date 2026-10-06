@@ -6,12 +6,14 @@ Enforces 100% financial metric reconciliation with DashboardService and AuditRep
 """
 from typing import Dict, Any, List, Optional
 from datetime import date, datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 
 from interfaces.unit_of_work import UnitOfWork
 from services.rbac_scope_service import RBACScope, RBACScopeService
 from services.savings_service import SavingsService
 from services.schedule_service import ScheduleService
+from database.query_utils import fetch_all_paginated
 
 
 class PortfolioService:
@@ -66,43 +68,50 @@ class PortfolioService:
             end_date = date.today()
 
 
-        # 1. Fetch Loans & Clients based on scope
-        loans_raw = []
-        clients_raw = []
-        repayments_today = []
-
-        try:
-            # Query active & historical loans
-            l_query = uow.client.table("loans").select("*, clients(name, client_code), loan_products(name, repayment_cycle), app_users(username), branches(name)")
-            
-            # Apply scope filter
-            if scope.scope_level == "OFFICER":
-                if scope.user_id:
+        # 1. Concurrently Fetch Loans, Clients & Groups based on scope
+        def _fetch_loans():
+            try:
+                l_query = uow.client.table("loans").select("*, clients(name, client_code), loan_products(name, repayment_cycle), app_users(username), branches(name)")
+                if scope.scope_level == "OFFICER" and scope.user_id:
                     l_query = l_query.eq("officer_id", scope.user_id)
-            elif scope.scope_level == "BRANCH":
-                if scope.branch_id:
+                elif scope.scope_level == "BRANCH" and scope.branch_id:
                     l_query = l_query.eq("branch_id", scope.branch_id)
-            elif scope.scope_level == "REGION":
-                if scope.assigned_branch_ids:
+                elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
                     l_query = l_query.in_("branch_id", scope.assigned_branch_ids)
+                return fetch_all_paginated(l_query)
+            except Exception:
+                return []
 
-            l_res = l_query.execute()
-            loans_raw = l_res.data or []
-        except Exception:
-            loans_raw = []
+        def _fetch_clients():
+            try:
+                c_query = uow.client.table("clients").select("*, client_statuses(name, color_code, icon)")
+                if scope.scope_level == "OFFICER" and scope.user_id:
+                    c_query = c_query.eq("officer_id", scope.user_id)
+                elif scope.scope_level == "BRANCH" and scope.branch_id:
+                    c_query = c_query.eq("branch_id", scope.branch_id)
+                elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
+                    c_query = c_query.in_("branch_id", scope.assigned_branch_ids)
+                return fetch_all_paginated(c_query)
+            except Exception:
+                return []
 
-        try:
-            c_query = uow.client.table("clients").select("*, client_statuses(name, color_code, icon)")
-            if scope.scope_level == "OFFICER" and scope.user_id:
-                c_query = c_query.eq("officer_id", scope.user_id)
-            elif scope.scope_level == "BRANCH" and scope.branch_id:
-                c_query = c_query.eq("branch_id", scope.branch_id)
-            elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
-                c_query = c_query.in_("branch_id", scope.assigned_branch_ids)
-            c_res = c_query.execute()
-            clients_raw = c_res.data or []
-        except Exception:
-            clients_raw = []
+        def _fetch_groups():
+            try:
+                g_query = uow.client.table("groups").select("group_id, name, group_number, meeting_day")
+                return fetch_all_paginated(g_query)
+            except Exception:
+                return []
+
+        with ThreadPoolExecutor(max_workers=3) as init_exec:
+            fut_l = init_exec.submit(_fetch_loans)
+            fut_c = init_exec.submit(_fetch_clients)
+            fut_g = init_exec.submit(_fetch_groups)
+
+            loans_raw = fut_l.result()
+            clients_raw = fut_c.result()
+            _raw_groups = fut_g.result()
+
+        repayments_today = []
 
         # 2.5 Filter by Loan Product
         is_asset_product = bool(selected_product and ("asset" in str(selected_product).lower()))
@@ -117,29 +126,23 @@ class PortfolioService:
         # Authoritative group name lookup from clients.group_id -> groups.name
         group_map = {}
         group_name_by_id = {}
-        _raw_groups = []
-        try:
-            g_res = uow.client.table("groups").select("group_id, name, group_number, meeting_day").execute()
-            _raw_groups = g_res.data or []
-            _g_name_counts = {}
-            for _g in _raw_groups:
-                _gn = _g.get("name", "")
-                _g_name_counts[_gn] = _g_name_counts.get(_gn, 0) + 1
+        _g_name_counts = {}
+        for _g in _raw_groups:
+            _gn = _g.get("name", "")
+            _g_name_counts[_gn] = _g_name_counts.get(_gn, 0) + 1
 
-            for _g in _raw_groups:
-                gid = str(_g["group_id"])
-                gn = _g.get("name", "Unknown")
-                if _g_name_counts.get(gn, 1) > 1:
-                    group_name_by_id[gid] = f"{gn} (#{_g.get('group_number', '?')} - {_g.get('meeting_day', '?')})"
-                else:
-                    group_name_by_id[gid] = gn
+        for _g in _raw_groups:
+            gid = str(_g.get("group_id") or "")
+            gn = _g.get("name", "Unknown")
+            if _g_name_counts.get(gn, 1) > 1:
+                group_name_by_id[gid] = f"{gn} (#{_g.get('group_number', '?')} - {_g.get('meeting_day', '?')})"
+            else:
+                group_name_by_id[gid] = gn
 
-            for c in clients_raw:
-                cid_str = str(c.get("client_id") or c.get("id"))
-                gid_str = str(c.get("group_id") or "")
-                group_map[cid_str] = group_name_by_id.get(gid_str, "Individual")
-        except Exception:
-            pass
+        for c in clients_raw:
+            cid_str = str(c.get("client_id") or c.get("id"))
+            gid_str = str(c.get("group_id") or "")
+            group_map[cid_str] = group_name_by_id.get(gid_str, "Individual")
 
         # 2. Filter in memory by active dropdown selections (BM, AM, Admin)
         if selected_branch and selected_branch != "All":
@@ -164,58 +167,34 @@ class PortfolioService:
             loans_raw = [l for l in loans_raw if group_map.get(str(l.get("client_id")), "Individual") == selected_group]
             clients_raw = [c for c in clients_raw if group_map.get(str(c.get("client_id") or c.get("id")), "Individual") == selected_group]
 
-        # 1. Fetch Savings across All 3 Tiers (Individual, Group, Misc) — Cumulative up to end_date & Period within [start_date, end_date] (BR-SAV-001 & BR-SAV-002)
+        # 1. Fetch Savings across All 3 Tiers (Individual, Group, Misc), Repayments & Payoffs Concurrently
         filtered_cids = [str(c.get("client_id") or c.get("id")) for c in clients_raw if (c.get("client_id") or c.get("id"))]
-        savings_map = {}
-        total_ind_dep = 0.0
-        total_ind_wth = 0.0
-        period_ind_dep = 0.0
-        period_ind_wth = 0.0
-        period_ind_dep_cids = set()
-        period_ind_wd_cids = set()
+        active_loan_ids = list(set([str(l.get("loan_id")) for l in loans_raw if l.get("loan_id") and str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]]))
         
         start_date_str = start_date.isoformat()
         end_date_str = end_date.isoformat()
 
-        # A. Individual Savings (Cumulative as-of-date position + Period flows)
-        try:
-            if filtered_cids:
-                s_query = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount, posting_date").in_("client_id", filtered_cids).lte("posting_date", end_date_str)
-                s_res = s_query.execute()
-                for s in (s_res.data or []):
-                    cid_str = str(s.get("client_id"))
-                    dep = float(s.get("deposit_amount") or 0.0)
-                    wth = float(s.get("withdrawal_amount") or 0.0)
-                    p_date = str(s.get("posting_date") or "")[:10]
-                    
-                    total_ind_dep += dep
-                    total_ind_wth += wth
-                    
-                    if start_date_str <= p_date <= end_date_str:
-                        if dep > 0:
-                            period_ind_dep += dep
-                            period_ind_dep_cids.add(cid_str)
-                        if wth > 0:
-                            period_ind_wth += wth
-                            period_ind_wd_cids.add(cid_str)
-                    
-                    if cid_str not in savings_map:
-                        savings_map[cid_str] = {'dep': 0.0, 'wth': 0.0, 'bal': 0.0}
-                    savings_map[cid_str]['dep'] += dep
-                    savings_map[cid_str]['wth'] += wth
-                    savings_map[cid_str]['bal'] += (dep - wth)
-        except Exception:
-            pass
+        def _fetch_ind_savings():
+            if not filtered_cids:
+                return []
+            try:
+                s_query = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount, posting_date, reference, remarks")
+                if scope.scope_level == "OFFICER" and scope.user_id:
+                    s_query = s_query.eq("officer_id", scope.user_id)
+                elif scope.scope_level == "BRANCH" and scope.branch_id:
+                    s_query = s_query.eq("branch_id", scope.branch_id)
+                elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
+                    s_query = s_query.in_("branch_id", scope.assigned_branch_ids)
+                s_query = s_query.lte("posting_date", end_date_str)
+                rows = fetch_all_paginated(s_query)
+                cid_set = set(filtered_cids)
+                return [r for r in rows if str(r.get("client_id")) in cid_set]
+            except Exception:
+                return []
 
-        # B. Group Savings (Cumulative as-of-date position + Period flows)
-        group_savings_bal_map = {}
-        total_grp_dep = 0.0
-        total_grp_wth = 0.0
-        period_grp_dep = 0.0
-        period_grp_wth = 0.0
-        period_grp_dep_gids = set()
-        period_grp_wd_gids = set()
-        if filtered_cids:
+        def _fetch_grp_savings():
+            if not filtered_cids:
+                return {"map": {}, "rows": []}
             try:
                 gm_query = uow.client.table("client_memberships").select("client_id, group_id, groups(name)").in_("client_id", filtered_cids).execute()
                 g_id_name_map = {}
@@ -226,65 +205,204 @@ class PortfolioService:
                         if selected_group and selected_group != "All" and gname != selected_group:
                             continue
                         g_id_name_map[gid] = gname
-
                 all_gids = list(g_id_name_map.keys())
                 if all_gids:
-                    gs_all = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount, posting_date").in_("group_id", all_gids).lte("posting_date", end_date_str).execute()
-                    for gs in (gs_all.data or []):
-                        gid = str(gs.get("group_id"))
-                        gname = g_id_name_map.get(gid, "Individual")
-                        dep = float(gs.get("deposit_amount") or 0.0)
-                        wth = float(gs.get("withdrawal_amount") or 0.0)
-                        p_date = str(gs.get("posting_date") or "")[:10]
-                        
-                        total_grp_dep += dep
-                        total_grp_wth += wth
-                        if start_date_str <= p_date <= end_date_str:
-                            if dep > 0:
-                                period_grp_dep += dep
-                                period_grp_dep_gids.add(gid)
-                            if wth > 0:
-                                period_grp_wth += wth
-                                period_grp_wd_gids.add(gid)
-                        group_savings_bal_map[gname] = group_savings_bal_map.get(gname, 0.0) + (dep - wth)
+                    gs_all = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount, posting_date").in_("group_id", all_gids).lte("posting_date", end_date_str)
+                    return {"map": g_id_name_map, "rows": fetch_all_paginated(gs_all)}
             except Exception:
                 pass
+            return {"map": {}, "rows": []}
 
-        # C. Misc Savings (Internal Savings) — Attributed to Designated Officer (BR-SAV-002)
+        def _fetch_misc_savings():
+            try:
+                active_branch_name = selected_branch if (selected_branch and selected_branch != "All") else getattr(scope, "branch_name", None)
+                m_off_id, m_off_name = SavingsService.get_branch_misc_savings_officer(uow, active_branch_name) if active_branch_name else ("", "")
+                should_include_misc = True
+                if selected_group and selected_group != "All":
+                    should_include_misc = False
+                elif selected_officer and selected_officer != "All":
+                    officer_sel_clean = str(selected_officer).strip().lower()
+                    should_include_misc = bool(m_off_name and (officer_sel_clean == m_off_name.lower() or officer_sel_clean == str(m_off_id).lower() or "co3" in officer_sel_clean))
+                elif scope.scope_level == "OFFICER" and scope.user_id:
+                    should_include_misc = bool(m_off_name and (str(scope.user_id) == str(m_off_id) or str(scope.username).lower() == m_off_name.lower() or "co3" in str(scope.username).lower()))
+
+                if should_include_misc:
+                    misc_q = uow.client.table("internal_savings").select("deposit_amount, withdrawal_amount, posting_date, branch").lte("posting_date", end_date_str)
+                    if active_branch_name:
+                        misc_q = misc_q.ilike("branch", f"%{active_branch_name}%")
+                    return fetch_all_paginated(misc_q)
+            except Exception:
+                pass
+            return []
+
+        def _fetch_repayments_period():
+            try:
+                s_d_str = start_date.strftime("%Y-%m-%d")
+                e_d_str = end_date.strftime("%Y-%m-%d") + "T23:59:59"
+                r_query = uow.client.table("repayments").select("*").gte("date", s_d_str).lte("date", e_d_str)
+                if scope.scope_level == "OFFICER" and scope.user_id:
+                    r_query = r_query.eq("officer_id", scope.user_id)
+                elif scope.scope_level == "BRANCH" and scope.branch_id:
+                    r_query = r_query.eq("branch_id", scope.branch_id)
+                elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
+                    r_query = r_query.in_("branch_id", scope.assigned_branch_ids)
+                raw_reps = fetch_all_paginated(r_query)
+                reps = [
+                    r for r in raw_reps 
+                    if str(r.get("transaction_type", "")).upper() != "ONBOARDING_LEGACY" 
+                    and str(r.get("note", "")).strip() != "Legacy Repayments Onboarded"
+                ]
+                if selected_branch and selected_branch != "All":
+                    b_id = None
+                    try: b_id = uow.loans._resolve_branch_id(selected_branch)
+                    except: pass
+                    reps = [r for r in reps if str(r.get("branch_id")).lower() == str(b_id).lower() or str(r.get("branch") or "").lower() == selected_branch.lower()]
+                if selected_officer and selected_officer != "All":
+                    o_id = None
+                    try: o_id = uow.loans._resolve_officer_id(selected_officer)
+                    except: pass
+                    reps = [r for r in reps if str(r.get("officer_id")).lower() == str(o_id).lower() or str(r.get("officer") or "").lower() == selected_officer.lower()]
+                if selected_product and selected_product != "All":
+                    prod_loan_ids = set(str(l.get("loan_id")) for l in loans_raw if l.get("loan_id"))
+                    reps = [r for r in reps if r.get("loan_id") and str(r.get("loan_id")) in prod_loan_ids]
+                if selected_group and selected_group != "All":
+                    reps = [r for r in reps if group_map.get(str(r.get("client_id")), "Individual") == selected_group]
+                return reps
+            except Exception:
+                return []
+
+        def _fetch_lifetime_repayments():
+            lt_map = {}
+            try:
+                lt_query = uow.client.table("repayments").select("loan_id, amount_paid")
+                if scope.scope_level == "OFFICER" and scope.user_id:
+                    lt_query = lt_query.eq("officer_id", scope.user_id)
+                elif scope.scope_level == "BRANCH" and scope.branch_id:
+                    lt_query = lt_query.eq("branch_id", scope.branch_id)
+                elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
+                    lt_query = lt_query.in_("branch_id", scope.assigned_branch_ids)
+                elif active_loan_ids:
+                    lt_query = lt_query.in_("loan_id", active_loan_ids[:200])
+                rows = fetch_all_paginated(lt_query)
+                for r in rows:
+                    lid_s = str(r.get("loan_id"))
+                    amt = float(r.get("amount_paid") or 0.0)
+                    lt_map[lid_s] = lt_map.get(lid_s, 0.0) + amt
+            except Exception:
+                pass
+            return lt_map
+
+        def _fetch_payoffs():
+            try:
+                payoff_q = uow.client.table("loan_payoff_excess_records").select("*, loans(loan_products(name)), clients(name, client_code), app_users(username, full_name)").gte("date", start_date_str).lte("date", end_date_str)
+                if scope.scope_level == "OFFICER" and scope.user_id:
+                    payoff_q = payoff_q.eq("officer_id", scope.user_id)
+                elif scope.scope_level == "BRANCH" and scope.branch_id:
+                    payoff_q = payoff_q.eq("branch_id", scope.branch_id)
+                elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
+                    payoff_q = payoff_q.in_("branch_id", scope.assigned_branch_ids)
+                return fetch_all_paginated(payoff_q)
+            except Exception:
+                return []
+
+        with ThreadPoolExecutor(max_workers=6) as stage2_exec:
+            fut_ind = stage2_exec.submit(_fetch_ind_savings)
+            fut_grp = stage2_exec.submit(_fetch_grp_savings)
+            fut_misc = stage2_exec.submit(_fetch_misc_savings)
+            fut_rep_p = stage2_exec.submit(_fetch_repayments_period)
+            fut_lt_rep = stage2_exec.submit(_fetch_lifetime_repayments)
+            fut_payoffs = stage2_exec.submit(_fetch_payoffs)
+
+            ind_savings_rows = fut_ind.result()
+            grp_savings_data = fut_grp.result()
+            misc_savings_rows = fut_misc.result()
+            repayments_today = fut_rep_p.result()
+            lifetime_repayments_map = fut_lt_rep.result()
+            prefetched_payoffs = fut_payoffs.result()
+
+        savings_map = {}
+        total_ind_dep = 0.0
+        total_ind_wth = 0.0
+        period_ind_dep = 0.0
+        period_ind_wth = 0.0
+        period_ind_dep_cids = set()
+        period_ind_wd_cids = set()
+
+        has_bf_opening = any(s.get("reference") == "OPENING-SAVINGS-BF" for s in ind_savings_rows)
+
+        # A. Process Individual Savings
+        for s in ind_savings_rows:
+            cid_str = str(s.get("client_id"))
+            dep = float(s.get("deposit_amount") or 0.0)
+            wth = float(s.get("withdrawal_amount") or 0.0)
+            p_date = str(s.get("posting_date") or "")[:10]
+            ref = str(s.get("reference") or "")
+            rem = str(s.get("remarks") or "").lower()
+
+            # Exclude legacy pre-baseline test onboarding records that duplicate 2026-08-31 opening balance
+            if ref.startswith("ONBOARDING") or "onboarding" in rem or p_date == "1970-01-01":
+                continue
+            if has_bf_opening and p_date < "2026-08-31":
+                continue
+            
+            total_ind_dep += dep
+            total_ind_wth += wth
+            
+            if start_date_str <= p_date <= end_date_str:
+                if dep > 0:
+                    period_ind_dep += dep
+                    period_ind_dep_cids.add(cid_str)
+                if wth > 0:
+                    period_ind_wth += wth
+                    period_ind_wd_cids.add(cid_str)
+            
+            if cid_str not in savings_map:
+                savings_map[cid_str] = {'dep': 0.0, 'wth': 0.0, 'bal': 0.0}
+            savings_map[cid_str]['dep'] += dep
+            savings_map[cid_str]['wth'] += wth
+            savings_map[cid_str]['bal'] += (dep - wth)
+
+        # B. Process Group Savings
+        group_savings_bal_map = {}
+        total_grp_dep = 0.0
+        total_grp_wth = 0.0
+        period_grp_dep = 0.0
+        period_grp_wth = 0.0
+        period_grp_dep_gids = set()
+        period_grp_wd_gids = set()
+        g_id_name_map = grp_savings_data.get("map", {})
+        for gs in grp_savings_data.get("rows", []):
+            gid = str(gs.get("group_id"))
+            gname = g_id_name_map.get(gid, "Individual")
+            dep = float(gs.get("deposit_amount") or 0.0)
+            wth = float(gs.get("withdrawal_amount") or 0.0)
+            p_date = str(gs.get("posting_date") or "")[:10]
+            
+            total_grp_dep += dep
+            total_grp_wth += wth
+            if start_date_str <= p_date <= end_date_str:
+                if dep > 0:
+                    period_grp_dep += dep
+                    period_grp_dep_gids.add(gid)
+                if wth > 0:
+                    period_grp_wth += wth
+                    period_grp_wd_gids.add(gid)
+            group_savings_bal_map[gname] = group_savings_bal_map.get(gname, 0.0) + (dep - wth)
+
+        # C. Process Misc Savings
         total_misc_dep = 0.0
         total_misc_wth = 0.0
         period_misc_dep = 0.0
         period_misc_wth = 0.0
-        try:
-            from services.savings_service import SavingsService
-            active_branch_name = selected_branch if (selected_branch and selected_branch != "All") else getattr(scope, "branch_name", None)
-            m_off_id, m_off_name = SavingsService.get_branch_misc_savings_officer(uow, active_branch_name) if active_branch_name else ("", "")
-            
-            should_include_misc = True
-            if selected_group and selected_group != "All":
-                should_include_misc = False
-            elif selected_officer and selected_officer != "All":
-                officer_sel_clean = str(selected_officer).strip().lower()
-                should_include_misc = bool(m_off_name and (officer_sel_clean == m_off_name.lower() or officer_sel_clean == str(m_off_id).lower() or "co3" in officer_sel_clean))
-            elif scope.scope_level == "OFFICER" and scope.user_id:
-                should_include_misc = bool(m_off_name and (str(scope.user_id) == str(m_off_id) or str(scope.username).lower() == m_off_name.lower() or "co3" in str(scope.username).lower()))
-
-            if should_include_misc:
-                misc_q = uow.client.table("internal_savings").select("deposit_amount, withdrawal_amount, posting_date, branch").lte("posting_date", end_date_str)
-                if active_branch_name:
-                    misc_q = misc_q.ilike("branch", f"%{active_branch_name}%")
-                misc_res = misc_q.execute()
-                for ms in (misc_res.data or []):
-                    dep = float(ms.get("deposit_amount") or 0.0)
-                    wth = float(ms.get("withdrawal_amount") or 0.0)
-                    p_date = str(ms.get("posting_date") or "")[:10]
-                    total_misc_dep += dep
-                    total_misc_wth += wth
-                    if start_date_str <= p_date <= end_date_str:
-                        period_misc_dep += dep
-                        period_misc_wth += wth
-        except Exception:
-            pass
+        for ms in misc_savings_rows:
+            dep = float(ms.get("deposit_amount") or 0.0)
+            wth = float(ms.get("withdrawal_amount") or 0.0)
+            p_date = str(ms.get("posting_date") or "")[:10]
+            total_misc_dep += dep
+            total_misc_wth += wth
+            if start_date_str <= p_date <= end_date_str:
+                period_misc_dep += dep
+                period_misc_wth += wth
 
         total_savings_deposit = total_ind_dep + total_grp_dep + total_misc_dep
         total_savings_withdrawal = total_ind_wth + total_grp_wth + total_misc_wth
@@ -297,62 +415,6 @@ class PortfolioService:
         period_savings_dep_clients = len(period_ind_dep_cids) + len(period_grp_dep_gids) + (1 if period_misc_dep > 0 else 0)
         period_savings_wd_clients = len(period_ind_wd_cids) + len(period_grp_wd_gids) + (1 if period_misc_wth > 0 else 0)
         total_savings_clients = sum(1 for v in savings_map.values() if v.get("bal", 0.0) > 0)
-
-        # 3. Query Repayments within Date Range for Scope (Excluding Historical Onboarding Opening Balances)
-        try:
-            s_d_str = start_date.strftime("%Y-%m-%d")
-            e_d_str = end_date.strftime("%Y-%m-%d") + "T23:59:59"
-            r_query = uow.client.table("repayments").select("*").gte("date", s_d_str).lte("date", e_d_str)
-            if scope.scope_level == "OFFICER" and scope.user_id:
-                r_query = r_query.eq("officer_id", scope.user_id)
-            elif scope.scope_level == "BRANCH" and scope.branch_id:
-                r_query = r_query.eq("branch_id", scope.branch_id)
-            elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
-                r_query = r_query.in_("branch_id", scope.assigned_branch_ids)
-            r_res = r_query.execute()
-            raw_reps = r_res.data or []
-
-            # BR-DASH-006: Filter out historical onboarding opening payments from period operations
-            repayments_today = [
-                r for r in raw_reps 
-                if str(r.get("transaction_type", "")).upper() != "ONBOARDING_LEGACY" 
-                and str(r.get("note", "")).strip() != "Legacy Repayments Onboarded"
-            ]
-
-            if selected_branch and selected_branch != "All":
-                b_id = None
-                try: b_id = uow.loans._resolve_branch_id(selected_branch)
-                except: pass
-                repayments_today = [r for r in repayments_today if str(r.get("branch_id")).lower() == str(b_id).lower() or str(r.get("branch") or "").lower() == selected_branch.lower()]
-            
-            if selected_officer and selected_officer != "All":
-                o_id = None
-                try: o_id = uow.loans._resolve_officer_id(selected_officer)
-                except: pass
-                repayments_today = [r for r in repayments_today if str(r.get("officer_id")).lower() == str(o_id).lower() or str(r.get("officer") or "").lower() == selected_officer.lower()]
-
-            if selected_product and selected_product != "All":
-                prod_loan_ids = set(str(l.get("loan_id")) for l in loans_raw if l.get("loan_id"))
-                repayments_today = [r for r in repayments_today if r.get("loan_id") and str(r.get("loan_id")) in prod_loan_ids]
-                
-        except Exception:
-            repayments_today = []
-
-        if selected_group and selected_group != "All":
-            repayments_today = [r for r in repayments_today if group_map.get(str(r.get("client_id")), "Individual") == selected_group]
-
-        # 4. Fetch Lifetime Repayments for Dynamic Outstanding Balance (Includes Historical Onboarding Payments)
-        lifetime_repayments_map = {}
-        try:
-            active_loan_ids = list(set([str(l.get("loan_id")) for l in loans_raw if l.get("loan_id") and str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]]))
-            if active_loan_ids:
-                lt_query = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", active_loan_ids).execute()
-                for r in (lt_query.data or []):
-                    lid_s = str(r.get("loan_id"))
-                    amt = float(r.get("amount_paid") or 0.0)
-                    lifetime_repayments_map[lid_s] = lifetime_repayments_map.get(lid_s, 0.0) + amt
-        except Exception:
-            lifetime_repayments_map = {}
 
         # Build client active loans map for dynamic lifecycle synchronization (BR-CLI-003, BR-CLI-005)
         clients_with_active_loans = set()
@@ -368,13 +430,8 @@ class PortfolioService:
                 if out_bal > 0:
                     clients_with_active_loans.add(cid_s)
                 elif out_bal <= 0 and act_cred > 0:
-                    # Self-heal loan status to Completed if zero balance
+                    # Dynamic loan status reflection in memory
                     l["status"] = "Completed"
-                    try:
-                        from services.client_status_service import ClientStatusService
-                        ClientStatusService.on_loan_repayment_check(uow, cid_s, lid_s)
-                    except Exception:
-                        pass
 
         # 5. Aggregations & Summary Calculations from Authoritative Client Statuses & Dynamic Balances (BR-CLI-006)
         total_clients_count = len(clients_raw)
@@ -385,22 +442,12 @@ class PortfolioService:
             cs = c.get("client_statuses")
             s_name = cs.get("name") if isinstance(cs, dict) else (c.get("status") or "Registered")
             
-            # Read-through self-healing guard when viewing overall scope
+            # Dynamic lifecycle synchronization in memory without read-time DB mutations
             if (not selected_product or selected_product == "All") and (not selected_group or selected_group == "All"):
                 if s_name == "On Loan" and cid_str not in clients_with_active_loans:
                     s_name = "Completed"
-                    try:
-                        from services.client_status_service import ClientStatusService
-                        ClientStatusService.transition_status(uow, cid_str, "Completed", reason="Dynamic loan payoff (Outstanding = ₦0)", trigger_type="SYSTEM")
-                    except Exception:
-                        pass
                 elif s_name in ["Registered", "Pending Loan", "Completed"] and cid_str in clients_with_active_loans:
                     s_name = "On Loan"
-                    try:
-                        from services.client_status_service import ClientStatusService
-                        ClientStatusService.transition_status(uow, cid_str, "On Loan", reason="Active loan with balance > 0", trigger_type="SYSTEM")
-                    except Exception:
-                        pass
 
             resolved_client_status[cid_str] = s_name
             status_map[s_name] = status_map.get(s_name, 0) + 1
@@ -522,21 +569,11 @@ class PortfolioService:
 
         # Authoritative Full Payoffs and Excess Payments from loan_payoff_excess_records (BR-DASH-005)
         has_authoritative_payoffs = False
-        payoff_records = []
+        payoff_records = list(prefetched_payoffs)
         loans_by_id_map = {str(l.get("loan_id")): l for l in loans_raw if l.get("loan_id")}
         clients_by_id_map = {str(c.get("client_id") or c.get("id")): c for c in clients_raw if (c.get("client_id") or c.get("id"))}
 
         try:
-            payoff_q = uow.client.table("loan_payoff_excess_records").select("*, loans(loan_products(name)), clients(name, client_code), app_users(username, full_name)").gte("date", s_d_str_iso).lte("date", e_d_str_iso)
-            if scope.scope_level == "OFFICER" and scope.user_id:
-                payoff_q = payoff_q.eq("officer_id", scope.user_id)
-            elif scope.scope_level == "BRANCH" and scope.branch_id:
-                payoff_q = payoff_q.eq("branch_id", scope.branch_id)
-            elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
-                payoff_q = payoff_q.in_("branch_id", scope.assigned_branch_ids)
-
-            p_data_res = payoff_q.execute()
-            payoff_records = p_data_res.data or []
 
             if selected_branch and selected_branch != "All":
                 b_id = None
@@ -878,6 +915,7 @@ class PortfolioService:
                         "Lifecycle Status": c_lifecycle_status
                     })
 
+        client_rows.sort(key=lambda r: str(r.get("Client Code") or ""))
         detailed_client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client ID", "Client Code", "Client Name", "Group", "Loan Product", "Loan Category", "Loan ID", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Period Excess Paid", "Status", "Lifecycle Status"])
         raw_client_codes = sorted(list(set([r["Client Code"] for r in client_rows if r.get("Client Code") and str(r.get("Client Code")).strip() not in ["", "N/A", "None"]]))) if client_rows else []
         

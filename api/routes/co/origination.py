@@ -5,9 +5,11 @@ and ClientStatusService directly against Supabase schema with 1:1 parity against
 """
 from typing import Optional, List, Dict, Any
 from datetime import date, datetime, timedelta
+import io
 import re
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from PIL import Image, ImageOps
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Form
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from api.dependencies import get_uow, get_current_user, require_role, check_branch_access
 from services.rbac_scope_service import RBACScopeService
@@ -413,6 +415,94 @@ def register_client(
         message=f"Successfully registered **{name_val}**! Assigned Client ID: **{generated_client_code}**"
     )
 
+
+@router.post("/upload-document")
+async def upload_document(
+    file: UploadFile = File(...),
+    category: str = Form("passport"),
+    client_id: Optional[str] = Form(None),
+    current_user: CurrentUser = Depends(require_role(["CO", "Credit Officer", "Officer", "BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Uploads and optimizes client identity documents & passport photos to Supabase Storage.
+    Automatically compresses and downsamples camera captures to <= 1000px and JPEG quality 75 (~50-120 KB).
+    """
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
+
+    filename = file.filename or "upload"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    is_image = ext in ["jpg", "jpeg", "png", "webp", "jfif"] or (file.content_type and file.content_type.startswith("image/"))
+
+    target_bytes = raw_bytes
+    target_content_type = file.content_type or "application/octet-stream"
+    target_ext = ext or "bin"
+
+    if is_image:
+        try:
+            img = Image.open(io.BytesIO(raw_bytes))
+            try:
+                img = ImageOps.exif_transpose(img)
+            except Exception:
+                pass
+
+            if img.mode in ("RGBA", "P", "LA"):
+                img = img.convert("RGB")
+
+            max_dimension = 1000
+            if img.width > max_dimension or img.height > max_dimension:
+                img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+
+            out_buf = io.BytesIO()
+            img.save(out_buf, format="JPEG", quality=75, optimize=True)
+            target_bytes = out_buf.getvalue()
+            target_content_type = "image/jpeg"
+            target_ext = "jpg"
+        except Exception:
+            pass
+
+    folder_id = client_id or str(uuid.uuid4())
+    safe_category = re.sub(r'[^a-zA-Z0-9_-]', '_', category)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    storage_path = f"{folder_id}/{safe_category}_{timestamp}.{target_ext}"
+
+    try:
+        buckets = uow.client.storage.list_buckets()
+        bucket_names = [b.name for b in buckets]
+        if "client-ids" not in bucket_names:
+            uow.client.storage.create_bucket("client-ids", options={"public": True})
+    except Exception:
+        pass
+
+    try:
+        uow.client.storage.from_("client-ids").upload(
+            path=storage_path,
+            file=target_bytes,
+            file_options={"content-type": target_content_type}
+        )
+    except Exception:
+        try:
+            uow.client.storage.from_("client-ids").remove([storage_path])
+            uow.client.storage.from_("client-ids").upload(
+                path=storage_path,
+                file=target_bytes,
+                file_options={"content-type": target_content_type}
+            )
+        except Exception as upload_err:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to store file: {upload_err}")
+
+    public_url = uow.client.storage.from_("client-ids").get_public_url(storage_path)
+
+    return {
+        "success": True,
+        "url": public_url,
+        "file_name": filename,
+        "size_kb": round(len(target_bytes) / 1024.0, 1),
+        "category": category
+    }
 
 
 @router.post("/apply", response_model=ApplyLoanResponse)
