@@ -39,6 +39,8 @@ from api.schemas.reports import (
     PortfolioPerformanceResponse,
     AreaBranchRow,
     AreaComparisonResponse,
+    MonthlyParityResponse,
+    MonthlyExecutiveStatementsResponse,
 )
 
 router = APIRouter(prefix="/api/v1/reports", tags=["Reports & Export"])
@@ -758,3 +760,164 @@ def export_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+# -----------------------------------------------------------------------------
+# 9. Monthly Executive Parity Matrix & Financial Statements Suite
+# -----------------------------------------------------------------------------
+
+@router.get("/monthly-parity", response_model=MonthlyParityResponse)
+def get_monthly_parity(
+    branch_name: Optional[str] = Query(None),
+    year: int = Query(2026),
+    month: int = Query(9),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Returns the authoritative 14-metric Credit Officers Monthly Summary (Parity Matrix)
+    comparing each Credit Officer side-by-side with Branch Total.
+    """
+    _check_reports_permission(current_user)
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
+
+    # Resolve single branch ID
+    bid = None
+    if isinstance(resolved_branch_id, str):
+        bid = resolved_branch_id
+    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
+        bid = resolved_branch_id[0]
+    else:
+        # Fallback to Ogijo or first branch
+        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
+        if res_b.data:
+            bid = res_b.data[0]["branch_id"]
+
+    if not bid:
+        raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch for Monthly Parity report.")
+
+    result = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=year, month=month)
+    return result
+
+
+@router.get("/official-statements", response_model=MonthlyExecutiveStatementsResponse)
+def get_official_statements(
+    branch_name: Optional[str] = Query(None),
+    year: int = Query(2026),
+    month: int = Query(9),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Returns the Official Executive Trial Balance & Receipts/Payments Account
+    modeled directly after the official paper reporting templates.
+    """
+    _check_reports_permission(current_user)
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
+
+    bid = None
+    if isinstance(resolved_branch_id, str):
+        bid = resolved_branch_id
+    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
+        bid = resolved_branch_id[0]
+    else:
+        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
+        if res_b.data:
+            bid = res_b.data[0]["branch_id"]
+
+    if not bid:
+        raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
+
+    result = ReportService.get_official_trial_balance_and_receipts_payments(uow, branch_id=bid, year=year, month=month)
+    return result
+
+
+@router.get("/export/monthly-parity-excel")
+def export_monthly_parity_excel(
+    branch_name: Optional[str] = Query(None),
+    year: int = Query(2026),
+    month: int = Query(9),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Exports a multi-sheet official executive financial report:
+    Sheet 1: CO Monthly Summary
+    Sheet 2: Official Trial Balance
+    Sheet 3: Receipts & Payments
+    """
+    _check_reports_permission(current_user)
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
+
+    bid = None
+    if isinstance(resolved_branch_id, str):
+        bid = resolved_branch_id
+    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
+        bid = resolved_branch_id[0]
+    else:
+        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
+        if res_b.data:
+            bid = res_b.data[0]["branch_id"]
+
+    matrix_res = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=year, month=month)
+    stmts_res = ReportService.get_official_trial_balance_and_receipts_payments(uow, branch_id=bid, year=year, month=month)
+
+    df_parity = matrix_res.get("dataframe", pd.DataFrame())
+    df_tb = stmts_res.get("trial_balance", {}).get("dataframe", pd.DataFrame())
+    df_rp = stmts_res.get("receipts_and_payments", {}).get("dataframe", pd.DataFrame())
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        if not df_parity.empty:
+            df_parity.to_excel(writer, sheet_name="CO_Monthly_Summary", index=False)
+        if not df_tb.empty:
+            df_tb.to_excel(writer, sheet_name="Official_Trial_Balance", index=False)
+        if not df_rp.empty:
+            df_rp.to_excel(writer, sheet_name="Receipts_and_Payments", index=False)
+
+    excel_bytes = output.getvalue()
+    b_name = matrix_res.get("branch_name", "Branch").replace(" ", "_")
+    filename = f"Executive_Monthly_Report_{b_name}_{year}_{month:02d}.xlsx"
+
+    return StreamingResponse(
+        io.BytesIO(excel_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@router.get("/export/monthly-parity-csv")
+def export_monthly_parity_csv(
+    branch_name: Optional[str] = Query(None),
+    year: int = Query(2026),
+    month: int = Query(9),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """Exports the Monthly Parity Matrix table to CSV."""
+    _check_reports_permission(current_user)
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
+
+    bid = None
+    if isinstance(resolved_branch_id, str):
+        bid = resolved_branch_id
+    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
+        bid = resolved_branch_id[0]
+    else:
+        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
+        if res_b.data:
+            bid = res_b.data[0]["branch_id"]
+
+    matrix_res = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=year, month=month)
+    df_parity = matrix_res.get("dataframe", pd.DataFrame())
+
+    csv_bytes = df_parity.to_csv(index=False).encode('utf-8') if not df_parity.empty else b""
+    b_name = matrix_res.get("branch_name", "Branch").replace(" ", "_")
+    filename = f"CO_Monthly_Summary_{b_name}_{year}_{month:02d}.csv"
+
+    return StreamingResponse(
+        io.BytesIO(csv_bytes),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+

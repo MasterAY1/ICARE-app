@@ -3,7 +3,7 @@ Reports and Export Pydantic Schemas — Phase 11 Parity Migration.
 Models for General Ledger Trial Balance, Savings Summary, Repayment Summary,
 Portfolio Performance, Area Branch Comparison, and Data Exports.
 """
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 from pydantic import BaseModel, Field
 
 
@@ -178,3 +178,90 @@ class AreaComparisonResponse(BaseModel):
     total_area_portfolio: float
     overall_par: float
     rows: List[AreaBranchRow]
+
+
+# --- MONTHLY EXECUTIVE SUITE SCHEMAS ---
+
+class MonthlyParityOfficer(BaseModel):
+    officer_id: str
+    name: str
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+
+
+class MonthlyParityMetricRow(BaseModel):
+    metric: str
+    values: Dict[str, Union[float, int]]
+
+
+class MonthlyParitySummaryCards(BaseModel):
+    disbursed_principal: float
+    upfront_fees: float
+    net_active_credit: float
+    opening_credit: float
+    collections: float
+    closing_credit: float
+    opening_savings: float
+    savings_deposits: float
+    savings_withdrawals: float
+    closing_savings: float
+    bank_deposits: float
+    office_expenses: float
+    active_loans: int
+    active_savers: int
+    gl_debits: float
+    gl_credits: float
+    gl_diff: float
+    is_gl_balanced: bool
+
+
+class MonthlyParityResponse(BaseModel):
+    year: int
+    month: int
+    month_label: str
+    branch_id: str
+    branch_name: str
+    total_col_name: str
+    officers: List[MonthlyParityOfficer]
+    rows: List[MonthlyParityMetricRow]
+    summary_cards: MonthlyParitySummaryCards
+
+
+class OfficialTrialBalanceRow(BaseModel):
+    section: str
+    item: str
+    debit: float
+    credit: float
+
+
+class OfficialTrialBalanceData(BaseModel):
+    rows: List[OfficialTrialBalanceRow]
+    total_debits: float
+    total_credits: float
+    variance: float
+    is_balanced: bool
+
+
+class ReceiptsPaymentsItem(BaseModel):
+    item: str
+    sub_detail: Optional[str] = None
+    amount: float
+
+
+class ReceiptsPaymentsData(BaseModel):
+    receipts: List[ReceiptsPaymentsItem]
+    payments: List[ReceiptsPaymentsItem]
+    total_receipts: float
+    total_payments: float
+    variance: float
+
+
+class MonthlyExecutiveStatementsResponse(BaseModel):
+    branch_name: str
+    area_name: str
+    month_label: str
+    year: int
+    month: int
+    trial_balance: OfficialTrialBalanceData
+    receipts_and_payments: ReceiptsPaymentsData
+

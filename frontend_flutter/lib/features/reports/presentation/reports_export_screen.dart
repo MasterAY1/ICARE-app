@@ -1,4 +1,5 @@
 // ignore_for_file: deprecated_member_use
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -33,6 +34,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // Tab 5: Inspect Officer
   String _inspectOfficer = 'All';
 
+  // Monthly Executive Parity State
+  int _selectedExecMonth = 9;
+  int _selectedExecYear = 2026;
+  int _selectedExecSubTab = 0; // 0: CO Summary, 1: Trial Balance, 2: Receipts & Payments
+
   // Futures
   late Future<ReportsMeta> _metaFuture;
   late Future<TrialBalanceData> _trialBalanceFuture;
@@ -40,6 +46,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   late Future<RepaymentSummaryData> _repaymentFuture;
   late Future<PortfolioPerformanceData> _portfolioFuture;
   late Future<AreaComparisonData> _areaFuture;
+  late Future<MonthlyParityData> _parityFuture;
+  late Future<MonthlyExecutiveStatementsData> _statementsFuture;
 
   final _currencyFormat = NumberFormat('#,##0.00');
   final _intFormat = NumberFormat('#,##0');
@@ -108,6 +116,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         startDate: startStr,
         endDate: endStr,
       );
+      _parityFuture = api.getMonthlyParity(
+        branchName: _selectedBranchName,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+      );
+      _statementsFuture = api.getOfficialStatements(
+        branchName: _selectedBranchName,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+      );
     });
   }
 
@@ -155,6 +173,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     List<String> tabs;
     if (isAm) {
       tabs = [
+        'Monthly Executive Parity',
         'Area Branches Comparison',
         'General Ledger & Trial Balance',
         'Savings Summary',
@@ -164,6 +183,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       ];
     } else {
       tabs = [
+        'Monthly Executive Parity',
         'General Ledger & Trial Balance',
         'Savings Summary',
         'Repayment Summary',
@@ -689,6 +709,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // ---------------------------------------------------------------------------
   Widget _buildActiveTabContent(String tabName, bool isAm) {
     switch (tabName) {
+      case 'Monthly Executive Parity':
+        return _buildMonthlyExecutiveParityTab();
       case 'Area Branches Comparison':
         return _buildAreaComparisonTab();
       case 'General Ledger & Trial Balance':
@@ -704,6 +726,523 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       default:
         return const SizedBox.shrink();
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tab 0: Monthly Executive Parity Suite
+  // ---------------------------------------------------------------------------
+  Widget _buildMonthlyExecutiveParityTab() {
+    final api = ref.read(reportsApiServiceProvider);
+    final monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Controls Row: Month, Year, and Quick Export
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Wrap(
+            spacing: 16,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.spaceBetween,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Month: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+                  const SizedBox(width: 6),
+                  DropdownButton<int>(
+                    value: _selectedExecMonth,
+                    underline: const SizedBox(),
+                    items: List.generate(12, (index) => DropdownMenuItem(
+                      value: index + 1,
+                      child: Text(monthNames[index], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    )),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          _selectedExecMonth = val;
+                          _refreshCurrentTabData();
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 16),
+                  const Text('Year: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+                  const SizedBox(width: 6),
+                  DropdownButton<int>(
+                    value: _selectedExecYear,
+                    underline: const SizedBox(),
+                    items: [2024, 2025, 2026, 2027, 2028].map((y) => DropdownMenuItem(
+                      value: y,
+                      child: Text('$y', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    )).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          _selectedExecYear = val;
+                          _refreshCurrentTabData();
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+              Wrap(
+                spacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.download, size: 16, color: Color(0xFF0F766E)),
+                    label: const Text('Excel Workbook', style: TextStyle(fontSize: 12, color: Color(0xFF0F766E), fontWeight: FontWeight.w700)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF0F766E)),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    onPressed: () async {
+                      try {
+                        final bytes = await api.downloadMonthlyParityExcel(
+                          branchName: _selectedBranchName,
+                          year: _selectedExecYear,
+                          month: _selectedExecMonth,
+                        );
+                        downloadBlobFile(
+                          bytes,
+                          'Executive_Monthly_Report_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.xlsx',
+                          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        );
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Executive Workbook downloaded successfully.')),
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Download failed: $e')),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.table_chart, size: 16, color: Color(0xFF1E293B)),
+                    label: const Text('CO Summary CSV', style: TextStyle(fontSize: 12, color: Color(0xFF1E293B), fontWeight: FontWeight.w700)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    onPressed: () async {
+                      try {
+                        final bytes = await api.downloadMonthlyParityCsv(
+                          branchName: _selectedBranchName,
+                          year: _selectedExecYear,
+                          month: _selectedExecMonth,
+                        );
+                        downloadBlobFile(
+                          bytes,
+                          'CO_Monthly_Summary_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.csv',
+                          'text/csv',
+                        );
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('CO Summary CSV downloaded successfully.')),
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Download failed: $e')),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Future Builder for Data
+        FutureBuilder<MonthlyParityData>(
+          future: _parityFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
+            }
+            if (snapshot.hasError) {
+              return _buildErrorCard(snapshot.error.toString());
+            }
+            final data = snapshot.data;
+            if (data == null) {
+              return _buildEmptyCard('No parity data available for selected month.');
+            }
+
+            final cards = data.summaryCards;
+
+            return Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Executive Monthly Summary — ${data.branchName} Branch (${data.monthLabel})',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Authoritative 100% reconciled monthly position across active credit, repayments, savings, and general ledger.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 8 Summary Cards in Grid
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isMobile = constraints.maxWidth < 600;
+                      final cardW = isMobile ? (constraints.maxWidth - 12) / 2 : 170.0;
+                      return Column(
+                        children: [
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: [
+                              _buildMetricCard('Principal Disbursed', _formatNgn(cards.disbursedPrincipal), width: cardW),
+                              _buildMetricCard('Upfront Fees', _formatNgn(cards.upfrontFees), width: cardW),
+                              _buildMetricCard('Net Active Credit', _formatNgn(cards.netActiveCredit), width: cardW),
+                              _buildMetricCard('Collections', _formatNgn(cards.collections), width: cardW),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: [
+                              _buildMetricCard('Closing Credit Portfolio', _formatNgn(cards.closingCredit), width: cardW),
+                              _buildMetricCard('Closing Savings Balance', _formatNgn(cards.closingSavings), width: cardW),
+                              _buildMetricCard('Bank Deposits (1050)', _formatNgn(cards.bankDeposits), width: cardW),
+                              _buildMetricCard(
+                                'GL Balance Integrity',
+                                cards.isGlBalanced ? '[BALANCED]' : '[OUT OF BALANCE]',
+                                width: cardW,
+                                isAccent: cards.isGlBalanced,
+                                subtitle: 'Debits == Credits',
+                              ),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Sub-Tab Switcher
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.all(4),
+                    child: Wrap(
+                      spacing: 4,
+                      children: [
+                        _buildSubTabButton('Credit Officers Monthly Summary', 0),
+                        _buildSubTabButton('Official Trial Balance', 1),
+                        _buildSubTabButton('Receipts & Payments Account', 2),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Sub-tab content
+                  if (_selectedExecSubTab == 0)
+                    _buildCoMonthlySummaryTable(data)
+                  else if (_selectedExecSubTab == 1)
+                    _buildOfficialTrialBalanceView()
+                  else
+                    _buildReceiptsAndPaymentsView(),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSubTabButton(String label, int index) {
+    final isSelected = _selectedExecSubTab == index;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedExecSubTab = index;
+        });
+      },
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: isSelected ? [const BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1))] : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCoMonthlySummaryTable(MonthlyParityData data) {
+    final officers = data.officers;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildScrollHint(),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
+            headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 12),
+            dataTextStyle: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
+            columnSpacing: 20,
+            columns: [
+              const DataColumn(label: Text('Financial Metric')),
+              ...officers.map((o) => DataColumn(numeric: true, label: Text(o.name))),
+              DataColumn(numeric: true, label: Text(data.totalColName, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)))),
+            ],
+            rows: data.rows.map((r) {
+              final isCount = r.metric.contains('Count');
+              return DataRow(
+                cells: [
+                  DataCell(Text(r.metric, style: const TextStyle(fontWeight: FontWeight.w600))),
+                  ...officers.map((o) {
+                    final val = r.values[o.name];
+                    String disp;
+                    if (val == null) {
+                      disp = '-';
+                    } else if (isCount) {
+                      disp = '${(val as num).toInt()}';
+                    } else {
+                      disp = _formatNgn((val as num).toDouble());
+                    }
+                    return DataCell(Text(disp));
+                  }),
+                  DataCell(
+                    Builder(builder: (_) {
+                      final val = r.values[data.totalColName];
+                      String disp;
+                      if (val == null) {
+                        disp = '-';
+                      } else if (isCount) {
+                        disp = '${(val as num).toInt()}';
+                      } else {
+                        disp = _formatNgn((val as num).toDouble());
+                      }
+                      return Text(disp, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)));
+                    }),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOfficialTrialBalanceView() {
+    return FutureBuilder<MonthlyExecutiveStatementsData>(
+      future: _statementsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
+        }
+        if (snapshot.hasError) {
+          return _buildErrorCard(snapshot.error.toString());
+        }
+        final data = snapshot.data;
+        if (data == null) {
+          return _buildEmptyCard('No trial balance statements available.');
+        }
+
+        final tb = data.trialBalance;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: tb.isBalanced ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: tb.isBalanced ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5)),
+              ),
+              child: Text(
+                'TRIAL BALANCE STATUS: ${tb.isBalanced ? "BALANCED" : "OUT OF BALANCE"} | TOTAL DEBITS: ${_formatNgn(tb.totalDebits)} | TOTAL CREDITS: ${_formatNgn(tb.totalCredits)}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: tb.isBalanced ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildScrollHint(),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
+                headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 12),
+                dataTextStyle: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
+                columnSpacing: 24,
+                columns: const [
+                  DataColumn(label: Text('Section')),
+                  DataColumn(label: Text('Item Description')),
+                  DataColumn(numeric: true, label: Text('Debit (₦)')),
+                  DataColumn(numeric: true, label: Text('Credit (₦)')),
+                ],
+                rows: tb.rows.map((r) {
+                  return DataRow(
+                    cells: [
+                      DataCell(Text(r.section, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F766E)))),
+                      DataCell(Text(r.item)),
+                      DataCell(Text(r.debit > 0 ? _formatNgn(r.debit) : '-')),
+                      DataCell(Text(r.credit > 0 ? _formatNgn(r.credit) : '-')),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildReceiptsAndPaymentsView() {
+    return FutureBuilder<MonthlyExecutiveStatementsData>(
+      future: _statementsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
+        }
+        if (snapshot.hasError) {
+          return _buildErrorCard(snapshot.error.toString());
+        }
+        final data = snapshot.data;
+        if (data == null) {
+          return _buildEmptyCard('No receipts & payments statements available.');
+        }
+
+        final rp = data.receiptsAndPayments;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFF86EFAC)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Total Receipts (Inflows)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
+                        const SizedBox(height: 4),
+                        Text(_formatNgn(rp.totalReceipts), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF166534), fontFamily: 'JetBrains Mono')),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFF93C5FD)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Total Payments (Outflows)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E40AF))),
+                        const SizedBox(height: 4),
+                        Text(_formatNgn(rp.totalPayments), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF1E40AF), fontFamily: 'JetBrains Mono')),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildScrollHint(),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
+                headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 12),
+                dataTextStyle: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
+                columnSpacing: 18,
+                columns: const [
+                  DataColumn(label: Text('Receipts Item')),
+                  DataColumn(label: Text('Receipts Detail')),
+                  DataColumn(numeric: true, label: Text('Receipts (₦)')),
+                  DataColumn(label: Text('Payments Item')),
+                  DataColumn(label: Text('Payments Detail')),
+                  DataColumn(numeric: true, label: Text('Payments (₦)')),
+                ],
+                rows: List.generate(
+                  math.max(rp.receipts.length, rp.payments.length),
+                  (index) {
+                    final r = index < rp.receipts.length ? rp.receipts[index] : null;
+                    final p = index < rp.payments.length ? rp.payments[index] : null;
+                    return DataRow(
+                      cells: [
+                        DataCell(Text(r?.item ?? '', style: const TextStyle(fontWeight: FontWeight.w500))),
+                        DataCell(Text(r?.subDetail ?? '', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))),
+                        DataCell(Text(r != null ? _formatNgn(r.amount) : '-')),
+                        DataCell(Text(p?.item ?? '', style: const TextStyle(fontWeight: FontWeight.w500))),
+                        DataCell(Text(p?.subDetail ?? '', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))),
+                        DataCell(Text(p != null ? _formatNgn(p.amount) : '-')),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------

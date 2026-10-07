@@ -211,4 +211,91 @@ class ReportsApiService {
     );
     return List<int>.from(response.data as List);
   }
+
+  /// 9. Get Monthly Parity Matrix
+  Future<MonthlyParityData> getMonthlyParity({
+    String? branchName,
+    int year = 2026,
+    int month = 9,
+  }) async {
+    final params = <String, dynamic>{
+      'year': year,
+      'month': month,
+    };
+    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+      params['branch_name'] = branchName;
+    }
+
+    final response = await _apiClient.get(
+      '/api/v1/reports/monthly-parity',
+      queryParameters: params,
+    );
+    return MonthlyParityData.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// 10. Get Official Executive Statements (Trial Balance & Receipts/Payments)
+  Future<MonthlyExecutiveStatementsData> getOfficialStatements({
+    String? branchName,
+    int year = 2026,
+    int month = 9,
+  }) async {
+    final params = <String, dynamic>{
+      'year': year,
+      'month': month,
+    };
+    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+      params['branch_name'] = branchName;
+    }
+
+    final response = await _apiClient.get(
+      '/api/v1/reports/official-statements',
+      queryParameters: params,
+    );
+    return MonthlyExecutiveStatementsData.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// 11. Download Executive Monthly Excel Workbook
+  Future<List<int>> downloadMonthlyParityExcel({
+    String? branchName,
+    int year = 2026,
+    int month = 9,
+  }) async {
+    final params = <String, dynamic>{
+      'year': year,
+      'month': month,
+    };
+    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+      params['branch_name'] = branchName;
+    }
+
+    final response = await _apiClient.get(
+      '/api/v1/reports/export/monthly-parity-excel',
+      queryParameters: params,
+      options: Options(responseType: ResponseType.bytes),
+    );
+    return List<int>.from(response.data as List);
+  }
+
+  /// 12. Download CO Monthly Summary CSV
+  Future<List<int>> downloadMonthlyParityCsv({
+    String? branchName,
+    int year = 2026,
+    int month = 9,
+  }) async {
+    final params = <String, dynamic>{
+      'year': year,
+      'month': month,
+    };
+    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+      params['branch_name'] = branchName;
+    }
+
+    final response = await _apiClient.get(
+      '/api/v1/reports/export/monthly-parity-csv',
+      queryParameters: params,
+      options: Options(responseType: ResponseType.bytes),
+    );
+    return List<int>.from(response.data as List);
+  }
 }
+

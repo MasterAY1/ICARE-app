@@ -13493,7 +13493,8 @@ elif page in ["Reports", "Reports & Export"]:
 
     # 6. Navigation Tabs
     if is_am:
-        tab_area, tab_tb, tab_sav, tab_rep, tab_port, tab_export = st.tabs([
+        tab_parity, tab_area, tab_tb, tab_sav, tab_rep, tab_port, tab_export = st.tabs([
+            "Monthly Executive Parity",
             "Area Branches Comparison",
             "General Ledger & Trial Balance",
             "Savings Summary",
@@ -13502,13 +13503,155 @@ elif page in ["Reports", "Reports & Export"]:
             "Data Exports & Downloads"
         ])
     else:
-        tab_tb, tab_sav, tab_rep, tab_port, tab_export = st.tabs([
+        tab_parity, tab_tb, tab_sav, tab_rep, tab_port, tab_export = st.tabs([
+            "Monthly Executive Parity",
             "General Ledger & Trial Balance",
             "Savings Summary",
             "Repayment Summary",
             "Portfolio & Officer Performance",
             "Data Exports & Downloads"
         ])
+
+    # --- TAB: MONTHLY EXECUTIVE PARITY & FINANCIAL STATEMENTS ---
+    with tab_parity:
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.subheader("Monthly Executive Parity & Financial Statement Suite")
+        st.caption("Authoritative branch-level monthly financial reports: Credit Officers Monthly Summary, Official 5-Section Trial Balance, and Receipts & Payments Cash Account.")
+
+        # Month and Year Selector
+        ep_col1, ep_col2, ep_col3 = st.columns([1.5, 1.5, 2.5])
+        with ep_col1:
+            month_names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+            sel_month_name = st.selectbox("Reporting Month", month_names, index=8, key="rep_exec_month") # default September
+            sel_month_num = month_names.index(sel_month_name) + 1
+        with ep_col2:
+            sel_year = st.selectbox("Reporting Year", [2024, 2025, 2026, 2027, 2028], index=2, key="rep_exec_year") # default 2026
+        with ep_col3:
+            if is_bm:
+                target_parity_branch_name = current_bm_branch
+                st.selectbox("Branch Scope", [current_bm_branch], disabled=True, key="rep_exec_branch_disp")
+            else:
+                target_parity_branch_name = st.selectbox("Branch Scope", list(branch_name_to_id.keys()), key="rep_exec_branch_sel")
+
+        target_parity_bid = branch_name_to_id.get(target_parity_branch_name)
+        if not target_parity_bid and branch_rows:
+            target_parity_bid = branch_rows[0]["branch_id"]
+
+        if target_parity_bid:
+            with SupabaseUnitOfWork() as uow_exec:
+                parity_data = ReportService.get_monthly_parity_matrix(uow_exec, branch_id=target_parity_bid, year=sel_year, month=sel_month_num)
+                exec_stmts = ReportService.get_official_trial_balance_and_receipts_payments(uow_exec, branch_id=target_parity_bid, year=sel_year, month=sel_month_num)
+
+            p_cards = parity_data["summary_cards"]
+
+            # Executive KPI Cards
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Principal Disbursed", f"₦{p_cards['disbursed_principal']:,.2f}")
+            c2.metric("Upfront Fees Collected", f"₦{p_cards['upfront_fees']:,.2f}")
+            c3.metric("Net Active Credit", f"₦{p_cards['net_active_credit']:,.2f}")
+            c4.metric("Installment Collections", f"₦{p_cards['collections']:,.2f}")
+
+            c5, c6, c7, c8 = st.columns(4)
+            c5.metric("Closing Credit Portfolio", f"₦{p_cards['closing_credit']:,.2f}")
+            c6.metric("Closing Savings Balance", f"₦{p_cards['closing_savings']:,.2f}")
+            c7.metric("Bank Deposits (1050)", f"₦{p_cards['bank_deposits']:,.2f}")
+            gl_badge = "[BALANCED]" if p_cards["is_gl_balanced"] else f"[OUT: ₦{p_cards['gl_diff']:,.2f}]"
+            c8.metric("General Ledger Equality", gl_badge)
+
+            st.markdown("---")
+
+            # 3 Sub-tabs inside Monthly Executive Suite
+            sub_co, sub_tb, sub_rp = st.tabs([
+                "Credit Officers Monthly Summary",
+                "Official Trial Balance",
+                "Receipts & Payments Account"
+            ])
+
+            # Sub-Tab 1: Credit Officers Monthly Summary (The Parity Matrix)
+            with sub_co:
+                st.markdown(f"#### Credit Officers Monthly Summary — {target_parity_branch_name} Branch ({sel_month_name} {sel_year})")
+                df_matrix = parity_data["dataframe"]
+                if not df_matrix.empty:
+                    st.dataframe(
+                        df_matrix.style.format(lambda val: f"{int(val):,}" if isinstance(val, (int, float)) and val == int(val) and abs(val) < 10000 and "Count" in str(val) else (f"₦{val:,.2f}" if isinstance(val, (int, float)) else str(val))),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                else:
+                    st.info("No data found for the selected month and branch.")
+
+            # Sub-Tab 2: Official Trial Balance (Exact Paper Layout)
+            with sub_tb:
+                tb_info = exec_stmts["trial_balance"]
+                st.markdown(f"#### Official Trial Balance — {target_parity_branch_name} Branch ({sel_month_name} {sel_year})")
+
+                tb_color = "#166534" if tb_info["is_balanced"] else "#991b1b"
+                tb_bg = "#f0fdf4" if tb_info["is_balanced"] else "#fef2f2"
+                tb_status_text = "BALANCED" if tb_info["is_balanced"] else f"OUT OF BALANCE (₦{tb_info['variance']:,.2f})"
+                st.markdown(f"""
+                    <div style='background: {tb_bg}; padding: 8px 16px; border-radius: 6px; border: 1px solid {tb_color}; display: inline-block; margin-bottom: 12px;'>
+                        <strong style='color: {tb_color}; font-size: 0.95rem;'>TRIAL BALANCE STATUS: {tb_status_text} | TOTAL DEBITS: ₦{tb_info['total_debits']:,.2f} | TOTAL CREDITS: ₦{tb_info['total_credits']:,.2f}</strong>
+                    </div>
+                """, unsafe_allow_html=True)
+
+                df_tb_exec = tb_info["dataframe"]
+                if not df_tb_exec.empty:
+                    st.dataframe(
+                        df_tb_exec.style.format({
+                            "debit": lambda v: f"₦{v:,.2f}" if v > 0 else "-",
+                            "credit": lambda v: f"₦{v:,.2f}" if v > 0 else "-"
+                        }),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+            # Sub-Tab 3: Receipts & Payments Account
+            with sub_rp:
+                rp_info = exec_stmts["receipts_and_payments"]
+                st.markdown(f"#### Monthly Report on Receipts and Payments Account — {target_parity_branch_name} Branch ({sel_month_name} {sel_year})")
+
+                rp_c1, rp_c2 = st.columns(2)
+                rp_c1.metric("Total Receipts (Inflows)", f"₦{rp_info['total_receipts']:,.2f}")
+                rp_c2.metric("Total Payments (Outflows)", f"₦{rp_info['total_payments']:,.2f}")
+
+                df_rp_exec = rp_info["dataframe"]
+                if not df_rp_exec.empty:
+                    st.dataframe(
+                        df_rp_exec.style.format({
+                            "Receipts Amount": lambda v: f"₦{v:,.2f}" if pd.notnull(v) and v > 0 else "-",
+                            "Payments Amount": lambda v: f"₦{v:,.2f}" if pd.notnull(v) and v > 0 else "-"
+                        }),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+            st.markdown("---")
+            st.markdown("#### Export Executive Monthly Statements")
+            ex_col1, ex_col2 = st.columns(2)
+            with ex_col1:
+                output_wb = io.BytesIO()
+                with pd.ExcelWriter(output_wb, engine="openpyxl") as writer:
+                    df_matrix.to_excel(writer, sheet_name="CO_Monthly_Summary", index=False)
+                    tb_info["dataframe"].to_excel(writer, sheet_name="Official_Trial_Balance", index=False)
+                    rp_info["dataframe"].to_excel(writer, sheet_name="Receipts_and_Payments", index=False)
+
+                st.download_button(
+                    label="Download Executive Financial Workbook (Excel)",
+                    data=output_wb.getvalue(),
+                    file_name=f"Executive_Monthly_Report_{target_parity_branch_name}_{sel_year}_{sel_month_num:02d}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            with ex_col2:
+                csv_bytes_parity = df_matrix.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="Download CO Parity Summary (CSV)",
+                    data=csv_bytes_parity,
+                    file_name=f"CO_Monthly_Summary_{target_parity_branch_name}_{sel_year}_{sel_month_num:02d}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+        st.markdown("</div>", unsafe_allow_html=True)
 
     # --- TAB 1 (AM EXCLUSIVE): AREA BRANCHES COMPARISON ---
     if is_am and area_data:

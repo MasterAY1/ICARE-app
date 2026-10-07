@@ -542,3 +542,286 @@ class AreaComparisonData {
     );
   }
 }
+
+// --- MONTHLY EXECUTIVE SUITE ---
+
+class MonthlyParityOfficer {
+  final String officerId;
+  final String name;
+  final String? username;
+  final String? fullName;
+
+  const MonthlyParityOfficer({
+    required this.officerId,
+    required this.name,
+    this.username,
+    this.fullName,
+  });
+
+  factory MonthlyParityOfficer.fromJson(Map<String, dynamic> json) {
+    return MonthlyParityOfficer(
+      officerId: (json['officer_id'] ?? '') as String,
+      name: (json['name'] ?? '') as String,
+      username: json['username'] as String?,
+      fullName: json['full_name'] as String?,
+    );
+  }
+}
+
+class MonthlyParityMetricRow {
+  final String metric;
+  final Map<String, dynamic> values;
+
+  const MonthlyParityMetricRow({
+    required this.metric,
+    required this.values,
+  });
+
+  factory MonthlyParityMetricRow.fromJson(Map<String, dynamic> json) {
+    return MonthlyParityMetricRow(
+      metric: (json['metric'] ?? '') as String,
+      values: (json['values'] as Map<String, dynamic>? ?? {}),
+    );
+  }
+}
+
+class MonthlyParitySummaryCards {
+  final double disbursedPrincipal;
+  final double upfrontFees;
+  final double netActiveCredit;
+  final double openingCredit;
+  final double collections;
+  final double closingCredit;
+  final double openingSavings;
+  final double savingsDeposits;
+  final double savingsWithdrawals;
+  final double closingSavings;
+  final double bankDeposits;
+  final double officeExpenses;
+  final int activeLoans;
+  final int activeSavers;
+  final double glDebits;
+  final double glCredits;
+  final double glDiff;
+  final bool isGlBalanced;
+
+  const MonthlyParitySummaryCards({
+    required this.disbursedPrincipal,
+    required this.upfrontFees,
+    required this.netActiveCredit,
+    required this.openingCredit,
+    required this.collections,
+    required this.closingCredit,
+    required this.openingSavings,
+    required this.savingsDeposits,
+    required this.savingsWithdrawals,
+    required this.closingSavings,
+    required this.bankDeposits,
+    required this.officeExpenses,
+    required this.activeLoans,
+    required this.activeSavers,
+    required this.glDebits,
+    required this.glCredits,
+    required this.glDiff,
+    required this.isGlBalanced,
+  });
+
+  factory MonthlyParitySummaryCards.fromJson(Map<String, dynamic> json) {
+    return MonthlyParitySummaryCards(
+      disbursedPrincipal: (json['disbursed_principal'] as num? ?? 0.0).toDouble(),
+      upfrontFees: (json['upfront_fees'] as num? ?? 0.0).toDouble(),
+      netActiveCredit: (json['net_active_credit'] as num? ?? 0.0).toDouble(),
+      openingCredit: (json['opening_credit'] as num? ?? 0.0).toDouble(),
+      collections: (json['collections'] as num? ?? 0.0).toDouble(),
+      closingCredit: (json['closing_credit'] as num? ?? 0.0).toDouble(),
+      openingSavings: (json['opening_savings'] as num? ?? 0.0).toDouble(),
+      savingsDeposits: (json['savings_deposits'] as num? ?? 0.0).toDouble(),
+      savingsWithdrawals: (json['savings_withdrawals'] as num? ?? 0.0).toDouble(),
+      closingSavings: (json['closing_savings'] as num? ?? 0.0).toDouble(),
+      bankDeposits: (json['bank_deposits'] as num? ?? 0.0).toDouble(),
+      officeExpenses: (json['office_expenses'] as num? ?? 0.0).toDouble(),
+      activeLoans: json['active_loans'] as int? ?? 0,
+      activeSavers: json['active_savers'] as int? ?? 0,
+      glDebits: (json['gl_debits'] as num? ?? 0.0).toDouble(),
+      glCredits: (json['gl_credits'] as num? ?? 0.0).toDouble(),
+      glDiff: (json['gl_diff'] as num? ?? 0.0).toDouble(),
+      isGlBalanced: json['is_gl_balanced'] as bool? ?? false,
+    );
+  }
+}
+
+class MonthlyParityData {
+  final int year;
+  final int month;
+  final String monthLabel;
+  final String branchId;
+  final String branchName;
+  final String totalColName;
+  final List<MonthlyParityOfficer> officers;
+  final List<MonthlyParityMetricRow> rows;
+  final MonthlyParitySummaryCards summaryCards;
+
+  const MonthlyParityData({
+    required this.year,
+    required this.month,
+    required this.monthLabel,
+    required this.branchId,
+    required this.branchName,
+    required this.totalColName,
+    required this.officers,
+    required this.rows,
+    required this.summaryCards,
+  });
+
+  factory MonthlyParityData.fromJson(Map<String, dynamic> json) {
+    return MonthlyParityData(
+      year: json['year'] as int? ?? 2026,
+      month: json['month'] as int? ?? 9,
+      monthLabel: (json['month_label'] ?? '') as String,
+      branchId: (json['branch_id'] ?? '') as String,
+      branchName: (json['branch_name'] ?? '') as String,
+      totalColName: (json['total_col_name'] ?? 'Branch Total') as String,
+      officers: (json['officers'] as List<dynamic>? ?? [])
+          .map((e) => MonthlyParityOfficer.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      rows: (json['rows'] as List<dynamic>? ?? [])
+          .map((e) => MonthlyParityMetricRow.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      summaryCards: MonthlyParitySummaryCards.fromJson(json['summary_cards'] as Map<String, dynamic>? ?? {}),
+    );
+  }
+}
+
+class OfficialTrialBalanceRow {
+  final String section;
+  final String item;
+  final double debit;
+  final double credit;
+
+  const OfficialTrialBalanceRow({
+    required this.section,
+    required this.item,
+    required this.debit,
+    required this.credit,
+  });
+
+  factory OfficialTrialBalanceRow.fromJson(Map<String, dynamic> json) {
+    return OfficialTrialBalanceRow(
+      section: (json['section'] ?? '') as String,
+      item: (json['item'] ?? '') as String,
+      debit: (json['debit'] as num? ?? 0.0).toDouble(),
+      credit: (json['credit'] as num? ?? 0.0).toDouble(),
+    );
+  }
+}
+
+class OfficialTrialBalanceData {
+  final List<OfficialTrialBalanceRow> rows;
+  final double totalDebits;
+  final double totalCredits;
+  final double variance;
+  final bool isBalanced;
+
+  const OfficialTrialBalanceData({
+    required this.rows,
+    required this.totalDebits,
+    required this.totalCredits,
+    required this.variance,
+    required this.isBalanced,
+  });
+
+  factory OfficialTrialBalanceData.fromJson(Map<String, dynamic> json) {
+    return OfficialTrialBalanceData(
+      rows: (json['rows'] as List<dynamic>? ?? [])
+          .map((e) => OfficialTrialBalanceRow.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      totalDebits: (json['total_debits'] as num? ?? 0.0).toDouble(),
+      totalCredits: (json['total_credits'] as num? ?? 0.0).toDouble(),
+      variance: (json['variance'] as num? ?? 0.0).toDouble(),
+      isBalanced: json['is_balanced'] as bool? ?? false,
+    );
+  }
+}
+
+class ReceiptsPaymentsItem {
+  final String item;
+  final String? subDetail;
+  final double amount;
+
+  const ReceiptsPaymentsItem({
+    required this.item,
+    this.subDetail,
+    required this.amount,
+  });
+
+  factory ReceiptsPaymentsItem.fromJson(Map<String, dynamic> json) {
+    return ReceiptsPaymentsItem(
+      item: (json['item'] ?? '') as String,
+      subDetail: json['sub_detail'] as String?,
+      amount: (json['amount'] as num? ?? 0.0).toDouble(),
+    );
+  }
+}
+
+class ReceiptsPaymentsData {
+  final List<ReceiptsPaymentsItem> receipts;
+  final List<ReceiptsPaymentsItem> payments;
+  final double totalReceipts;
+  final double totalPayments;
+  final double variance;
+
+  const ReceiptsPaymentsData({
+    required this.receipts,
+    required this.payments,
+    required this.totalReceipts,
+    required this.totalPayments,
+    required this.variance,
+  });
+
+  factory ReceiptsPaymentsData.fromJson(Map<String, dynamic> json) {
+    return ReceiptsPaymentsData(
+      receipts: (json['receipts'] as List<dynamic>? ?? [])
+          .map((e) => ReceiptsPaymentsItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      payments: (json['payments'] as List<dynamic>? ?? [])
+          .map((e) => ReceiptsPaymentsItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      totalReceipts: (json['total_receipts'] as num? ?? 0.0).toDouble(),
+      totalPayments: (json['total_payments'] as num? ?? 0.0).toDouble(),
+      variance: (json['variance'] as num? ?? 0.0).toDouble(),
+    );
+  }
+}
+
+class MonthlyExecutiveStatementsData {
+  final String branchName;
+  final String areaName;
+  final String monthLabel;
+  final int year;
+  final int month;
+  final OfficialTrialBalanceData trialBalance;
+  final ReceiptsPaymentsData receiptsAndPayments;
+
+  const MonthlyExecutiveStatementsData({
+    required this.branchName,
+    required this.areaName,
+    required this.monthLabel,
+    required this.year,
+    required this.month,
+    required this.trialBalance,
+    required this.receiptsAndPayments,
+  });
+
+  factory MonthlyExecutiveStatementsData.fromJson(Map<String, dynamic> json) {
+    return MonthlyExecutiveStatementsData(
+      branchName: (json['branch_name'] ?? '') as String,
+      areaName: (json['area_name'] ?? '') as String,
+      monthLabel: (json['month_label'] ?? '') as String,
+      year: json['year'] as int? ?? 2026,
+      month: json['month'] as int? ?? 9,
+      trialBalance: OfficialTrialBalanceData.fromJson(json['trial_balance'] as Map<String, dynamic>? ?? {}),
+      receiptsAndPayments: ReceiptsPaymentsData.fromJson(json['receipts_and_payments'] as Map<String, dynamic>? ?? {}),
+    );
+  }
+}
+
