@@ -869,6 +869,7 @@ class MonthlyReconciliationData {
   final List<BankStatementItem> banks;
   final double cashInHandBf;
   final double overdueBf;
+  final double overdueCf;
   final double salesProfitMarkup;
   final double salesCashAndCarry;
   final double fundCashHoAssetReceipt;
@@ -885,6 +886,10 @@ class MonthlyReconciliationData {
   final double retainedEarnings;
   final double headOfficeAssetAllocation;
   final double lapseDepositReserve;
+  final double disbursedPrincipal;
+  final double upfrontFees;
+  final double savingsDeposits;
+  final double collections;
 
   // Cumulative Trial Balance Expenses (Year-To-Date)
   final double tbSalary;
@@ -916,6 +921,7 @@ class MonthlyReconciliationData {
     required this.banks,
     required this.cashInHandBf,
     required this.overdueBf,
+    this.overdueCf = 0.0,
     required this.salesProfitMarkup,
     required this.salesCashAndCarry,
     required this.fundCashHoAssetReceipt,
@@ -932,6 +938,10 @@ class MonthlyReconciliationData {
     required this.retainedEarnings,
     required this.headOfficeAssetAllocation,
     this.lapseDepositReserve = 0.0,
+    this.disbursedPrincipal = 0.0,
+    this.upfrontFees = 0.0,
+    this.savingsDeposits = 0.0,
+    this.collections = 0.0,
     this.tbSalary = 0.0,
     this.tbRent = 0.0,
     this.tbElectricity = 0.0,
@@ -960,6 +970,7 @@ class MonthlyReconciliationData {
       banks: rawBanks.map((b) => BankStatementItem.fromJson(b as Map<String, dynamic>)).toList(),
       cashInHandBf: (json['cash_in_hand_bf'] as num? ?? 0.0).toDouble(),
       overdueBf: (json['overdue_bf'] as num? ?? 0.0).toDouble(),
+      overdueCf: (json['overdue_cf'] as num? ?? json['tb_overdue'] as num? ?? 0.0).toDouble(),
       salesProfitMarkup: (json['sales_profit_markup'] as num? ?? 0.0).toDouble(),
       salesCashAndCarry: (json['sales_cash_and_carry'] as num? ?? 0.0).toDouble(),
       fundCashHoAssetReceipt: (json['fund_cash_ho_asset_receipt'] as num? ?? 0.0).toDouble(),
@@ -976,6 +987,10 @@ class MonthlyReconciliationData {
       retainedEarnings: (json['retained_earnings'] as num? ?? 0.0).toDouble(),
       headOfficeAssetAllocation: (json['head_office_asset_allocation'] as num? ?? 0.0).toDouble(),
       lapseDepositReserve: (json['lapse_deposit_reserve'] as num? ?? 0.0).toDouble(),
+      disbursedPrincipal: (json['disbursed_principal'] as num? ?? 0.0).toDouble(),
+      upfrontFees: (json['upfront_fees'] as num? ?? 0.0).toDouble(),
+      savingsDeposits: (json['savings_deposits'] as num? ?? 0.0).toDouble(),
+      collections: (json['collections'] as num? ?? 0.0).toDouble(),
 
       tbSalary: (json['tb_salary'] as num? ?? 0.0).toDouble(),
       tbRent: (json['tb_rent'] as num? ?? 0.0).toDouble(),
@@ -1007,6 +1022,8 @@ class MonthlyReconciliationData {
       'banks': banks.map((b) => b.toJson()).toList(),
       'cash_in_hand_bf': cashInHandBf,
       'overdue_bf': overdueBf,
+      'overdue_cf': overdueCf,
+      'tb_overdue': overdueCf,
       'sales_profit_markup': salesProfitMarkup,
       'sales_cash_and_carry': salesCashAndCarry,
       'fund_cash_ho_asset_receipt': fundCashHoAssetReceipt,
@@ -1025,6 +1042,10 @@ class MonthlyReconciliationData {
       'retained_earnings': retainedEarnings,
       'head_office_asset_allocation': headOfficeAssetAllocation,
       'lapse_deposit_reserve': lapseDepositReserve,
+      'disbursed_principal': disbursedPrincipal,
+      'upfront_fees': upfrontFees,
+      'savings_deposits': savingsDeposits,
+      'collections': collections,
 
       'tb_salary': tbSalary,
       'tb_rent': tbRent,

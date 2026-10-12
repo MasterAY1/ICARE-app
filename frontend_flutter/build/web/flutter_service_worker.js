@@ -8,13 +8,6 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       try {
-        const cacheNames = await caches.keys();
-        await Promise.all(cacheNames.map((name) => caches.delete(name)));
-      } catch (e) {
-        console.warn('Failed to delete caches:', e);
-      }
-
-      try {
         await self.registration.unregister();
       } catch (e) {
         console.warn('Failed to unregister the service worker:', e);
@@ -24,6 +17,7 @@ self.addEventListener('activate', (event) => {
         const clients = await self.clients.matchAll({
           type: 'window',
         });
+        // Reload clients to ensure they are not using the old service worker.
         clients.forEach((client) => {
           if (client.url && 'navigate' in client) {
             client.navigate(client.url);
@@ -35,8 +29,3 @@ self.addEventListener('activate', (event) => {
     })()
   );
 });
-
-self.addEventListener('fetch', (event) => {
-  event.respondWith(fetch(event.request));
-});
-

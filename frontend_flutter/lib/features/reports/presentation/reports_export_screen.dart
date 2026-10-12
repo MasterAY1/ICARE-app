@@ -1937,9 +1937,10 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
   late TextEditingController _b2IntController;
   late TextEditingController _b2CloseController;
 
-  // Additional Treasury
+  // Additional Treasury & Overdue
   late TextEditingController _cashBfController;
   late TextEditingController _overdueBfController;
+  late TextEditingController _overdueCfController;
   late TextEditingController _profitController;
   late TextEditingController _ccController;
   late TextEditingController _lapseRetController;
@@ -1947,6 +1948,12 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
   late TextEditingController _paidOtherController;
   late TextEditingController _retainedEarningsController;
   late TextEditingController _hoAssetAllocController;
+
+  // Operational Table Overrides
+  late TextEditingController _disbursedPrincipalController;
+  late TextEditingController _upfrontFeesController;
+  late TextEditingController _savingsDepositsController;
+  late TextEditingController _collectionsController;
 
   // Remittances
   late TextEditingController _fRecHoAssetController;
@@ -1958,7 +1965,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
   late TextEditingController _fPayHoMainController;
   late TextEditingController _fPayBrController;
 
-  // Cumulative Trial Balance Expenses (Year-To-Date)
+  // Cumulative Trial Balance Expenses (Year-To-Date & Annex-1 Vouchers)
   late TextEditingController _tbSalaryController;
   late TextEditingController _tbRentController;
   late TextEditingController _tbElectricityController;
@@ -1970,7 +1977,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
   late TextEditingController _tbTrainingController;
   late TextEditingController _tbOtherExpensesController;
 
-  // Cumulative Trial Balance Income & Reserves (Year-To-Date)
+  // Cumulative Trial Balance Income & Reserves (Year-To-Date & Annex-1 Inflows)
   late TextEditingController _tbSalesProfitController;
   late TextEditingController _tbDamagesFineController;
   late TextEditingController _tbPassbookController;
@@ -2011,6 +2018,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
     final d = widget.initialData;
     _cashBfController = TextEditingController(text: d.cashInHandBf > 0 ? d.cashInHandBf.toStringAsFixed(2) : '');
     _overdueBfController = TextEditingController(text: d.overdueBf > 0 ? d.overdueBf.toStringAsFixed(2) : '');
+    _overdueCfController = TextEditingController(text: d.overdueCf > 0 ? d.overdueCf.toStringAsFixed(2) : '');
     _profitController = TextEditingController(text: d.salesProfitMarkup > 0 ? d.salesProfitMarkup.toStringAsFixed(2) : '');
     _ccController = TextEditingController(text: d.salesCashAndCarry > 0 ? d.salesCashAndCarry.toStringAsFixed(2) : '');
     _lapseRetController = TextEditingController(text: d.lapseDepositReturn > 0 ? d.lapseDepositReturn.toStringAsFixed(2) : '');
@@ -2018,6 +2026,11 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
     _paidOtherController = TextEditingController(text: d.paidToOtherSources > 0 ? d.paidToOtherSources.toStringAsFixed(2) : '');
     _retainedEarningsController = TextEditingController(text: d.retainedEarnings > 0 ? d.retainedEarnings.toStringAsFixed(2) : '26351209.00');
     _hoAssetAllocController = TextEditingController(text: d.headOfficeAssetAllocation > 0 ? d.headOfficeAssetAllocation.toStringAsFixed(2) : '14730282.00');
+
+    _disbursedPrincipalController = TextEditingController(text: d.disbursedPrincipal > 0 ? d.disbursedPrincipal.toStringAsFixed(2) : '');
+    _upfrontFeesController = TextEditingController(text: d.upfrontFees > 0 ? d.upfrontFees.toStringAsFixed(2) : '');
+    _savingsDepositsController = TextEditingController(text: d.savingsDeposits > 0 ? d.savingsDeposits.toStringAsFixed(2) : '');
+    _collectionsController = TextEditingController(text: d.collections > 0 ? d.collections.toStringAsFixed(2) : '');
 
     _fRecHoAssetController = TextEditingController(text: d.fundCashHoAssetReceipt > 0 ? d.fundCashHoAssetReceipt.toStringAsFixed(2) : '');
     _fRecHoMainController = TextEditingController(text: d.fundCashHoMainReceipt > 0 ? d.fundCashHoMainReceipt.toStringAsFixed(2) : '');
@@ -2050,6 +2063,19 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
     _tbFundInternalController = TextEditingController(text: d.tbFundInternal > 0 ? d.tbFundInternal.toStringAsFixed(2) : '');
     _tbContingencyController = TextEditingController(text: d.tbContingency > 0 ? d.tbContingency.toStringAsFixed(2) : '');
     _lapseDepositReserveController = TextEditingController(text: d.lapseDepositReserve > 0 ? d.lapseDepositReserve.toStringAsFixed(2) : '');
+
+    // Add listener to auto-update live totals
+    for (final c in [
+      _tbSalaryController, _tbElectricityController, _tbStationeryController,
+      _tbEntertainmentController, _tbTelephoneController, _tbTransportController,
+      _tbTrainingController, _tbRentController, _tbRepairOfficeController,
+      _tbOtherExpensesController, _tbPassbookController, _tbApplicationFeeController,
+      _tbScrapsSalesController, _tbDamagesFineController
+    ]) {
+      c.addListener(() {
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   @override
@@ -2081,6 +2107,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
 
     _cashBfController.dispose();
     _overdueBfController.dispose();
+    _overdueCfController.dispose();
     _profitController.dispose();
     _ccController.dispose();
     _lapseRetController.dispose();
@@ -2088,6 +2115,11 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
     _paidOtherController.dispose();
     _retainedEarningsController.dispose();
     _hoAssetAllocController.dispose();
+
+    _disbursedPrincipalController.dispose();
+    _upfrontFeesController.dispose();
+    _savingsDepositsController.dispose();
+    _collectionsController.dispose();
 
     _fRecHoAssetController.dispose();
     _fRecHoMainController.dispose();
@@ -2157,6 +2189,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
         ],
         cashInHandBf: _parseVal(_cashBfController),
         overdueBf: _parseVal(_overdueBfController),
+        overdueCf: _parseVal(_overdueCfController),
         salesProfitMarkup: _parseVal(_profitController),
         salesCashAndCarry: _parseVal(_ccController),
         fundCashHoAssetReceipt: _parseVal(_fRecHoAssetController),
@@ -2172,6 +2205,10 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
         receivedFromOtherSources: _parseVal(_recOtherController),
         retainedEarnings: _parseVal(_retainedEarningsController) > 0 ? _parseVal(_retainedEarningsController) : 26351209.0,
         headOfficeAssetAllocation: _parseVal(_hoAssetAllocController) > 0 ? _parseVal(_hoAssetAllocController) : 14730282.0,
+        disbursedPrincipal: _parseVal(_disbursedPrincipalController),
+        upfrontFees: _parseVal(_upfrontFeesController),
+        savingsDeposits: _parseVal(_savingsDepositsController),
+        collections: _parseVal(_collectionsController),
         tbSalary: _parseVal(_tbSalaryController),
         tbRent: _parseVal(_tbRentController),
         tbElectricity: _parseVal(_tbElectricityController),
@@ -2226,7 +2263,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
     }
   }
 
-  Widget _buildField(String label, TextEditingController controller, {String? hint, bool isNumber = true}) {
+  Widget _buildField(String label, TextEditingController controller, {String? hint, bool isNumber = true, bool readOnly = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2239,15 +2276,20 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
         const SizedBox(height: 4),
         TextField(
           controller: controller,
+          readOnly: readOnly,
           keyboardType: isNumber ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
-          style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A)),
+          style: TextStyle(
+            fontSize: 12,
+            color: readOnly ? const Color(0xFF64748B) : const Color(0xFF0F172A),
+            fontWeight: readOnly ? FontWeight.w600 : FontWeight.normal,
+          ),
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
             isDense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             filled: true,
-            fillColor: const Color(0xFFF8FAFC),
+            fillColor: readOnly ? const Color(0xFFF1F5F9) : const Color(0xFFF8FAFC),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
               borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
@@ -2269,7 +2311,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
   Widget _buildSectionCard({
     required int sectionIndex,
     required String title,
-    required String subtitle,
+    String? subtitle,
     required IconData icon,
     required Widget child,
   }) {
@@ -2306,11 +2348,13 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
                           title,
                           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle,
-                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                        ),
+                        if (subtitle != null && subtitle.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle,
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -2366,7 +2410,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: _buildField('Opening Balance B/F (₦)', openC, hint: '0.00')),
+              Expanded(child: _buildField('Opening Balance B/F (₦) [Auto B/F]', openC, hint: '0.00')),
               const SizedBox(width: 8),
               Expanded(child: _buildField('Closing Balance C/F (₦)', closeC, hint: '0.00')),
             ],
@@ -2386,6 +2430,23 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
 
   @override
   Widget build(BuildContext context) {
+    // Dynamic calculations for Annex-1 live feedback
+    final annex1ExpenseSum = _parseVal(_tbSalaryController) +
+        _parseVal(_tbElectricityController) +
+        _parseVal(_tbStationeryController) +
+        _parseVal(_tbEntertainmentController) +
+        _parseVal(_tbTelephoneController) +
+        _parseVal(_tbTransportController) +
+        _parseVal(_tbTrainingController) +
+        _parseVal(_tbRentController) +
+        _parseVal(_tbRepairOfficeController) +
+        _parseVal(_tbOtherExpensesController);
+
+    final annex1InflowSum = _parseVal(_tbPassbookController) +
+        _parseVal(_tbApplicationFeeController) +
+        _parseVal(_tbScrapsSalesController) +
+        _parseVal(_tbDamagesFineController);
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final isNarrow = constraints.maxWidth < 750;
@@ -2397,7 +2458,6 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
             _buildSectionCard(
               sectionIndex: 1,
               title: '1. Commercial Bank Accounts (Statements)',
-              subtitle: 'Zero hardcoding: Enter your commercial bank statement details (e.g. Sterling, Wema) and balances.',
               icon: Icons.account_balance,
               child: isNarrow
                   ? Column(
@@ -2422,106 +2482,124 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
             ),
             const SizedBox(height: 16),
 
-            // Section 2: Additional Treasury Balances & Cash Movements
+            // Section 2: Monthly Operating Expenses (Annex-1 Vouchers)
             _buildSectionCard(
               sectionIndex: 2,
-              title: '2. Additional Treasury Balances & Cash Movements',
-              subtitle: 'Physical vault cash floats, profits, lapse reserves, and YTD equity adjustments.',
-              icon: Icons.account_balance_wallet,
-              child: LayoutBuilder(
-                builder: (context, s2Constraints) {
-                  final isMobile = s2Constraints.maxWidth < 600;
-                  final fieldW = isMobile
-                      ? (s2Constraints.maxWidth - 8) / 2
-                      : (s2Constraints.maxWidth - 16) / 3;
-                  return Wrap(
-                    spacing: 8,
-                    runSpacing: 10,
-                    children: [
-                      SizedBox(width: fieldW, child: _buildField('Cash in Hand B/F (₦)', _cashBfController, hint: 'e.g. 522700.00')),
-                      SizedBox(width: fieldW, child: _buildField('Overdue B/F (₦)', _overdueBfController, hint: 'e.g. 14500.00')),
-                      SizedBox(width: fieldW, child: _buildField('Sales Profit / Markup (₦)', _profitController, hint: '0.00')),
-                      SizedBox(width: fieldW, child: _buildField('Sales: Cash and Carry (₦)', _ccController, hint: '0.00')),
-                      SizedBox(width: fieldW, child: _buildField('Lapse Deposit Return (₦)', _lapseRetController, hint: 'e.g. 16700.00')),
-                      SizedBox(width: fieldW, child: _buildField('Received Other Sources (₦)', _recOtherController, hint: 'e.g. 55200.00')),
-                      SizedBox(width: fieldW, child: _buildField('Paid to Other Sources (₦)', _paidOtherController, hint: 'e.g. 1041405.00')),
-                      SizedBox(width: fieldW, child: _buildField('Retained Earnings YTD (₦)', _retainedEarningsController, hint: '26351209.00')),
-                      SizedBox(width: fieldW, child: _buildField('HO Asset Allocation (₦)', _hoAssetAllocController, hint: '14730282.00')),
-                    ],
-                  );
-                },
+              title: '2. Monthly Operating Expenses (Annex-1 Vouchers)',
+              icon: Icons.receipt_long,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LayoutBuilder(
+                    builder: (context, s2Constraints) {
+                      final isMobile = s2Constraints.maxWidth < 600;
+                      final isTablet = s2Constraints.maxWidth >= 600 && s2Constraints.maxWidth < 950;
+                      final fieldW = isMobile
+                          ? (s2Constraints.maxWidth - 8) / 2
+                          : isTablet
+                              ? (s2Constraints.maxWidth - 16) / 3
+                              : (s2Constraints.maxWidth - 24) / 4;
+                      return Wrap(
+                        spacing: 8,
+                        runSpacing: 10,
+                        children: [
+                          SizedBox(width: fieldW, child: _buildField('Personnel Gross Salary (₦)', _tbSalaryController, hint: 'e.g. 502335.00')),
+                          SizedBox(width: fieldW, child: _buildField('Electricity/Gas/Water (₦)', _tbElectricityController, hint: 'e.g. 4200.00')),
+                          SizedBox(width: fieldW, child: _buildField('Stationery/Office Mgmt (₦)', _tbStationeryController, hint: 'e.g. 36400.00')),
+                          SizedBox(width: fieldW, child: _buildField('Entertainment (₦)', _tbEntertainmentController, hint: 'e.g. 7000.00')),
+                          SizedBox(width: fieldW, child: _buildField('Telephone/Postage (₦)', _tbTelephoneController, hint: 'e.g. 3000.00')),
+                          SizedBox(width: fieldW, child: _buildField('Transport Allowance (₦)', _tbTransportController, hint: 'e.g. 155000.00')),
+                          SizedBox(width: fieldW, child: _buildField('Training Expenses (₦)', _tbTrainingController, hint: 'e.g. 331470.00')),
+                          SizedBox(width: fieldW, child: _buildField('Office Rent (₦)', _tbRentController, hint: '0.00')),
+                          SizedBox(width: fieldW, child: _buildField('Repair Cost Office (₦)', _tbRepairOfficeController, hint: '0.00')),
+                          SizedBox(width: fieldW, child: _buildField('Other Operating Expenses (₦)', _tbOtherExpensesController, hint: '0.00')),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFBBF7D0)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF16A34A)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Annex-1 Monthly Expenses Total: ₦${annex1ExpenseSum.toStringAsFixed(2)} • Automatically feeds Receipts & Payments Row 7 and increments YTD Trial Balance',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF166534)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),
 
-            // Section 3: Head Office & Area Fund Cash Remittances
+            // Section 3: Monthly Sundry Receipts (Annex-1 Inflows)
             _buildSectionCard(
               sectionIndex: 3,
-              title: '3. Head Office & Area Fund Cash Remittances',
-              subtitle: 'Inter-branch and headquarters liquidity cash receipts and disbursements.',
-              icon: Icons.sync_alt,
-              child: LayoutBuilder(
-                builder: (context, s3Constraints) {
-                  final isMobile = s3Constraints.maxWidth < 650;
-                  final inflowsCol = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Fund Cash Received (Inflows)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF166534))),
-                      const SizedBox(height: 8),
-                      _buildField('HO Asset Received (₦)', _fRecHoAssetController, hint: '0.00'),
-                      const SizedBox(height: 8),
-                      _buildField('HO Main Received (₦)', _fRecHoMainController, hint: '0.00'),
-                      const SizedBox(height: 8),
-                      _buildField('Other Area Received (₦)', _fRecAreaController, hint: '0.00'),
-                      const SizedBox(height: 8),
-                      _buildField('Branch Office Received (₦)', _fRecBrController, hint: '0.00'),
-                    ],
-                  );
-
-                  final outflowsCol = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Fund Cash Remitted (Outflows)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1E40AF))),
-                      const SizedBox(height: 8),
-                      _buildField('HO Asset Remitted (₦)', _fPayHoAssetController, hint: '0.00'),
-                      const SizedBox(height: 8),
-                      _buildField('HO Main Remitted (₦)', _fPayHoMainController, hint: '0.00'),
-                      const SizedBox(height: 8),
-                      _buildField('Branch Office Remitted (₦)', _fPayBrController, hint: '0.00'),
-                    ],
-                  );
-
-                  if (isMobile) {
-                    return Column(
+              title: '3. Monthly Sundry Receipts (Annex-1 Inflows)',
+              icon: Icons.payments,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LayoutBuilder(
+                    builder: (context, s3Constraints) {
+                      final isMobile = s3Constraints.maxWidth < 600;
+                      final fieldW = isMobile
+                          ? (s3Constraints.maxWidth - 8) / 2
+                          : (s3Constraints.maxWidth - 24) / 4;
+                      return Wrap(
+                        spacing: 8,
+                        runSpacing: 10,
+                        children: [
+                          SizedBox(width: fieldW, child: _buildField('Passbook Fees (₦)', _tbPassbookController, hint: 'e.g. 2000.00')),
+                          SizedBox(width: fieldW, child: _buildField('Application Fees (₦)', _tbApplicationFeeController, hint: 'e.g. 58500.00')),
+                          SizedBox(width: fieldW, child: _buildField('Scraps Sales / Bonus (₦)', _tbScrapsSalesController, hint: 'e.g. 420.00')),
+                          SizedBox(width: fieldW, child: _buildField('Damages and Fine (₦)', _tbDamagesFineController, hint: '0.00')),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: Row(
                       children: [
-                        inflowsCol,
-                        const SizedBox(height: 16),
-                        const Divider(color: Color(0xFFE2E8F0)),
-                        const SizedBox(height: 8),
-                        outflowsCol,
+                        const Icon(Icons.info_outline, size: 16, color: Color(0xFF2563EB)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Annex-1 Inflows Total: ₦${annex1InflowSum.toStringAsFixed(2)} • Automatically feeds Receipts & Payments Row 10',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                          ),
+                        ),
                       ],
-                    );
-                  }
-
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: inflowsCol),
-                      const SizedBox(width: 20),
-                      Expanded(child: outflowsCol),
-                    ],
-                  );
-                },
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),
 
-            // Section 4: Cumulative Trial Balance Expenses (Year-To-Date)
+            // Section 4: Cashbook Remittances & Operational Collections
             _buildSectionCard(
               sectionIndex: 4,
-              title: '4. Cumulative Trial Balance Expenses (Year-To-Date)',
-              subtitle: 'Cumulative operating expenditures from Jan 1 through the reporting month.',
-              icon: Icons.receipt_long,
+              title: '4. Cashbook Remittances & Operational Collections',
+              icon: Icons.sync_alt,
               child: LayoutBuilder(
                 builder: (context, s4Constraints) {
                   final isMobile = s4Constraints.maxWidth < 600;
@@ -2535,16 +2613,22 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
                     spacing: 8,
                     runSpacing: 10,
                     children: [
-                      SizedBox(width: fieldW, child: _buildField('Personnel Gross Salary (₦)', _tbSalaryController, hint: 'e.g. 4453447.00')),
-                      SizedBox(width: fieldW, child: _buildField('Office Rent (₦)', _tbRentController, hint: 'e.g. 400000.00')),
-                      SizedBox(width: fieldW, child: _buildField('Electricity/Gas (₦)', _tbElectricityController, hint: 'e.g. 81700.00')),
-                      SizedBox(width: fieldW, child: _buildField('Stationery/Office Mgmt (₦)', _tbStationeryController, hint: 'e.g. 1043300.00')),
-                      SizedBox(width: fieldW, child: _buildField('Entertainment (₦)', _tbEntertainmentController, hint: 'e.g. 253000.00')),
-                      SizedBox(width: fieldW, child: _buildField('Telephone/Postage (₦)', _tbTelephoneController, hint: 'e.g. 27000.00')),
-                      SizedBox(width: fieldW, child: _buildField('Repair Cost Office (₦)', _tbRepairOfficeController, hint: 'e.g. 243100.00')),
-                      SizedBox(width: fieldW, child: _buildField('Transport Allowance (₦)', _tbTransportController, hint: 'e.g. 1405600.00')),
-                      SizedBox(width: fieldW, child: _buildField('Training Expenses (₦)', _tbTrainingController, hint: 'e.g. 1890652.00')),
-                      SizedBox(width: fieldW, child: _buildField('Other Expenses (₦)', _tbOtherExpensesController, hint: '0.00')),
+                      SizedBox(width: fieldW, child: _buildField('Sales Profit / Markup (₦)', _profitController, hint: 'e.g. 2352890.00')),
+                      SizedBox(width: fieldW, child: _buildField('Sales: Cash and Carry (₦)', _ccController, hint: 'e.g. 95000.00')),
+                      SizedBox(width: fieldW, child: _buildField('Upfront Fees Collected (₦)', _upfrontFeesController, hint: 'e.g. 583000.00')),
+                      SizedBox(width: fieldW, child: _buildField('Installment Collections (₦)', _collectionsController, hint: 'e.g. 17465675.00')),
+                      SizedBox(width: fieldW, child: _buildField('Principal Disbursed (₦)', _disbursedPrincipalController, hint: 'e.g. 19549000.00')),
+                      SizedBox(width: fieldW, child: _buildField('Deposit Savings (₦)', _savingsDepositsController, hint: 'e.g. 4292225.00')),
+                      SizedBox(width: fieldW, child: _buildField('Lapse Deposit Return (₦)', _lapseRetController, hint: 'e.g. 16700.00')),
+                      SizedBox(width: fieldW, child: _buildField('HO Asset Inflow (₦)', _fRecHoAssetController, hint: 'e.g. 1024000.00')),
+                      SizedBox(width: fieldW, child: _buildField('HO Main Inflow (₦)', _fRecHoMainController, hint: 'e.g. 700000.00')),
+                      SizedBox(width: fieldW, child: _buildField('Branch Office Inflow (₦)', _fRecBrController, hint: 'e.g. 900000.00')),
+                      SizedBox(width: fieldW, child: _buildField('Other Area Inflow (₦)', _fRecAreaController, hint: 'e.g. 200000.00')),
+                      SizedBox(width: fieldW, child: _buildField('HO Asset Outflow (₦)', _fPayHoAssetController, hint: 'e.g. 1024000.00')),
+                      SizedBox(width: fieldW, child: _buildField('HO Main Outflow (₦)', _fPayHoMainController, hint: 'e.g. 2500000.00')),
+                      SizedBox(width: fieldW, child: _buildField('Branch Office Outflow (₦)', _fPayBrController, hint: 'e.g. 200000.00')),
+                      SizedBox(width: fieldW, child: _buildField('Closing Overdue C/F (₦)', _overdueCfController, hint: 'e.g. 26900.00')),
+                      SizedBox(width: fieldW, child: _buildField('Opening Overdue B/F (₦) [Auto]', _overdueBfController, hint: 'e.g. 14500.00')),
                     ],
                   );
                 },
@@ -2552,11 +2636,10 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
             ),
             const SizedBox(height: 16),
 
-            // Section 5: Cumulative Trial Balance Income & Reserves (Year-To-Date)
+            // Section 5: Capital Funds & Equity Adjustments (YTD)
             _buildSectionCard(
               sectionIndex: 5,
-              title: '5. Cumulative Trial Balance Income & Reserves (Year-To-Date)',
-              subtitle: 'Cumulative auxiliary revenue and balance sheet equity/funds.',
+              title: '5. Capital Funds & Equity Adjustments (YTD)',
               icon: Icons.pie_chart,
               child: LayoutBuilder(
                 builder: (context, s5Constraints) {
@@ -2571,16 +2654,14 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
                     spacing: 8,
                     runSpacing: 10,
                     children: [
-                      SizedBox(width: fieldW, child: _buildField('Sales Profit Cumulative (₦)', _tbSalesProfitController, hint: 'e.g. 1636698.00')),
-                      SizedBox(width: fieldW, child: _buildField('Damages and Fine (₦)', _tbDamagesFineController, hint: 'e.g. 5500.00')),
-                      SizedBox(width: fieldW, child: _buildField('Passbook Fees (₦)', _tbPassbookController, hint: 'e.g. 42500.00')),
-                      SizedBox(width: fieldW, child: _buildField('Scraps Sales (₦)', _tbScrapsSalesController, hint: 'e.g. 1440.00')),
-                      SizedBox(width: fieldW, child: _buildField('Application Fees (₦)', _tbApplicationFeeController, hint: 'e.g. 418000.00')),
                       SizedBox(width: fieldW, child: _buildField('HO Fund Main Debit (₦)', _tbFundHoMainController, hint: 'e.g. 36553628.00')),
                       SizedBox(width: fieldW, child: _buildField('Branch Office Fund (₦)', _tbFundBranchController, hint: 'e.g. 971000.00')),
                       SizedBox(width: fieldW, child: _buildField('Other Area Fund (₦)', _tbFundOtherAreaController, hint: 'e.g. 11300000.00')),
-                      SizedBox(width: fieldW, child: _buildField('Internal Fund (₦)', _tbFundInternalController, hint: 'e.g. 5018362.00')),
-                      SizedBox(width: fieldW, child: _buildField('Lapse Deposit Reserve (₦)', _lapseDepositReserveController, hint: '0.00')),
+                      SizedBox(width: fieldW, child: _buildField('Internal Capital Fund (₦)', _tbFundInternalController, hint: 'e.g. 5018362.00')),
+                      SizedBox(width: fieldW, child: _buildField('Retained Earnings (₦) [B/F]', _retainedEarningsController, hint: '26351209.00')),
+                      SizedBox(width: fieldW, child: _buildField('HO Asset Allocation (₦) [B/F]', _hoAssetAllocController, hint: '14730282.00')),
+                      SizedBox(width: fieldW, child: _buildField('Lapse Deposit Reserve (₦)', _lapseDepositReserveController, hint: '1674054.00')),
+                      SizedBox(width: fieldW, child: _buildField('Sales Profit Cumulative YTD (₦)', _tbSalesProfitController, hint: 'e.g. 1671398.00')),
                       SizedBox(width: fieldW, child: _buildField('Contingency Reserve (₦)', _tbContingencyController, hint: '0.00')),
                     ],
                   );
