@@ -83,3 +83,4 @@ storage/backups/*.json
 **/android/build/
 **/android/.kotlin/
 **/android/local.properties
+.vercel

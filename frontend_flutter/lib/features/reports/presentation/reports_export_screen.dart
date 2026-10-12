@@ -164,6 +164,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     final isMobile = MediaQuery.of(context).size.width < 750;
 
     return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
       padding: EdgeInsets.symmetric(
         horizontal: isMobile ? 12 : 24,
         vertical: isMobile ? 12 : 20,
@@ -708,23 +709,20 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: const Color(0xFFE2E8F0)),
           ),
-          child: Wrap(
-            spacing: 16,
-            runSpacing: 10,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            alignment: WrapAlignment.spaceBetween,
-            children: [
-              Row(
+          child: LayoutBuilder(
+            builder: (layoutCtx, constraints) {
+              final isMobile = constraints.maxWidth < 650;
+              final monthDropdown = Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Month: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                  const SizedBox(width: 6),
+                  const Text('Month: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+                  const SizedBox(width: 4),
                   DropdownButton<int>(
                     value: _selectedExecMonth,
                     underline: const SizedBox(),
                     items: List.generate(12, (index) => DropdownMenuItem(
                       value: index + 1,
-                      child: Text(monthNames[index], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      child: Text(monthNames[index], style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                     )),
                     onChanged: (val) {
                       if (val != null) {
@@ -735,15 +733,20 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       }
                     },
                   ),
-                  const SizedBox(width: 16),
-                  const Text('Year: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                  const SizedBox(width: 6),
+                ],
+              );
+
+              final yearDropdown = Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Year: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+                  const SizedBox(width: 4),
                   DropdownButton<int>(
                     value: _selectedExecYear,
                     underline: const SizedBox(),
                     items: [2024, 2025, 2026, 2027, 2028].map((y) => DropdownMenuItem(
                       value: y,
-                      child: Text('$y', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      child: Text('$y', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                     )).toList(),
                     onChanged: (val) {
                       if (val != null) {
@@ -755,79 +758,119 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     },
                   ),
                 ],
-              ),
-              Wrap(
-                spacing: 8,
+              );
+
+              final excelBtn = OutlinedButton.icon(
+                icon: const Icon(Icons.download, size: 14, color: Color(0xFF0F766E)),
+                label: const Text('Excel Workbook', style: TextStyle(fontSize: 11, color: Color(0xFF0F766E), fontWeight: FontWeight.w700)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFF0F766E)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                onPressed: () async {
+                  try {
+                    final bytes = await api.downloadMonthlyParityExcel(
+                      branchName: _selectedBranchName,
+                      year: _selectedExecYear,
+                      month: _selectedExecMonth,
+                    );
+                    downloadBlobFile(
+                      bytes,
+                      'Executive_Monthly_Report_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.xlsx',
+                      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    );
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Executive Workbook downloaded successfully.')),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Download failed: $e')),
+                      );
+                    }
+                  }
+                },
+              );
+
+              final csvBtn = OutlinedButton.icon(
+                icon: const Icon(Icons.table_chart, size: 14, color: Color(0xFF1E293B)),
+                label: const Text('CO Summary CSV', style: TextStyle(fontSize: 11, color: Color(0xFF1E293B), fontWeight: FontWeight.w700)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                onPressed: () async {
+                  try {
+                    final bytes = await api.downloadMonthlyParityCsv(
+                      branchName: _selectedBranchName,
+                      year: _selectedExecYear,
+                      month: _selectedExecMonth,
+                    );
+                    downloadBlobFile(
+                      bytes,
+                      'CO_Monthly_Summary_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.csv',
+                      'text/csv',
+                    );
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('CO Summary CSV downloaded successfully.')),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Download failed: $e')),
+                      );
+                    }
+                  }
+                },
+              );
+
+              if (isMobile) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        monthDropdown,
+                        yearDropdown,
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(child: excelBtn),
+                        const SizedBox(width: 8),
+                        Expanded(child: csvBtn),
+                      ],
+                    ),
+                  ],
+                );
+              }
+
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.download, size: 16, color: Color(0xFF0F766E)),
-                    label: const Text('Excel Workbook', style: TextStyle(fontSize: 12, color: Color(0xFF0F766E), fontWeight: FontWeight.w700)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF0F766E)),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                    onPressed: () async {
-                      try {
-                        final bytes = await api.downloadMonthlyParityExcel(
-                          branchName: _selectedBranchName,
-                          year: _selectedExecYear,
-                          month: _selectedExecMonth,
-                        );
-                        downloadBlobFile(
-                          bytes,
-                          'Executive_Monthly_Report_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.xlsx',
-                          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                        );
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Executive Workbook downloaded successfully.')),
-                          );
-                        }
-                      } catch (e) {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Download failed: $e')),
-                          );
-                        }
-                      }
-                    },
+                  Row(
+                    children: [
+                      monthDropdown,
+                      const SizedBox(width: 16),
+                      yearDropdown,
+                    ],
                   ),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.table_chart, size: 16, color: Color(0xFF1E293B)),
-                    label: const Text('CO Summary CSV', style: TextStyle(fontSize: 12, color: Color(0xFF1E293B), fontWeight: FontWeight.w700)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                    onPressed: () async {
-                      try {
-                        final bytes = await api.downloadMonthlyParityCsv(
-                          branchName: _selectedBranchName,
-                          year: _selectedExecYear,
-                          month: _selectedExecMonth,
-                        );
-                        downloadBlobFile(
-                          bytes,
-                          'CO_Monthly_Summary_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.csv',
-                          'text/csv',
-                        );
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('CO Summary CSV downloaded successfully.')),
-                          );
-                        }
-                      } catch (e) {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Download failed: $e')),
-                          );
-                        }
-                      }
-                    },
+                  Row(
+                    children: [
+                      excelBtn,
+                      const SizedBox(width: 8),
+                      csvBtn,
+                    ],
                   ),
                 ],
-              ),
-            ],
+              );
+            },
           ),
         ),
         const SizedBox(height: 16),
@@ -871,39 +914,30 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // 8 Summary Cards in Grid
+                  // 8 Summary Cards in Grid (Responsive 2-col on mobile, 4-col on tablet/desktop)
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final isMobile = constraints.maxWidth < 600;
-                      final cardW = isMobile ? (constraints.maxWidth - 12) / 2 : 170.0;
-                      return Column(
+                      final cardW = isMobile
+                          ? (constraints.maxWidth - 10) / 2
+                          : (constraints.maxWidth - 36) / 4;
+                      return Wrap(
+                        spacing: isMobile ? 10 : 12,
+                        runSpacing: isMobile ? 10 : 12,
                         children: [
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 12,
-                            children: [
-                              _buildMetricCard('Principal Disbursed', _formatNgn(cards.disbursedPrincipal), width: cardW),
-                              _buildMetricCard('Upfront Fees', _formatNgn(cards.upfrontFees), width: cardW),
-                              _buildMetricCard('Net Active Credit', _formatNgn(cards.netActiveCredit), width: cardW),
-                              _buildMetricCard('Collections', _formatNgn(cards.collections), width: cardW),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 12,
-                            children: [
-                              _buildMetricCard('Closing Credit Portfolio', _formatNgn(cards.closingCredit), width: cardW),
-                              _buildMetricCard('Closing Savings Balance', _formatNgn(cards.closingSavings), width: cardW),
-                              _buildMetricCard('Bank Deposits (1050)', _formatNgn(cards.bankDeposits), width: cardW),
-                              _buildMetricCard(
-                                'GL Balance Integrity',
-                                cards.isGlBalanced ? '[BALANCED]' : '[OUT OF BALANCE]',
-                                width: cardW,
-                                isAccent: cards.isGlBalanced,
-                                subtitle: 'Debits == Credits',
-                              ),
-                            ],
+                          _buildMetricCard('Principal Disbursed', _formatNgn(cards.disbursedPrincipal), width: cardW),
+                          _buildMetricCard('Upfront Fees', _formatNgn(cards.upfrontFees), width: cardW),
+                          _buildMetricCard('Net Active Credit', _formatNgn(cards.netActiveCredit), width: cardW),
+                          _buildMetricCard('Collections', _formatNgn(cards.collections), width: cardW),
+                          _buildMetricCard('Closing Credit Portfolio', _formatNgn(cards.closingCredit), width: cardW),
+                          _buildMetricCard('Closing Savings Balance', _formatNgn(cards.closingSavings), width: cardW),
+                          _buildMetricCard('Bank Deposits (1050)', _formatNgn(cards.bankDeposits), width: cardW),
+                          _buildMetricCard(
+                            'GL Balance Integrity',
+                            cards.isGlBalanced ? '[BALANCED]' : '[OUT OF BALANCE]',
+                            width: cardW,
+                            isAccent: cards.isGlBalanced,
+                            subtitle: 'Debits == Credits',
                           ),
                         ],
                       );
@@ -911,21 +945,29 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Sub-Tab Switcher
+                  // Sub-Tab Switcher (Single-line horizontally scrollable pill bar on mobile, no multi-row wrap)
                   Container(
+                    width: double.infinity,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
                     padding: const EdgeInsets.all(4),
-                    child: Wrap(
-                      spacing: 4,
-                      children: [
-                        _buildSubTabButton('Credit Officers Monthly Summary', 0),
-                        _buildSubTabButton('Official Trial Balance', 1),
-                        _buildSubTabButton('Receipts & Payments Account', 2),
-                        _buildSubTabButton('Bank Statements & Treasury Reconciliation', 3),
-                      ],
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      child: Row(
+                        children: [
+                          _buildSubTabButton('Credit Officers Summary', 0, icon: Icons.people_alt_outlined),
+                          const SizedBox(width: 4),
+                          _buildSubTabButton('Official Trial Balance', 1, icon: Icons.balance_outlined),
+                          const SizedBox(width: 4),
+                          _buildSubTabButton('Receipts & Payments Account', 2, icon: Icons.receipt_long_outlined),
+                          const SizedBox(width: 4),
+                          _buildSubTabButton('Bank & Treasury Reconciliation', 3, icon: Icons.account_balance_outlined),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -948,7 +990,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 
-  Widget _buildSubTabButton(String label, int index) {
+  Widget _buildSubTabButton(String label, int index, {IconData? icon}) {
     final isSelected = _selectedExecSubTab == index;
     return InkWell(
       onTap: () {
@@ -958,19 +1000,34 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       },
       borderRadius: BorderRadius.circular(6),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected ? Colors.white : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
-          boxShadow: isSelected ? [const BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1))] : null,
+          boxShadow: isSelected
+              ? [const BoxShadow(color: Color(0x10000000), blurRadius: 4, offset: Offset(0, 1))]
+              : null,
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(
+                icon,
+                size: 14,
+                color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -978,17 +1035,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
   Widget _buildCoMonthlySummaryTable(MonthlyParityData data) {
     final officers = data.officers;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildScrollHint(),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-            headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 12),
-            dataTextStyle: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
-            columnSpacing: 20,
+    return _buildContainedTable(
+      hint: 'Swipe horizontally to view all credit officers',
+      child: DataTable(
+        headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
+        headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 12),
+        dataTextStyle: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
+        columnSpacing: 20,
             columns: [
               const DataColumn(label: Text('Financial Metric')),
               ...officers.map((o) => DataColumn(numeric: true, label: Text(o.name))),
@@ -1028,9 +1081,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 ],
               );
             }).toList(),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -1071,9 +1122,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            _buildScrollHint(),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+            _buildContainedTable(
+              hint: 'Swipe horizontally to view full trial balance',
               child: DataTable(
                 headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
                 headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 12),
@@ -1123,51 +1173,73 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFF86EFAC)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Total Receipts (Inflows)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
-                        const SizedBox(height: 4),
-                        Text(_formatNgn(rp.totalReceipts), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF166534), fontFamily: 'JetBrains Mono')),
-                      ],
-                    ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isMobile = constraints.maxWidth < 600;
+                final receiptsCard = Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFF86EFAC)),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFF93C5FD)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Total Payments (Outflows)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E40AF))),
-                        const SizedBox(height: 4),
-                        Text(_formatNgn(rp.totalPayments), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF1E40AF), fontFamily: 'JetBrains Mono')),
-                      ],
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Total Receipts (Inflows)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
+                      const SizedBox(height: 4),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(_formatNgn(rp.totalReceipts), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF166534), fontFamily: 'JetBrains Mono')),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                );
+
+                final paymentsCard = Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFF93C5FD)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Total Payments (Outflows)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E40AF))),
+                      const SizedBox(height: 4),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(_formatNgn(rp.totalPayments), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF1E40AF), fontFamily: 'JetBrains Mono')),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (isMobile) {
+                  return Column(
+                    children: [
+                      receiptsCard,
+                      const SizedBox(height: 8),
+                      paymentsCard,
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: receiptsCard),
+                    const SizedBox(width: 12),
+                    Expanded(child: paymentsCard),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 16),
-            _buildScrollHint(),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+            _buildContainedTable(
+              hint: 'Swipe horizontally to view full ledger rows',
               child: DataTable(
                 headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
                 headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 12),
@@ -1272,30 +1344,21 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               LayoutBuilder(
                 builder: (context, constraints) {
                   final isMobile = constraints.maxWidth < 600;
-                  final cardW = isMobile ? (constraints.maxWidth - 12) / 2 : 170.0;
-                  return Column(
+                  final cardW = isMobile
+                      ? (constraints.maxWidth - 10) / 2
+                      : (constraints.maxWidth - 36) / 4;
+                  return Wrap(
+                    spacing: isMobile ? 10 : 12,
+                    runSpacing: isMobile ? 10 : 12,
                     children: [
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          _buildMetricCard('Supervised Branches', '${data.totalBranches}', width: cardW),
-                          _buildMetricCard('People on Loan', '${_intFormat.format(data.totalPeopleOnLoan)} Clients', width: cardW),
-                          _buildMetricCard('Active Savers', '${_intFormat.format(data.totalActiveSavers)} Savers', width: cardW),
-                          _buildMetricCard('Active Loans Count', '${_intFormat.format(data.totalActiveLoans)} Loans', width: cardW),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          _buildMetricCard('Regional Collections', _formatNgn(data.totalAreaCollections), width: cardW),
-                          _buildMetricCard('Expected Collections', _formatNgn(data.totalAreaExpected), width: cardW),
-                          _buildMetricCard('Area Efficiency', '${data.overallEfficiency.toStringAsFixed(1)}%', width: cardW),
-                          _buildMetricCard('Area Savings Portfolio', _formatNgn(data.totalAreaSavings), width: cardW),
-                        ],
-                      ),
+                      _buildMetricCard('Supervised Branches', '${data.totalBranches}', width: cardW),
+                      _buildMetricCard('People on Loan', '${_intFormat.format(data.totalPeopleOnLoan)} Clients', width: cardW),
+                      _buildMetricCard('Active Savers', '${_intFormat.format(data.totalActiveSavers)} Savers', width: cardW),
+                      _buildMetricCard('Active Loans Count', '${_intFormat.format(data.totalActiveLoans)} Loans', width: cardW),
+                      _buildMetricCard('Regional Collections', _formatNgn(data.totalAreaCollections), width: cardW),
+                      _buildMetricCard('Expected Collections', _formatNgn(data.totalAreaExpected), width: cardW),
+                      _buildMetricCard('Area Efficiency', '${data.overallEfficiency.toStringAsFixed(1)}%', width: cardW),
+                      _buildMetricCard('Area Savings Portfolio', _formatNgn(data.totalAreaSavings), width: cardW),
                     ],
                   );
                 },
@@ -1308,9 +1371,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               const SizedBox(height: 12),
 
               // DataTable with mobile scroll cue
-              _buildScrollHint(),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
+              _buildContainedTable(
+                hint: 'Swipe horizontally to view all branch metrics',
                 child: DataTable(
                   headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
                   columns: const [
@@ -1586,7 +1648,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   Widget _buildMetricCard(String label, String value, {String? subtitle, bool isAccent = false, double? width}) {
     return Container(
       width: width ?? 170,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      constraints: const BoxConstraints(minHeight: 68),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: isAccent ? const Color(0xFF064E3B) : const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(8),
@@ -1594,9 +1657,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
@@ -1612,7 +1678,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               maxLines: 1,
               softWrap: false,
               style: TextStyle(
-                fontSize: 15,
+                fontSize: 14,
                 fontWeight: FontWeight.w800,
                 fontFamily: 'JetBrains Mono',
                 color: isAccent ? Colors.white : const Color(0xFF0F172A),
@@ -1623,6 +1689,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             const SizedBox(height: 2),
             Text(
               subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 10,
                 color: isAccent ? const Color(0xFFA7F3D0) : const Color(0xFF64748B),
@@ -1634,15 +1702,45 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 
-
-  Widget _buildScrollHint() {
-    return const Padding(
-      padding: EdgeInsets.only(bottom: 8),
-      child: Row(
+  Widget _buildContainedTable({
+    required Widget child,
+    String? hint,
+  }) {
+    final isMobile = MediaQuery.of(context).size.width < 750;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(Icons.swipe, size: 14, color: Color(0xFF94A3B8)),
-          SizedBox(width: 6),
-          Text('Scroll horizontally for complete table', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
+          if (isMobile)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF8FAFC),
+                border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.swap_horiz, size: 14, color: Color(0xFF64748B)),
+                  const SizedBox(width: 6),
+                  Text(
+                    hint ?? 'Swipe horizontally to view all columns',
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const ClampingScrollPhysics(),
+            child: child,
+          ),
         ],
       ),
     );
@@ -1721,6 +1819,13 @@ class _BankReconciliationForm extends ConsumerStatefulWidget {
 
 class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm> {
   bool _isSaving = false;
+  final Map<int, bool> _sectionExpanded = {
+    1: true,
+    2: true,
+    3: true,
+    4: true,
+    5: true,
+  };
 
   // Bank 1
   late TextEditingController _b1NameController;
@@ -2033,18 +2138,20 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
       children: [
         Text(
           label,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
         TextField(
           controller: controller,
           keyboardType: isNumber ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
-          style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+          style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A)),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+            hintStyle: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
             isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             filled: true,
             fillColor: const Color(0xFFF8FAFC),
             border: OutlineInputBorder(
@@ -2066,39 +2173,69 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
   }
 
   Widget _buildSectionCard({
+    required int sectionIndex,
     required String title,
     required String subtitle,
     required IconData icon,
     required Widget child,
   }) {
+    final isExpanded = _sectionExpanded[sectionIndex] ?? true;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: const Color(0xFF0F766E)),
-              const SizedBox(width: 8),
-              Text(
-                title,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+          InkWell(
+            onTap: () {
+              setState(() {
+                _sectionExpanded[sectionIndex] = !isExpanded;
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Icon(icon, size: 18, color: const Color(0xFF0F766E)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    isExpanded ? Icons.expand_less : Icons.expand_more,
+                    size: 20,
+                    color: const Color(0xFF64748B),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-          ),
-          const SizedBox(height: 16),
-          child,
+          if (isExpanded) ...[
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: child,
+            ),
+          ],
         ],
       ),
     );
@@ -2114,7 +2251,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
     TextEditingController closeC,
   ) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(6),
@@ -2124,18 +2261,30 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E293B))),
-          const SizedBox(height: 12),
-          _buildField('Bank Name', nameC, hint: 'e.g., Sterling Bank', isNumber: false),
           const SizedBox(height: 10),
-          _buildField('Account Number', accC, hint: 'e.g., 374206', isNumber: false),
-          const SizedBox(height: 10),
-          _buildField('Opening Balance B/F (₦)', openC, hint: '0.00'),
-          const SizedBox(height: 10),
-          _buildField('Bank Charges (₦)', chgC, hint: '0.00'),
-          const SizedBox(height: 10),
-          _buildField('Bank Interest Earned (₦)', intC, hint: '0.00'),
-          const SizedBox(height: 10),
-          _buildField('Closing Balance C/F (₦)', closeC, hint: '0.00'),
+          Row(
+            children: [
+              Expanded(child: _buildField('Bank Name', nameC, hint: 'e.g., Sterling Bank', isNumber: false)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildField('Account Number', accC, hint: 'e.g., 374206', isNumber: false)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: _buildField('Opening Balance B/F (₦)', openC, hint: '0.00')),
+              const SizedBox(width: 8),
+              Expanded(child: _buildField('Closing Balance C/F (₦)', closeC, hint: '0.00')),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: _buildField('Bank Charges (₦)', chgC, hint: '0.00')),
+              const SizedBox(width: 8),
+              Expanded(child: _buildField('Bank Interest Earned (₦)', intC, hint: '0.00')),
+            ],
+          ),
         ],
       ),
     );
@@ -2146,13 +2295,13 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
     return LayoutBuilder(
       builder: (context, constraints) {
         final isNarrow = constraints.maxWidth < 750;
-        final isVeryNarrow = constraints.maxWidth < 950;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Section 1: Commercial Bank Accounts (Statements)
             _buildSectionCard(
+              sectionIndex: 1,
               title: '1. Commercial Bank Accounts (Statements)',
               subtitle: 'Zero hardcoding: Enter your commercial bank statement details (e.g. Sterling, Wema) and balances.',
               icon: Icons.account_balance,
@@ -2160,7 +2309,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
                   ? Column(
                       children: [
                         _buildBankCard('Bank Account 1', _b1NameController, _b1AccController, _b1OpenController, _b1ChgController, _b1IntController, _b1CloseController),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         _buildBankCard('Bank Account 2 (Optional)', _b2NameController, _b2AccController, _b2OpenController, _b2ChgController, _b2IntController, _b2CloseController),
                       ],
                     )
@@ -2170,7 +2319,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
                         Expanded(
                           child: _buildBankCard('Bank Account 1', _b1NameController, _b1AccController, _b1OpenController, _b1ChgController, _b1IntController, _b1CloseController),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 14),
                         Expanded(
                           child: _buildBankCard('Bank Account 2 (Optional)', _b2NameController, _b2AccController, _b2OpenController, _b2ChgController, _b2IntController, _b2CloseController),
                         ),
@@ -2181,290 +2330,168 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
 
             // Section 2: Additional Treasury Balances & Cash Movements
             _buildSectionCard(
+              sectionIndex: 2,
               title: '2. Additional Treasury Balances & Cash Movements',
               subtitle: 'Physical vault cash floats, profits, lapse reserves, and YTD equity adjustments.',
               icon: Icons.account_balance_wallet,
-              child: isVeryNarrow
-                  ? Column(
-                      children: [
-                        _buildField('Cash in Hand B/F (Vault Float) (₦)', _cashBfController, hint: 'e.g. 522700.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Overdue B/F (₦)', _overdueBfController, hint: 'e.g. 14500.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Sales Profit / Finance Markup (₦)', _profitController, hint: '0.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Sales: Cash and Carry (₦)', _ccController, hint: '0.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Lapse Deposit Return (₦)', _lapseRetController, hint: 'e.g. 16700.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Received from Other Sources (Annex-1) (₦)', _recOtherController, hint: 'e.g. 55200.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Paid to Other Sources / Op Expenses (₦)', _paidOtherController, hint: 'e.g. 1041405.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Retained Earnings (YTD Equity) (₦)', _retainedEarningsController, hint: '26351209.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Head Office Asset Allocation (₦)', _hoAssetAllocController, hint: '14730282.00'),
-                      ],
-                    )
-                  : Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            children: [
-                              _buildField('Cash in Hand B/F (Vault Float) (₦)', _cashBfController, hint: 'e.g. 522700.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Overdue B/F (₦)', _overdueBfController, hint: 'e.g. 14500.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Sales Profit / Finance Markup (₦)', _profitController, hint: '0.00'),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            children: [
-                              _buildField('Sales: Cash and Carry (₦)', _ccController, hint: '0.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Lapse Deposit Return (₦)', _lapseRetController, hint: 'e.g. 16700.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Received from Other Sources (Annex-1) (₦)', _recOtherController, hint: 'e.g. 55200.00'),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            children: [
-                              _buildField('Paid to Other Sources / Op Expenses (₦)', _paidOtherController, hint: 'e.g. 1041405.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Retained Earnings (YTD Equity) (₦)', _retainedEarningsController, hint: '26351209.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Head Office Asset Allocation (₦)', _hoAssetAllocController, hint: '14730282.00'),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+              child: LayoutBuilder(
+                builder: (context, s2Constraints) {
+                  final isMobile = s2Constraints.maxWidth < 600;
+                  final fieldW = isMobile
+                      ? (s2Constraints.maxWidth - 8) / 2
+                      : (s2Constraints.maxWidth - 16) / 3;
+                  return Wrap(
+                    spacing: 8,
+                    runSpacing: 10,
+                    children: [
+                      SizedBox(width: fieldW, child: _buildField('Cash in Hand B/F (₦)', _cashBfController, hint: 'e.g. 522700.00')),
+                      SizedBox(width: fieldW, child: _buildField('Overdue B/F (₦)', _overdueBfController, hint: 'e.g. 14500.00')),
+                      SizedBox(width: fieldW, child: _buildField('Sales Profit / Markup (₦)', _profitController, hint: '0.00')),
+                      SizedBox(width: fieldW, child: _buildField('Sales: Cash and Carry (₦)', _ccController, hint: '0.00')),
+                      SizedBox(width: fieldW, child: _buildField('Lapse Deposit Return (₦)', _lapseRetController, hint: 'e.g. 16700.00')),
+                      SizedBox(width: fieldW, child: _buildField('Received Other Sources (₦)', _recOtherController, hint: 'e.g. 55200.00')),
+                      SizedBox(width: fieldW, child: _buildField('Paid to Other Sources (₦)', _paidOtherController, hint: 'e.g. 1041405.00')),
+                      SizedBox(width: fieldW, child: _buildField('Retained Earnings YTD (₦)', _retainedEarningsController, hint: '26351209.00')),
+                      SizedBox(width: fieldW, child: _buildField('HO Asset Allocation (₦)', _hoAssetAllocController, hint: '14730282.00')),
+                    ],
+                  );
+                },
+              ),
             ),
             const SizedBox(height: 16),
 
             // Section 3: Head Office & Area Fund Cash Remittances
             _buildSectionCard(
+              sectionIndex: 3,
               title: '3. Head Office & Area Fund Cash Remittances',
               subtitle: 'Inter-branch and headquarters liquidity cash receipts and disbursements.',
               icon: Icons.sync_alt,
-              child: isNarrow
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              child: LayoutBuilder(
+                builder: (context, s3Constraints) {
+                  final isMobile = s3Constraints.maxWidth < 650;
+                  final inflowsCol = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Fund Cash Received (Inflows)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF166534))),
+                      const SizedBox(height: 8),
+                      _buildField('HO Asset Received (₦)', _fRecHoAssetController, hint: '0.00'),
+                      const SizedBox(height: 8),
+                      _buildField('HO Main Received (₦)', _fRecHoMainController, hint: '0.00'),
+                      const SizedBox(height: 8),
+                      _buildField('Other Area Received (₦)', _fRecAreaController, hint: '0.00'),
+                      const SizedBox(height: 8),
+                      _buildField('Branch Office Received (₦)', _fRecBrController, hint: '0.00'),
+                    ],
+                  );
+
+                  final outflowsCol = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Fund Cash Remitted (Outflows)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1E40AF))),
+                      const SizedBox(height: 8),
+                      _buildField('HO Asset Remitted (₦)', _fPayHoAssetController, hint: '0.00'),
+                      const SizedBox(height: 8),
+                      _buildField('HO Main Remitted (₦)', _fPayHoMainController, hint: '0.00'),
+                      const SizedBox(height: 8),
+                      _buildField('Branch Office Remitted (₦)', _fPayBrController, hint: '0.00'),
+                    ],
+                  );
+
+                  if (isMobile) {
+                    return Column(
                       children: [
-                        const Text('Fund Cash Received (Inflows)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF166534))),
-                        const SizedBox(height: 10),
-                        _buildField('HO Asset Received (₦)', _fRecHoAssetController, hint: '0.00'),
-                        const SizedBox(height: 12),
-                        _buildField('HO Main Received (₦)', _fRecHoMainController, hint: '0.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Other Area Received (₦)', _fRecAreaController, hint: '0.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Branch Office Received (₦)', _fRecBrController, hint: '0.00'),
-                        const SizedBox(height: 20),
-                        const Text('Fund Cash Remitted (Outflows)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E40AF))),
-                        const SizedBox(height: 10),
-                        _buildField('HO Asset Remitted (₦)', _fPayHoAssetController, hint: '0.00'),
-                        const SizedBox(height: 12),
-                        _buildField('HO Main Remitted (₦)', _fPayHoMainController, hint: '0.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Branch Office Remitted (₦)', _fPayBrController, hint: '0.00'),
+                        inflowsCol,
+                        const SizedBox(height: 16),
+                        const Divider(color: Color(0xFFE2E8F0)),
+                        const SizedBox(height: 8),
+                        outflowsCol,
                       ],
-                    )
-                  : Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Fund Cash Received (Inflows)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF166534))),
-                              const SizedBox(height: 10),
-                              _buildField('HO Asset Received (₦)', _fRecHoAssetController, hint: '0.00'),
-                              const SizedBox(height: 12),
-                              _buildField('HO Main Received (₦)', _fRecHoMainController, hint: '0.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Other Area Received (₦)', _fRecAreaController, hint: '0.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Branch Office Received (₦)', _fRecBrController, hint: '0.00'),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 24),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Fund Cash Remitted (Outflows)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E40AF))),
-                              const SizedBox(height: 10),
-                              _buildField('HO Asset Remitted (₦)', _fPayHoAssetController, hint: '0.00'),
-                              const SizedBox(height: 12),
-                              _buildField('HO Main Remitted (₦)', _fPayHoMainController, hint: '0.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Branch Office Remitted (₦)', _fPayBrController, hint: '0.00'),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                    );
+                  }
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: inflowsCol),
+                      const SizedBox(width: 20),
+                      Expanded(child: outflowsCol),
+                    ],
+                  );
+                },
+              ),
             ),
             const SizedBox(height: 16),
 
             // Section 4: Cumulative Trial Balance Expenses (Year-To-Date)
             _buildSectionCard(
+              sectionIndex: 4,
               title: '4. Cumulative Trial Balance Expenses (Year-To-Date)',
               subtitle: 'Cumulative operating expenditures from Jan 1 through the reporting month.',
               icon: Icons.receipt_long,
-              child: isVeryNarrow
-                  ? Column(
-                      children: [
-                        _buildField('Personnel Gross Salary (₦)', _tbSalaryController, hint: 'e.g. 4453447.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Office Rent (₦)', _tbRentController, hint: 'e.g. 400000.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Electricity/Gas/Water (₦)', _tbElectricityController, hint: 'e.g. 81700.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Stationery/Office Mgmt (₦)', _tbStationeryController, hint: 'e.g. 1043300.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Entertainment (₦)', _tbEntertainmentController, hint: 'e.g. 253000.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Telephone/Postage (₦)', _tbTelephoneController, hint: 'e.g. 27000.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Repair Cost (Office) (₦)', _tbRepairOfficeController, hint: 'e.g. 243100.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Transport Allowance (₦)', _tbTransportController, hint: 'e.g. 1405600.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Training Expenses (₦)', _tbTrainingController, hint: 'e.g. 1890652.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Other Expenses (₦)', _tbOtherExpensesController, hint: '0.00'),
-                      ],
-                    )
-                  : Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            children: [
-                              _buildField('Personnel Gross Salary (₦)', _tbSalaryController, hint: 'e.g. 4453447.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Office Rent (₦)', _tbRentController, hint: 'e.g. 400000.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Electricity/Gas/Water (₦)', _tbElectricityController, hint: 'e.g. 81700.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Stationery/Office Mgmt (₦)', _tbStationeryController, hint: 'e.g. 1043300.00'),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            children: [
-                              _buildField('Entertainment (₦)', _tbEntertainmentController, hint: 'e.g. 253000.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Telephone/Postage (₦)', _tbTelephoneController, hint: 'e.g. 27000.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Repair Cost (Office) (₦)', _tbRepairOfficeController, hint: 'e.g. 243100.00'),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            children: [
-                              _buildField('Transport Allowance (₦)', _tbTransportController, hint: 'e.g. 1405600.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Training Expenses (₦)', _tbTrainingController, hint: 'e.g. 1890652.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Other Expenses (₦)', _tbOtherExpensesController, hint: '0.00'),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+              child: LayoutBuilder(
+                builder: (context, s4Constraints) {
+                  final isMobile = s4Constraints.maxWidth < 600;
+                  final isTablet = s4Constraints.maxWidth >= 600 && s4Constraints.maxWidth < 950;
+                  final fieldW = isMobile
+                      ? (s4Constraints.maxWidth - 8) / 2
+                      : isTablet
+                          ? (s4Constraints.maxWidth - 16) / 3
+                          : (s4Constraints.maxWidth - 24) / 4;
+                  return Wrap(
+                    spacing: 8,
+                    runSpacing: 10,
+                    children: [
+                      SizedBox(width: fieldW, child: _buildField('Personnel Gross Salary (₦)', _tbSalaryController, hint: 'e.g. 4453447.00')),
+                      SizedBox(width: fieldW, child: _buildField('Office Rent (₦)', _tbRentController, hint: 'e.g. 400000.00')),
+                      SizedBox(width: fieldW, child: _buildField('Electricity/Gas (₦)', _tbElectricityController, hint: 'e.g. 81700.00')),
+                      SizedBox(width: fieldW, child: _buildField('Stationery/Office Mgmt (₦)', _tbStationeryController, hint: 'e.g. 1043300.00')),
+                      SizedBox(width: fieldW, child: _buildField('Entertainment (₦)', _tbEntertainmentController, hint: 'e.g. 253000.00')),
+                      SizedBox(width: fieldW, child: _buildField('Telephone/Postage (₦)', _tbTelephoneController, hint: 'e.g. 27000.00')),
+                      SizedBox(width: fieldW, child: _buildField('Repair Cost Office (₦)', _tbRepairOfficeController, hint: 'e.g. 243100.00')),
+                      SizedBox(width: fieldW, child: _buildField('Transport Allowance (₦)', _tbTransportController, hint: 'e.g. 1405600.00')),
+                      SizedBox(width: fieldW, child: _buildField('Training Expenses (₦)', _tbTrainingController, hint: 'e.g. 1890652.00')),
+                      SizedBox(width: fieldW, child: _buildField('Other Expenses (₦)', _tbOtherExpensesController, hint: '0.00')),
+                    ],
+                  );
+                },
+              ),
             ),
             const SizedBox(height: 16),
 
             // Section 5: Cumulative Trial Balance Income & Reserves (Year-To-Date)
             _buildSectionCard(
+              sectionIndex: 5,
               title: '5. Cumulative Trial Balance Income & Reserves (Year-To-Date)',
               subtitle: 'Cumulative auxiliary revenue and balance sheet equity/funds.',
               icon: Icons.pie_chart,
-              child: isVeryNarrow
-                  ? Column(
-                      children: [
-                        _buildField('Sales Profit (Cumulative) (₦)', _tbSalesProfitController, hint: 'e.g. 1636698.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Damages and Fine (₦)', _tbDamagesFineController, hint: 'e.g. 5500.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Passbook Fees (₦)', _tbPassbookController, hint: 'e.g. 42500.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Scraps Sales (₦)', _tbScrapsSalesController, hint: 'e.g. 1440.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Application Fees (₦)', _tbApplicationFeeController, hint: 'e.g. 418000.00'),
-                        const SizedBox(height: 12),
-                        _buildField('HO Fund (Main) (Debit) (₦)', _tbFundHoMainController, hint: 'e.g. 36553628.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Branch Office Fund (₦)', _tbFundBranchController, hint: 'e.g. 971000.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Other Area Fund (₦)', _tbFundOtherAreaController, hint: 'e.g. 11300000.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Internal Fund (₦)', _tbFundInternalController, hint: 'e.g. 5018362.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Lapse Deposit Reserve (₦)', _lapseDepositReserveController, hint: '0.00'),
-                        const SizedBox(height: 12),
-                        _buildField('Contingency Reserve (₦)', _tbContingencyController, hint: '0.00'),
-                      ],
-                    )
-                  : Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            children: [
-                              _buildField('Sales Profit (Cumulative) (₦)', _tbSalesProfitController, hint: 'e.g. 1636698.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Damages and Fine (₦)', _tbDamagesFineController, hint: 'e.g. 5500.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Passbook Fees (₦)', _tbPassbookController, hint: 'e.g. 42500.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Scraps Sales (₦)', _tbScrapsSalesController, hint: 'e.g. 1440.00'),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            children: [
-                              _buildField('Application Fees (₦)', _tbApplicationFeeController, hint: 'e.g. 418000.00'),
-                              const SizedBox(height: 12),
-                              _buildField('HO Fund (Main) (Debit) (₦)', _tbFundHoMainController, hint: 'e.g. 36553628.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Branch Office Fund (₦)', _tbFundBranchController, hint: 'e.g. 971000.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Other Area Fund (₦)', _tbFundOtherAreaController, hint: 'e.g. 11300000.00'),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            children: [
-                              _buildField('Internal Fund (₦)', _tbFundInternalController, hint: 'e.g. 5018362.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Lapse Deposit Reserve (₦)', _lapseDepositReserveController, hint: '0.00'),
-                              const SizedBox(height: 12),
-                              _buildField('Contingency Reserve (₦)', _tbContingencyController, hint: '0.00'),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+              child: LayoutBuilder(
+                builder: (context, s5Constraints) {
+                  final isMobile = s5Constraints.maxWidth < 600;
+                  final isTablet = s5Constraints.maxWidth >= 600 && s5Constraints.maxWidth < 950;
+                  final fieldW = isMobile
+                      ? (s5Constraints.maxWidth - 8) / 2
+                      : isTablet
+                          ? (s5Constraints.maxWidth - 16) / 3
+                          : (s5Constraints.maxWidth - 24) / 4;
+                  return Wrap(
+                    spacing: 8,
+                    runSpacing: 10,
+                    children: [
+                      SizedBox(width: fieldW, child: _buildField('Sales Profit Cumulative (₦)', _tbSalesProfitController, hint: 'e.g. 1636698.00')),
+                      SizedBox(width: fieldW, child: _buildField('Damages and Fine (₦)', _tbDamagesFineController, hint: 'e.g. 5500.00')),
+                      SizedBox(width: fieldW, child: _buildField('Passbook Fees (₦)', _tbPassbookController, hint: 'e.g. 42500.00')),
+                      SizedBox(width: fieldW, child: _buildField('Scraps Sales (₦)', _tbScrapsSalesController, hint: 'e.g. 1440.00')),
+                      SizedBox(width: fieldW, child: _buildField('Application Fees (₦)', _tbApplicationFeeController, hint: 'e.g. 418000.00')),
+                      SizedBox(width: fieldW, child: _buildField('HO Fund Main Debit (₦)', _tbFundHoMainController, hint: 'e.g. 36553628.00')),
+                      SizedBox(width: fieldW, child: _buildField('Branch Office Fund (₦)', _tbFundBranchController, hint: 'e.g. 971000.00')),
+                      SizedBox(width: fieldW, child: _buildField('Other Area Fund (₦)', _tbFundOtherAreaController, hint: 'e.g. 11300000.00')),
+                      SizedBox(width: fieldW, child: _buildField('Internal Fund (₦)', _tbFundInternalController, hint: 'e.g. 5018362.00')),
+                      SizedBox(width: fieldW, child: _buildField('Lapse Deposit Reserve (₦)', _lapseDepositReserveController, hint: '0.00')),
+                      SizedBox(width: fieldW, child: _buildField('Contingency Reserve (₦)', _tbContingencyController, hint: '0.00')),
+                    ],
+                  );
+                },
+              ),
             ),
             const SizedBox(height: 24),
 
