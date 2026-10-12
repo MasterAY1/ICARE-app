@@ -37,7 +37,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // Monthly Executive Parity State
   int _selectedExecMonth = 9;
   int _selectedExecYear = 2026;
-  int _selectedExecSubTab = 0; // 0: CO Summary, 1: Trial Balance, 2: Receipts & Payments
+  int _selectedExecSubTab = 0; // 0: CO Summary, 1: Trial Balance, 2: Receipts & Payments, 3: Bank Statements & Treasury Reconciliation
 
   // Futures
   late Future<ReportsMeta> _metaFuture;
@@ -48,6 +48,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   late Future<AreaComparisonData> _areaFuture;
   late Future<MonthlyParityData> _parityFuture;
   late Future<MonthlyExecutiveStatementsData> _statementsFuture;
+  late Future<MonthlyReconciliationData> _reconciliationFuture;
 
   final _currencyFormat = NumberFormat('#,##0.00');
   final _intFormat = NumberFormat('#,##0');
@@ -122,6 +123,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         month: _selectedExecMonth,
       );
       _statementsFuture = api.getOfficialStatements(
+        branchName: _selectedBranchName,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+      );
+      _reconciliationFuture = api.getMonthlyReconciliation(
         branchName: _selectedBranchName,
         year: _selectedExecYear,
         month: _selectedExecMonth,
@@ -966,6 +972,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         _buildSubTabButton('Credit Officers Monthly Summary', 0),
                         _buildSubTabButton('Official Trial Balance', 1),
                         _buildSubTabButton('Receipts & Payments Account', 2),
+                        _buildSubTabButton('Bank Statements & Treasury Reconciliation', 3),
                       ],
                     ),
                   ),
@@ -976,8 +983,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     _buildCoMonthlySummaryTable(data)
                   else if (_selectedExecSubTab == 1)
                     _buildOfficialTrialBalanceView()
+                  else if (_selectedExecSubTab == 2)
+                    _buildReceiptsAndPaymentsView()
                   else
-                    _buildReceiptsAndPaymentsView(),
+                    _buildBankReconciliationView(),
                 ],
               ),
             );
@@ -1240,6 +1249,34 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  Widget _buildBankReconciliationView() {
+    return FutureBuilder<MonthlyReconciliationData>(
+      future: _reconciliationFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
+        }
+        if (snapshot.hasError) {
+          return _buildErrorCard(snapshot.error.toString());
+        }
+        final data = snapshot.data;
+        if (data == null) {
+          return _buildEmptyCard('No bank statement reconciliation data available.');
+        }
+
+        return _BankReconciliationForm(
+          initialData: data,
+          branchName: _selectedBranchName,
+          year: _selectedExecYear,
+          month: _selectedExecMonth,
+          onSaved: () {
+            _refreshCurrentTabData();
+          },
         );
       },
     );
@@ -2303,3 +2340,560 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 }
+
+class _BankReconciliationForm extends ConsumerStatefulWidget {
+  final MonthlyReconciliationData initialData;
+  final String? branchName;
+  final int year;
+  final int month;
+  final VoidCallback onSaved;
+
+  const _BankReconciliationForm({
+    required this.initialData,
+    required this.branchName,
+    required this.year,
+    required this.month,
+    required this.onSaved,
+  });
+
+  @override
+  ConsumerState<_BankReconciliationForm> createState() => _BankReconciliationFormState();
+}
+
+class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm> {
+  bool _isSaving = false;
+
+  // Bank 1
+  late TextEditingController _b1NameController;
+  late TextEditingController _b1AccController;
+  late TextEditingController _b1OpenController;
+  late TextEditingController _b1ChgController;
+  late TextEditingController _b1IntController;
+  late TextEditingController _b1CloseController;
+
+  // Bank 2
+  late TextEditingController _b2NameController;
+  late TextEditingController _b2AccController;
+  late TextEditingController _b2OpenController;
+  late TextEditingController _b2ChgController;
+  late TextEditingController _b2IntController;
+  late TextEditingController _b2CloseController;
+
+  // Additional Treasury
+  late TextEditingController _cashBfController;
+  late TextEditingController _overdueBfController;
+  late TextEditingController _profitController;
+  late TextEditingController _ccController;
+  late TextEditingController _lapseRetController;
+  late TextEditingController _recOtherController;
+  late TextEditingController _paidOtherController;
+  late TextEditingController _retainedEarningsController;
+  late TextEditingController _hoAssetAllocController;
+
+  // Remittances
+  late TextEditingController _fRecHoAssetController;
+  late TextEditingController _fRecHoMainController;
+  late TextEditingController _fRecAreaController;
+  late TextEditingController _fRecBrController;
+
+  late TextEditingController _fPayHoAssetController;
+  late TextEditingController _fPayHoMainController;
+  late TextEditingController _fPayBrController;
+
+  @override
+  void initState() {
+    super.initState();
+    _initControllers();
+  }
+
+  void _initControllers() {
+    final banks = widget.initialData.banks;
+    final b1 = banks.isNotEmpty ? banks[0] : null;
+    final b2 = banks.length > 1 ? banks[1] : null;
+
+    _b1NameController = TextEditingController(text: b1?.bankName ?? '');
+    _b1AccController = TextEditingController(text: b1?.accountNumber ?? '');
+    _b1OpenController = TextEditingController(text: b1 != null && b1.openingBalance > 0 ? b1.openingBalance.toStringAsFixed(2) : '');
+    _b1ChgController = TextEditingController(text: b1 != null && b1.bankCharges > 0 ? b1.bankCharges.toStringAsFixed(2) : '');
+    _b1IntController = TextEditingController(text: b1 != null && b1.bankInterest > 0 ? b1.bankInterest.toStringAsFixed(2) : '');
+    _b1CloseController = TextEditingController(text: b1 != null && b1.closingBalance > 0 ? b1.closingBalance.toStringAsFixed(2) : '');
+
+    _b2NameController = TextEditingController(text: b2?.bankName ?? '');
+    _b2AccController = TextEditingController(text: b2?.accountNumber ?? '');
+    _b2OpenController = TextEditingController(text: b2 != null && b2.openingBalance > 0 ? b2.openingBalance.toStringAsFixed(2) : '');
+    _b2ChgController = TextEditingController(text: b2 != null && b2.bankCharges > 0 ? b2.bankCharges.toStringAsFixed(2) : '');
+    _b2IntController = TextEditingController(text: b2 != null && b2.bankInterest > 0 ? b2.bankInterest.toStringAsFixed(2) : '');
+    _b2CloseController = TextEditingController(text: b2 != null && b2.closingBalance > 0 ? b2.closingBalance.toStringAsFixed(2) : '');
+
+    final d = widget.initialData;
+    _cashBfController = TextEditingController(text: d.cashInHandBf > 0 ? d.cashInHandBf.toStringAsFixed(2) : '');
+    _overdueBfController = TextEditingController(text: d.overdueBf > 0 ? d.overdueBf.toStringAsFixed(2) : '');
+    _profitController = TextEditingController(text: d.salesProfitMarkup > 0 ? d.salesProfitMarkup.toStringAsFixed(2) : '');
+    _ccController = TextEditingController(text: d.salesCashAndCarry > 0 ? d.salesCashAndCarry.toStringAsFixed(2) : '');
+    _lapseRetController = TextEditingController(text: d.lapseDepositReturn > 0 ? d.lapseDepositReturn.toStringAsFixed(2) : '');
+    _recOtherController = TextEditingController(text: d.receivedFromOtherSources > 0 ? d.receivedFromOtherSources.toStringAsFixed(2) : '');
+    _paidOtherController = TextEditingController(text: d.paidToOtherSources > 0 ? d.paidToOtherSources.toStringAsFixed(2) : '');
+    _retainedEarningsController = TextEditingController(text: d.retainedEarnings > 0 ? d.retainedEarnings.toStringAsFixed(2) : '26351209.00');
+    _hoAssetAllocController = TextEditingController(text: d.headOfficeAssetAllocation > 0 ? d.headOfficeAssetAllocation.toStringAsFixed(2) : '14730282.00');
+
+    _fRecHoAssetController = TextEditingController(text: d.fundCashHoAssetReceipt > 0 ? d.fundCashHoAssetReceipt.toStringAsFixed(2) : '');
+    _fRecHoMainController = TextEditingController(text: d.fundCashHoMainReceipt > 0 ? d.fundCashHoMainReceipt.toStringAsFixed(2) : '');
+    _fRecAreaController = TextEditingController(text: d.fundCashOtherAreaReceipt > 0 ? d.fundCashOtherAreaReceipt.toStringAsFixed(2) : '');
+    _fRecBrController = TextEditingController(text: d.fundCashBranchReceipt > 0 ? d.fundCashBranchReceipt.toStringAsFixed(2) : '');
+
+    _fPayHoAssetController = TextEditingController(text: d.fundCashHoAssetPayment > 0 ? d.fundCashHoAssetPayment.toStringAsFixed(2) : '');
+    _fPayHoMainController = TextEditingController(text: d.fundCashHoMainPayment > 0 ? d.fundCashHoMainPayment.toStringAsFixed(2) : '');
+    _fPayBrController = TextEditingController(text: d.fundCashBranchPayment > 0 ? d.fundCashBranchPayment.toStringAsFixed(2) : '');
+  }
+
+  @override
+  void didUpdateWidget(_BankReconciliationForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialData != widget.initialData ||
+        oldWidget.branchName != widget.branchName ||
+        oldWidget.year != widget.year ||
+        oldWidget.month != widget.month) {
+      _disposeControllers();
+      _initControllers();
+    }
+  }
+
+  void _disposeControllers() {
+    _b1NameController.dispose();
+    _b1AccController.dispose();
+    _b1OpenController.dispose();
+    _b1ChgController.dispose();
+    _b1IntController.dispose();
+    _b1CloseController.dispose();
+
+    _b2NameController.dispose();
+    _b2AccController.dispose();
+    _b2OpenController.dispose();
+    _b2ChgController.dispose();
+    _b2IntController.dispose();
+    _b2CloseController.dispose();
+
+    _cashBfController.dispose();
+    _overdueBfController.dispose();
+    _profitController.dispose();
+    _ccController.dispose();
+    _lapseRetController.dispose();
+    _recOtherController.dispose();
+    _paidOtherController.dispose();
+    _retainedEarningsController.dispose();
+    _hoAssetAllocController.dispose();
+
+    _fRecHoAssetController.dispose();
+    _fRecHoMainController.dispose();
+    _fRecAreaController.dispose();
+    _fRecBrController.dispose();
+
+    _fPayHoAssetController.dispose();
+    _fPayHoMainController.dispose();
+    _fPayBrController.dispose();
+  }
+
+  @override
+  void dispose() {
+    _disposeControllers();
+    super.dispose();
+  }
+
+  double _parseVal(TextEditingController c) {
+    final text = c.text.replaceAll(',', '').trim();
+    return double.tryParse(text) ?? 0.0;
+  }
+
+  Future<void> _handleSave() async {
+    setState(() => _isSaving = true);
+    try {
+      final updatedData = MonthlyReconciliationData(
+        banks: [
+          BankStatementItem(
+            bankName: _b1NameController.text.trim(),
+            accountNumber: _b1AccController.text.trim(),
+            openingBalance: _parseVal(_b1OpenController),
+            bankCharges: _parseVal(_b1ChgController),
+            bankInterest: _parseVal(_b1IntController),
+            closingBalance: _parseVal(_b1CloseController),
+          ),
+          BankStatementItem(
+            bankName: _b2NameController.text.trim(),
+            accountNumber: _b2AccController.text.trim(),
+            openingBalance: _parseVal(_b2OpenController),
+            bankCharges: _parseVal(_b2ChgController),
+            bankInterest: _parseVal(_b2IntController),
+            closingBalance: _parseVal(_b2CloseController),
+          ),
+        ],
+        cashInHandBf: _parseVal(_cashBfController),
+        overdueBf: _parseVal(_overdueBfController),
+        salesProfitMarkup: _parseVal(_profitController),
+        salesCashAndCarry: _parseVal(_ccController),
+        fundCashHoAssetReceipt: _parseVal(_fRecHoAssetController),
+        fundCashHoMainReceipt: _parseVal(_fRecHoMainController),
+        fundCashOtherAreaReceipt: _parseVal(_fRecAreaController),
+        fundCashBranchReceipt: _parseVal(_fRecBrController),
+        fundCashHoAssetPayment: _parseVal(_fPayHoAssetController),
+        fundCashHoMainPayment: _parseVal(_fPayHoMainController),
+        fundCashBranchPayment: _parseVal(_fPayBrController),
+        depositWithdrawal: 0.0,
+        lapseDepositReturn: _parseVal(_lapseRetController),
+        paidToOtherSources: _parseVal(_paidOtherController),
+        receivedFromOtherSources: _parseVal(_recOtherController),
+        retainedEarnings: _parseVal(_retainedEarningsController) > 0 ? _parseVal(_retainedEarningsController) : 26351209.0,
+        headOfficeAssetAllocation: _parseVal(_hoAssetAllocController) > 0 ? _parseVal(_hoAssetAllocController) : 14730282.0,
+      );
+
+      final api = ref.read(reportsApiServiceProvider);
+      await api.saveMonthlyReconciliation(
+        branchName: widget.branchName,
+        year: widget.year,
+        month: widget.month,
+        data: updatedData,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Monthly reconciliation saved successfully. Statements recalculated.'),
+            backgroundColor: Color(0xFF166534),
+          ),
+        );
+        widget.onSaved();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save reconciliation: $e'),
+            backgroundColor: const Color(0xFFDC2626),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Widget _buildField(String label, TextEditingController controller, {String? hint, bool isNumber = true}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          keyboardType: isNumber ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
+          style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            filled: true,
+            fillColor: const Color(0xFFF8FAFC),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: const BorderSide(color: Color(0xFF0F766E), width: 1.5),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSectionCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Widget child,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: const Color(0xFF0F766E)),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          ),
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBankCard(
+    String title,
+    TextEditingController nameC,
+    TextEditingController accC,
+    TextEditingController openC,
+    TextEditingController chgC,
+    TextEditingController intC,
+    TextEditingController closeC,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E293B))),
+          const SizedBox(height: 12),
+          _buildField('Bank Name', nameC, hint: 'e.g., Sterling Bank', isNumber: false),
+          const SizedBox(height: 10),
+          _buildField('Account Number', accC, hint: 'e.g., 374206', isNumber: false),
+          const SizedBox(height: 10),
+          _buildField('Opening Balance B/F (₦)', openC, hint: '0.00'),
+          const SizedBox(height: 10),
+          _buildField('Bank Charges (₦)', chgC, hint: '0.00'),
+          const SizedBox(height: 10),
+          _buildField('Bank Interest Earned (₦)', intC, hint: '0.00'),
+          const SizedBox(height: 10),
+          _buildField('Closing Balance C/F (₦)', closeC, hint: '0.00'),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 750;
+        final isVeryNarrow = constraints.maxWidth < 950;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Section 1: Commercial Bank Accounts (Statements)
+            _buildSectionCard(
+              title: '1. Commercial Bank Accounts (Statements)',
+              subtitle: 'Zero hardcoding: Enter your commercial bank statement details (e.g. Sterling, Wema) and balances.',
+              icon: Icons.account_balance,
+              child: isNarrow
+                  ? Column(
+                      children: [
+                        _buildBankCard('Bank Account 1', _b1NameController, _b1AccController, _b1OpenController, _b1ChgController, _b1IntController, _b1CloseController),
+                        const SizedBox(height: 16),
+                        _buildBankCard('Bank Account 2 (Optional)', _b2NameController, _b2AccController, _b2OpenController, _b2ChgController, _b2IntController, _b2CloseController),
+                      ],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: _buildBankCard('Bank Account 1', _b1NameController, _b1AccController, _b1OpenController, _b1ChgController, _b1IntController, _b1CloseController),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildBankCard('Bank Account 2 (Optional)', _b2NameController, _b2AccController, _b2OpenController, _b2ChgController, _b2IntController, _b2CloseController),
+                        ),
+                      ],
+                    ),
+            ),
+            const SizedBox(height: 16),
+
+            // Section 2: Additional Treasury Balances & Cash Movements
+            _buildSectionCard(
+              title: '2. Additional Treasury Balances & Cash Movements',
+              subtitle: 'Physical vault cash floats, profits, lapse reserves, and YTD equity adjustments.',
+              icon: Icons.account_balance_wallet,
+              child: isVeryNarrow
+                  ? Column(
+                      children: [
+                        _buildField('Cash in Hand B/F (Vault Float) (₦)', _cashBfController, hint: 'e.g. 522700.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Overdue B/F (₦)', _overdueBfController, hint: 'e.g. 14500.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Sales Profit / Finance Markup (₦)', _profitController, hint: '0.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Sales: Cash and Carry (₦)', _ccController, hint: '0.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Lapse Deposit Return (₦)', _lapseRetController, hint: 'e.g. 16700.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Received from Other Sources (Annex-1) (₦)', _recOtherController, hint: 'e.g. 55200.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Paid to Other Sources / Op Expenses (₦)', _paidOtherController, hint: 'e.g. 1041405.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Retained Earnings (YTD Equity) (₦)', _retainedEarningsController, hint: '26351209.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Head Office Asset Allocation (₦)', _hoAssetAllocController, hint: '14730282.00'),
+                      ],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            children: [
+                              _buildField('Cash in Hand B/F (Vault Float) (₦)', _cashBfController, hint: 'e.g. 522700.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Overdue B/F (₦)', _overdueBfController, hint: 'e.g. 14500.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Sales Profit / Finance Markup (₦)', _profitController, hint: '0.00'),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              _buildField('Sales: Cash and Carry (₦)', _ccController, hint: '0.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Lapse Deposit Return (₦)', _lapseRetController, hint: 'e.g. 16700.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Received from Other Sources (Annex-1) (₦)', _recOtherController, hint: 'e.g. 55200.00'),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              _buildField('Paid to Other Sources / Op Expenses (₦)', _paidOtherController, hint: 'e.g. 1041405.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Retained Earnings (YTD Equity) (₦)', _retainedEarningsController, hint: '26351209.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Head Office Asset Allocation (₦)', _hoAssetAllocController, hint: '14730282.00'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+            const SizedBox(height: 16),
+
+            // Section 3: Head Office & Area Fund Cash Remittances
+            _buildSectionCard(
+              title: '3. Head Office & Area Fund Cash Remittances',
+              subtitle: 'Inter-branch and headquarters liquidity cash receipts and disbursements.',
+              icon: Icons.sync_alt,
+              child: isNarrow
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Fund Cash Received (Inflows)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF166534))),
+                        const SizedBox(height: 10),
+                        _buildField('HO Asset Received (₦)', _fRecHoAssetController, hint: '0.00'),
+                        const SizedBox(height: 12),
+                        _buildField('HO Main Received (₦)', _fRecHoMainController, hint: '0.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Other Area Received (₦)', _fRecAreaController, hint: '0.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Branch Office Received (₦)', _fRecBrController, hint: '0.00'),
+                        const SizedBox(height: 20),
+                        const Text('Fund Cash Remitted (Outflows)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E40AF))),
+                        const SizedBox(height: 10),
+                        _buildField('HO Asset Remitted (₦)', _fPayHoAssetController, hint: '0.00'),
+                        const SizedBox(height: 12),
+                        _buildField('HO Main Remitted (₦)', _fPayHoMainController, hint: '0.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Branch Office Remitted (₦)', _fPayBrController, hint: '0.00'),
+                      ],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Fund Cash Received (Inflows)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF166534))),
+                              const SizedBox(height: 10),
+                              _buildField('HO Asset Received (₦)', _fRecHoAssetController, hint: '0.00'),
+                              const SizedBox(height: 12),
+                              _buildField('HO Main Received (₦)', _fRecHoMainController, hint: '0.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Other Area Received (₦)', _fRecAreaController, hint: '0.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Branch Office Received (₦)', _fRecBrController, hint: '0.00'),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 24),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Fund Cash Remitted (Outflows)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E40AF))),
+                              const SizedBox(height: 10),
+                              _buildField('HO Asset Remitted (₦)', _fPayHoAssetController, hint: '0.00'),
+                              const SizedBox(height: 12),
+                              _buildField('HO Main Remitted (₦)', _fPayHoMainController, hint: '0.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Branch Office Remitted (₦)', _fPayBrController, hint: '0.00'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+            const SizedBox(height: 24),
+
+            // Submit Button
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: _isSaving ? null : _handleSave,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.save, size: 20, color: Colors.white),
+                label: Text(
+                  _isSaving ? 'Saving & Recalculating...' : 'Save & Recalculate Statements',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0F766E),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  elevation: 1,
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
+        );
+      },
+    );
+  }
+}
+

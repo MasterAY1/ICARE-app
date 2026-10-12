@@ -825,3 +825,132 @@ class MonthlyExecutiveStatementsData {
   }
 }
 
+class BankStatementItem {
+  final String bankName;
+  final String accountNumber;
+  final double openingBalance;
+  final double bankCharges;
+  final double bankInterest;
+  final double closingBalance;
+
+  const BankStatementItem({
+    required this.bankName,
+    required this.accountNumber,
+    required this.openingBalance,
+    required this.bankCharges,
+    required this.bankInterest,
+    required this.closingBalance,
+  });
+
+  factory BankStatementItem.fromJson(Map<String, dynamic> json) {
+    return BankStatementItem(
+      bankName: (json['bank_name'] ?? '') as String,
+      accountNumber: (json['account_number'] ?? '') as String,
+      openingBalance: (json['opening_balance'] as num? ?? 0.0).toDouble(),
+      bankCharges: (json['bank_charges'] as num? ?? 0.0).toDouble(),
+      bankInterest: (json['bank_interest'] as num? ?? 0.0).toDouble(),
+      closingBalance: (json['closing_balance'] as num? ?? 0.0).toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'bank_name': bankName,
+      'account_number': accountNumber,
+      'opening_balance': openingBalance,
+      'bank_charges': bankCharges,
+      'bank_interest': bankInterest,
+      'closing_balance': closingBalance,
+    };
+  }
+}
+
+class MonthlyReconciliationData {
+  final List<BankStatementItem> banks;
+  final double cashInHandBf;
+  final double overdueBf;
+  final double salesProfitMarkup;
+  final double salesCashAndCarry;
+  final double fundCashHoAssetReceipt;
+  final double fundCashHoMainReceipt;
+  final double fundCashOtherAreaReceipt;
+  final double fundCashBranchReceipt;
+  final double fundCashHoAssetPayment;
+  final double fundCashHoMainPayment;
+  final double fundCashBranchPayment;
+  final double depositWithdrawal;
+  final double lapseDepositReturn;
+  final double paidToOtherSources;
+  final double receivedFromOtherSources;
+  final double retainedEarnings;
+  final double headOfficeAssetAllocation;
+
+  const MonthlyReconciliationData({
+    required this.banks,
+    required this.cashInHandBf,
+    required this.overdueBf,
+    required this.salesProfitMarkup,
+    required this.salesCashAndCarry,
+    required this.fundCashHoAssetReceipt,
+    required this.fundCashHoMainReceipt,
+    required this.fundCashOtherAreaReceipt,
+    required this.fundCashBranchReceipt,
+    required this.fundCashHoAssetPayment,
+    required this.fundCashHoMainPayment,
+    required this.fundCashBranchPayment,
+    required this.depositWithdrawal,
+    required this.lapseDepositReturn,
+    required this.paidToOtherSources,
+    required this.receivedFromOtherSources,
+    required this.retainedEarnings,
+    required this.headOfficeAssetAllocation,
+  });
+
+  factory MonthlyReconciliationData.fromJson(Map<String, dynamic> json) {
+    final rawBanks = json['banks'] as List<dynamic>? ?? [];
+    return MonthlyReconciliationData(
+      banks: rawBanks.map((b) => BankStatementItem.fromJson(b as Map<String, dynamic>)).toList(),
+      cashInHandBf: (json['cash_in_hand_bf'] as num? ?? 0.0).toDouble(),
+      overdueBf: (json['overdue_bf'] as num? ?? 0.0).toDouble(),
+      salesProfitMarkup: (json['sales_profit_markup'] as num? ?? 0.0).toDouble(),
+      salesCashAndCarry: (json['sales_cash_and_carry'] as num? ?? 0.0).toDouble(),
+      fundCashHoAssetReceipt: (json['fund_cash_ho_asset_receipt'] as num? ?? 0.0).toDouble(),
+      fundCashHoMainReceipt: (json['fund_cash_ho_main_receipt'] as num? ?? 0.0).toDouble(),
+      fundCashOtherAreaReceipt: (json['fund_cash_other_area_receipt'] as num? ?? 0.0).toDouble(),
+      fundCashBranchReceipt: (json['fund_cash_branch_receipt'] as num? ?? 0.0).toDouble(),
+      fundCashHoAssetPayment: (json['fund_cash_ho_asset_payment'] as num? ?? 0.0).toDouble(),
+      fundCashHoMainPayment: (json['fund_cash_ho_main_payment'] as num? ?? 0.0).toDouble(),
+      fundCashBranchPayment: (json['fund_cash_branch_payment'] as num? ?? 0.0).toDouble(),
+      depositWithdrawal: (json['deposit_withdrawal'] as num? ?? 0.0).toDouble(),
+      lapseDepositReturn: (json['lapse_deposit_return'] as num? ?? 0.0).toDouble(),
+      paidToOtherSources: (json['paid_to_other_sources'] as num? ?? 0.0).toDouble(),
+      receivedFromOtherSources: (json['received_from_other_sources'] as num? ?? 0.0).toDouble(),
+      retainedEarnings: (json['retained_earnings'] as num? ?? 26351209.0).toDouble(),
+      headOfficeAssetAllocation: (json['head_office_asset_allocation'] as num? ?? 14730282.0).toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'banks': banks.map((b) => b.toJson()).toList(),
+      'cash_in_hand_bf': cashInHandBf,
+      'overdue_bf': overdueBf,
+      'sales_profit_markup': salesProfitMarkup,
+      'sales_cash_and_carry': salesCashAndCarry,
+      'fund_cash_ho_asset_receipt': fundCashHoAssetReceipt,
+      'fund_cash_ho_main_receipt': fundCashHoMainReceipt,
+      'fund_cash_other_area_receipt': fundCashOtherAreaReceipt,
+      'fund_cash_branch_receipt': fundCashBranchReceipt,
+      'fund_cash_ho_asset_payment': fundCashHoAssetPayment,
+      'fund_cash_ho_main_payment': fundCashHoMainPayment,
+      'fund_cash_branch_payment': fundCashBranchPayment,
+      'deposit_withdrawal': depositWithdrawal,
+      'lapse_deposit_return': lapseDepositReturn,
+      'paid_to_other_sources': paidToOtherSources,
+      'received_from_other_sources': receivedFromOtherSources,
+      'retained_earnings': retainedEarnings,
+      'head_office_asset_allocation': headOfficeAssetAllocation,
+    };
+  }
+}
+

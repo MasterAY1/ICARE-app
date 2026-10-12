@@ -297,5 +297,52 @@ class ReportsApiService {
     );
     return List<int>.from(response.data as List);
   }
+
+  /// 13. Get Monthly Reconciliation Data
+  Future<MonthlyReconciliationData> getMonthlyReconciliation({
+    String? branchName,
+    int year = 2026,
+    int month = 9,
+  }) async {
+    final params = <String, dynamic>{
+      'year': year,
+      'month': month,
+    };
+    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+      params['branch_name'] = branchName;
+    }
+
+    final response = await _apiClient.get(
+      '/api/v1/reports/monthly-reconciliation',
+      queryParameters: params,
+    );
+    final body = response.data as Map<String, dynamic>;
+    final data = (body['data'] ?? {}) as Map<String, dynamic>;
+    return MonthlyReconciliationData.fromJson(data);
+  }
+
+  /// 14. Save Monthly Reconciliation Data
+  Future<Map<String, dynamic>> saveMonthlyReconciliation({
+    String? branchName,
+    int year = 2026,
+    int month = 9,
+    required MonthlyReconciliationData data,
+  }) async {
+    final payload = <String, dynamic>{
+      'year': year,
+      'month': month,
+      'data': data.toJson(),
+    };
+    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+      payload['branch_name'] = branchName;
+    }
+
+    final response = await _apiClient.post(
+      '/api/v1/reports/monthly-reconciliation',
+      data: payload,
+    );
+    return response.data as Map<String, dynamic>;
+  }
 }
+
 

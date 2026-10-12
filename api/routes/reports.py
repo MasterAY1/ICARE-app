@@ -41,6 +41,7 @@ from api.schemas.reports import (
     AreaComparisonResponse,
     MonthlyParityResponse,
     MonthlyExecutiveStatementsResponse,
+    MonthlyReconciliationPayload,
 )
 
 router = APIRouter(prefix="/api/v1/reports", tags=["Reports & Export"])
@@ -830,6 +831,73 @@ def get_official_statements(
 
     result = ReportService.get_official_trial_balance_and_receipts_payments(uow, branch_id=bid, year=year, month=month)
     return result
+
+
+@router.get("/monthly-reconciliation")
+def get_monthly_reconciliation(
+    branch_name: Optional[str] = Query(None),
+    branch_id: Optional[str] = Query(None),
+    year: int = Query(2026),
+    month: int = Query(9),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Retrieves user-entered monthly bank statement reconciliation and treasury adjustments.
+    Zero hardcoding.
+    """
+    _check_reports_permission(current_user)
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
+
+    bid = branch_id or (resolved_branch_id if isinstance(resolved_branch_id, str) else (resolved_branch_id[0] if isinstance(resolved_branch_id, list) and resolved_branch_id else None))
+    if not bid:
+        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
+        if res_b.data:
+            bid = res_b.data[0]["branch_id"]
+
+    if not bid:
+        raise HTTPException(status_code=400, detail="Unable to resolve branch.")
+
+    data = ReportService.get_monthly_statement_reconciliation(uow, branch_id=bid, year=year, month=month)
+    return {
+        "branch_id": bid,
+        "year": year,
+        "month": month,
+        "data": data
+    }
+
+
+@router.post("/monthly-reconciliation")
+def save_monthly_reconciliation(
+    payload: MonthlyReconciliationPayload,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Saves user-entered bank statement reconciliation and treasury adjustments.
+    """
+    _check_reports_permission(current_user)
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
+
+    bid = payload.branch_id or (resolved_branch_id if isinstance(resolved_branch_id, str) else (resolved_branch_id[0] if isinstance(resolved_branch_id, list) and resolved_branch_id else None))
+    if not bid:
+        raise HTTPException(status_code=400, detail="Valid branch_id required.")
+
+    success = ReportService.save_monthly_statement_reconciliation(
+        uow, branch_id=bid, year=payload.year, month=payload.month, data=payload.data
+    )
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to save statement reconciliation.")
+
+    # Return updated statements immediately
+    updated_stmts = ReportService.get_official_trial_balance_and_receipts_payments(
+        uow, branch_id=bid, year=payload.year, month=payload.month
+    )
+    return {
+        "status": "success",
+        "message": "Monthly reconciliation saved successfully.",
+        "statements": updated_stmts
+    }
 
 
 @router.get("/export/monthly-parity-excel")

@@ -265,3 +265,20 @@ class MonthlyExecutiveStatementsResponse(BaseModel):
     trial_balance: OfficialTrialBalanceData
     receipts_and_payments: ReceiptsPaymentsData
 
+
+class MonthlyReconciliationBankItem(BaseModel):
+    bank_name: str = ""
+    account_number: str = ""
+    opening_balance: float = 0.0
+    bank_charges: float = 0.0
+    bank_interest: float = 0.0
+    closing_balance: float = 0.0
+
+
+class MonthlyReconciliationPayload(BaseModel):
+    branch_id: Optional[str] = None
+    branch_name: Optional[str] = None
+    year: int
+    month: int
+    data: Dict[str, Any]
+
