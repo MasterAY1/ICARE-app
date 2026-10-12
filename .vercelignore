@@ -1,0 +1,8 @@
+# Ignore backend files from Vercel build so it does not attempt to create Python serverless functions
+api/
+services/
+database/
+scripts/
+tests/
+venv/
+*.py
