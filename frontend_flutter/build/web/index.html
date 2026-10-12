@@ -20,19 +20,22 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="description" content="ICARE Core Banking Application">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <script>
     // Unregister legacy service workers and clear CacheStorage to prevent mobile caching
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function(registrations) {
-        for (let registration of registrations) {
-          registration.unregister();
+        for (var i = 0; i < registrations.length; i++) {
+          registrations[i].unregister();
         }
       });
     }
     if ('caches' in window) {
       caches.keys().then(function(names) {
-        for (let name of names) {
-          caches.delete(name);
+        for (var i = 0; i < names.length; i++) {
+          caches.delete(names[i]);
         }
       });
     }
@@ -59,6 +62,11 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    var bsScript = document.createElement('script');
+    bsScript.src = 'flutter_bootstrap.js?v=' + Date.now();
+    bsScript.async = true;
+    document.body.appendChild(bsScript);
+  </script>
 </body>
 </html>
