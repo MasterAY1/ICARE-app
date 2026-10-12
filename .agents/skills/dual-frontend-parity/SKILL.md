@@ -1,17 +1,20 @@
 ---
 name: dual-frontend-parity
-description: Enforces dual-frontend parity across Streamlit (production) and Flutter (pilot) without merging git branches. Guarantees that any business logic, calculation, or UI change takes effect in both frontends simultaneously while strictly prohibiting git merges between main and migration branches until explicit user approval. Governs single-officer Flutter testing against the shared live Supabase database with zero disparity.
+description: [SUPERSEDED] Formerly enforced dual-frontend parity between Streamlit and Flutter. Superseded in October 2026 by Flutter-First Primary Architecture. Streamlit is now deprecated and serves as a read-only historical reference.
 ---
 
-# Dual-Frontend Parity & Zero-Merge Governance Skill
+# Dual-Frontend Parity & Zero-Merge Governance Skill [SUPERSEDED]
 
-## 1. Executive Summary & Purpose
-This skill establishes the mandatory architectural and operational protocols for running **Streamlit (live on GitHub / production)** and **Flutter (local pilot / staging)** concurrently against the **same shared Supabase database**, without performing any git branch merges until the user explicitly approves.
+> [!WARNING]
+> **GOVERNANCE STATUS: SUPERSEDED & DEPRECATED (October 2026)**
+> Per explicit user architectural directive:
+> 1. **Streamlit (`app.py`) is officially deprecated and sunsetted.** It is no longer an active development target and serves solely as an archival/read-only reference for legacy financial formulas.
+> 2. **Flutter (`frontend_flutter/`) is the sole primary frontend application.**
+> 3. Dual-frontend parity requirements are lifted. UI/UX design in Flutter is no longer constrained to reproduce Streamlit layouts.
+> 4. All future screens, error corrections, bug fixes, and feature additions must be built directly in Flutter.
 
-When the user asks to modify business logic, fix bugs, adjust calculations, or audit parity:
-1. **Both frontends must receive the changes** so that neither falls behind.
-2. **Git branches (`main` and `flutter-migration`) must NEVER be merged** without explicit, unambiguous user confirmation.
-3. **The single pilot officer using Flutter must experience 100% data, workflow, and visual parity** with Streamlit.
+## 1. Executive Summary & Purpose (Historical Context)
+This skill previously established protocols for running **Streamlit** and **Flutter** concurrently. With Flutter now designated as the single production frontend, this document is retained solely for historical audit purposes.
 
 ---
 

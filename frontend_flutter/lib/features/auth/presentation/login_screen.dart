@@ -456,7 +456,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             decoration: InputDecoration(
               filled: true,
               fillColor: Colors.white,
-              hintText: 'Enter your username',
+              hintText: 'e.g. OGI_CO1, BM_Ogijo',
               hintStyle: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               border: OutlineInputBorder(

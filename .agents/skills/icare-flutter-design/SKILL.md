@@ -27,23 +27,25 @@ Whenever you design, create, modify, inspect, or review any Flutter screen, widg
 
 ---
 
-## 1. Principle 1: Existing System First
+## 1. Principle 1: Flutter-First Mobile Experience & Modern Design Freedom
 
-The existing Streamlit implementation is the **visual and behavioural reference** unless an explicitly approved Flutter design decision overrides it.
+With Streamlit sunsetted and deprecated, the Flutter frontend is the primary and authoritative interface. 
 
-Do **not** redesign ICARE simply because Flutter allows a different design.
+You have **full design freedom to modernize, simplify, and streamline the mobile UI/UX**. You are NOT constrained to reproduce Streamlit's old layout, cluttered tables, or desktop web patterns.
 
-### Preserve Existing:
-- **Terminology & Labels**: Use exact button names, section headers, input labels, and table column titles from Streamlit.
-- **Buttons & Actions**: Preserve existing placement, action order, and confirmation dialogs.
-- **Information Hierarchy**: Keep the logical order of sections, summaries, and detail breakdowns.
-- **Navigation & Menus**: Maintain role-based sidebar items and sequence from `RBACScopeService.get_permitted_menu_items`.
-- **Workflows**: Preserve multi-step collection, loan origination, withdrawal, and EOD cashbook flows.
-- **Metric Meanings**: Do not invent new metrics or re-calculate existing metrics differently.
-- **Status Meanings**: Respect canonical client and loan statuses (`Registered`, `On Loan`, `Completed`, `Dormant`, `Inactive (Savings Only)`, `Closed`, `Suspended`, `Defaulter`).
-- **Content & Financial Values**: Present real values exactly as formatted by the backend and Streamlit reference.
+### Design Freedom & Simplification:
+- **Simplify Cluttered Screens**: Reduce cognitive overload. Group related actions, eliminate redundant data cards, and prioritize the primary user task (e.g. fast collection recording).
+- **Mobile-Native Patterns**: Use bottom sheets, swipe gestures, collapsible accordions, clean cards, and responsive navigation instead of dense multi-column desktop tables.
+- **Visual Polish**: Use clean corporate typography, generous whitespace, SVG/Material icons, and clear contrast.
 
-When uncertain about any visual or behavioural detail, **inspect the actual Streamlit implementation (`app.py`) before inventing anything.**
+### What Must Still Be Preserved (Core Domain Invariants):
+- **Financial & Business Rules**: Do not invent new financial logic or change how figures are computed.
+- **Canonical Terminology**: Maintain standard banking terms (`Repayment`, `Savings`, `Arrears`, `PAR`, `Active Credit`).
+- **Status Meanings**: Respect canonical client and loan statuses (`Registered`, `On Loan`, `Completed`, `Dormant`, etc.).
+- **Account 1000 Integrity**: Physical vault cash must always reflect Account 1000 from the backend.
+- **Zero-Emoji Rule**: Clean corporate icons/SVG only. Emojis remain strictly forbidden.
+
+When understanding historical calculation nuances, inspect the backend Python services or `app.py` as a reference.
 
 ---
 

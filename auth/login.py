@@ -78,7 +78,7 @@ def render_login_page():
                 <p class='login-subtitle'>ICARE — Growing Together</p>
             """, unsafe_allow_html=True)
             
-            username = st.text_input("Username", placeholder="Enter your username")
+            username = st.text_input("Username", placeholder="e.g. OGI_CO1, BM_Ogijo")
             pw = st.text_input("Password", type="password", placeholder="Enter your password")
             
             submitted = st.form_submit_button("SIGN IN", use_container_width=True)

@@ -27,6 +27,12 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
     def _resolve_officer_id(self, username: str) -> str:
         if not username:
             raise ValueError("Username cannot be empty when resolving officer_id")
+        import uuid
+        try:
+            uuid.UUID(str(username))
+            return str(username)
+        except (ValueError, TypeError):
+            pass
         try:
             res = self.client.table("app_users").select("id").eq("username", username).execute()
             if res.data:
@@ -34,6 +40,12 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
             res_full = self.client.table("app_users").select("id").eq("full_name", username).execute()
             if res_full.data:
                 return res_full.data[0]["id"]
+            res_suffix = self.client.table("app_users").select("id, username").ilike("username", f"*_{username}").execute()
+            if res_suffix.data:
+                ogi_match = [r for r in res_suffix.data if (r.get("username") or "").startswith("OGI_")]
+                if ogi_match:
+                    return ogi_match[0]["id"]
+                return res_suffix.data[0]["id"]
         except Exception as e:
             raise ValueError(f"Failed to resolve officer_id for {username}: {str(e)}")
         raise ValueError(f"Officer '{username}' not found")

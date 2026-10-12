@@ -72,6 +72,12 @@ class SupabaseSavingsRepository(BaseRepository):
                 oid = res_ci.data[0]["id"]
                 self._officer_cache[u_key] = oid
                 return oid
+            res_suffix = self.client.table("app_users").select("id, username").ilike("username", f"*_{username}").execute()
+            if res_suffix.data:
+                ogi_match = [r for r in res_suffix.data if (r.get("username") or "").startswith("OGI_")]
+                oid = ogi_match[0]["id"] if ogi_match else res_suffix.data[0]["id"]
+                self._officer_cache[u_key] = oid
+                return oid
         except Exception:
             pass
         return None

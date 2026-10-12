@@ -723,9 +723,9 @@ class ReportService:
         # 2. Officers
         res_u = uow.client.table("app_users").select("id, username, full_name").eq("branch_id", branch_id).execute()
         all_users = res_u.data or []
-        co_users = [u for u in all_users if (u.get("username") or "").startswith("CO")]
+        co_users = [u for u in all_users if (u.get("username") or "").startswith("CO") or "_CO" in (u.get("username") or "").upper()]
         if not co_users:
-            co_users = [u for u in all_users if "officer" in (u.get("full_name") or "").lower() or (u.get("username") or "").lower().startswith("co")]
+            co_users = [u for u in all_users if "officer" in (u.get("full_name") or "").lower() or "co" in (u.get("username") or "").lower()]
         co_users.sort(key=lambda u: u.get("username") or u.get("full_name") or "")
 
         officers = []

@@ -218,7 +218,7 @@ def load_co_mapping():
     try:
         with SupabaseUnitOfWork() as uow:
             users = uow.users.find_all()
-            co_users = [u for u in users if (getattr(u, 'role', None) in ['CO', 'Officer', 'Credit Officer'] or (getattr(u, 'username', '') and getattr(u, 'username', '').upper().startswith('CO')))]
+            co_users = [u for u in users if (getattr(u, 'role', None) in ['CO', 'Officer', 'Credit Officer'] or (getattr(u, 'username', '') and (getattr(u, 'username', '').upper().startswith('CO') or '_CO' in getattr(u, 'username', '').upper())))]
             name_map = {u.full_name.strip(): u.username for u in co_users if u.full_name}
             display_map = {v: k for k, v in name_map.items()}
             return name_map, display_map

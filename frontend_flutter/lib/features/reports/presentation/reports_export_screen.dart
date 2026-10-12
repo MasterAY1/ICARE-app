@@ -37,12 +37,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   int _selectedExecYear = 2026;
   int _selectedExecSubTab = 0; // 0: CO Summary, 1: Trial Balance, 2: Receipts & Payments, 3: Bank Statements & Treasury Reconciliation
 
-  // Futures
-  late Future<ReportsMeta> _metaFuture;
-  late Future<AreaComparisonData> _areaFuture;
-  late Future<MonthlyParityData> _parityFuture;
-  late Future<MonthlyExecutiveStatementsData> _statementsFuture;
-  late Future<MonthlyReconciliationData> _reconciliationFuture;
+  // Futures & Cache
+  ReportsMeta? _cachedMeta;
+  Future<ReportsMeta>? _metaFuture;
+  Future<AreaComparisonData>? _areaFuture;
+  Future<MonthlyParityData>? _parityFuture;
+  Future<MonthlyExecutiveStatementsData>? _statementsFuture;
+  Future<MonthlyReconciliationData>? _reconciliationFuture;
 
   final _currencyFormat = NumberFormat('#,##0.00');
   final _intFormat = NumberFormat('#,##0');
@@ -51,22 +52,64 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchMetaAndRefresh();
+    // Resolve user branch immediately if Branch Manager
+    final authState = ref.read(authControllerProvider);
+    if (authState is AuthStateAuthenticated) {
+      final user = authState.user;
+      final role = user.role.trim();
+      if (role == 'Branch Manager' || role == 'BM') {
+        _selectedBranchName = user.branch;
+      }
+    }
+    _initFutures();
   }
 
-  void _fetchMetaAndRefresh() {
+  void _initFutures() {
     final api = ref.read(reportsApiServiceProvider);
+    final asOfStr = _dateMode == 'As of Date' ? _dateFormat.format(_asOfDate) : null;
+    final startStr = _dateMode == 'Date Range' ? _dateFormat.format(_startDate) : null;
+    final endStr = _dateMode == 'Date Range' ? _dateFormat.format(_endDate) : null;
+
+    // Initialize all business futures immediately so frames never crash or show grey boxes
+    _parityFuture = api.getMonthlyParity(
+      branchName: _selectedBranchName,
+      year: _selectedExecYear,
+      month: _selectedExecMonth,
+    );
+    _statementsFuture = api.getOfficialStatements(
+      branchName: _selectedBranchName,
+      year: _selectedExecYear,
+      month: _selectedExecMonth,
+    );
+    _reconciliationFuture = api.getMonthlyReconciliation(
+      branchName: _selectedBranchName,
+      year: _selectedExecYear,
+      month: _selectedExecMonth,
+    );
+    _areaFuture = api.getAreaComparison(
+      productName: _selectedProductName,
+      asOfDate: asOfStr,
+      startDate: startStr,
+      endDate: endStr,
+    );
+
+    // Fetch metadata asynchronously for branch/product/officer options
     _metaFuture = api.getReportsMeta().then((meta) {
-      if (_selectedBranchName == null) {
-        if (meta.scopeLevel == 'BRANCH' && meta.defaultBranch != null) {
-          _selectedBranchName = meta.defaultBranch;
-        } else if (meta.scopeLevel == 'AREA') {
-          _selectedBranchName = 'All Assigned Branches (Consolidated Area View)';
-        } else {
-          _selectedBranchName = 'All Branches (Consolidated)';
-        }
+      if (mounted) {
+        setState(() {
+          _cachedMeta = meta;
+          if (_selectedBranchName == null) {
+            if (meta.scopeLevel == 'BRANCH' && meta.defaultBranch != null) {
+              _selectedBranchName = meta.defaultBranch;
+            } else if (meta.scopeLevel == 'AREA') {
+              _selectedBranchName = 'All Assigned Branches (Consolidated Area View)';
+            } else {
+              _selectedBranchName = 'All Branches (Consolidated)';
+            }
+            _refreshCurrentTabData();
+          }
+        });
       }
-      _refreshCurrentTabData();
       return meta;
     });
   }
@@ -176,16 +219,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           _buildIdentityBanner(isAdmin, isBm, isAm, user.branch),
           const SizedBox(height: 16),
 
-          // 2. Universal Filter Controls Card
-          _buildFilterControlsCard(isAdmin, isBm, isAm),
+          // 2. Pill Tabs Navigation
+          _buildPillTabs(tabs),
           const SizedBox(height: 16),
 
-          // 3. Pill Tabs Navigation
-          _buildPillTabs(tabs),
-          const SizedBox(height: 20),
-
-          // 4. Tab Content
-          _buildActiveTabContent(tabs[_selectedTabIndex], isAm),
+          // 3. Tab Content
+          _buildActiveTabContent(tabs[_selectedTabIndex], isAdmin, isBm, isAm),
         ],
       ),
     );
@@ -317,13 +356,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // 2. Filter Controls Card
+  // 2. Custom Export Filters Card (For Data Exports Tab)
   // ---------------------------------------------------------------------------
-  Widget _buildFilterControlsCard(bool isAdmin, bool isBm, bool isAm) {
+  Widget _buildExportFilterCard(bool isAdmin, bool isBm, bool isAm) {
     return FutureBuilder<ReportsMeta>(
       future: _metaFuture,
       builder: (context, snapshot) {
-        final meta = snapshot.data;
+        final meta = snapshot.data ?? _cachedMeta;
         final branches = meta?.branches ?? [];
         final products = meta != null ? ['All Products', ...meta.products] : ['All Products'];
         final officers = meta != null
@@ -352,21 +391,28 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
         return Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: const Color(0xFFE2E8F0)),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Filter Controls',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+          child: Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              initiallyExpanded: false,
+              tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              title: const Text(
+                'Customize Export Parameters (Optional: Product, Officer, Date Range)',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
               ),
-              const SizedBox(height: 12),
-              Builder(
+              subtitle: Text(
+                'Active: ${_selectedBranchName ?? 'All Branches'} • $_selectedProductName • $_selectedOfficerName • $_dateMode',
+                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+              ),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Builder(
                 builder: (context) {
                   final isMobile = MediaQuery.of(context).size.width < 750;
 
@@ -618,12 +664,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   );
                 },
               ),
-            ],
-          ),
-        );
-      },
+            ),
+          ],
+        ),
+      ),
     );
-  }
+  },
+);
+}
 
   // ---------------------------------------------------------------------------
   // 3. Horizontal Pill Tabs Navigation
@@ -673,24 +721,24 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // ---------------------------------------------------------------------------
   // 4. Tab Content Router
   // ---------------------------------------------------------------------------
-  Widget _buildActiveTabContent(String tabName, bool isAm) {
+  Widget _buildActiveTabContent(String tabName, bool isAdmin, bool isBm, bool isAm) {
     switch (tabName) {
       case 'Monthly Executive Statements':
       case 'Monthly Executive Parity':
-        return _buildMonthlyExecutiveParityTab();
+        return _buildMonthlyExecutiveParityTab(isAdmin, isBm, isAm);
       case 'Area Branches Comparison':
         return _buildAreaComparisonTab();
       case 'Data Exports & Downloads':
-        return _buildDataExportsTab(isAm);
+        return _buildDataExportsTab(isAdmin, isBm, isAm);
       default:
-        return _buildMonthlyExecutiveParityTab();
+        return _buildMonthlyExecutiveParityTab(isAdmin, isBm, isAm);
     }
   }
 
   // ---------------------------------------------------------------------------
   // Tab 0: Monthly Executive Parity Suite
   // ---------------------------------------------------------------------------
-  Widget _buildMonthlyExecutiveParityTab() {
+  Widget _buildMonthlyExecutiveParityTab(bool isAdmin, bool isBm, bool isAm) {
     final api = ref.read(reportsApiServiceProvider);
     final monthNames = [
       'January', 'February', 'March', 'April', 'May', 'June',
@@ -759,6 +807,53 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   ),
                 ],
               );
+
+              Widget? branchControl;
+              if (isAdmin || isAm) {
+                final branches = _cachedMeta?.branches ?? [];
+                final options = isAm
+                    ? ['All Assigned Branches (Consolidated Area View)', ...branches.map((b) => b.name)]
+                    : ['All Branches (Consolidated)', ...branches.map((b) => b.name)];
+                final currBranch = _selectedBranchName ?? (options.isNotEmpty ? options.first : null);
+                branchControl = Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Branch: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+                    const SizedBox(width: 4),
+                    DropdownButton<String>(
+                      value: options.contains(currBranch) ? currBranch : (options.isNotEmpty ? options.first : null),
+                      underline: const SizedBox(),
+                      items: options.map((b) => DropdownMenuItem(
+                        value: b,
+                        child: Text(b, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+                      )).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() {
+                            _selectedBranchName = val;
+                            _refreshCurrentTabData();
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                );
+              }
+
+              final branchBadge = isBm
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Text(
+                        'Branch: ${_selectedBranchName ?? 'Current'}',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                      ),
+                    )
+                  : null;
 
               final excelBtn = OutlinedButton.icon(
                 icon: const Icon(Icons.download, size: 14, color: Color(0xFF0F766E)),
@@ -832,14 +927,18 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         monthDropdown,
                         yearDropdown,
+                        if (branchControl != null) branchControl,
+                        if (branchBadge != null) branchBadge,
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(child: excelBtn),
@@ -854,11 +953,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               return Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
+                  Wrap(
+                    spacing: 16,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       monthDropdown,
-                      const SizedBox(width: 16),
                       yearDropdown,
+                      if (branchControl != null) branchControl,
+                      if (branchBadge != null) branchBadge,
                     ],
                   ),
                   Row(
@@ -879,16 +981,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         FutureBuilder<MonthlyParityData>(
           future: _parityFuture,
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
+            if (_parityFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+              if (snapshot.hasError) {
+                return _buildErrorCard(snapshot.error.toString());
+              }
               return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
             }
-            if (snapshot.hasError) {
-              return _buildErrorCard(snapshot.error.toString());
-            }
-            final data = snapshot.data;
-            if (data == null) {
-              return _buildEmptyCard('No parity data available for selected month.');
-            }
+            final data = snapshot.data!;
 
             final cards = data.summaryCards;
 
@@ -1089,16 +1188,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     return FutureBuilder<MonthlyExecutiveStatementsData>(
       future: _statementsFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (_statementsFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+          if (snapshot.hasError) {
+            return _buildErrorCard(snapshot.error.toString());
+          }
           return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
         }
-        if (snapshot.hasError) {
-          return _buildErrorCard(snapshot.error.toString());
-        }
-        final data = snapshot.data;
-        if (data == null) {
-          return _buildEmptyCard('No trial balance statements available.');
-        }
+        final data = snapshot.data!;
 
         final tb = data.trialBalance;
 
@@ -1157,16 +1253,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     return FutureBuilder<MonthlyExecutiveStatementsData>(
       future: _statementsFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (_statementsFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+          if (snapshot.hasError) {
+            return _buildErrorCard(snapshot.error.toString());
+          }
           return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
         }
-        if (snapshot.hasError) {
-          return _buildErrorCard(snapshot.error.toString());
-        }
-        final data = snapshot.data;
-        if (data == null) {
-          return _buildEmptyCard('No receipts & payments statements available.');
-        }
+        final data = snapshot.data!;
 
         final rp = data.receiptsAndPayments;
 
@@ -1282,16 +1375,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     return FutureBuilder<MonthlyReconciliationData>(
       future: _reconciliationFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (_reconciliationFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+          if (snapshot.hasError) {
+            return _buildErrorCard(snapshot.error.toString());
+          }
           return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
         }
-        if (snapshot.hasError) {
-          return _buildErrorCard(snapshot.error.toString());
-        }
-        final data = snapshot.data;
-        if (data == null) {
-          return _buildEmptyCard('No bank statement reconciliation data available.');
-        }
+        final data = snapshot.data!;
 
         return _BankReconciliationForm(
           initialData: data,
@@ -1313,14 +1403,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     return FutureBuilder<AreaComparisonData>(
       future: _areaFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (_areaFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+          if (snapshot.hasError) {
+            return _buildErrorCard(snapshot.error.toString());
+          }
           return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
         }
-        if (snapshot.hasError) {
-          return _buildErrorCard(snapshot.error.toString());
-        }
-        final data = snapshot.data;
-        if (data == null || data.rows.isEmpty) {
+        final data = snapshot.data!;
+        if (data.rows.isEmpty) {
           return _buildEmptyCard('No branch comparison data available for assigned area.');
         }
 
@@ -1452,7 +1542,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // ---------------------------------------------------------------------------
   // Tab: Data Exports & Downloads
   // ---------------------------------------------------------------------------
-  Widget _buildDataExportsTab(bool isAm) {
+  Widget _buildDataExportsTab(bool isAdmin, bool isBm, bool isAm) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -1467,7 +1557,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           const Text('Comprehensive Operational Data Exports', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
           const SizedBox(height: 4),
           const Text('Direct in-memory generation of full operational datasets. All files download directly to your browser without external cloud dependencies.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
+
+          // Optional Custom Export Filters
+          _buildExportFilterCard(isAdmin, isBm, isAm),
+          const SizedBox(height: 12),
 
           // Master Operational Report (Excel)
           Container(

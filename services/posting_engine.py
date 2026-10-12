@@ -61,9 +61,15 @@ class FinancialPostingEngine:
                 oid = res_f.data[0]["id"]
                 cls._officer_cache[u_key] = oid
                 return oid
-            res_il = uow.client.table("app_users").select("id").ilike("full_name", f"%{username}%").execute()
+            res_il = uow.client.table("app_users").select("id").ilike("full_name", f"*{username}*").execute()
             if res_il.data:
                 oid = res_il.data[0]["id"]
+                cls._officer_cache[u_key] = oid
+                return oid
+            res_suffix = uow.client.table("app_users").select("id, username").ilike("username", f"*_{username}").execute()
+            if res_suffix.data:
+                ogi_match = [r for r in res_suffix.data if (r.get("username") or "").startswith("OGI_")]
+                oid = ogi_match[0]["id"] if ogi_match else res_suffix.data[0]["id"]
                 cls._officer_cache[u_key] = oid
                 return oid
         except Exception as e:
