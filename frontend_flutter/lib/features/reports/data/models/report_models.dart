@@ -884,6 +884,33 @@ class MonthlyReconciliationData {
   final double receivedFromOtherSources;
   final double retainedEarnings;
   final double headOfficeAssetAllocation;
+  final double lapseDepositReserve;
+
+  // Cumulative Trial Balance Expenses (Year-To-Date)
+  final double tbSalary;
+  final double tbRent;
+  final double tbElectricity;
+  final double tbStationery;
+  final double tbEntertainment;
+  final double tbTelephone;
+  final double tbRepairOffice;
+  final double tbTransport;
+  final double tbTraining;
+  final double tbOtherExpenses;
+
+  // Cumulative Trial Balance Income (Year-To-Date)
+  final double tbSalesProfit;
+  final double tbDamagesFine;
+  final double tbPassbook;
+  final double tbScrapsSales;
+  final double tbApplicationFee;
+
+  // Cumulative Trial Balance Funds & Reserves (Year-To-Date)
+  final double tbFundHoMain;
+  final double tbFundBranch;
+  final double tbFundOtherArea;
+  final double tbFundInternal;
+  final double tbContingency;
 
   const MonthlyReconciliationData({
     required this.banks,
@@ -904,6 +931,27 @@ class MonthlyReconciliationData {
     required this.receivedFromOtherSources,
     required this.retainedEarnings,
     required this.headOfficeAssetAllocation,
+    this.lapseDepositReserve = 0.0,
+    this.tbSalary = 0.0,
+    this.tbRent = 0.0,
+    this.tbElectricity = 0.0,
+    this.tbStationery = 0.0,
+    this.tbEntertainment = 0.0,
+    this.tbTelephone = 0.0,
+    this.tbRepairOffice = 0.0,
+    this.tbTransport = 0.0,
+    this.tbTraining = 0.0,
+    this.tbOtherExpenses = 0.0,
+    this.tbSalesProfit = 0.0,
+    this.tbDamagesFine = 0.0,
+    this.tbPassbook = 0.0,
+    this.tbScrapsSales = 0.0,
+    this.tbApplicationFee = 0.0,
+    this.tbFundHoMain = 0.0,
+    this.tbFundBranch = 0.0,
+    this.tbFundOtherArea = 0.0,
+    this.tbFundInternal = 0.0,
+    this.tbContingency = 0.0,
   });
 
   factory MonthlyReconciliationData.fromJson(Map<String, dynamic> json) {
@@ -925,8 +973,32 @@ class MonthlyReconciliationData {
       lapseDepositReturn: (json['lapse_deposit_return'] as num? ?? 0.0).toDouble(),
       paidToOtherSources: (json['paid_to_other_sources'] as num? ?? 0.0).toDouble(),
       receivedFromOtherSources: (json['received_from_other_sources'] as num? ?? 0.0).toDouble(),
-      retainedEarnings: (json['retained_earnings'] as num? ?? 26351209.0).toDouble(),
-      headOfficeAssetAllocation: (json['head_office_asset_allocation'] as num? ?? 14730282.0).toDouble(),
+      retainedEarnings: (json['retained_earnings'] as num? ?? 0.0).toDouble(),
+      headOfficeAssetAllocation: (json['head_office_asset_allocation'] as num? ?? 0.0).toDouble(),
+      lapseDepositReserve: (json['lapse_deposit_reserve'] as num? ?? 0.0).toDouble(),
+
+      tbSalary: (json['tb_salary'] as num? ?? 0.0).toDouble(),
+      tbRent: (json['tb_rent'] as num? ?? 0.0).toDouble(),
+      tbElectricity: (json['tb_electricity'] as num? ?? 0.0).toDouble(),
+      tbStationery: (json['tb_stationery'] as num? ?? 0.0).toDouble(),
+      tbEntertainment: (json['tb_entertainment'] as num? ?? 0.0).toDouble(),
+      tbTelephone: (json['tb_telephone'] as num? ?? 0.0).toDouble(),
+      tbRepairOffice: (json['tb_repair_office'] as num? ?? 0.0).toDouble(),
+      tbTransport: (json['tb_transport'] as num? ?? 0.0).toDouble(),
+      tbTraining: (json['tb_training'] as num? ?? 0.0).toDouble(),
+      tbOtherExpenses: (json['tb_other_expenses'] as num? ?? 0.0).toDouble(),
+
+      tbSalesProfit: (json['tb_sales_profit'] as num? ?? 0.0).toDouble(),
+      tbDamagesFine: (json['tb_damages_fine'] as num? ?? 0.0).toDouble(),
+      tbPassbook: (json['tb_passbook'] as num? ?? 0.0).toDouble(),
+      tbScrapsSales: (json['tb_scraps_sales'] as num? ?? 0.0).toDouble(),
+      tbApplicationFee: (json['tb_application_fee'] as num? ?? 0.0).toDouble(),
+
+      tbFundHoMain: (json['tb_fund_ho_main'] as num? ?? 0.0).toDouble(),
+      tbFundBranch: (json['tb_fund_branch'] as num? ?? 0.0).toDouble(),
+      tbFundOtherArea: (json['tb_fund_other_area'] as num? ?? 0.0).toDouble(),
+      tbFundInternal: (json['tb_fund_internal'] as num? ?? 0.0).toDouble(),
+      tbContingency: (json['tb_contingency'] as num? ?? 0.0).toDouble(),
     );
   }
 
@@ -948,8 +1020,34 @@ class MonthlyReconciliationData {
       'lapse_deposit_return': lapseDepositReturn,
       'paid_to_other_sources': paidToOtherSources,
       'received_from_other_sources': receivedFromOtherSources,
+      'retainedEarnings': retainedEarnings,
+      'headOfficeAssetAllocation': headOfficeAssetAllocation,
       'retained_earnings': retainedEarnings,
       'head_office_asset_allocation': headOfficeAssetAllocation,
+      'lapse_deposit_reserve': lapseDepositReserve,
+
+      'tb_salary': tbSalary,
+      'tb_rent': tbRent,
+      'tb_electricity': tbElectricity,
+      'tb_stationery': tbStationery,
+      'tb_entertainment': tbEntertainment,
+      'tb_telephone': tbTelephone,
+      'tb_repair_office': tbRepairOffice,
+      'tb_transport': tbTransport,
+      'tb_training': tbTraining,
+      'tb_other_expenses': tbOtherExpenses,
+
+      'tb_sales_profit': tbSalesProfit,
+      'tb_damages_fine': tbDamagesFine,
+      'tb_passbook': tbPassbook,
+      'tb_scraps_sales': tbScrapsSales,
+      'tb_application_fee': tbApplicationFee,
+
+      'tb_fund_ho_main': tbFundHoMain,
+      'tb_fund_branch': tbFundBranch,
+      'tb_fund_other_area': tbFundOtherArea,
+      'tb_fund_internal': tbFundInternal,
+      'tb_contingency': tbContingency,
     };
   }
 }

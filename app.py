@@ -13493,22 +13493,14 @@ elif page in ["Reports", "Reports & Export"]:
 
     # 6. Navigation Tabs
     if is_am:
-        tab_parity, tab_area, tab_tb, tab_sav, tab_rep, tab_port, tab_export = st.tabs([
-            "Monthly Executive Parity",
+        tab_parity, tab_area, tab_export = st.tabs([
+            "Monthly Executive Statements",
             "Area Branches Comparison",
-            "General Ledger & Trial Balance",
-            "Savings Summary",
-            "Repayment Summary",
-            "Portfolio & Officer Performance",
             "Data Exports & Downloads"
         ])
     else:
-        tab_parity, tab_tb, tab_sav, tab_rep, tab_port, tab_export = st.tabs([
-            "Monthly Executive Parity",
-            "General Ledger & Trial Balance",
-            "Savings Summary",
-            "Repayment Summary",
-            "Portfolio & Officer Performance",
+        tab_parity, tab_export = st.tabs([
+            "Monthly Executive Statements",
             "Data Exports & Downloads"
         ])
 
@@ -13691,6 +13683,44 @@ elif page in ["Reports", "Reports & Export"]:
                         f_pay_ho_main = float(st.number_input("HO Main Remitted (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("fund_cash_ho_main_payment") or 0.0), key="r_f_pay_ho_main"))
                         f_pay_br = float(st.number_input("Branch Office Remitted (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("fund_cash_branch_payment") or 0.0), key="r_f_pay_br"))
 
+                    st.markdown("---")
+                    st.markdown("##### 4. Cumulative Trial Balance Expenses (Year-To-Date)")
+                    st.caption("Cumulative operating expenditures from Jan 1 through the reporting month. Replaces any hardcoded ledger figures.")
+                    tb_e1, tb_e2, tb_e3 = st.columns(3)
+                    with tb_e1:
+                        tb_sal_val = float(st.number_input("Personnel Gross Salary (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_salary") or 0.0), key="r_tb_salary"))
+                        tb_rent_val = float(st.number_input("Office Rent (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_rent") or 0.0), key="r_tb_rent"))
+                        tb_elec_val = float(st.number_input("Electricity/Gas/Water (₦)", min_value=0.0, step=500.0, value=float(recon_existing.get("tb_electricity") or 0.0), key="r_tb_electricity"))
+                        tb_stat_val = float(st.number_input("Stationery/Office Mgmt (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_stationery") or 0.0), key="r_tb_stationery"))
+                    with tb_e2:
+                        tb_ent_val = float(st.number_input("Entertainment (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_entertainment") or 0.0), key="r_tb_entertainment"))
+                        tb_tel_val = float(st.number_input("Telephone/Postage (₦)", min_value=0.0, step=500.0, value=float(recon_existing.get("tb_telephone") or 0.0), key="r_tb_telephone"))
+                        tb_rep_off_val = float(st.number_input("Repair Cost (Office) (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_repair_office") or 0.0), key="r_tb_repair_office"))
+                        tb_trans_val = float(st.number_input("Transport Allowance (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_transport") or 0.0), key="r_tb_transport"))
+                    with tb_e3:
+                        tb_train_val = float(st.number_input("Training Expenses (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_training") or 0.0), key="r_tb_training"))
+                        tb_sec_val = float(st.number_input("Community Security (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_security") or 0.0), key="r_tb_security"))
+                        tb_other_exp_val = float(st.number_input("Other Expenses (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_other_expenses") or 0.0), key="r_tb_other_expenses"))
+
+                    st.markdown("---")
+                    st.markdown("##### 5. Cumulative Trial Balance Income & Reserves (Year-To-Date)")
+                    st.caption("Cumulative auxiliary revenue and headquarters/inter-branch balance sheet reserves.")
+                    tb_i1, tb_i2, tb_i3 = st.columns(3)
+                    with tb_i1:
+                        tb_prof_val = float(st.number_input("Sales Profit (Cumulative) (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_sales_profit") or 0.0), key="r_tb_profit"))
+                        tb_dam_val = float(st.number_input("Damages and Fine (₦)", min_value=0.0, step=500.0, value=float(recon_existing.get("tb_damages_fine") or 0.0), key="r_tb_damages"))
+                        tb_pass_val = float(st.number_input("Passbook Fees (₦)", min_value=0.0, step=500.0, value=float(recon_existing.get("tb_passbook") or 0.0), key="r_tb_passbook"))
+                        tb_scrap_val = float(st.number_input("Scraps Sales (₦)", min_value=0.0, step=100.0, value=float(recon_existing.get("tb_scraps_sales") or 0.0), key="r_tb_scraps"))
+                    with tb_i2:
+                        tb_app_val = float(st.number_input("Application Fees (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_application_fee") or 0.0), key="r_tb_app_fee"))
+                        tb_ho_main_val = float(st.number_input("HO Fund (Main) (Debit) (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_fund_ho_main") or 0.0), key="r_tb_ho_main"))
+                        tb_br_val = float(st.number_input("Branch Office Fund (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_fund_branch") or 0.0), key="r_tb_branch"))
+                        tb_area_val = float(st.number_input("Other Area Fund (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_fund_other_area") or 0.0), key="r_tb_area"))
+                    with tb_i3:
+                        tb_int_val = float(st.number_input("Internal Fund (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_fund_internal") or 0.0), key="r_tb_internal"))
+                        tb_lapse_res_val = float(st.number_input("Lapse Deposit Reserve (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("lapse_deposit_reserve") or 0.0), key="r_tb_lapse_res"))
+                        tb_contingency_val = float(st.number_input("Contingency Reserve (₦)", min_value=0.0, step=1000.0, value=float(recon_existing.get("tb_contingency") or 0.0), key="r_tb_contingency"))
+
                     save_recon = st.form_submit_button("Save & Recalculate Statements", type="primary", use_container_width=True)
 
                     if save_recon:
@@ -13729,7 +13759,29 @@ elif page in ["Reports", "Reports & Export"]:
                             "paid_to_other_sources": paid_other_val,
                             "received_from_other_sources": rec_other_val,
                             "retained_earnings": retained_earn_val,
-                            "head_office_asset_allocation": ho_asset_alloc_val
+                            "head_office_asset_allocation": ho_asset_alloc_val,
+                            "tb_salary": tb_sal_val,
+                            "tb_rent": tb_rent_val,
+                            "tb_electricity": tb_elec_val,
+                            "tb_stationery": tb_stat_val,
+                            "tb_entertainment": tb_ent_val,
+                            "tb_telephone": tb_tel_val,
+                            "tb_repair_office": tb_rep_off_val,
+                            "tb_transport": tb_trans_val,
+                            "tb_training": tb_train_val,
+                            "tb_security": tb_sec_val,
+                            "tb_other_expenses": tb_other_exp_val,
+                            "tb_sales_profit": tb_prof_val,
+                            "tb_damages_fine": tb_dam_val,
+                            "tb_passbook": tb_pass_val,
+                            "tb_scraps_sales": tb_scrap_val,
+                            "tb_application_fee": tb_app_val,
+                            "tb_fund_ho_main": tb_ho_main_val,
+                            "tb_fund_branch": tb_br_val,
+                            "tb_fund_other_area": tb_area_val,
+                            "tb_fund_internal": tb_int_val,
+                            "lapse_deposit_reserve": tb_lapse_res_val,
+                            "tb_contingency": tb_contingency_val,
                         }
                         with SupabaseUnitOfWork() as uow_save_recon:
                             ok = ReportService.save_monthly_statement_reconciliation(
@@ -13836,257 +13888,6 @@ elif page in ["Reports", "Reports & Export"]:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
-            st.markdown("</div>", unsafe_allow_html=True)
-
-    # --- TAB: GENERAL LEDGER & TRIAL BALANCE ---
-    with tab_tb:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("General Ledger Trial Balance")
-        st.caption("Double-entry verification of all Chart of Accounts balances. Total Debits must mathematically equal Total Credits.")
-
-        if selected_product != "All Products" or selected_officer != "All Officers":
-            st.info("[INFO] General Ledger Trial Balance reflects double-entry account positions by Branch / Entity. Sub-ledger breakdowns by Loan Product and Officer are detailed in the Repayment Summary, Savings Summary, and Portfolio tabs.")
-
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total Debits", f"₦{tb_data['total_debits']:,.2f}")
-        m2.metric("Total Credits", f"₦{tb_data['total_credits']:,.2f}")
-        m3.metric("Net Variance", f"₦{tb_data['variance']:,.2f}")
-        status_color = "#166534" if tb_data["is_balanced"] else "#991b1b"
-        status_bg = "#f0fdf4" if tb_data["is_balanced"] else "#fef2f2"
-        m4.markdown(f"""
-            <div style='background: {status_bg}; padding: 10px 14px; border-radius: 8px; border: 1px solid {status_color}; text-align: center; margin-top: 4px;'>
-                <span style='font-size: 0.75rem; color: #64748B; font-weight: 600; text-transform: uppercase;'>Ledger Integrity</span>
-                <p style='color: {status_color}; font-size: 1.1rem; font-weight: 800; margin: 0;'>{tb_data['status']}</p>
-            </div>
-        """, unsafe_allow_html=True)
-
-        tb_df = tb_data["dataframe"]
-        if not tb_df.empty:
-            display_tb = tb_df.copy()
-            st.dataframe(
-                display_tb.style.format({
-                    "Gross Debits": "₦{:,.2f}",
-                    "Gross Credits": "₦{:,.2f}",
-                    "Debit Balance": "₦{:,.2f}",
-                    "Credit Balance": "₦{:,.2f}",
-                    "Net Position": "₦{:,.2f}"
-                }),
-                use_container_width=True,
-                hide_index=True
-            )
-        else:
-            st.info("No ledger entries found for the selected scope.")
-
-        st.markdown("---")
-        st.markdown("#### Direct Download: Trial Balance")
-        d_col1, d_col2 = st.columns(2)
-        with d_col1:
-            tb_csv = tb_df.to_csv(index=False).encode('utf-8') if not tb_df.empty else b""
-            st.download_button(
-                label="Download Trial Balance (CSV)",
-                data=tb_csv,
-                file_name=f"trial_balance_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        with d_col2:
-            tb_excel = export_dataframe_to_excel_bytes(tb_df, sheet_name="Trial_Balance") if not tb_df.empty else b""
-            st.download_button(
-                label="Download Trial Balance (Excel)",
-                data=tb_excel,
-                file_name=f"trial_balance_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # --- TAB: SAVINGS SUMMARY ---
-    with tab_sav:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("Savings Portfolio & Savers Breakdown")
-        st.caption("Authoritative savings summary derived from individual deposits, group savings, and LAPS reserves.")
-
-        s1, s2, s3, s4 = st.columns(4)
-        s1.metric("Individual Deposits", f"₦{sav_data['total_individual_deposits']:,.2f}")
-        s2.metric("Individual Withdrawals", f"₦{sav_data['total_individual_withdrawals']:,.2f}")
-        s3.metric("Net Individual Savings", f"₦{sav_data['net_individual_savings']:,.2f}")
-        s4.metric("Active Savers Count", f"{sav_data['active_savers_count']:,} Clients")
-
-        s5, s6, s7 = st.columns(3)
-        s5.metric("Net Group Savings", f"₦{sav_data['net_group_savings']:,.2f}")
-        s6.metric("LAPS Reserve", f"₦{sav_data['laps_reserve']:,.2f}")
-        s7.metric("Consolidated Savings Portfolio", f"₦{sav_data['total_consolidated_savings']:,.2f}")
-
-        st.markdown("---")
-        st.markdown("#### Itemized Savers List")
-        savers_df = sav_data["savers_dataframe"]
-        if not savers_df.empty:
-            st.dataframe(
-                savers_df.style.format({
-                    "Total Deposited": "₦{:,.2f}",
-                    "Total Withdrawn": "₦{:,.2f}",
-                    "Net Savings Balance": "₦{:,.2f}"
-                }),
-                use_container_width=True,
-                hide_index=True
-            )
-        else:
-            st.info("No active savers found for the selected scope.")
-
-        st.markdown("---")
-        st.markdown("#### Direct Download: Savings Summary")
-        sd_col1, sd_col2 = st.columns(2)
-        with sd_col1:
-            sav_csv = savers_df.to_csv(index=False).encode('utf-8') if not savers_df.empty else b""
-            st.download_button(
-                label="Download Savings Summary (CSV)",
-                data=sav_csv,
-                file_name=f"savings_summary_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        with sd_col2:
-            sav_excel = export_dataframe_to_excel_bytes(savers_df, sheet_name="Savings_Summary") if not savers_df.empty else b""
-            st.download_button(
-                label="Download Savings Summary (Excel)",
-                data=sav_excel,
-                file_name=f"savings_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # --- TAB: REPAYMENT SUMMARY ---
-    with tab_rep:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("Repayments & Collections Performance Summary")
-        st.caption("Granular collection summary detailing base scheduled collections, full early payoffs, and excess payments.")
-
-        r1, r2, r3 = st.columns(3)
-        r1.metric("Total Collections Received", f"₦{rep_data['total_collected']:,.2f}")
-        r2.metric("Scheduled Expected Collections", f"₦{rep_data['total_expected']:,.2f}")
-        r3.metric("Collection Efficiency", f"{rep_data['collection_efficiency']:.2f}%")
-
-        r4, r5, r6 = st.columns(3)
-        r4.metric("Full Payoffs Settled", f"₦{rep_data['full_payoff_amount']:,.2f}", f"{rep_data['full_payoff_count']} Loans")
-        r5.metric("Excess Surplus Cash", f"₦{rep_data['excess_payment_amount']:,.2f}", f"{rep_data['excess_payment_count']} Events")
-        r6.metric("Overdue Collections", f"₦{rep_data['total_overdue_collected']:,.2f}")
-
-        st.markdown("---")
-        st.markdown("#### Collections by Loan Product")
-        prod_df = rep_data["product_dataframe"]
-        if not prod_df.empty:
-            st.dataframe(
-                prod_df.style.format({
-                    "Collections (NGN)": "₦{:,.2f}",
-                    "Transactions": "{:,}",
-                    "Unique Clients": "{:,}"
-                }),
-                use_container_width=True,
-                hide_index=True
-            )
-        else:
-            st.info("No product collections found for the selected scope.")
-
-        st.markdown("---")
-        st.markdown("#### Itemized Collections Log")
-        reps_df = rep_data["repayments_dataframe"]
-        if not reps_df.empty:
-            st.dataframe(
-                reps_df.style.format({
-                    "Amount Paid": "₦{:,.2f}",
-                    "Expected Amount": "₦{:,.2f}"
-                }),
-                use_container_width=True,
-                hide_index=True
-            )
-        else:
-            st.info("No repayments recorded for the selected scope.")
-
-        st.markdown("---")
-        st.markdown("#### Direct Download: Repayment Summary")
-        rd_col1, rd_col2 = st.columns(2)
-        with rd_col1:
-            rep_csv = reps_df.to_csv(index=False).encode('utf-8') if not reps_df.empty else b""
-            st.download_button(
-                label="Download Repayments Log (CSV)",
-                data=rep_csv,
-                file_name=f"repayments_summary_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        with rd_col2:
-            rep_excel = export_dataframe_to_excel_bytes(reps_df, sheet_name="Repayment_Summary") if not reps_df.empty else b""
-            st.download_button(
-                label="Download Repayments Log (Excel)",
-                data=rep_excel,
-                file_name=f"repayments_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # --- TAB: PORTFOLIO & OFFICER PERFORMANCE ---
-    with tab_port:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("Portfolio Summary & Health")
-        portfolio_summary = generate_portfolio_summary(filtered_loans, filtered_reps)
-
-        p1, p2, p3 = st.columns(3)
-        p1.metric("Active Loans", portfolio_summary['active_loans'])
-        p2.metric("Total Portfolio", f"₦{portfolio_summary['total_portfolio']:,.0f}")
-        p3.metric("PAR %", f"{portfolio_summary['par_percentage']:.2f}%")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        if ROLE in [ROLE_ADMIN, "Admin", "Super Admin", "BM", "AM", "Area Manager", "Director"]:
-            st.markdown("<div class='card'>", unsafe_allow_html=True)
-            st.subheader("Officer Performance Breakdown")
-
-            officers = filtered_loans['Officer'].dropna().unique() if not filtered_loans.empty and 'Officer' in filtered_loans.columns else []
-            display_options = ["All"] + [CO_DISPLAY_MAP.get(o, o) for o in officers]
-            selected_display = st.selectbox("Select Officer to Inspect:", display_options, key="rep_officer_inspect_sel")
-            selected_officer_inspect = "All" if selected_display == "All" else CO_NAME_MAP.get(selected_display, selected_display)
-
-            if selected_officer_inspect != "All":
-                officer_report = generate_officer_report(filtered_loans, filtered_reps, selected_officer_inspect)
-            else:
-                officer_report = generate_officer_report(filtered_loans, filtered_reps)
-
-            if not officer_report.empty:
-                st.dataframe(
-                    officer_report.style.format({
-                        "Active Credit": "₦{:,.0f}",
-                        "Loan Repay": "₦{:,.0f}",
-                        "Paid to Loan": "₦{:,.0f}",
-                        "Loan Balance": "₦{:,.0f}",
-                        "Savings": "₦{:,.0f}",
-                        "Overdue": "₦{:,.0f}"
-                    }),
-                    use_container_width=True
-                )
-            else:
-                st.info("No data available for officer report.")
-            st.markdown("</div>", unsafe_allow_html=True)
-
-            # Credit Intelligence & Risk Rating Report
-            st.markdown("<div class='card'>", unsafe_allow_html=True)
-            st.subheader("Client Risk Rating & Credit Intelligence")
-            st.caption("Automated credit risk evaluation, repayment compliance, and upgrade eligibility recommendations.")
-
-            try:
-                with SupabaseUnitOfWork() as uow_risk:
-                    from services.client_risk_rating_service import ClientRiskRatingService
-                    risk_target_branch = resolved_branch_id if isinstance(resolved_branch_id, str) else (BRANCH_ID or branch_name_to_id.get(current_bm_branch))
-                    risk_dist = ClientRiskRatingService.get_branch_risk_distribution(uow_risk, risk_target_branch)
-
-                    r1, r2, r3, r4, r5 = st.columns(5)
-                    r1.metric("[EXCELLENT] Upgrade", risk_dist.get("EXCELLENT", 0))
-                    r2.metric("[GOOD] Maintain", risk_dist.get("GOOD", 0))
-                    r3.metric("[FAIR] Monitor", risk_dist.get("FAIR", 0))
-                    r4.metric("[RISKY] No Increase", risk_dist.get("RISKY", 0))
-                    r5.metric("[HIGH RISK] Decline", risk_dist.get("HIGH_RISK", 0))
-            except Exception:
-                st.info("No active risk rating data available.")
             st.markdown("</div>", unsafe_allow_html=True)
 
     # --- TAB: DATA EXPORTS & DOWNLOADS ---

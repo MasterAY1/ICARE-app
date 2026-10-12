@@ -31,8 +31,6 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   DateTime _startDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
   DateTime _endDate = DateTime.now();
 
-  // Tab 5: Inspect Officer
-  String _inspectOfficer = 'All';
 
   // Monthly Executive Parity State
   int _selectedExecMonth = 9;
@@ -41,10 +39,6 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
   // Futures
   late Future<ReportsMeta> _metaFuture;
-  late Future<TrialBalanceData> _trialBalanceFuture;
-  late Future<SavingsSummaryData> _savingsFuture;
-  late Future<RepaymentSummaryData> _repaymentFuture;
-  late Future<PortfolioPerformanceData> _portfolioFuture;
   late Future<AreaComparisonData> _areaFuture;
   late Future<MonthlyParityData> _parityFuture;
   late Future<MonthlyExecutiveStatementsData> _statementsFuture;
@@ -84,33 +78,6 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     final endStr = _dateMode == 'Date Range' ? _dateFormat.format(_endDate) : null;
 
     setState(() {
-      _trialBalanceFuture = api.getTrialBalance(
-        branchName: _selectedBranchName,
-        asOfDate: asOfStr,
-        startDate: startStr,
-        endDate: endStr,
-      );
-      _savingsFuture = api.getSavingsSummary(
-        branchName: _selectedBranchName,
-        productName: _selectedProductName,
-        officerName: _selectedOfficerName,
-        asOfDate: asOfStr,
-        startDate: startStr,
-        endDate: endStr,
-      );
-      _repaymentFuture = api.getRepaymentSummary(
-        branchName: _selectedBranchName,
-        productName: _selectedProductName,
-        officerName: _selectedOfficerName,
-        startDate: startStr,
-        endDate: endStr,
-      );
-      _portfolioFuture = api.getPortfolioPerformance(
-        branchName: _selectedBranchName,
-        productName: _selectedProductName,
-        officerName: _selectedOfficerName,
-        inspectOfficer: _inspectOfficer,
-      );
       _areaFuture = api.getAreaComparison(
         productName: _selectedProductName,
         asOfDate: asOfStr,
@@ -179,21 +146,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     List<String> tabs;
     if (isAm) {
       tabs = [
-        'Monthly Executive Parity',
+        'Monthly Executive Statements',
         'Area Branches Comparison',
-        'General Ledger & Trial Balance',
-        'Savings Summary',
-        'Repayment Summary',
-        'Portfolio & Officer Performance',
         'Data Exports & Downloads',
       ];
     } else {
       tabs = [
-        'Monthly Executive Parity',
-        'General Ledger & Trial Balance',
-        'Savings Summary',
-        'Repayment Summary',
-        'Portfolio & Officer Performance',
+        'Monthly Executive Statements',
         'Data Exports & Downloads',
       ];
     }
@@ -715,22 +674,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // ---------------------------------------------------------------------------
   Widget _buildActiveTabContent(String tabName, bool isAm) {
     switch (tabName) {
+      case 'Monthly Executive Statements':
       case 'Monthly Executive Parity':
         return _buildMonthlyExecutiveParityTab();
       case 'Area Branches Comparison':
         return _buildAreaComparisonTab();
-      case 'General Ledger & Trial Balance':
-        return _buildTrialBalanceTab();
-      case 'Savings Summary':
-        return _buildSavingsSummaryTab();
-      case 'Repayment Summary':
-        return _buildRepaymentSummaryTab();
-      case 'Portfolio & Officer Performance':
-        return _buildPortfolioPerformanceTab();
       case 'Data Exports & Downloads':
         return _buildDataExportsTab(isAm);
       default:
-        return const SizedBox.shrink();
+        return _buildMonthlyExecutiveParityTab();
     }
   }
 
@@ -1433,584 +1385,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Tab 2: General Ledger & Trial Balance
-  // ---------------------------------------------------------------------------
-  Widget _buildTrialBalanceTab() {
-    return FutureBuilder<TrialBalanceData>(
-      future: _trialBalanceFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
-        }
-        if (snapshot.hasError) return _buildErrorCard(snapshot.error.toString());
-        final data = snapshot.data;
-        if (data == null || data.rows.isEmpty) {
-          return _buildEmptyCard('No ledger entries found for the selected scope.');
-        }
 
-        final isBalanced = data.isBalanced;
-
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('General Ledger Trial Balance', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-              const SizedBox(height: 4),
-              const Text('Double-entry verification of all Chart of Accounts balances. Total Debits must mathematically equal Total Credits.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-              const SizedBox(height: 16),
-
-              // Responsive KPI Row
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isMobile = constraints.maxWidth < 600;
-                  final cardW = isMobile ? (constraints.maxWidth - 12) / 2 : 170.0;
-                  return Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      _buildMetricCard('Total Debits', _formatNgn(data.totalDebits), width: cardW),
-                      _buildMetricCard('Total Credits', _formatNgn(data.totalCredits), width: cardW),
-                      _buildMetricCard('Net Variance', _formatNgn(data.variance), width: cardW),
-                      Container(
-                        width: cardW,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: isBalanced ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: isBalanced ? const Color(0xFF166534) : const Color(0xFF991B1B)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('LEDGER INTEGRITY', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF64748B))),
-                            const SizedBox(height: 4),
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                data.status,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                  color: isBalanced ? const Color(0xFF166534) : const Color(0xFF991B1B),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 20),
-              const Divider(color: Color(0xFFE2E8F0)),
-              const SizedBox(height: 12),
-
-              // Table with mobile scroll cue
-              _buildScrollHint(),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-                  columns: const [
-                    DataColumn(label: Text('Code', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Account Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Type', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Gross Debits', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Gross Credits', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Debit Balance', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Credit Balance', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Net Position', style: TextStyle(fontWeight: FontWeight.bold))),
-                  ],
-                  rows: data.rows.map((r) {
-                    return DataRow(cells: [
-                      DataCell(Text(r.accountCode, style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'JetBrains Mono'))),
-                      DataCell(Text(r.accountName)),
-                      DataCell(Text(r.accountType)),
-                      DataCell(Text(_formatNgn(r.grossDebits), style: const TextStyle(fontFamily: 'JetBrains Mono'))),
-                      DataCell(Text(_formatNgn(r.grossCredits), style: const TextStyle(fontFamily: 'JetBrains Mono'))),
-                      DataCell(Text(_formatNgn(r.debitBalance), style: const TextStyle(fontFamily: 'JetBrains Mono'))),
-                      DataCell(Text(_formatNgn(r.creditBalance), style: const TextStyle(fontFamily: 'JetBrains Mono'))),
-                      DataCell(Text(_formatNgn(r.netPosition), style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'JetBrains Mono'))),
-                    ]);
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Divider(color: Color(0xFFE2E8F0)),
-              const SizedBox(height: 12),
-
-              Builder(
-                builder: (context) {
-                  final isMobile = MediaQuery.of(context).size.width < 750;
-                  return SizedBox(
-                    width: isMobile ? double.infinity : null,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _triggerCsvDownload('trial_balance', 'trial_balance.csv'),
-                      icon: const Icon(Icons.file_download, size: 16),
-                      label: const Text('Download Trial Balance (CSV)'),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A), foregroundColor: Colors.white),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   // ---------------------------------------------------------------------------
-  // Tab 3: Savings Summary
-  // ---------------------------------------------------------------------------
-  Widget _buildSavingsSummaryTab() {
-    return FutureBuilder<SavingsSummaryData>(
-      future: _savingsFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
-        }
-        if (snapshot.hasError) return _buildErrorCard(snapshot.error.toString());
-        final data = snapshot.data;
-        if (data == null || data.savers.isEmpty) {
-          return _buildEmptyCard('No active savers found for the selected scope.');
-        }
-
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Savings Portfolio & Savers Breakdown', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-              const SizedBox(height: 4),
-              const Text('Authoritative savings summary derived from individual deposits, group savings, and LAPS reserves.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-              const SizedBox(height: 16),
-
-              // Responsive KPI Rows
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isMobile = constraints.maxWidth < 600;
-                  final cardW = isMobile ? (constraints.maxWidth - 12) / 2 : 170.0;
-                  return Column(
-                    children: [
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          _buildMetricCard('Individual Deposits', _formatNgn(data.totalIndividualDeposits), width: cardW),
-                          _buildMetricCard('Individual Withdrawals', _formatNgn(data.totalIndividualWithdrawals), width: cardW),
-                          _buildMetricCard('Net Individual Savings', _formatNgn(data.netIndividualSavings), width: cardW),
-                          _buildMetricCard('Active Savers Count', '${_intFormat.format(data.activeSaversCount)} Clients', width: cardW),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          _buildMetricCard('Net Group Savings', _formatNgn(data.netGroupSavings), width: cardW),
-                          _buildMetricCard('LAPS Reserve', _formatNgn(data.lapsReserve), width: cardW),
-                          _buildMetricCard('Consolidated Portfolio', _formatNgn(data.totalConsolidatedSavings), isAccent: true, width: cardW),
-                        ],
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 20),
-              const Divider(color: Color(0xFFE2E8F0)),
-              const SizedBox(height: 12),
-
-              const Text('Itemized Savers List', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-              const SizedBox(height: 12),
-
-              // DataTable with mobile scroll cue
-              _buildScrollHint(),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-                  columns: const [
-                    DataColumn(label: Text('Client ID', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Group', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Branch', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Officer', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Deposited', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Withdrawn', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Net Balance', style: TextStyle(fontWeight: FontWeight.bold))),
-                  ],
-                  rows: data.savers.take(100).map((s) {
-                    return DataRow(cells: [
-                      DataCell(Text(s.clientId, style: const TextStyle(fontWeight: FontWeight.w600))),
-                      DataCell(Text(s.clientName)),
-                      DataCell(Text(s.group)),
-                      DataCell(Text(s.branch)),
-                      DataCell(Text(s.officer)),
-                      DataCell(Text(_formatNgn(s.totalDeposited))),
-                      DataCell(Text(_formatNgn(s.totalWithdrawn))),
-                      DataCell(Text(_formatNgn(s.netSavingsBalance), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF064E3B)))),
-                    ]);
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Divider(color: Color(0xFFE2E8F0)),
-              const SizedBox(height: 12),
-
-              Builder(
-                builder: (context) {
-                  final isMobile = MediaQuery.of(context).size.width < 750;
-                  return SizedBox(
-                    width: isMobile ? double.infinity : null,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _triggerCsvDownload('savings', 'savings_summary.csv'),
-                      icon: const Icon(Icons.file_download, size: 16),
-                      label: const Text('Download Savings Summary (CSV)'),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A), foregroundColor: Colors.white),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Tab 4: Repayment Summary
-  // ---------------------------------------------------------------------------
-  Widget _buildRepaymentSummaryTab() {
-    return FutureBuilder<RepaymentSummaryData>(
-      future: _repaymentFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
-        }
-        if (snapshot.hasError) return _buildErrorCard(snapshot.error.toString());
-        final data = snapshot.data;
-        if (data == null || data.repayments.isEmpty) {
-          return _buildEmptyCard('No repayments recorded for the selected scope.');
-        }
-
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Repayments & Collections Performance Summary', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-              const SizedBox(height: 4),
-              const Text('Granular collection summary detailing base scheduled collections, full early payoffs, and excess payments.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-              const SizedBox(height: 16),
-
-              // KPI Rows with responsive 2-col layout on mobile
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isMobile = constraints.maxWidth < 600;
-                  final cardW = isMobile ? (constraints.maxWidth - 12) / 2 : 180.0;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          _buildMetricCard('Total Collections', _formatNgn(data.totalCollected), width: cardW),
-                          _buildMetricCard('Expected Collections', _formatNgn(data.totalExpected), width: cardW),
-                          _buildMetricCard('Collection Efficiency', '${data.collectionEfficiency.toStringAsFixed(1)}%', width: cardW),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          _buildMetricCard('Full Payoffs Settled', _formatNgn(data.fullPayoffAmount), subtitle: '${data.fullPayoffCount} Loans', width: cardW),
-                          _buildMetricCard('Excess Surplus Cash', _formatNgn(data.excessPaymentAmount), subtitle: '${data.excessPaymentCount} Events', width: cardW),
-                          _buildMetricCard('Overdue Collections', _formatNgn(data.totalOverdueCollected), width: cardW),
-                        ],
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 20),
-              const Divider(color: Color(0xFFE2E8F0)),
-              const SizedBox(height: 12),
-
-              const Text('Collections by Loan Product', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-              const SizedBox(height: 12),
-
-              // DataTable with mobile scroll cue
-              _buildScrollHint(),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-                  columns: const [
-                    DataColumn(label: Text('Loan Product', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Collections (NGN)', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Transactions', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Unique Clients', style: TextStyle(fontWeight: FontWeight.bold))),
-                  ],
-                  rows: data.products.map((p) {
-                    return DataRow(cells: [
-                      DataCell(Text(p.loanProduct, style: const TextStyle(fontWeight: FontWeight.w600))),
-                      DataCell(Text(_formatNgn(p.collectionsNgn))),
-                      DataCell(Text(_intFormat.format(p.transactions))),
-                      DataCell(Text(_intFormat.format(p.uniqueClients))),
-                    ]);
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Divider(color: Color(0xFFE2E8F0)),
-              const SizedBox(height: 12),
-
-              Builder(
-                builder: (context) {
-                  final isMobile = MediaQuery.of(context).size.width < 750;
-                  return SizedBox(
-                    width: isMobile ? double.infinity : null,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _triggerCsvDownload('repayments', 'repayments_summary.csv'),
-                      icon: const Icon(Icons.file_download, size: 16),
-                      label: const Text('Download Repayments Log (CSV)'),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A), foregroundColor: Colors.white),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Tab 5: Portfolio & Officer Performance
-  // ---------------------------------------------------------------------------
-  Widget _buildPortfolioPerformanceTab() {
-    return FutureBuilder<PortfolioPerformanceData>(
-      future: _portfolioFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
-        }
-        if (snapshot.hasError) return _buildErrorCard(snapshot.error.toString());
-        final data = snapshot.data;
-        if (data == null) {
-          return _buildEmptyCard('No portfolio data available.');
-        }
-
-        final risk = data.riskDistribution;
-
-        return Column(
-          children: [
-            // Card 1: Portfolio Summary & Health
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Portfolio Summary & Health', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                  const SizedBox(height: 16),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isMobile = constraints.maxWidth < 600;
-                      final cardW = isMobile ? (constraints.maxWidth - 12) / 2 : 180.0;
-                      return Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          _buildMetricCard('Active Loans', '${data.activeLoans}', width: cardW),
-                          _buildMetricCard('Total Portfolio', _formatNgn(data.totalPortfolio), width: cardW),
-                          _buildMetricCard('PAR %', '${data.parPercentage.toStringAsFixed(2)}%', width: cardW),
-                        ],
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Card 2: Officer Performance Breakdown
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Builder(
-                    builder: (context) {
-                      final isMobile = MediaQuery.of(context).size.width < 750;
-                      if (isMobile) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Officer Performance Breakdown', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                            const SizedBox(height: 10),
-                            SizedBox(
-                              width: double.infinity,
-                              child: DropdownButtonFormField<String>(
-                                value: _inspectOfficer,
-                                decoration: _inputDecoration(),
-                                items: ['All', ...data.officersList].map((o) => DropdownMenuItem(value: o, child: Text(o, overflow: TextOverflow.ellipsis))).toList(),
-                                onChanged: (val) {
-                                  if (val != null) {
-                                    setState(() => _inspectOfficer = val);
-                                    _refreshCurrentTabData();
-                                  }
-                                },
-                              ),
-                            ),
-                          ],
-                        );
-                      }
-                      return Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Officer Performance Breakdown', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                          SizedBox(
-                            width: 220,
-                            child: DropdownButtonFormField<String>(
-                              value: _inspectOfficer,
-                              decoration: _inputDecoration(),
-                              items: ['All', ...data.officersList].map((o) => DropdownMenuItem(value: o, child: Text(o, overflow: TextOverflow.ellipsis))).toList(),
-                              onChanged: (val) {
-                                if (val != null) {
-                                  setState(() => _inspectOfficer = val);
-                                  _refreshCurrentTabData();
-                                }
-                              },
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 16),
-
-                  if (data.officerRecords.isNotEmpty) ...[
-                    _buildScrollHint(),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                        headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-                        columns: const [
-                          DataColumn(label: Text('Client ID', style: TextStyle(fontWeight: FontWeight.bold))),
-                          DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                          DataColumn(label: Text('Group', style: TextStyle(fontWeight: FontWeight.bold))),
-                          DataColumn(label: Text('Product', style: TextStyle(fontWeight: FontWeight.bold))),
-                          DataColumn(label: Text('Active Credit', style: TextStyle(fontWeight: FontWeight.bold))),
-                          DataColumn(label: Text('Loan Repay', style: TextStyle(fontWeight: FontWeight.bold))),
-                          DataColumn(label: Text('Loan Balance', style: TextStyle(fontWeight: FontWeight.bold))),
-                          DataColumn(label: Text('Savings', style: TextStyle(fontWeight: FontWeight.bold))),
-                          DataColumn(label: Text('Overdue', style: TextStyle(fontWeight: FontWeight.bold))),
-                        ],
-                        rows: data.officerRecords.take(50).map((r) {
-                          return DataRow(cells: [
-                            DataCell(Text(r.clientId, style: const TextStyle(fontWeight: FontWeight.w600))),
-                            DataCell(Text(r.clientName)),
-                            DataCell(Text(r.group)),
-                            DataCell(Text(r.product)),
-                            DataCell(Text(_formatNgn(r.activeCredit))),
-                            DataCell(Text(_formatNgn(r.loanRepay))),
-                            DataCell(Text(_formatNgn(r.loanBalance))),
-                            DataCell(Text(_formatNgn(r.savings))),
-                            DataCell(Text(_formatNgn(r.overdue), style: TextStyle(color: r.overdue > 0 ? const Color(0xFFDC2626) : Colors.black))),
-                          ]);
-                        }).toList(),
-                      ),
-                    ),
-                  ] else
-                    const Text('No records found for the selected officer inspector.', style: TextStyle(color: Color(0xFF64748B))),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Card 3: Client Risk Rating & Credit Intelligence
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Client Risk Rating & Credit Intelligence', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                  const SizedBox(height: 4),
-                  const Text('Automated credit risk evaluation, repayment compliance, and upgrade eligibility recommendations.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                  const SizedBox(height: 16),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isMobile = constraints.maxWidth < 600;
-                      final cardW = isMobile ? (constraints.maxWidth - 12) / 2 : 150.0;
-                      return Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          _buildRiskCard('EXCELLENT', 'Upgrade', risk['EXCELLENT'] ?? 0, const Color(0xFF166534), const Color(0xFFF0FDF4), width: cardW),
-                          _buildRiskCard('GOOD', 'Maintain', risk['GOOD'] ?? 0, const Color(0xFF2563EB), const Color(0xFFEFF6FF), width: cardW),
-                          _buildRiskCard('FAIR', 'Monitor', risk['FAIR'] ?? 0, const Color(0xFFD97706), const Color(0xFFFFFBEB), width: cardW),
-                          _buildRiskCard('RISKY', 'No Increase', risk['RISKY'] ?? 0, const Color(0xFFEA580C), const Color(0xFFFFF7ED), width: cardW),
-                          _buildRiskCard('HIGH RISK', 'Decline', risk['HIGH_RISK'] ?? 0, const Color(0xFFDC2626), const Color(0xFFFEF2F2), width: cardW),
-                        ],
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Tab 6: Data Exports & Downloads
+  // Tab: Data Exports & Downloads
   // ---------------------------------------------------------------------------
   Widget _buildDataExportsTab(bool isAm) {
     return Container(
@@ -2256,25 +1634,6 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 
-  Widget _buildRiskCard(String level, String action, int count, Color textColor, Color bgColor, {double? width}) {
-    return Container(
-      width: width ?? 150,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: textColor.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('[$level] $action', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textColor)),
-          const SizedBox(height: 6),
-          Text('$count', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: textColor, fontFamily: 'JetBrains Mono')),
-        ],
-      ),
-    );
-  }
 
   Widget _buildScrollHint() {
     return const Padding(
@@ -2400,6 +1759,31 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
   late TextEditingController _fPayHoMainController;
   late TextEditingController _fPayBrController;
 
+  // Cumulative Trial Balance Expenses (Year-To-Date)
+  late TextEditingController _tbSalaryController;
+  late TextEditingController _tbRentController;
+  late TextEditingController _tbElectricityController;
+  late TextEditingController _tbStationeryController;
+  late TextEditingController _tbEntertainmentController;
+  late TextEditingController _tbTelephoneController;
+  late TextEditingController _tbRepairOfficeController;
+  late TextEditingController _tbTransportController;
+  late TextEditingController _tbTrainingController;
+  late TextEditingController _tbOtherExpensesController;
+
+  // Cumulative Trial Balance Income & Reserves (Year-To-Date)
+  late TextEditingController _tbSalesProfitController;
+  late TextEditingController _tbDamagesFineController;
+  late TextEditingController _tbPassbookController;
+  late TextEditingController _tbScrapsSalesController;
+  late TextEditingController _tbApplicationFeeController;
+  late TextEditingController _tbFundHoMainController;
+  late TextEditingController _tbFundBranchController;
+  late TextEditingController _tbFundOtherAreaController;
+  late TextEditingController _tbFundInternalController;
+  late TextEditingController _tbContingencyController;
+  late TextEditingController _lapseDepositReserveController;
+
   @override
   void initState() {
     super.initState();
@@ -2444,6 +1828,29 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
     _fPayHoAssetController = TextEditingController(text: d.fundCashHoAssetPayment > 0 ? d.fundCashHoAssetPayment.toStringAsFixed(2) : '');
     _fPayHoMainController = TextEditingController(text: d.fundCashHoMainPayment > 0 ? d.fundCashHoMainPayment.toStringAsFixed(2) : '');
     _fPayBrController = TextEditingController(text: d.fundCashBranchPayment > 0 ? d.fundCashBranchPayment.toStringAsFixed(2) : '');
+
+    _tbSalaryController = TextEditingController(text: d.tbSalary > 0 ? d.tbSalary.toStringAsFixed(2) : '');
+    _tbRentController = TextEditingController(text: d.tbRent > 0 ? d.tbRent.toStringAsFixed(2) : '');
+    _tbElectricityController = TextEditingController(text: d.tbElectricity > 0 ? d.tbElectricity.toStringAsFixed(2) : '');
+    _tbStationeryController = TextEditingController(text: d.tbStationery > 0 ? d.tbStationery.toStringAsFixed(2) : '');
+    _tbEntertainmentController = TextEditingController(text: d.tbEntertainment > 0 ? d.tbEntertainment.toStringAsFixed(2) : '');
+    _tbTelephoneController = TextEditingController(text: d.tbTelephone > 0 ? d.tbTelephone.toStringAsFixed(2) : '');
+    _tbRepairOfficeController = TextEditingController(text: d.tbRepairOffice > 0 ? d.tbRepairOffice.toStringAsFixed(2) : '');
+    _tbTransportController = TextEditingController(text: d.tbTransport > 0 ? d.tbTransport.toStringAsFixed(2) : '');
+    _tbTrainingController = TextEditingController(text: d.tbTraining > 0 ? d.tbTraining.toStringAsFixed(2) : '');
+    _tbOtherExpensesController = TextEditingController(text: d.tbOtherExpenses > 0 ? d.tbOtherExpenses.toStringAsFixed(2) : '');
+
+    _tbSalesProfitController = TextEditingController(text: d.tbSalesProfit > 0 ? d.tbSalesProfit.toStringAsFixed(2) : '');
+    _tbDamagesFineController = TextEditingController(text: d.tbDamagesFine > 0 ? d.tbDamagesFine.toStringAsFixed(2) : '');
+    _tbPassbookController = TextEditingController(text: d.tbPassbook > 0 ? d.tbPassbook.toStringAsFixed(2) : '');
+    _tbScrapsSalesController = TextEditingController(text: d.tbScrapsSales > 0 ? d.tbScrapsSales.toStringAsFixed(2) : '');
+    _tbApplicationFeeController = TextEditingController(text: d.tbApplicationFee > 0 ? d.tbApplicationFee.toStringAsFixed(2) : '');
+    _tbFundHoMainController = TextEditingController(text: d.tbFundHoMain > 0 ? d.tbFundHoMain.toStringAsFixed(2) : '');
+    _tbFundBranchController = TextEditingController(text: d.tbFundBranch > 0 ? d.tbFundBranch.toStringAsFixed(2) : '');
+    _tbFundOtherAreaController = TextEditingController(text: d.tbFundOtherArea > 0 ? d.tbFundOtherArea.toStringAsFixed(2) : '');
+    _tbFundInternalController = TextEditingController(text: d.tbFundInternal > 0 ? d.tbFundInternal.toStringAsFixed(2) : '');
+    _tbContingencyController = TextEditingController(text: d.tbContingency > 0 ? d.tbContingency.toStringAsFixed(2) : '');
+    _lapseDepositReserveController = TextEditingController(text: d.lapseDepositReserve > 0 ? d.lapseDepositReserve.toStringAsFixed(2) : '');
   }
 
   @override
@@ -2491,6 +1898,29 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
     _fPayHoAssetController.dispose();
     _fPayHoMainController.dispose();
     _fPayBrController.dispose();
+
+    _tbSalaryController.dispose();
+    _tbRentController.dispose();
+    _tbElectricityController.dispose();
+    _tbStationeryController.dispose();
+    _tbEntertainmentController.dispose();
+    _tbTelephoneController.dispose();
+    _tbRepairOfficeController.dispose();
+    _tbTransportController.dispose();
+    _tbTrainingController.dispose();
+    _tbOtherExpensesController.dispose();
+
+    _tbSalesProfitController.dispose();
+    _tbDamagesFineController.dispose();
+    _tbPassbookController.dispose();
+    _tbScrapsSalesController.dispose();
+    _tbApplicationFeeController.dispose();
+    _tbFundHoMainController.dispose();
+    _tbFundBranchController.dispose();
+    _tbFundOtherAreaController.dispose();
+    _tbFundInternalController.dispose();
+    _tbContingencyController.dispose();
+    _lapseDepositReserveController.dispose();
   }
 
   @override
@@ -2543,6 +1973,27 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
         receivedFromOtherSources: _parseVal(_recOtherController),
         retainedEarnings: _parseVal(_retainedEarningsController) > 0 ? _parseVal(_retainedEarningsController) : 26351209.0,
         headOfficeAssetAllocation: _parseVal(_hoAssetAllocController) > 0 ? _parseVal(_hoAssetAllocController) : 14730282.0,
+        tbSalary: _parseVal(_tbSalaryController),
+        tbRent: _parseVal(_tbRentController),
+        tbElectricity: _parseVal(_tbElectricityController),
+        tbStationery: _parseVal(_tbStationeryController),
+        tbEntertainment: _parseVal(_tbEntertainmentController),
+        tbTelephone: _parseVal(_tbTelephoneController),
+        tbRepairOffice: _parseVal(_tbRepairOfficeController),
+        tbTransport: _parseVal(_tbTransportController),
+        tbTraining: _parseVal(_tbTrainingController),
+        tbOtherExpenses: _parseVal(_tbOtherExpensesController),
+        tbSalesProfit: _parseVal(_tbSalesProfitController),
+        tbDamagesFine: _parseVal(_tbDamagesFineController),
+        tbPassbook: _parseVal(_tbPassbookController),
+        tbScrapsSales: _parseVal(_tbScrapsSalesController),
+        tbApplicationFee: _parseVal(_tbApplicationFeeController),
+        tbFundHoMain: _parseVal(_tbFundHoMainController),
+        tbFundBranch: _parseVal(_tbFundBranchController),
+        tbFundOtherArea: _parseVal(_tbFundOtherAreaController),
+        tbFundInternal: _parseVal(_tbFundInternalController),
+        tbContingency: _parseVal(_tbContingencyController),
+        lapseDepositReserve: _parseVal(_lapseDepositReserveController),
       );
 
       final api = ref.read(reportsApiServiceProvider);
@@ -2857,6 +2308,158 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
                               _buildField('HO Main Remitted (₦)', _fPayHoMainController, hint: '0.00'),
                               const SizedBox(height: 12),
                               _buildField('Branch Office Remitted (₦)', _fPayBrController, hint: '0.00'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+            const SizedBox(height: 16),
+
+            // Section 4: Cumulative Trial Balance Expenses (Year-To-Date)
+            _buildSectionCard(
+              title: '4. Cumulative Trial Balance Expenses (Year-To-Date)',
+              subtitle: 'Cumulative operating expenditures from Jan 1 through the reporting month.',
+              icon: Icons.receipt_long,
+              child: isVeryNarrow
+                  ? Column(
+                      children: [
+                        _buildField('Personnel Gross Salary (₦)', _tbSalaryController, hint: 'e.g. 4453447.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Office Rent (₦)', _tbRentController, hint: 'e.g. 400000.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Electricity/Gas/Water (₦)', _tbElectricityController, hint: 'e.g. 81700.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Stationery/Office Mgmt (₦)', _tbStationeryController, hint: 'e.g. 1043300.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Entertainment (₦)', _tbEntertainmentController, hint: 'e.g. 253000.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Telephone/Postage (₦)', _tbTelephoneController, hint: 'e.g. 27000.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Repair Cost (Office) (₦)', _tbRepairOfficeController, hint: 'e.g. 243100.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Transport Allowance (₦)', _tbTransportController, hint: 'e.g. 1405600.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Training Expenses (₦)', _tbTrainingController, hint: 'e.g. 1890652.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Other Expenses (₦)', _tbOtherExpensesController, hint: '0.00'),
+                      ],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            children: [
+                              _buildField('Personnel Gross Salary (₦)', _tbSalaryController, hint: 'e.g. 4453447.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Office Rent (₦)', _tbRentController, hint: 'e.g. 400000.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Electricity/Gas/Water (₦)', _tbElectricityController, hint: 'e.g. 81700.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Stationery/Office Mgmt (₦)', _tbStationeryController, hint: 'e.g. 1043300.00'),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              _buildField('Entertainment (₦)', _tbEntertainmentController, hint: 'e.g. 253000.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Telephone/Postage (₦)', _tbTelephoneController, hint: 'e.g. 27000.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Repair Cost (Office) (₦)', _tbRepairOfficeController, hint: 'e.g. 243100.00'),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              _buildField('Transport Allowance (₦)', _tbTransportController, hint: 'e.g. 1405600.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Training Expenses (₦)', _tbTrainingController, hint: 'e.g. 1890652.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Other Expenses (₦)', _tbOtherExpensesController, hint: '0.00'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+            const SizedBox(height: 16),
+
+            // Section 5: Cumulative Trial Balance Income & Reserves (Year-To-Date)
+            _buildSectionCard(
+              title: '5. Cumulative Trial Balance Income & Reserves (Year-To-Date)',
+              subtitle: 'Cumulative auxiliary revenue and balance sheet equity/funds.',
+              icon: Icons.pie_chart,
+              child: isVeryNarrow
+                  ? Column(
+                      children: [
+                        _buildField('Sales Profit (Cumulative) (₦)', _tbSalesProfitController, hint: 'e.g. 1636698.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Damages and Fine (₦)', _tbDamagesFineController, hint: 'e.g. 5500.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Passbook Fees (₦)', _tbPassbookController, hint: 'e.g. 42500.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Scraps Sales (₦)', _tbScrapsSalesController, hint: 'e.g. 1440.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Application Fees (₦)', _tbApplicationFeeController, hint: 'e.g. 418000.00'),
+                        const SizedBox(height: 12),
+                        _buildField('HO Fund (Main) (Debit) (₦)', _tbFundHoMainController, hint: 'e.g. 36553628.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Branch Office Fund (₦)', _tbFundBranchController, hint: 'e.g. 971000.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Other Area Fund (₦)', _tbFundOtherAreaController, hint: 'e.g. 11300000.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Internal Fund (₦)', _tbFundInternalController, hint: 'e.g. 5018362.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Lapse Deposit Reserve (₦)', _lapseDepositReserveController, hint: '0.00'),
+                        const SizedBox(height: 12),
+                        _buildField('Contingency Reserve (₦)', _tbContingencyController, hint: '0.00'),
+                      ],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            children: [
+                              _buildField('Sales Profit (Cumulative) (₦)', _tbSalesProfitController, hint: 'e.g. 1636698.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Damages and Fine (₦)', _tbDamagesFineController, hint: 'e.g. 5500.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Passbook Fees (₦)', _tbPassbookController, hint: 'e.g. 42500.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Scraps Sales (₦)', _tbScrapsSalesController, hint: 'e.g. 1440.00'),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              _buildField('Application Fees (₦)', _tbApplicationFeeController, hint: 'e.g. 418000.00'),
+                              const SizedBox(height: 12),
+                              _buildField('HO Fund (Main) (Debit) (₦)', _tbFundHoMainController, hint: 'e.g. 36553628.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Branch Office Fund (₦)', _tbFundBranchController, hint: 'e.g. 971000.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Other Area Fund (₦)', _tbFundOtherAreaController, hint: 'e.g. 11300000.00'),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              _buildField('Internal Fund (₦)', _tbFundInternalController, hint: 'e.g. 5018362.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Lapse Deposit Reserve (₦)', _lapseDepositReserveController, hint: '0.00'),
+                              const SizedBox(height: 12),
+                              _buildField('Contingency Reserve (₦)', _tbContingencyController, hint: '0.00'),
                             ],
                           ),
                         ),
