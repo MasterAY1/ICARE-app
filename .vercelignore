@@ -1,4 +1,5 @@
-# Ignore backend files from Vercel build so it does not attempt to create Python serverless functions
+# Ignore backend files, Python manifests, tests, and scripts from Vercel deployment
+# so Vercel does not attempt to create Python serverless functions.
 api/
 services/
 database/
@@ -6,3 +7,12 @@ scripts/
 tests/
 venv/
 *.py
+requirements.txt
+runtime.txt
+Pipfile*
+pyproject.toml
+pytest.ini
+run.sh
+run.bat
+.env*
+Finance_book_automated.xlsx
