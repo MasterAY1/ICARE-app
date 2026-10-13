@@ -2024,8 +2024,8 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
     _lapseRetController = TextEditingController(text: d.lapseDepositReturn > 0 ? d.lapseDepositReturn.toStringAsFixed(2) : '');
     _recOtherController = TextEditingController(text: d.receivedFromOtherSources > 0 ? d.receivedFromOtherSources.toStringAsFixed(2) : '');
     _paidOtherController = TextEditingController(text: d.paidToOtherSources > 0 ? d.paidToOtherSources.toStringAsFixed(2) : '');
-    _retainedEarningsController = TextEditingController(text: d.retainedEarnings > 0 ? d.retainedEarnings.toStringAsFixed(2) : '26351209.00');
-    _hoAssetAllocController = TextEditingController(text: d.headOfficeAssetAllocation > 0 ? d.headOfficeAssetAllocation.toStringAsFixed(2) : '14730282.00');
+    _retainedEarningsController = TextEditingController(text: d.retainedEarnings > 0 ? d.retainedEarnings.toStringAsFixed(2) : '');
+    _hoAssetAllocController = TextEditingController(text: d.headOfficeAssetAllocation > 0 ? d.headOfficeAssetAllocation.toStringAsFixed(2) : '');
 
     _disbursedPrincipalController = TextEditingController(text: d.disbursedPrincipal > 0 ? d.disbursedPrincipal.toStringAsFixed(2) : '');
     _upfrontFeesController = TextEditingController(text: d.upfrontFees > 0 ? d.upfrontFees.toStringAsFixed(2) : '');
@@ -2203,8 +2203,8 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
         lapseDepositReturn: _parseVal(_lapseRetController),
         paidToOtherSources: _parseVal(_paidOtherController),
         receivedFromOtherSources: _parseVal(_recOtherController),
-        retainedEarnings: _parseVal(_retainedEarningsController) > 0 ? _parseVal(_retainedEarningsController) : 26351209.0,
-        headOfficeAssetAllocation: _parseVal(_hoAssetAllocController) > 0 ? _parseVal(_hoAssetAllocController) : 14730282.0,
+        retainedEarnings: _parseVal(_retainedEarningsController),
+        headOfficeAssetAllocation: _parseVal(_hoAssetAllocController),
         disbursedPrincipal: _parseVal(_disbursedPrincipalController),
         upfrontFees: _parseVal(_upfrontFeesController),
         savingsDeposits: _parseVal(_savingsDepositsController),
@@ -2404,7 +2404,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
             children: [
               Expanded(child: _buildField('Bank Name', nameC, hint: 'e.g., Sterling Bank', isNumber: false)),
               const SizedBox(width: 8),
-              Expanded(child: _buildField('Account Number', accC, hint: 'e.g., 374206', isNumber: false)),
+              Expanded(child: _buildField('Account Number', accC, hint: 'e.g., Account No.', isNumber: false)),
             ],
           ),
           const SizedBox(height: 8),

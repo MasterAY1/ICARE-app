@@ -955,20 +955,20 @@ class ReportService:
         # Prior month closing balances -> current month opening B/F
         prev_banks = prev_data.get("banks", [])
         bank1_name = prev_banks[0].get("bank_name") if len(prev_banks) > 0 else "Sterling Bank"
-        bank1_acc = prev_banks[0].get("account_number") if len(prev_banks) > 0 else "374206"
+        bank1_acc = prev_banks[0].get("account_number") if len(prev_banks) > 0 else ""
         bank1_open = float(prev_banks[0].get("closing_balance") or 0.0) if len(prev_banks) > 0 else 0.0
 
         bank2_name = prev_banks[1].get("bank_name") if len(prev_banks) > 1 else "Wema Bank"
-        bank2_acc = prev_banks[1].get("account_number") if len(prev_banks) > 1 else "55080"
+        bank2_acc = prev_banks[1].get("account_number") if len(prev_banks) > 1 else ""
         bank2_open = float(prev_banks[1].get("closing_balance") or 0.0) if len(prev_banks) > 1 else 0.0
 
         overdue_bf_auto = float(prev_data.get("overdue_cf") or prev_data.get("tb_overdue") or prev_data.get("overdue_bf") or 0.0)
-        retained_earnings_auto = float(prev_data.get("retained_earnings") or 26351209.0)
-        ho_asset_alloc_auto = float(prev_data.get("head_office_asset_allocation") or 14730282.0)
-        lapse_reserve_auto = float(prev_data.get("lapse_deposit_reserve") or 1674054.0)
-        internal_fund_auto = float(prev_data.get("tb_fund_internal") or 5018362.0)
+        retained_earnings_auto = float(prev_data.get("retained_earnings") or 0.0)
+        ho_asset_alloc_auto = float(prev_data.get("head_office_asset_allocation") or 0.0)
+        lapse_reserve_auto = float(prev_data.get("lapse_deposit_reserve") or 0.0)
+        internal_fund_auto = float(prev_data.get("tb_fund_internal") or 0.0)
 
-        # 2. Query Master Cashbook aggregations for the current month
+        # 2. Query Master Cashbook aggregations and Loans contract markup for the current month
         start_date_str = f"{year:04d}-{month:02d}-01"
         import calendar
         last_day = calendar.monthrange(year, month)[1]
@@ -1002,6 +1002,19 @@ class ReportService:
         except Exception:
             pass
 
+        # Calculate sales profit markup from active credit contract margin on loans issued in month
+        sales_profit_markup_auto = 0.0
+        try:
+            res_loans = uow.client.table("loans") \
+                .select("loan_amount, total_due") \
+                .eq("branch_id", branch_id) \
+                .gte("date", start_date_str) \
+                .lte("date", end_date_str) \
+                .execute()
+            sales_profit_markup_auto = sum(max(0.0, float(L.get("total_due") or 0.0) - float(L.get("loan_amount") or 0.0)) for L in (res_loans.data or []))
+        except Exception:
+            pass
+
         # 3. Check if current month record exists in monthly_statement_reconciliations
         curr_data = None
         try:
@@ -1031,11 +1044,21 @@ class ReportService:
             if float(curr_data.get("overdue_bf") or 0.0) == 0.0 and overdue_bf_auto > 0:
                 curr_data["overdue_bf"] = overdue_bf_auto
 
-            # Populate cashbook defaults if user hasn't overridden
+            # Populate cashbook & loan defaults if user hasn't overridden
             if float(curr_data.get("sales_cash_and_carry") or 0.0) == 0.0 and cb_cc > 0:
                 curr_data["sales_cash_and_carry"] = cb_cc
             if float(curr_data.get("lapse_deposit_return") or 0.0) == 0.0 and cb_lapse_ret > 0:
                 curr_data["lapse_deposit_return"] = cb_lapse_ret
+            if float(curr_data.get("sales_profit_markup") or 0.0) == 0.0 and sales_profit_markup_auto > 0:
+                curr_data["sales_profit_markup"] = sales_profit_markup_auto
+            if float(curr_data.get("retained_earnings") or 0.0) == 0.0 and retained_earnings_auto > 0:
+                curr_data["retained_earnings"] = retained_earnings_auto
+            if float(curr_data.get("head_office_asset_allocation") or 0.0) == 0.0 and ho_asset_alloc_auto > 0:
+                curr_data["head_office_asset_allocation"] = ho_asset_alloc_auto
+            if float(curr_data.get("lapse_deposit_reserve") or 0.0) == 0.0 and lapse_reserve_auto > 0:
+                curr_data["lapse_deposit_reserve"] = lapse_reserve_auto
+            if float(curr_data.get("tb_fund_internal") or 0.0) == 0.0 and internal_fund_auto > 0:
+                curr_data["tb_fund_internal"] = internal_fund_auto
 
             curr_data["prior_recon"] = prev_data
             return curr_data
@@ -1063,7 +1086,7 @@ class ReportService:
             "cash_in_hand_bf": 0.0,
             "overdue_bf": overdue_bf_auto,
             "overdue_cf": 0.0,
-            "sales_profit_markup": 0.0,
+            "sales_profit_markup": sales_profit_markup_auto,
             "sales_cash_and_carry": cb_cc,
             "fund_cash_ho_asset_receipt": 0.0,
             "fund_cash_ho_main_receipt": cb_f_rec_ho,
@@ -1269,31 +1292,33 @@ class ReportService:
         fund_br_pay = float(recon_data.get("fund_cash_branch_payment") or 0.0)
         tot_fund_pay = fund_ho_asset_pay + fund_ho_main_pay + fund_br_pay
 
-        retained_earnings = float(recon_data.get("retained_earnings") or 0.0)
-        lapse_deposit_res = float(recon_data.get("lapse_deposit_reserve") or 0.0)
-        ho_asset_alloc = float(recon_data.get("head_office_asset_allocation") or 0.0)
+        # Capital Funds & Retained Earnings: Fall back directly to previous month if not explicitly overridden
+        retained_earnings = float(recon_data.get("retained_earnings") or prev_data.get("retained_earnings") or 0.0)
+        ho_asset_alloc = float(recon_data.get("head_office_asset_allocation") or prev_data.get("head_office_asset_allocation") or 0.0)
+        prev_lapse = float(prev_data.get("lapse_deposit_reserve") or 0.0)
+        lapse_deposit_res = float(recon_data.get("lapse_deposit_reserve") or (max(0.0, prev_lapse - lapse_return) if prev_lapse > 0 else 0.0))
 
-        # Funds YTD on Trial Balance
+        # Funds YTD on Trial Balance (Dynamic flow: Prior YTD + Net current month cash movement)
         tb_fund_ho_main = float(recon_data.get("tb_fund_ho_main") or 0.0)
         if tb_fund_ho_main == 0.0 and float(prev_data.get("tb_fund_ho_main") or 0.0) > 0:
             net_ho_flow = fund_ho_main_pay - fund_ho_main_rec
-            tb_fund_ho_main = float(prev_data.get("tb_fund_ho_main") or 0.0) + (net_ho_flow if net_ho_flow != 0 else 1600000.0)
+            tb_fund_ho_main = float(prev_data.get("tb_fund_ho_main") or 0.0) + net_ho_flow
 
         tb_fund_branch = float(recon_data.get("tb_fund_branch") or 0.0)
         if tb_fund_branch == 0.0 and float(prev_data.get("tb_fund_branch") or 0.0) > 0:
             net_br_flow = fund_br_rec - fund_br_pay
-            tb_fund_branch = float(prev_data.get("tb_fund_branch") or 0.0) - (net_br_flow if net_br_flow != 0 else 200000.0)
+            tb_fund_branch = float(prev_data.get("tb_fund_branch") or 0.0) - net_br_flow
 
         tb_fund_other_area = float(recon_data.get("tb_fund_other_area") or 0.0)
         if tb_fund_other_area == 0.0 and float(prev_data.get("tb_fund_other_area") or 0.0) > 0:
-            tb_fund_other_area = float(prev_data.get("tb_fund_other_area") or 0.0) + (fund_area_rec if fund_area_rec > 0 else 900000.0)
+            tb_fund_other_area = float(prev_data.get("tb_fund_other_area") or 0.0) + fund_area_rec
 
-        tb_fund_internal = float(recon_data.get("tb_fund_internal") or prev_data.get("tb_fund_internal") or 5018362.0)
+        tb_fund_internal = float(recon_data.get("tb_fund_internal") or prev_data.get("tb_fund_internal") or 0.0)
 
-        # Sales profit YTD on Trial Balance
+        # Sales profit YTD on Trial Balance: Prior YTD + Current Month sales markup
         tb_sales_profit = float(recon_data.get("tb_sales_profit") or 0.0)
         if tb_sales_profit == 0.0 and float(prev_data.get("tb_sales_profit") or 0.0) > 0:
-            tb_sales_profit = float(prev_data.get("tb_sales_profit") or 0.0) + 266519.0
+            tb_sales_profit = float(prev_data.get("tb_sales_profit") or 0.0) + sales_profit_markup
 
         # Closing liquid position in Payments line 8
         closing_liquid_cf = tot_bank_closing + overdue_cf
