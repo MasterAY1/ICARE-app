@@ -2540,24 +2540,120 @@ if page == "Dashboard":
                             st.error(f"Rejection failed: {e}")
 
         elif ROLE in ["AM", "Area Manager"]:
-            st.markdown("### Area Manager Dashboard")
-            st.caption("Regional Operational Performance & Branch Supervision")
-            all_loans = load_loans()
-            my_loans = get_clients_for_user(all_loans, ROLE, USER, BRANCH)
-            assigned_branches = sorted(list(set(my_loans['Branch'].dropna().tolist()))) if not my_loans.empty and 'Branch' in my_loans.columns else [BRANCH]
-            am_data = DashboardService.get_am_dashboard_data(uow, assigned_branches)
+            from services.area_manager_service import AreaManagerService
 
-            reg = am_data["regional_summary"]
-            r1, r2, r3, r4, r5 = st.columns(5)
-            r1.metric("Branches", reg["branches_count"])
-            r2.metric("Active Clients", reg["active_clients"])
-            r3.metric("Outstanding Portfolio", f"₦{reg['outstanding_portfolio']:,.0f}")
-            r4.metric("Total Savings", f"₦{reg['savings']:,.0f}")
-            r5.metric("Today's Collection", f"₦{reg['today_collection']:,.0f}")
+            st.markdown("### Area Manager Regional Console — Area 1")
+            st.caption("Regional Operational Performance, Two-Tier EOD Confirmation & Branch Governance")
 
-            st.divider()
-            st.markdown("#### Regional Branch Performance Grid")
-            st.dataframe(am_data["branch_performance"], use_container_width=True, hide_index=True)
+            try:
+                reg = AreaManagerService.get_regional_summary(uow, USER_ID)
+                approvals = AreaManagerService.get_pending_area_approvals(uow, USER_ID)
+                matrix = AreaManagerService.get_branch_performance_matrix(uow, USER_ID)
+
+                # 1. Five Core Regional KPI Cards
+                r1, r2, r3, r4, r5 = st.columns(5)
+                r1.metric("Supervised Branches", f"{reg.get('open_branches_count', 0)} / {reg.get('branches_count', 0)}")
+                r2.metric("Active Portfolio", f"₦{reg.get('outstanding_portfolio', 0):,.0f}")
+                r3.metric("Vault Cash (Acct 1000)", f"₦{reg.get('vault_cash_acct_1000', 0):,.0f}")
+                r4.metric("Today's Collections", f"₦{reg.get('today_collected', 0):,.0f}")
+                r5.metric("Regional PAR", reg.get('par', '0.0%'))
+
+                # 2. Area Approvals Hub
+                p_eod = approvals.get("pending_branch_eods", [])
+                p_loans = approvals.get("pending_high_value_loans", [])
+                p_trans = approvals.get("pending_branch_transfers", [])
+
+                st.divider()
+                st.markdown("#### Area Governance & Approvals Hub")
+                st.caption("Two-tier EOD reconciliation sign-off, high-value loan escalation (> ₦300,000), and branch transfers.")
+
+                tab_eod, tab_loans, tab_trans = st.tabs([
+                    f"EOD Branch Confirmations ({len([e for e in p_eod if e.get('status') == 'PENDING'])})",
+                    f"High-Value Loans > ₦300k ({len(p_loans)})",
+                    f"Inter-Branch Transfers ({len(p_trans)})"
+                ])
+
+                with tab_eod:
+                    for eod in p_eod:
+                        b_col1, b_col2, b_col3, b_col4 = st.columns([2, 2, 2, 2])
+                        b_col1.write(f"**{eod['branch_name']} Branch**")
+                        b_col2.write(f"Status: `{eod['status']}`")
+                        b_col3.write(f"Vault Cash: ₦{eod.get('vault_cash', 0):,.0f}")
+                        if eod.get("status") == "PENDING":
+                            if b_col4.button("Confirm EOD", key=f"am_conf_eod_{eod['branch_id']}"):
+                                AreaManagerService.confirm_branch_eod(uow, eod["branch_id"], eod["closure_date"], USER_ID, notes="Confirmed via AM Console")
+                                st.success(f"{eod['branch_name']} EOD Confirmed!")
+                                st.rerun()
+                        elif eod.get("is_confirmed"):
+                            b_col4.success("Confirmed")
+                        else:
+                            b_col4.info(eod['status'])
+
+                    if approvals.get("can_lock_area"):
+                        st.markdown("---")
+                        if st.button("Lock & Seal Area 1 (Final Daily Close)", type="primary", key="am_lock_area_btn"):
+                            AreaManagerService.confirm_area_closure(uow, reg["business_date"], USER_ID, notes="Area 1 Sealed")
+                            st.success("Area 1 has been successfully locked and sealed for today!")
+                            st.rerun()
+
+                with tab_loans:
+                    if not p_loans:
+                        st.info("No high-value loan applications exceeding ₦300,000 currently require Area Manager approval.")
+                    else:
+                        for l in p_loans:
+                            l_col1, l_col2, l_col3 = st.columns([3, 1, 1])
+                            l_col1.write(f"**{l.get('client_name')}** ({l.get('branch')}) — ₦{l.get('amount', 0):,.0f} | Officer: {l.get('officer_name')}")
+                            if l_col2.button("Approve", key=f"am_app_loan_{l['loan_id']}"):
+                                from services.loan_service import LoanService
+                                LoanService.approve_loan(uow, l["loan_id"], approved_by=USER)
+                                st.success("Loan Approved!")
+                                st.rerun()
+                            if l_col3.button("Reject", key=f"am_rej_loan_{l['loan_id']}", type="secondary"):
+                                from services.loan_service import LoanService
+                                LoanService.reject_loan(uow, l["loan_id"], rejected_by=USER, reason="Rejected by Area Manager")
+                                st.warning("Loan Rejected.")
+                                st.rerun()
+
+                with tab_trans:
+                    if not p_trans:
+                        st.info("No inter-branch client or officer transfers pending approval.")
+                    else:
+                        for t in p_trans:
+                            st.write(f"Transfer: {t}")
+
+                # 3. Regional Branch Performance Matrix
+                st.divider()
+                st.markdown("#### Regional Branch Performance Matrix")
+                if matrix:
+                    import pandas as pd
+                    df_matrix = pd.DataFrame([
+                        {
+                            "Branch": m["branch_name"],
+                            "Active Clients": m["active_borrowers"],
+                            "Total Disbursed": f"₦{m['total_disbursed']:,.0f}",
+                            "Active Credit": f"₦{m['active_credit']:,.0f}",
+                            "Today's Collections": f"₦{m['today_collections']:,.0f}",
+                            "PAR > 30d": f"{m['par_percentage']:.1f}%",
+                            "Vault Cash": f"₦{m['vault_cash_acct_1000']:,.0f}",
+                            "EOD Status": m["eod_status"],
+                        }
+                        for m in matrix
+                    ])
+                    st.dataframe(df_matrix, use_container_width=True, hide_index=True)
+
+                # 4. Consolidated Excel Export
+                st.divider()
+                excel_bytes = AreaManagerService.generate_area_excel_workbook(uow, USER_ID)
+                st.download_button(
+                    label="Download Area 1 Consolidated Reports (Excel)",
+                    data=excel_bytes,
+                    file_name=f"Area_1_Consolidated_Report_{reg['business_date']}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="am_download_excel_btn"
+                )
+
+            except Exception as e:
+                st.error(f"Error loading Area Manager Console: {e}")
 
         elif ROLE in ["BM", ROLE_BRANCH_MANAGER]:
             st.markdown(f"### Branch Manager Dashboard — {BRANCH} Branch")
