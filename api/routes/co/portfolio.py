@@ -14,6 +14,8 @@ from api.schemas.portfolio import (
     ClientDossierResponse,
     ChangeClientStatusRequest,
     DossierReversalRequest,
+    TransferClientRequest,
+    TransferClientResponse,
     FilterOptions,
     PortfolioMetrics,
     GroupPortfolioItem,
@@ -22,6 +24,7 @@ from api.schemas.portfolio import (
 from services.rbac_scope_service import RBACScope, RBACScopeService
 from services.portfolio_service import PortfolioService
 from services.client_status_service import ClientStatusService
+from services.client_service import ClientService
 from services.correction_service import CorrectionService
 
 router = APIRouter(prefix="/api/v1/co/portfolio", tags=["CO Portfolio"])
@@ -518,3 +521,38 @@ def submit_dossier_reversal_request(
     )
 
     return {"status": "success", "request_id": req_id, "message": f"Reversal request #{req_id[:8]} submitted to Branch Manager."}
+
+
+@router.post("/transfer-client", response_model=TransferClientResponse)
+def transfer_client_portfolio(
+    req: TransferClientRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Executes a multi-level client transfer (Intra-branch, Inter-branch, Inter-area).
+    Atomically reassigns client and active loan records while preserving 100% of
+    lifecycle status, savings balances, and ledger history.
+    """
+    res = ClientService.transfer_client(
+        uow=uow,
+        client_id=req.client_id,
+        to_officer_id=req.to_officer_id,
+        to_branch_id=req.to_branch_id,
+        to_group_id=req.to_group_id,
+        reason=req.reason,
+        transferred_by=current_user.id or current_user.username
+    )
+
+    return TransferClientResponse(
+        success=True,
+        transfer_id=res["transfer_id"],
+        transfer_type=res["transfer_type"],
+        client_id=res["client_id"],
+        client_name=res["client_name"],
+        new_branch=res["new_branch"],
+        new_officer=res["new_officer"],
+        status=res["status"],
+        message=res["message"]
+    )
+

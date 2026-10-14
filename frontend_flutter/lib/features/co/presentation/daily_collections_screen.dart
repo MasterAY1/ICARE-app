@@ -2218,7 +2218,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                           decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFFECACA))),
-                          child: const Text('₦0 Arrears', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFDC2626))),
+                          child: const Text('Unpaid (₦0)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFDC2626))),
                         )
                       else if (clientTotal > 0)
                         Container(
@@ -2444,7 +2444,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                '₦0 Arrears',
+                                'Unpaid (₦0)',
                                 style: TextStyle(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w700,

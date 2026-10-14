@@ -40,7 +40,7 @@ class RenewalService:
                 cs_obj = c_status_res.data[0].get("client_statuses") or {}
                 cs_name = cs_obj.get("name") if isinstance(cs_obj, dict) else ""
                 if cs_name == "Defaulter":
-                    warnings.append("⚠️ DEFAULTER WARNING: Client has past default history. BM must make final approval decision.")
+                    warnings.append("[DEFAULTER WARNING] Client has past default history. BM must make final approval decision.")
         except Exception:
             pass
 
@@ -49,7 +49,7 @@ class RenewalService:
         # NEW CLIENT CHECK
         if not has_any_loan:
             if requested_amount > 100000:
-                warnings.append("⚠️ NEW CLIENT: Requested amount is above the ₦100,000 standard limit for new clients. Proceed only if authorized.")
+                warnings.append("[NEW CLIENT] Requested amount is above the ₦100,000 standard limit for new clients. Proceed only if authorized.")
         
         # EXISTING CLIENT CHECK
         else:
@@ -77,7 +77,7 @@ class RenewalService:
             for loan in past_loans:
                 loan_status = loan.get("status", "")
                 if loan_status in ["Defaulter", "Written Off"]:
-                    warnings.append(f"⚠️ PAST LOAN WARNING: Client has a previous loan with status '{loan_status}'.")
+                    warnings.append(f"[PAST LOAN WARNING] Client has a previous loan with status '{loan_status}'.")
                         
         # 2. Fetch client savings balance (to ensure they meet required percentage)
         res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", client_id).execute()
@@ -103,7 +103,7 @@ class RenewalService:
                 res_schedule = uow.client.table("loan_schedule").select("status").in_("loan_id", loan_ids).execute()
                 late_count = sum(1 for row in res_schedule.data if row.get("status") in ["Partial", "Overdue"])
                 if late_count > 3:
-                    warnings.append(f"⚠️ REPAYMENT WARNING: Repayment history has {late_count} partial/overdue installments.")
+                    warnings.append(f"[REPAYMENT WARNING] Repayment history has {late_count} partial/overdue installments.")
 
         if is_eligible:
             reasons.append("Eligible to apply for this loan.")

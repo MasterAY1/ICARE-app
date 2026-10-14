@@ -1,4 +1,5 @@
 import uuid
+import math
 from typing import Optional, Any
 from datetime import date, datetime, timedelta
 from database.repositories.unit_of_work import SupabaseUnitOfWork
@@ -266,7 +267,7 @@ class ScheduleService:
             # Monthly loans check if scheduled due date matches
             is_meeting_today = True
 
-        # 4. Fetch schedule rows
+        # 4. Fetch schedule rows if not provided
         if schedule_rows is None:
             try:
                 res_sch = uow.client.table("loan_schedule").select("*").eq("loan_id", loan_id).order("installment_number").execute()
@@ -275,56 +276,143 @@ class ScheduleService:
                 schedule_rows = []
 
         total_due_base = float(loan_data.get("total_due") if loan_data.get("total_due") is not None else (loan_data.get("active_credit") or loan_data.get("loan_amount") or 0.0))
-        if total_paid_sch is None:
-            if schedule_rows is not None:
-                total_paid_sch = sum(float(row.get("paid_amount") or 0.0) for row in schedule_rows)
-            else:
-                total_paid_sch, has_sch = ScheduleService.get_total_paid(uow, loan_id)
-        rem_bal = max(0.0, total_due_base - total_paid_sch)
+
+        # Reconcile total paid from schedule and repayments table
+        sch_paid = sum(float(row.get("paid_amount") or 0.0) for row in schedule_rows) if schedule_rows else 0.0
+        rep_paid = 0.0
+        if total_paid_sch is not None:
+            rep_paid = float(total_paid_sch)
+        elif loan_id:
+            try:
+                res_rep = uow.client.table("repayments").select("amount_paid").eq("loan_id", loan_id).execute()
+                rep_paid = sum(float(r.get("amount_paid") or 0.0) for r in (res_rep.data or []))
+            except Exception:
+                pass
+
+        authoritative_paid = max(sch_paid, rep_paid)
+        rem_bal = max(0.0, total_due_base - authoritative_paid)
+
+        if rem_bal <= 0.0:
+            return {
+                "loan_id": loan_id,
+                "client_id": resolved_client_id,
+                "cycle": cycle,
+                "meeting_day": meeting_day_str,
+                "is_meeting_today": is_meeting_today,
+                "current_installment": 0.0,
+                "overdue_arrears": 0.0,
+                "total_due_today": 0.0,
+                "has_overdue": False,
+                "missed_installments_count": 0,
+                "remaining_balance": 0.0
+            }
+
+        # Resolve duration and single expected installment
+        lp_inst = (loan_data.get("loan_products") or {}).get("installments")
+        dur = int(loan_data.get("duration") or lp_inst or (60 if cycle == "Daily" else 20))
+        if dur <= 0:
+            dur = 1
+
+        inst_repay = float(loan_data.get("loan_repay") or loan_data.get("expected_installment") or 0.0)
+        if inst_repay <= 0.0:
+            inst_repay = round(total_due_base / dur, 2) if dur > 0 else total_due_base
+
+        # Check schedule rows coverage
+        max_sch_date = None
+        if schedule_rows:
+            try:
+                sch_dates = [datetime.strptime(r["due_date"].split("T")[0], "%Y-%m-%d").date() for r in schedule_rows if r.get("due_date")]
+                if sch_dates:
+                    max_sch_date = max(sch_dates)
+            except Exception:
+                pass
+
+        # If schedule rows cover up to or beyond evaluation date, use chronological waterflow
+        use_waterflow = bool(schedule_rows and max_sch_date and max_sch_date >= evaluation_date)
 
         overdue_arrears = 0.0
         current_installment = 0.0
         missed_count = 0
-        found_exact_today = False
 
-        if schedule_rows:
-            for row in schedule_rows:
+        if use_waterflow:
+            remaining_cash = authoritative_paid
+            found_exact_today = False
+            sorted_rows = sorted(
+                schedule_rows,
+                key=lambda r: (r.get("installment_number") or 0, r.get("due_date") or "")
+            )
+
+            for row in sorted_rows:
                 try:
                     d_due = datetime.strptime(row["due_date"].split("T")[0], "%Y-%m-%d").date()
                 except Exception:
                     continue
 
-                t_due = float(row.get("total_due") or 0.0)
-                p_amt = float(row.get("paid_amount") or 0.0)
-                needed = max(0.0, t_due - p_amt)
+                t_due = float(row.get("total_due") or (float(row.get("principal", 0)) + float(row.get("interest", 0))))
+                row_covered = min(remaining_cash, t_due)
+                remaining_cash = max(0.0, remaining_cash - row_covered)
+                shortfall = max(0.0, t_due - row_covered)
 
                 if d_due < evaluation_date:
-                    if needed > 0:
-                        overdue_arrears += needed
+                    if shortfall > 0:
+                        overdue_arrears += shortfall
                         missed_count += 1
                 elif d_due == evaluation_date:
-                    if needed > 0:
-                        current_installment += needed
+                    if shortfall > 0:
+                        current_installment += shortfall
                         found_exact_today = True
-                else:
-                    pass
 
-            if is_meeting_today and not found_exact_today and current_installment == 0:
-                # Look for first pending installment on or after evaluation date
-                for row in schedule_rows:
+            if is_meeting_today and not found_exact_today and current_installment == 0.0:
+                for row in sorted_rows:
                     try:
                         d_due = datetime.strptime(row["due_date"].split("T")[0], "%Y-%m-%d").date()
                     except Exception:
                         continue
-                    needed = max(0.0, float(row.get("total_due") or 0.0) - float(row.get("paid_amount") or 0.0))
-                    if d_due >= evaluation_date and needed > 0:
-                        current_installment = needed
+                    if d_due >= evaluation_date:
+                        t_due = float(row.get("total_due") or (float(row.get("principal", 0)) + float(row.get("interest", 0))))
+                        current_installment = min(inst_repay, t_due)
                         break
         else:
-            # Fallback for unscheduled / legacy loan
-            dur = int(loan_data.get("duration") or 1)
-            inst_val = round(total_due_base / dur, 2) if dur > 0 else total_due_base
-            current_installment = inst_val if is_meeting_today else 0.0
+            # Truncated or missing schedule rows: derive from start_date & cycle calendar
+            start_dt = None
+            if loan_data.get("start_date"):
+                try:
+                    start_dt = datetime.strptime(str(loan_data["start_date"]).split("T")[0], "%Y-%m-%d").date()
+                except Exception:
+                    pass
+            if not start_dt and schedule_rows:
+                try:
+                    first_row = min(schedule_rows, key=lambda r: (r.get("installment_number") or 1, r.get("due_date") or ""))
+                    start_dt = datetime.strptime(str(first_row["due_date"]).split("T")[0], "%Y-%m-%d").date()
+                except Exception:
+                    pass
+            if not start_dt and loan_data.get("created_at"):
+                try:
+                    start_dt = datetime.strptime(str(loan_data["created_at"]).split("T")[0], "%Y-%m-%d").date()
+                except Exception:
+                    pass
+            if not start_dt:
+                start_dt = evaluation_date
+
+            past_meetings = 0
+            if start_dt < evaluation_date:
+                cur = start_dt
+                day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                while cur < evaluation_date:
+                    if cycle == "Daily":
+                        if cur.weekday() < 5:
+                            past_meetings += 1
+                    elif cycle == "Weekly":
+                        if meeting_day_str and day_names[cur.weekday()].lower() == meeting_day_str.lower():
+                            past_meetings += 1
+                        elif not meeting_day_str and cur.weekday() == start_dt.weekday():
+                            past_meetings += 1
+                    cur += timedelta(days=1)
+
+            expected_past = min(dur, past_meetings) * inst_repay
+            overdue_arrears = min(rem_bal, max(0.0, expected_past - authoritative_paid))
+            missed_count = int(math.ceil(overdue_arrears / inst_repay)) if inst_repay > 0 and overdue_arrears > 0 else 0
+            current_installment = min(inst_repay, max(0.0, rem_bal - overdue_arrears)) if is_meeting_today else 0.0
 
         current_installment = min(current_installment, rem_bal)
         overdue_arrears = min(overdue_arrears, rem_bal)
@@ -594,3 +682,107 @@ class ScheduleService:
             rescheduled_count += 1
 
         return rescheduled_count
+
+    @staticmethod
+    def evaluate_and_apply_loan_default(
+        uow: SupabaseUnitOfWork,
+        loan_id: str,
+        evaluation_date: Optional[date] = None,
+        actor_id: Optional[str] = None
+    ) -> dict:
+        """
+        Evaluates the 3-default rule (BR-CLI-002, BR-CLI-003, BR-CLI-009):
+        If a loan has >= 3 missed/overdue installments up to evaluation_date,
+        automatically flags the loan status as 'Defaulter' and transitions
+        the client's lifecycle status to 'Defaulter'.
+        """
+        from services.client_status_service import ClientStatusService
+        eval_date = evaluation_date if evaluation_date else date.today()
+
+        breakdown = ScheduleService.get_loan_due_breakdown(
+            uow=uow,
+            loan_id=loan_id,
+            evaluation_date=eval_date
+        )
+
+        missed_count = breakdown.get("missed_installments_count", 0)
+        client_id = breakdown.get("client_id")
+
+        if missed_count >= 3:
+            # Check current loan status
+            res_l = uow.client.table("loans").select("loan_id, status, client_id").eq("loan_id", loan_id).execute()
+            if res_l.data:
+                l_row = res_l.data[0]
+                if l_row.get("status") != "Defaulter":
+                    uow.client.table("loans").update({
+                        "status": "Defaulter",
+                        "updated_at": datetime.now().isoformat()
+                    }).eq("loan_id", loan_id).execute()
+
+                # Transition client status to Defaulter if not already Defaulter
+                c_id = l_row.get("client_id") or client_id
+                if c_id:
+                    ClientStatusService.transition_status(
+                        uow=uow,
+                        client_id=c_id,
+                        new_status_name="Defaulter",
+                        changed_by=actor_id,
+                        reason=f"Client defaulted {missed_count} installments on loan {loan_id[:8]}",
+                        trigger_type="SYSTEM",
+                        trigger_reference=loan_id
+                    )
+
+            return {
+                "defaulted": True,
+                "missed_installments_count": missed_count,
+                "loan_id": loan_id,
+                "client_id": client_id,
+                "status": "Defaulter"
+            }
+
+        return {
+            "defaulted": False,
+            "missed_installments_count": missed_count,
+            "loan_id": loan_id,
+            "client_id": client_id,
+            "status": "Active"
+        }
+
+    @staticmethod
+    def evaluate_branch_defaults(
+        uow: SupabaseUnitOfWork,
+        branch_id: Optional[str] = None,
+        evaluation_date: Optional[date] = None,
+        actor_id: Optional[str] = None
+    ) -> dict:
+        """
+        Evaluates all active loans in the branch for the 3-default rule.
+        Transitions eligible loans and clients to 'Defaulter'.
+        """
+        eval_date = evaluation_date if evaluation_date else date.today()
+        query = uow.client.table("loans").select("loan_id, client_id, branch_id, status").in_("status", ["Active", "ACTIVE", "Disbursed"])
+        if branch_id:
+            query = query.eq("branch_id", branch_id)
+
+        res = query.execute()
+        active_loans = res.data or []
+
+        defaulters = []
+        for l in active_loans:
+            r = ScheduleService.evaluate_and_apply_loan_default(
+                uow=uow,
+                loan_id=l["loan_id"],
+                evaluation_date=eval_date,
+                actor_id=actor_id
+            )
+            if r.get("defaulted"):
+                defaulters.append(r)
+
+        return {
+            "success": True,
+            "evaluated_count": len(active_loans),
+            "new_defaulters_count": len(defaulters),
+            "defaulters": defaulters,
+            "message": f"Evaluated {len(active_loans)} active loans. {len(defaulters)} loans transitioned to Defaulter."
+        }
+

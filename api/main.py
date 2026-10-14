@@ -2,7 +2,7 @@
 ICARE Core Banking — Real FastAPI Backend Application Adapter.
 Exposes authoritative REST APIs for Flutter clients directly wrapping Python domain services and Supabase Unit of Work.
 """
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -15,6 +15,7 @@ from api.routes.co import withdrawals as co_withdrawals
 from api.routes.co import origination as co_origination
 from api.routes.bm import dashboard as bm_dashboard
 from api.routes.bm import cashbook as bm_cashbook
+from api.routes.bm import approvals as bm_approvals
 from api.routes import audit
 from api.routes import users
 from api.routes import reports
@@ -35,12 +36,51 @@ app.add_middleware(
 )
 
 
+from api.core.errors import ICAREException, translate_error_to_icare_response
+from fastapi.exceptions import RequestValidationError
+
+
+@app.exception_handler(ICAREException)
+async def icare_exception_handler(request: Request, exc: ICAREException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.to_dict()
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    err_dict = translate_error_to_icare_response(exc)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=err_dict
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    first_err = exc.errors()[0] if exc.errors() else {}
+    field = " -> ".join(str(loc) for loc in first_err.get("loc", []))
+    msg = first_err.get("msg", "Invalid input parameter.")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "error_code": "VALIDATION_FAILED",
+            "title": "Invalid Request Parameters",
+            "message": f"Field '{field}': {msg}",
+            "action": "Please check the required fields and submit valid data.",
+            "details": exc.errors()
+        }
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Structured global error handler."""
+    """Structured global error handler providing human-friendly messages."""
+    err_dict = translate_error_to_icare_response(exc)
     return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": f"Internal Server Error: {str(exc)}"}
+        status_code=status.HTTP_400_BAD_REQUEST if not isinstance(exc, (SystemError, MemoryError)) else status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content=err_dict
     )
 
 
@@ -54,6 +94,7 @@ app.include_router(co_withdrawals.router)
 app.include_router(co_origination.router)
 app.include_router(bm_dashboard.router)
 app.include_router(bm_cashbook.router)
+app.include_router(bm_approvals.router)
 app.include_router(audit.router)
 app.include_router(users.router)
 app.include_router(reports.router)

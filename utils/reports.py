@@ -327,7 +327,9 @@ def export_consolidated_report_to_excel(
     repayments_df: pd.DataFrame = None,
     loans_df: pd.DataFrame = None,
     portfolio_summary: dict = None,
-    area_comparison_df: pd.DataFrame = None
+    area_comparison_df: pd.DataFrame = None,
+    deposit_statement_df: pd.DataFrame = None,
+    credit_statement_df: pd.DataFrame = None
 ) -> bytes:
     """Generate comprehensive multi-tab Excel workbook in-memory with zero external cloud dependencies."""
     import io
@@ -336,6 +338,10 @@ def export_consolidated_report_to_excel(
     header_fill = PatternFill(start_color="003366", end_color="003366", fill_type="solid")
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        if deposit_statement_df is not None and not deposit_statement_df.empty:
+            deposit_statement_df.to_excel(writer, sheet_name='Deposit_Statement', index=False)
+        if credit_statement_df is not None and not credit_statement_df.empty:
+            credit_statement_df.to_excel(writer, sheet_name='Credit_Statement', index=False)
         if area_comparison_df is not None and not area_comparison_df.empty:
             area_comparison_df.to_excel(writer, sheet_name='Area_Branch_Comparison', index=False)
         if trial_balance_df is not None and not trial_balance_df.empty:

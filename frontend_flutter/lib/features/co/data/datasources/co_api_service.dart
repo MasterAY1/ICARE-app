@@ -84,6 +84,24 @@ class CoApiService {
     return response.data as Map<String, dynamic>;
   }
 
+  /// POST /api/v1/co/portfolio/transfer-client
+  Future<Map<String, dynamic>> transferClient({
+    required String clientId,
+    required String toOfficerId,
+    required String toBranchId,
+    String? toGroupId,
+    required String reason,
+  }) async {
+    final response = await _client.post('/api/v1/co/portfolio/transfer-client', data: {
+      'client_id': clientId,
+      'to_officer_id': toOfficerId,
+      'to_branch_id': toBranchId,
+      if (toGroupId != null) 'to_group_id': toGroupId,
+      'reason': reason,
+    });
+    return response.data as Map<String, dynamic>;
+  }
+
   // ==========================================
   // 2. FIELD COLLECTIONS
   // ==========================================

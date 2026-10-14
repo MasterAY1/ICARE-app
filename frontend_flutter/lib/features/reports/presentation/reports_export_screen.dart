@@ -35,7 +35,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // Monthly Executive Parity State
   int _selectedExecMonth = 9;
   int _selectedExecYear = 2026;
-  int _selectedExecSubTab = 0; // 0: CO Summary, 1: Trial Balance, 2: Receipts & Payments, 3: Bank Statements & Treasury Reconciliation
+  int _selectedExecSubTab = 0; // 0: A. Deposit Statement, 1: B. Credit Statement, 2: Receipts & Payments, 3: Trial Balance, 4: CO Summary, 5: Bank Reconciliation
 
   // Futures & Cache
   ReportsMeta? _cachedMeta;
@@ -1053,13 +1053,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       physics: const BouncingScrollPhysics(),
                       child: Row(
                         children: [
-                          _buildSubTabButton('Credit Officers Summary', 0, icon: Icons.people_alt_outlined),
+                          _buildSubTabButton('A. Deposit Statement', 0, icon: Icons.savings_outlined),
                           const SizedBox(width: 4),
-                          _buildSubTabButton('Official Trial Balance', 1, icon: Icons.balance_outlined),
+                          _buildSubTabButton('B. Credit Statement', 1, icon: Icons.credit_card_outlined),
                           const SizedBox(width: 4),
                           _buildSubTabButton('Receipts & Payments Account', 2, icon: Icons.receipt_long_outlined),
                           const SizedBox(width: 4),
-                          _buildSubTabButton('Bank & Treasury Reconciliation', 3, icon: Icons.account_balance_outlined),
+                          _buildSubTabButton('Official Trial Balance', 3, icon: Icons.balance_outlined),
+                          const SizedBox(width: 4),
+                          _buildSubTabButton('Credit Officers Summary', 4, icon: Icons.people_alt_outlined),
+                          const SizedBox(width: 4),
+                          _buildSubTabButton('Bank & Treasury Reconciliation', 5, icon: Icons.account_balance_outlined),
                         ],
                       ),
                     ),
@@ -1068,11 +1072,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
                   // Sub-tab content
                   if (_selectedExecSubTab == 0)
-                    _buildCoMonthlySummaryTable(data)
+                    _buildDepositStatementView()
                   else if (_selectedExecSubTab == 1)
-                    _buildOfficialTrialBalanceView()
+                    _buildCreditStatementView()
                   else if (_selectedExecSubTab == 2)
                     _buildReceiptsAndPaymentsView()
+                  else if (_selectedExecSubTab == 3)
+                    _buildOfficialTrialBalanceView()
+                  else if (_selectedExecSubTab == 4)
+                    _buildCoMonthlySummaryTable(data)
                   else
                     _buildBankReconciliationView(),
                 ],
@@ -1176,6 +1184,193 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               );
             }).toList(),
       ),
+    );
+  }
+
+  Widget _buildDepositStatementView() {
+    return FutureBuilder<MonthlyExecutiveStatementsData>(
+      future: _statementsFuture,
+      builder: (context, snapshot) {
+        if (_statementsFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+          if (snapshot.hasError) {
+            return _buildErrorCard(snapshot.error.toString());
+          }
+          return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
+        }
+        final data = snapshot.data!;
+        final ds = data.depositStatement;
+        if (ds == null || ds.rows.isEmpty) {
+          return const Center(child: Padding(
+            padding: EdgeInsets.all(32.0),
+            child: Text('No Deposit Statement records available for this period.', style: TextStyle(color: Color(0xFF64748B))),
+          ));
+        }
+
+        final totRow = ds.rows.firstWhere((r) => r.programme == 'Total', orElse: () => ds.rows.last);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // KPI Summary cards
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isMobile = constraints.maxWidth < 600;
+                final cardW = isMobile ? (constraints.maxWidth - 8) / 2 : (constraints.maxWidth - 24) / 4;
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildMetricCard('Active Savers', '${totRow.balanceNo} Savers', width: cardW),
+                    _buildMetricCard('Deposit Balance', _formatNgn(totRow.balanceAmount), width: cardW),
+                    _buildMetricCard('Month Deposits', _formatNgn(totRow.depositCurr), width: cardW),
+                    _buildMetricCard('Month Payouts', _formatNgn(totRow.withdrawalCurrAmount + totRow.returnCurrAmount), width: cardW),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildContainedTable(
+              hint: 'Swipe horizontally to view all deposit columns across programmes',
+              child: DataTable(
+                headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
+                headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 11),
+                dataTextStyle: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
+                columnSpacing: 14,
+                columns: const [
+                  DataColumn(label: Text('Programme')),
+                  DataColumn(numeric: true, label: Text('Members\nB/F')),
+                  DataColumn(numeric: true, label: Text('New\nMembers')),
+                  DataColumn(numeric: true, label: Text('Total\nMembers')),
+                  DataColumn(numeric: true, label: Text('Deposit\nB/F (₦)')),
+                  DataColumn(numeric: true, label: Text('Current\nDeposit (₦)')),
+                  DataColumn(numeric: true, label: Text('Total\nDeposit (₦)')),
+                  DataColumn(numeric: true, label: Text('Withdrawals\nB/F (No, ₦)')),
+                  DataColumn(numeric: true, label: Text('Current\nWithdrawals (No, ₦)')),
+                  DataColumn(numeric: true, label: Text('Total\nWithdrawals (No, ₦)')),
+                  DataColumn(numeric: true, label: Text('Cancellations\nB/F (No, ₦)')),
+                  DataColumn(numeric: true, label: Text('Current\nCancellations (No, ₦)')),
+                  DataColumn(numeric: true, label: Text('Total\nCancellations (No, ₦)')),
+                  DataColumn(numeric: true, label: Text('Active\nSavers')),
+                  DataColumn(numeric: true, label: Text('Net Deposit\nBalance (₦)')),
+                ],
+                rows: ds.rows.map((r) {
+                  final isTot = r.programme == 'Total';
+                  final boldStyle = isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontSize: 11) : const TextStyle(fontSize: 11);
+                  return DataRow(
+                    color: isTot ? MaterialStateProperty.all(const Color(0xFFF1F5F9)) : null,
+                    cells: [
+                      DataCell(Text(r.programme, style: isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E)) : const TextStyle(fontWeight: FontWeight.w600))),
+                      DataCell(Text('${r.memberPrev}', style: boldStyle)),
+                      DataCell(Text('${r.memberCurr}', style: boldStyle)),
+                      DataCell(Text('${r.memberTotal}', style: boldStyle)),
+                      DataCell(Text(_formatNgn(r.depositPrev), style: boldStyle)),
+                      DataCell(Text(_formatNgn(r.depositCurr), style: boldStyle)),
+                      DataCell(Text(_formatNgn(r.depositTotal), style: boldStyle)),
+                      DataCell(Text('${r.withdrawalPrevNo} (${_formatNgn(r.withdrawalPrevAmount)})', style: boldStyle)),
+                      DataCell(Text('${r.withdrawalCurrNo} (${_formatNgn(r.withdrawalCurrAmount)})', style: boldStyle)),
+                      DataCell(Text('${r.withdrawalTotalNo} (${_formatNgn(r.withdrawalTotalAmount)})', style: boldStyle)),
+                      DataCell(Text('${r.returnPrevNo} (${_formatNgn(r.returnPrevAmount)})', style: boldStyle)),
+                      DataCell(Text('${r.returnCurrNo} (${_formatNgn(r.returnCurrAmount)})', style: boldStyle)),
+                      DataCell(Text('${r.returnTotalNo} (${_formatNgn(r.returnTotalAmount)})', style: boldStyle)),
+                      DataCell(Text('${r.balanceNo}', style: isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E)) : const TextStyle(fontWeight: FontWeight.w700))),
+                      DataCell(Text(_formatNgn(r.balanceAmount), style: isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E)) : const TextStyle(fontWeight: FontWeight.w700))),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCreditStatementView() {
+    return FutureBuilder<MonthlyExecutiveStatementsData>(
+      future: _statementsFuture,
+      builder: (context, snapshot) {
+        if (_statementsFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+          if (snapshot.hasError) {
+            return _buildErrorCard(snapshot.error.toString());
+          }
+          return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
+        }
+        final data = snapshot.data!;
+        final cs = data.creditStatement;
+        if (cs == null || cs.rows.isEmpty) {
+          return const Center(child: Padding(
+            padding: EdgeInsets.all(32.0),
+            child: Text('No Credit Statement records available for this period.', style: TextStyle(color: Color(0xFF64748B))),
+          ));
+        }
+
+        final balCountRow = cs.rows.firstWhere((r) => r.item.contains('Active Loans Count'), orElse: () => cs.rows.first);
+        final balAmtRow = cs.rows.firstWhere((r) => r.item.contains('Active Credit Balance'), orElse: () => cs.rows.first);
+        final instCurrRow = cs.rows.firstWhere((r) => r.item.contains('Current Month Installments'), orElse: () => cs.rows.first);
+        final payoffRow = cs.rows.firstWhere((r) => r.item.contains('Current Settled Loans Count'), orElse: () => cs.rows.first);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // KPI Summary cards
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isMobile = constraints.maxWidth < 600;
+                final cardW = isMobile ? (constraints.maxWidth - 8) / 2 : (constraints.maxWidth - 24) / 4;
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildMetricCard('Active Loans', '${balCountRow.total.toInt()} Loans', width: cardW),
+                    _buildMetricCard('Active Credit', _formatNgn(balAmtRow.total), width: cardW),
+                    _buildMetricCard('Month Collections', _formatNgn(instCurrRow.total), width: cardW),
+                    _buildMetricCard('Month Full Payoffs', '${payoffRow.total.toInt()} Settled', width: cardW),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildContainedTable(
+              hint: 'Swipe horizontally to view credit metrics across Monthly, Weekly, Daily programmes',
+              child: DataTable(
+                headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
+                headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 11),
+                dataTextStyle: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
+                columnSpacing: 16,
+                columns: const [
+                  DataColumn(label: Text('Category')),
+                  DataColumn(label: Text('Reporting Metric')),
+                  DataColumn(numeric: true, label: Text('Monthly')),
+                  DataColumn(numeric: true, label: Text('Weekly')),
+                  DataColumn(numeric: true, label: Text('Daily')),
+                  DataColumn(numeric: true, label: Text('Consolidated\nTotal')),
+                ],
+                rows: cs.rows.map((r) {
+                  final isCount = r.item.contains('Count');
+                  final isHighlight = r.item.contains('Total') || r.item.contains('Balance') || r.item.contains('Active');
+                  final rowColor = isHighlight ? const Color(0xFFF8FAFC) : null;
+                  final textStyle = isHighlight ? const TextStyle(fontWeight: FontWeight.w700, fontSize: 11) : const TextStyle(fontSize: 11);
+                  final totStyle = isHighlight ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E), fontSize: 11) : const TextStyle(fontWeight: FontWeight.w600, fontSize: 11);
+
+                  String formatVal(double v) => isCount ? '${v.toInt()}' : (v > 0 ? _formatNgn(v) : '-');
+
+                  return DataRow(
+                    color: rowColor != null ? MaterialStateProperty.all(rowColor) : null,
+                    cells: [
+                      DataCell(Text(r.section, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F766E), fontSize: 11))),
+                      DataCell(Text(r.item, style: textStyle)),
+                      DataCell(Text(formatVal(r.monthly), style: textStyle)),
+                      DataCell(Text(formatVal(r.weekly), style: textStyle)),
+                      DataCell(Text(formatVal(r.daily), style: textStyle)),
+                      DataCell(Text(formatVal(r.total), style: totStyle)),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

@@ -41,6 +41,8 @@ from api.schemas.reports import (
     AreaComparisonResponse,
     MonthlyParityResponse,
     MonthlyExecutiveStatementsResponse,
+    DepositStatementData,
+    CreditStatementData,
     MonthlyReconciliationPayload,
 )
 
@@ -688,13 +690,25 @@ def export_excel(
         area_dict = ReportService.get_area_branch_comparison(uow, assigned_branch_ids=assigned_ids, start_date=start_date, end_date=end_date, as_of_date=as_of_date)
         area_df = area_dict.get("dataframe")
 
+    dep_df = None
+    credit_df = None
+    target_bid = resolved_branch_id if isinstance(resolved_branch_id, str) else (resolved_branch_id[0] if isinstance(resolved_branch_id, list) and len(resolved_branch_id) == 1 else None)
+    if target_bid:
+        ref_date = as_of_date or end_date or datetime.now().date()
+        dep_dict = ReportService.get_monthly_deposit_statement(uow, branch_id=target_bid, year=ref_date.year, month=ref_date.month)
+        credit_dict = ReportService.get_monthly_credit_statement(uow, branch_id=target_bid, year=ref_date.year, month=ref_date.month)
+        dep_df = pd.DataFrame(dep_dict.get("rows", [])) if dep_dict.get("rows") else None
+        credit_df = pd.DataFrame(credit_dict.get("rows", [])) if credit_dict.get("rows") else None
+
     excel_bytes = export_consolidated_report_to_excel(
         trial_balance_df=tb_dict.get("dataframe"),
         savings_df=sav_dict.get("savers_dataframe"),
         repayments_df=rep_dict.get("repayments_dataframe"),
         loans_df=filtered_loans,
         portfolio_summary=port_sum,
-        area_comparison_df=area_df
+        area_comparison_df=area_df,
+        deposit_statement_df=dep_df,
+        credit_statement_df=credit_df
     )
 
     filename = f"icare_master_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
@@ -833,6 +847,68 @@ def get_official_statements(
     return result
 
 
+@router.get("/deposit-statement", response_model=DepositStatementData)
+def get_deposit_statement(
+    branch_name: Optional[str] = Query(None),
+    year: int = Query(2026),
+    month: int = Query(9),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Returns Statement A: Monthly Deposit Statement with cycle breakdown.
+    Fully automated rollover from M-1 closing balances and M operational transactions.
+    """
+    _check_reports_permission(current_user)
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
+
+    bid = None
+    if isinstance(resolved_branch_id, str):
+        bid = resolved_branch_id
+    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
+        bid = resolved_branch_id[0]
+    else:
+        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
+        if res_b.data:
+            bid = res_b.data[0]["branch_id"]
+
+    if not bid:
+        raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
+
+    return ReportService.get_monthly_deposit_statement(uow, branch_id=bid, year=year, month=month)
+
+
+@router.get("/credit-statement", response_model=CreditStatementData)
+def get_credit_statement(
+    branch_name: Optional[str] = Query(None),
+    year: int = Query(2026),
+    month: int = Query(9),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Returns Statement B: Monthly Credit Statement with cycle breakdown.
+    Fully automated rollover from M-1 closing balances and M operational transactions.
+    """
+    _check_reports_permission(current_user)
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
+
+    bid = None
+    if isinstance(resolved_branch_id, str):
+        bid = resolved_branch_id
+    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
+        bid = resolved_branch_id[0]
+    else:
+        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
+        if res_b.data:
+            bid = res_b.data[0]["branch_id"]
+
+    if not bid:
+        raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
+
+    return ReportService.get_monthly_credit_statement(uow, branch_id=bid, year=year, month=month)
+
+
 @router.get("/monthly-reconciliation")
 def get_monthly_reconciliation(
     branch_name: Optional[str] = Query(None),
@@ -933,15 +1009,23 @@ def export_monthly_parity_excel(
     df_parity = matrix_res.get("dataframe", pd.DataFrame())
     df_tb = stmts_res.get("trial_balance", {}).get("dataframe", pd.DataFrame())
     df_rp = stmts_res.get("receipts_and_payments", {}).get("dataframe", pd.DataFrame())
+    dep_rows = stmts_res.get("deposit_statement", {}).get("rows", [])
+    df_dep = pd.DataFrame(dep_rows) if dep_rows else pd.DataFrame()
+    credit_rows = stmts_res.get("credit_statement", {}).get("rows", [])
+    df_credit = pd.DataFrame(credit_rows) if credit_rows else pd.DataFrame()
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        if not df_parity.empty:
-            df_parity.to_excel(writer, sheet_name="CO_Monthly_Summary", index=False)
-        if not df_tb.empty:
-            df_tb.to_excel(writer, sheet_name="Official_Trial_Balance", index=False)
+        if not df_dep.empty:
+            df_dep.to_excel(writer, sheet_name="Deposit_Statement", index=False)
+        if not df_credit.empty:
+            df_credit.to_excel(writer, sheet_name="Credit_Statement", index=False)
         if not df_rp.empty:
             df_rp.to_excel(writer, sheet_name="Receipts_and_Payments", index=False)
+        if not df_tb.empty:
+            df_tb.to_excel(writer, sheet_name="Official_Trial_Balance", index=False)
+        if not df_parity.empty:
+            df_parity.to_excel(writer, sheet_name="CO_Monthly_Summary", index=False)
 
     excel_bytes = output.getvalue()
     b_name = matrix_res.get("branch_name", "Branch").replace(" ", "_")

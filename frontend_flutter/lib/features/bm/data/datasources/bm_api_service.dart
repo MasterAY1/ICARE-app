@@ -170,4 +170,67 @@ class BmApiService {
     );
     return response.data as Map<String, dynamic>;
   }
+
+  // ==========================================
+  // CLIENT PROFILE UPDATE APPROVALS
+  // ==========================================
+
+  Future<List<dynamic>> getPendingClientUpdates({String? branchId}) async {
+    final queryParams = <String, dynamic>{};
+    if (branchId != null) queryParams['branch_id'] = branchId;
+    final response = await _apiClient.get(
+      '/api/v1/bm/approvals/client-updates/pending',
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+    return response.data as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> approveClientUpdate(String requestId) async {
+    final response = await _apiClient.post(
+      '/api/v1/bm/approvals/client-updates/$requestId/approve',
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> rejectClientUpdate(String requestId, String reason) async {
+    final response = await _apiClient.post(
+      '/api/v1/bm/approvals/client-updates/$requestId/reject',
+      data: {'reason': reason},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  // ==========================================
+  // AUTOMATED OPERATIONS: LAPS SWEEP & DEFAULTERS
+  // ==========================================
+
+  Future<List<dynamic>> previewLapsSweep({String? branchId, int thresholdDays = 90}) async {
+    final queryParams = <String, dynamic>{'threshold_days': thresholdDays};
+    if (branchId != null) queryParams['branch_id'] = branchId;
+    final response = await _apiClient.get(
+      '/api/v1/bm/savings/sweep-laps-preview',
+      queryParameters: queryParams,
+    );
+    return response.data as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> executeLapsSweep({String? branchId, int thresholdDays = 90}) async {
+    final queryParams = <String, dynamic>{'threshold_days': thresholdDays};
+    if (branchId != null) queryParams['branch_id'] = branchId;
+    final response = await _apiClient.post(
+      '/api/v1/bm/savings/sweep-laps',
+      queryParameters: queryParams,
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> evaluateDefaulters({String? branchId}) async {
+    final queryParams = <String, dynamic>{};
+    if (branchId != null) queryParams['branch_id'] = branchId;
+    final response = await _apiClient.post(
+      '/api/v1/bm/loans/evaluate-defaulters',
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+    return response.data as Map<String, dynamic>;
+  }
 }

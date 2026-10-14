@@ -87,3 +87,24 @@ class ChangeClientStatusRequest(BaseModel):
 class DossierReversalRequest(BaseModel):
     record_id: str
     reason: str
+
+
+class TransferClientRequest(BaseModel):
+    client_id: str
+    to_officer_id: str
+    to_branch_id: str
+    to_group_id: Optional[str] = None
+    reason: str
+
+
+class TransferClientResponse(BaseModel):
+    success: bool
+    transfer_id: str
+    transfer_type: str
+    client_id: str
+    client_name: str
+    new_branch: str
+    new_officer: str
+    status: str
+    message: str
+

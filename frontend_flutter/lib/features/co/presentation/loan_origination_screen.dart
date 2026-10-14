@@ -6,6 +6,7 @@ import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../shared/utils/file_picker_helper.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../core/errors/app_error_formatter.dart';
 import '../data/datasources/co_api_service.dart';
 
 final loanOriginationTabProvider = StateProvider<String>((ref) => 'Client Registration');
@@ -633,13 +634,41 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         }
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(res['message'] ?? 'Client and Guarantor updated successfully!'), backgroundColor: Colors.green),
-      );
+      final statusStr = res['status']?.toString();
+      if (statusStr == 'PENDING_APPROVAL') {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                Icon(Icons.hourglass_top_rounded, color: Colors.amber.shade800, size: 24),
+                const SizedBox(width: 8),
+                const Text('Pending BM Review', style: TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: Text(
+              res['message'] ?? 'Client profile update request has been submitted and is awaiting Branch Manager approval.',
+              style: const TextStyle(fontSize: 14),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['message'] ?? 'Client and Guarantor updated successfully!'),
+            backgroundColor: Colors.green.shade700,
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update details: $e'), backgroundColor: Colors.red),
-      );
+      AppErrorFormatter.showErrorDialog(context, e);
     } finally {
       setState(() => _isSubmitting = false);
     }

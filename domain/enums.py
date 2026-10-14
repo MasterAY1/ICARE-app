@@ -8,11 +8,22 @@ class LoanStatus(str, Enum):
     DISBURSED = "Disbursed"
     ACTIVE = "Active"
     COMPLETED = "Completed"
+    DEFAULTER = "Defaulter"
     REJECTED = "Rejected"
     CANCELLED = "Cancelled"
     WRITTEN_OFF = "Written Off"
     CLOSED = "Closed"
     INTERNAL_ACCOUNT = "Internal Account"
+
+class ClientTransferType(str, Enum):
+    INTRA_BRANCH = "INTRA_BRANCH"
+    INTER_BRANCH = "INTER_BRANCH"
+    INTER_AREA = "INTER_AREA"
+
+class ClientProfileUpdateStatus(str, Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
 
 class ClientStatus(str, Enum):
     REGISTERED = "Registered"

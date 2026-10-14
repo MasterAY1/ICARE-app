@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, date
-from typing import Optional, Any
+from typing import Optional, Any, List, Dict
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from domain.entities.savings import IndividualSavings, GroupSavings, MiscSavings, LapsSavings
 from domain.entities.repayment import Repayment
@@ -1144,4 +1144,131 @@ class SavingsService:
                     uow.cashbook.rebuild_projection(uow, branch_val, orig_date)
         except Exception:
             pass
+
+    @staticmethod
+    def preview_automatic_laps_sweep(
+        uow: SupabaseUnitOfWork,
+        branch_id: Optional[str] = None,
+        threshold_days: int = 90,
+        execution_date: Optional[date] = None
+    ) -> List[dict]:
+        """
+        Scans for clients with 'Inactive (Savings Only)', 'Dormant', or 'Suspended' status
+        for >= threshold_days (max 3 months) who have positive individual savings balances.
+        Returns candidate accounts without executing transfers.
+        """
+        eval_date = execution_date if execution_date else date.today()
+        target_statuses = {"Inactive (Savings Only)", "Dormant", "Suspended"}
+
+        query = (
+            uow.client.table("clients")
+            .select("client_id, name, client_code, branch_id, officer_id, status, status_changed_at, created_at, branches(name), app_users(username, full_name)")
+        )
+        if branch_id:
+            query = query.eq("branch_id", branch_id)
+
+        res = query.execute()
+        clients = res.data or []
+
+        candidates = []
+        for c in clients:
+            c_status = c.get("status")
+            if c_status not in target_statuses:
+                continue
+
+            # Determine duration in current status
+            dt_str = c.get("status_changed_at") or c.get("created_at")
+            if not dt_str:
+                continue
+            try:
+                changed_dt = date.fromisoformat(str(dt_str)[:10])
+            except Exception:
+                continue
+
+            days_inactive = (eval_date - changed_dt).days
+            if days_inactive < threshold_days:
+                continue
+
+            # Check individual savings balance
+            bal = uow.individual_savings.get_total_balance(client_id=c["client_id"])
+            if bal > 0.01:
+                b_name = c.get("branches", {}).get("name") if isinstance(c.get("branches"), dict) else ""
+                u_info = c.get("app_users") if isinstance(c.get("app_users"), dict) else {}
+                o_name = u_info.get("full_name") or u_info.get("username", "")
+
+                candidates.append({
+                    "client_id": c["client_id"],
+                    "client_name": c.get("name", "Unknown"),
+                    "client_code": c.get("client_code", ""),
+                    "branch_id": c.get("branch_id"),
+                    "branch_name": b_name,
+                    "officer_name": o_name,
+                    "status": c_status,
+                    "days_in_status": days_inactive,
+                    "savings_balance": round(bal, 2)
+                })
+
+        return candidates
+
+    @staticmethod
+    def process_automatic_laps_sweep(
+        uow: SupabaseUnitOfWork,
+        branch_id: Optional[str] = None,
+        threshold_days: int = 90,
+        execution_date: Optional[date] = None
+    ) -> dict:
+        """
+        Executes automated sweep to LAPS for clients inactive >= 3 months (90 days).
+        Non-cash operation: transfers savings from individual_savings to laps_savings (Account 1000 unaffected).
+        """
+        candidates = SavingsService.preview_automatic_laps_sweep(
+            uow=uow,
+            branch_id=branch_id,
+            threshold_days=threshold_days,
+            execution_date=execution_date
+        )
+
+        eval_date = execution_date if execution_date else date.today()
+        swept = []
+        total_amt = 0.0
+
+        for cand in candidates:
+            try:
+                res = SavingsService.transfer_to_laps(
+                    uow=uow,
+                    client_id=cand["client_id"],
+                    client_name=cand["client_name"],
+                    source_savings_type="IndividualSavings",
+                    branch=cand["branch_name"] or cand["branch_id"],
+                    officer=cand["officer_name"] or "SYSTEM",
+                    amount=cand["savings_balance"],
+                    reference=f"AUTO-LAPS-{cand['client_id'][:8]}",
+                    remarks=f"Automatic LAPS sweep after {cand['days_in_status']} days in {cand['status']}",
+                    posting_date=eval_date
+                )
+                swept.append({
+                    "client_id": cand["client_id"],
+                    "client_name": cand["client_name"],
+                    "amount": cand["savings_balance"],
+                    "status": "Transferred",
+                    "details": res
+                })
+                total_amt += cand["savings_balance"]
+            except Exception as ex:
+                swept.append({
+                    "client_id": cand["client_id"],
+                    "client_name": cand["client_name"],
+                    "amount": cand["savings_balance"],
+                    "status": "Failed",
+                    "error": str(ex)
+                })
+
+        return {
+            "success": True,
+            "swept_count": len([s for s in swept if s["status"] == "Transferred"]),
+            "total_amount": round(total_amt, 2),
+            "details": swept,
+            "message": f"Successfully swept {len([s for s in swept if s["status"] == 'Transferred'])} client balances (₦{total_amt:,.2f}) into LAPS."
+        }
+
 

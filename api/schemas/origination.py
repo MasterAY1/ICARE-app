@@ -194,3 +194,5 @@ class UpdateClientGuarantorInput(BaseModel):
 class UpdateClientGuarantorResponse(BaseModel):
     success: bool
     message: str
+    status: Optional[str] = "APPLIED"
+    request_id: Optional[str] = None

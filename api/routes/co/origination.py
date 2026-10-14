@@ -871,7 +871,44 @@ def update_client_and_guarantor(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
     check_branch_access(current_user, client.branch_id, "update client details")
 
-    # 1. Update Client Record
+    # Enterprise Four-Eyes Governance: If requested by Credit Officer, submit for BM review
+    if current_user.role in ["CO", "Credit Officer", "Officer"]:
+        from services.client_service import ClientService
+        proposed = {
+            "name": c_name,
+            "phone": payload.phone.strip() if payload.phone else None,
+            "address": payload.address.strip() if payload.address else None,
+            "marital_status": payload.marital_status,
+            "business_type": payload.business_type.strip() if payload.business_type else None,
+            "average_monthly_income": payload.average_monthly_income,
+            "other_obligations": payload.other_obligations.strip() if payload.other_obligations else None,
+            "id_means": payload.id_means,
+            "id_number": payload.id_number.strip() if payload.id_number else None,
+            "guarantor_name": payload.guarantor_name.strip() if payload.guarantor_name else None,
+            "guarantor_phone": payload.guarantor_phone.strip() if payload.guarantor_phone else None,
+            "guarantor_address": payload.guarantor_address.strip() if payload.guarantor_address else None,
+            "guarantor_marital_status": payload.guarantor_marital_status,
+            "guarantor_occupation": payload.guarantor_occupation.strip() if payload.guarantor_occupation else None,
+            "guarantor_relationship": payload.guarantor_relationship.strip() if payload.guarantor_relationship else None,
+            "guarantor_office_address": payload.guarantor_office_address.strip() if payload.guarantor_office_address else None,
+            "guarantor_id_means": payload.guarantor_id_means,
+            "guarantor_id_number": payload.guarantor_id_number.strip() if payload.guarantor_id_number else None,
+        }
+        res_req = ClientService.submit_profile_update_request(
+            uow=uow,
+            client_id=client_id,
+            requested_by=current_user.id or current_user.username,
+            branch_id=client.branch_id,
+            proposed_changes=proposed
+        )
+        return UpdateClientGuarantorResponse(
+            success=True,
+            message=res_req["message"],
+            status="PENDING_APPROVAL",
+            request_id=res_req["request_id"]
+        )
+
+    # 1. Update Client Record (Direct update for BM / AM / Admin)
     client_update_data = {
         "name": c_name,
         "phone": payload.phone.strip() if payload.phone else None,
@@ -952,5 +989,6 @@ def update_client_and_guarantor(
 
     return UpdateClientGuarantorResponse(
         success=True,
-        message="Client and Guarantor details updated successfully."
+        message="Client and Guarantor details updated successfully.",
+        status="APPROVED"
     )

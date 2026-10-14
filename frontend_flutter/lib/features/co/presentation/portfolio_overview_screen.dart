@@ -5,6 +5,7 @@ import '../../../core/utils/currency_formatter.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../core/errors/app_error_formatter.dart';
 import '../data/datasources/co_api_service.dart';
 
 final portfolioMainTabProvider = StateProvider<String>((ref) => 'Portfolio Summary & Analytics');
@@ -2627,7 +2628,24 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                     const SizedBox(height: 4),
                     Text('Code: ${c['client_code'] ?? "N/A"} · Nickname: ${c['nickname'] ?? "None"}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
                     const SizedBox(height: 4),
-                    _buildLifecycleBadge(c['status']?.toString() ?? 'Active'),
+                    Row(
+                      children: [
+                        _buildLifecycleBadge(c['status']?.toString() ?? 'Active'),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            side: const BorderSide(color: Color(0xFF2563EB)),
+                          ),
+                          icon: const Icon(Icons.swap_horiz_rounded, size: 14, color: Color(0xFF2563EB)),
+                          label: const Text('Transfer Portfolio', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+                          onPressed: () => _showTransferClientDialog(context, c['client_id']?.toString() ?? '', name),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -3255,13 +3273,155 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error transitioning status: $e'), backgroundColor: Colors.red),
-        );
+        AppErrorFormatter.showErrorDialog(context, e);
       }
     } finally {
       if (mounted) setState(() => _isSubmittingStatus = false);
     }
+  }
+
+  Future<void> _showTransferClientDialog(BuildContext context, String clientId, String clientName) async {
+    final toOfficerCtrl = TextEditingController();
+    final toBranchCtrl = TextEditingController();
+    final toGroupCtrl = TextEditingController();
+    final reasonCtrl = TextEditingController();
+    bool isSubmitting = false;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.swap_horiz_rounded, color: Color(0xFF2563EB), size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Transfer Client Portfolio', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text(clientName, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Transfers client assignment, active loans, and records across officers, branches, or areas while preserving 100% of savings balance and history.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: toBranchCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Destination Branch ID *',
+                    hintText: 'Enter destination branch UUID',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: toOfficerCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Destination Officer ID *',
+                    hintText: 'Enter recipient credit officer UUID',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: toGroupCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Destination Group ID (Optional)',
+                    hintText: 'Optional solidarity group UUID',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: reasonCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Transfer Reason *',
+                    hintText: 'Business justification for portfolio transfer',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      final bId = toBranchCtrl.text.trim();
+                      final oId = toOfficerCtrl.text.trim();
+                      final rText = reasonCtrl.text.trim();
+                      if (bId.isEmpty || oId.isEmpty || rText.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Branch ID, Officer ID, and Reason are required.')),
+                        );
+                        return;
+                      }
+                      setDialogState(() => isSubmitting = true);
+                      try {
+                        final api = ref.read(coApiServiceProvider);
+                        final res = await api.transferClient(
+                          clientId: clientId,
+                          toOfficerId: oId,
+                          toBranchId: bId,
+                          toGroupId: toGroupCtrl.text.trim().isNotEmpty ? toGroupCtrl.text.trim() : null,
+                          reason: rText,
+                        );
+                        Navigator.of(ctx).pop();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(res['message'] ?? 'Client transferred successfully!'), backgroundColor: Colors.green.shade700),
+                          );
+                          ref.invalidate(portfolioDataProvider);
+                          final code = ref.read(selectedClientCodeProvider);
+                          if (code != null) ref.invalidate(clientDossierDataProvider(code));
+                        }
+                      } catch (err) {
+                        setDialogState(() => isSubmitting = false);
+                        AppErrorFormatter.showErrorDialog(context, err);
+                      }
+                    },
+              child: isSubmitting
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Confirm Transfer'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // 7. Audit Trail Subtab

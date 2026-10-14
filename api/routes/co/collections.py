@@ -220,17 +220,18 @@ def get_collection_sheet(
             except Exception:
                 pass
 
-    # Bulk pre-fetch repayments for unscheduled loans in ONE batched query
-    unscheduled_grp_lids = [lid for lid in grp_loan_ids if lid not in schedules_by_lid]
+    # Bulk pre-fetch repayments for ALL group loans in batched queries
     grp_reps_by_lid = {}
-    if unscheduled_grp_lids:
-        try:
-            res_r = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", unscheduled_grp_lids).execute()
-            for r in (res_r.data or []):
-                lid = r.get("loan_id")
-                grp_reps_by_lid[lid] = grp_reps_by_lid.get(lid, 0.0) + float(r.get("amount_paid") or 0.0)
-        except Exception:
-            pass
+    if grp_loan_ids:
+        for i in range(0, len(grp_loan_ids), 100):
+            chunk = grp_loan_ids[i:i+100]
+            try:
+                res_r = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", chunk).execute()
+                for r in (res_r.data or []):
+                    lid = r.get("loan_id")
+                    grp_reps_by_lid[lid] = grp_reps_by_lid.get(lid, 0.0) + float(r.get("amount_paid") or 0.0)
+            except Exception:
+                pass
 
     # Pre-fetch individual savings balances
     group_sav_map = {}
@@ -291,10 +292,9 @@ def get_collection_sheet(
                 # In-memory total paid & remaining balance (zero HTTP queries!)
                 has_sched = lid in schedules_by_lid
                 loan_sch_rows = schedules_by_lid.get(lid, [])
-                if has_sched:
-                    paid_amt = sum(float(row.get("paid_amount") or 0.0) for row in loan_sch_rows)
-                else:
-                    paid_amt = grp_reps_by_lid.get(lid, 0.0)
+                sch_paid = sum(float(row.get("paid_amount") or 0.0) for row in loan_sch_rows) if loan_sch_rows else 0.0
+                rep_paid = grp_reps_by_lid.get(lid, 0.0)
+                paid_amt = max(sch_paid, rep_paid)
                 rem_bal = max(0.0, tot_due - paid_amt)
 
                 lp = loan_row.get('loan_products') or {}
@@ -309,7 +309,7 @@ def get_collection_sheet(
                     loan_data=loan_row,
                     schedule_rows=loan_sch_rows,
                     meeting_day_str=grp_meeting_day,
-                    total_paid_sch=paid_amt if has_sched else None
+                    total_paid_sch=paid_amt
                 )
                 exp_rep = float(due_info.get("total_due_today") or 0.0)
                 has_ov = bool(due_info.get("has_overdue", False))
@@ -321,14 +321,9 @@ def get_collection_sheet(
                     exp_rep = min(exp_rep, rem_bal) if rem_bal > 0 else 0.0
                     if curr_inst <= 0.0 and not has_ov:
                         curr_inst = min(inst_repay, exp_rep) if inst_repay > 0 else exp_rep
-                elif rem_bal > 0:
-                    if inst_repay > 0:
-                        exp_rep = min(inst_repay, rem_bal)
-                    else:
-                        dur = float(loan_row.get('duration') or 1)
-                        inst_repay = (tot_due / dur) if dur > 0 else tot_due
-                        exp_rep = min(inst_repay, rem_bal)
-                    curr_inst = exp_rep
+                elif rem_bal > 0 and due_info.get("is_meeting_today") and not due_info.get("has_overdue"):
+                    if curr_inst > 0:
+                        exp_rep = curr_inst
 
                 s_date_str = str(loan_row.get('start_date') or '')
                 is_future = False

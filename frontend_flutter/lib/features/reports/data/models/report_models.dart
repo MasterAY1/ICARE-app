@@ -793,6 +793,139 @@ class ReceiptsPaymentsData {
   }
 }
 
+// --- STATEMENT A: MONTHLY DEPOSIT STATEMENT ---
+class DepositStatementRow {
+  final String programme;
+  final int memberPrev;
+  final int memberCurr;
+  final int memberTotal;
+  final double depositPrev;
+  final double depositCurr;
+  final double depositTotal;
+  final int withdrawalPrevNo;
+  final double withdrawalPrevAmount;
+  final int withdrawalCurrNo;
+  final double withdrawalCurrAmount;
+  final int withdrawalTotalNo;
+  final double withdrawalTotalAmount;
+  final int returnPrevNo;
+  final double returnPrevAmount;
+  final int returnCurrNo;
+  final double returnCurrAmount;
+  final int returnTotalNo;
+  final double returnTotalAmount;
+  final int balanceNo;
+  final double balanceAmount;
+
+  const DepositStatementRow({
+    required this.programme,
+    required this.memberPrev,
+    required this.memberCurr,
+    required this.memberTotal,
+    required this.depositPrev,
+    required this.depositCurr,
+    required this.depositTotal,
+    required this.withdrawalPrevNo,
+    required this.withdrawalPrevAmount,
+    required this.withdrawalCurrNo,
+    required this.withdrawalCurrAmount,
+    required this.withdrawalTotalNo,
+    required this.withdrawalTotalAmount,
+    required this.returnPrevNo,
+    required this.returnPrevAmount,
+    required this.returnCurrNo,
+    required this.returnCurrAmount,
+    required this.returnTotalNo,
+    required this.returnTotalAmount,
+    required this.balanceNo,
+    required this.balanceAmount,
+  });
+
+  factory DepositStatementRow.fromJson(Map<String, dynamic> json) {
+    return DepositStatementRow(
+      programme: (json['programme'] ?? '') as String,
+      memberPrev: json['member_prev'] as int? ?? 0,
+      memberCurr: json['member_curr'] as int? ?? 0,
+      memberTotal: json['member_total'] as int? ?? 0,
+      depositPrev: (json['deposit_prev'] as num? ?? 0.0).toDouble(),
+      depositCurr: (json['deposit_curr'] as num? ?? 0.0).toDouble(),
+      depositTotal: (json['deposit_total'] as num? ?? 0.0).toDouble(),
+      withdrawalPrevNo: json['withdrawal_prev_no'] as int? ?? 0,
+      withdrawalPrevAmount: (json['withdrawal_prev_amount'] as num? ?? 0.0).toDouble(),
+      withdrawalCurrNo: json['withdrawal_curr_no'] as int? ?? 0,
+      withdrawalCurrAmount: (json['withdrawal_curr_amount'] as num? ?? 0.0).toDouble(),
+      withdrawalTotalNo: json['withdrawal_total_no'] as int? ?? 0,
+      withdrawalTotalAmount: (json['withdrawal_total_amount'] as num? ?? 0.0).toDouble(),
+      returnPrevNo: json['return_prev_no'] as int? ?? 0,
+      returnPrevAmount: (json['return_prev_amount'] as num? ?? 0.0).toDouble(),
+      returnCurrNo: json['return_curr_no'] as int? ?? 0,
+      returnCurrAmount: (json['return_curr_amount'] as num? ?? 0.0).toDouble(),
+      returnTotalNo: json['return_total_no'] as int? ?? 0,
+      returnTotalAmount: (json['return_total_amount'] as num? ?? 0.0).toDouble(),
+      balanceNo: json['balance_no'] as int? ?? 0,
+      balanceAmount: (json['balance_amount'] as num? ?? 0.0).toDouble(),
+    );
+  }
+}
+
+class DepositStatementData {
+  final List<DepositStatementRow> rows;
+
+  const DepositStatementData({required this.rows});
+
+  factory DepositStatementData.fromJson(Map<String, dynamic> json) {
+    return DepositStatementData(
+      rows: (json['rows'] as List<dynamic>? ?? [])
+          .map((e) => DepositStatementRow.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+// --- STATEMENT B: MONTHLY CREDIT STATEMENT ---
+class CreditStatementRow {
+  final String section;
+  final String item;
+  final double monthly;
+  final double weekly;
+  final double daily;
+  final double total;
+
+  const CreditStatementRow({
+    required this.section,
+    required this.item,
+    required this.monthly,
+    required this.weekly,
+    required this.daily,
+    required this.total,
+  });
+
+  factory CreditStatementRow.fromJson(Map<String, dynamic> json) {
+    return CreditStatementRow(
+      section: (json['section'] ?? '') as String,
+      item: (json['item'] ?? '') as String,
+      monthly: (json['monthly'] as num? ?? 0.0).toDouble(),
+      weekly: (json['weekly'] as num? ?? 0.0).toDouble(),
+      daily: (json['daily'] as num? ?? 0.0).toDouble(),
+      total: (json['total'] as num? ?? 0.0).toDouble(),
+    );
+  }
+}
+
+class CreditStatementData {
+  final List<CreditStatementRow> rows;
+
+  const CreditStatementData({required this.rows});
+
+  factory CreditStatementData.fromJson(Map<String, dynamic> json) {
+    return CreditStatementData(
+      rows: (json['rows'] as List<dynamic>? ?? [])
+          .map((e) => CreditStatementRow.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
 class MonthlyExecutiveStatementsData {
   final String branchName;
   final String areaName;
@@ -801,6 +934,8 @@ class MonthlyExecutiveStatementsData {
   final int month;
   final OfficialTrialBalanceData trialBalance;
   final ReceiptsPaymentsData receiptsAndPayments;
+  final DepositStatementData? depositStatement;
+  final CreditStatementData? creditStatement;
 
   const MonthlyExecutiveStatementsData({
     required this.branchName,
@@ -810,6 +945,8 @@ class MonthlyExecutiveStatementsData {
     required this.month,
     required this.trialBalance,
     required this.receiptsAndPayments,
+    this.depositStatement,
+    this.creditStatement,
   });
 
   factory MonthlyExecutiveStatementsData.fromJson(Map<String, dynamic> json) {
@@ -821,6 +958,12 @@ class MonthlyExecutiveStatementsData {
       month: json['month'] as int? ?? 9,
       trialBalance: OfficialTrialBalanceData.fromJson(json['trial_balance'] as Map<String, dynamic>? ?? {}),
       receiptsAndPayments: ReceiptsPaymentsData.fromJson(json['receipts_and_payments'] as Map<String, dynamic>? ?? {}),
+      depositStatement: json['deposit_statement'] != null
+          ? DepositStatementData.fromJson(json['deposit_statement'] as Map<String, dynamic>)
+          : null,
+      creditStatement: json['credit_statement'] != null
+          ? CreditStatementData.fromJson(json['credit_statement'] as Map<String, dynamic>)
+          : null,
     );
   }
 }

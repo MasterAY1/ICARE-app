@@ -256,6 +256,49 @@ class ReceiptsPaymentsData(BaseModel):
     variance: float
 
 
+# --- STATEMENT A: MONTHLY DEPOSIT STATEMENT ---
+class DepositStatementRow(BaseModel):
+    programme: str
+    member_prev: int = 0
+    member_curr: int = 0
+    member_total: int = 0
+    deposit_prev: float = 0.0
+    deposit_curr: float = 0.0
+    deposit_total: float = 0.0
+    withdrawal_prev_no: int = 0
+    withdrawal_prev_amount: float = 0.0
+    withdrawal_curr_no: int = 0
+    withdrawal_curr_amount: float = 0.0
+    withdrawal_total_no: int = 0
+    withdrawal_total_amount: float = 0.0
+    return_prev_no: int = 0
+    return_prev_amount: float = 0.0
+    return_curr_no: int = 0
+    return_curr_amount: float = 0.0
+    return_total_no: int = 0
+    return_total_amount: float = 0.0
+    balance_no: int = 0
+    balance_amount: float = 0.0
+
+
+class DepositStatementData(BaseModel):
+    rows: List[DepositStatementRow]
+
+
+# --- STATEMENT B: MONTHLY CREDIT STATEMENT ---
+class CreditStatementRow(BaseModel):
+    section: str
+    item: str
+    monthly: Union[float, int] = 0.0
+    weekly: Union[float, int] = 0.0
+    daily: Union[float, int] = 0.0
+    total: Union[float, int] = 0.0
+
+
+class CreditStatementData(BaseModel):
+    rows: List[CreditStatementRow]
+
+
 class MonthlyExecutiveStatementsResponse(BaseModel):
     branch_name: str
     area_name: str
@@ -264,6 +307,8 @@ class MonthlyExecutiveStatementsResponse(BaseModel):
     month: int
     trial_balance: OfficialTrialBalanceData
     receipts_and_payments: ReceiptsPaymentsData
+    deposit_statement: Optional[DepositStatementData] = None
+    credit_statement: Optional[CreditStatementData] = None
 
 
 class MonthlyReconciliationBankItem(BaseModel):
