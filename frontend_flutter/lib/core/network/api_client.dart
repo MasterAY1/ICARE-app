@@ -27,8 +27,15 @@ class ApiClient {
     HttpClientAdapter? adapter,
   })  : _connectivityService = connectivityService,
         _offlineDb = offlineDb {
-    final envBaseUrl = const String.fromEnvironment('API_BASE_URL', defaultValue: 'https://icare-app.onrender.com');
-    final effectiveUrl = baseUrl ?? (envBaseUrl.isNotEmpty ? envBaseUrl : 'https://icare-app.onrender.com');
+    String defaultUrl = 'https://icare-app.onrender.com';
+    if (kIsWeb) {
+      final origin = Uri.base.origin;
+      if (origin.isNotEmpty && !origin.startsWith('file://')) {
+        defaultUrl = origin;
+      }
+    }
+    final envBaseUrl = const String.fromEnvironment('API_BASE_URL', defaultValue: '');
+    final effectiveUrl = baseUrl ?? (envBaseUrl.isNotEmpty ? envBaseUrl : defaultUrl);
     _dio = Dio(BaseOptions(
       baseUrl: effectiveUrl,
       connectTimeout: const Duration(seconds: 15),

@@ -20,6 +20,7 @@ from api.routes.am import dashboard as am_dashboard
 from api.routes import audit
 from api.routes import users
 from api.routes import reports
+from api.routes import onboarding
 
 app = FastAPI(
     title="ICARE Core Banking Backend API",
@@ -100,6 +101,7 @@ app.include_router(am_dashboard.router)
 app.include_router(audit.router)
 app.include_router(users.router)
 app.include_router(reports.router)
+app.include_router(onboarding.router)
 
 
 @app.get("/health")

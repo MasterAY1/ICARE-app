@@ -8,6 +8,7 @@ import '../../../core/offline/offline_database_service.dart';
 import '../../../core/theme/icare_colors.dart';
 import '../../../core/theme/icare_typography.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
+import '../../onboarding/presentation/branch_onboarding_portal_screen.dart';
 import 'login_screen.dart';
 
 /// Institutional Welcome Splash Screen for ICARE Core Banking.
@@ -79,10 +80,32 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
     if (!mounted) return;
 
-    final authState = ref.read(authControllerProvider);
-    final targetScreen = (authState is AuthStateAuthenticated)
-        ? const CoAppScaffold()
-        : const LoginScreen();
+    // 5. Inspect URL parameters / hash fragments for public branch onboarding link
+    String? onboardingToken;
+    if (Uri.base.queryParameters.containsKey('token')) {
+      onboardingToken = Uri.base.queryParameters['token'];
+    }
+    if ((onboardingToken == null || onboardingToken.isEmpty) && Uri.base.fragment.isNotEmpty) {
+      final fragment = Uri.base.fragment;
+      final fragUri = Uri.tryParse(fragment.startsWith('/') ? fragment : '/$fragment');
+      if (fragUri != null && fragUri.queryParameters.containsKey('token')) {
+        onboardingToken = fragUri.queryParameters['token'];
+      }
+    }
+
+    final isExplicitOnboarding = Uri.base.path.contains('onboarding') ||
+        Uri.base.fragment.contains('onboarding') ||
+        (onboardingToken != null && onboardingToken.isNotEmpty);
+
+    Widget targetScreen;
+    if (isExplicitOnboarding) {
+      targetScreen = BranchOnboardingPortalScreen(token: onboardingToken ?? '');
+    } else {
+      final authState = ref.read(authControllerProvider);
+      targetScreen = (authState is AuthStateAuthenticated)
+          ? const CoAppScaffold()
+          : const LoginScreen();
+    }
 
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(

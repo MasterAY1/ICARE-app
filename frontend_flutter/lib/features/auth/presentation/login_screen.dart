@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../onboarding/presentation/branch_onboarding_portal_screen.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 
 /// Screen 0: 1:1 Direct Translation of Streamlit auth/login.py and app.py L598-950
@@ -577,7 +578,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
+          TextButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const BranchOnboardingPortalScreen(token: ''),
+                ),
+              );
+            },
+            icon: const Icon(Icons.domain_add_outlined, size: 14, color: Color(0xD9FFFFFF)),
+            label: const Text(
+              'Have a Branch Onboarding Link? Open Portal',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: Color(0xD9FFFFFF),
+                decoration: TextDecoration.underline,
+                decorationColor: Color(0x66FFFFFF),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
 
           // Footer Bar (L94-100)
           Container(
