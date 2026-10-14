@@ -1885,28 +1885,21 @@ class ReportService:
         tot_inst = {c: round(prev[c]["inst"] + curr[c]["inst"] - curr[c]["settled_amt"], 2) for c in cycles}
         rows.append(make_row("3. Installment Collection", "• Total Installments (₦) (Col 14 = 12+13-28)", tot_inst))
 
-        # 4. Overdue
-        rows.append(make_row("4. Overdue", "• Overdue Brought Forward (₦)", {c: prev[c].get("overdue", 0.0) for c in cycles}))
-        rows.append(make_row("4. Overdue", "• Current Month Overdue (₦)", {c: curr[c].get("overdue_cur", 0.0) for c in cycles}))
-        rows.append(make_row("4. Overdue", "• Overdue Recovered (₦)", {c: curr[c].get("overdue_rec", 0.0) for c in cycles}))
-        tot_overdue = {c: round(prev[c].get("overdue", 0.0) + curr[c].get("overdue_cur", 0.0) - curr[c].get("overdue_rec", 0.0), 2) for c in cycles}
-        rows.append(make_row("4. Overdue", "• Total Overdue Carried Forward (₦)", tot_overdue))
-
-        # 5. Balance (Portfolio Position)
+        # 4. Balance (Portfolio Position)
         bal_loans_no = tot_disb_no
         bal_credit_amt = {c: round(tot_disb_amt[c] - tot_inst[c], 2) for c in cycles}
-        rows.append(make_row("5. Balance (Portfolio)", "• Active Loans Count (Col 23 = Col 7)", bal_loans_no))
-        rows.append(make_row("5. Balance (Portfolio)", "• Active Credit Balance (₦) (Col 24 = Col 8 - Col 14)", bal_credit_amt))
+        rows.append(make_row("4. Balance (Portfolio)", "• Active Loans Count (Col 23 = Col 7)", bal_loans_no))
+        rows.append(make_row("4. Balance (Portfolio)", "• Active Credit Balance (₦) (Col 24 = Col 8 - Col 14)", bal_credit_amt))
 
-        # 6. Full Repayment (Settled Loans)
-        rows.append(make_row("6. Full Repayment (Settled Loans)", "• Previous Settled Loans Count (Col 25)", {c: prev[c]["settled_no"] for c in cycles}))
-        rows.append(make_row("6. Full Repayment (Settled Loans)", "• Previous Settled Amount (₦) (Col 26)", {c: prev[c]["settled_amt"] for c in cycles}))
-        rows.append(make_row("6. Full Repayment (Settled Loans)", "• Current Settled Loans Count (Col 27)", {c: curr[c]["settled_no"] for c in cycles}))
-        rows.append(make_row("6. Full Repayment (Settled Loans)", "• Current Settled Amount (₦) (Col 28)", {c: curr[c]["settled_amt"] for c in cycles}))
+        # 5. Full Repayment (Settled Loans)
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Previous Settled Loans Count (Col 25)", {c: prev[c]["settled_no"] for c in cycles}))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Previous Settled Amount (₦) (Col 26)", {c: prev[c]["settled_amt"] for c in cycles}))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Current Settled Loans Count (Col 27)", {c: curr[c]["settled_no"] for c in cycles}))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Current Settled Amount (₦) (Col 28)", {c: curr[c]["settled_amt"] for c in cycles}))
         tot_settled_no = {c: prev[c]["settled_no"] + curr[c]["settled_no"] for c in cycles}
         tot_settled_amt = {c: round(prev[c]["settled_amt"] + curr[c]["settled_amt"], 2) for c in cycles}
-        rows.append(make_row("6. Full Repayment (Settled Loans)", "• Total Cumulative Settled Count", tot_settled_no))
-        rows.append(make_row("6. Full Repayment (Settled Loans)", "• Total Cumulative Settled Amount (₦)", tot_settled_amt))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Total Cumulative Settled Count", tot_settled_no))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Total Cumulative Settled Amount (₦)", tot_settled_amt))
 
         return {"rows": rows}
 

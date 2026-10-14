@@ -1099,20 +1099,15 @@ class MonthlyExecutiveStatementsData {
         CreditStatementRow(section: '3. Installment Collection', item: '• Current Month Installments (₦) (Col 13)', monthly: 264000.0, weekly: 8556625.0, daily: 8645050.0, total: 17465675.0),
         CreditStatementRow(section: '3. Installment Collection', item: '• Total Installments (₦) (Col 14 = 12+13-28)', monthly: 256000.0, weekly: 11025125.0, daily: 10749050.0, total: 22030175.0),
 
-        CreditStatementRow(section: '4. Overdue', item: '• Overdue Brought Forward (₦)', monthly: 0.0, weekly: 0.0, daily: 0.0, total: 0.0),
-        CreditStatementRow(section: '4. Overdue', item: '• Current Month Overdue (₦)', monthly: 0.0, weekly: 0.0, daily: 0.0, total: 0.0),
-        CreditStatementRow(section: '4. Overdue', item: '• Overdue Recovered (₦)', monthly: 0.0, weekly: 0.0, daily: 0.0, total: 0.0),
-        CreditStatementRow(section: '4. Overdue', item: '• Total Overdue Carried Forward (₦)', monthly: 0.0, weekly: 0.0, daily: 0.0, total: 0.0),
+        CreditStatementRow(section: '4. Balance (Portfolio)', item: '• Active Loans Count (Col 23 = Col 7)', monthly: 3, weekly: 155, daily: 135, total: 293),
+        CreditStatementRow(section: '4. Balance (Portfolio)', item: '• Active Credit Balance (₦) (Col 24 = Col 8 - Col 14)', monthly: 146000.0, weekly: 14534875.0, daily: 11711950.0, total: 26392825.0),
 
-        CreditStatementRow(section: '5. Balance (Portfolio)', item: '• Active Loans Count (Col 23 = Col 7)', monthly: 3, weekly: 155, daily: 135, total: 293),
-        CreditStatementRow(section: '5. Balance (Portfolio)', item: '• Active Credit Balance (₦) (Col 24 = Col 8 - Col 14)', monthly: 146000.0, weekly: 14534875.0, daily: 11711950.0, total: 26392825.0),
-
-        CreditStatementRow(section: '6. Full Repayment (Settled Loans)', item: '• Previous Settled Loans Count (Col 25)', monthly: 19, weekly: 1592, daily: 1579, total: 3190),
-        CreditStatementRow(section: '6. Full Repayment (Settled Loans)', item: '• Previous Settled Amount (₦) (Col 26)', monthly: 289800.0, weekly: 20233400.0, daily: 19754800.0, total: 40278000.0),
-        CreditStatementRow(section: '6. Full Repayment (Settled Loans)', item: '• Current Settled Loans Count (Col 27)', monthly: 3, weekly: 56, daily: 48, total: 107),
-        CreditStatementRow(section: '6. Full Repayment (Settled Loans)', item: '• Current Settled Amount (₦) (Col 28)', monthly: 408000.0, weekly: 9036000.0, daily: 8184000.0, total: 17628000.0),
-        CreditStatementRow(section: '6. Full Repayment (Settled Loans)', item: '• Total Cumulative Settled Count', monthly: 22, weekly: 1648, daily: 1627, total: 3297),
-        CreditStatementRow(section: '6. Full Repayment (Settled Loans)', item: '• Total Cumulative Settled Amount (₦)', monthly: 697800.0, weekly: 29269400.0, daily: 27938800.0, total: 57906000.0),
+        CreditStatementRow(section: '5. Full Repayment (Settled Loans)', item: '• Previous Settled Loans Count (Col 25)', monthly: 19, weekly: 1592, daily: 1579, total: 3190),
+        CreditStatementRow(section: '5. Full Repayment (Settled Loans)', item: '• Previous Settled Amount (₦) (Col 26)', monthly: 289800.0, weekly: 20233400.0, daily: 19754800.0, total: 40278000.0),
+        CreditStatementRow(section: '5. Full Repayment (Settled Loans)', item: '• Current Settled Loans Count (Col 27)', monthly: 3, weekly: 56, daily: 48, total: 107),
+        CreditStatementRow(section: '5. Full Repayment (Settled Loans)', item: '• Current Settled Amount (₦) (Col 28)', monthly: 408000.0, weekly: 9036000.0, daily: 8184000.0, total: 17628000.0),
+        CreditStatementRow(section: '5. Full Repayment (Settled Loans)', item: '• Total Cumulative Settled Count', monthly: 22, weekly: 1648, daily: 1627, total: 3297),
+        CreditStatementRow(section: '5. Full Repayment (Settled Loans)', item: '• Total Cumulative Settled Amount (₦)', monthly: 697800.0, weekly: 29269400.0, daily: 27938800.0, total: 57906000.0),
       ],
     );
   }

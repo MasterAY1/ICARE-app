@@ -1345,7 +1345,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   DataColumn(numeric: true, label: Text('Daily')),
                   DataColumn(numeric: true, label: Text('Consolidated\nTotal')),
                 ],
-                rows: cs.rows.map((r) {
+                rows: cs.rows
+                    .where((r) => !r.section.toLowerCase().contains('overdue') && !r.item.toLowerCase().contains('overdue'))
+                    .map((r) {
                   final isCount = r.item.contains('Count');
                   final isHighlight = r.item.contains('Total') || r.item.contains('Balance') || r.item.contains('Active');
                   final rowColor = isHighlight ? const Color(0xFFF8FAFC) : null;
@@ -1354,10 +1356,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
                   String formatVal(double v) => isCount ? '${v.toInt()}' : (v > 0 ? _formatNgn(v) : '-');
 
+                  var sectionName = r.section;
+                  if (sectionName.startsWith('5. Balance')) sectionName = '4. Balance (Portfolio)';
+                  if (sectionName.startsWith('6. Full Repayment')) sectionName = '5. Full Repayment (Settled Loans)';
+
                   return DataRow(
                     color: rowColor != null ? MaterialStateProperty.all(rowColor) : null,
                     cells: [
-                      DataCell(Text(r.section, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F766E), fontSize: 11))),
+                      DataCell(Text(sectionName, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F766E), fontSize: 11))),
                       DataCell(Text(r.item, style: textStyle)),
                       DataCell(Text(formatVal(r.monthly), style: textStyle)),
                       DataCell(Text(formatVal(r.weekly), style: textStyle)),
