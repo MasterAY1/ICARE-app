@@ -1,5 +1,5 @@
 streamlit==1.38.0
-starlette==0.36.3
+starlette>=0.37.2
 pandas==2.2.0
 numpy==1.26.4
 supabase
@@ -16,3 +16,9 @@ uuid-utils==0.9.0
 holidays
 extra-streamlit-components==0.1.71
 bcrypt==4.1.2
+fastapi==0.115.0
+uvicorn==0.30.0
+pydantic>=2.7.0
+pydantic-settings>=2.4.0
+python-multipart>=0.0.9
+httpx>=0.27.0
