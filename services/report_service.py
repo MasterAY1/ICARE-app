@@ -1266,7 +1266,50 @@ class ReportService:
             row1_sub += f", Overdue B/F: ₦{overdue_bf:,.2f}"
 
         # 4. Helper for dynamic dual-mode YTD accumulation
-        prev_data = recon_data.get("prior_recon") or {}
+        prev_data = dict(recon_data.get("prior_recon") or {})
+
+        # If future month (after Sept 2026), fetch computed prior month TB & RP for recursive YTD rollover
+        if year > 2026 or (year == 2026 and month > 9):
+            prev_year = year if month > 1 else year - 1
+            prev_month = month - 1 if month > 1 else 12
+            try:
+                prev_official = ReportService.get_official_trial_balance_and_receipts_payments(
+                    uow, branch_id, prev_year, prev_month, officer_name=officer_name, product_name=product_name
+                )
+                prev_tb_rows = {r["item"]: r for r in prev_official.get("trial_balance", {}).get("rows", [])}
+                for item, p_row in prev_tb_rows.items():
+                    val = p_row["debit"] if p_row["debit"] > 0 else p_row["credit"]
+                    if item == "Personnel Gross Salary": prev_data["tb_salary"] = val
+                    elif item == "Office Rent": prev_data["tb_rent"] = val
+                    elif item == "Electricity/Gas/Water": prev_data["tb_electricity"] = val
+                    elif item == "Stationery/Office Management/Service Staff": prev_data["tb_stationery"] = val
+                    elif item == "Entertainment": prev_data["tb_entertainment"] = val
+                    elif item == "Telephone/Postage": prev_data["tb_telephone"] = val
+                    elif item == "Repair Cost (Office)": prev_data["tb_repair_office"] = val
+                    elif item == "Transport Allowance": prev_data["tb_transport"] = val
+                    elif item == "Training Expenses": prev_data["tb_training"] = val
+                    elif item == "Bank Charges": prev_data["tb_bank_charges"] = val
+                    elif item == "Sales Profit": prev_data["tb_sales_profit"] = val
+                    elif item == "Bank interest": prev_data["tb_bank_interest"] = val
+                    elif item == "Retained Earnings": prev_data["retained_earnings"] = val
+                    elif item == "Damages and Fine": prev_data["tb_damages_fine"] = val
+                    elif item == "Passbook": prev_data["tb_passbook"] = val
+                    elif item == "Scraps Sales": prev_data["tb_scraps_sales"] = val
+                    elif item == "Application Fee": prev_data["tb_application_fee"] = val
+                    elif item == "Head Office (Asset Allocation)": prev_data["head_office_asset_allocation"] = val
+                    elif item == "Head Office (Main)": prev_data["tb_fund_ho_main"] = val
+                    elif item == "Branch Office": prev_data["tb_fund_branch"] = val
+                    elif item == "Other Area": prev_data["tb_fund_other_area"] = val
+                    elif item == "Internal": prev_data["tb_fund_internal"] = val
+                    elif item == "Lapse Deposit": prev_data["lapse_deposit_reserve"] = val
+
+                prev_payments = prev_official.get("receipts_and_payments", {}).get("payments", [])
+                prev_closing_liquid = prev_payments[-1]["amount"] if prev_payments else 0.0
+                if tot_bank_opening == 0.0 and prev_closing_liquid > 0:
+                    tot_bank_opening = prev_closing_liquid
+                    row1_amount = round(tot_bank_opening + cash_in_hand_bf + overdue_bf, 2)
+            except Exception:
+                pass
 
         def resolve_ytd_and_monthly(entered_val: float, prev_val: float) -> tuple[float, float]:
             # Computes (ytd_total, monthly_activity).
@@ -1297,10 +1340,10 @@ class ReportService:
 
         # Bank charges dynamic YTD accumulation
         prev_bk_charges = float(prev_data.get("tb_bank_charges") or 0.0)
-        tb_bank_charges = prev_bk_charges + tot_bank_charges if prev_bk_charges > 0 or tot_bank_charges > 0 else float(recon_data.get("tb_bank_charges") or 0.0)
+        tb_bank_charges = round(prev_bk_charges + tot_bank_charges if prev_bk_charges > 0 or tot_bank_charges > 0 else float(recon_data.get("tb_bank_charges") or 0.0), 2)
 
         # Sum of Monthly Annex-1 Operational Expenses (feeds Payments line 7)
-        tot_annex1_expenses = m_salary + m_rent + m_elec + m_stat + m_ent + m_tel + m_rep + m_trans + m_train + m_other_exp
+        tot_annex1_expenses = round(m_salary + m_rent + m_elec + m_stat + m_ent + m_tel + m_rep + m_trans + m_train + m_other_exp, 2)
         paid_other_sources = float(recon_data.get("paid_to_other_sources") or 0.0)
         if paid_other_sources == 0.0 and tot_annex1_expenses > 0:
             paid_other_sources = tot_annex1_expenses
@@ -1311,75 +1354,121 @@ class ReportService:
         tb_scraps, m_scraps = resolve_ytd_and_monthly(float(recon_data.get("tb_scraps_sales") or 0.0), float(prev_data.get("tb_scraps_sales") or 0.0))
         tb_damages, m_damages = resolve_ytd_and_monthly(float(recon_data.get("tb_damages_fine") or 0.0), float(prev_data.get("tb_damages_fine") or 0.0))
 
-        tot_annex1_receipts = m_passbook + m_app_fee + m_scraps + m_damages
+        tot_annex1_receipts = round(m_passbook + m_app_fee + m_scraps + m_damages, 2)
         rec_other_sources = float(recon_data.get("received_from_other_sources") or 0.0)
         if rec_other_sources == 0.0 and tot_annex1_receipts > 0:
             rec_other_sources = tot_annex1_receipts
 
         # Bank interest dynamic YTD
         prev_interest = float(prev_data.get("tb_bank_interest") or 0.0)
-        tb_bank_interest = prev_interest + tot_bank_interest if prev_interest > 0 else (tot_bank_interest or float(recon_data.get("tb_bank_interest") or 0.0))
+        tb_bank_interest = round(prev_interest + tot_bank_interest if prev_interest > 0 else (tot_bank_interest or float(recon_data.get("tb_bank_interest") or 0.0)), 2)
 
         # Operational figures come authoritatively from the database (via parity matrix cards)
         # Guarantees 100% parity across Parity Matrix, Statements A & B, Receipts & Payments, Cashbook & DB
-        disbursed_principal = cards["disbursed_principal"] or float(recon_data.get("disbursed_principal") or 0.0)
-        upfront_fees = cards["upfront_fees"] or float(recon_data.get("upfront_fees") or 0.0)
-        savings_deposits = cards["savings_deposits"] or float(recon_data.get("savings_deposits") or 0.0)
-        collections = cards["collections"] or float(recon_data.get("collections") or 0.0)
-        deposit_wth_val = cards["savings_withdrawals"] or float(recon_data.get("deposit_withdrawal") or 0.0)
-        closing_credit = cards["closing_credit"] or float(recon_data.get("closing_credit") or 0.0)
-        closing_savings = cards["closing_savings"] or float(recon_data.get("closing_savings") or 0.0)
+        disbursed_principal = round(cards["disbursed_principal"] or float(recon_data.get("disbursed_principal") or 0.0), 2)
+        upfront_fees = round(cards["upfront_fees"] or float(recon_data.get("upfront_fees") or 0.0), 2)
+        savings_deposits = round(cards["savings_deposits"] or float(recon_data.get("savings_deposits") or 0.0), 2)
+        collections = round(cards["collections"] or float(recon_data.get("collections") or 0.0), 2)
+        deposit_wth_val = round(cards["savings_withdrawals"] or float(recon_data.get("deposit_withdrawal") or 0.0), 2)
+        closing_credit = round(cards["closing_credit"] or float(recon_data.get("closing_credit") or 0.0), 2)
+        closing_savings = round(cards["closing_savings"] or float(recon_data.get("closing_savings") or 0.0), 2)
 
-        sales_profit_markup = float(recon_data.get("sales_profit_markup") or 0.0)
-        sales_cc = float(recon_data.get("sales_cash_and_carry") or 0.0)
-        lapse_return = float(recon_data.get("lapse_deposit_return") or 0.0)
+        sales_profit_markup = round(float(recon_data.get("sales_profit_markup") or 0.0), 2)
+        sales_cc = round(float(recon_data.get("sales_cash_and_carry") or 0.0), 2)
+        lapse_return = round(float(recon_data.get("lapse_deposit_return") or 0.0), 2)
 
-        fund_ho_asset_rec = float(recon_data.get("fund_cash_ho_asset_receipt") or 0.0)
-        fund_ho_main_rec = float(recon_data.get("fund_cash_ho_main_receipt") or 0.0)
-        fund_area_rec = float(recon_data.get("fund_cash_other_area_receipt") or 0.0)
-        fund_br_rec = float(recon_data.get("fund_cash_branch_receipt") or 0.0)
-        tot_fund_rec = fund_ho_asset_rec + fund_ho_main_rec + fund_area_rec + fund_br_rec
+        fund_ho_asset_rec = round(float(recon_data.get("fund_cash_ho_asset_receipt") or 0.0), 2)
+        fund_ho_main_rec = round(float(recon_data.get("fund_cash_ho_main_receipt") or 0.0), 2)
+        fund_area_rec = round(float(recon_data.get("fund_cash_other_area_receipt") or 0.0), 2)
+        fund_br_rec = round(float(recon_data.get("fund_cash_branch_receipt") or 0.0), 2)
+        tot_fund_rec = round(fund_ho_asset_rec + fund_ho_main_rec + fund_area_rec + fund_br_rec, 2)
 
-        fund_ho_asset_pay = float(recon_data.get("fund_cash_ho_asset_payment") or 0.0)
-        fund_ho_main_pay = float(recon_data.get("fund_cash_ho_main_payment") or 0.0)
-        fund_br_pay = float(recon_data.get("fund_cash_branch_payment") or 0.0)
-        tot_fund_pay = fund_ho_asset_pay + fund_ho_main_pay + fund_br_pay
+        fund_ho_asset_pay = round(float(recon_data.get("fund_cash_ho_asset_payment") or 0.0), 2)
+        fund_ho_main_pay = round(float(recon_data.get("fund_cash_ho_main_payment") or 0.0), 2)
+        fund_br_pay = round(float(recon_data.get("fund_cash_branch_payment") or 0.0), 2)
+        tot_fund_pay = round(fund_ho_asset_pay + fund_ho_main_pay + fund_br_pay, 2)
 
         # Capital Funds & Retained Earnings: Fall back directly to previous month if not explicitly overridden
-        retained_earnings = float(recon_data.get("retained_earnings") or prev_data.get("retained_earnings") or 0.0)
-        ho_asset_alloc = float(recon_data.get("head_office_asset_allocation") or prev_data.get("head_office_asset_allocation") or 0.0)
+        retained_earnings = round(float(recon_data.get("retained_earnings") or prev_data.get("retained_earnings") or 0.0), 2)
+        ho_asset_alloc = round(float(recon_data.get("head_office_asset_allocation") or prev_data.get("head_office_asset_allocation") or 0.0), 2)
         prev_lapse = float(prev_data.get("lapse_deposit_reserve") or 0.0)
-        lapse_deposit_res = float(recon_data.get("lapse_deposit_reserve") or (max(0.0, prev_lapse - lapse_return) if prev_lapse > 0 else 0.0))
+        lapse_deposit_res = round(float(recon_data.get("lapse_deposit_reserve") or (max(0.0, prev_lapse - lapse_return) if prev_lapse > 0 else 0.0)), 2)
 
         # Funds YTD on Trial Balance (Dynamic flow: Prior YTD + Net current month cash movement)
         tb_fund_ho_main = float(recon_data.get("tb_fund_ho_main") or 0.0)
-        if tb_fund_ho_main == 0.0 and float(prev_data.get("tb_fund_ho_main") or 0.0) > 0:
+        if tb_fund_ho_main == 0.0 and float(prev_data.get("tb_fund_ho_main") or 0.0) != 0.0:
             net_ho_flow = fund_ho_main_pay - fund_ho_main_rec
             tb_fund_ho_main = float(prev_data.get("tb_fund_ho_main") or 0.0) + net_ho_flow
+        tb_fund_ho_main = round(tb_fund_ho_main, 2)
 
         tb_fund_branch = float(recon_data.get("tb_fund_branch") or 0.0)
-        if tb_fund_branch == 0.0 and float(prev_data.get("tb_fund_branch") or 0.0) > 0:
+        if tb_fund_branch == 0.0 and float(prev_data.get("tb_fund_branch") or 0.0) != 0.0:
             net_br_flow = fund_br_rec - fund_br_pay
             tb_fund_branch = float(prev_data.get("tb_fund_branch") or 0.0) - net_br_flow
+        tb_fund_branch = round(tb_fund_branch, 2)
 
         tb_fund_other_area = float(recon_data.get("tb_fund_other_area") or 0.0)
-        if tb_fund_other_area == 0.0 and float(prev_data.get("tb_fund_other_area") or 0.0) > 0:
+        if tb_fund_other_area == 0.0 and float(prev_data.get("tb_fund_other_area") or 0.0) != 0.0:
             tb_fund_other_area = float(prev_data.get("tb_fund_other_area") or 0.0) + fund_area_rec
+        tb_fund_other_area = round(tb_fund_other_area, 2)
 
-        tb_fund_internal = float(recon_data.get("tb_fund_internal") or prev_data.get("tb_fund_internal") or 0.0)
+        tb_fund_internal = round(float(recon_data.get("tb_fund_internal") or prev_data.get("tb_fund_internal") or 0.0), 2)
 
         # Sales profit YTD on Trial Balance: Prior YTD + Current Month sales markup
         tb_sales_profit = float(recon_data.get("tb_sales_profit") or 0.0)
-        if tb_sales_profit == 0.0 and float(prev_data.get("tb_sales_profit") or 0.0) > 0:
+        if tb_sales_profit == 0.0 and float(prev_data.get("tb_sales_profit") or 0.0) != 0.0:
             tb_sales_profit = float(prev_data.get("tb_sales_profit") or 0.0) + sales_profit_markup
+        tb_sales_profit = round(tb_sales_profit, 2)
+
+        # 5. Construct Monthly Receipts & Payments Rows
+        receipts = [
+            {"item": f"Bank Balances B/F ({bank_names_str})", "sub_detail": row1_sub, "amount": row1_amount},
+            {"item": "Sales Profit / Finance Markup", "sub_detail": "Contract Margin", "amount": sales_profit_markup},
+            {"item": "Fund Cash (Head Office & Areas)", "sub_detail": f"Asset: ₦{fund_ho_asset_rec:,.0f}, Main: ₦{fund_ho_main_rec:,.0f}, Area: ₦{fund_area_rec:,.0f}, Branch: ₦{fund_br_rec:,.0f}", "amount": tot_fund_rec},
+            {"item": "Sales: Cash and Carry", "sub_detail": "Direct Asset Sales", "amount": sales_cc},
+            {"item": "Finance: Initial Deposit (Upfront Fees)", "sub_detail": "Weekly Origination Fees", "amount": upfront_fees},
+            {"item": "Deposit Savings (Monthly Deposits)", "sub_detail": "Client Member Deposits", "amount": savings_deposits},
+            {"item": "Installments (Finance Repayments)", "sub_detail": "Daily, Weekly, and Monthly collections", "amount": collections},
+            {"item": "Lapse Deposit Savings", "sub_detail": "LAPS Savings Collections", "amount": 0.0},
+            {"item": "Bank Interest", "sub_detail": f"Earned from {bank_names_str}", "amount": tot_bank_interest},
+            {"item": "Received from Other Sources (Annex-1)", "sub_detail": "Sundry cash inflows", "amount": rec_other_sources},
+        ]
+        tot_receipts = round(sum(r["amount"] for r in receipts), 2)
+
+        # Preliminary payments before closing liquid position
+        payments = [
+            {"item": "Sales: Cash and Carry", "sub_detail": "Direct Asset Costs", "amount": sales_cc},
+            {"item": "Finance Disbursed (Principal Loans)", "sub_detail": "New Credit Originations", "amount": disbursed_principal},
+            {"item": "Fund Cash Remitted (Head Office & Branch)", "sub_detail": f"Asset: ₦{fund_ho_asset_pay:,.0f}, Main: ₦{fund_ho_main_pay:,.0f}, Branch: ₦{fund_br_pay:,.0f}", "amount": tot_fund_pay},
+            {"item": "Deposit Withdrawals (Savings Payouts)", "sub_detail": "Savings Withdrawals Handed to Clients", "amount": deposit_wth_val},
+            {"item": "Lapse Deposit Returns", "sub_detail": "LAPS Maturities Settled", "amount": lapse_return},
+            {"item": "Bank Charges", "sub_detail": bank_chg_sub or "Commercial Bank Charges", "amount": tot_bank_charges},
+            {"item": "Paid to Other Sources & Operational Expenses", "sub_detail": "Itemized Operational Outflows", "amount": paid_other_sources},
+            {"item": f"Closing Liquid Position ({bank_names_str})", "sub_detail": bank_cf_sub or "Statement Balances c/f", "amount": 0.0},
+        ]
+        payments_excl_closing = round(sum(p["amount"] for p in payments[:7]), 2)
 
         # Closing liquid position in Payments line 8
-        closing_liquid_cf = tot_bank_closing + overdue_cf
-        closing_liquid_sub = bank_cf_sub or "Statement Balances c/f"
-        if overdue_cf > 0:
-            closing_liquid_sub += f", Overdue C/F: ₦{overdue_cf:,.2f}"
+        if tot_bank_closing > 0:
+            closing_liquid_cf = round(tot_bank_closing + overdue_cf, 2)
+            closing_liquid_sub = bank_cf_sub or "Statement Balances c/f"
+            if overdue_cf > 0:
+                closing_liquid_sub += f", Overdue C/F: ₦{overdue_cf:,.2f}"
+            bank_accounts_tb = tot_bank_closing
+        else:
+            # Dynamically derive closing liquid position from net cash flow (Cashbook position)
+            closing_liquid_cf = max(0.0, round(tot_receipts - payments_excl_closing, 2))
+            closing_liquid_sub = f"Dynamic Cashbook Position c/f: ₦{closing_liquid_cf:,.2f}"
+            if overdue_cf > 0:
+                closing_liquid_sub += f", Overdue C/F: ₦{overdue_cf:,.2f}"
+            bank_accounts_tb = max(0.0, round(closing_liquid_cf - overdue_cf, 2))
 
-        # 5. Construct Official Trial Balance Rows (Dynamic Zero Hardcoding)
+        payments[7]["amount"] = closing_liquid_cf
+        payments[7]["sub_detail"] = closing_liquid_sub
+        tot_payments = round(sum(p["amount"] for p in payments), 2)
+        variance_rp = round(abs(tot_receipts - tot_payments), 2)
+
+        # 6. Construct Official Trial Balance Rows (Dynamic Zero Hardcoding)
         tb_rows = [
             # A: INCOME (Normal Balance: Credit)
             {"section": "A. INCOME", "item": "Sales Profit", "debit": 0.0, "credit": tb_sales_profit},
@@ -1423,42 +1512,18 @@ class ReportService:
             # F: ASSET (Normal Balance: Debit)
             {"section": "F. ASSET", "item": "Credit Balance (Debtors)", "debit": closing_credit, "credit": 0.0},
             {"section": "F. ASSET", "item": "Overdue", "debit": overdue_cf, "credit": 0.0},
-            {"section": "F. ASSET", "item": f"Bank Accounts ({bank_names_str})", "debit": tot_bank_closing, "credit": 0.0},
+            {"section": "F. ASSET", "item": f"Bank Accounts ({bank_names_str})", "debit": bank_accounts_tb, "credit": 0.0},
             {"section": "F. ASSET", "item": "Cash in hand (Account 1000)", "debit": cash_in_hand_bf, "credit": 0.0},
         ]
 
-        tot_tb_debits = sum(r["debit"] for r in tb_rows)
-        tot_tb_credits = sum(r["credit"] for r in tb_rows)
+        for r in tb_rows:
+            r["debit"] = round(float(r["debit"] or 0.0), 2)
+            r["credit"] = round(float(r["credit"] or 0.0), 2)
+
+        tot_tb_debits = round(sum(r["debit"] for r in tb_rows), 2)
+        tot_tb_credits = round(sum(r["credit"] for r in tb_rows), 2)
         tb_diff = round(abs(tot_tb_debits - tot_tb_credits), 2)
         df_tb = pd.DataFrame(tb_rows)
-
-        # 6. Construct Monthly Receipts & Payments Rows
-        receipts = [
-            {"item": f"Bank Balances B/F ({bank_names_str})", "sub_detail": row1_sub, "amount": row1_amount},
-            {"item": "Sales Profit / Finance Markup", "sub_detail": "Contract Margin", "amount": sales_profit_markup},
-            {"item": "Fund Cash (Head Office & Areas)", "sub_detail": f"Asset: ₦{fund_ho_asset_rec:,.0f}, Main: ₦{fund_ho_main_rec:,.0f}, Area: ₦{fund_area_rec:,.0f}, Branch: ₦{fund_br_rec:,.0f}", "amount": tot_fund_rec},
-            {"item": "Sales: Cash and Carry", "sub_detail": "Direct Asset Sales", "amount": sales_cc},
-            {"item": "Finance: Initial Deposit (Upfront Fees)", "sub_detail": "Weekly Origination Fees", "amount": upfront_fees},
-            {"item": "Deposit Savings (Monthly Deposits)", "sub_detail": "Client Member Deposits", "amount": savings_deposits},
-            {"item": "Installments (Finance Repayments)", "sub_detail": "Daily, Weekly, and Monthly collections", "amount": collections},
-            {"item": "Lapse Deposit Savings", "sub_detail": "LAPS Savings Collections", "amount": 0.0},
-            {"item": "Bank Interest", "sub_detail": f"Earned from {bank_names_str}", "amount": tot_bank_interest},
-            {"item": "Received from Other Sources (Annex-1)", "sub_detail": "Sundry cash inflows", "amount": rec_other_sources},
-        ]
-        tot_receipts = sum(r["amount"] for r in receipts)
-
-        payments = [
-            {"item": "Sales: Cash and Carry", "sub_detail": "Direct Asset Costs", "amount": sales_cc},
-            {"item": "Finance Disbursed (Principal Loans)", "sub_detail": "New Credit Originations", "amount": disbursed_principal},
-            {"item": "Fund Cash Remitted (Head Office & Branch)", "sub_detail": f"Asset: ₦{fund_ho_asset_pay:,.0f}, Main: ₦{fund_ho_main_pay:,.0f}, Branch: ₦{fund_br_pay:,.0f}", "amount": tot_fund_pay},
-            {"item": "Deposit Withdrawals (Savings Payouts)", "sub_detail": "Savings Withdrawals Handed to Clients", "amount": deposit_wth_val},
-            {"item": "Lapse Deposit Returns", "sub_detail": "LAPS Maturities Settled", "amount": lapse_return},
-            {"item": "Bank Charges", "sub_detail": bank_chg_sub or "Commercial Bank Charges", "amount": tot_bank_charges},
-            {"item": "Paid to Other Sources & Operational Expenses", "sub_detail": "Itemized Operational Outflows", "amount": paid_other_sources},
-            {"item": f"Closing Liquid Position ({bank_names_str})", "sub_detail": closing_liquid_sub, "amount": closing_liquid_cf},
-        ]
-        tot_payments = sum(p["amount"] for p in payments)
-        variance_rp = round(abs(tot_receipts - tot_payments), 2)
 
         # Build Side-by-Side DataFrame
         max_len = max(len(receipts), len(payments))

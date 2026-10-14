@@ -244,3 +244,73 @@ class TestMonthlyDepositAndCreditStatements:
         net_inst = oct_crd_map["• Total Installments (₦) (Col 14 = 12+13-28)"]["total"]
         assert oct_crd_map["• Active Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["total"] == round(net_disb - net_inst, 2)
 
+    def test_october_trial_balance_and_receipts_payments_rollover(self):
+        """
+        Verifies that Receipts & Payments Account and Official Trial Balance
+        automatically roll over YTD figures, opening bank balances, and capital funds into October.
+        """
+        oct_st = ReportService.get_official_trial_balance_and_receipts_payments(
+            self.uow, self.ogijo_branch_id, 2026, 10
+        )
+        rp = oct_st["receipts_and_payments"]
+        tb = oct_st["trial_balance"]
+        tb_map = {r["item"]: r for r in tb["rows"]}
+
+        # 1. Receipts & Payments Account
+        # Row 1 Bank Balances B/F matches September closing banks
+        assert rp["receipts"][0]["amount"] >= 644306.0
+        # Balance variance is exactly 0.0
+        assert rp["variance"] == 0.0
+        assert rp["total_receipts"] == rp["total_payments"]
+
+        # 2. Official Trial Balance YTD Rollover
+        assert tb_map["Personnel Gross Salary"]["debit"] == 4453447.0
+        assert tb_map["Office Rent"]["debit"] == 400000.0
+        assert tb_map["Training Expenses"]["debit"] == 1890652.0
+        assert tb_map["Transport Allowance"]["debit"] == 1405600.0
+        assert tb_map["Sales Profit"]["credit"] == 3757769.0
+        assert tb_map["Retained Earnings"]["credit"] == 26351209.0
+        assert tb_map["Head Office (Asset Allocation)"]["credit"] == 14730282.0
+        assert tb_map["Head Office (Main)"]["debit"] == 36553628.0
+        assert tb_map["Deposit Balance"]["credit"] == 11485785.0
+        assert tb_map["Credit Balance (Debtors)"]["debit"] == 26392825.0
+        # Total debits match September baseline
+        assert tb["total_debits"] == 73678366.0
+        assert tb["total_credits"] == 74788157.0
+
+    def test_co_summary_october_rollover_and_filter_responsiveness(self):
+        """
+        Verifies that the Credit Officers Summary table (Parity Matrix)
+        dynamically rolls over individual CO credit and savings balances for October,
+        and responds to filtering by Credit Officer.
+        """
+        # Unfiltered October CO summary
+        oct_matrix = ReportService.get_monthly_parity_matrix(
+            self.uow, self.ogijo_branch_id, 2026, 10
+        )
+        rows_map = {r["metric"]: r["values"] for r in oct_matrix["rows"]}
+
+        # Opening credit balances per officer
+        open_c = rows_map["Opening Credit Balance (B/F)"]
+        assert open_c["Dorcas (OGI_CO1)"] == 8021500.0
+        assert open_c["Ayomide (OGI_CO2)"] == 6513375.0
+        assert open_c["Olajumoke (OGI_CO3)"] == 7118700.0
+        assert open_c["Oluwaseun (OGI_CO4)"] == 4739250.0
+        assert open_c["Ogijo Branch Total"] == 26392825.0
+
+        # Opening savings balances per officer
+        open_s = rows_map["Savings B/F (Opening Balance)"]
+        assert open_s["Dorcas (OGI_CO1)"] == 2431680.0
+        assert open_s["Ayomide (OGI_CO2)"] == 1876725.0
+        assert open_s["Olajumoke (OGI_CO3)"] == 4941550.0
+        assert open_s["Oluwaseun (OGI_CO4)"] == 2235830.0
+        assert open_s["Ogijo Branch Total"] == 11485785.0
+
+        # Filtered by officer 'Dorcas'
+        dorcas_matrix = ReportService.get_monthly_parity_matrix(
+            self.uow, self.ogijo_branch_id, 2026, 10, officer_name="Dorcas"
+        )
+        assert len(dorcas_matrix["officers"]) == 1
+        assert dorcas_matrix["officers"][0]["name"] == "Dorcas (OGI_CO1)"
+
+
