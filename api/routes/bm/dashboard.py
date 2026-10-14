@@ -369,10 +369,20 @@ def approve_loan(
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
-    res_l = uow.client.table("loans").select("branch_id").eq("loan_id", payload.loan_id).execute()
+    res_l = uow.client.table("loans").select("branch_id, loan_amount").eq("loan_id", payload.loan_id).execute()
     if not res_l.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan not found.")
-    _check_branch_access(current_user, res_l.data[0].get("branch_id"), "approve loans")
+    loan_row = res_l.data[0]
+    _check_branch_access(current_user, loan_row.get("branch_id"), "approve loans")
+
+    # Enforce BM loan approval threshold ceiling of ₦300,000
+    norm_role = RBACScopeService.normalize_role(current_user.role)
+    loan_amt = float(loan_row.get("loan_amount") or 0.0)
+    if norm_role == "Branch Manager" and loan_amt > 300000:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Loan #{payload.loan_id[:8]} amount (₦{loan_amt:,.2f}) exceeds Branch Manager limit of ₦300,000. Escalated to Area Manager."
+        )
 
     try:
         d_date = date.fromisoformat(payload.disbursement_date)
@@ -429,21 +439,32 @@ def batch_approve_loans(
     if not payload.loan_ids:
         return ActionResponse(success=True, message="No loans provided.")
 
-    res_l = uow.client.table("loans").select("loan_id, branch_id").in_("loan_id", payload.loan_ids).execute()
-    loans_map = {row["loan_id"]: row.get("branch_id") for row in (res_l.data or [])}
+    res_l = uow.client.table("loans").select("loan_id, branch_id, loan_amount").in_("loan_id", payload.loan_ids).execute()
+    loans_map = {row["loan_id"]: row for row in (res_l.data or [])}
 
     s_cnt = 0
     f_cnt = 0
     errors = []
     default_d = date.fromisoformat(payload.default_disbursement_date)
     dates_map = payload.loan_dates_map or {}
+    norm_role = RBACScopeService.normalize_role(current_user.role)
 
     for lid in payload.loan_ids:
         if lid not in loans_map:
             f_cnt += 1
             errors.append(f"Loan #{lid[:8]}: Loan not found.")
             continue
-        target_branch_id = loans_map[lid]
+
+        l_info = loans_map[lid]
+        target_bid = l_info.get("branch_id")
+        l_amt = float(l_info.get("loan_amount") or 0.0)
+
+        # Enforce BM ceiling
+        if norm_role == "Branch Manager" and l_amt > 300000:
+            f_cnt += 1
+            errors.append(f"Loan #{lid[:8]}: Amount ₦{l_amt:,.2f} exceeds BM limit of ₦300,000; escalated to AM.")
+            continue
+        target_branch_id = target_bid
         try:
             _check_branch_access(current_user, target_branch_id, "approve loans")
             cur_d = date.fromisoformat(dates_map[lid]) if lid in dates_map else default_d

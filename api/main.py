@@ -16,6 +16,7 @@ from api.routes.co import origination as co_origination
 from api.routes.bm import dashboard as bm_dashboard
 from api.routes.bm import cashbook as bm_cashbook
 from api.routes.bm import approvals as bm_approvals
+from api.routes.am import dashboard as am_dashboard
 from api.routes import audit
 from api.routes import users
 from api.routes import reports
@@ -95,6 +96,7 @@ app.include_router(co_origination.router)
 app.include_router(bm_dashboard.router)
 app.include_router(bm_cashbook.router)
 app.include_router(bm_approvals.router)
+app.include_router(am_dashboard.router)
 app.include_router(audit.router)
 app.include_router(users.router)
 app.include_router(reports.router)

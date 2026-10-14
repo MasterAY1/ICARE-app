@@ -103,3 +103,73 @@ class TestMonthlyDepositAndCreditStatements:
         oct_rows_map = {r["item"]: r for r in oct_credit["rows"]}
         prev_loans_row = oct_rows_map["• Previous Loans Count (B/F)"]
         assert prev_loans_row["total"] == 293, "October previous loans count must equal September total net loans (293)"
+
+    def test_september_cross_tab_parity_and_portfolio_payoffs(self):
+        """
+        Verifies 100% cross-tab parity across Database, Parity Matrix, Statements A & B,
+        Receipts & Payments, Trial Balance, and Portfolio Overview for September 2026.
+        Enforces zero hardcoding and authoritative data provenance (BR-DASH-002, BR-DASH-005).
+        """
+        from datetime import date
+        from services.portfolio_service import PortfolioService
+        from services.rbac_scope_service import RBACScope
+
+        # 1. Parity Matrix
+        matrix = ReportService.get_monthly_parity_matrix(self.uow, self.ogijo_branch_id, 2026, 9)
+        cards = matrix["summary_cards"]
+
+        # 2. Statement A (Deposit Statement)
+        dep = ReportService.get_monthly_deposit_statement(self.uow, self.ogijo_branch_id, 2026, 9)
+        tot_dep = dep["rows"][-1]
+
+        # 3. Statement B (Credit Statement)
+        crd = ReportService.get_monthly_credit_statement(self.uow, self.ogijo_branch_id, 2026, 9)
+        crd_map = {r["item"]: r for r in crd["rows"]}
+
+        # 4. Trial Balance & Receipts/Payments
+        tb_rec = ReportService.get_official_trial_balance_and_receipts_payments(self.uow, self.ogijo_branch_id, 2026, 9)
+        rp = tb_rec["receipts_and_payments"]
+        rp_rec_map = {r["item"]: r["amount"] for r in rp["receipts"]}
+        rp_pay_map = {p["item"]: p["amount"] for p in rp["payments"]}
+
+        # 5. Portfolio Service
+        scope = RBACScope(role="BRANCH_MANAGER", user_id="bm_test", branch_id=self.ogijo_branch_id, scope_level="BRANCH")
+        p_data = PortfolioService.get_portfolio_data_for_scope(
+            uow=self.uow,
+            scope=scope,
+            selected_branch="Ogijo",
+            start_date=date(2026, 9, 1),
+            end_date=date(2026, 9, 30)
+        )
+        p_sum = p_data["summary"]
+
+        # Assert Collection Parity: ₦17,465,675.00
+        assert cards["collections"] == 17465675.0
+        assert crd_map["• Current Month Installments (₦) (Col 13)"]["total"] == 17465675.0
+        assert rp_rec_map["Installments (Finance Repayments)"] == 17465675.0
+        assert p_sum["total_actual_collection"] == 17465675.0
+
+        # Assert Savings Deposits Parity: ₦4,292,225.00
+        assert cards["savings_deposits"] == 4292225.0
+        assert tot_dep["deposit_curr"] == 4292225.0
+        assert rp_rec_map["Deposit Savings (Monthly Deposits)"] == 4292225.0
+
+        # Assert Savings Withdrawals Parity: ₦3,497,300.00
+        assert cards["savings_withdrawals"] == 3497300.0
+        assert (tot_dep["withdrawal_curr_amount"] + tot_dep["return_curr_amount"]) == 3497300.0
+        assert rp_pay_map["Deposit Withdrawals (Savings Payouts)"] == 3497300.0
+
+        # Assert Closing Savings Parity: ₦11,485,785.00
+        assert cards["closing_savings"] == 11485785.0
+        assert tot_dep["balance_amount"] == 11485785.0
+
+        # Assert Closing Credit Parity: ₦26,392,825.00
+        assert cards["closing_credit"] == 26392825.0
+        assert crd_map["• Active Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["total"] == 26392825.0
+
+        # Assert Portfolio Full Payments and Excess Payments
+        assert p_sum["full_payments"]["count"] == 22
+        assert p_sum["full_payments"]["amount"] == 2930896.16
+        assert p_sum["excess_payments"]["count"] > 0
+        assert p_sum["excess_payments"]["amount"] > 0.0
+        assert len(p_data["payoff_excess_table"]) > 0

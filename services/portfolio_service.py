@@ -667,6 +667,42 @@ class PortfolioService:
                 }
                 payoff_records.append(syn_rec)
 
+        # Dynamic capture of completed loans settled within the period (BR-DASH-005)
+        existing_fp_loan_ids = {str(r.get("loan_id")) for r in payoff_records if str(r.get("record_type", "")).upper() in ["FULL_PAYOFF", "FULL_PAYOFF_WITH_EXCESS", "FULL_PAYOFF_AND_EXCESS"]}
+        for l in loans_raw:
+            st = str(l.get("status") or "").upper()
+            lid_str = str(l.get("loan_id") or "")
+            if st in ["COMPLETED", "CLOSED"] and lid_str and lid_str not in existing_fp_loan_ids:
+                c_reps = [r for r in repayments_today if str(r.get("loan_id")) == lid_str]
+                if c_reps:
+                    cid_str = str(l.get("client_id") or "")
+                    c_obj = clients_by_id_map.get(cid_str, {})
+                    last_rep = sorted(c_reps, key=lambda x: str(x.get("date") or ""))[-1]
+                    act_cred = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
+                    syn_fp = {
+                        "id": f"syn-fp-{lid_str}",
+                        "repayment_id": str(last_rep.get("id") or ""),
+                        "loan_id": lid_str,
+                        "client_id": cid_str,
+                        "client_name": c_obj.get("name") or "Unknown",
+                        "client_code": c_obj.get("client_code") or "Unknown",
+                        "group_name": group_map.get(cid_str, "Individual"),
+                        "loan_product": (l.get("loan_products") or {}).get("name") or "General",
+                        "officer_id": l.get("officer_id"),
+                        "branch_id": l.get("branch_id"),
+                        "date": str(last_rep.get("date") or end_date_str)[:10],
+                        "record_type": "FULL_PAYOFF",
+                        "amount_paid": sum(float(r.get("amount_paid") or 0.0) for r in c_reps),
+                        "expected_installment": float(l.get("loan_repay") or 0.0),
+                        "active_credit_settled": act_cred,
+                        "excess_amount": 0.0,
+                        "remaining_balance_before": 0.0,
+                        "remaining_balance_after": 0.0,
+                        "notes": "Completed loan full settlement in period"
+                    }
+                    payoff_records.append(syn_fp)
+                    existing_fp_loan_ids.add(lid_str)
+
         fp_recs = [r for r in payoff_records if str(r.get("record_type", "")).upper() in ["FULL_PAYOFF", "FULL_PAYOFF_WITH_EXCESS", "FULL_PAYOFF_AND_EXCESS"]]
         full_payments_count = len(fp_recs)
         full_payments_amt = sum(float(r.get("active_credit_settled") or r.get("amount_paid") or 0.0) for r in fp_recs)

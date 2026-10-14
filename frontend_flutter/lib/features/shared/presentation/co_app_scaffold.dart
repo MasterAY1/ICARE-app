@@ -14,6 +14,7 @@ import '../../co/presentation/daily_cashbook_screen.dart';
 import '../../bm/presentation/bm_dashboard_screen.dart';
 import '../../bm/presentation/master_cashbook_screen.dart';
 import '../../bm/presentation/user_management_screen.dart';
+import '../../am/presentation/am_dashboard_screen.dart';
 import '../../audit/presentation/audit_ledger_screen.dart';
 import '../../reports/presentation/reports_export_screen.dart';
 import '../../auth/presentation/login_screen.dart';
@@ -385,7 +386,7 @@ class CoAppScaffold extends ConsumerWidget {
                               const SizedBox(height: 24),
 
                               // Active View Dispatcher
-                              _buildActiveView(activePage, isBm),
+                              _buildActiveView(activePage, isBm, isAm),
                             ],
                           ),
                         ),
@@ -404,7 +405,7 @@ class CoAppScaffold extends ConsumerWidget {
                         ],
 
                         // Active View Dispatcher
-                        _buildActiveView(activePage, isBm),
+                        _buildActiveView(activePage, isBm, isAm),
                       ],
                     ),
                   ),
@@ -1060,9 +1061,10 @@ class CoAppScaffold extends ConsumerWidget {
     );
   }
 
-  Widget _buildActiveView(String page, bool isBm) {
+  Widget _buildActiveView(String page, bool isBm, bool isAm) {
     switch (page) {
       case 'Dashboard':
+        if (isAm) return const AmDashboardScreen();
         return isBm ? const BmDashboardScreen() : const CoDashboardScreen();
       case 'Loan Origination':
         return const LoanOriginationScreen();

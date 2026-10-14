@@ -1346,9 +1346,40 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
       child: ExpansionTile(
         initiallyExpanded: _excessAuditExpanded,
         onExpansionChanged: (v) => setState(() => _excessAuditExpanded = v),
-        title: const Text(
-          'Excess and full payment',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0F172A)),
+        title: Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            const Text(
+              'Excess and Full Payment Audit Ledger',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0F172A)),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFECFDF5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFA7F3D0)),
+              ),
+              child: Text(
+                '$fullCount Full Payoffs',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF065F46)),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: Text(
+                '$excessCount Excess Payers',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+              ),
+            ),
+          ],
         ),
         subtitle: const Text(
           'Authoritative breakdown of surplus cash collections and full loan payoff settlements within the selected period (BR-DASH-005).',
