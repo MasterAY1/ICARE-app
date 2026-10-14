@@ -1263,12 +1263,13 @@ class SavingsService:
                     "error": str(ex)
                 })
 
+        transferred_count = len([s for s in swept if s.get("status") == "Transferred"])
         return {
             "success": True,
-            "swept_count": len([s for s in swept if s["status"] == "Transferred"]),
+            "swept_count": transferred_count,
             "total_amount": round(total_amt, 2),
             "details": swept,
-            "message": f"Successfully swept {len([s for s in swept if s["status"] == 'Transferred'])} client balances (₦{total_amt:,.2f}) into LAPS."
+            "message": f"Successfully swept {transferred_count} client balances (₦{total_amt:,.2f}) into LAPS."
         }
 
 
