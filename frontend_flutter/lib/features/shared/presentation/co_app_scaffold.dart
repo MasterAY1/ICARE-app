@@ -146,7 +146,7 @@ class CoAppScaffold extends ConsumerWidget {
     } else if (isAdmin) {
       navItems = ['Dashboard', 'Portfolio', 'Branch Onboarding', 'Loan Origination', 'Collections', 'Withdrawal Operations', 'CO Cashbook', 'Master Cashbook', 'User Management', 'Audit Ledger', 'Reports & Export'];
     } else if (isAm) {
-      navItems = ['Dashboard', 'Portfolio', 'User Management', 'Audit Ledger', 'Reports & Export'];
+      navItems = ['Dashboard', 'Portfolio', 'Branch Onboarding', 'User Management', 'Audit Ledger', 'Reports & Export'];
     } else {
       navItems = ['Dashboard', 'Loan Origination', 'Collections', 'Withdrawal Operations', 'Portfolio', 'CO Cashbook'];
     }

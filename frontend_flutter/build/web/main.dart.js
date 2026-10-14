@@ -132853,16 +132853,16 @@ A.zj.prototype={
 OZ(a,b){b.a9(0,$.ij().gbG(),t.c).bZ(0,"Dashboard")
 b.a9(0,$.ik().gbG(),t.nT).Jv()
 A.cs(a,!1).UV(A.nw(new A.aeY(),null,t.z),new A.aeZ())},
-pl(a8,a9){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2=this,a3=null,a4="Reports & Export",a5="Loan Origination",a6="Withdrawal Operations",a7=$.ik()
-a9.w7(a7,new A.af7(a8))
-s=a9.az(a7,t.FB)
-if(!(s instanceof A.fB)){$.az.ry$.push(new A.af8(a8))
+pl(a9,b0){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2=this,a3=null,a4="Reports & Export",a5="Branch Onboarding",a6="Loan Origination",a7="Withdrawal Operations",a8=$.ik()
+b0.w7(a8,new A.af7(a9))
+s=b0.az(a8,t.FB)
+if(!(s instanceof A.fB)){$.az.ry$.push(new A.af8(a9))
 return B.amC}r=s.a
-q=a9.az($.ij(),t.N)
-a7=r.e
-if(B.e.W(a7).length===0){a7=A.e(8)
+q=b0.az($.ij(),t.N)
+a8=r.e
+if(B.e.W(a8).length===0){a8=A.e(8)
 p=A.F(B.cb,B.j,1)
-return A.Bo(a3,B.A,A.cV(A.m(a3,A.t(A.a([B.a4Q,B.w,B.aLC,B.M,A.c("No valid branch scope was detected for "+r.b+". The system fails closed per governance rule FP-001.",a3,a3,a3,a3,B.aZ,B.c2,a3,a3),B.ak,A.cD(B.aJj,new A.af9(a2,a8,a9),A.b_(a3,a3,B.y,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3))],t.p),B.f,B.c,B.Q),B.h,a3,B.pA,new A.n(B.l,a3,p,a7,a3,a3,B.i),a3,a3,a3,B.b8,a3,a3,a3),a3,a3),a3,a3)}o=r.c
+return A.Bo(a3,B.A,A.cV(A.m(a3,A.t(A.a([B.a4Q,B.w,B.aLC,B.M,A.c("No valid branch scope was detected for "+r.b+". The system fails closed per governance rule FP-001.",a3,a3,a3,a3,B.aZ,B.c2,a3,a3),B.ak,A.cD(B.aJj,new A.af9(a2,a9,b0),A.b_(a3,a3,B.y,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3,a3))],t.p),B.f,B.c,B.Q),B.h,a3,B.pA,new A.n(B.l,a3,p,a8,a3,a3,B.i),a3,a3,a3,B.b8,a3,a3,a3),a3,a3),a3,a3)}o=r.c
 o=o.length!==0?o:r.b
 n=B.e.W(r.d)
 m=n==="Branch Manager"||n==="BM"
@@ -132876,9 +132876,9 @@ j=p}if(m)i=B.a1
 else if(l)i=B.hy
 else{p=k?B.bh:B.b2
 i=p}if(m)h=A.a(["Dashboard","Portfolio","Master Cashbook","User Management","Audit Ledger",a4],t.s)
-else if(l)h=A.a(["Dashboard","Portfolio","Branch Onboarding",a5,"Collections",a6,"CO Cashbook","Master Cashbook","User Management","Audit Ledger",a4],t.s)
+else if(l)h=A.a(["Dashboard","Portfolio",a5,a6,"Collections",a7,"CO Cashbook","Master Cashbook","User Management","Audit Ledger",a4],t.s)
 else{p=t.s
-h=k?A.a(["Dashboard","Portfolio","User Management","Audit Ledger",a4],p):A.a(["Dashboard",a5,"Collections",a6,"Portfolio","CO Cashbook"],p)}g=A.b9(a8,a3,t.w).w.a.a
+h=k?A.a(["Dashboard","Portfolio",a5,"User Management","Audit Ledger",a4],p):A.a(["Dashboard",a6,"Collections",a7,"Portfolio","CO Cashbook"],p)}g=A.b9(a9,a3,t.w).w.a.a
 f=g>=900
 e=g<600
 if(e)d=B.bk
@@ -132889,15 +132889,15 @@ c=A.e(8)
 b=t.p
 c=A.o(A.a([p,B.q,B.aJY,B.q,A.m(a3,A.c(j,a3,a3,a3,a3,B.oB,a3,a3,a3),B.h,a3,a3,new A.n(i,a3,a3,c,a3,a3,B.i),a3,a3,a3,B.kH,a3,a3,a3)],b),B.f,B.c,B.b,0,a3,a3)
 c=A.bno(A.a([A.bo0(new A.afb()),A.bo0(new A.afc(a2)),new A.d0(new A.afd(o),a3)],b),a3,B.U,a3,0,a3,new A.d0(new A.afe(),a3),0,c,0)
-p=c}c=f?a3:new A.Uq(B.l,a2.anE(a8,a9,o,j,a7,i,h,q),a3)
-b=f?a3:a2.ane(a8,a9,h,q,m,k)
+p=c}c=f?a3:new A.Uq(B.l,a2.anE(a9,b0,o,j,a8,i,h,q),a3)
+b=f?a3:a2.ane(a9,b0,h,q,m,k)
 a=A.m(a3,a3,B.h,B.J,a3,a3,a3,3,a3,a3,a3,a3,1/0)
 a0=t.p
-if(f)a7=A.o(A.a([A.m(a3,a2.ap7(a8,a9,o,j,a7,i,h,q),B.h,a3,a3,B.Qt,a3,1/0,a3,B.a1f,a3,a3,270),A.l(A.c_(A.t(A.a([a2.apT(o,a7,j),B.bi,a2.YM(q,m,k)],a0),B.m,B.c,B.b),a3,B.u,d,a3,B.aO),1)],a0),B.m,B.c,B.b,0,a3,a3)
+if(f)a8=A.o(A.a([A.m(a3,a2.ap7(a9,b0,o,j,a8,i,h,q),B.h,a3,a3,B.Qt,a3,1/0,a3,B.a1f,a3,a3,270),A.l(A.c_(A.t(A.a([a2.apT(o,a8,j),B.bi,a2.YM(q,m,k)],a0),B.m,B.c,B.b),a3,B.u,d,a3,B.aO),1)],a0),B.m,B.c,B.b,0,a3,a3)
 else{a1=A.a([],a0)
-if(!e||q!=="Dashboard"){a7=a2.ZF(o,a7,j,e)
-B.d.u(a1,A.a([a7,A.aw(a3,e?12:20,a3)],a0))}a1.push(a2.YM(q,m,k))
-a7=A.c_(A.t(a1,B.m,B.c,B.b),a3,B.u,d,a3,B.aO)}return A.Bo(p,B.A,A.t(A.a([a,A.l(a7,1)],a0),B.f,B.c,B.b),b,c)},
+if(!e||q!=="Dashboard"){a8=a2.ZF(o,a8,j,e)
+B.d.u(a1,A.a([a8,A.aw(a3,e?12:20,a3)],a0))}a1.push(a2.YM(q,m,k))
+a8=A.c_(A.t(a1,B.m,B.c,B.b),a3,B.u,d,a3,B.aO)}return A.Bo(p,B.A,A.t(A.a([a,A.l(a8,1)],a0),B.f,B.c,B.b),b,c)},
 ane(a,b,c,d,e,f){var s,r,q,p,o,n=null
 if(e)s=A.a([new A.ie([B.nr,B.ja,"Dashboard","Dashboard"]),new A.ie([B.rG,B.rO,"Portfolio","Portfolio"]),new A.ie([B.j7,B.eI,"Master Cashbook","Cashbook"]),new A.ie([B.rJ,B.jb,"User Management","Users"]),new A.ie([B.rL,B.ny,"Audit Ledger","Audit"])],t.R7)
 else{r=t.R7
