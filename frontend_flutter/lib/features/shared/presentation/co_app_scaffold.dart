@@ -18,6 +18,7 @@ import '../../am/presentation/am_dashboard_screen.dart';
 import '../../am/presentation/am_portfolio_screen.dart';
 import '../../audit/presentation/audit_ledger_screen.dart';
 import '../../reports/presentation/reports_export_screen.dart';
+import '../../onboarding/presentation/branch_onboarding_admin_screen.dart';
 import '../../auth/presentation/login_screen.dart';
 
 /// Active page state provider for Streamlit-style radio navigation
@@ -143,7 +144,7 @@ class CoAppScaffold extends ConsumerWidget {
     if (isBm) {
       navItems = ['Dashboard', 'Portfolio', 'Master Cashbook', 'User Management', 'Audit Ledger', 'Reports & Export'];
     } else if (isAdmin) {
-      navItems = ['Dashboard', 'Portfolio', 'Loan Origination', 'Collections', 'Withdrawal Operations', 'CO Cashbook', 'Master Cashbook', 'User Management', 'Audit Ledger', 'Reports & Export'];
+      navItems = ['Dashboard', 'Portfolio', 'Branch Onboarding', 'Loan Origination', 'Collections', 'Withdrawal Operations', 'CO Cashbook', 'Master Cashbook', 'User Management', 'Audit Ledger', 'Reports & Export'];
     } else if (isAm) {
       navItems = ['Dashboard', 'Portfolio', 'User Management', 'Audit Ledger', 'Reports & Export'];
     } else {
@@ -338,6 +339,7 @@ class CoAppScaffold extends ConsumerWidget {
               navItems,
               activePage,
               isBm,
+              isAm,
             ),
       body: Column(
         children: [
@@ -416,13 +418,14 @@ class CoAppScaffold extends ConsumerWidget {
     );
   }
 
-  /// Modern Mobile Bottom Navigation Bar (Cleaner 4-item layout for CO)
+  /// Modern Mobile Bottom Navigation Bar
   Widget _buildBottomNavBar(
     BuildContext context,
     WidgetRef ref,
     List<String> navItems,
     String activePage,
     bool isBm,
+    bool isAm,
   ) {
     final List<({String key, String shortLabel, IconData icon, IconData activeIcon})> destinations;
     if (isBm) {
@@ -432,6 +435,14 @@ class CoAppScaffold extends ConsumerWidget {
         (key: 'Master Cashbook', shortLabel: 'Cashbook', icon: Icons.account_balance_outlined, activeIcon: Icons.account_balance),
         (key: 'User Management', shortLabel: 'Users', icon: Icons.people_alt_outlined, activeIcon: Icons.people_alt),
         (key: 'Audit Ledger', shortLabel: 'Audit', icon: Icons.security_outlined, activeIcon: Icons.security),
+      ];
+    } else if (isAm) {
+      destinations = [
+        (key: 'Dashboard', shortLabel: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
+        (key: 'Portfolio', shortLabel: 'Portfolio', icon: Icons.pie_chart_outline, activeIcon: Icons.pie_chart),
+        (key: 'User Management', shortLabel: 'Staff', icon: Icons.people_alt_outlined, activeIcon: Icons.people_alt),
+        (key: 'Audit Ledger', shortLabel: 'Audit', icon: Icons.security_outlined, activeIcon: Icons.security),
+        (key: 'Reports & Export', shortLabel: 'Reports', icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart),
       ];
     } else {
       destinations = [
@@ -445,8 +456,12 @@ class CoAppScaffold extends ConsumerWidget {
     final availableDests = destinations.where((d) => navItems.contains(d.key)).toList();
     if (availableDests.isEmpty) return const SizedBox.shrink();
 
-    final activeThemeColor = isBm ? const Color(0xFF2563EB) : const Color(0xFF065F46);
-    final activeBgColor = isBm ? const Color(0xFFEFF6FF) : const Color(0xFFECFDF5);
+    final activeThemeColor = isBm
+        ? const Color(0xFF2563EB)
+        : (isAm ? const Color(0xFF0F766E) : const Color(0xFF065F46));
+    final activeBgColor = isBm
+        ? const Color(0xFFEFF6FF)
+        : (isAm ? const Color(0xFFF0FDFA) : const Color(0xFFECFDF5));
 
     return Container(
       decoration: const BoxDecoration(
@@ -961,6 +976,8 @@ class CoAppScaffold extends ConsumerWidget {
         return active ? Icons.person_add_alt_1 : Icons.person_add_alt_1_outlined;
       case 'Portfolio':
         return active ? Icons.folder_shared : Icons.folder_shared_outlined;
+      case 'Branch Onboarding':
+        return active ? Icons.domain_add : Icons.domain_add_outlined;
       case 'CO Cashbook':
         return active ? Icons.account_balance_wallet : Icons.account_balance_wallet_outlined;
       case 'Master Cashbook':
@@ -1088,6 +1105,8 @@ class CoAppScaffold extends ConsumerWidget {
       case 'Reports & Export':
       case 'Reports':
         return const ReportsExportScreen();
+      case 'Branch Onboarding':
+        return const BranchOnboardingAdminScreen();
       default:
         return Container(
           padding: const EdgeInsets.all(24),

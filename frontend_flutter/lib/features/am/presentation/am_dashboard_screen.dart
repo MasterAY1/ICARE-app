@@ -424,81 +424,102 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
-        constraints: const BoxConstraints(maxWidth: 800),
+        constraints: BoxConstraints(
+          maxWidth: 800,
+          maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+        ),
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
-        padding: const EdgeInsets.all(24),
-        child: FutureBuilder<Map<String, dynamic>>(
-          future: ref.read(amApiServiceProvider).getBranchInspection(branchId: branchId, businessDate: dateStr),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const SizedBox(height: 250, child: Center(child: CircularProgressIndicator()));
-            }
-            if (snapshot.hasError) {
-              return Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text('Error loading branch inspection: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
-              );
-            }
-            final data = snapshot.data!;
-            final officers = (data['officer_collection_status'] as List<dynamic>?) ?? [];
-            final summary = data['branch_summary'] ?? {};
-            final cashPos = data['branch_cash_position'] ?? {};
+        padding: const EdgeInsets.all(20),
+        child: SingleChildScrollView(
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: ref.read(amApiServiceProvider).getBranchInspection(branchId: branchId, businessDate: dateStr),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const SizedBox(height: 250, child: Center(child: CircularProgressIndicator()));
+              }
+              if (snapshot.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text('Error loading branch inspection: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
+                );
+              }
+              final data = snapshot.data!;
+              final officers = (data['officer_collection_status'] as List<dynamic>?) ?? [];
+              final summary = data['branch_summary'] ?? {};
+              final cashPos = data['branch_cash_position'] ?? {};
 
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.analytics_outlined, color: Color(0xFF2563EB), size: 22),
-                        const SizedBox(width: 8),
-                        Text('Branch Inspection — $branchName', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
-                  ],
-                ),
-                Text('Supervisory drill-down as viewed by Branch Manager for $dateStr', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                const Divider(height: 20),
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.analytics_outlined, color: Color(0xFF2563EB), size: 22),
+                          const SizedBox(width: 8),
+                          Text('Branch Inspection — $branchName', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+                    ],
+                  ),
+                  Text('Supervisory drill-down as viewed by Branch Manager for $dateStr', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  const Divider(height: 20),
 
-                // Quick metrics
-                Row(
-                  children: [
-                    Expanded(child: _buildInspectionMiniCard('Active Borrowers', '${summary['active_clients'] ?? 0}')),
-                    const SizedBox(width: 10),
-                    Expanded(child: _buildInspectionMiniCard('Vault Cash (Acct 1000)', CurrencyFormatter.format((cashPos['closing_balance'] as num?)?.toDouble() ?? 0.0))),
-                    const SizedBox(width: 10),
-                    Expanded(child: _buildInspectionMiniCard('Cashbook Status', cashPos['status'] ?? 'Balanced', isStatus: true)),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                const Text('Credit Officers Scheduled Today', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                if (officers.isEmpty)
-                  const Text('No credit officers scheduled for this branch today.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13))
-                else
-                  ...officers.map((o) => Container(
-                        margin: const EdgeInsets.only(bottom: 6),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFE2E8F0))),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  // Quick metrics (Responsive for mobile viewports)
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isModalMobile = constraints.maxWidth < 450;
+                      if (isModalMobile) {
+                        return Column(
                           children: [
-                            Text(o['Officer Name'] ?? o['Officer'] ?? 'Officer', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            Text('Exp: ₦${o['Expected'] ?? 0} | Coll: ₦${o['Collected'] ?? 0} (${o['Compliance %'] ?? 0}%)', style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569))),
+                            _buildInspectionMiniCard('Active Borrowers', '${summary['active_clients'] ?? 0}'),
+                            const SizedBox(height: 8),
+                            _buildInspectionMiniCard('Vault Cash (Acct 1000)', CurrencyFormatter.format((cashPos['closing_balance'] as num?)?.toDouble() ?? 0.0)),
+                            const SizedBox(height: 8),
+                            _buildInspectionMiniCard('Cashbook Status', cashPos['status'] ?? 'Balanced', isStatus: true),
                           ],
-                        ),
-                      )),
-                const SizedBox(height: 16),
-              ],
-            );
-          },
+                        );
+                      }
+                      return Row(
+                        children: [
+                          Expanded(child: _buildInspectionMiniCard('Active Borrowers', '${summary['active_clients'] ?? 0}')),
+                          const SizedBox(width: 10),
+                          Expanded(child: _buildInspectionMiniCard('Vault Cash (Acct 1000)', CurrencyFormatter.format((cashPos['closing_balance'] as num?)?.toDouble() ?? 0.0))),
+                          const SizedBox(width: 10),
+                          Expanded(child: _buildInspectionMiniCard('Cashbook Status', cashPos['status'] ?? 'Balanced', isStatus: true)),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Credit Officers Scheduled Today', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  if (officers.isEmpty)
+                    const Text('No credit officers scheduled for this branch today.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13))
+                  else
+                    ...officers.map((o) => Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFE2E8F0))),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(o['Officer Name'] ?? o['Officer'] ?? 'Officer', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                              Text('Exp: ₦${o['Expected'] ?? 0} | Coll: ₦${o['Collected'] ?? 0} (${o['Compliance %'] ?? 0}%)', style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569))),
+                            ],
+                          ),
+                        )),
+                  const SizedBox(height: 16),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -570,7 +591,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
         final isMobile = screenWidth < 600;
 
         return SingleChildScrollView(
-          padding: isMobile ? const EdgeInsets.all(12) : const EdgeInsets.all(24),
+          padding: isMobile ? EdgeInsets.zero : const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -604,11 +625,11 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
               // Header Row
               _buildHeaderRow(data.regionalSummary, selectedDate, isMobile),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
               // Mobile Segmented Switcher
               if (isMobile) ...[
-                _buildMobileSectionSwitcher(),
+                _buildMobileSectionSwitcher(data.approvalsHub, data.branchPerformance.length),
                 const SizedBox(height: 16),
               ],
 
@@ -638,6 +659,99 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   // HEADER ROW
   // =========================================================================
   Widget _buildHeaderRow(RegionalSummaryModel reg, DateTime selectedDate, bool isMobile) {
+    if (isMobile) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F766E),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text('AREA 1', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.5)),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Regional Console',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                    ),
+                  ],
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime(2025),
+                          lastDate: DateTime(2027),
+                        );
+                        if (picked != null) {
+                          ref.read(amSelectedDateProvider.notifier).state = picked;
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.calendar_today, size: 12, color: Color(0xFF475569)),
+                            const SizedBox(width: 4),
+                            Text(
+                              DateFormat('MMM dd').format(selectedDate),
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    IconButton(
+                      icon: const Icon(Icons.download, size: 18, color: Color(0xFF065F46)),
+                      tooltip: 'Download Regional Report',
+                      padding: const EdgeInsets.all(6),
+                      constraints: const BoxConstraints(),
+                      onPressed: _isProcessing ? null : _handleDownloadAreaExcel,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Supervising: ${reg.assignedBranches.join(' • ')}',
+              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -657,14 +771,14 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(color: const Color(0xFFD97706), borderRadius: BorderRadius.circular(6)),
+                      decoration: BoxDecoration(color: const Color(0xFF0F766E), borderRadius: BorderRadius.circular(6)),
                       child: const Text('Area 1 Supervision', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
                     ),
                     const SizedBox(width: 8),
-                    Flexible(
+                    const Flexible(
                       child: Text(
                         'Regional Operations Console',
-                        style: TextStyle(fontSize: isMobile ? 15 : 18, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -701,7 +815,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               ElevatedButton.icon(
                 onPressed: _isProcessing ? null : _handleDownloadAreaExcel,
                 icon: const Icon(Icons.download, size: 15, color: Colors.white),
-                label: Text(isMobile ? 'Excel' : 'Regional Report (.xlsx)', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                label: const Text('Regional Report (.xlsx)', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
               ),
             ],
@@ -714,33 +828,59 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   // =========================================================================
   // MOBILE SECTION SWITCHER
   // =========================================================================
-  Widget _buildMobileSectionSwitcher() {
-    final sections = ['Overview', 'Approvals', 'Branches'];
+  Widget _buildMobileSectionSwitcher(AreaApprovalsHubModel approvals, int branchCount) {
+    final pendingCount = approvals.pendingBranchEods.length + approvals.pendingHighValueLoans.length + approvals.pendingBranchTransfers.length;
+    final sections = [
+      (label: 'Overview', badge: null),
+      (label: 'Branches', badge: '$branchCount'),
+      (label: 'Approvals', badge: pendingCount > 0 ? '$pendingCount' : null),
+    ];
     return Container(
-      decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
-      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE2E8F0),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      padding: const EdgeInsets.all(3),
       child: Row(
         children: sections.map((s) {
-          final isSel = _mobileSectionTab == s;
+          final isSel = _mobileSectionTab == s.label;
           return Expanded(
             child: InkWell(
-              onTap: () => setState(() => _mobileSectionTab = s),
-              borderRadius: BorderRadius.circular(6),
+              onTap: () => setState(() => _mobileSectionTab = s.label),
+              borderRadius: BorderRadius.circular(8),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
                   color: isSel ? Colors.white : Colors.transparent,
-                  borderRadius: BorderRadius.circular(6),
-                  boxShadow: isSel ? const [BoxShadow(color: Color(0x0A0F172A), blurRadius: 4)] : null,
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: isSel ? const [BoxShadow(color: Color(0x10000000), blurRadius: 4, offset: Offset(0, 1))] : null,
                 ),
-                child: Text(
-                  s,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
-                    color: isSel ? const Color(0xFF0F172A) : const Color(0xFF64748B),
-                  ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      s.label,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+                        color: isSel ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                      ),
+                    ),
+                    if (s.badge != null) ...[
+                      const SizedBox(width: 5),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: isSel ? const Color(0xFF0F766E) : const Color(0xFF64748B),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          s.badge!,
+                          style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -754,64 +894,123 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   // SECTION 1: REGIONAL EXECUTIVE KPI ROW
   // =========================================================================
   Widget _buildRegionalExecutiveKpiRow(RegionalSummaryModel reg) {
-    final c1 = _buildKpiCard(
-      'Active Branches',
-      '${reg.openBranchesCount} / ${reg.branchesCount}',
-      subtitle: 'Operational Status',
-      icon: Icons.storefront_outlined,
-      accentColor: const Color(0xFF2563EB),
-    );
-    final c2 = _buildKpiCard(
-      'Regional Borrowers',
-      '${reg.activeClients}',
-      subtitle: 'Active Loan Borrowers',
-      icon: Icons.people_alt_outlined,
-      accentColor: const Color(0xFF7C3AED),
-    );
-    final c3 = _buildKpiCard(
-      'Active Portfolio',
-      CurrencyFormatter.format(reg.activeCredit),
-      subtitle: 'Gross Active Credit',
-      icon: Icons.account_balance_outlined,
-      accentColor: const Color(0xFF059669),
-    );
-    final c4 = _buildKpiCard(
-      'Today\'s Collections',
-      CurrencyFormatter.format(reg.todayCollected),
-      subtitle: '${reg.compliancePct}% Compliance',
-      icon: Icons.payments_outlined,
-      accentColor: const Color(0xFF10B981),
-      isGrand: true,
-    );
-    final c5 = _buildKpiCard(
-      'Vault Cash (Acct 1000)',
-      CurrencyFormatter.format(reg.vaultCashAcct1000),
-      subtitle: 'Area 1 Cash Position',
-      icon: Icons.account_balance_wallet_outlined,
-      accentColor: const Color(0xFFD97706),
-    );
-    final c6 = _buildKpiCard(
-      'Regional PAR 30%',
-      reg.par,
-      subtitle: '${reg.defaultersCount} Defaulters',
-      icon: Icons.warning_amber_rounded,
-      accentColor: const Color(0xFFDC2626),
-    );
-
     return LayoutBuilder(
       builder: (context, constraints) {
         final w = constraints.maxWidth;
         if (w < 600) {
           return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [Expanded(child: c1), const SizedBox(width: 8), Expanded(child: c2)]),
-              const SizedBox(height: 8),
-              Row(children: [Expanded(child: c3), const SizedBox(width: 8), Expanded(child: c4)]),
-              const SizedBox(height: 8),
-              Row(children: [Expanded(child: c5), const SizedBox(width: 8), Expanded(child: c6)]),
+              _buildHeroCollectionsCard(reg),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildModernMetricCard(
+                      title: 'Active Portfolio',
+                      value: CurrencyFormatter.format(reg.activeCredit),
+                      subtitle: 'Total Gross Credit',
+                      icon: Icons.pie_chart_outline,
+                      iconColor: const Color(0xFF0F766E),
+                      iconBg: const Color(0xFFF0FDFA),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildModernMetricCard(
+                      title: 'Vault Cash (1000)',
+                      value: CurrencyFormatter.format(reg.vaultCashAcct1000),
+                      subtitle: 'Ledger Cash Position',
+                      icon: Icons.account_balance_wallet_outlined,
+                      iconColor: const Color(0xFF2563EB),
+                      iconBg: const Color(0xFFEFF6FF),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildModernMetricCard(
+                      title: 'Active Borrowers',
+                      value: '${reg.activeClients} Clients',
+                      subtitle: 'People on Loan',
+                      icon: Icons.people_outline,
+                      iconColor: const Color(0xFF7C3AED),
+                      iconBg: const Color(0xFFF5F3FF),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildModernMetricCard(
+                      title: 'Regional PAR > 30d',
+                      value: reg.par,
+                      subtitle: '${reg.defaultersCount} Defaulters',
+                      icon: Icons.warning_amber_rounded,
+                      iconColor: const Color(0xFFDC2626),
+                      iconBg: const Color(0xFFFEF2F2),
+                      isAlert: reg.defaultersCount > 0,
+                    ),
+                  ),
+                ],
+              ),
             ],
           );
-        } else if (w < 1000) {
+        }
+
+        // Tablet & Desktop layout
+        final c1 = _buildModernMetricCard(
+          title: 'Active Branches',
+          value: '${reg.openBranchesCount} / ${reg.branchesCount}',
+          subtitle: 'Operational Status',
+          icon: Icons.storefront_outlined,
+          iconColor: const Color(0xFF2563EB),
+          iconBg: const Color(0xFFEFF6FF),
+        );
+        final c2 = _buildModernMetricCard(
+          title: 'Regional Borrowers',
+          value: '${reg.activeClients} Clients',
+          subtitle: 'Active Loan Borrowers',
+          icon: Icons.people_alt_outlined,
+          iconColor: const Color(0xFF7C3AED),
+          iconBg: const Color(0xFFF5F3FF),
+        );
+        final c3 = _buildModernMetricCard(
+          title: 'Active Portfolio',
+          value: CurrencyFormatter.format(reg.activeCredit),
+          subtitle: 'Gross Active Credit',
+          icon: Icons.account_balance_outlined,
+          iconColor: const Color(0xFF0F766E),
+          iconBg: const Color(0xFFF0FDFA),
+        );
+        final c4 = _buildModernMetricCard(
+          title: 'Today\'s Collections',
+          value: CurrencyFormatter.format(reg.todayCollected),
+          subtitle: '${reg.compliancePct.toStringAsFixed(1)}% Compliance',
+          icon: Icons.payments_outlined,
+          iconColor: const Color(0xFF10B981),
+          iconBg: const Color(0xFFECFDF5),
+        );
+        final c5 = _buildModernMetricCard(
+          title: 'Vault Cash (Acct 1000)',
+          value: CurrencyFormatter.format(reg.vaultCashAcct1000),
+          subtitle: 'Area 1 Cash Position',
+          icon: Icons.account_balance_wallet_outlined,
+          iconColor: const Color(0xFFD97706),
+          iconBg: const Color(0xFFFFFBEB),
+        );
+        final c6 = _buildModernMetricCard(
+          title: 'Regional PAR 30%',
+          value: reg.par,
+          subtitle: '${reg.defaultersCount} Defaulters',
+          icon: Icons.warning_amber_rounded,
+          iconColor: const Color(0xFFDC2626),
+          iconBg: const Color(0xFFFEF2F2),
+          isAlert: reg.defaultersCount > 0,
+        );
+
+        if (w < 1100) {
           return Column(
             children: [
               Row(children: [Expanded(child: c1), const SizedBox(width: 10), Expanded(child: c2), const SizedBox(width: 10), Expanded(child: c3)]),
@@ -839,26 +1038,122 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     );
   }
 
-  Widget _buildKpiCard(
-    String label,
-    String value, {
+  Widget _buildHeroCollectionsCard(RegionalSummaryModel reg) {
+    final progress = (reg.compliancePct / 100.0).clamp(0.0, 1.0);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF064E3B), Color(0xFF0F766E)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x18064E3B),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'TODAY\'S REGIONAL COLLECTIONS',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFA7F3D0),
+                  letterSpacing: 0.8,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0x30FFFFFF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0x40FFFFFF)),
+                ),
+                child: Text(
+                  '${reg.compliancePct.toStringAsFixed(1)}% Compliance',
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              CurrencyFormatter.format(reg.todayCollected),
+              style: const TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+                fontFamily: 'monospace',
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 6,
+              backgroundColor: const Color(0x30FFFFFF),
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF34D399)),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Target: ${CurrencyFormatter.format(reg.todayExpected)}',
+                style: const TextStyle(fontSize: 11.5, color: Color(0xFFE2E8F0), fontWeight: FontWeight.w500),
+              ),
+              Text(
+                'Open: ${reg.openBranchesCount} of ${reg.branchesCount} Branches',
+                style: const TextStyle(fontSize: 11.5, color: Color(0xFFA7F3D0), fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernMetricCard({
+    required String title,
+    required String value,
     required String subtitle,
     required IconData icon,
-    required Color accentColor,
-    bool isGrand = false,
+    required Color iconColor,
+    required Color iconBg,
+    bool isAlert = false,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border(
-          top: BorderSide(color: accentColor, width: 3),
-          left: BorderSide(color: isGrand ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
-          right: BorderSide(color: isGrand ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
-          bottom: BorderSide(color: isGrand ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
-        ),
-        boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: isAlert ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -867,9 +1162,21 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
-                child: Text(label, style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              Icon(icon, size: 16, color: accentColor),
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(icon, size: 14, color: iconColor),
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -881,16 +1188,25 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               maxLines: 1,
               softWrap: false,
               style: TextStyle(
-                fontSize: 18,
+                fontSize: 16,
                 fontWeight: FontWeight.w800,
-                color: isGrand ? const Color(0xFF15803D) : const Color(0xFF0F172A),
+                color: isAlert ? const Color(0xFFDC2626) : const Color(0xFF0F172A),
                 fontFamily: 'monospace',
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
-          const SizedBox(height: 3),
-          Text(subtitle, style: const TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+              color: isAlert ? const Color(0xFFEF4444) : const Color(0xFF94A3B8),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );
@@ -912,7 +1228,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(isMobile ? 14 : 20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
@@ -922,60 +1238,91 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Area Governance & Approvals Hub', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                  SizedBox(height: 3),
-                  Text('Two-tier EOD reconciliation sign-off, high-value loan escalation, and inter-branch transfers.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                ],
-              ),
-              if (approvals.canLockArea)
-                ElevatedButton.icon(
-                  onPressed: _isProcessing ? null : () => _handleConfirmAreaClosure('Area 1', DateFormat('yyyy-MM-dd').format(ref.read(amSelectedDateProvider))),
-                  icon: const Icon(Icons.lock, size: 15, color: Colors.white),
-                  label: const Text('Lock & Seal Area 1 EOD', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B)),
-                ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // Tabs
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: tabs.map((t) {
-              final tabKey = t.split(' (')[0];
-              final isSel = _activeApprovalTab.startsWith(tabKey);
-              return InkWell(
-                onTap: () => setState(() => _activeApprovalTab = tabKey),
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isSel ? const Color(0xFF064E3B) : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: isSel ? const Color(0xFF064E3B) : const Color(0xFFE2E8F0)),
-                  ),
-                  child: Text(
-                    t,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
-                      color: isSel ? Colors.white : const Color(0xFF475569),
+          if (isMobile)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Area Governance & Approvals Hub', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                const SizedBox(height: 3),
+                const Text('Two-tier EOD reconciliation sign-off, high-value loan escalation, and inter-branch transfers.', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                if (approvals.canLockArea) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isProcessing ? null : () => _handleConfirmAreaClosure('Area 1', DateFormat('yyyy-MM-dd').format(ref.read(amSelectedDateProvider))),
+                      icon: const Icon(Icons.lock, size: 15, color: Colors.white),
+                      label: const Text('Lock & Seal Area 1 EOD', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF064E3B),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
                     ),
                   ),
+                ],
+              ],
+            )
+          else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Area Governance & Approvals Hub', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                    SizedBox(height: 3),
+                    Text('Two-tier EOD reconciliation sign-off, high-value loan escalation, and inter-branch transfers.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  ],
                 ),
-              );
-            }).toList(),
+                if (approvals.canLockArea)
+                  ElevatedButton.icon(
+                    onPressed: _isProcessing ? null : () => _handleConfirmAreaClosure('Area 1', DateFormat('yyyy-MM-dd').format(ref.read(amSelectedDateProvider))),
+                    icon: const Icon(Icons.lock, size: 15, color: Colors.white),
+                    label: const Text('Lock & Seal Area 1 EOD', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B)),
+                  ),
+              ],
+            ),
+          const SizedBox(height: 14),
+
+          // Tabs (Scrollable on mobile)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: tabs.map((t) {
+                final tabKey = t.split(' (')[0];
+                final isSel = _activeApprovalTab.startsWith(tabKey);
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: InkWell(
+                    onTap: () => setState(() => _activeApprovalTab = tabKey),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSel ? const Color(0xFF064E3B) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: isSel ? const Color(0xFF064E3B) : const Color(0xFFE2E8F0)),
+                      ),
+                      child: Text(
+                        t,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
+                          color: isSel ? Colors.white : const Color(0xFF475569),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           const Divider(height: 1, color: Color(0xFFE2E8F0)),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
 
           if (_activeApprovalTab.startsWith('Branch EOD'))
             _buildBranchEodApprovalsTab(approvals.pendingBranchEods, isMobile)
@@ -999,6 +1346,126 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     return Column(
       children: eods.map((e) {
         final isConfirmed = e.isConfirmed;
+
+        if (isMobile) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: isConfirmed ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: isConfirmed ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: isConfirmed ? const Color(0xFFDCFCE7) : const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Icon(
+                            isConfirmed ? Icons.check_circle : Icons.pending_actions,
+                            color: isConfirmed ? const Color(0xFF15803D) : const Color(0xFF2563EB),
+                            size: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(e.branchName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: isConfirmed ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        isConfirmed ? 'CONFIRMED' : e.status,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: isConfirmed ? const Color(0xFF15803D) : const Color(0xFF92400E),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Account 1000 Vault', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
+                          const SizedBox(height: 2),
+                          Text(
+                            CurrencyFormatter.format(e.vaultCash),
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A), fontFamily: 'monospace'),
+                          ),
+                        ],
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          const Text('Cash Variance', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
+                          const SizedBox(height: 2),
+                          Text(
+                            CurrencyFormatter.format(e.cashVariance),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: e.cashVariance == 0 ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (!isConfirmed)
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isProcessing ? null : () => _handleConfirmBranchEod(e.branchId, e.branchName, e.closureDate),
+                      icon: const Icon(Icons.check, size: 15, color: Colors.white),
+                      label: const Text('Confirm & Sign Off Branch EOD', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF065F46),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  )
+                else
+                  Row(
+                    children: [
+                      const Icon(Icons.verified, size: 14, color: Color(0xFF15803D)),
+                      const SizedBox(width: 4),
+                      Text('Signed by ${e.confirmedBy ?? "AM"}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF15803D), fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+              ],
+            ),
+          );
+        }
+
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(14),
@@ -1080,58 +1547,141 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     }
 
     return Column(
-      children: loans.map((l) => Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
-              child: const Icon(Icons.trending_up, color: Color(0xFFB45309), size: 20),
+      children: loans.map((l) {
+        if (isMobile) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(l.clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      const SizedBox(width: 8),
-                      Text('(${l.branchName} — ${l.officer})', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                    ],
-                  ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(6)),
+                          child: const Icon(Icons.trending_up, color: Color(0xFFB45309), size: 16),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(l.clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(4)),
+                      child: Text(l.branchName, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8))),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Officer: ${l.officer} • Product: ${l.loanProduct}',
+                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Amount: ${CurrencyFormatter.format(l.loanAmount)}',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF2563EB), fontFamily: 'monospace'),
+                ),
+                if (l.escalationReason.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text('Amount: ${CurrencyFormatter.format(l.loanAmount)} | Product: ${l.loanProduct}',
-                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
                   Text(l.escalationReason, style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626))),
                 ],
-              ),
-            ),
-            Row(
-              children: [
-                OutlinedButton(
-                  onPressed: _isProcessing ? null : () => _handleRejectHighValueLoan(l.loanId, l.clientName),
-                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
-                  child: const Text('Reject', style: TextStyle(fontSize: 11.5)),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: _isProcessing ? null : () => _handleApproveHighValueLoan(l.loanId, l.clientName, l.loanAmount),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
-                  child: const Text('Confirm', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _isProcessing ? null : () => _handleRejectHighValueLoan(l.loanId, l.clientName),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFDC2626),
+                          side: const BorderSide(color: Color(0xFFFCA5A5)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: const Text('Reject', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _isProcessing ? null : () => _handleApproveHighValueLoan(l.loanId, l.clientName, l.loanAmount),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: const Text('Confirm Loan', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
-      )).toList(),
+          );
+        }
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
+                child: const Icon(Icons.trending_up, color: Color(0xFFB45309), size: 20),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(l.clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        const SizedBox(width: 8),
+                        Text('(${l.branchName} — ${l.officer})', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text('Amount: ${CurrencyFormatter.format(l.loanAmount)} | Product: ${l.loanProduct}',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+                    Text(l.escalationReason, style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626))),
+                  ],
+                ),
+              ),
+              Row(
+                children: [
+                  OutlinedButton(
+                    onPressed: _isProcessing ? null : () => _handleRejectHighValueLoan(l.loanId, l.clientName),
+                    style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
+                    child: const Text('Reject', style: TextStyle(fontSize: 11.5)),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: _isProcessing ? null : () => _handleApproveHighValueLoan(l.loanId, l.clientName, l.loanAmount),
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
+                    child: const Text('Confirm', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -1144,42 +1694,97 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     }
 
     return Column(
-      children: transfers.map((t) => Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8)),
-              child: const Icon(Icons.swap_horiz, color: Color(0xFF2563EB), size: 20),
+      children: transfers.map((t) {
+        if (isMobile) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(t.clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  const SizedBox(height: 4),
-                  Text('Route: ${t.sourceBranchName} ➔ ${t.destBranchName}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                  Text('Balance: ${CurrencyFormatter.format(t.outstandingBalance)} | Savings: ${CurrencyFormatter.format(t.savingsBalance)}',
-                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(6)),
+                      child: const Icon(Icons.swap_horiz, color: Color(0xFF2563EB), size: 16),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(t.clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Route: ${t.sourceBranchName} ➔ ${t.destBranchName}',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Balance: ${CurrencyFormatter.format(t.outstandingBalance)} | Savings: ${CurrencyFormatter.format(t.savingsBalance)}',
+                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isProcessing ? null : () => _handleSignOffTransfer(t.transferId, t.clientName),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF065F46),
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text('Sign Off Client Transfer', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8)),
+                child: const Icon(Icons.swap_horiz, color: Color(0xFF2563EB), size: 20),
               ),
-            ),
-            ElevatedButton(
-              onPressed: _isProcessing ? null : () => _handleSignOffTransfer(t.transferId, t.clientName),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
-              child: const Text('Sign Off', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-      )).toList(),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(t.clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(height: 4),
+                    Text('Route: ${t.sourceBranchName} ➔ ${t.destBranchName}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                    Text('Balance: ${CurrencyFormatter.format(t.outstandingBalance)} | Savings: ${CurrencyFormatter.format(t.savingsBalance)}',
+                        style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                  ],
+                ),
+              ),
+              ElevatedButton(
+                onPressed: _isProcessing ? null : () => _handleSignOffTransfer(t.transferId, t.clientName),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
+                child: const Text('Sign Off', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -1298,13 +1903,18 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
   Widget _buildMobileBranchCard(BranchPerformanceItemModel b) {
     final isHealthy = b.compliancePct >= 85.0 && b.cashVariance == 0.0;
+    final progress = (b.expectedCollection > 0)
+        ? (b.collected / b.expectedCollection).clamp(0.0, 1.0)
+        : 1.0;
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(8),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1312,32 +1922,149 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(b.branchName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+              Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.location_city, color: Color(0xFF0F172A), size: 16),
+                  ),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(b.branchName, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                      Text('BM: ${b.bmName}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                    ],
+                  ),
+                ],
+              ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(color: isHealthy ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2), borderRadius: BorderRadius.circular(4)),
-                child: Text(b.operationalStatus, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: isHealthy ? const Color(0xFF15803D) : const Color(0xFFDC2626))),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                decoration: BoxDecoration(
+                  color: isHealthy ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  b.operationalStatus,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: isHealthy ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                  ),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text('BM: ${b.bmName}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
+
+          // Collection Progress Bar
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Coll: ${CurrencyFormatter.format(b.collected)} (${b.compliancePct}%)', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF15803D))),
-              Text('Vault: ${CurrencyFormatter.format(b.vaultCashAcct1000)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+              Text(
+                'Collection: ${CurrencyFormatter.format(b.collected)}',
+                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontFamily: 'monospace'),
+              ),
+              Text(
+                '${b.compliancePct.toStringAsFixed(1)}%',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: isHealthy ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                ),
+              ),
             ],
           ),
-          const Divider(height: 16),
+          const SizedBox(height: 5),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 5,
+              backgroundColor: const Color(0xFFE2E8F0),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                isHealthy ? const Color(0xFF059669) : const Color(0xFFD97706),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // 2 mini tiles: Vault Cash (Acct 1000) & PAR
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFF1F5F9)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Vault Cash (Acct 1000)', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                      const SizedBox(height: 2),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          CurrencyFormatter.format(b.vaultCashAcct1000),
+                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB), fontFamily: 'monospace'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFF1F5F9)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('PAR > 30d', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                      const SizedBox(height: 2),
+                      Text(
+                        b.par,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: b.par == '0.0%' ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Action buttons
           Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => _showBranchInspectionModal(b.branchId, b.branchName),
                   icon: const Icon(Icons.search, size: 14),
-                  label: const Text('Inspect Branch'),
+                  label: const Text('Inspect Branch', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -1345,8 +2072,12 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 child: ElevatedButton.icon(
                   onPressed: () => _showBranchHandoverModal(b.branchId, b.branchName),
                   icon: const Icon(Icons.folder_open, size: 14, color: Colors.white),
-                  label: const Text('Reports', style: TextStyle(color: Colors.white)),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
+                  label: const Text('Reports', style: TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF065F46),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
                 ),
               ),
             ],
