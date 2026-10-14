@@ -15,6 +15,7 @@ import '../../bm/presentation/bm_dashboard_screen.dart';
 import '../../bm/presentation/master_cashbook_screen.dart';
 import '../../bm/presentation/user_management_screen.dart';
 import '../../am/presentation/am_dashboard_screen.dart';
+import '../../am/presentation/am_portfolio_screen.dart';
 import '../../audit/presentation/audit_ledger_screen.dart';
 import '../../reports/presentation/reports_export_screen.dart';
 import '../../auth/presentation/login_screen.dart';
@@ -144,7 +145,7 @@ class CoAppScaffold extends ConsumerWidget {
     } else if (isAdmin) {
       navItems = ['Dashboard', 'Portfolio', 'Loan Origination', 'Collections', 'Withdrawal Operations', 'CO Cashbook', 'Master Cashbook', 'User Management', 'Audit Ledger', 'Reports & Export'];
     } else if (isAm) {
-      navItems = ['Dashboard', 'Portfolio', 'Master Cashbook', 'CO Cashbook', 'User Management', 'Audit Ledger', 'Reports & Export'];
+      navItems = ['Dashboard', 'Portfolio', 'User Management', 'Audit Ledger', 'Reports & Export'];
     } else {
       navItems = ['Dashboard', 'Loan Origination', 'Collections', 'Withdrawal Operations', 'Portfolio', 'CO Cashbook'];
     }
@@ -1073,6 +1074,7 @@ class CoAppScaffold extends ConsumerWidget {
       case 'Withdrawal Operations':
         return const WithdrawalOperationsScreen();
       case 'Portfolio':
+        if (isAm) return const AmPortfolioScreen();
         return const PortfolioOverviewScreen();
       case 'CO Cashbook':
         return const DailyCashbookScreen();

@@ -1568,6 +1568,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildBankReconciliationView() {
+    final authState = ref.watch(authControllerProvider);
+    final user = authState is AuthStateAuthenticated ? authState.user : null;
+    final role = user?.role.trim() ?? '';
+    final isAm = role == 'Area Manager' || role == 'AM';
+
     return FutureBuilder<MonthlyReconciliationData>(
       future: _reconciliationFuture,
       builder: (context, snapshot) {
@@ -1584,6 +1589,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           branchName: _selectedBranchName,
           year: _selectedExecYear,
           month: _selectedExecMonth,
+          isReadOnly: isAm,
           onSaved: () {
             _refreshCurrentTabData();
           },
@@ -2094,6 +2100,7 @@ class _BankReconciliationForm extends ConsumerStatefulWidget {
   final int year;
   final int month;
   final VoidCallback onSaved;
+  final bool isReadOnly;
 
   const _BankReconciliationForm({
     required this.initialData,
@@ -2101,6 +2108,7 @@ class _BankReconciliationForm extends ConsumerStatefulWidget {
     required this.year,
     required this.month,
     required this.onSaved,
+    this.isReadOnly = false,
   });
 
   @override
@@ -2362,6 +2370,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
   }
 
   Future<void> _handleSave() async {
+    if (widget.isReadOnly) return;
     setState(() => _isSaving = true);
     try {
       final updatedData = MonthlyReconciliationData(
@@ -2460,6 +2469,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
   }
 
   Widget _buildField(String label, TextEditingController controller, {String? hint, bool isNumber = true, bool readOnly = false}) {
+    final effectiveReadOnly = widget.isReadOnly || readOnly;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2472,12 +2482,12 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
         const SizedBox(height: 4),
         TextField(
           controller: controller,
-          readOnly: readOnly,
+          readOnly: effectiveReadOnly,
           keyboardType: isNumber ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
           style: TextStyle(
             fontSize: 12,
-            color: readOnly ? const Color(0xFF64748B) : const Color(0xFF0F172A),
-            fontWeight: readOnly ? FontWeight.w600 : FontWeight.normal,
+            color: effectiveReadOnly ? const Color(0xFF64748B) : const Color(0xFF0F172A),
+            fontWeight: effectiveReadOnly ? FontWeight.w600 : FontWeight.normal,
           ),
           decoration: InputDecoration(
             hintText: hint,
@@ -2485,7 +2495,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
             isDense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             filled: true,
-            fillColor: readOnly ? const Color(0xFFF1F5F9) : const Color(0xFFF8FAFC),
+            fillColor: effectiveReadOnly ? const Color(0xFFF1F5F9) : const Color(0xFFF8FAFC),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
               borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
@@ -2866,30 +2876,53 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
             ),
             const SizedBox(height: 24),
 
-            // Submit Button
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                onPressed: _isSaving ? null : _handleSave,
-                icon: _isSaving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.save, size: 20, color: Colors.white),
-                label: Text(
-                  _isSaving ? 'Saving & Recalculating...' : 'Save & Recalculate Statements',
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+            // Submit Button or Read-Only Banner
+            if (widget.isReadOnly)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F766E),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  elevation: 1,
+                child: const Row(
+                  children: [
+                    Icon(Icons.lock_outline, size: 20, color: Color(0xFF64748B)),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Read-Only Mode: Area Managers have inspection and export privileges. Statements and ledger reconciliations can only be modified by the Branch Manager or Head Office.',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: _isSaving ? null : _handleSave,
+                  icon: _isSaving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.save, size: 20, color: Colors.white),
+                  label: Text(
+                    _isSaving ? 'Saving & Recalculating...' : 'Save & Recalculate Statements',
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0F766E),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    elevation: 1,
+                  ),
                 ),
               ),
-            ),
             const SizedBox(height: 32),
           ],
         );

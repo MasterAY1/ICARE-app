@@ -570,14 +570,14 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                     headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
                     headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF334155), fontSize: 13),
                     dataTextStyle: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
-                    columns: const [
-                      DataColumn(label: Text('User')),
-                      DataColumn(label: Text('Full Name')),
-                      DataColumn(label: Text('Role')),
-                      DataColumn(label: Text('Branch')),
-                      DataColumn(label: Text('Status')),
-                      DataColumn(label: Text('Last Login')),
-                      DataColumn(label: Text('Actions')),
+                    columns: [
+                      const DataColumn(label: Text('User')),
+                      const DataColumn(label: Text('Full Name')),
+                      const DataColumn(label: Text('Role')),
+                      const DataColumn(label: Text('Branch')),
+                      const DataColumn(label: Text('Status')),
+                      const DataColumn(label: Text('Last Login')),
+                      if (!isAm) const DataColumn(label: Text('Actions')),
                     ],
                     rows: filteredUsers.map((u) {
                       final roleColor = _getRoleBadgeColor(u.role);
@@ -611,32 +611,33 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                             ),
                           ),
                           DataCell(Text(u.lastLogin ?? 'Never')),
-                          DataCell(
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Reset Password',
-                                  icon: const Icon(Icons.lock_reset, size: 18, color: Color(0xFF2563EB)),
-                                  onPressed: () {
-                                    setState(() {
-                                      _resetUsername = u.username;
-                                      _selectedTabIndex = isAdmin ? 2 : 1;
-                                    });
-                                  },
-                                ),
-                                IconButton(
-                                  tooltip: u.isActive ? 'Deactivate' : 'Activate',
-                                  icon: Icon(
-                                    u.isActive ? Icons.block : Icons.check_circle_outline,
-                                    size: 18,
-                                    color: u.isActive ? const Color(0xFFD97706) : const Color(0xFF16A34A),
+                          if (!isAm)
+                            DataCell(
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    tooltip: 'Reset Password',
+                                    icon: const Icon(Icons.lock_reset, size: 18, color: Color(0xFF2563EB)),
+                                    onPressed: () {
+                                      setState(() {
+                                        _resetUsername = u.username;
+                                        _selectedTabIndex = isAdmin ? 2 : 1;
+                                      });
+                                    },
                                   ),
-                                  onPressed: _isActionLoading ? null : () => _handleToggleStatus(u.id, !u.isActive),
-                                ),
-                              ],
+                                  IconButton(
+                                    tooltip: u.isActive ? 'Deactivate' : 'Activate',
+                                    icon: Icon(
+                                      u.isActive ? Icons.block : Icons.check_circle_outline,
+                                      size: 18,
+                                      color: u.isActive ? const Color(0xFFD97706) : const Color(0xFF16A34A),
+                                    ),
+                                    onPressed: _isActionLoading ? null : () => _handleToggleStatus(u.id, !u.isActive),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
                         ],
                       );
                     }).toList(),
