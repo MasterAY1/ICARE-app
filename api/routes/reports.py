@@ -786,12 +786,15 @@ def get_monthly_parity(
     branch_name: Optional[str] = Query(None),
     year: int = Query(2026),
     month: int = Query(9),
+    officer_name: Optional[str] = Query(None),
+    product_name: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
     Returns the authoritative 14-metric Credit Officers Monthly Summary (Parity Matrix)
     comparing each Credit Officer side-by-side with Branch Total.
+    Supports filtering by officer and product.
     """
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
@@ -811,7 +814,7 @@ def get_monthly_parity(
     if not bid:
         raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch for Monthly Parity report.")
 
-    result = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=year, month=month)
+    result = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name)
     return result
 
 
@@ -820,12 +823,15 @@ def get_official_statements(
     branch_name: Optional[str] = Query(None),
     year: int = Query(2026),
     month: int = Query(9),
+    officer_name: Optional[str] = Query(None),
+    product_name: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
     Returns the Official Executive Trial Balance & Receipts/Payments Account
     modeled directly after the official paper reporting templates.
+    Supports filtering by officer and product.
     """
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
@@ -843,7 +849,9 @@ def get_official_statements(
     if not bid:
         raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
 
-    result = ReportService.get_official_trial_balance_and_receipts_payments(uow, branch_id=bid, year=year, month=month)
+    result = ReportService.get_official_trial_balance_and_receipts_payments(
+        uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name
+    )
     return result
 
 
@@ -852,12 +860,15 @@ def get_deposit_statement(
     branch_name: Optional[str] = Query(None),
     year: int = Query(2026),
     month: int = Query(9),
+    officer_name: Optional[str] = Query(None),
+    product_name: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
     Returns Statement A: Monthly Deposit Statement with cycle breakdown.
     Fully automated rollover from M-1 closing balances and M operational transactions.
+    Supports filtering by officer and product.
     """
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
@@ -875,7 +886,9 @@ def get_deposit_statement(
     if not bid:
         raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
 
-    return ReportService.get_monthly_deposit_statement(uow, branch_id=bid, year=year, month=month)
+    return ReportService.get_monthly_deposit_statement(
+        uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name
+    )
 
 
 @router.get("/credit-statement", response_model=CreditStatementData)
@@ -883,12 +896,15 @@ def get_credit_statement(
     branch_name: Optional[str] = Query(None),
     year: int = Query(2026),
     month: int = Query(9),
+    officer_name: Optional[str] = Query(None),
+    product_name: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
     Returns Statement B: Monthly Credit Statement with cycle breakdown.
     Fully automated rollover from M-1 closing balances and M operational transactions.
+    Supports filtering by officer and product.
     """
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
@@ -906,7 +922,9 @@ def get_credit_statement(
     if not bid:
         raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
 
-    return ReportService.get_monthly_credit_statement(uow, branch_id=bid, year=year, month=month)
+    return ReportService.get_monthly_credit_statement(
+        uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name
+    )
 
 
 @router.get("/monthly-reconciliation")
@@ -981,6 +999,8 @@ def export_monthly_parity_excel(
     branch_name: Optional[str] = Query(None),
     year: int = Query(2026),
     month: int = Query(9),
+    officer_name: Optional[str] = Query(None),
+    product_name: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
@@ -1003,8 +1023,8 @@ def export_monthly_parity_excel(
         if res_b.data:
             bid = res_b.data[0]["branch_id"]
 
-    matrix_res = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=year, month=month)
-    stmts_res = ReportService.get_official_trial_balance_and_receipts_payments(uow, branch_id=bid, year=year, month=month)
+    matrix_res = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name)
+    stmts_res = ReportService.get_official_trial_balance_and_receipts_payments(uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name)
 
     df_parity = matrix_res.get("dataframe", pd.DataFrame())
     df_tb = stmts_res.get("trial_balance", {}).get("dataframe", pd.DataFrame())
@@ -1043,6 +1063,8 @@ def export_monthly_parity_csv(
     branch_name: Optional[str] = Query(None),
     year: int = Query(2026),
     month: int = Query(9),
+    officer_name: Optional[str] = Query(None),
+    product_name: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
@@ -1060,7 +1082,7 @@ def export_monthly_parity_csv(
         if res_b.data:
             bid = res_b.data[0]["branch_id"]
 
-    matrix_res = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=year, month=month)
+    matrix_res = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name)
     df_parity = matrix_res.get("dataframe", pd.DataFrame())
 
     csv_bytes = df_parity.to_csv(index=False).encode('utf-8') if not df_parity.empty else b""

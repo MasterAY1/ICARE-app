@@ -75,11 +75,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       branchName: _selectedBranchName,
       year: _selectedExecYear,
       month: _selectedExecMonth,
+      officerName: _selectedOfficerName,
+      productName: _selectedProductName,
     );
     _statementsFuture = api.getOfficialStatements(
       branchName: _selectedBranchName,
       year: _selectedExecYear,
       month: _selectedExecMonth,
+      officerName: _selectedOfficerName,
+      productName: _selectedProductName,
     );
     _reconciliationFuture = api.getMonthlyReconciliation(
       branchName: _selectedBranchName,
@@ -131,11 +135,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         branchName: _selectedBranchName,
         year: _selectedExecYear,
         month: _selectedExecMonth,
+        officerName: _selectedOfficerName,
+        productName: _selectedProductName,
       );
       _statementsFuture = api.getOfficialStatements(
         branchName: _selectedBranchName,
         year: _selectedExecYear,
         month: _selectedExecMonth,
+        officerName: _selectedOfficerName,
+        productName: _selectedProductName,
       );
       _reconciliationFuture = api.getMonthlyReconciliation(
         branchName: _selectedBranchName,
@@ -855,6 +863,59 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     )
                   : null;
 
+              final products = _cachedMeta != null ? ['All Products', ..._cachedMeta!.products] : ['All Products'];
+              final officers = _cachedMeta != null
+                  ? ['All Officers', ..._cachedMeta!.officers.map((o) => o.fullName)]
+                  : ['All Officers'];
+
+              final officerDropdown = Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Officer: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+                  const SizedBox(width: 4),
+                  DropdownButton<String>(
+                    value: officers.contains(_selectedOfficerName) ? _selectedOfficerName : officers.first,
+                    underline: const SizedBox(),
+                    items: officers.map((o) => DropdownMenuItem(
+                      value: o,
+                      child: Text(o, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+                    )).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          _selectedOfficerName = val;
+                          _refreshCurrentTabData();
+                        });
+                      }
+                    },
+                  ),
+                ],
+              );
+
+              final productDropdown = Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Product: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+                  const SizedBox(width: 4),
+                  DropdownButton<String>(
+                    value: products.contains(_selectedProductName) ? _selectedProductName : products.first,
+                    underline: const SizedBox(),
+                    items: products.map((p) => DropdownMenuItem(
+                      value: p,
+                      child: Text(p, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+                    )).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          _selectedProductName = val;
+                          _refreshCurrentTabData();
+                        });
+                      }
+                    },
+                  ),
+                ],
+              );
+
               final excelBtn = OutlinedButton.icon(
                 icon: const Icon(Icons.download, size: 14, color: Color(0xFF0F766E)),
                 label: const Text('Excel Workbook', style: TextStyle(fontSize: 11, color: Color(0xFF0F766E), fontWeight: FontWeight.w700)),
@@ -868,6 +929,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       branchName: _selectedBranchName,
                       year: _selectedExecYear,
                       month: _selectedExecMonth,
+                      officerName: _selectedOfficerName,
+                      productName: _selectedProductName,
                     );
                     downloadBlobFile(
                       bytes,
@@ -902,6 +965,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       branchName: _selectedBranchName,
                       year: _selectedExecYear,
                       month: _selectedExecMonth,
+                      officerName: _selectedOfficerName,
+                      productName: _selectedProductName,
                     );
                     downloadBlobFile(
                       bytes,
@@ -936,6 +1001,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         yearDropdown,
                         if (branchControl != null) branchControl,
                         if (branchBadge != null) branchBadge,
+                        officerDropdown,
+                        productDropdown,
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -953,17 +1020,24 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               return Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Wrap(
-                    spacing: 16,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      monthDropdown,
-                      yearDropdown,
-                      if (branchControl != null) branchControl,
-                      if (branchBadge != null) branchBadge,
-                    ],
+                  Expanded(
+                    child: Wrap(
+                      spacing: 16,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        monthDropdown,
+                        yearDropdown,
+                        if (branchControl != null) branchControl,
+                        if (branchBadge != null) branchBadge,
+                        officerDropdown,
+                        productDropdown,
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 12),
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       excelBtn,
                       const SizedBox(width: 8),

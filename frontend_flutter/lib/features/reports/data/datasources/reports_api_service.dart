@@ -217,6 +217,8 @@ class ReportsApiService {
     String? branchName,
     int year = 2026,
     int month = 9,
+    String? officerName,
+    String? productName,
   }) async {
     final params = <String, dynamic>{
       'year': year,
@@ -224,6 +226,12 @@ class ReportsApiService {
     };
     if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
+    }
+    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+      params['officer_name'] = officerName;
+    }
+    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+      params['product_name'] = productName;
     }
 
     final response = await _apiClient.get(
@@ -238,6 +246,8 @@ class ReportsApiService {
     String? branchName,
     int year = 2026,
     int month = 9,
+    String? officerName,
+    String? productName,
   }) async {
     final params = <String, dynamic>{
       'year': year,
@@ -245,6 +255,12 @@ class ReportsApiService {
     };
     if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
+    }
+    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+      params['officer_name'] = officerName;
+    }
+    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+      params['product_name'] = productName;
     }
 
     final response = await _apiClient.get(
@@ -259,6 +275,8 @@ class ReportsApiService {
     String? branchName,
     int year = 2026,
     int month = 9,
+    String? officerName,
+    String? productName,
   }) async {
     final params = <String, dynamic>{
       'year': year,
@@ -266,6 +284,12 @@ class ReportsApiService {
     };
     if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
+    }
+    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+      params['officer_name'] = officerName;
+    }
+    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+      params['product_name'] = productName;
     }
 
     final response = await _apiClient.get(
@@ -281,6 +305,8 @@ class ReportsApiService {
     String? branchName,
     int year = 2026,
     int month = 9,
+    String? officerName,
+    String? productName,
   }) async {
     final params = <String, dynamic>{
       'year': year,
@@ -288,6 +314,12 @@ class ReportsApiService {
     };
     if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
+    }
+    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+      params['officer_name'] = officerName;
+    }
+    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+      params['product_name'] = productName;
     }
 
     final response = await _apiClient.get(
