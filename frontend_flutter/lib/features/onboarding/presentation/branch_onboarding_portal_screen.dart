@@ -283,7 +283,7 @@ class _BranchOnboardingPortalScreenState
     );
 
     String selectedDay = isEditing ? (groupToEdit['meeting_day']?.toString() ?? 'Daily') : 'Daily';
-    final availableDays = ['Daily', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    final availableDays = ['Daily', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Monthly'];
     if (!availableDays.contains(selectedDay)) {
       selectedDay = 'Daily';
     }
@@ -296,8 +296,10 @@ class _BranchOnboardingPortalScreenState
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setModalState) {
+            final isMobileModal = MediaQuery.of(ctx).size.width < 500;
             return Dialog(
               backgroundColor: Colors.white,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 520),
@@ -349,127 +351,221 @@ class _BranchOnboardingPortalScreenState
                         const Divider(height: 1, color: Color(0xFFE2E8F0)),
                         const SizedBox(height: 16),
 
-                        // Group Reference & Name
-                        Row(
-                          children: [
-                            SizedBox(
-                              width: 130,
-                              child: TextFormField(
-                                controller: refCtrl,
-                                textCapitalization: TextCapitalization.characters,
-                                decoration: const InputDecoration(
-                                  labelText: 'Group Code *',
-                                  hintText: 'GRP-01',
-                                  labelStyle: TextStyle(fontSize: 12),
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                  border: OutlineInputBorder(),
-                                ),
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-                                validator: (val) {
-                                  if (val == null || val.trim().isEmpty) return 'Required';
-                                  final clean = val.trim().toUpperCase();
-                                  final dup = _groups.any((g) =>
-                                      g != groupToEdit &&
-                                      (g['group_reference'] ?? '').toString().toUpperCase() == clean);
-                                  if (dup) return 'Code in use';
-                                  return null;
-                                },
-                              ),
+                        if (isMobileModal) ...[
+                          TextFormField(
+                            controller: refCtrl,
+                            textCapitalization: TextCapitalization.characters,
+                            decoration: const InputDecoration(
+                              labelText: 'Group Code *',
+                              hintText: 'GRP-01',
+                              labelStyle: TextStyle(fontSize: 12),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                              border: OutlineInputBorder(),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
-                                controller: nameCtrl,
-                                textCapitalization: TextCapitalization.words,
-                                decoration: const InputDecoration(
-                                  labelText: 'Group Name *',
-                                  hintText: 'e.g. Akowonjo Market Traders',
-                                  labelStyle: TextStyle(fontSize: 12),
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                  border: OutlineInputBorder(),
-                                ),
-                                style: const TextStyle(fontSize: 13),
-                                validator: (val) =>
-                                    (val == null || val.trim().isEmpty) ? 'Please enter a group name' : null,
-                              ),
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                            validator: (val) {
+                              if (val == null || val.trim().isEmpty) return 'Required';
+                              final clean = val.trim().toUpperCase();
+                              final dup = _groups.any((g) =>
+                                  g != groupToEdit &&
+                                  (g['group_reference'] ?? '').toString().toUpperCase() == clean);
+                              if (dup) return 'Code in use';
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: nameCtrl,
+                            textCapitalization: TextCapitalization.words,
+                            decoration: const InputDecoration(
+                              labelText: 'Group Name *',
+                              hintText: 'e.g. Akowonjo Market Traders',
+                              labelStyle: TextStyle(fontSize: 12),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                              border: OutlineInputBorder(),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
+                            style: const TextStyle(fontSize: 13),
+                            validator: (val) =>
+                                (val == null || val.trim().isEmpty) ? 'Please enter a group name' : null,
+                          ),
+                          const SizedBox(height: 14),
+                          DropdownButtonFormField<String>(
+                            initialValue: selectedDay,
+                            decoration: const InputDecoration(
+                              labelText: 'Meeting Day *',
+                              labelStyle: TextStyle(fontSize: 12),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                              border: OutlineInputBorder(),
+                            ),
+                            items: availableDays.map((d) {
+                              return DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontSize: 13)));
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null) setModalState(() => selectedDay = val);
+                            },
+                          ),
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: leaderCtrl,
+                            textCapitalization: TextCapitalization.words,
+                            decoration: const InputDecoration(
+                              labelText: 'Group Leader / Rep',
+                              hintText: 'e.g. Alhaja Risikat',
+                              labelStyle: TextStyle(fontSize: 12),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                              border: OutlineInputBorder(),
+                            ),
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: officerCtrl,
+                            textCapitalization: TextCapitalization.words,
+                            decoration: const InputDecoration(
+                              labelText: 'Credit Officer Name',
+                              hintText: 'e.g. Babatunde Lawal',
+                              labelStyle: TextStyle(fontSize: 12),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                              border: OutlineInputBorder(),
+                            ),
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: phoneCtrl,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              labelText: 'Officer Phone',
+                              hintText: 'e.g. 08012345678',
+                              labelStyle: TextStyle(fontSize: 12),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                              border: OutlineInputBorder(),
+                            ),
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ] else ...[
+                          // Group Reference & Name
+                          Row(
+                            children: [
+                              SizedBox(
+                                width: 130,
+                                child: TextFormField(
+                                  controller: refCtrl,
+                                  textCapitalization: TextCapitalization.characters,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Group Code *',
+                                    hintText: 'GRP-01',
+                                    labelStyle: TextStyle(fontSize: 12),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                                  validator: (val) {
+                                    if (val == null || val.trim().isEmpty) return 'Required';
+                                    final clean = val.trim().toUpperCase();
+                                    final dup = _groups.any((g) =>
+                                        g != groupToEdit &&
+                                        (g['group_reference'] ?? '').toString().toUpperCase() == clean);
+                                    if (dup) return 'Code in use';
+                                    return null;
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextFormField(
+                                  controller: nameCtrl,
+                                  textCapitalization: TextCapitalization.words,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Group Name *',
+                                    hintText: 'e.g. Akowonjo Market Traders',
+                                    labelStyle: TextStyle(fontSize: 12),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  style: const TextStyle(fontSize: 13),
+                                  validator: (val) =>
+                                      (val == null || val.trim().isEmpty) ? 'Please enter a group name' : null,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
 
-                        // Meeting Day & Leader Name
-                        Row(
-                          children: [
-                            Expanded(
-                              child: DropdownButtonFormField<String>(
-                                initialValue: selectedDay,
-                                decoration: const InputDecoration(
-                                  labelText: 'Meeting Day *',
-                                  labelStyle: TextStyle(fontSize: 12),
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                  border: OutlineInputBorder(),
+                          // Meeting Day & Leader Name
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  initialValue: selectedDay,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Meeting Day *',
+                                    labelStyle: TextStyle(fontSize: 12),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  items: availableDays.map((d) {
+                                    return DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontSize: 13)));
+                                  }).toList(),
+                                  onChanged: (val) {
+                                    if (val != null) setModalState(() => selectedDay = val);
+                                  },
                                 ),
-                                items: availableDays.map((d) {
-                                  return DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontSize: 13)));
-                                }).toList(),
-                                onChanged: (val) {
-                                  if (val != null) setModalState(() => selectedDay = val);
-                                },
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
-                                controller: leaderCtrl,
-                                textCapitalization: TextCapitalization.words,
-                                decoration: const InputDecoration(
-                                  labelText: 'Group Leader / Rep',
-                                  hintText: 'e.g. Alhaja Risikat',
-                                  labelStyle: TextStyle(fontSize: 12),
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                  border: OutlineInputBorder(),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextFormField(
+                                  controller: leaderCtrl,
+                                  textCapitalization: TextCapitalization.words,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Group Leader / Rep',
+                                    hintText: 'e.g. Alhaja Risikat',
+                                    labelStyle: TextStyle(fontSize: 12),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  style: const TextStyle(fontSize: 13),
                                 ),
-                                style: const TextStyle(fontSize: 13),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
 
-                        // Assigned Credit Officer & Phone
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextFormField(
-                                controller: officerCtrl,
-                                textCapitalization: TextCapitalization.words,
-                                decoration: const InputDecoration(
-                                  labelText: 'Credit Officer Name',
-                                  hintText: 'e.g. Babatunde Lawal',
-                                  labelStyle: TextStyle(fontSize: 12),
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                  border: OutlineInputBorder(),
+                          // Assigned Credit Officer & Phone
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: officerCtrl,
+                                  textCapitalization: TextCapitalization.words,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Credit Officer Name',
+                                    hintText: 'e.g. Babatunde Lawal',
+                                    labelStyle: TextStyle(fontSize: 12),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  style: const TextStyle(fontSize: 13),
                                 ),
-                                style: const TextStyle(fontSize: 13),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
-                                controller: phoneCtrl,
-                                keyboardType: TextInputType.phone,
-                                decoration: const InputDecoration(
-                                  labelText: 'Officer Phone',
-                                  hintText: 'e.g. 08012345678',
-                                  labelStyle: TextStyle(fontSize: 12),
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                  border: OutlineInputBorder(),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextFormField(
+                                  controller: phoneCtrl,
+                                  keyboardType: TextInputType.phone,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Officer Phone',
+                                    hintText: 'e.g. 08012345678',
+                                    labelStyle: TextStyle(fontSize: 12),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  style: const TextStyle(fontSize: 13),
                                 ),
-                                style: const TextStyle(fontSize: 13),
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 14),
 
                         // Initial Group Savings (Optional)
@@ -640,10 +736,18 @@ class _BranchOnboardingPortalScreenState
     );
 
     // Active loan fields
+    final existingPrincipal = isEditing
+        ? (double.tryParse(memberToEdit['principal_loan']?.toString() ?? '') ??
+            double.tryParse(memberToEdit['active_credit']?.toString() ?? '0') ??
+            0.0)
+        : 0.0;
     final existingActiveCredit = isEditing ? (double.tryParse(memberToEdit['active_credit']?.toString() ?? '0') ?? 0.0) : 0.0;
     final existingCurBal = isEditing ? (double.tryParse(memberToEdit['current_credit_balance']?.toString() ?? '0') ?? 0.0) : 0.0;
-    bool hasActiveLoan = existingActiveCredit > 0 || existingCurBal > 0;
+    bool hasActiveLoan = existingPrincipal > 0 || existingActiveCredit > 0 || existingCurBal > 0;
 
+    final principalCtrl = TextEditingController(
+      text: existingPrincipal > 0 ? existingPrincipal.toStringAsFixed(2) : '',
+    );
     final creditCtrl = TextEditingController(
       text: existingActiveCredit > 0 ? existingActiveCredit.toStringAsFixed(2) : '',
     );
@@ -671,8 +775,10 @@ class _BranchOnboardingPortalScreenState
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setModalState) {
+            final isMobileModal = MediaQuery.of(ctx).size.width < 500;
             return Dialog(
               backgroundColor: Colors.white,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 560),
@@ -729,71 +835,127 @@ class _BranchOnboardingPortalScreenState
                         const SizedBox(height: 16),
 
                         // Section 1: Group Assignment & Code
-                        Row(
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: DropdownButtonFormField<String>(
-                                initialValue: selectedGroupRef,
-                                decoration: const InputDecoration(
-                                  labelText: 'Solidarity Group *',
-                                  labelStyle: TextStyle(fontSize: 12),
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                  border: OutlineInputBorder(),
+                        if (isMobileModal) ...[
+                          DropdownButtonFormField<String>(
+                            initialValue: selectedGroupRef,
+                            decoration: const InputDecoration(
+                              labelText: 'Solidarity Group *',
+                              labelStyle: TextStyle(fontSize: 12),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                              border: OutlineInputBorder(),
+                            ),
+                            items: _groups.map((g) {
+                              final gRef = g['group_reference'] ?? '';
+                              final gName = g['group_name'] ?? '';
+                              return DropdownMenuItem(
+                                value: gRef.toString(),
+                                child: Text(
+                                  '$gRef ($gName)',
+                                  style: const TextStyle(fontSize: 13),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                items: _groups.map((g) {
-                                  final gRef = g['group_reference'] ?? '';
-                                  final gName = g['group_name'] ?? '';
-                                  return DropdownMenuItem(
-                                    value: gRef.toString(),
-                                    child: Text(
-                                      '$gRef ($gName)',
-                                      style: const TextStyle(fontSize: 13),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  );
-                                }).toList(),
-                                onChanged: (val) {
-                                  if (val != null) {
-                                    setModalState(() {
-                                      selectedGroupRef = val;
-                                      if (!isEditing) {
-                                        // Auto-update member reference code with new group code
-                                        refCtrl.text = '$branchCode-${selectedGroupRef.replaceAll('GRP-', '')}-${nextSeq.toString().padLeft(3, '0')}';
-                                      }
-                                    });
+                              );
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setModalState(() {
+                                  selectedGroupRef = val;
+                                  if (!isEditing) {
+                                    refCtrl.text = '$branchCode-${selectedGroupRef.replaceAll('GRP-', '')}-${nextSeq.toString().padLeft(3, '0')}';
                                   }
-                                },
-                              ),
+                                });
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: refCtrl,
+                            textCapitalization: TextCapitalization.characters,
+                            decoration: const InputDecoration(
+                              labelText: 'Member Code *',
+                              hintText: 'e.g. BR-01-001',
+                              labelStyle: TextStyle(fontSize: 12),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                              border: OutlineInputBorder(),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              flex: 2,
-                              child: TextFormField(
-                                controller: refCtrl,
-                                textCapitalization: TextCapitalization.characters,
-                                decoration: const InputDecoration(
-                                  labelText: 'Member Code *',
-                                  hintText: 'e.g. BR-01-001',
-                                  labelStyle: TextStyle(fontSize: 12),
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                  border: OutlineInputBorder(),
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                            validator: (val) {
+                              if (val == null || val.trim().isEmpty) return 'Required';
+                              final clean = val.trim().toUpperCase();
+                              final dup = _members.any((m) =>
+                                  m != memberToEdit &&
+                                  (m['member_reference'] ?? '').toString().toUpperCase() == clean);
+                              if (dup) return 'Code in use';
+                              return null;
+                            },
+                          ),
+                        ] else ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: DropdownButtonFormField<String>(
+                                  initialValue: selectedGroupRef,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Solidarity Group *',
+                                    labelStyle: TextStyle(fontSize: 12),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  items: _groups.map((g) {
+                                    final gRef = g['group_reference'] ?? '';
+                                    final gName = g['group_name'] ?? '';
+                                    return DropdownMenuItem(
+                                      value: gRef.toString(),
+                                      child: Text(
+                                        '$gRef ($gName)',
+                                        style: const TextStyle(fontSize: 13),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      setModalState(() {
+                                        selectedGroupRef = val;
+                                        if (!isEditing) {
+                                          refCtrl.text = '$branchCode-${selectedGroupRef.replaceAll('GRP-', '')}-${nextSeq.toString().padLeft(3, '0')}';
+                                        }
+                                      });
+                                    }
+                                  },
                                 ),
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-                                validator: (val) {
-                                  if (val == null || val.trim().isEmpty) return 'Required';
-                                  final clean = val.trim().toUpperCase();
-                                  final dup = _members.any((m) =>
-                                      m != memberToEdit &&
-                                      (m['member_reference'] ?? '').toString().toUpperCase() == clean);
-                                  if (dup) return 'Code in use';
-                                  return null;
-                                },
                               ),
-                            ),
-                          ],
-                        ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                flex: 2,
+                                child: TextFormField(
+                                  controller: refCtrl,
+                                  textCapitalization: TextCapitalization.characters,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Member Code *',
+                                    hintText: 'e.g. BR-01-001',
+                                    labelStyle: TextStyle(fontSize: 12),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                                  validator: (val) {
+                                    if (val == null || val.trim().isEmpty) return 'Required';
+                                    final clean = val.trim().toUpperCase();
+                                    final dup = _members.any((m) =>
+                                        m != memberToEdit &&
+                                        (m['member_reference'] ?? '').toString().toUpperCase() == clean);
+                                    if (dup) return 'Code in use';
+                                    return null;
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 14),
 
                         // Full Name
@@ -814,38 +976,65 @@ class _BranchOnboardingPortalScreenState
                         const SizedBox(height: 14),
 
                         // Phone & Home Address
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextFormField(
-                                controller: phoneCtrl,
-                                keyboardType: TextInputType.phone,
-                                decoration: const InputDecoration(
-                                  labelText: 'Phone Number',
-                                  hintText: 'e.g. 08012345678',
-                                  labelStyle: TextStyle(fontSize: 12),
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                  border: OutlineInputBorder(),
-                                ),
-                                style: const TextStyle(fontSize: 13),
-                              ),
+                        if (isMobileModal) ...[
+                          TextFormField(
+                            controller: phoneCtrl,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              labelText: 'Phone Number',
+                              hintText: 'e.g. 08012345678',
+                              labelStyle: TextStyle(fontSize: 12),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                              border: OutlineInputBorder(),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
-                                controller: addressCtrl,
-                                decoration: const InputDecoration(
-                                  labelText: 'Residential / Shop Address',
-                                  hintText: 'e.g. Shop 4B Akowonjo',
-                                  labelStyle: TextStyle(fontSize: 12),
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                  border: OutlineInputBorder(),
-                                ),
-                                style: const TextStyle(fontSize: 13),
-                              ),
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: addressCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'Residential / Shop Address',
+                              hintText: 'e.g. Shop 4B Akowonjo',
+                              labelStyle: TextStyle(fontSize: 12),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                              border: OutlineInputBorder(),
                             ),
-                          ],
-                        ),
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ] else ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: phoneCtrl,
+                                  keyboardType: TextInputType.phone,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Phone Number',
+                                    hintText: 'e.g. 08012345678',
+                                    labelStyle: TextStyle(fontSize: 12),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextFormField(
+                                  controller: addressCtrl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Residential / Shop Address',
+                                    hintText: 'e.g. Shop 4B Akowonjo',
+                                    labelStyle: TextStyle(fontSize: 12),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 14),
 
                         // Opening Savings
@@ -902,6 +1091,7 @@ class _BranchOnboardingPortalScreenState
                                   setModalState(() {
                                     hasActiveLoan = val;
                                     if (!val) {
+                                      principalCtrl.clear();
                                       creditCtrl.clear();
                                       balanceCtrl.clear();
                                     }
@@ -941,8 +1131,84 @@ class _BranchOnboardingPortalScreenState
                                   },
                                 ),
                                 const SizedBox(height: 12),
-                                Row(
-                                  children: [
+                                if (isMobileModal) ...[
+                                  TextFormField(
+                                    controller: principalCtrl,
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    decoration: const InputDecoration(
+                                      labelText: 'Principal Loan (₦) *',
+                                      prefixText: '₦ ',
+                                      hintText: 'e.g. 100,000',
+                                      labelStyle: TextStyle(fontSize: 11.5),
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    style: const TextStyle(fontSize: 13),
+                                    onChanged: (val) {
+                                      if (creditCtrl.text.isEmpty || creditCtrl.text == '0.00') {
+                                        creditCtrl.text = val;
+                                      }
+                                    },
+                                    validator: (val) {
+                                      if (!hasActiveLoan) return null;
+                                      if (val == null || val.trim().isEmpty) return 'Required';
+                                      final amt = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
+                                      if (amt <= 0) return 'Must be > 0';
+                                      return null;
+                                    },
+                                  ),
+                                  const SizedBox(height: 12),
+                                  TextFormField(
+                                    controller: creditCtrl,
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    decoration: const InputDecoration(
+                                      labelText: 'Active Credit Disbursed (₦) *',
+                                      prefixText: '₦ ',
+                                      hintText: 'e.g. 120,000',
+                                      labelStyle: TextStyle(fontSize: 11.5),
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    style: const TextStyle(fontSize: 13),
+                                    validator: (val) {
+                                      if (!hasActiveLoan) return null;
+                                      if (val == null || val.trim().isEmpty) return 'Required';
+                                      final amt = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
+                                      if (amt <= 0) return 'Must be > 0';
+                                      return null;
+                                    },
+                                  ),
+                                ] else ...[
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                      child: TextFormField(
+                                        controller: principalCtrl,
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        decoration: const InputDecoration(
+                                          labelText: 'Principal Loan (₦) *',
+                                          prefixText: '₦ ',
+                                          hintText: 'e.g. 100,000',
+                                          labelStyle: TextStyle(fontSize: 11.5),
+                                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        style: const TextStyle(fontSize: 13),
+                                        onChanged: (val) {
+                                          if (creditCtrl.text.isEmpty || creditCtrl.text == '0.00') {
+                                            creditCtrl.text = val;
+                                          }
+                                        },
+                                        validator: (val) {
+                                          if (!hasActiveLoan) return null;
+                                          if (val == null || val.trim().isEmpty) return 'Required';
+                                          final amt = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
+                                          if (amt <= 0) return 'Must be > 0';
+                                          return null;
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
                                     Expanded(
                                       child: TextFormField(
                                         controller: creditCtrl,
@@ -950,7 +1216,7 @@ class _BranchOnboardingPortalScreenState
                                         decoration: const InputDecoration(
                                           labelText: 'Active Credit Disbursed (₦) *',
                                           prefixText: '₦ ',
-                                          hintText: 'e.g. 100,000',
+                                          hintText: 'e.g. 120,000',
                                           labelStyle: TextStyle(fontSize: 11.5),
                                           contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                           border: OutlineInputBorder(),
@@ -965,32 +1231,31 @@ class _BranchOnboardingPortalScreenState
                                         },
                                       ),
                                     ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: balanceCtrl,
-                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                        decoration: const InputDecoration(
-                                          labelText: 'Outstanding Balance (₦) *',
-                                          prefixText: '₦ ',
-                                          hintText: 'e.g. 45,000',
-                                          labelStyle: TextStyle(fontSize: 11.5),
-                                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                          border: OutlineInputBorder(),
-                                        ),
-                                        style: const TextStyle(fontSize: 13),
-                                        validator: (val) {
-                                          if (!hasActiveLoan) return null;
-                                          if (val == null || val.trim().isEmpty) return 'Required';
-                                          final bal = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
-                                          final cred = double.tryParse(creditCtrl.text.replaceAll(',', '').trim()) ?? 0;
-                                          if (bal < 0) return 'Cannot be negative';
-                                          if (bal > cred && cred > 0) return 'Exceeds credit';
-                                          return null;
-                                        },
-                                      ),
-                                    ),
                                   ],
+                                ),
+                              ],
+                              const SizedBox(height: 12),
+                                TextFormField(
+                                  controller: balanceCtrl,
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Outstanding Balance (₦) *',
+                                    prefixText: '₦ ',
+                                    hintText: 'e.g. 45,000',
+                                    labelStyle: TextStyle(fontSize: 11.5),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  style: const TextStyle(fontSize: 13),
+                                  validator: (val) {
+                                    if (!hasActiveLoan) return null;
+                                    if (val == null || val.trim().isEmpty) return 'Required';
+                                    final bal = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
+                                    final cred = double.tryParse(creditCtrl.text.replaceAll(',', '').trim()) ?? 0;
+                                    if (bal < 0) return 'Cannot be negative';
+                                    if (bal > cred && cred > 0) return 'Exceeds credit';
+                                    return null;
+                                  },
                                 ),
                               ],
                             ),
@@ -1022,13 +1287,18 @@ class _BranchOnboardingPortalScreenState
                                 final cleanAddress = addressCtrl.text.trim();
                                 final cleanSavings = double.tryParse(savingsCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
 
+                                final cleanPrincipal = hasActiveLoan
+                                    ? (double.tryParse(principalCtrl.text.replaceAll(',', '').trim()) ?? 0.0)
+                                    : 0.0;
                                 final cleanActiveCred = hasActiveLoan
-                                    ? (double.tryParse(creditCtrl.text.replaceAll(',', '').trim()) ?? 0.0)
+                                    ? (double.tryParse(creditCtrl.text.replaceAll(',', '').trim()) ?? cleanPrincipal)
                                     : 0.0;
                                 final cleanCurBal = hasActiveLoan
                                     ? (double.tryParse(balanceCtrl.text.replaceAll(',', '').trim()) ?? 0.0)
                                     : 0.0;
                                 final cleanProd = hasActiveLoan ? selectedProduct : productOptions.first;
+
+                                final finalPrincipal = cleanPrincipal > 0 ? cleanPrincipal : cleanActiveCred;
 
                                 setState(() {
                                   if (isEditing) {
@@ -1039,7 +1309,7 @@ class _BranchOnboardingPortalScreenState
                                     memberToEdit['home_address'] = cleanAddress;
                                     memberToEdit['savings_balance'] = cleanSavings;
                                     memberToEdit['loan_type'] = cleanProd;
-                                    memberToEdit['principal_loan'] = cleanActiveCred;
+                                    memberToEdit['principal_loan'] = finalPrincipal;
                                     memberToEdit['active_credit'] = cleanActiveCred;
                                     memberToEdit['current_credit_balance'] = cleanCurBal;
                                   } else {
@@ -1052,7 +1322,7 @@ class _BranchOnboardingPortalScreenState
                                       'home_address': cleanAddress,
                                       'savings_balance': cleanSavings,
                                       'loan_type': cleanProd,
-                                      'principal_loan': cleanActiveCred,
+                                      'principal_loan': finalPrincipal,
                                       'active_credit': cleanActiveCred,
                                       'current_credit_balance': cleanCurBal,
                                     });
@@ -1173,6 +1443,11 @@ class _BranchOnboardingPortalScreenState
   }
 
   double get _totalSavings => _members.fold(0.0, (sum, m) => sum + (double.tryParse(m['savings_balance']?.toString() ?? '0') ?? 0.0));
+  double get _totalPrincipalLoan => _members.fold(0.0, (sum, m) {
+    final p = double.tryParse(m['principal_loan']?.toString() ?? '');
+    final a = double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0;
+    return sum + (p != null && p > 0 ? p : a);
+  });
   double get _totalActiveCredit => _members.fold(0.0, (sum, m) => sum + (double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0));
   double get _totalCurrentBalance => _members.fold(0.0, (sum, m) => sum + (double.tryParse(m['current_credit_balance']?.toString() ?? '0') ?? 0.0));
 
@@ -1595,7 +1870,9 @@ class _BranchOnboardingPortalScreenState
                 _buildMetricCardChip('Groups', _groups.length.toString(), Icons.hub_outlined, const Color(0xFF475569), const Color(0xFFF1F5F9)),
                 _buildMetricCardChip('Members', _members.length.toString(), Icons.people_outline, const Color(0xFF475569), const Color(0xFFF1F5F9)),
                 _buildMetricCardChip('Total Savings', CurrencyFormatter.formatNaira(_totalSavings), Icons.savings_outlined, const Color(0xFF059669), const Color(0xFFECFDF5)),
-                _buildMetricCardChip('Disbursed Credit', CurrencyFormatter.formatNaira(_totalActiveCredit), Icons.credit_card_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF)),
+                if (_totalPrincipalLoan > 0)
+                  _buildMetricCardChip('Principal Disbursed', CurrencyFormatter.formatNaira(_totalPrincipalLoan), Icons.account_balance_outlined, const Color(0xFF4F46E5), const Color(0xFFEEF2FF)),
+                _buildMetricCardChip('Active Credit', CurrencyFormatter.formatNaira(_totalActiveCredit), Icons.credit_card_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF)),
                 _buildMetricCardChip('Outstanding Balance', CurrencyFormatter.formatNaira(_totalCurrentBalance), Icons.account_balance_wallet_outlined, const Color(0xFFD97706), const Color(0xFFFFFBEB)),
               ];
 
@@ -1866,6 +2143,7 @@ class _BranchOnboardingPortalScreenState
     final phone = m['phone_number'] ?? '';
     final savings = double.tryParse(m['savings_balance']?.toString() ?? '0') ?? 0.0;
     final activeCred = double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0;
+    final princLoan = double.tryParse(m['principal_loan']?.toString() ?? '') ?? activeCred;
     final curBal = double.tryParse(m['current_credit_balance']?.toString() ?? '0') ?? 0.0;
     final prod = m['loan_type'] ?? 'Daily 60 Days';
 
@@ -2012,6 +2290,18 @@ class _BranchOnboardingPortalScreenState
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
+                      if (activeCred > 0 && princLoan > 0)
+                        Text(
+                          'Prin: ${CurrencyFormatter.formatNaira(princLoan)}',
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF64748B),
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                     ],
                   ),
                 ),
@@ -2058,6 +2348,7 @@ class _BranchOnboardingPortalScreenState
     final phone = m['phone_number'] ?? '';
     final savings = double.tryParse(m['savings_balance']?.toString() ?? '0') ?? 0.0;
     final activeCred = double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0;
+    final princLoan = double.tryParse(m['principal_loan']?.toString() ?? '') ?? activeCred;
     final curBal = double.tryParse(m['current_credit_balance']?.toString() ?? '0') ?? 0.0;
     final prod = m['loan_type'] ?? 'Daily 60 Days';
 
@@ -2141,6 +2432,16 @@ class _BranchOnboardingPortalScreenState
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
+                if (activeCred > 0 && princLoan > 0)
+                  Text(
+                    'Prin: ${CurrencyFormatter.formatNaira(princLoan)}',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF64748B),
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
               ],
             ),
           ),
@@ -2547,8 +2848,12 @@ class _BranchOnboardingPortalScreenState
                     _buildReviewRow('Registered Members', '${_members.length} clients'),
                     const Divider(height: 16, color: Color(0xFFF1F5F9)),
                     _buildReviewRow('Initial Opening Savings', CurrencyFormatter.formatNaira(_totalSavings)),
+                    if (_totalPrincipalLoan > 0) ...[
+                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      _buildReviewRow('Total Principal Disbursed', CurrencyFormatter.formatNaira(_totalPrincipalLoan)),
+                    ],
                     const Divider(height: 16, color: Color(0xFFF1F5F9)),
-                    _buildReviewRow('Total Active Credit Disbursed', CurrencyFormatter.formatNaira(_totalActiveCredit)),
+                    _buildReviewRow('Total Active Credit (With Interest)', CurrencyFormatter.formatNaira(_totalActiveCredit)),
                     const Divider(height: 16, color: Color(0xFFF1F5F9)),
                     _buildReviewRow('Total Current Balance', CurrencyFormatter.formatNaira(_totalCurrentBalance)),
                   ],

@@ -95,7 +95,7 @@ class OnboardingService:
         products = p_res.data or []
 
         # Standard meeting days
-        meeting_days = ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+        meeting_days = ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Monthly"]
 
         return {
             "session": session,
