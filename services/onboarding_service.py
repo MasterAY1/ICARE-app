@@ -2,6 +2,7 @@ import uuid
 import math
 import secrets
 import datetime
+import re
 from typing import Dict, Any, List, Optional, Tuple
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from services.loan_product_engine import LoanProductEngine
@@ -93,6 +94,25 @@ class OnboardingService:
         # Fetch reference loan products
         p_res = uow.client.table("loan_products").select("product_id, name, repayment_cycle, installments, interest_rate").order("name").execute()
         products = p_res.data or []
+
+        # Check next available branch group number for smart UI pre-filling
+        branch_id = session.get("branch_id")
+        if not branch_id and session.get("branch_code"):
+            b_res = uow.client.table("branches").select("branch_id").or_(f"name.ilike.{session.get('branch_name')},code.ilike.{session.get('branch_code')}").execute()
+            if b_res.data:
+                branch_id = b_res.data[0]["branch_id"]
+
+        next_group_num = 1
+        if branch_id:
+            g_res = uow.client.table("groups").select("group_number").eq("branch_id", branch_id).execute()
+            nums = []
+            for g in (g_res.data or []):
+                gn_val = str(g.get("group_number") or "").strip()
+                if gn_val.isdigit():
+                    nums.append(int(gn_val))
+            if nums:
+                next_group_num = max(nums) + 1
+        session["next_branch_group_number"] = next_group_num
 
         # Standard meeting days
         meeting_days = ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Monthly"]
@@ -428,7 +448,7 @@ class OnboardingService:
     def commit_session(
         uow: SupabaseUnitOfWork,
         session_id: str,
-        approved_by_id: str,
+        approved_by_id: Optional[str] = None,
         approval_notes: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -465,7 +485,7 @@ class OnboardingService:
                     "branch_id": branch_id,
                     "name": branch_name,
                     "code": branch_code,
-                    "status": "Active"
+                    "is_active": True
                 }).execute()
 
         # 2. Pre-fetch Loan Products map
@@ -494,7 +514,19 @@ class OnboardingService:
             day = min(d.day, calendar.monthrange(y, m)[1])
             return datetime.date(y, m, day)
 
-        # 4. Migrate Groups
+        # 4. Migrate Groups (Option B: Dynamic Branch Auto-Sequence & Ingestion Collision Guard)
+        # Fetch existing groups for this branch to prevent collision
+        res_existing_groups = uow.client.table("groups").select("group_number").eq("branch_id", branch_id).execute()
+        existing_group_numbers = set()
+        max_existing_group_num = 0
+        for eg in (res_existing_groups.data or []):
+            gn_str = eg.get("group_number")
+            if gn_str and str(gn_str).strip().isdigit():
+                num = int(str(gn_str).strip())
+                existing_group_numbers.add(num)
+                if num > max_existing_group_num:
+                    max_existing_group_num = num
+
         group_ref_map = {}
         for idx, g in enumerate(groups, 1):
             g_ref = str(g.get("group_reference") or f"GRP-{str(idx).zfill(2)}").strip()
@@ -503,32 +535,48 @@ class OnboardingService:
             leader = g.get("leader_name")
             g_sav = float(g.get("group_savings") or 0.0)
 
+            # Extract requested group number from g_ref or fallback to idx
+            digits = re.findall(r'\d+', g_ref)
             try:
-                gn = int(g_ref.upper().replace("GRP-", "").strip())
+                raw_gn = int(digits[-1]) if digits else idx
             except Exception:
-                gn = idx
+                raw_gn = idx
 
-            # Check if group already exists
-            g_check = uow.client.table("groups").select("group_id").eq("branch_id", branch_id).eq("group_number", str(gn)).execute()
-            if g_check.data:
-                g_id = g_check.data[0]["group_id"]
-                uow.client.table("groups").update({
-                    "name": g_name, "meeting_day": m_day, "leader_name": leader
-                }).eq("group_id", g_id).execute()
+            # Option B Collision Guard:
+            # If raw_gn already exists in this branch, or has already been assigned in this batch:
+            if raw_gn in existing_group_numbers:
+                max_existing_group_num += 1
+                gn = max_existing_group_num
             else:
-                g_id = str(uuid.uuid4())
-                uow.client.table("groups").insert({
-                    "group_id": g_id, "name": g_name, "meeting_day": m_day,
-                    "branch_id": branch_id, "leader_name": leader, "status": "Active",
-                    "group_number": str(gn), "current_member_sequence": 0
-                }).execute()
+                gn = raw_gn
+                if gn > max_existing_group_num:
+                    max_existing_group_num = gn
+            existing_group_numbers.add(gn)
+
+            # Always insert a fresh group record - zero overwrite guarantee
+            g_id = str(uuid.uuid4())
+            uow.client.table("groups").insert({
+                "group_id": g_id,
+                "name": g_name,
+                "meeting_day": m_day,
+                "branch_id": branch_id,
+                "leader_name": leader,
+                "status": "Active",
+                "group_number": str(gn),
+                "current_member_sequence": 0
+            }).execute()
 
             # Group opening savings
             if g_sav > 0:
                 uow.client.table("group_savings").insert({
-                    "id": str(uuid.uuid4()), "group_id": g_id, "posting_date": "1970-01-01",
-                    "branch_id": branch_id, "deposit_amount": g_sav, "withdrawal_amount": 0.0,
-                    "reference": "ONBOARDING-GROUP-OPENING", "remarks": "Initial Onboarding Group Savings"
+                    "id": str(uuid.uuid4()),
+                    "group_id": g_id,
+                    "posting_date": "1970-01-01",
+                    "branch_id": branch_id,
+                    "deposit_amount": g_sav,
+                    "withdrawal_amount": 0.0,
+                    "reference": "ONBOARDING-GROUP-OPENING",
+                    "remarks": "Initial Onboarding Group Savings"
                 }).execute()
 
             group_ref_map[g_ref] = {
@@ -546,6 +594,10 @@ class OnboardingService:
         schedules_created = 0
         group_max_seq = {}
 
+        # Pre-fetch existing client codes in this branch to ensure zero collision / overwrites
+        res_existing_clients = uow.client.table("clients").select("client_code").eq("branch_id", branch_id).execute()
+        existing_client_codes = {str(c.get("client_code")).strip() for c in (res_existing_clients.data or []) if c.get("client_code")}
+
         # 5. Migrate Members
         for m_idx, m in enumerate(members, 1):
             f_name = str(m.get("full_name") or "").strip()
@@ -558,14 +610,21 @@ class OnboardingService:
             gn = g_info["group_number"]
             m_day_str = g_info["meeting_day"]
 
-            m_num = m.get("member_number") or (m_idx)
+            m_num = m.get("member_number") or m_idx
             try:
                 seq = int(m_num)
             except Exception:
                 seq = m_idx
+
+            # Find next free sequence for this group to avoid code duplication
+            target_client_code = f"{branch_code}-{str(gn).zfill(2)}-{str(seq).zfill(3)}"
+            while target_client_code in existing_client_codes:
+                seq += 1
+                target_client_code = f"{branch_code}-{str(gn).zfill(2)}-{str(seq).zfill(3)}"
+
+            existing_client_codes.add(target_client_code)
             group_max_seq[g_id] = max(group_max_seq.get(g_id, 0), seq)
 
-            target_client_code = f"{branch_code}-{str(gn).zfill(2)}-{str(seq).zfill(3)}"
             phone = m.get("phone_number")
             addr = m.get("home_address")
             s_bal = float(m.get("savings_balance") or 0.0)
@@ -576,27 +635,26 @@ class OnboardingService:
             has_loan = (a_cred > 0 or c_bal > 0)
             lifecycle_status = ON_LOAN_STATUS_ID if has_loan else SAVINGS_ONLY_STATUS_ID
 
-            # Create or update client
-            c_check = uow.client.table("clients").select("client_id").eq("client_code", target_client_code).execute()
-            if c_check.data:
-                c_id = c_check.data[0]["client_id"]
-                uow.client.table("clients").update({
-                    "name": f_name, "phone": phone, "address": addr,
-                    "branch_id": branch_id, "group_id": g_id, "status": lifecycle_status
-                }).eq("client_id", c_id).execute()
-            else:
-                c_id = str(uuid.uuid4())
-                uow.client.table("clients").insert({
-                    "client_id": c_id, "client_code": target_client_code, "name": f_name,
-                    "phone": phone, "address": addr, "branch_id": branch_id,
-                    "group_id": g_id, "status": lifecycle_status
-                }).execute()
-                clients_created += 1
+            # Always insert as fresh client - zero overwrite guarantee
+            c_id = str(uuid.uuid4())
+            uow.client.table("clients").insert({
+                "client_id": c_id,
+                "client_code": target_client_code,
+                "name": f_name,
+                "phone": phone,
+                "address": addr,
+                "branch_id": branch_id,
+                "group_id": g_id,
+                "status": lifecycle_status
+            }).execute()
+            clients_created += 1
 
             # Membership link
-            uow.client.table("client_memberships").delete().eq("client_id", c_id).execute()
             uow.client.table("client_memberships").insert({
-                "membership_id": str(uuid.uuid4()), "client_id": c_id, "group_id": g_id, "branch_id": branch_id
+                "membership_id": str(uuid.uuid4()),
+                "client_id": c_id,
+                "group_id": g_id,
+                "branch_id": branch_id
             }).execute()
 
             # Seed Individual Opening Savings

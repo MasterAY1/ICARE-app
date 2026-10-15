@@ -268,7 +268,19 @@ class _BranchOnboardingPortalScreenState
 
   void _showGroupModal({Map<String, dynamic>? groupToEdit}) {
     final isEditing = groupToEdit != null;
-    final nextNum = _groups.length + 1;
+    int startingNum = (_sessionData?['next_branch_group_number'] as num?)?.toInt() ?? 1;
+    int maxInSession = 0;
+    for (final g in _groups) {
+      final refStr = (g['group_reference'] ?? '').toString();
+      final matches = RegExp(r'\d+').allMatches(refStr);
+      if (matches.isNotEmpty) {
+        final lastNum = int.tryParse(matches.last.group(0) ?? '') ?? 0;
+        if (lastNum > maxInSession) {
+          maxInSession = lastNum;
+        }
+      }
+    }
+    final nextNum = maxInSession >= startingNum ? (maxInSession + 1) : startingNum;
     final defaultRef = isEditing
         ? (groupToEdit['group_reference']?.toString() ?? 'GRP-01')
         : 'GRP-${nextNum.toString().padLeft(2, '0')}';
@@ -358,6 +370,8 @@ class _BranchOnboardingPortalScreenState
                             decoration: const InputDecoration(
                               labelText: 'Group Code *',
                               hintText: 'GRP-01',
+                              helperText: 'Branch sequence (auto-offsets to prevent conflicts)',
+                              helperMaxLines: 1,
                               labelStyle: TextStyle(fontSize: 12),
                               contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                               border: OutlineInputBorder(),
