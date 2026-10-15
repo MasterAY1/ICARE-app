@@ -776,6 +776,25 @@ class _BranchOnboardingPortalScreenState
         return StatefulBuilder(
           builder: (context, setModalState) {
             final isMobileModal = MediaQuery.of(ctx).size.width < 500;
+            final enteredCred = double.tryParse(creditCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+            final enteredBal = double.tryParse(balanceCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+            int prodInstallments = 60;
+            final prodLower = selectedProduct.toLowerCase();
+            if (prodLower.contains('120')) {
+              prodInstallments = 120;
+            } else if (prodLower.contains('12') && (prodLower.contains('w') || prodLower.contains('week'))) {
+              prodInstallments = 12;
+            } else if (prodLower.contains('24') && (prodLower.contains('w') || prodLower.contains('week'))) {
+              prodInstallments = 24;
+            } else if (prodLower.contains('3') && (prodLower.contains('m') || prodLower.contains('month'))) {
+              prodInstallments = 3;
+            } else if (prodLower.contains('6') && (prodLower.contains('m') || prodLower.contains('month'))) {
+              prodInstallments = 6;
+            } else if (prodLower.contains('60')) {
+              prodInstallments = 60;
+            }
+            final calcInstallment = prodInstallments > 0 ? (enteredCred / prodInstallments) : 0.0;
+            final estRemainingCount = calcInstallment > 0 ? (enteredBal / calcInstallment).ceil() : 0;
             return Dialog(
               backgroundColor: Colors.white,
               insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
@@ -1139,16 +1158,13 @@ class _BranchOnboardingPortalScreenState
                                       labelText: 'Principal Loan (₦) *',
                                       prefixText: '₦ ',
                                       hintText: 'e.g. 100,000',
+                                      helperText: 'Base capital borrowed or asset cost',
+                                      helperMaxLines: 1,
                                       labelStyle: TextStyle(fontSize: 11.5),
                                       contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                       border: OutlineInputBorder(),
                                     ),
                                     style: const TextStyle(fontSize: 13),
-                                    onChanged: (val) {
-                                      if (creditCtrl.text.isEmpty || creditCtrl.text == '0.00') {
-                                        creditCtrl.text = val;
-                                      }
-                                    },
                                     validator: (val) {
                                       if (!hasActiveLoan) return null;
                                       if (val == null || val.trim().isEmpty) return 'Required';
@@ -1165,11 +1181,14 @@ class _BranchOnboardingPortalScreenState
                                       labelText: 'Active Credit Disbursed (₦) *',
                                       prefixText: '₦ ',
                                       hintText: 'e.g. 120,000',
+                                      helperText: 'Total scheduled repayable debt',
+                                      helperMaxLines: 1,
                                       labelStyle: TextStyle(fontSize: 11.5),
                                       contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                       border: OutlineInputBorder(),
                                     ),
                                     style: const TextStyle(fontSize: 13),
+                                    onChanged: (_) => setModalState(() {}),
                                     validator: (val) {
                                       if (!hasActiveLoan) return null;
                                       if (val == null || val.trim().isEmpty) return 'Required';
@@ -1189,16 +1208,13 @@ class _BranchOnboardingPortalScreenState
                                           labelText: 'Principal Loan (₦) *',
                                           prefixText: '₦ ',
                                           hintText: 'e.g. 100,000',
+                                          helperText: 'Base capital borrowed or asset cost',
+                                          helperMaxLines: 1,
                                           labelStyle: TextStyle(fontSize: 11.5),
                                           contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                           border: OutlineInputBorder(),
                                         ),
                                         style: const TextStyle(fontSize: 13),
-                                        onChanged: (val) {
-                                          if (creditCtrl.text.isEmpty || creditCtrl.text == '0.00') {
-                                            creditCtrl.text = val;
-                                          }
-                                        },
                                         validator: (val) {
                                           if (!hasActiveLoan) return null;
                                           if (val == null || val.trim().isEmpty) return 'Required';
@@ -1217,11 +1233,14 @@ class _BranchOnboardingPortalScreenState
                                           labelText: 'Active Credit Disbursed (₦) *',
                                           prefixText: '₦ ',
                                           hintText: 'e.g. 120,000',
+                                          helperText: 'Total scheduled repayable debt',
+                                          helperMaxLines: 1,
                                           labelStyle: TextStyle(fontSize: 11.5),
                                           contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                           border: OutlineInputBorder(),
                                         ),
                                         style: const TextStyle(fontSize: 13),
+                                        onChanged: (_) => setModalState(() {}),
                                         validator: (val) {
                                           if (!hasActiveLoan) return null;
                                           if (val == null || val.trim().isEmpty) return 'Required';
@@ -1242,11 +1261,14 @@ class _BranchOnboardingPortalScreenState
                                     labelText: 'Outstanding Balance (₦) *',
                                     prefixText: '₦ ',
                                     hintText: 'e.g. 45,000',
+                                    helperText: 'Current uncollected balance',
+                                    helperMaxLines: 1,
                                     labelStyle: TextStyle(fontSize: 11.5),
                                     contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                     border: OutlineInputBorder(),
                                   ),
                                   style: const TextStyle(fontSize: 13),
+                                  onChanged: (_) => setModalState(() {}),
                                   validator: (val) {
                                     if (!hasActiveLoan) return null;
                                     if (val == null || val.trim().isEmpty) return 'Required';
@@ -1257,6 +1279,35 @@ class _BranchOnboardingPortalScreenState
                                     return null;
                                   },
                                 ),
+                                if (enteredCred > 0) ...[
+                                  const SizedBox(height: 12),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFEFF6FF),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: const Color(0xFFDBEAFE)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.calculate_outlined, size: 16, color: Color(0xFF2563EB)),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            'Scheduled Installment: ${CurrencyFormatter.formatNaira(calcInstallment)} / period ($prodInstallments total)'
+                                            '${enteredBal > 0 ? ' • ~$estRemainingCount remaining' : ''}',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFF1D4ED8),
+                                              fontFeatures: [FontFeature.tabularFigures()],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
