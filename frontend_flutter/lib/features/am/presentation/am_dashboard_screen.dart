@@ -11,6 +11,7 @@ import '../data/datasources/am_api_service.dart';
 import '../data/models/am_dashboard_models.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 import '../../shared/utils/file_download_helper.dart';
+import '../../onboarding/presentation/branch_onboarding_admin_screen.dart';
 
 /// Provider for selected business date in AM dashboard
 final amSelectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
@@ -636,6 +637,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               // Content based on platform and mobile tab
               if (!isMobile || _mobileSectionTab == 'Overview') ...[
                 _buildRegionalExecutiveKpiRow(data.regionalSummary),
+                const SizedBox(height: 16),
+                _buildOnboardingQuickActionCard(context, ref, isMobile),
                 const SizedBox(height: 24),
               ],
 
@@ -728,7 +731,17 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: const Icon(Icons.domain_add, size: 18, color: Color(0xFF0F766E)),
+                      tooltip: 'Branch Onboarding',
+                      padding: const EdgeInsets.all(6),
+                      constraints: const BoxConstraints(),
+                      onPressed: () {
+                        ref.read(activeCoPageProvider.notifier).state = 'Branch Onboarding';
+                      },
+                    ),
+                    const SizedBox(width: 4),
                     IconButton(
                       icon: const Icon(Icons.download, size: 18, color: Color(0xFF065F46)),
                       tooltip: 'Download Regional Report',
@@ -810,6 +823,18 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 icon: const Icon(Icons.calendar_today, size: 14),
                 label: Text(DateFormat('yyyy-MM-dd').format(selectedDate), style: const TextStyle(fontSize: 12)),
                 style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () {
+                  ref.read(activeCoPageProvider.notifier).state = 'Branch Onboarding';
+                },
+                icon: const Icon(Icons.domain_add, size: 14, color: Color(0xFF0F766E)),
+                label: const Text('Branch Onboarding', style: TextStyle(color: Color(0xFF0F766E), fontSize: 12, fontWeight: FontWeight.bold)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFF0F766E)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
               ),
               const SizedBox(width: 8),
               ElevatedButton.icon(
@@ -1035,6 +1060,139 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           ],
         );
       },
+    );
+  }
+
+  // =========================================================================
+  // ONBOARDING QUICK ACTION & MIGRATION CONSOLE CARD
+  // =========================================================================
+  Widget _buildOnboardingQuickActionCard(BuildContext context, WidgetRef ref, bool isMobile) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
+      ),
+      child: isMobile
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDFA),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFCCFBF1)),
+                      ),
+                      child: const Icon(Icons.domain_add, color: Color(0xFF0F766E), size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Branch Digital Onboarding',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Issue 14-day links & manage branch activation',
+                            style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          ref.read(activeCoPageProvider.notifier).state = 'Branch Onboarding';
+                        },
+                        icon: const Icon(Icons.tune, size: 14, color: Color(0xFF0F766E)),
+                        label: const Text('Manage Sessions', style: TextStyle(color: Color(0xFF0F766E), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF0F766E)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => showGenerateOnboardingLinkDialog(context, ref),
+                        icon: const Icon(Icons.add_link, size: 14, color: Colors.white),
+                        label: const Text('+ Generate Link', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0F766E),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDFA),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFCCFBF1)),
+                  ),
+                  child: const Icon(Icons.domain_add, color: Color(0xFF0F766E), size: 26),
+                ),
+                const SizedBox(width: 16),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Branch Digital Onboarding & Migration Console',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                      ),
+                      SizedBox(height: 3),
+                      Text(
+                        'Issue cryptographically secure 14-day links to incoming branch teams, inspect staged member & loan rosters, and sign off on core banking activation.',
+                        style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    ref.read(activeCoPageProvider.notifier).state = 'Branch Onboarding';
+                  },
+                  icon: const Icon(Icons.tune, size: 15, color: Color(0xFF0F766E)),
+                  label: const Text('Open Console', style: TextStyle(color: Color(0xFF0F766E), fontSize: 12.5, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFF0F766E)),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  onPressed: () => showGenerateOnboardingLinkDialog(context, ref),
+                  icon: const Icon(Icons.add_link, size: 15, color: Colors.white),
+                  label: const Text('+ Generate Branch Link', style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0F766E),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 

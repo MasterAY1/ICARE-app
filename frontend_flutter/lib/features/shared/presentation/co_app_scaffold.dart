@@ -440,8 +440,8 @@ class CoAppScaffold extends ConsumerWidget {
       destinations = [
         (key: 'Dashboard', shortLabel: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
         (key: 'Portfolio', shortLabel: 'Portfolio', icon: Icons.pie_chart_outline, activeIcon: Icons.pie_chart),
+        (key: 'Branch Onboarding', shortLabel: 'Onboarding', icon: Icons.domain_add_outlined, activeIcon: Icons.domain_add),
         (key: 'User Management', shortLabel: 'Staff', icon: Icons.people_alt_outlined, activeIcon: Icons.people_alt),
-        (key: 'Audit Ledger', shortLabel: 'Audit', icon: Icons.security_outlined, activeIcon: Icons.security),
         (key: 'Reports & Export', shortLabel: 'Reports', icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart),
       ];
     } else {
