@@ -65,6 +65,7 @@ class ConnectivityService {
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   Timer? _heartbeatTimer;
   bool _lastStatus = true;
+  int _consecutiveFailures = 0;
 
   bool get isOnline => _lastStatus;
 
@@ -76,11 +77,14 @@ class ConnectivityService {
     _connectivitySub = _connectivity.onConnectivityChanged.listen((results) async {
       final hasInterface = results.any((r) => r != ConnectivityResult.none);
       if (!hasInterface) {
+        _consecutiveFailures = 2;
         _updateStatus(false);
       } else {
         // Double-check with a lightweight ping to verify actual data throughput
         final actuallyOnline = await checkActualConnection();
-        _updateStatus(actuallyOnline);
+        if (actuallyOnline) {
+          _updateStatus(true);
+        }
       }
     });
 
@@ -89,17 +93,19 @@ class ConnectivityService {
 
   void _startHeartbeat() {
     _heartbeatTimer?.cancel();
-    // Active heartbeat every 8 seconds to seamlessly catch online <-> offline transitions
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 8), (_) async {
+    // Steady heartbeat every 30 seconds with debouncing to prevent flapping
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       await checkActualConnection();
     });
   }
 
   void reportOffline() {
+    _consecutiveFailures = 2;
     _updateStatus(false);
   }
 
   void reportOnline() {
+    _consecutiveFailures = 0;
     _updateStatus(true);
   }
 
@@ -111,8 +117,15 @@ class ConnectivityService {
   }
 
   static String get _healthUrl {
-    const apiUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'https://icare-app.onrender.com');
-    final cleanUrl = apiUrl.isNotEmpty ? apiUrl : 'https://icare-app.onrender.com';
+    String defaultUrl = 'https://icare-app.onrender.com';
+    if (kIsWeb) {
+      final origin = Uri.base.origin;
+      if (origin.isNotEmpty && !origin.startsWith('file://')) {
+        defaultUrl = origin;
+      }
+    }
+    const envBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
+    final cleanUrl = envBaseUrl.isNotEmpty ? envBaseUrl : defaultUrl;
     return cleanUrl.endsWith('/') ? '${cleanUrl}health' : '$cleanUrl/health';
   }
 
@@ -121,17 +134,30 @@ class ConnectivityService {
     try {
       final res = await _connectivity.checkConnectivity();
       if (res.every((r) => r == ConnectivityResult.none)) {
+        _consecutiveFailures = 2;
         _updateStatus(false);
         return false;
       }
       
       final healthRes = await _healthClient.get(_healthUrl);
       final isHealthy = healthRes.statusCode == 200;
-      _updateStatus(isHealthy);
-      return isHealthy;
+      if (isHealthy) {
+        _consecutiveFailures = 0;
+        _updateStatus(true);
+        return true;
+      } else {
+        _consecutiveFailures++;
+        if (_consecutiveFailures >= 2) {
+          _updateStatus(false);
+        }
+        return false;
+      }
     } catch (_) {
-      // If server doesn't respond or timed out, report offline
-      _updateStatus(false);
+      // Require at least 2 consecutive failures before declaring offline to prevent UI flapping
+      _consecutiveFailures++;
+      if (_consecutiveFailures >= 2) {
+        _updateStatus(false);
+      }
       return false;
     }
   }

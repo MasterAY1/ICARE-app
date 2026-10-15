@@ -19,7 +19,7 @@ final amSelectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
 /// Provider for loading AM Dashboard data
 final amDashboardDataProvider = FutureProvider.autoDispose<AmDashboardDataModel>((ref) async {
   final api = ref.watch(amApiServiceProvider);
-  final isOnline = ref.watch(isOnlineProvider);
+  final isOnline = ref.read(isOnlineProvider);
   final dbService = ref.watch(offlineDatabaseServiceProvider);
   final selectedDate = ref.watch(amSelectedDateProvider);
   final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);

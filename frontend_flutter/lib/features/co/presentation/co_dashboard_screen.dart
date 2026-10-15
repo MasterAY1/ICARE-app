@@ -21,7 +21,7 @@ import '../../shared/presentation/co_app_scaffold.dart';
 
 final coDashboardProvider = FutureProvider.autoDispose<CoDashboardData>((ref) async {
   final api = ref.watch(coApiServiceProvider);
-  final isOnline = ref.watch(isOnlineProvider);
+  final isOnline = ref.read(isOnlineProvider);
   final dbService = ref.watch(offlineDatabaseServiceProvider);
   final syncMgr = ref.watch(offlineSyncManagerProvider);
 

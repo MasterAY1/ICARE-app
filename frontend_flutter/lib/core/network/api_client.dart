@@ -34,12 +34,12 @@ class ApiClient {
         defaultUrl = origin;
       }
     }
-    final envBaseUrl = const String.fromEnvironment('API_BASE_URL', defaultValue: '');
+    const envBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
     final effectiveUrl = baseUrl ?? (envBaseUrl.isNotEmpty ? envBaseUrl : defaultUrl);
     _dio = Dio(BaseOptions(
       baseUrl: effectiveUrl,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 15),
+      connectTimeout: const Duration(seconds: 20),
+      receiveTimeout: const Duration(seconds: 45),
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -96,25 +96,26 @@ class ApiClient {
         return handler.next(response);
       },
       onError: (err, handler) async {
-        if (_isConnectionError(err)) {
-          // Immediately notify connectivity service of offline state
+        final isPhysOffline = _isPhysicalDisconnect(err);
+        if (isPhysOffline) {
+          // Immediately notify connectivity service of true physical offline state
           _connectivityService?.reportOffline();
+        }
 
-          // If this was a GET request, resolve with cached data
-          if (err.requestOptions.method.toUpperCase() == 'GET') {
-            final cacheKey = _getCacheKey(
-              err.requestOptions.path,
-              err.requestOptions.queryParameters,
-            );
-            final cached = await _offlineDb?.getCachedApiResponse(cacheKey);
-            if (cached != null) {
-              return handler.resolve(Response(
-                requestOptions: err.requestOptions,
-                data: cached,
-                statusCode: 200,
-                statusMessage: 'OK (Offline Cache Fallback)',
-              ));
-            }
+        // If this was a GET request and network dropped or timed out, resolve with cached data
+        if (_isConnectionError(err) && err.requestOptions.method.toUpperCase() == 'GET') {
+          final cacheKey = _getCacheKey(
+            err.requestOptions.path,
+            err.requestOptions.queryParameters,
+          );
+          final cached = await _offlineDb?.getCachedApiResponse(cacheKey);
+          if (cached != null) {
+            return handler.resolve(Response(
+              requestOptions: err.requestOptions,
+              data: cached,
+              statusCode: 200,
+              statusMessage: 'OK (Offline Cache Fallback)',
+            ));
           }
         }
 
@@ -122,6 +123,23 @@ class ApiClient {
         return handler.next(err);
       },
     ));
+  }
+
+  static bool _isPhysicalDisconnect(DioException err) {
+    if (err.type == DioExceptionType.connectionError ||
+        err.type == DioExceptionType.connectionTimeout) {
+      return true;
+    }
+    final msg = (err.message ?? '').toLowerCase();
+    final errStr = err.error?.toString().toLowerCase() ?? '';
+    if (msg.contains('socketexception') ||
+        msg.contains('failed host lookup') ||
+        msg.contains('network is unreachable') ||
+        errStr.contains('socketexception') ||
+        errStr.contains('failed host lookup')) {
+      return true;
+    }
+    return false;
   }
 
   static bool _isConnectionError(DioException err) {

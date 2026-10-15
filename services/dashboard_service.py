@@ -120,10 +120,12 @@ class DashboardService:
         try:
             loan_ids = [str(l.get("loan_id")) for l in all_loans if l.get("loan_id")]
             if loan_ids:
-                all_rep_res = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", loan_ids).execute()
-                for r in (all_rep_res.data or []):
-                    lid_s = str(r.get("loan_id"))
-                    lifetime_reps_map[lid_s] = lifetime_reps_map.get(lid_s, 0.0) + float(r.get("amount_paid") or 0.0)
+                for i in range(0, len(loan_ids), 100):
+                    chunk = loan_ids[i:i + 100]
+                    all_rep_res = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", chunk).execute()
+                    for r in (all_rep_res.data or []):
+                        lid_s = str(r.get("loan_id"))
+                        lifetime_reps_map[lid_s] = lifetime_reps_map.get(lid_s, 0.0) + float(r.get("amount_paid") or 0.0)
         except Exception:
             pass
 
@@ -137,11 +139,11 @@ class DashboardService:
         if schedules_by_loan is None:
             schedules_by_loan = {}
             active_lids = [str(l.get("loan_id")) for l in all_loans if l.get("loan_id")]
-            chunk_size = 30
+            chunk_size = 100
             for i in range(0, len(active_lids), chunk_size):
                 chunk = active_lids[i:i + chunk_size]
                 try:
-                    res_sch = uow.client.table("loan_schedule").select("*").in_("loan_id", chunk).order("installment_number").limit(1000).execute()
+                    res_sch = uow.client.table("loan_schedule").select("*").in_("loan_id", chunk).order("installment_number").limit(2000).execute()
                     for row in (res_sch.data or []):
                         lid_k = str(row.get("loan_id"))
                         if lid_k not in schedules_by_loan:
@@ -219,7 +221,8 @@ class DashboardService:
                 sched_rows = schedules_by_loan.get(lid_s, []) if schedules_by_loan else []
                 due_info = ScheduleService.get_loan_due_breakdown(
                     uow, lid_s, target_date, client_id=cid,
-                    loan_data=l, schedule_rows=sched_rows, meeting_day_str=g_mday
+                    loan_data=l, schedule_rows=sched_rows, meeting_day_str=g_mday,
+                    total_paid_sch=tot_paid_loan
                 )
                 has_ov = bool(due_info.get("has_overdue", False))
                 ov_arr = float(due_info.get("overdue_arrears") or 0.0)
@@ -497,17 +500,19 @@ class DashboardService:
             
             loan_ids = [str(l.get("loan_id")) for l in active_loans if l.get("loan_id")]
             if loan_ids:
-                all_rep_res = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", loan_ids).execute()
-                for r in (all_rep_res.data or []):
-                    lid_s = str(r.get("loan_id"))
-                    co_lifetime_reps_map[lid_s] = co_lifetime_reps_map.get(lid_s, 0.0) + float(r.get("amount_paid") or 0.0)
+                for i in range(0, len(loan_ids), 100):
+                    chunk = loan_ids[i:i + 100]
+                    all_rep_res = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", chunk).execute()
+                    for r in (all_rep_res.data or []):
+                        lid_s = str(r.get("loan_id"))
+                        co_lifetime_reps_map[lid_s] = co_lifetime_reps_map.get(lid_s, 0.0) + float(r.get("amount_paid") or 0.0)
 
-                # Batch pre-fetch schedules in chunks of 30 to prevent N+1 query loop and timeouts
-                chunk_size = 30
+                # Batch pre-fetch schedules in chunks of 100 to prevent N+1 query loop and timeouts
+                chunk_size = 100
                 for i in range(0, len(loan_ids), chunk_size):
                     chunk = loan_ids[i:i + chunk_size]
                     try:
-                        res_sch_chunk = uow.client.table("loan_schedule").select("*").in_("loan_id", chunk).order("installment_number").limit(1000).execute()
+                        res_sch_chunk = uow.client.table("loan_schedule").select("*").in_("loan_id", chunk).order("installment_number").limit(2000).execute()
                         for row in (res_sch_chunk.data or []):
                             lid_k = str(row.get("loan_id"))
                             if lid_k not in schedules_by_loan:
@@ -587,11 +592,13 @@ class DashboardService:
 
                 # Fetch authoritative loan due breakdown from ScheduleService
                 from services.schedule_service import ScheduleService
+                tot_paid_co = co_lifetime_reps_map.get(str(lid), 0.0)
                 due_info = ScheduleService.get_loan_due_breakdown(
                     uow, lid, target_date, client_id=cid,
                     loan_data=l,
                     schedule_rows=schedules_by_loan.get(str(lid), []),
-                    meeting_day_str=g_mday
+                    meeting_day_str=g_mday,
+                    total_paid_sch=tot_paid_co
                 )
                 has_arrears_flag = due_info.get("has_overdue", False)
                 overdue_arrears_amt = float(due_info.get("overdue_arrears") or 0.0)
@@ -924,12 +931,14 @@ class DashboardService:
 
                 exp_by_off = {}
                 if loan_ids:
-                    sched_res = uow.client.table("loan_schedule").select("loan_id, total_due").in_("loan_id", loan_ids).eq("due_date", date_str).execute()
-                    for s in (sched_res.data or []):
-                        lid_s = str(s.get("loan_id") or "")
-                        oid_s = loan_to_off.get(lid_s)
-                        if oid_s:
-                            exp_by_off[oid_s] = exp_by_off.get(oid_s, 0.0) + float(s.get("total_due") or 0.0)
+                    for i in range(0, len(loan_ids), 100):
+                        chunk = loan_ids[i:i + 100]
+                        sched_res = uow.client.table("loan_schedule").select("loan_id, total_due").in_("loan_id", chunk).eq("due_date", date_str).execute()
+                        for s in (sched_res.data or []):
+                            lid_s = str(s.get("loan_id") or "")
+                            oid_s = loan_to_off.get(lid_s)
+                            if oid_s:
+                                exp_by_off[oid_s] = exp_by_off.get(oid_s, 0.0) + float(s.get("total_due") or 0.0)
 
                 cb_by_off = {str(c["officer_id"]): float(c.get("closing_balance") or 0.0) for c in (cb_res.data or []) if c.get("officer_id")}
 
