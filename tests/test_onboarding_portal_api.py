@@ -28,12 +28,18 @@ class TestOnboardingPortalApi(unittest.TestCase):
             b_res = self.uow.client.table("branches").select("branch_id").eq("code", "TST").execute()
             if b_res.data:
                 bid = b_res.data[0]["branch_id"]
+                self.uow.client.table("internal_savings").delete().eq("branch_id", bid).execute()
+                self.uow.client.table("laps_savings").delete().eq("branch_id", bid).execute()
                 self.uow.client.table("individual_savings").delete().eq("branch_id", bid).execute()
                 self.uow.client.table("group_savings").delete().eq("branch_id", bid).execute()
                 self.uow.client.table("client_memberships").delete().eq("branch_id", bid).execute()
                 self.uow.client.table("loans").delete().eq("branch_id", bid).execute()
                 self.uow.client.table("clients").delete().eq("branch_id", bid).execute()
                 self.uow.client.table("groups").delete().eq("branch_id", bid).execute()
+                u_res = self.uow.client.table("app_users").select("id").eq("branch_id", bid).execute()
+                for u in (u_res.data or []):
+                    self.uow.client.table("user_roles").delete().eq("user_id", u["id"]).execute()
+                self.uow.client.table("app_users").delete().eq("branch_id", bid).execute()
                 self.uow.client.table("branches").delete().eq("branch_id", bid).execute()
         except Exception:
             pass
@@ -254,5 +260,167 @@ class TestOnboardingPortalApi(unittest.TestCase):
         # Cleanup after test
         self._cleanup()
 
+    def test_officer_provisioning_and_pooled_savings_migration(self):
+        """
+        Verifies:
+        1. Credit officers are provisioned into app_users and assigned role 'Credit Officer' in user_roles.
+        2. Designated Misc Savings officer is persisted to branches.extra_fields (BR-SAV-006).
+        3. Groups, clients, memberships, individual savings, and loans are assigned officer_id.
+        4. Misc Savings is ingested into internal_savings with designated officer_id.
+        5. LAPS Savings reserve is ingested into laps_savings.
+        """
+        self._cleanup()
+
+        session = OnboardingService.create_session(
+            uow=self.uow,
+            branch_name="Test Automation Branch",
+            branch_code="TST",
+            contact_person="Admin Coordinator",
+            contact_phone="08022223333"
+        )
+        token = session["token"]
+
+        payload = {
+            "officers": [
+                {
+                    "name": "Olajumoke Bakare",
+                    "phone": "08011223344",
+                    "role": "Credit Officer",
+                    "is_misc_savings_manager": True
+                },
+                {
+                    "name": "Babatunde Lawal",
+                    "phone": "08099887766",
+                    "role": "Credit Officer",
+                    "is_misc_savings_manager": False
+                }
+            ],
+            "groups": [
+                {
+                    "group_reference": "GRP-01",
+                    "group_name": "Progress Solidarity",
+                    "meeting_day": "Tuesday",
+                    "leader_name": "Mrs. Adeola",
+                    "officer_name": "Olajumoke Bakare",
+                    "officer_phone": "08011223344",
+                    "group_savings": 20000.0
+                },
+                {
+                    "group_reference": "GRP-02",
+                    "group_name": "Success Group",
+                    "meeting_day": "Thursday",
+                    "leader_name": "Mr. Joseph",
+                    "officer_name": "Babatunde Lawal",
+                    "officer_phone": "08099887766",
+                    "group_savings": 15000.0
+                }
+            ],
+            "members": [
+                {
+                    "member_reference": "TST-01-001",
+                    "group_reference": "GRP-01",
+                    "member_number": 1,
+                    "full_name": "Client A",
+                    "phone_number": "08012345678",
+                    "savings_balance": 5000.0,
+                    "loan_type": "Daily 60 Days",
+                    "principal_loan": 100000.0,
+                    "active_credit": 99000.0,
+                    "current_credit_balance": 49500.0
+                },
+                {
+                    "member_reference": "TST-02-001",
+                    "group_reference": "GRP-02",
+                    "member_number": 1,
+                    "full_name": "Client B",
+                    "phone_number": "08087654321",
+                    "savings_balance": 8000.0,
+                    "loan_type": "Daily 60 Days",
+                    "principal_loan": 50000.0,
+                    "active_credit": 49500.0,
+                    "current_credit_balance": 25000.0
+                }
+            ],
+            "misc_savings": 35000.0,
+            "laps_savings": 18500.0
+        }
+
+        save_res = client.put(f"/api/v1/onboarding/session/{token}/save-draft", json={"payload": payload})
+        self.assertEqual(save_res.status_code, 200)
+
+        submit_res = client.post(f"/api/v1/onboarding/session/{token}/submit")
+        self.assertEqual(submit_res.status_code, 200)
+
+        commit_res = OnboardingService.commit_session(uow=self.uow, session_id=session["id"])
+        self.assertEqual(commit_res["status"], "success")
+        self.assertEqual(commit_res["officers_provisioned"], 2)
+        self.assertEqual(commit_res["misc_savings_posted"], 35000.0)
+        self.assertEqual(commit_res["laps_savings_posted"], 18500.0)
+
+        # 1. Verify app_users & user_roles
+        b_res = self.uow.client.table("branches").select("branch_id, officer_assignments").eq("code", "TST").execute()
+        self.assertTrue(bool(b_res.data))
+        b_id = b_res.data[0]["branch_id"]
+        b_assignments = b_res.data[0].get("officer_assignments") or []
+
+        u_res = self.uow.client.table("app_users").select("id, username, full_name, extra_fields").eq("branch_id", b_id).execute()
+        self.assertEqual(len(u_res.data), 2)
+        user_by_name = {u["full_name"]: u for u in u_res.data}
+        self.assertIn("Olajumoke Bakare", user_by_name)
+        self.assertIn("Babatunde Lawal", user_by_name)
+
+        olajumoke_id = user_by_name["Olajumoke Bakare"]["id"]
+        babatunde_id = user_by_name["Babatunde Lawal"]["id"]
+
+        # Check user roles
+        ur1 = self.uow.client.table("user_roles").select("*").eq("user_id", olajumoke_id).execute()
+        self.assertEqual(len(ur1.data), 1)
+        self.assertEqual(ur1.data[0]["role_id"], "bd8790ee-c0eb-485a-8b6a-93f54519965d")
+
+        # 2. Check designated Misc Savings Officer in app_users and branches.officer_assignments (BR-SAV-006)
+        self.assertTrue(user_by_name["Olajumoke Bakare"].get("extra_fields", {}).get("is_misc_savings_manager"))
+        self.assertFalse(user_by_name["Babatunde Lawal"].get("extra_fields", {}).get("is_misc_savings_manager", False))
+
+        mgr_assign = [oa for oa in b_assignments if isinstance(oa, dict) and oa.get("is_misc_savings_manager")]
+        self.assertEqual(len(mgr_assign), 1)
+        self.assertEqual(mgr_assign[0]["officer_id"], olajumoke_id)
+
+        # 3. Check groups officer_id
+        g1 = self.uow.client.table("groups").select("officer_id").eq("branch_id", b_id).eq("name", "Progress Solidarity").execute()
+        self.assertEqual(g1.data[0]["officer_id"], olajumoke_id)
+        g2 = self.uow.client.table("groups").select("officer_id").eq("branch_id", b_id).eq("name", "Success Group").execute()
+        self.assertEqual(g2.data[0]["officer_id"], babatunde_id)
+
+        # 4. Check clients & client_memberships officer_id
+        c1 = self.uow.client.table("clients").select("officer_id, client_id").eq("name", "Client A").execute()
+        self.assertEqual(c1.data[0]["officer_id"], olajumoke_id)
+        m1 = self.uow.client.table("client_memberships").select("officer_id").eq("client_id", c1.data[0]["client_id"]).execute()
+        self.assertEqual(m1.data[0]["officer_id"], olajumoke_id)
+
+        c2 = self.uow.client.table("clients").select("officer_id, client_id").eq("name", "Client B").execute()
+        self.assertEqual(c2.data[0]["officer_id"], babatunde_id)
+        m2 = self.uow.client.table("client_memberships").select("officer_id").eq("client_id", c2.data[0]["client_id"]).execute()
+        self.assertEqual(m2.data[0]["officer_id"], babatunde_id)
+
+        # 5. Check loans officer_id
+        l1 = self.uow.client.table("loans").select("officer_id").eq("client_id", c1.data[0]["client_id"]).execute()
+        self.assertEqual(l1.data[0]["officer_id"], olajumoke_id)
+        l2 = self.uow.client.table("loans").select("officer_id").eq("client_id", c2.data[0]["client_id"]).execute()
+        self.assertEqual(l2.data[0]["officer_id"], babatunde_id)
+
+        # 6. Check internal_savings (Misc Savings)
+        misc_res = self.uow.client.table("internal_savings").select("*").eq("branch_id", b_id).execute()
+        self.assertEqual(len(misc_res.data), 1)
+        self.assertEqual(float(misc_res.data[0]["deposit_amount"]), 35000.0)
+        self.assertEqual(misc_res.data[0]["officer_id"], olajumoke_id)
+
+        # 7. Check laps_savings
+        laps_res = self.uow.client.table("laps_savings").select("*").eq("branch_id", b_id).execute()
+        self.assertEqual(len(laps_res.data), 1)
+        self.assertEqual(float(laps_res.data[0]["deposit_amount"]), 18500.0)
+
+        self._cleanup()
+
 if __name__ == "__main__":
     unittest.main()
+

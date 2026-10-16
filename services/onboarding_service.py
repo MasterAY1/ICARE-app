@@ -7,6 +7,8 @@ from typing import Dict, Any, List, Optional, Tuple
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from services.loan_product_engine import LoanProductEngine
 from services.business_date_service import get_nigerian_holidays
+from services.savings_service import SavingsService
+from auth.password import hash_password
 
 class OnboardingService:
     """
@@ -57,7 +59,7 @@ class OnboardingService:
             "total_savings": 0.0,
             "total_active_credit": 0.0,
             "total_current_balance": 0.0,
-            "payload": {"officers": [], "groups": [], "members": []},
+            "payload": {"officers": [], "groups": [], "members": [], "misc_savings": 0.0, "laps_savings": 0.0},
             "validation_summary": {"is_valid": True, "errors": [], "warnings": []},
             "expires_at": expires_at.isoformat(),
             "created_at": now.isoformat(),
@@ -206,9 +208,12 @@ class OnboardingService:
         aggregates = {
             "total_groups": len(groups),
             "total_members": len(members),
+            "total_officers": len(officers),
             "total_savings": round(total_savings, 2),
             "total_active_credit": round(total_active_credit, 2),
-            "total_current_balance": round(total_current_balance, 2)
+            "total_current_balance": round(total_current_balance, 2),
+            "misc_savings": float(payload.get("misc_savings") or 0.0),
+            "laps_savings": float(payload.get("laps_savings") or 0.0)
         }
 
         validation_summary = {
@@ -402,12 +407,59 @@ class OnboardingService:
                 "current_credit_balance": c_bal_num
             })
 
-        officers = [{"officer_name": name, "phone_number": phone} for name, phone in officers_dict.items()]
+        # 3. Parse Branch and Officer List sheet (for officers, laps savings, and misc fees)
+        misc_savings_val = 0.0
+        laps_savings_val = 0.0
+        if "Branch and Officer List" in wb.sheetnames:
+            ws_bo = wb["Branch and Officer List"]
+            for r in range(1, ws_bo.max_row + 1):
+                # Check for officers in columns 5 and 6 (Row 4 onwards)
+                if r >= 4:
+                    bo_off_name = ws_bo.cell(r, 5).value
+                    bo_off_phone = ws_bo.cell(r, 6).value
+                    if bo_off_name and str(bo_off_name).strip() not in ("None", ""):
+                        clean_bo_name = str(bo_off_name).strip()
+                        if clean_bo_name not in officers_dict:
+                            officers_dict[clean_bo_name] = str(bo_off_phone or "").strip()
+
+                # Check for pooled savings keywords
+                for c in range(1, ws_bo.max_column + 1):
+                    val = str(ws_bo.cell(r, c).value or "").strip().lower()
+                    if "laps" in val and laps_savings_val == 0.0:
+                        for cand in [ws_bo.cell(r + 1, c).value, ws_bo.cell(r, c + 1).value]:
+                            try:
+                                if cand is not None and float(str(cand).replace(",", "")) > 0:
+                                    laps_savings_val = float(str(cand).replace(",", ""))
+                                    break
+                            except Exception:
+                                pass
+                    elif ("misc" in val or "internal" in val) and misc_savings_val == 0.0:
+                        for cand in [ws_bo.cell(r + 1, c).value, ws_bo.cell(r, c + 1).value]:
+                            try:
+                                if cand is not None and float(str(cand).replace(",", "")) > 0:
+                                    misc_savings_val = float(str(cand).replace(",", ""))
+                                    break
+                            except Exception:
+                                pass
+
+        officers = []
+        for idx, (name, phone) in enumerate(officers_dict.items(), 1):
+            is_misc = ("olajumoke" in name.lower() or "co3" in name.lower() or idx == 1)
+            officers.append({
+                "name": name,
+                "officer_name": name,
+                "phone": phone,
+                "phone_number": phone,
+                "role": "Credit Officer",
+                "is_misc_savings_manager": is_misc
+            })
 
         return {
             "officers": officers,
             "groups": groups,
-            "members": members
+            "members": members,
+            "misc_savings": misc_savings_val,
+            "laps_savings": laps_savings_val
         }
 
     @staticmethod
@@ -514,6 +566,131 @@ class OnboardingService:
             day = min(d.day, calendar.monthrange(y, m)[1])
             return datetime.date(y, m, day)
 
+        # 3.5. Provision & Map Credit Officers (app_users & user_roles)
+        officers_data = payload.get("officers", [])
+        all_officer_names = {}
+        for off in officers_data:
+            o_name = str(off.get("name") or off.get("officer_name") or "").strip()
+            o_phone = str(off.get("phone") or off.get("phone_number") or "").strip()
+            is_mgr = bool(off.get("is_misc_savings_manager", False))
+            if o_name:
+                all_officer_names[o_name.lower()] = {
+                    "name": o_name,
+                    "phone": o_phone,
+                    "is_misc_savings_manager": is_mgr
+                }
+
+        for g in groups:
+            g_off_name = str(g.get("officer_name") or "").strip()
+            g_off_phone = str(g.get("officer_phone") or "").strip()
+            if g_off_name and g_off_name.lower() not in all_officer_names:
+                all_officer_names[g_off_name.lower()] = {
+                    "name": g_off_name,
+                    "phone": g_off_phone,
+                    "is_misc_savings_manager": False
+                }
+
+        # Fetch existing users for this branch
+        res_existing_users = uow.client.table("app_users").select("id, username, full_name, is_active").eq("branch_id", branch_id).execute()
+        existing_users = res_existing_users.data or []
+
+        officer_map = {}
+        for eu in existing_users:
+            if eu.get("full_name"):
+                officer_map[eu["full_name"].strip().lower()] = eu["id"]
+            if eu.get("username"):
+                officer_map[eu["username"].strip().lower()] = eu["id"]
+
+        # Fetch Credit Officer role_id
+        co_role_res = uow.client.table("roles").select("role_id").eq("name", "Credit Officer").execute()
+        co_role_id = co_role_res.data[0]["role_id"] if co_role_res.data else "bd8790ee-c0eb-485a-8b6a-93f54519965d"
+
+        co_counter = len(existing_users)
+        default_pwd_hash = hash_password("password123")
+        designated_misc_officer_id = None
+        designated_misc_officer_name = None
+
+        for off_key, off_info in all_officer_names.items():
+            off_name = off_info["name"]
+            off_phone = off_info["phone"]
+            is_mgr = off_info["is_misc_savings_manager"]
+
+            if off_key in officer_map:
+                u_id = officer_map[off_key]
+            else:
+                co_counter += 1
+                username = f"{branch_code}_CO{co_counter}"
+                u_id = str(uuid.uuid4())
+                now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+                extra_data = {"phone": off_phone} if off_phone else {}
+                if is_mgr:
+                    extra_data["is_misc_savings_manager"] = True
+
+                uow.client.table("app_users").insert({
+                    "id": u_id,
+                    "username": username,
+                    "full_name": off_name,
+                    "branch_id": branch_id,
+                    "password_hash": default_pwd_hash,
+                    "is_active": True,
+                    "created_at": now_str,
+                    "updated_at": now_str,
+                    "extra_fields": extra_data
+                }).execute()
+
+                uow.client.table("user_roles").insert({
+                    "user_id": u_id,
+                    "role_id": co_role_id
+                }).execute()
+
+                officer_map[off_key] = u_id
+                officer_map[username.lower()] = u_id
+
+            if is_mgr and not designated_misc_officer_id:
+                designated_misc_officer_id = u_id
+                designated_misc_officer_name = off_name
+
+        # Fallback resolution for designated Misc Savings officer (BR-SAV-006)
+        if not designated_misc_officer_id:
+            try:
+                m_id, m_name = SavingsService.get_branch_misc_savings_officer(uow, branch_name)
+                if m_id:
+                    designated_misc_officer_id = m_id
+                    designated_misc_officer_name = m_name
+            except Exception:
+                pass
+
+        first_officer_id = list(officer_map.values())[0] if officer_map else None
+        first_officer_name = list(all_officer_names.values())[0]["name"] if all_officer_names else "CO1"
+        if not designated_misc_officer_id:
+            designated_misc_officer_id = first_officer_id
+            designated_misc_officer_name = first_officer_name
+
+        # Persist officer assignments list into branches.officer_assignments
+        try:
+            b_curr = uow.client.table("branches").select("officer_assignments").eq("branch_id", branch_id).execute()
+            cur_assignments = (b_curr.data[0].get("officer_assignments") if b_curr.data else []) or []
+            if not isinstance(cur_assignments, list):
+                cur_assignments = []
+
+            existing_oa_ids = {item.get("officer_id") for item in cur_assignments if isinstance(item, dict)}
+            for off_key, off_info in all_officer_names.items():
+                oid = officer_map.get(off_key)
+                if oid and oid not in existing_oa_ids:
+                    cur_assignments.append({
+                        "officer_id": oid,
+                        "full_name": off_info["name"],
+                        "phone": off_info["phone"],
+                        "role": "Credit Officer",
+                        "is_misc_savings_manager": (oid == designated_misc_officer_id)
+                    })
+                    existing_oa_ids.add(oid)
+
+            uow.client.table("branches").update({"officer_assignments": cur_assignments}).eq("branch_id", branch_id).execute()
+        except Exception:
+            pass
+
         # 4. Migrate Groups (Option B: Dynamic Branch Auto-Sequence & Ingestion Collision Guard)
         # Fetch existing groups for this branch to prevent collision
         res_existing_groups = uow.client.table("groups").select("group_number").eq("branch_id", branch_id).execute()
@@ -534,6 +711,8 @@ class OnboardingService:
             m_day = str(g.get("meeting_day") or "Daily").strip()
             leader = g.get("leader_name")
             g_sav = float(g.get("group_savings") or 0.0)
+            g_off_name = str(g.get("officer_name") or "").strip()
+            g_officer_id = officer_map.get(g_off_name.lower()) or first_officer_id
 
             # Extract requested group number from g_ref or fallback to idx
             digits = re.findall(r'\d+', g_ref)
@@ -560,6 +739,7 @@ class OnboardingService:
                 "name": g_name,
                 "meeting_day": m_day,
                 "branch_id": branch_id,
+                "officer_id": g_officer_id,
                 "leader_name": leader,
                 "status": "Active",
                 "group_number": str(gn),
@@ -573,6 +753,7 @@ class OnboardingService:
                     "group_id": g_id,
                     "posting_date": "1970-01-01",
                     "branch_id": branch_id,
+                    "officer_id": g_officer_id,
                     "deposit_amount": g_sav,
                     "withdrawal_amount": 0.0,
                     "reference": "ONBOARDING-GROUP-OPENING",
@@ -582,7 +763,8 @@ class OnboardingService:
             group_ref_map[g_ref] = {
                 "group_id": g_id,
                 "group_number": gn,
-                "meeting_day": m_day
+                "meeting_day": m_day,
+                "officer_id": g_officer_id
             }
 
         # Canonical lifecycle status IDs
@@ -609,6 +791,7 @@ class OnboardingService:
             g_id = g_info["group_id"]
             gn = g_info["group_number"]
             m_day_str = g_info["meeting_day"]
+            m_officer_id = g_info.get("officer_id") or first_officer_id
 
             m_num = m.get("member_number") or m_idx
             try:
@@ -645,6 +828,7 @@ class OnboardingService:
                 "address": addr,
                 "branch_id": branch_id,
                 "group_id": g_id,
+                "officer_id": m_officer_id,
                 "status": lifecycle_status
             }).execute()
             clients_created += 1
@@ -654,14 +838,15 @@ class OnboardingService:
                 "membership_id": str(uuid.uuid4()),
                 "client_id": c_id,
                 "group_id": g_id,
-                "branch_id": branch_id
+                "branch_id": branch_id,
+                "officer_id": m_officer_id
             }).execute()
 
             # Seed Individual Opening Savings
             if s_bal > 0:
                 uow.client.table("individual_savings").insert({
                     "id": str(uuid.uuid4()), "client_id": c_id, "posting_date": "1970-01-01",
-                    "branch_id": branch_id, "deposit_amount": s_bal, "withdrawal_amount": 0.0,
+                    "branch_id": branch_id, "officer_id": m_officer_id, "deposit_amount": s_bal, "withdrawal_amount": 0.0,
                     "reference": "ONBOARDING-MEMBER-OPENING", "remarks": "Initial Onboarding Savings"
                 }).execute()
 
@@ -679,7 +864,7 @@ class OnboardingService:
                     "disbursement_date": base_eval_date.isoformat(), "start_date": base_eval_date.isoformat(),
                     "loan_amount": float(m.get("principal_loan") or a_cred),
                     "active_credit": a_cred, "total_due": c_bal, "loan_repay": expected_inst,
-                    "status": "Active", "branch_id": branch_id, "product_id": prod["product_id"],
+                    "status": "Active", "branch_id": branch_id, "officer_id": m_officer_id, "product_id": prod["product_id"],
                     "product_category": prod_cat,
                     "extra_fields": {
                         "is_legacy": True, "onboarded_at": base_eval_date.isoformat(),
@@ -742,6 +927,37 @@ class OnboardingService:
         for g_id, max_seq in group_max_seq.items():
             uow.client.table("groups").update({"current_member_sequence": max_seq}).eq("group_id", g_id).execute()
 
+        # 6.5. Process Branch Pooled Savings (LAPS & Misc Savings)
+        misc_sav_val = float(payload.get("misc_savings") or 0.0)
+        if misc_sav_val > 0:
+            ex_misc = uow.client.table("internal_savings").select("id").eq("branch_id", branch_id).eq("reference", "ONBOARDING-MISC-OPENING").execute()
+            if not ex_misc.data:
+                uow.client.table("internal_savings").insert({
+                    "id": str(uuid.uuid4()),
+                    "posting_date": "1970-01-01",
+                    "branch_id": branch_id,
+                    "officer_id": designated_misc_officer_id,
+                    "deposit_amount": misc_sav_val,
+                    "withdrawal_amount": 0.0,
+                    "reference": "ONBOARDING-MISC-OPENING",
+                    "remarks": f"Initial Onboarding Misc Savings (Managed by {designated_misc_officer_name})"
+                }).execute()
+
+        laps_sav_val = float(payload.get("laps_savings") or 0.0)
+        if laps_sav_val > 0:
+            ex_laps = uow.client.table("laps_savings").select("id").eq("branch_id", branch_id).eq("reference", "ONBOARDING-LAPS-OPENING").execute()
+            if not ex_laps.data:
+                uow.client.table("laps_savings").insert({
+                    "id": str(uuid.uuid4()),
+                    "posting_date": "1970-01-01",
+                    "branch_id": branch_id,
+                    "officer_id": designated_misc_officer_id,
+                    "deposit_amount": laps_sav_val,
+                    "withdrawal_amount": 0.0,
+                    "reference": "ONBOARDING-LAPS-OPENING",
+                    "remarks": "Initial Onboarding Branch LAPS Savings Reserve"
+                }).execute()
+
         # 7. Update Session Status to Approved
         now = datetime.datetime.now(datetime.timezone.utc)
         uow.client.table("branch_onboarding_sessions").update({
@@ -758,5 +974,8 @@ class OnboardingService:
             "groups_migrated": len(groups),
             "clients_created": clients_created,
             "loans_created": loans_created,
-            "schedules_created": schedules_created
+            "schedules_created": schedules_created,
+            "officers_provisioned": len(all_officer_names),
+            "misc_savings_posted": misc_sav_val,
+            "laps_savings_posted": laps_sav_val
         }

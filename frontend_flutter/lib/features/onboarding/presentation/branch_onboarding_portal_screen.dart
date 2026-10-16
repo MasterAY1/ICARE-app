@@ -48,6 +48,10 @@ class _BranchOnboardingPortalScreenState
   List<Map<String, dynamic>> _groups = [];
   List<Map<String, dynamic>> _members = [];
   List<Map<String, dynamic>> _officers = [];
+  double _miscSavings = 0.0;
+  double _lapsSavings = 0.0;
+  final TextEditingController _miscSavingsCtrl = TextEditingController();
+  final TextEditingController _lapsSavingsCtrl = TextEditingController();
   String _selectedGroupFilter = 'All';
   final TextEditingController _searchCtrl = TextEditingController();
 
@@ -56,7 +60,7 @@ class _BranchOnboardingPortalScreenState
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _currentToken = widget.token.trim();
     _tokenCtrl = TextEditingController(text: _currentToken);
     _loadSessionData();
@@ -67,6 +71,8 @@ class _BranchOnboardingPortalScreenState
     _tabController.dispose();
     _searchCtrl.dispose();
     _tokenCtrl.dispose();
+    _miscSavingsCtrl.dispose();
+    _lapsSavingsCtrl.dispose();
     super.dispose();
   }
 
@@ -105,6 +111,8 @@ class _BranchOnboardingPortalScreenState
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList() ??
           [];
+      final miscVal = (payload['misc_savings'] as num?)?.toDouble() ?? 0.0;
+      final lapsVal = (payload['laps_savings'] as num?)?.toDouble() ?? 0.0;
 
       setState(() {
         _sessionData = session;
@@ -113,6 +121,10 @@ class _BranchOnboardingPortalScreenState
         _groups = groupsList;
         _members = membersList;
         _officers = officersList;
+        _miscSavings = miscVal;
+        _lapsSavings = lapsVal;
+        _miscSavingsCtrl.text = miscVal > 0 ? miscVal.toStringAsFixed(2) : '';
+        _lapsSavingsCtrl.text = lapsVal > 0 ? lapsVal.toStringAsFixed(2) : '';
         _isLoading = false;
       });
     } catch (e) {
@@ -150,6 +162,8 @@ class _BranchOnboardingPortalScreenState
         'officers': _officers,
         'groups': _groups,
         'members': _members,
+        'misc_savings': _miscSavings,
+        'laps_savings': _lapsSavings,
       };
 
       final res = await api.saveDraft(_currentToken, payload);
@@ -188,11 +202,17 @@ class _BranchOnboardingPortalScreenState
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList() ??
           [];
+      final miscVal = (payload['misc_savings'] as num?)?.toDouble() ?? 0.0;
+      final lapsVal = (payload['laps_savings'] as num?)?.toDouble() ?? 0.0;
 
       setState(() {
         _groups = groupsList;
         _members = membersList;
         _officers = officersList;
+        _miscSavings = miscVal;
+        _lapsSavings = lapsVal;
+        _miscSavingsCtrl.text = miscVal > 0 ? miscVal.toStringAsFixed(2) : '';
+        _lapsSavingsCtrl.text = lapsVal > 0 ? lapsVal.toStringAsFixed(2) : '';
         _isSaving = false;
         _lastSavedTime = DateTime.now();
         _tabController.animateTo(0); // Jump to member roster
@@ -211,7 +231,7 @@ class _BranchOnboardingPortalScreenState
       builder: (ctx) => AlertDialog(
         title: const Text('Confirm Onboarding Submission'),
         content: Text(
-          'You are about to submit ${_groups.length} groups and ${_members.length} members for administrative approval. Once submitted, changes cannot be made until reviewed.',
+          'You are about to submit ${_groups.length} groups, ${_members.length} members, and ${_officers.length} credit officers for administrative approval. Once submitted, changes cannot be made until reviewed.',
           style: const TextStyle(fontSize: 13),
         ),
         actions: [
@@ -238,6 +258,8 @@ class _BranchOnboardingPortalScreenState
         'officers': _officers,
         'groups': _groups,
         'members': _members,
+        'misc_savings': _miscSavings,
+        'laps_savings': _lapsSavings,
       };
       await api.saveDraft(_currentToken, payload);
 
@@ -288,8 +310,31 @@ class _BranchOnboardingPortalScreenState
     final refCtrl = TextEditingController(text: defaultRef);
     final nameCtrl = TextEditingController(text: isEditing ? (groupToEdit['group_name']?.toString() ?? '') : '');
     final leaderCtrl = TextEditingController(text: isEditing ? (groupToEdit['leader_name']?.toString() ?? '') : '');
-    final officerCtrl = TextEditingController(text: isEditing ? (groupToEdit['officer_name']?.toString() ?? '') : '');
+    final officerNames = _officers
+        .map((o) => (o['name'] ?? o['officer_name'] ?? '').toString().trim())
+        .where((n) => n.isNotEmpty)
+        .toSet()
+        .toList();
+
+    String currentOfficerName = isEditing
+        ? (groupToEdit['officer_name']?.toString() ?? '')
+        : (officerNames.isNotEmpty ? officerNames.first : '');
+
+    final officerCtrl = TextEditingController(text: currentOfficerName);
     final phoneCtrl = TextEditingController(text: isEditing ? (groupToEdit['officer_phone']?.toString() ?? '') : '');
+
+    if (phoneCtrl.text.isEmpty && currentOfficerName.isNotEmpty) {
+      final match = _officers.firstWhere(
+        (o) => (o['name'] ?? o['officer_name'] ?? '').toString().trim().toLowerCase() == currentOfficerName.toLowerCase(),
+        orElse: () => {},
+      );
+      phoneCtrl.text = (match['phone'] ?? match['phone_number'] ?? '').toString();
+    }
+
+    String selectedOfficerDropdown = officerNames.contains(officerCtrl.text.trim())
+        ? officerCtrl.text.trim()
+        : (officerCtrl.text.trim().isNotEmpty ? '__custom__' : (officerNames.isNotEmpty ? officerNames.first : '__custom__'));
+
     final savingsCtrl = TextEditingController(
       text: isEditing ? (groupToEdit['group_savings']?.toString() ?? '0.00') : '0.00',
     );
@@ -431,19 +476,73 @@ class _BranchOnboardingPortalScreenState
                             ),
                             style: const TextStyle(fontSize: 13),
                           ),
-                          const SizedBox(height: 14),
-                          TextFormField(
-                            controller: officerCtrl,
-                            textCapitalization: TextCapitalization.words,
-                            decoration: const InputDecoration(
-                              labelText: 'Credit Officer Name',
-                              hintText: 'e.g. Babatunde Lawal',
-                              labelStyle: TextStyle(fontSize: 12),
-                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                              border: OutlineInputBorder(),
+                          if (officerNames.isNotEmpty) ...[
+                            DropdownButtonFormField<String>(
+                              initialValue: selectedOfficerDropdown,
+                              decoration: const InputDecoration(
+                                labelText: 'Assigned Credit Officer',
+                                labelStyle: TextStyle(fontSize: 12),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                border: OutlineInputBorder(),
+                              ),
+                              items: [
+                                ...officerNames.map((name) => DropdownMenuItem(
+                                  value: name,
+                                  child: Text(name, style: const TextStyle(fontSize: 13)),
+                                )),
+                                const DropdownMenuItem(
+                                  value: '__custom__',
+                                  child: Text('+ Custom / Enter New Officer', style: TextStyle(fontSize: 13, color: Color(0xFF2563EB))),
+                                ),
+                              ],
+                              onChanged: (val) {
+                                if (val != null) {
+                                  setModalState(() {
+                                    selectedOfficerDropdown = val;
+                                    if (val != '__custom__') {
+                                      officerCtrl.text = val;
+                                      final match = _officers.firstWhere(
+                                        (o) => (o['name'] ?? o['officer_name'] ?? '').toString().trim().toLowerCase() == val.toLowerCase(),
+                                        orElse: () => {},
+                                      );
+                                      phoneCtrl.text = (match['phone'] ?? match['phone_number'] ?? '').toString();
+                                    } else {
+                                      officerCtrl.clear();
+                                      phoneCtrl.clear();
+                                    }
+                                  });
+                                }
+                              },
                             ),
-                            style: const TextStyle(fontSize: 13),
-                          ),
+                            if (selectedOfficerDropdown == '__custom__') ...[
+                              const SizedBox(height: 14),
+                              TextFormField(
+                                controller: officerCtrl,
+                                textCapitalization: TextCapitalization.words,
+                                decoration: const InputDecoration(
+                                  labelText: 'Credit Officer Name',
+                                  hintText: 'e.g. Babatunde Lawal',
+                                  labelStyle: TextStyle(fontSize: 12),
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                  border: OutlineInputBorder(),
+                                ),
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ],
+                          ] else ...[
+                            TextFormField(
+                              controller: officerCtrl,
+                              textCapitalization: TextCapitalization.words,
+                              decoration: const InputDecoration(
+                                labelText: 'Credit Officer Name',
+                                hintText: 'e.g. Babatunde Lawal',
+                                labelStyle: TextStyle(fontSize: 12),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                border: OutlineInputBorder(),
+                              ),
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ],
                           const SizedBox(height: 14),
                           TextFormField(
                             controller: phoneCtrl,
@@ -547,19 +646,80 @@ class _BranchOnboardingPortalScreenState
 
                           // Assigned Credit Officer & Phone
                           Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Expanded(
-                                child: TextFormField(
-                                  controller: officerCtrl,
-                                  textCapitalization: TextCapitalization.words,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Credit Officer Name',
-                                    hintText: 'e.g. Babatunde Lawal',
-                                    labelStyle: TextStyle(fontSize: 12),
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  style: const TextStyle(fontSize: 13),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (officerNames.isNotEmpty) ...[
+                                      DropdownButtonFormField<String>(
+                                        initialValue: selectedOfficerDropdown,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Assigned Credit Officer',
+                                          labelStyle: TextStyle(fontSize: 12),
+                                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        items: [
+                                          ...officerNames.map((name) => DropdownMenuItem(
+                                            value: name,
+                                            child: Text(name, style: const TextStyle(fontSize: 13)),
+                                          )),
+                                          const DropdownMenuItem(
+                                            value: '__custom__',
+                                            child: Text('+ Custom / Enter New Officer', style: TextStyle(fontSize: 13, color: Color(0xFF2563EB))),
+                                          ),
+                                        ],
+                                        onChanged: (val) {
+                                          if (val != null) {
+                                            setModalState(() {
+                                              selectedOfficerDropdown = val;
+                                              if (val != '__custom__') {
+                                                officerCtrl.text = val;
+                                                final match = _officers.firstWhere(
+                                                  (o) => (o['name'] ?? o['officer_name'] ?? '').toString().trim().toLowerCase() == val.toLowerCase(),
+                                                  orElse: () => {},
+                                                );
+                                                phoneCtrl.text = (match['phone'] ?? match['phone_number'] ?? '').toString();
+                                              } else {
+                                                officerCtrl.clear();
+                                                phoneCtrl.clear();
+                                              }
+                                            });
+                                          }
+                                        },
+                                      ),
+                                      if (selectedOfficerDropdown == '__custom__') ...[
+                                        const SizedBox(height: 10),
+                                        TextFormField(
+                                          controller: officerCtrl,
+                                          textCapitalization: TextCapitalization.words,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Credit Officer Name',
+                                            hintText: 'e.g. Babatunde Lawal',
+                                            labelStyle: TextStyle(fontSize: 12),
+                                            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          style: const TextStyle(fontSize: 13),
+                                        ),
+                                      ],
+                                    ] else ...[
+                                      TextFormField(
+                                        controller: officerCtrl,
+                                        textCapitalization: TextCapitalization.words,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Credit Officer Name',
+                                          hintText: 'e.g. Babatunde Lawal',
+                                          labelStyle: TextStyle(fontSize: 12),
+                                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        style: const TextStyle(fontSize: 13),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -654,6 +814,19 @@ class _BranchOnboardingPortalScreenState
                                       'officer_name': cleanOfficer,
                                       'officer_phone': cleanPhone,
                                       'group_savings': cleanSavings,
+                                    });
+                                  }
+
+                                  // Auto-register officer into _officers if not present
+                                  if (cleanOfficer.isNotEmpty &&
+                                      !_officers.any((o) => (o['name'] ?? o['officer_name'] ?? '').toString().trim().toLowerCase() == cleanOfficer.toLowerCase())) {
+                                    _officers.add({
+                                      'name': cleanOfficer,
+                                      'officer_name': cleanOfficer,
+                                      'phone': cleanPhone,
+                                      'phone_number': cleanPhone,
+                                      'role': 'Credit Officer',
+                                      'is_misc_savings_manager': _officers.isEmpty,
                                     });
                                   }
                                 });
@@ -1728,6 +1901,10 @@ class _BranchOnboardingPortalScreenState
                         icon: const Icon(Icons.hub_outlined, size: 18),
                         text: 'Solidarity Groups (${_groups.length})',
                       ),
+                      Tab(
+                        icon: const Icon(Icons.badge_outlined, size: 18),
+                        text: 'Officers & Reserves (${_officers.length})',
+                      ),
                       const Tab(
                         icon: Icon(Icons.upload_file_outlined, size: 18),
                         text: 'Excel Uploader',
@@ -1749,6 +1926,7 @@ class _BranchOnboardingPortalScreenState
                 children: [
                   _buildMembersGridTab(isSubmitted),
                   _buildGroupsTab(isSubmitted),
+                  _buildOfficersAndReservesTab(isSubmitted),
                   _buildExcelUploaderTab(isSubmitted),
                   _buildReviewSignOffTab(isSubmitted),
                 ],
@@ -1932,9 +2110,12 @@ class _BranchOnboardingPortalScreenState
             builder: (context, constraints) {
               final isNarrow = constraints.maxWidth < 800;
               final items = [
+                _buildMetricCardChip('Officers', _officers.length.toString(), Icons.badge_outlined, const Color(0xFF0F766E), const Color(0xFFF0FDFA)),
                 _buildMetricCardChip('Groups', _groups.length.toString(), Icons.hub_outlined, const Color(0xFF475569), const Color(0xFFF1F5F9)),
                 _buildMetricCardChip('Members', _members.length.toString(), Icons.people_outline, const Color(0xFF475569), const Color(0xFFF1F5F9)),
                 _buildMetricCardChip('Total Savings', CurrencyFormatter.formatNaira(_totalSavings), Icons.savings_outlined, const Color(0xFF059669), const Color(0xFFECFDF5)),
+                if (_miscSavings > 0)
+                  _buildMetricCardChip('Misc Savings', CurrencyFormatter.formatNaira(_miscSavings), Icons.account_balance_wallet_outlined, const Color(0xFF0D9488), const Color(0xFFCCFBF1)),
                 if (_totalPrincipalLoan > 0)
                   _buildMetricCardChip('Principal Disbursed', CurrencyFormatter.formatNaira(_totalPrincipalLoan), Icons.account_balance_outlined, const Color(0xFF4F46E5), const Color(0xFFEEF2FF)),
                 _buildMetricCardChip('Active Credit', CurrencyFormatter.formatNaira(_totalActiveCredit), Icons.credit_card_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF)),
@@ -2804,7 +2985,652 @@ class _BranchOnboardingPortalScreenState
   }
 
   // =========================================================================
-  // TAB 3: EXCEL UPLOADER
+  // TAB 3: CREDIT OFFICERS & BRANCH RESERVES
+  // =========================================================================
+
+  Widget _buildOfficersAndReservesTab(bool isSubmitted) {
+    // Find designated misc manager name
+    String? designatedMgrName;
+    for (final o in _officers) {
+      if (o['is_misc_savings_manager'] == true) {
+        designatedMgrName = o['name']?.toString() ?? o['officer_name']?.toString();
+        break;
+      }
+    }
+    designatedMgrName ??= _officers.isNotEmpty
+        ? (_officers.first['name']?.toString() ?? _officers.first['officer_name']?.toString() ?? 'First Active Officer')
+        : 'Not Designated';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 1000),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 1. Branch Pooled Reserves Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: const Icon(Icons.account_balance_wallet_outlined, color: Color(0xFF1D4ED8), size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Branch Pooled Reserves & Accounting Buffers',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Centralized branch funds governed by ICARE accounting rules. Inflows must flow via Account 1000.',
+                          style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // 2. Branch Pooled Reserves Cards (Misc Savings & LAPS)
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isWide = constraints.maxWidth >= 600;
+                  final miscCard = _buildReserveCard(
+                    title: 'Branch Misc Savings (Internal Pool)',
+                    badge: 'BR-SAV-002 • BR-SAV-006',
+                    badgeColor: const Color(0xFF059669),
+                    badgeBg: const Color(0xFFECFDF5),
+                    amount: _miscSavings,
+                    subtitle: 'Exclusive managing officer: $designatedMgrName',
+                    description: 'Special pooled branch fund for internal operations and contingencies. Managed by exactly one designated Credit Officer.',
+                    icon: Icons.savings_outlined,
+                    iconColor: const Color(0xFF059669),
+                    iconBg: const Color(0xFFECFDF5),
+                    isSubmitted: isSubmitted,
+                    onEdit: () => _openEditReserveDialog(
+                      'Branch Misc Savings',
+                      'Specify the initial opening balance for the branch internal misc savings pool.',
+                      _miscSavings,
+                      (val) => setState(() => _miscSavings = val),
+                    ),
+                  );
+
+                  final lapsCard = _buildReserveCard(
+                    title: 'Branch LAPS Risk Reserve',
+                    badge: 'Risk Reserve Buffer',
+                    badgeColor: const Color(0xFF2563EB),
+                    badgeBg: const Color(0xFFEFF6FF),
+                    amount: _lapsSavings,
+                    subtitle: 'Stored in laps_savings ledger',
+                    description: 'Loan Additional Protection Scheme risk reserve protecting against defaults and contingencies.',
+                    icon: Icons.shield_outlined,
+                    iconColor: const Color(0xFF2563EB),
+                    iconBg: const Color(0xFFEFF6FF),
+                    isSubmitted: isSubmitted,
+                    onEdit: () => _openEditReserveDialog(
+                      'Branch LAPS Risk Reserve',
+                      'Specify the initial opening balance for the branch LAPS risk reserve buffer.',
+                      _lapsSavings,
+                      (val) => setState(() => _lapsSavings = val),
+                    ),
+                  );
+
+                  if (isWide) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: miscCard),
+                        const SizedBox(width: 16),
+                        Expanded(child: lapsCard),
+                      ],
+                    );
+                  } else {
+                    return Column(
+                      children: [
+                        miscCard,
+                        const SizedBox(height: 12),
+                        lapsCard,
+                      ],
+                    );
+                  }
+                },
+              ),
+              const SizedBox(height: 32),
+
+              // 3. Credit Officers Section Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: const Icon(Icons.badge_outlined, color: Color(0xFF334155), size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Credit Officers Roster (${_officers.length})',
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'Field officers handling solidarity groups, client loans, and daily collections',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  if (!isSubmitted)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+                      onPressed: () => _openOfficerDialog(),
+                      icon: const Icon(Icons.person_add_alt, size: 16),
+                      label: const Text('Add Credit Officer', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // 4. Officers List or Empty State
+              if (_officers.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(32),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.person_outline, size: 40, color: Color(0xFF94A3B8)),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'No Credit Officers Registered Yet',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'You can add credit officers manually here or upload your branch Excel template. Assigned officers in groups will also be auto-registered.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      ),
+                      if (!isSubmitted) ...[
+                        const SizedBox(height: 16),
+                        OutlinedButton.icon(
+                          onPressed: () => _openOfficerDialog(),
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Add First Credit Officer'),
+                        ),
+                      ],
+                    ],
+                  ),
+                )
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _officers.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, idx) {
+                    final off = _officers[idx];
+                    final name = (off['name'] ?? off['officer_name'] ?? 'Officer ${idx + 1}').toString();
+                    final phone = (off['phone'] ?? off['phone_number'] ?? '').toString();
+                    final isMiscMgr = off['is_misc_savings_manager'] == true;
+
+                    // Compute assigned groups count
+                    final assignedGroups = _groups.where((g) {
+                      final gOff = (g['officer_name'] ?? '').toString().trim().toLowerCase();
+                      return gOff.isNotEmpty && gOff == name.trim().toLowerCase();
+                    }).length;
+
+                    return Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isMiscMgr ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
+                          width: isMiscMgr ? 1.5 : 1.0,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 20,
+                            backgroundColor: isMiscMgr ? const Color(0xFFECFDF5) : const Color(0xFFEFF6FF),
+                            child: Text(
+                              name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'CO',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: isMiscMgr ? const Color(0xFF059669) : const Color(0xFF1D4ED8),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        name,
+                                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEFF6FF),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                                      ),
+                                      child: const Text(
+                                        'Credit Officer',
+                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8)),
+                                      ),
+                                    ),
+                                    if (isMiscMgr) ...[
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFECFDF5),
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(color: const Color(0xFFA7F3D0)),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.verified_user, size: 12, color: Color(0xFF059669)),
+                                            SizedBox(width: 4),
+                                            Text(
+                                              'Designated Misc Manager (BR-SAV-006)',
+                                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF059669)),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.phone_outlined, size: 13, color: Color(0xFF64748B)),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      phone.isNotEmpty ? phone : 'No phone registered',
+                                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    const Icon(Icons.hub_outlined, size: 13, color: Color(0xFF64748B)),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '$assignedGroups assigned groups',
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (!isSubmitted) ...[
+                            if (!isMiscMgr)
+                              TextButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    for (var o in _officers) {
+                                      o['is_misc_savings_manager'] = false;
+                                    }
+                                    off['is_misc_savings_manager'] = true;
+                                  });
+                                  _saveDraft();
+                                  _showBanner('$name designated as Misc Savings Manager (BR-SAV-006).');
+                                },
+                                icon: const Icon(Icons.star_outline, size: 14),
+                                label: const Text('Set as Misc Manager', style: TextStyle(fontSize: 11)),
+                              ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF2563EB)),
+                              tooltip: 'Edit officer details',
+                              onPressed: () => _openOfficerDialog(officerToEdit: off),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
+                              tooltip: 'Remove officer',
+                              onPressed: () => _confirmDeleteOfficer(off),
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReserveCard({
+    required String title,
+    required String badge,
+    required Color badgeColor,
+    required Color badgeBg,
+    required double amount,
+    required String subtitle,
+    required String description,
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBg,
+    required bool isSubmitted,
+    required VoidCallback onEdit,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(icon, size: 18, color: iconColor),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: badgeBg,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  badge,
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: badgeColor),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            CurrencyFormatter.formatNaira(amount),
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontFeatures: [FontFeature.tabularFigures()]),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            description,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), height: 1.3),
+          ),
+          if (!isSubmitted) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                visualDensity: VisualDensity.compact,
+              ),
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined, size: 14),
+              label: const Text('Update Fund Amount', style: TextStyle(fontSize: 11)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _openEditReserveDialog(String title, String ruleDescription, double currentVal, Function(double) onSave) {
+    final ctrl = TextEditingController(text: currentVal > 0 ? currentVal.toStringAsFixed(2) : '0.00');
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(ruleDescription, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: ctrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Opening Balance (₦) *',
+                  prefixText: '₦ ',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                validator: (val) {
+                  if (val == null || val.trim().isEmpty) return 'Enter amount';
+                  final numVal = double.tryParse(val.replaceAll(',', '').trim());
+                  if (numVal == null || numVal < 0) return 'Enter a valid positive number';
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                final numVal = double.parse(ctrl.text.replaceAll(',', '').trim());
+                onSave(numVal);
+                Navigator.of(ctx).pop();
+                _saveDraft();
+                _showBanner('$title updated to ${CurrencyFormatter.formatNaira(numVal)}.');
+              }
+            },
+            child: const Text('Save Fund'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openOfficerDialog({Map<String, dynamic>? officerToEdit}) {
+    final isEditing = officerToEdit != null;
+    final nameCtrl = TextEditingController(text: isEditing ? (officerToEdit['name'] ?? officerToEdit['officer_name'] ?? '') : '');
+    final phoneCtrl = TextEditingController(text: isEditing ? (officerToEdit['phone'] ?? officerToEdit['phone_number'] ?? '') : '');
+    bool isMiscMgr = isEditing ? (officerToEdit['is_misc_savings_manager'] == true) : (_officers.isEmpty);
+
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(isEditing ? 'Edit Credit Officer' : 'Add Credit Officer', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          content: Form(
+            key: formKey,
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Enter credit officer credentials for branch field operations.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: nameCtrl,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Full Name *',
+                      hintText: 'e.g. Babatunde Lawal',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    validator: (val) => (val == null || val.trim().isEmpty) ? 'Full Name is required' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'Phone Number',
+                      hintText: 'e.g. 08012345678',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Designated Misc Savings Manager', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                              SizedBox(height: 2),
+                              Text('Assigns exclusive custody of branch internal misc savings pool (BR-SAV-006).', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: isMiscMgr,
+                          activeThumbColor: IcareColors.primary,
+                          onChanged: (val) => setDialogState(() => isMiscMgr = val),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  final cleanName = nameCtrl.text.trim();
+                  final cleanPhone = phoneCtrl.text.trim();
+
+                  setState(() {
+                    if (isMiscMgr) {
+                      for (var o in _officers) {
+                        o['is_misc_savings_manager'] = false;
+                      }
+                    }
+
+                    if (isEditing) {
+                      officerToEdit['name'] = cleanName;
+                      officerToEdit['officer_name'] = cleanName;
+                      officerToEdit['phone'] = cleanPhone;
+                      officerToEdit['phone_number'] = cleanPhone;
+                      officerToEdit['is_misc_savings_manager'] = isMiscMgr;
+                    } else {
+                      _officers.add({
+                        'name': cleanName,
+                        'officer_name': cleanName,
+                        'phone': cleanPhone,
+                        'phone_number': cleanPhone,
+                        'role': 'Credit Officer',
+                        'is_misc_savings_manager': isMiscMgr,
+                      });
+                    }
+                  });
+
+                  Navigator.of(ctx).pop();
+                  _saveDraft();
+                  _showBanner(isEditing ? 'Officer updated successfully.' : 'Officer added successfully.');
+                }
+              },
+              child: Text(isEditing ? 'Save Changes' : 'Add Officer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmDeleteOfficer(Map<String, dynamic> officer) {
+    final name = (officer['name'] ?? officer['officer_name'] ?? 'Officer').toString();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm Officer Removal'),
+        content: Text('Are you sure you want to remove credit officer "$name"? Any assigned groups will remain but will require re-assignment.', style: const TextStyle(fontSize: 13)),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+            onPressed: () {
+              setState(() {
+                _officers.remove(officer);
+              });
+              Navigator.of(ctx).pop();
+              _saveDraft();
+              _showBanner('Officer "$name" removed.');
+            },
+            child: const Text('Remove Officer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // =========================================================================
+  // TAB 4: EXCEL UPLOADER
   // =========================================================================
 
   Widget _buildExcelUploaderTab(bool isSubmitted) {
@@ -2908,11 +3734,21 @@ class _BranchOnboardingPortalScreenState
                 ),
                 child: Column(
                   children: [
+                    _buildReviewRow('Credit Officers Provisioned', '${_officers.length} officers'),
+                    const Divider(height: 16, color: Color(0xFFF1F5F9)),
                     _buildReviewRow('Solidarity Groups', '${_groups.length} groups created'),
                     const Divider(height: 16, color: Color(0xFFF1F5F9)),
                     _buildReviewRow('Registered Members', '${_members.length} clients'),
                     const Divider(height: 16, color: Color(0xFFF1F5F9)),
                     _buildReviewRow('Initial Opening Savings', CurrencyFormatter.formatNaira(_totalSavings)),
+                    if (_miscSavings > 0) ...[
+                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      _buildReviewRow('Branch Misc Savings (BR-SAV-006)', CurrencyFormatter.formatNaira(_miscSavings)),
+                    ],
+                    if (_lapsSavings > 0) ...[
+                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      _buildReviewRow('Branch LAPS Risk Reserve', CurrencyFormatter.formatNaira(_lapsSavings)),
+                    ],
                     if (_totalPrincipalLoan > 0) ...[
                       const Divider(height: 16, color: Color(0xFFF1F5F9)),
                       _buildReviewRow('Total Principal Disbursed', CurrencyFormatter.formatNaira(_totalPrincipalLoan)),

@@ -23,6 +23,20 @@ class SavingsService:
         if not is_open:
             raise ValueError(f"Operational Restriction: Cannot post savings. {reason}.")
 
+        # Check Account Cancellation Invariant (Zero balance on Member Savings withdrawal)
+        is_account_cancellation = False
+        if withdrawal_amount > 0 and client_id:
+            try:
+                curr_bal = uow.individual_savings.get_total_balance(client_id=client_id)
+                if curr_bal > 0 and withdrawal_amount >= (curr_bal - 0.01):
+                    is_account_cancellation = True
+                    if remarks and "[ACCOUNT CANCELLATION]" not in remarks:
+                        remarks = f"[ACCOUNT CANCELLATION] {remarks}"
+                    elif not remarks:
+                        remarks = "[ACCOUNT CANCELLATION] Full balance withdrawal (Account Cancellation)"
+            except Exception:
+                pass
+
         entity = IndividualSavings(
             id=savings_id,
             client_id=client_id,
@@ -40,8 +54,8 @@ class SavingsService:
         
         try:
             # 2. Audit
-            action = "Individual Savings Deposit" if deposit_amount > 0 else "Individual Savings Withdrawal"
-            uow.audit.log_action(officer, "Credit Officer", action, "individual_savings", entity.id, None, {"deposit": deposit_amount, "withdrawal": withdrawal_amount})
+            action = "Individual Savings Deposit" if deposit_amount > 0 else ("Account Cancellation" if is_account_cancellation else "Individual Savings Withdrawal")
+            uow.audit.log_action(officer, "Credit Officer", action, "individual_savings", entity.id, None, {"deposit": deposit_amount, "withdrawal": withdrawal_amount, "is_cancellation": is_account_cancellation})
 
             # 3. Create Event & Post
             event_type = "SavingsDeposited" if deposit_amount > 0 else "SavingsWithdrawn"
@@ -144,17 +158,25 @@ class SavingsService:
             # Ogijo branch designated officer is CO3 (Miss. Olajumoke)
             return ("60fa48a4-16a2-4ab8-b9c5-d13d72a040cc", "CO3")
         
-        # Look up from branch extra_fields or app_users
+        # Look up from branch officer_assignments or app_users
         try:
             b_res = uow.client.table("branches").select("*").ilike("name", f"%{branch}%").execute()
             if b_res.data:
                 b_info = b_res.data[0]
-                ext = b_info.get("extra_fields") or {}
-                if isinstance(ext, dict) and ext.get("misc_savings_officer_id"):
-                    return (ext["misc_savings_officer_id"], ext.get("misc_savings_officer_name", "CO3"))
-                
-                # Look up first active CO for this branch
-                u_res = uow.client.table("app_users").select("id, username").eq("branch_id", b_info["branch_id"]).execute()
+                o_assign = b_info.get("officer_assignments") or []
+                if isinstance(o_assign, list):
+                    for oa in o_assign:
+                        if isinstance(oa, dict) and oa.get("is_misc_savings_manager"):
+                            return (oa["officer_id"], oa.get("full_name") or oa.get("username", "CO3"))
+
+                # Look up active users for this branch
+                u_res = uow.client.table("app_users").select("id, username, full_name, extra_fields").eq("branch_id", b_info["branch_id"]).execute()
+                for u in (u_res.data or []):
+                    u_ext = u.get("extra_fields") or {}
+                    if isinstance(u_ext, dict) and u_ext.get("is_misc_savings_manager"):
+                        return (u["id"], u.get("full_name") or u["username"])
+
+                # Fallback to first active CO for this branch
                 for u in (u_res.data or []):
                     if "co" in str(u.get("username", "")).lower():
                         return (u["id"], u["username"])
@@ -367,6 +389,18 @@ class SavingsService:
             )
             uow.misc_savings.create(source_entity)
         else: # IndividualSavings
+            # Check Account Cancellation Invariant (Zero balance on Member Savings loan offset)
+            if client_id:
+                try:
+                    curr_bal = uow.individual_savings.get_total_balance(client_id=client_id)
+                    if curr_bal > 0 and amount >= (curr_bal - 0.01):
+                        if remarks and "[ACCOUNT CANCELLATION]" not in remarks:
+                            remarks = f"[ACCOUNT CANCELLATION] {remarks}"
+                        elif not remarks:
+                            remarks = f"[ACCOUNT CANCELLATION] Loan offset of ₦{amount:,.2f} from IndividualSavings"
+                except Exception:
+                    pass
+
             source_entity = IndividualSavings(
                 client_id=client_id,
                 client_name=client_name,
