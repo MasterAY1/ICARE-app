@@ -307,7 +307,8 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     final nameCtrl = TextEditingController(text: groupToEdit?['group_name'] ?? '');
     final refCtrl = TextEditingController(text: groupToEdit?['group_reference'] ?? 'GRP-${(_groups.length + 1).toString().padLeft(2, '0')}');
     final leaderCtrl = TextEditingController(text: groupToEdit?['leader_name'] ?? '');
-    final savingsCtrl = TextEditingController(text: (groupToEdit?['group_savings'] ?? 0.0).toString());
+    final existingGroupSavings = isEdit ? (double.tryParse(groupToEdit['group_savings']?.toString() ?? '0') ?? 0.0) : 0.0;
+    final savingsCtrl = TextEditingController(text: existingGroupSavings > 0 ? existingGroupSavings.toStringAsFixed(2) : '');
     String selectedDay = groupToEdit?['meeting_day'] ?? _meetingDays.first;
 
     showDialog(
@@ -478,9 +479,16 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     final nameCtrl = TextEditingController(text: memberToEdit?['full_name'] ?? '');
     final phoneCtrl = TextEditingController(text: memberToEdit?['phone_number'] ?? '');
     final addrCtrl = TextEditingController(text: memberToEdit?['home_address'] ?? '');
-    final savingsCtrl = TextEditingController(text: (memberToEdit?['savings_balance'] ?? 0.0).toString());
-    final activeCreditCtrl = TextEditingController(text: (memberToEdit?['active_credit'] ?? 0.0).toString());
-    final currentBalCtrl = TextEditingController(text: (memberToEdit?['current_credit_balance'] ?? 0.0).toString());
+
+    final sVal = double.tryParse(memberToEdit?['savings_balance']?.toString() ?? '0') ?? 0.0;
+    final pVal = double.tryParse((memberToEdit?['principal'] ?? memberToEdit?['principal_loan'] ?? memberToEdit?['loan_amount'])?.toString() ?? '0') ?? 0.0;
+    final acVal = double.tryParse(memberToEdit?['active_credit']?.toString() ?? '0') ?? 0.0;
+    final cbVal = double.tryParse((memberToEdit?['current_credit_balance'] ?? memberToEdit?['current_balance'])?.toString() ?? '0') ?? 0.0;
+
+    final savingsCtrl = TextEditingController(text: sVal > 0 ? sVal.toStringAsFixed(2) : '');
+    final principalCtrl = TextEditingController(text: pVal > 0 ? pVal.toStringAsFixed(2) : '');
+    final activeCreditCtrl = TextEditingController(text: acVal > 0 ? acVal.toStringAsFixed(2) : '');
+    final currentBalCtrl = TextEditingController(text: cbVal > 0 ? cbVal.toStringAsFixed(2) : '');
 
     String selectedGroupRef = memberToEdit?['group_reference'] ?? _groups.first['group_reference'];
     String? selectedLoanProduct = memberToEdit?['loan_type'];
@@ -532,7 +540,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                         child: TextFormField(
                           controller: savingsCtrl,
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(labelText: 'Savings Balance (₦)', prefixText: '₦ '),
+                          decoration: const InputDecoration(labelText: 'Savings Balance (₦)', hintText: '0.00', prefixText: '₦ '),
                         ),
                       ),
                     ],
@@ -561,20 +569,26 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                     children: [
                       Expanded(
                         child: TextFormField(
-                          controller: activeCreditCtrl,
+                          controller: principalCtrl,
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(labelText: 'Active Credit (₦)', prefixText: '₦ '),
+                          decoration: const InputDecoration(labelText: 'Principal Disbursed (₦)', hintText: '0.00', prefixText: '₦ '),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: TextFormField(
-                          controller: currentBalCtrl,
+                          controller: activeCreditCtrl,
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(labelText: 'Current Balance (₦)', prefixText: '₦ '),
+                          decoration: const InputDecoration(labelText: 'Active Credit (₦)', hintText: '0.00', prefixText: '₦ '),
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: currentBalCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'Current Loan Balance (₦)', hintText: '0.00', prefixText: '₦ '),
                   ),
                 ],
               ),
@@ -591,9 +605,10 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                   return;
                 }
 
-                final sBal = double.tryParse(savingsCtrl.text.trim()) ?? 0.0;
-                final aCred = double.tryParse(activeCreditCtrl.text.trim()) ?? 0.0;
-                final cBal = double.tryParse(currentBalCtrl.text.trim()) ?? (aCred > 0 ? aCred : 0.0);
+                final sBal = double.tryParse(savingsCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+                final pAmount = double.tryParse(principalCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+                final aCred = double.tryParse(activeCreditCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+                final cBal = double.tryParse(currentBalCtrl.text.replaceAll(',', '').trim()) ?? (aCred > 0 ? aCred : 0.0);
 
                 final updatedMember = {
                   'full_name': fName,
@@ -601,9 +616,11 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                   'phone_number': phoneCtrl.text.trim().isEmpty ? null : phoneCtrl.text.trim(),
                   'home_address': addrCtrl.text.trim().isEmpty ? null : addrCtrl.text.trim(),
                   'savings_balance': sBal,
+                  'principal': pAmount > 0 ? pAmount : (aCred > 0 ? aCred : 0.0),
+                  'principal_loan': pAmount > 0 ? pAmount : (aCred > 0 ? aCred : 0.0),
                   'active_credit': aCred,
                   'current_credit_balance': cBal,
-                  'loan_type': (aCred > 0 || cBal > 0) ? selectedLoanProduct : null,
+                  'loan_type': (pAmount > 0 || aCred > 0 || cBal > 0) ? selectedLoanProduct : null,
                   'officer_name': _officer?['name'] ?? '',
                 };
 
@@ -941,11 +958,27 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
   // =========================================================================
 
   Widget _buildPortfolioSummaryRibbon() {
-    final indivSav = double.tryParse(_aggregates['individual_member_savings']?.toString() ?? '0') ?? 0.0;
-    final grpSav = double.tryParse(_aggregates['group_savings_pool']?.toString() ?? '0') ?? 0.0;
-    final totSav = double.tryParse(_aggregates['total_portfolio_savings']?.toString() ?? '0') ?? 0.0;
-    final activeCredit = double.tryParse(_aggregates['active_credit']?.toString() ?? '0') ?? 0.0;
-    final currentBal = double.tryParse(_aggregates['outstanding_balance']?.toString() ?? '0') ?? 0.0;
+    final isGroupFiltered = _selectedGroupFilter != 'All';
+    final targetGroups = isGroupFiltered
+        ? _groups.where((g) => (g['group_reference'] ?? '').toString().toUpperCase() == _selectedGroupFilter.toUpperCase()).toList()
+        : _groups;
+    final targetMembers = isGroupFiltered
+        ? _members.where((m) => (m['group_reference'] ?? '').toString().toUpperCase() == _selectedGroupFilter.toUpperCase()).toList()
+        : _members;
+
+    final indivSav = targetMembers.fold<double>(0.0, (sum, m) => sum + (double.tryParse(m['savings_balance']?.toString() ?? '0') ?? 0.0));
+    final grpSav = targetGroups.fold<double>(0.0, (sum, g) => sum + (double.tryParse(g['group_savings']?.toString() ?? '0') ?? 0.0));
+    final isMiscMgr = _officer?['is_misc_savings_manager'] == true;
+    final miscSav = (!isGroupFiltered && isMiscMgr) ? (double.tryParse(_officer?['misc_savings']?.toString() ?? '0') ?? 0.0) : 0.0;
+    final totSav = indivSav + grpSav + miscSav;
+
+    final principal = targetMembers.fold<double>(0.0, (sum, m) {
+      final p = double.tryParse((m['principal'] ?? m['principal_loan'] ?? m['loan_amount'])?.toString() ?? '');
+      final a = double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0;
+      return sum + (p != null && p > 0 ? p : a);
+    });
+    final activeCredit = targetMembers.fold<double>(0.0, (sum, m) => sum + (double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0));
+    final currentBal = targetMembers.fold<double>(0.0, (sum, m) => sum + (double.tryParse((m['current_credit_balance'] ?? m['current_balance'])?.toString() ?? '0') ?? 0.0));
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -957,13 +990,23 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
         builder: (context, constraints) {
           final isNarrow = constraints.maxWidth < 650;
           final items = [
-            _buildRibbonKpi('My Groups', '${_groups.length}'),
-            _buildRibbonKpi('My Clients', '${_members.length}'),
-            _buildRibbonKpi('Client Savings', CurrencyFormatter.formatNaira(indivSav)),
-            _buildRibbonKpi('Group Savings', CurrencyFormatter.formatNaira(grpSav)),
-            _buildRibbonKpi('Total Savings', CurrencyFormatter.formatNaira(totSav), isPrimary: true),
+            if (isGroupFiltered)
+              _buildRibbonKpi('Filtered Group', _selectedGroupFilter)
+            else
+              _buildRibbonKpi('My Groups', '${targetGroups.length}'),
+            _buildRibbonKpi(isGroupFiltered ? 'Group Clients' : 'My Clients', '${targetMembers.length}'),
+            if (isGroupFiltered) ...[
+              _buildRibbonKpi('Group Savings', CurrencyFormatter.formatNaira(grpSav)),
+              _buildRibbonKpi('Client Savings', CurrencyFormatter.formatNaira(indivSav)),
+            ] else ...[
+              _buildRibbonKpi('Client Savings', CurrencyFormatter.formatNaira(indivSav)),
+              _buildRibbonKpi('Group Savings', CurrencyFormatter.formatNaira(grpSav)),
+            ],
+            _buildRibbonKpi(isGroupFiltered ? 'Total Group Savings' : 'Total Savings', CurrencyFormatter.formatNaira(totSav), isPrimary: true),
+            if (principal > 0)
+              _buildRibbonKpi('Principal', CurrencyFormatter.formatNaira(principal)),
             _buildRibbonKpi('Active Credit', CurrencyFormatter.formatNaira(activeCredit)),
-            _buildRibbonKpi('Current Balance', CurrencyFormatter.formatNaira(currentBal)),
+            _buildRibbonKpi('Loan Balance', CurrencyFormatter.formatNaira(currentBal)),
           ];
 
           if (isNarrow) {

@@ -65,10 +65,11 @@ class _BranchOnboardingPortalScreenState
 
   final currencyFmt = NumberFormat("#,##0.00", "en_US");
 
+  bool _isEnforcedOfficerScope = false;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
     _currentToken = widget.token.trim();
     _tokenCtrl = TextEditingController(text: _currentToken);
 
@@ -77,9 +78,14 @@ class _BranchOnboardingPortalScreenState
     final officerFromUrl = uri.queryParameters['officer'];
     if (widget.initialOfficer != null && widget.initialOfficer!.trim().isNotEmpty) {
       _scopedOfficer = widget.initialOfficer!.trim();
+      _isEnforcedOfficerScope = true;
     } else if (officerFromUrl != null && officerFromUrl.trim().isNotEmpty) {
       _scopedOfficer = Uri.decodeComponent(officerFromUrl.trim());
+      _isEnforcedOfficerScope = true;
     }
+
+    final isOfficer = _scopedOfficer != null && _scopedOfficer!.isNotEmpty;
+    _tabController = TabController(length: isOfficer ? 4 : 5, vsync: this);
 
     _loadSessionData();
   }
@@ -131,6 +137,14 @@ class _BranchOnboardingPortalScreenState
           [];
       final miscVal = (payload['misc_savings'] as num?)?.toDouble() ?? 0.0;
       final lapsVal = (payload['laps_savings'] as num?)?.toDouble() ?? 0.0;
+
+      final sessionScopedOfficer = data['scoped_officer']?.toString();
+      if ((_scopedOfficer == null || _scopedOfficer!.isEmpty) && sessionScopedOfficer != null && sessionScopedOfficer.isNotEmpty) {
+        _scopedOfficer = sessionScopedOfficer;
+        _isEnforcedOfficerScope = true;
+        _tabController.dispose();
+        _tabController = TabController(length: 4, vsync: this);
+      }
 
       setState(() {
         _sessionData = session;
@@ -245,6 +259,104 @@ class _BranchOnboardingPortalScreenState
     } catch (e) {
       setState(() => _isSaving = false);
       _showBanner('Error uploading Excel: $e', isSuccess: false);
+    }
+  }
+
+  Future<void> _submitScopedOfficerRoster() async {
+    if (_scopedOfficer == null || _scopedOfficer!.isEmpty) return;
+
+    final myGroups = _scopedGroups;
+    final myMembers = _scopedMembers;
+
+    if (myGroups.isEmpty) {
+      _showBanner('Please register at least one solidarity group before submitting to your Branch Manager.', isSuccess: false);
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Submit Roster to Branch Manager', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Are you sure you want to submit your completed roster to your Branch Manager for review and branch sign-off?',
+              style: TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Officer: $_scopedOfficer', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text('Solidarity Groups: ${myGroups.length}', style: const TextStyle(fontSize: 12)),
+                  const SizedBox(height: 2),
+                  Text('Registered Members: ${myMembers.length}', style: const TextStyle(fontSize: 12)),
+                  const SizedBox(height: 2),
+                  Text('Portfolio Savings: ${CurrencyFormatter.formatNaira(_displayTotalSavings)}',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF059669))),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Once submitted, your roster will be locked for review by the Branch Manager.',
+              style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Confirm & Submit to BM'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isSaving = true);
+    try {
+      final off = _officers.firstWhere(
+        (o) => (o['name'] ?? o['officer_name'])?.toString().trim().toLowerCase() == _scopedOfficer!.toLowerCase(),
+        orElse: () => <String, dynamic>{},
+      );
+      final coToken = (off['token'] ?? off['co_token'])?.toString();
+
+      if (coToken != null && coToken.startsWith('onb_co_')) {
+        final api = ref.read(onboardingApiServiceProvider);
+        await api.saveOfficerDraft(coToken, {'groups': myGroups, 'members': myMembers});
+        await api.submitOfficerRoster(coToken);
+      } else {
+        if (off.isNotEmpty) {
+          off['status'] = 'submitted';
+        }
+        await _saveDraft();
+      }
+
+      setState(() {
+        _isSaving = false;
+        if (off.isNotEmpty) {
+          off['status'] = 'submitted';
+        }
+      });
+      _showBanner('Your roster has been successfully submitted to your Branch Manager!', isSuccess: true);
+      await _loadSessionData();
+    } catch (e) {
+      setState(() => _isSaving = false);
+      _showBanner('Failed to submit roster: $e', isSuccess: false);
     }
   }
 
@@ -425,8 +537,9 @@ class _BranchOnboardingPortalScreenState
         ? officerCtrl.text.trim()
         : (officerCtrl.text.trim().isNotEmpty ? '__custom__' : (officerNames.isNotEmpty ? officerNames.first : '__custom__'));
 
+    final existingGroupSavings = isEditing ? (double.tryParse(groupToEdit['group_savings']?.toString() ?? '0') ?? 0.0) : 0.0;
     final savingsCtrl = TextEditingController(
-      text: isEditing ? (groupToEdit['group_savings']?.toString() ?? '0.00') : '0.00',
+      text: existingGroupSavings > 0 ? existingGroupSavings.toStringAsFixed(2) : '',
     );
 
     String selectedDay = isEditing ? (groupToEdit['meeting_day']?.toString() ?? 'Daily') : 'Daily';
@@ -1041,8 +1154,9 @@ class _BranchOnboardingPortalScreenState
     final nameCtrl = TextEditingController(text: isEditing ? (memberToEdit['full_name']?.toString() ?? '') : '');
     final phoneCtrl = TextEditingController(text: isEditing ? (memberToEdit['phone_number']?.toString() ?? '') : '');
     final addressCtrl = TextEditingController(text: isEditing ? (memberToEdit['home_address']?.toString() ?? '') : '');
+    final existingSavings = isEditing ? (double.tryParse(memberToEdit['savings_balance']?.toString() ?? '0') ?? 0.0) : 0.0;
     final savingsCtrl = TextEditingController(
-      text: isEditing ? (memberToEdit['savings_balance']?.toString() ?? '0.00') : '0.00',
+      text: existingSavings > 0 ? existingSavings.toStringAsFixed(2) : '',
     );
 
     // Active loan fields
@@ -1842,20 +1956,56 @@ class _BranchOnboardingPortalScreenState
   double get _totalActiveCredit => _members.fold(0.0, (sum, m) => sum + (double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0));
   double get _totalCurrentBalance => _members.fold(0.0, (sum, m) => sum + (double.tryParse(m['current_credit_balance']?.toString() ?? '0') ?? 0.0));
 
-  double get _displayMemberSavings => (_scopedOfficer != null ? _scopedMembers : _members)
+  bool get _isGroupFiltered => _selectedGroupFilter != 'All';
+
+  List<Map<String, dynamic>> get _currentFilteredGroups {
+    final base = _scopedOfficer != null ? _scopedGroups : _groups;
+    if (!_isGroupFiltered) return base;
+    return base.where((g) => (g['group_reference'] ?? '').toString().toUpperCase() == _selectedGroupFilter.toUpperCase()).toList();
+  }
+
+  List<Map<String, dynamic>> get _currentFilteredMembers {
+    final base = _scopedOfficer != null ? _scopedMembers : _members;
+    if (!_isGroupFiltered) return base;
+    return base.where((m) => (m['group_reference'] ?? '').toString().toUpperCase() == _selectedGroupFilter.toUpperCase()).toList();
+  }
+
+  double get _displayMemberSavings => _currentFilteredMembers
       .fold(0.0, (sum, m) => sum + (double.tryParse(m['savings_balance']?.toString() ?? '0') ?? 0.0));
-  double get _displayGroupSavings => (_scopedOfficer != null ? _scopedGroups : _groups)
+
+  double get _displayGroupSavings => _currentFilteredGroups
       .fold(0.0, (sum, g) => sum + (double.tryParse(g['group_savings']?.toString() ?? '0') ?? 0.0));
-  double get _displayTotalSavings => _displayMemberSavings + _displayGroupSavings + (_scopedOfficer == null ? _miscSavings : 0.0);
-  double get _displayPrincipalLoan => (_scopedOfficer != null ? _scopedMembers : _members).fold(0.0, (sum, m) {
-    final p = double.tryParse(m['principal_loan']?.toString() ?? '');
+
+  double get _displayTotalSavings {
+    if (_isGroupFiltered) {
+      return _displayMemberSavings + _displayGroupSavings;
+    }
+    return _displayMemberSavings + _displayGroupSavings + (_scopedOfficer == null ? (_miscSavings + _lapsSavings) : _displayOfficerMiscSavings);
+  }
+
+  double get _displayOfficerMiscSavings {
+    if (_scopedOfficer == null) return 0.0;
+    final off = _officers.firstWhere(
+      (o) => (o['name'] ?? o['officer_name'])?.toString().trim().toLowerCase() == _scopedOfficer!.toLowerCase(),
+      orElse: () => <String, dynamic>{},
+    );
+    if (off['is_misc_savings_manager'] == true) {
+      return _miscSavings;
+    }
+    return 0.0;
+  }
+
+  double get _displayPrincipalLoan => _currentFilteredMembers.fold(0.0, (sum, m) {
+    final p = double.tryParse((m['principal'] ?? m['principal_loan'] ?? m['loan_amount'])?.toString() ?? '');
     final a = double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0;
     return sum + (p != null && p > 0 ? p : a);
   });
-  double get _displayActiveCredit => (_scopedOfficer != null ? _scopedMembers : _members)
+
+  double get _displayActiveCredit => _currentFilteredMembers
       .fold(0.0, (sum, m) => sum + (double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0));
-  double get _displayCurrentBalance => (_scopedOfficer != null ? _scopedMembers : _members)
-      .fold(0.0, (sum, m) => sum + (double.tryParse(m['current_credit_balance']?.toString() ?? '0') ?? 0.0));
+
+  double get _displayCurrentBalance => _currentFilteredMembers
+      .fold(0.0, (sum, m) => sum + (double.tryParse((m['current_credit_balance'] ?? m['current_balance'])?.toString() ?? '0') ?? 0.0));
 
   @override
   Widget build(BuildContext context) {
@@ -2117,20 +2267,23 @@ class _BranchOnboardingPortalScreenState
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        TextButton.icon(
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        if (!_isEnforcedOfficerScope)
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: const Icon(Icons.remove_red_eye_outlined, size: 13, color: Color(0xFF2563EB)),
+                            label: const Text('View All Branch Data (AM Mode)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+                            onPressed: () {
+                              setState(() {
+                                _scopedOfficer = null;
+                                _tabController.dispose();
+                                _tabController = TabController(length: 5, vsync: this);
+                              });
+                            },
                           ),
-                          icon: const Icon(Icons.remove_red_eye_outlined, size: 13, color: Color(0xFF2563EB)),
-                          label: const Text('View All Branch Data (AM Mode)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
-                          onPressed: () {
-                            setState(() {
-                              _scopedOfficer = null;
-                            });
-                          },
-                        ),
                       ],
                     ),
                   );
@@ -2146,6 +2299,7 @@ class _BranchOnboardingPortalScreenState
               child: LayoutBuilder(
                 builder: (context, tabConstraints) {
                   final isTabScrollable = tabConstraints.maxWidth < 650;
+                  final isOfficer = _scopedOfficer != null && _scopedOfficer!.isNotEmpty;
                   return TabBar(
                     controller: _tabController,
                     isScrollable: isTabScrollable,
@@ -2156,34 +2310,47 @@ class _BranchOnboardingPortalScreenState
                     indicatorWeight: 2.5,
                     labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                     onTap: (index) => _tabController.animateTo(index),
-                    tabs: [
-                      Tab(
-                        icon: const Icon(Icons.groups_outlined, size: 18),
-                        text: _scopedOfficer != null
-                            ? 'My Members (${_scopedMembers.length})'
-                            : 'Member Roster (${_members.length})',
-                      ),
-                      Tab(
-                        icon: const Icon(Icons.hub_outlined, size: 18),
-                        text: _scopedOfficer != null
-                            ? 'My Groups (${_scopedGroups.length})'
-                            : 'Solidarity Groups (${_groups.length})',
-                      ),
-                      Tab(
-                        icon: const Icon(Icons.badge_outlined, size: 18),
-                        text: _scopedOfficer != null
-                            ? 'Officer Profile'
-                            : 'Officers & Reserves (${_officers.length})',
-                      ),
-                      const Tab(
-                        icon: Icon(Icons.upload_file_outlined, size: 18),
-                        text: 'Excel Uploader',
-                      ),
-                      Tab(
-                        icon: const Icon(Icons.verified_outlined, size: 18),
-                        text: _scopedOfficer != null ? 'Review & Save' : 'Review & Sign-Off',
-                      ),
-                    ],
+                    tabs: isOfficer
+                        ? [
+                            Tab(
+                              icon: const Icon(Icons.groups_outlined, size: 18),
+                              text: 'My Members (${_scopedMembers.length})',
+                            ),
+                            Tab(
+                              icon: const Icon(Icons.hub_outlined, size: 18),
+                              text: 'My Groups (${_scopedGroups.length})',
+                            ),
+                            const Tab(
+                              icon: Icon(Icons.upload_file_outlined, size: 18),
+                              text: 'Excel Uploader',
+                            ),
+                            const Tab(
+                              icon: Icon(Icons.verified_outlined, size: 18),
+                              text: 'Review & Submit',
+                            ),
+                          ]
+                        : [
+                            Tab(
+                              icon: const Icon(Icons.groups_outlined, size: 18),
+                              text: 'Member Roster (${_members.length})',
+                            ),
+                            Tab(
+                              icon: const Icon(Icons.hub_outlined, size: 18),
+                              text: 'Solidarity Groups (${_groups.length})',
+                            ),
+                            Tab(
+                              icon: const Icon(Icons.badge_outlined, size: 18),
+                              text: 'Officers & Reserves (${_officers.length})',
+                            ),
+                            const Tab(
+                              icon: Icon(Icons.upload_file_outlined, size: 18),
+                              text: 'Excel Uploader',
+                            ),
+                            const Tab(
+                              icon: Icon(Icons.verified_outlined, size: 18),
+                              text: 'Review & Sign-Off',
+                            ),
+                          ],
                   );
                 },
               ),
@@ -2193,13 +2360,20 @@ class _BranchOnboardingPortalScreenState
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                children: [
-                  _buildMembersGridTab(isSubmitted),
-                  _buildGroupsTab(isSubmitted),
-                  _buildOfficersAndReservesTab(isSubmitted),
-                  _buildExcelUploaderTab(isSubmitted),
-                  _buildReviewSignOffTab(isSubmitted),
-                ],
+                children: (_scopedOfficer != null && _scopedOfficer!.isNotEmpty)
+                    ? [
+                        _buildMembersGridTab(isSubmitted),
+                        _buildGroupsTab(isSubmitted),
+                        _buildExcelUploaderTab(isSubmitted),
+                        _buildReviewSignOffTab(isSubmitted),
+                      ]
+                    : [
+                        _buildMembersGridTab(isSubmitted),
+                        _buildGroupsTab(isSubmitted),
+                        _buildOfficersAndReservesTab(isSubmitted),
+                        _buildExcelUploaderTab(isSubmitted),
+                        _buildReviewSignOffTab(isSubmitted),
+                      ],
               ),
             ),
           ],
@@ -2308,7 +2482,20 @@ class _BranchOnboardingPortalScreenState
                       : const Icon(Icons.save_outlined, size: 14),
                   label: const Text('Save Draft', style: TextStyle(fontSize: 11.5)),
                 ),
-                if (_scopedOfficer == null) ...[
+                if (_scopedOfficer != null) ...[
+                  const SizedBox(width: 6),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: IcareColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: (_isSaving || isSubmitted) ? null : _submitScopedOfficerRoster,
+                    icon: const Icon(Icons.send_outlined, size: 14),
+                    label: const Text('Submit to BM', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  ),
+                ] else ...[
                   const SizedBox(width: 6),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
@@ -2414,29 +2601,37 @@ class _BranchOnboardingPortalScreenState
               final isNarrow = constraints.maxWidth < 800;
               final isScoped = _scopedOfficer != null && _scopedOfficer!.isNotEmpty;
 
-              final items = isScoped
-                  ? [
-                      _buildMetricCardChip('Portfolio Officer', _scopedOfficer!, Icons.badge_outlined, const Color(0xFF0F766E), const Color(0xFFF0FDFA)),
-                      _buildMetricCardChip('My Groups', _scopedGroups.length.toString(), Icons.hub_outlined, const Color(0xFF475569), const Color(0xFFF1F5F9)),
-                      _buildMetricCardChip('My Members', _scopedMembers.length.toString(), Icons.people_outline, const Color(0xFF475569), const Color(0xFFF1F5F9)),
-                      _buildMetricCardChip('Portfolio Savings', CurrencyFormatter.formatNaira(_displayTotalSavings), Icons.savings_outlined, const Color(0xFF059669), const Color(0xFFECFDF5)),
-                      if (_displayPrincipalLoan > 0)
-                        _buildMetricCardChip('Principal Disbursed', CurrencyFormatter.formatNaira(_displayPrincipalLoan), Icons.account_balance_outlined, const Color(0xFF4F46E5), const Color(0xFFEEF2FF)),
-                      _buildMetricCardChip('Active Credit', CurrencyFormatter.formatNaira(_displayActiveCredit), Icons.credit_card_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF)),
-                      _buildMetricCardChip('Outstanding Balance', CurrencyFormatter.formatNaira(_displayCurrentBalance), Icons.account_balance_wallet_outlined, const Color(0xFFD97706), const Color(0xFFFFFBEB)),
-                    ]
-                  : [
-                      _buildMetricCardChip('Officers', _officers.length.toString(), Icons.badge_outlined, const Color(0xFF0F766E), const Color(0xFFF0FDFA)),
-                      _buildMetricCardChip('Groups', _groups.length.toString(), Icons.hub_outlined, const Color(0xFF475569), const Color(0xFFF1F5F9)),
-                      _buildMetricCardChip('Members', _members.length.toString(), Icons.people_outline, const Color(0xFF475569), const Color(0xFFF1F5F9)),
-                      _buildMetricCardChip('Total Savings', CurrencyFormatter.formatNaira(_totalSavings), Icons.savings_outlined, const Color(0xFF059669), const Color(0xFFECFDF5)),
-                      if (_miscSavings > 0)
-                        _buildMetricCardChip('Misc Savings', CurrencyFormatter.formatNaira(_miscSavings), Icons.account_balance_wallet_outlined, const Color(0xFF0D9488), const Color(0xFFCCFBF1)),
-                      if (_totalPrincipalLoan > 0)
-                        _buildMetricCardChip('Principal Disbursed', CurrencyFormatter.formatNaira(_totalPrincipalLoan), Icons.account_balance_outlined, const Color(0xFF4F46E5), const Color(0xFFEEF2FF)),
-                      _buildMetricCardChip('Active Credit', CurrencyFormatter.formatNaira(_totalActiveCredit), Icons.credit_card_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF)),
-                      _buildMetricCardChip('Outstanding Balance', CurrencyFormatter.formatNaira(_totalCurrentBalance), Icons.account_balance_wallet_outlined, const Color(0xFFD97706), const Color(0xFFFFFBEB)),
-                    ];
+              final isFiltered = _isGroupFiltered;
+
+              final items = <Widget>[
+                if (isScoped)
+                  _buildMetricCardChip('Portfolio Officer', _scopedOfficer!, Icons.badge_outlined, const Color(0xFF0F766E), const Color(0xFFF0FDFA))
+                else if (!isFiltered)
+                  _buildMetricCardChip('Officers', _officers.length.toString(), Icons.badge_outlined, const Color(0xFF0F766E), const Color(0xFFF0FDFA)),
+
+                if (isFiltered)
+                  _buildMetricCardChip('Filtered Group', _selectedGroupFilter, Icons.filter_alt_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF))
+                else
+                  _buildMetricCardChip(isScoped ? 'My Groups' : 'Groups', _currentFilteredGroups.length.toString(), Icons.hub_outlined, const Color(0xFF475569), const Color(0xFFF1F5F9)),
+
+                _buildMetricCardChip(isFiltered ? 'Group Members' : (isScoped ? 'My Members' : 'Members'), _currentFilteredMembers.length.toString(), Icons.people_outline, const Color(0xFF475569), const Color(0xFFF1F5F9)),
+
+                if (isFiltered) ...[
+                  _buildMetricCardChip('Group Savings', CurrencyFormatter.formatNaira(_displayGroupSavings), Icons.savings_outlined, const Color(0xFF0D9488), const Color(0xFFCCFBF1)),
+                  _buildMetricCardChip('Member Savings', CurrencyFormatter.formatNaira(_displayMemberSavings), Icons.savings_outlined, const Color(0xFF10B981), const Color(0xFFECFDF5)),
+                ],
+
+                _buildMetricCardChip(isFiltered ? 'Total Group Savings' : 'Total Savings', CurrencyFormatter.formatNaira(_displayTotalSavings), Icons.savings_outlined, const Color(0xFF059669), const Color(0xFFECFDF5)),
+
+                if (!isFiltered && _scopedOfficer == null && _miscSavings > 0)
+                  _buildMetricCardChip('Misc Savings', CurrencyFormatter.formatNaira(_miscSavings), Icons.account_balance_wallet_outlined, const Color(0xFF0D9488), const Color(0xFFCCFBF1)),
+
+                if (_displayPrincipalLoan > 0)
+                  _buildMetricCardChip('Principal Disbursed', CurrencyFormatter.formatNaira(_displayPrincipalLoan), Icons.account_balance_outlined, const Color(0xFF4F46E5), const Color(0xFFEEF2FF)),
+
+                _buildMetricCardChip('Active Credit', CurrencyFormatter.formatNaira(_displayActiveCredit), Icons.credit_card_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF)),
+                _buildMetricCardChip('Outstanding Balance', CurrencyFormatter.formatNaira(_displayCurrentBalance), Icons.account_balance_wallet_outlined, const Color(0xFFD97706), const Color(0xFFFFFBEB)),
+              ];
 
               if (isNarrow) {
                 return SingleChildScrollView(
@@ -4017,7 +4212,7 @@ class _BranchOnboardingPortalScreenState
   }
 
   void _openEditReserveDialog(String title, String ruleDescription, double currentVal, Function(double) onSave) {
-    final ctrl = TextEditingController(text: currentVal > 0 ? currentVal.toStringAsFixed(2) : '0.00');
+    final ctrl = TextEditingController(text: currentVal > 0 ? currentVal.toStringAsFixed(2) : '');
     final formKey = GlobalKey<FormState>();
 
     showDialog(
@@ -4171,13 +4366,19 @@ class _BranchOnboardingPortalScreenState
                       officerToEdit['phone_number'] = cleanPhone;
                       officerToEdit['is_misc_savings_manager'] = isMiscMgr;
                     } else {
+                      final coId = 'onb_co_${DateTime.now().millisecondsSinceEpoch.toRadixString(16)}';
                       _officers.add({
+                        'id': coId,
+                        'officer_id': coId,
                         'name': cleanName,
                         'officer_name': cleanName,
                         'phone': cleanPhone,
                         'phone_number': cleanPhone,
                         'role': 'Credit Officer',
                         'is_misc_savings_manager': isMiscMgr,
+                        'token': coId,
+                        'co_token': coId,
+                        'status': 'drafting',
                       });
                     }
                   });
@@ -4436,15 +4637,35 @@ class _BranchOnboardingPortalScreenState
                     ),
                   ),
                   const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 44,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
-                      onPressed: _isSaving ? null : _saveDraft,
-                      icon: const Icon(Icons.save_outlined, size: 18),
-                      label: const Text('Save My Groups & Members', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 44,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFFCBD5E1)),
+                            ),
+                            onPressed: _isSaving ? null : _saveDraft,
+                            icon: const Icon(Icons.save_outlined, size: 16),
+                            label: const Text('Save Progress Draft', style: TextStyle(fontSize: 12.5)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: SizedBox(
+                          height: 44,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+                            onPressed: (_isSaving || isSubmitted) ? null : _submitScopedOfficerRoster,
+                            icon: const Icon(Icons.send_outlined, size: 16),
+                            label: const Text('Confirm & Submit to BM', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ] else
                   SizedBox(

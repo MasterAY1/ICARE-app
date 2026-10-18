@@ -3,12 +3,37 @@ import math
 import secrets
 import datetime
 import re
+import time
 from typing import Dict, Any, List, Optional, Tuple
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from services.loan_product_engine import LoanProductEngine
 from services.business_date_service import get_nigerian_holidays
 from services.savings_service import SavingsService
 from auth.password import hash_password
+
+_LOAN_PRODUCTS_CACHE: Dict[str, Any] = {"data": None, "timestamp": 0.0}
+_LOAN_PRODUCTS_CACHE_TTL = 900.0  # 15 minutes TTL
+
+def get_cached_loan_products(uow: SupabaseUnitOfWork) -> List[Dict[str, Any]]:
+    """Fetches loan products with 15-minute in-memory caching to eliminate redundant remote DB round-trips."""
+    now = time.time()
+    if _LOAN_PRODUCTS_CACHE["data"] is not None and (now - _LOAN_PRODUCTS_CACHE["timestamp"] < _LOAN_PRODUCTS_CACHE_TTL):
+        return _LOAN_PRODUCTS_CACHE["data"]
+    try:
+        p_res = uow.client.table("loan_products").select("product_id, name, repayment_cycle, installments, interest_rate").order("name").execute()
+        data = p_res.data or []
+        _LOAN_PRODUCTS_CACHE["data"] = data
+        _LOAN_PRODUCTS_CACHE["timestamp"] = now
+        return data
+    except Exception:
+        if _LOAN_PRODUCTS_CACHE["data"] is not None:
+            return _LOAN_PRODUCTS_CACHE["data"]
+        raise
+
+def get_cached_loan_products_map(uow: SupabaseUnitOfWork) -> Dict[str, bool]:
+    """Returns a lowercased name -> True mapping of active loan products from cache."""
+    prods = get_cached_loan_products(uow)
+    return {str(p.get("name") or "").strip().lower(): True for p in prods if p.get("name")}
 
 class OnboardingService:
     """
@@ -94,9 +119,8 @@ class OnboardingService:
                 if "expired" in str(e).lower():
                     raise e
 
-        # Fetch reference loan products
-        p_res = uow.client.table("loan_products").select("product_id, name, repayment_cycle, installments, interest_rate").order("name").execute()
-        products = p_res.data or []
+        # Fetch reference loan products from cache
+        products = get_cached_loan_products(uow)
 
         # Check next available branch group number for smart UI pre-filling
         branch_id = session.get("branch_id")
@@ -322,9 +346,19 @@ class OnboardingService:
                 "laps_savings": float(laps_s or 0.0),
             }
 
-        # Pre-load loan products for validation
-        p_res = uow.client.table("loan_products").select("name").execute()
-        products_map = {p["name"].strip().lower(): True for p in (p_res.data or [])}
+        # Auto-provision dedicated officer tokens for any officers missing them
+        for off in final_payload.get("officers", []):
+            if not off.get("token") and not off.get("co_token"):
+                co_tok = f"onb_co_{secrets.token_hex(12)}"
+                off["token"] = co_tok
+                off["co_token"] = co_tok
+            if not off.get("id") and not off.get("officer_id"):
+                new_id = str(uuid.uuid4())
+                off["id"] = new_id
+                off["officer_id"] = new_id
+
+        # Pre-load loan products from cache for fast in-memory validation
+        products_map = get_cached_loan_products_map(uow)
 
         validation_summary, aggregates = OnboardingService.validate_payload(final_payload, products_map)
 
@@ -406,8 +440,7 @@ class OnboardingService:
         payload["officers"] = officers
 
         # Re-validate with new officer
-        p_res = uow.client.table("loan_products").select("name").execute()
-        products_map = {p["name"].strip().lower(): True for p in (p_res.data or [])}
+        products_map = get_cached_loan_products_map(uow)
         validation_summary, aggregates = OnboardingService.validate_payload(payload, products_map)
 
         uow.client.table("branch_onboarding_sessions").update({
@@ -494,9 +527,8 @@ class OnboardingService:
             "outstanding_balance": round(curr_balance, 2)
         }
 
-        # Loan products and meeting days
-        p_res = uow.client.table("loan_products").select("product_id, name, repayment_cycle, installments, interest_rate").order("name").execute()
-        products = p_res.data or []
+        # Loan products from cache and standard meeting days
+        products = get_cached_loan_products(uow)
         meeting_days = ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Monthly"]
 
         is_submitted = (target_officer.get("status") == "submitted")
@@ -529,6 +561,7 @@ class OnboardingService:
         """
         Saves updated groups and members belonging exclusively to this Credit Officer.
         Guarantees other officers' data remains completely untouched.
+        Optimized to compute aggregates and return workspace in-memory without duplicate DB round-trips.
         """
         session, target_officer = OnboardingService.find_session_by_co_token(uow, co_token)
 
@@ -577,23 +610,67 @@ class OnboardingService:
             "laps_savings": float(payload.get("laps_savings") or 0.0)
         }
 
-        p_res = uow.client.table("loan_products").select("name").execute()
-        products_map = {p["name"].strip().lower(): True for p in (p_res.data or [])}
-        validation_summary, aggregates = OnboardingService.validate_payload(final_payload, products_map)
+        # Fast in-memory validation using cached loan products
+        products_map = get_cached_loan_products_map(uow)
+        validation_summary, branch_aggregates = OnboardingService.validate_payload(final_payload, products_map)
 
         now = datetime.datetime.now(datetime.timezone.utc)
         uow.client.table("branch_onboarding_sessions").update({
             "payload": final_payload,
-            "total_groups": aggregates["total_groups"],
-            "total_members": aggregates["total_members"],
-            "total_savings": aggregates["total_savings"],
-            "total_active_credit": aggregates["total_active_credit"],
-            "total_current_balance": aggregates["total_current_balance"],
+            "total_groups": branch_aggregates["total_groups"],
+            "total_members": branch_aggregates["total_members"],
+            "total_savings": branch_aggregates["total_savings"],
+            "total_active_credit": branch_aggregates["total_active_credit"],
+            "total_current_balance": branch_aggregates["total_current_balance"],
             "validation_summary": validation_summary,
             "updated_at": now.isoformat()
         }).eq("id", session["id"]).execute()
 
-        return OnboardingService.get_officer_workspace(uow, co_token)
+        # Calculate officer-specific aggregates in-memory to eliminate 3 redundant remote queries
+        indiv_savings = sum(float(m.get("savings_balance") or 0.0) for m in incoming_members)
+        grp_savings = sum(float(g.get("group_savings") or 0.0) for g in incoming_groups)
+        tot_savings = indiv_savings + grp_savings
+        active_credit = sum(float(m.get("active_credit") or 0.0) for m in incoming_members)
+        curr_balance = sum(float(m.get("current_credit_balance") or 0.0) for m in incoming_members)
+
+        officer_aggregates = {
+            "portfolio_groups": len(incoming_groups),
+            "portfolio_members": len(incoming_members),
+            "individual_member_savings": round(indiv_savings, 2),
+            "group_savings_pool": round(grp_savings, 2),
+            "total_portfolio_savings": round(tot_savings, 2),
+            "active_credit": round(active_credit, 2),
+            "outstanding_balance": round(curr_balance, 2)
+        }
+
+        cached_products = get_cached_loan_products(uow)
+        meeting_days = ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Monthly"]
+        is_submitted = (target_officer.get("status") == "submitted")
+        is_session_locked = session.get("status") in ("submitted", "bm_submitted", "approved")
+
+        return {
+            "status": "success",
+            "message": "Draft saved successfully.",
+            "officer": {
+                "id": target_officer.get("id"),
+                "name": target_officer.get("name"),
+                "phone": target_officer.get("phone"),
+                "role": target_officer.get("role", "Credit Officer"),
+                "status": target_officer.get("status", "drafting"),
+                "is_misc_savings_manager": bool(target_officer.get("is_misc_savings_manager", False)),
+                "submitted_at": target_officer.get("submitted_at")
+            },
+            "branch_name": session.get("branch_name"),
+            "branch_code": session.get("branch_code"),
+            "session_status": session.get("status"),
+            "expires_at": session.get("expires_at"),
+            "groups": incoming_groups,
+            "members": incoming_members,
+            "aggregates": officer_aggregates,
+            "loan_products": cached_products,
+            "meeting_days": meeting_days,
+            "is_locked": is_submitted or is_session_locked
+        }
 
     @staticmethod
     def submit_officer_roster(uow: SupabaseUnitOfWork, co_token: str) -> Dict[str, Any]:
