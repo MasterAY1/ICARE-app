@@ -44,6 +44,7 @@ from api.schemas.reports import (
     DepositStatementData,
     CreditStatementData,
     MonthlyReconciliationPayload,
+    Annex1ReportResponse,
 )
 
 router = APIRouter(prefix="/api/v1/reports", tags=["Reports & Export"])
@@ -927,6 +928,37 @@ def get_credit_statement(
     )
 
 
+@router.get("/annex-1", response_model=Annex1ReportResponse)
+def get_annex_1(
+    branch_name: Optional[str] = Query(None),
+    year: int = Query(2026),
+    month: int = Query(9),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Returns Annex-1: Detailed Sundry Receipts and Operational Expenses breakdown.
+    Direct statutory parity with Paper Images 4 & 8.
+    """
+    _check_reports_permission(current_user)
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
+
+    bid = None
+    if isinstance(resolved_branch_id, str):
+        bid = resolved_branch_id
+    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
+        bid = resolved_branch_id[0]
+    else:
+        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
+        if res_b.data:
+            bid = res_b.data[0]["branch_id"]
+
+    if not bid:
+        raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
+
+    return ReportService.get_annex_1_details(uow, branch_id=bid, year=year, month=month)
+
+
 @router.get("/monthly-reconciliation")
 def get_monthly_reconciliation(
     branch_name: Optional[str] = Query(None),
@@ -1034,6 +1066,15 @@ def export_monthly_parity_excel(
     credit_rows = stmts_res.get("credit_statement", {}).get("rows", [])
     df_credit = pd.DataFrame(credit_rows) if credit_rows else pd.DataFrame()
 
+    annex1_res = ReportService.get_annex_1_details(uow, branch_id=bid, year=year, month=month)
+    annex_rows = []
+    for r in annex1_res.get("sundry_receipts", []):
+        annex_rows.append({"Type": "Receipts", "Category": "Sundry Receipts", "Code": r["code"], "Item": r["name"], "Amount": r["amount"]})
+    for g in annex1_res.get("sundry_payments_groups", []):
+        for item in g.get("items", []):
+            annex_rows.append({"Type": "Payments", "Category": g["category_name"], "Code": item["code"], "Item": item["name"], "Amount": item["amount"]})
+    df_annex = pd.DataFrame(annex_rows) if annex_rows else pd.DataFrame()
+
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         if not df_dep.empty:
@@ -1042,6 +1083,8 @@ def export_monthly_parity_excel(
             df_credit.to_excel(writer, sheet_name="Credit_Statement", index=False)
         if not df_rp.empty:
             df_rp.to_excel(writer, sheet_name="Receipts_and_Payments", index=False)
+        if not df_annex.empty:
+            df_annex.to_excel(writer, sheet_name="Annex_1_Sundry", index=False)
         if not df_tb.empty:
             df_tb.to_excel(writer, sheet_name="Official_Trial_Balance", index=False)
         if not df_parity.empty:

@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -12,10 +13,12 @@ import '../data/onboarding_api_service.dart';
 
 class BranchOnboardingPortalScreen extends ConsumerStatefulWidget {
   final String token;
+  final String? initialOfficer;
 
   const BranchOnboardingPortalScreen({
     super.key,
     required this.token,
+    this.initialOfficer,
   });
 
   @override
@@ -37,6 +40,10 @@ class _BranchOnboardingPortalScreenState
 
   late String _currentToken;
   late final TextEditingController _tokenCtrl;
+
+  // Credit Officer Scoped Mode & Filtering
+  String? _scopedOfficer;
+  String _selectedOfficerFilter = 'All';
 
   Map<String, dynamic>? _sessionData;
   List<dynamic> _loanProducts = [];
@@ -63,6 +70,16 @@ class _BranchOnboardingPortalScreenState
     _tabController = TabController(length: 5, vsync: this);
     _currentToken = widget.token.trim();
     _tokenCtrl = TextEditingController(text: _currentToken);
+
+    // Resolve CO scope from constructor or URL query parameters
+    final uri = Uri.base;
+    final officerFromUrl = uri.queryParameters['officer'];
+    if (widget.initialOfficer != null && widget.initialOfficer!.trim().isNotEmpty) {
+      _scopedOfficer = widget.initialOfficer!.trim();
+    } else if (officerFromUrl != null && officerFromUrl.trim().isNotEmpty) {
+      _scopedOfficer = Uri.decodeComponent(officerFromUrl.trim());
+    }
+
     _loadSessionData();
   }
 
@@ -92,7 +109,7 @@ class _BranchOnboardingPortalScreenState
 
     try {
       final api = ref.read(onboardingApiServiceProvider);
-      final data = await api.getSession(_currentToken);
+      final data = await api.getSession(_currentToken, officer: _scopedOfficer);
 
       final session = data['session'] as Map<String, dynamic>? ?? {};
       final payload = session['payload'] as Map<String, dynamic>? ?? {};
@@ -166,7 +183,7 @@ class _BranchOnboardingPortalScreenState
         'laps_savings': _lapsSavings,
       };
 
-      final res = await api.saveDraft(_currentToken, payload);
+      final res = await api.saveDraft(_currentToken, payload, scopedOfficer: _scopedOfficer);
       setState(() {
         _isSaving = false;
         _lastSavedTime = DateTime.now();
@@ -187,7 +204,12 @@ class _BranchOnboardingPortalScreenState
       _showBanner('Uploading and parsing ${picked.name}...', isSuccess: true);
 
       final api = ref.read(onboardingApiServiceProvider);
-      final res = await api.uploadExcelBytes(_currentToken, picked.bytes, picked.name);
+      final res = await api.uploadExcelBytes(
+        _currentToken,
+        picked.bytes,
+        picked.name,
+        scopedOfficer: _scopedOfficer,
+      );
 
       final payload = res['payload'] as Map<String, dynamic>? ?? {};
       final groupsList = (payload['groups'] as List<dynamic>?)
@@ -316,9 +338,11 @@ class _BranchOnboardingPortalScreenState
         .toSet()
         .toList();
 
-    String currentOfficerName = isEditing
-        ? (groupToEdit['officer_name']?.toString() ?? '')
-        : (officerNames.isNotEmpty ? officerNames.first : '');
+    String currentOfficerName = (_scopedOfficer != null && _scopedOfficer!.isNotEmpty)
+        ? _scopedOfficer!
+        : (isEditing
+            ? (groupToEdit['officer_name']?.toString() ?? '')
+            : (officerNames.isNotEmpty ? officerNames.first : ''));
 
     final officerCtrl = TextEditingController(text: currentOfficerName);
     final phoneCtrl = TextEditingController(text: isEditing ? (groupToEdit['officer_phone']?.toString() ?? '') : '');
@@ -476,7 +500,21 @@ class _BranchOnboardingPortalScreenState
                             ),
                             style: const TextStyle(fontSize: 13),
                           ),
-                          if (officerNames.isNotEmpty) ...[
+                          if (_scopedOfficer != null && _scopedOfficer!.isNotEmpty) ...[
+                            TextFormField(
+                              controller: officerCtrl,
+                              enabled: false,
+                              decoration: const InputDecoration(
+                                labelText: 'Assigned Credit Officer (Your Workspace)',
+                                labelStyle: TextStyle(fontSize: 12),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                border: OutlineInputBorder(),
+                                filled: true,
+                                fillColor: Color(0xFFF1F5F9),
+                              ),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                            ),
+                          ] else if (officerNames.isNotEmpty) ...[
                             DropdownButtonFormField<String>(
                               initialValue: selectedOfficerDropdown,
                               decoration: const InputDecoration(
@@ -652,7 +690,21 @@ class _BranchOnboardingPortalScreenState
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    if (officerNames.isNotEmpty) ...[
+                                    if (_scopedOfficer != null && _scopedOfficer!.isNotEmpty) ...[
+                                      TextFormField(
+                                        controller: officerCtrl,
+                                        enabled: false,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Assigned Credit Officer (Your Workspace)',
+                                          labelStyle: TextStyle(fontSize: 12),
+                                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                          border: OutlineInputBorder(),
+                                          filled: true,
+                                          fillColor: Color(0xFFF1F5F9),
+                                        ),
+                                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                                      ),
+                                    ] else if (officerNames.isNotEmpty) ...[
                                       DropdownButtonFormField<String>(
                                         initialValue: selectedOfficerDropdown,
                                         decoration: const InputDecoration(
@@ -858,7 +910,8 @@ class _BranchOnboardingPortalScreenState
   }
 
   void _showMemberModal({Map<String, dynamic>? memberToEdit}) {
-    if (_groups.isEmpty) {
+    final availableGroups = _scopedGroups;
+    if (availableGroups.isEmpty) {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -870,9 +923,11 @@ class _BranchOnboardingPortalScreenState
               Text('Create a Group First', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
             ],
           ),
-          content: const Text(
-            'Members must belong to a Solidarity Group. Please add at least one group before registering members.',
-            style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
+          content: Text(
+            _scopedOfficer != null
+                ? 'You do not have any solidarity groups created yet for your portfolio ($_scopedOfficer). Please add at least one solidarity group before registering members.'
+                : 'Members must belong to a Solidarity Group. Please add at least one group before registering members.',
+            style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
           ),
           actions: [
             TextButton(
@@ -901,12 +956,14 @@ class _BranchOnboardingPortalScreenState
     final branchCode = _sessionData?['branch_code'] ?? 'BR';
 
     String selectedGroupRef = isEditing
-        ? (memberToEdit['group_reference']?.toString() ?? _groups.first['group_reference'])
-        : (_selectedGroupFilter != 'All' ? _selectedGroupFilter : _groups.first['group_reference']);
+        ? (memberToEdit['group_reference']?.toString() ?? availableGroups.first['group_reference'])
+        : (_selectedGroupFilter != 'All' && availableGroups.any((g) => g['group_reference'] == _selectedGroupFilter)
+            ? _selectedGroupFilter
+            : availableGroups.first['group_reference']);
 
-    // Ensure selected group exists in _groups
-    if (!_groups.any((g) => g['group_reference'] == selectedGroupRef)) {
-      selectedGroupRef = _groups.first['group_reference'];
+    // Ensure selected group exists in availableGroups
+    if (!availableGroups.any((g) => g['group_reference'] == selectedGroupRef)) {
+      selectedGroupRef = availableGroups.first['group_reference'];
     }
 
     final nextSeq = _members.length + 1;
@@ -1050,7 +1107,7 @@ class _BranchOnboardingPortalScreenState
                               contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                               border: OutlineInputBorder(),
                             ),
-                            items: _groups.map((g) {
+                            items: availableGroups.map((g) {
                               final gRef = g['group_reference'] ?? '';
                               final gName = g['group_name'] ?? '';
                               return DropdownMenuItem(
@@ -1109,7 +1166,7 @@ class _BranchOnboardingPortalScreenState
                                     contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                     border: OutlineInputBorder(),
                                   ),
-                                  items: _groups.map((g) {
+                                  items: availableGroups.map((g) {
                                     final gRef = g['group_reference'] ?? '';
                                     final gName = g['group_name'] ?? '';
                                     return DropdownMenuItem(
@@ -1680,7 +1737,37 @@ class _BranchOnboardingPortalScreenState
     );
   }
 
-  double get _totalSavings => _members.fold(0.0, (sum, m) => sum + (double.tryParse(m['savings_balance']?.toString() ?? '0') ?? 0.0));
+  List<Map<String, dynamic>> get _scopedGroups {
+    if (_scopedOfficer != null && _scopedOfficer!.isNotEmpty) {
+      final name = _scopedOfficer!.trim().toLowerCase();
+      return _groups.where((g) => (g['officer_name'] ?? '').toString().trim().toLowerCase() == name).toList();
+    }
+    if (_selectedOfficerFilter != 'All') {
+      final name = _selectedOfficerFilter.trim().toLowerCase();
+      return _groups.where((g) => (g['officer_name'] ?? '').toString().trim().toLowerCase() == name).toList();
+    }
+    return _groups;
+  }
+
+  Set<String> get _scopedGroupRefs {
+    return _scopedGroups.map((g) => (g['group_reference'] ?? '').toString().toUpperCase()).toSet();
+  }
+
+  List<Map<String, dynamic>> get _scopedMembers {
+    if (_scopedOfficer != null && _scopedOfficer!.isNotEmpty) {
+      final refs = _scopedGroupRefs;
+      return _members.where((m) => refs.contains((m['group_reference'] ?? '').toString().toUpperCase())).toList();
+    }
+    if (_selectedOfficerFilter != 'All') {
+      final refs = _scopedGroupRefs;
+      return _members.where((m) => refs.contains((m['group_reference'] ?? '').toString().toUpperCase())).toList();
+    }
+    return _members;
+  }
+
+  double get _totalMemberSavings => _members.fold(0.0, (sum, m) => sum + (double.tryParse(m['savings_balance']?.toString() ?? '0') ?? 0.0));
+  double get _totalGroupSavings => _groups.fold(0.0, (sum, g) => sum + (double.tryParse(g['group_savings']?.toString() ?? '0') ?? 0.0));
+  double get _totalSavings => _totalMemberSavings + _totalGroupSavings + _miscSavings;
   double get _totalPrincipalLoan => _members.fold(0.0, (sum, m) {
     final p = double.tryParse(m['principal_loan']?.toString() ?? '');
     final a = double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0;
@@ -1688,6 +1775,21 @@ class _BranchOnboardingPortalScreenState
   });
   double get _totalActiveCredit => _members.fold(0.0, (sum, m) => sum + (double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0));
   double get _totalCurrentBalance => _members.fold(0.0, (sum, m) => sum + (double.tryParse(m['current_credit_balance']?.toString() ?? '0') ?? 0.0));
+
+  double get _displayMemberSavings => (_scopedOfficer != null ? _scopedMembers : _members)
+      .fold(0.0, (sum, m) => sum + (double.tryParse(m['savings_balance']?.toString() ?? '0') ?? 0.0));
+  double get _displayGroupSavings => (_scopedOfficer != null ? _scopedGroups : _groups)
+      .fold(0.0, (sum, g) => sum + (double.tryParse(g['group_savings']?.toString() ?? '0') ?? 0.0));
+  double get _displayTotalSavings => _displayMemberSavings + _displayGroupSavings + (_scopedOfficer == null ? _miscSavings : 0.0);
+  double get _displayPrincipalLoan => (_scopedOfficer != null ? _scopedMembers : _members).fold(0.0, (sum, m) {
+    final p = double.tryParse(m['principal_loan']?.toString() ?? '');
+    final a = double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0;
+    return sum + (p != null && p > 0 ? p : a);
+  });
+  double get _displayActiveCredit => (_scopedOfficer != null ? _scopedMembers : _members)
+      .fold(0.0, (sum, m) => sum + (double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0));
+  double get _displayCurrentBalance => (_scopedOfficer != null ? _scopedMembers : _members)
+      .fold(0.0, (sum, m) => sum + (double.tryParse(m['current_credit_balance']?.toString() ?? '0') ?? 0.0));
 
   @override
   Widget build(BuildContext context) {
@@ -1873,6 +1975,102 @@ class _BranchOnboardingPortalScreenState
             // Summary Metrics Bar
             _buildSummaryMetricsBar(),
 
+            // Scoped Officer Workspace Indicator
+            if (_scopedOfficer != null && _scopedOfficer!.isNotEmpty)
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isMobile = constraints.maxWidth < 650;
+                  if (isMobile) {
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      color: const Color(0xFFEFF6FF),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.person_pin_outlined, size: 15, color: Color(0xFF1E40AF)),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'Workspace: $_scopedOfficer',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1E40AF)),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: () => setState(() => _scopedOfficer = null),
+                                child: const Text('Show All (AM)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'Showing your assigned groups and members. Uploads and edits are merged safely.',
+                            style: TextStyle(fontSize: 10.5, color: Color(0xFF3B82F6)),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    color: const Color(0xFFEFF6FF),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDBEAFE),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.person_pin_outlined, size: 14, color: Color(0xFF1E40AF)),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Credit Officer Workspace: $_scopedOfficer',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1E40AF)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            'Showing groups and members assigned to your portfolio. Edits and uploads merge safely without clobbering other officers.',
+                            style: TextStyle(fontSize: 11.5, color: Color(0xFF3B82F6)),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        TextButton.icon(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          icon: const Icon(Icons.remove_red_eye_outlined, size: 13, color: Color(0xFF2563EB)),
+                          label: const Text('View All Branch Data (AM Mode)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+                          onPressed: () {
+                            setState(() {
+                              _scopedOfficer = null;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+
             // Tab Navigation Header
             Container(
               decoration: const BoxDecoration(
@@ -1895,23 +2093,29 @@ class _BranchOnboardingPortalScreenState
                     tabs: [
                       Tab(
                         icon: const Icon(Icons.groups_outlined, size: 18),
-                        text: 'Member Roster (${_members.length})',
+                        text: _scopedOfficer != null
+                            ? 'My Members (${_scopedMembers.length})'
+                            : 'Member Roster (${_members.length})',
                       ),
                       Tab(
                         icon: const Icon(Icons.hub_outlined, size: 18),
-                        text: 'Solidarity Groups (${_groups.length})',
+                        text: _scopedOfficer != null
+                            ? 'My Groups (${_scopedGroups.length})'
+                            : 'Solidarity Groups (${_groups.length})',
                       ),
                       Tab(
                         icon: const Icon(Icons.badge_outlined, size: 18),
-                        text: 'Officers & Reserves (${_officers.length})',
+                        text: _scopedOfficer != null
+                            ? 'Officer Profile'
+                            : 'Officers & Reserves (${_officers.length})',
                       ),
                       const Tab(
                         icon: Icon(Icons.upload_file_outlined, size: 18),
                         text: 'Excel Uploader',
                       ),
-                      const Tab(
-                        icon: Icon(Icons.verified_outlined, size: 18),
-                        text: 'Review & Sign-Off',
+                      Tab(
+                        icon: const Icon(Icons.verified_outlined, size: 18),
+                        text: _scopedOfficer != null ? 'Review & Save' : 'Review & Sign-Off',
                       ),
                     ],
                   );
@@ -2038,18 +2242,20 @@ class _BranchOnboardingPortalScreenState
                       : const Icon(Icons.save_outlined, size: 14),
                   label: const Text('Save Draft', style: TextStyle(fontSize: 11.5)),
                 ),
-                const SizedBox(width: 6),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: IcareColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    visualDensity: VisualDensity.compact,
+                if (_scopedOfficer == null) ...[
+                  const SizedBox(width: 6),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: IcareColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: _isSaving ? null : _submitPackage,
+                    icon: const Icon(Icons.send_outlined, size: 14),
+                    label: const Text('Submit', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                   ),
-                  onPressed: _isSaving ? null : _submitPackage,
-                  icon: const Icon(Icons.send_outlined, size: 14),
-                  label: const Text('Submit', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                ),
+                ],
               ] else ...[
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2109,18 +2315,31 @@ class _BranchOnboardingPortalScreenState
           child: LayoutBuilder(
             builder: (context, constraints) {
               final isNarrow = constraints.maxWidth < 800;
-              final items = [
-                _buildMetricCardChip('Officers', _officers.length.toString(), Icons.badge_outlined, const Color(0xFF0F766E), const Color(0xFFF0FDFA)),
-                _buildMetricCardChip('Groups', _groups.length.toString(), Icons.hub_outlined, const Color(0xFF475569), const Color(0xFFF1F5F9)),
-                _buildMetricCardChip('Members', _members.length.toString(), Icons.people_outline, const Color(0xFF475569), const Color(0xFFF1F5F9)),
-                _buildMetricCardChip('Total Savings', CurrencyFormatter.formatNaira(_totalSavings), Icons.savings_outlined, const Color(0xFF059669), const Color(0xFFECFDF5)),
-                if (_miscSavings > 0)
-                  _buildMetricCardChip('Misc Savings', CurrencyFormatter.formatNaira(_miscSavings), Icons.account_balance_wallet_outlined, const Color(0xFF0D9488), const Color(0xFFCCFBF1)),
-                if (_totalPrincipalLoan > 0)
-                  _buildMetricCardChip('Principal Disbursed', CurrencyFormatter.formatNaira(_totalPrincipalLoan), Icons.account_balance_outlined, const Color(0xFF4F46E5), const Color(0xFFEEF2FF)),
-                _buildMetricCardChip('Active Credit', CurrencyFormatter.formatNaira(_totalActiveCredit), Icons.credit_card_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF)),
-                _buildMetricCardChip('Outstanding Balance', CurrencyFormatter.formatNaira(_totalCurrentBalance), Icons.account_balance_wallet_outlined, const Color(0xFFD97706), const Color(0xFFFFFBEB)),
-              ];
+              final isScoped = _scopedOfficer != null && _scopedOfficer!.isNotEmpty;
+
+              final items = isScoped
+                  ? [
+                      _buildMetricCardChip('Portfolio Officer', _scopedOfficer!, Icons.badge_outlined, const Color(0xFF0F766E), const Color(0xFFF0FDFA)),
+                      _buildMetricCardChip('My Groups', _scopedGroups.length.toString(), Icons.hub_outlined, const Color(0xFF475569), const Color(0xFFF1F5F9)),
+                      _buildMetricCardChip('My Members', _scopedMembers.length.toString(), Icons.people_outline, const Color(0xFF475569), const Color(0xFFF1F5F9)),
+                      _buildMetricCardChip('Portfolio Savings', CurrencyFormatter.formatNaira(_displayTotalSavings), Icons.savings_outlined, const Color(0xFF059669), const Color(0xFFECFDF5)),
+                      if (_displayPrincipalLoan > 0)
+                        _buildMetricCardChip('Principal Disbursed', CurrencyFormatter.formatNaira(_displayPrincipalLoan), Icons.account_balance_outlined, const Color(0xFF4F46E5), const Color(0xFFEEF2FF)),
+                      _buildMetricCardChip('Active Credit', CurrencyFormatter.formatNaira(_displayActiveCredit), Icons.credit_card_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF)),
+                      _buildMetricCardChip('Outstanding Balance', CurrencyFormatter.formatNaira(_displayCurrentBalance), Icons.account_balance_wallet_outlined, const Color(0xFFD97706), const Color(0xFFFFFBEB)),
+                    ]
+                  : [
+                      _buildMetricCardChip('Officers', _officers.length.toString(), Icons.badge_outlined, const Color(0xFF0F766E), const Color(0xFFF0FDFA)),
+                      _buildMetricCardChip('Groups', _groups.length.toString(), Icons.hub_outlined, const Color(0xFF475569), const Color(0xFFF1F5F9)),
+                      _buildMetricCardChip('Members', _members.length.toString(), Icons.people_outline, const Color(0xFF475569), const Color(0xFFF1F5F9)),
+                      _buildMetricCardChip('Total Savings', CurrencyFormatter.formatNaira(_totalSavings), Icons.savings_outlined, const Color(0xFF059669), const Color(0xFFECFDF5)),
+                      if (_miscSavings > 0)
+                        _buildMetricCardChip('Misc Savings', CurrencyFormatter.formatNaira(_miscSavings), Icons.account_balance_wallet_outlined, const Color(0xFF0D9488), const Color(0xFFCCFBF1)),
+                      if (_totalPrincipalLoan > 0)
+                        _buildMetricCardChip('Principal Disbursed', CurrencyFormatter.formatNaira(_totalPrincipalLoan), Icons.account_balance_outlined, const Color(0xFF4F46E5), const Color(0xFFEEF2FF)),
+                      _buildMetricCardChip('Active Credit', CurrencyFormatter.formatNaira(_totalActiveCredit), Icons.credit_card_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF)),
+                      _buildMetricCardChip('Outstanding Balance', CurrencyFormatter.formatNaira(_totalCurrentBalance), Icons.account_balance_wallet_outlined, const Color(0xFFD97706), const Color(0xFFFFFBEB)),
+                    ];
 
               if (isNarrow) {
                 return SingleChildScrollView(
@@ -2196,7 +2415,10 @@ class _BranchOnboardingPortalScreenState
   // =========================================================================
 
   Widget _buildMembersGridTab(bool isSubmitted) {
-    final filtered = _members.where((m) {
+    final availableGroups = _scopedGroups;
+    final baseMembers = _scopedMembers;
+
+    final filtered = baseMembers.where((m) {
       if (_selectedGroupFilter != 'All' && m['group_reference'] != _selectedGroupFilter) {
         return false;
       }
@@ -2210,6 +2432,12 @@ class _BranchOnboardingPortalScreenState
       return true;
     }).toList();
 
+    final officerNames = _officers
+        .map((o) => (o['name'] ?? o['officer_name'] ?? '').toString().trim())
+        .where((n) => n.isNotEmpty)
+        .toSet()
+        .toList();
+
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -2218,6 +2446,37 @@ class _BranchOnboardingPortalScreenState
           LayoutBuilder(
             builder: (context, constraints) {
               final isNarrow = constraints.maxWidth < 640;
+
+              final officerDropdown = (_scopedOfficer == null && officerNames.isNotEmpty)
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFFCBD5E1)),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _selectedOfficerFilter,
+                          isExpanded: isNarrow,
+                          icon: const Icon(Icons.arrow_drop_down, size: 18),
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                          items: [
+                            const DropdownMenuItem(value: 'All', child: Text('All Officers')),
+                            ...officerNames.map((n) => DropdownMenuItem(value: n, child: Text(n))),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() {
+                                _selectedOfficerFilter = val;
+                                _selectedGroupFilter = 'All';
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                    )
+                  : null;
 
               final groupDropdown = Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
@@ -2234,7 +2493,7 @@ class _BranchOnboardingPortalScreenState
                     style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
                     items: [
                       const DropdownMenuItem(value: 'All', child: Text('All Groups')),
-                      ..._groups.map((g) => DropdownMenuItem(
+                      ...availableGroups.map((g) => DropdownMenuItem(
                             value: g['group_reference']?.toString(),
                             child: Text('${g['group_reference']} (${g['group_name']})'),
                           )),
@@ -2280,23 +2539,47 @@ class _BranchOnboardingPortalScreenState
               if (isNarrow) {
                 return Column(
                   children: [
-                    Row(
-                      children: [
-                        Expanded(child: groupDropdown),
-                        if (addMemberBtn != null) ...[
+                    if (officerDropdown != null) ...[
+                      Row(
+                        children: [
+                          Expanded(child: officerDropdown),
                           const SizedBox(width: 8),
-                          addMemberBtn,
+                          Expanded(child: groupDropdown),
                         ],
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    searchField,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(child: searchField),
+                          if (addMemberBtn != null) ...[
+                            const SizedBox(width: 8),
+                            addMemberBtn,
+                          ],
+                        ],
+                      ),
+                    ] else ...[
+                      Row(
+                        children: [
+                          Expanded(child: groupDropdown),
+                          if (addMemberBtn != null) ...[
+                            const SizedBox(width: 8),
+                            addMemberBtn,
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      searchField,
+                    ],
                   ],
                 );
               }
 
               return Row(
                 children: [
+                  if (officerDropdown != null) ...[
+                    officerDropdown,
+                    const SizedBox(width: 8),
+                  ],
                   groupDropdown,
                   const SizedBox(width: 12),
                   Expanded(child: searchField),
@@ -2322,7 +2605,9 @@ class _BranchOnboardingPortalScreenState
                         Text(
                           _members.isEmpty
                               ? 'No members registered yet. Click "Add Member" or upload your Excel template.'
-                              : 'No members match the current search or group filter.',
+                              : (_scopedOfficer != null
+                                  ? 'No members found for $_scopedOfficer matching current filters.'
+                                  : 'No members match the current search or filter criteria.'),
                           style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
                         ),
                         if (_members.isEmpty && !isSubmitted) ...[
@@ -2736,6 +3021,14 @@ class _BranchOnboardingPortalScreenState
   // =========================================================================
 
   Widget _buildGroupsTab(bool isSubmitted) {
+    final displayedGroups = _scopedGroups;
+
+    final officerNames = _officers
+        .map((o) => (o['name'] ?? o['officer_name'] ?? '').toString().trim())
+        .where((n) => n.isNotEmpty)
+        .toSet()
+        .toList();
+
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -2744,9 +3037,11 @@ class _BranchOnboardingPortalScreenState
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Branch Solidarity Groups',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+              Text(
+                _scopedOfficer != null
+                    ? 'Solidarity Groups ($_scopedOfficer)'
+                    : 'Branch Solidarity Groups',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
               ),
               if (!isSubmitted)
                 ElevatedButton.icon(
@@ -2757,19 +3052,55 @@ class _BranchOnboardingPortalScreenState
                 ),
             ],
           ),
+          if (_scopedOfficer == null && officerNames.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      selected: _selectedOfficerFilter == 'All',
+                      label: const Text('All Officers', style: TextStyle(fontSize: 11)),
+                      onSelected: (_) => setState(() {
+                        _selectedOfficerFilter = 'All';
+                        _selectedGroupFilter = 'All';
+                      }),
+                    ),
+                  ),
+                  ...officerNames.map((name) => Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          selected: _selectedOfficerFilter == name,
+                          label: Text(name, style: const TextStyle(fontSize: 11)),
+                          onSelected: (_) => setState(() {
+                            _selectedOfficerFilter = name;
+                            _selectedGroupFilter = 'All';
+                          }),
+                        ),
+                      )),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
 
           Expanded(
-            child: _groups.isEmpty
+            child: displayedGroups.isEmpty
                 ? Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(Icons.hub_outlined, size: 40, color: Color(0xFF94A3B8)),
                         const SizedBox(height: 8),
-                        const Text(
-                          'No groups added yet. Create your first solidarity group.',
-                          style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                        Text(
+                          _scopedOfficer != null
+                              ? 'No groups added yet for $_scopedOfficer. Click "Add Group" to create your first solidarity group.'
+                              : (_selectedOfficerFilter != 'All'
+                                  ? 'No groups assigned to $_selectedOfficerFilter.'
+                                  : 'No groups added yet. Create your first solidarity group.'),
+                          style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
                         ),
                         if (!isSubmitted) ...[
                           const SizedBox(height: 12),
@@ -2788,10 +3119,10 @@ class _BranchOnboardingPortalScreenState
                       final isMobile = constraints.maxWidth < 650;
 
                       return ListView.separated(
-                        itemCount: _groups.length,
+                        itemCount: displayedGroups.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (context, idx) {
-                          final g = _groups[idx];
+                          final g = displayedGroups[idx];
                           return isMobile
                               ? _buildGroupCardMobile(g, isSubmitted)
                               : _buildGroupRowDesktop(g, isSubmitted);
@@ -3032,7 +3363,7 @@ class _BranchOnboardingPortalScreenState
                         ),
                         SizedBox(height: 2),
                         Text(
-                          'Centralized branch funds governed by ICARE accounting rules. Inflows must flow via Account 1000.',
+                          'Centralized branch operational funds. All inflows are secured in primary vault cash.',
                           style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                         ),
                       ],
@@ -3046,19 +3377,23 @@ class _BranchOnboardingPortalScreenState
               LayoutBuilder(
                 builder: (context, constraints) {
                   final isWide = constraints.maxWidth >= 600;
+                  final isOfficerScoped = _scopedOfficer != null;
+
                   final miscCard = _buildReserveCard(
-                    title: 'Branch Misc Savings (Internal Pool)',
-                    badge: 'BR-SAV-002 • BR-SAV-006',
+                    title: 'Branch Misc Savings',
+                    badge: 'Branch Reserve',
                     badgeColor: const Color(0xFF059669),
                     badgeBg: const Color(0xFFECFDF5),
                     amount: _miscSavings,
-                    subtitle: 'Exclusive managing officer: $designatedMgrName',
+                    subtitle: isOfficerScoped
+                        ? 'Managed by Area Manager & Designated Officer'
+                        : 'Exclusive managing officer: $designatedMgrName',
                     description: 'Special pooled branch fund for internal operations and contingencies. Managed by exactly one designated Credit Officer.',
                     icon: Icons.savings_outlined,
                     iconColor: const Color(0xFF059669),
                     iconBg: const Color(0xFFECFDF5),
-                    isSubmitted: isSubmitted,
-                    onEdit: () => _openEditReserveDialog(
+                    isSubmitted: isSubmitted || isOfficerScoped,
+                    onEdit: isOfficerScoped ? () {} : () => _openEditReserveDialog(
                       'Branch Misc Savings',
                       'Specify the initial opening balance for the branch internal misc savings pool.',
                       _miscSavings,
@@ -3072,13 +3407,13 @@ class _BranchOnboardingPortalScreenState
                     badgeColor: const Color(0xFF2563EB),
                     badgeBg: const Color(0xFFEFF6FF),
                     amount: _lapsSavings,
-                    subtitle: 'Stored in laps_savings ledger',
+                    subtitle: 'Official Risk Protection Reserve',
                     description: 'Loan Additional Protection Scheme risk reserve protecting against defaults and contingencies.',
                     icon: Icons.shield_outlined,
                     iconColor: const Color(0xFF2563EB),
                     iconBg: const Color(0xFFEFF6FF),
-                    isSubmitted: isSubmitted,
-                    onEdit: () => _openEditReserveDialog(
+                    isSubmitted: isSubmitted || isOfficerScoped,
+                    onEdit: isOfficerScoped ? () {} : () => _openEditReserveDialog(
                       'Branch LAPS Risk Reserve',
                       'Specify the initial opening balance for the branch LAPS risk reserve buffer.',
                       _lapsSavings,
@@ -3204,104 +3539,129 @@ class _BranchOnboardingPortalScreenState
                       return gOff.isNotEmpty && gOff == name.trim().toLowerCase();
                     }).length;
 
-                    return Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: isMiscMgr ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
-                          width: isMiscMgr ? 1.5 : 1.0,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 20,
-                            backgroundColor: isMiscMgr ? const Color(0xFFECFDF5) : const Color(0xFFEFF6FF),
-                            child: Text(
-                              name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'CO',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: isMiscMgr ? const Color(0xFF059669) : const Color(0xFF1D4ED8),
+                    return LayoutBuilder(
+                      builder: (context, cardConstraints) {
+                        final isMobileCard = cardConstraints.maxWidth < 620;
+
+                        final avatarWidget = CircleAvatar(
+                          radius: 20,
+                          backgroundColor: isMiscMgr ? const Color(0xFFECFDF5) : const Color(0xFFEFF6FF),
+                          child: Text(
+                            name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'CO',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: isMiscMgr ? const Color(0xFF059669) : const Color(0xFF1D4ED8),
+                            ),
+                          ),
+                        );
+
+                        final badgesWrap = Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                              ),
+                              child: const Text(
+                                'Credit Officer',
+                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8)),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        name,
-                                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFEFF6FF),
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: const Color(0xFFBFDBFE)),
-                                      ),
-                                      child: const Text(
-                                        'Credit Officer',
-                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8)),
-                                      ),
-                                    ),
-                                    if (isMiscMgr) ...[
-                                      const SizedBox(width: 8),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFECFDF5),
-                                          borderRadius: BorderRadius.circular(4),
-                                          border: Border.all(color: const Color(0xFFA7F3D0)),
-                                        ),
-                                        child: const Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.verified_user, size: 12, color: Color(0xFF059669)),
-                                            SizedBox(width: 4),
-                                            Text(
-                                              'Designated Misc Manager (BR-SAV-006)',
-                                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF059669)),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ],
+                            if (isMiscMgr)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFECFDF5),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: const Color(0xFFA7F3D0)),
                                 ),
-                                const SizedBox(height: 4),
-                                Row(
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Icon(Icons.phone_outlined, size: 13, color: Color(0xFF64748B)),
-                                    const SizedBox(width: 4),
+                                    Icon(Icons.verified_user, size: 12, color: Color(0xFF059669)),
+                                    SizedBox(width: 4),
                                     Text(
-                                      phone.isNotEmpty ? phone : 'No phone registered',
-                                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    const Icon(Icons.hub_outlined, size: 13, color: Color(0xFF64748B)),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '$assignedGroups assigned groups',
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                                      'Designated Misc Manager',
+                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF059669)),
                                     ),
                                   ],
                                 ),
-                              ],
+                              ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xFFCBD5E1)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.hub_outlined, size: 11, color: Color(0xFF475569)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '$assignedGroups assigned groups',
+                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          if (!isSubmitted) ...[
-                            if (!isMiscMgr)
+                          ],
+                        );
+
+                        final editDeleteActions = Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (!isSubmitted && _scopedOfficer == null) ...[
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF2563EB)),
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                tooltip: 'Edit officer details',
+                                onPressed: () => _openOfficerDialog(officerToEdit: off),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                tooltip: 'Remove officer',
+                                onPressed: () => _confirmDeleteOfficer(off),
+                              ),
+                            ],
+                          ],
+                        );
+
+                        final linkAndMiscActions = Row(
+                          children: [
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: () {
+                                final origin = Uri.base.origin;
+                                final coUrl = '$origin/#/onboarding?token=$_currentToken&officer=${Uri.encodeComponent(name.trim())}';
+                                Clipboard.setData(ClipboardData(text: coUrl));
+                                _showBanner('Onboarding link for $name copied to clipboard!', isSuccess: true);
+                              },
+                              icon: const Icon(Icons.link, size: 13),
+                              label: const Text('Copy Officer Link', style: TextStyle(fontSize: 11)),
+                            ),
+                            const Spacer(),
+                            if (!isSubmitted && !isMiscMgr && _scopedOfficer == null)
                               TextButton.icon(
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  visualDensity: VisualDensity.compact,
+                                ),
                                 onPressed: () {
                                   setState(() {
                                     for (var o in _officers) {
@@ -3310,24 +3670,115 @@ class _BranchOnboardingPortalScreenState
                                     off['is_misc_savings_manager'] = true;
                                   });
                                   _saveDraft();
-                                  _showBanner('$name designated as Misc Savings Manager (BR-SAV-006).');
+                                  _showBanner('$name designated as Misc Savings Manager.');
                                 },
-                                icon: const Icon(Icons.star_outline, size: 14),
+                                icon: const Icon(Icons.star_outline, size: 13),
                                 label: const Text('Set as Misc Manager', style: TextStyle(fontSize: 11)),
                               ),
-                            IconButton(
-                              icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF2563EB)),
-                              tooltip: 'Edit officer details',
-                              onPressed: () => _openOfficerDialog(officerToEdit: off),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
-                              tooltip: 'Remove officer',
-                              onPressed: () => _confirmDeleteOfficer(off),
-                            ),
                           ],
-                        ],
-                      ),
+                        );
+
+                        if (isMobileCard) {
+                          return Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isMiscMgr ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
+                                width: isMiscMgr ? 1.5 : 1.0,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    avatarWidget,
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            name,
+                                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            phone.isNotEmpty ? phone : 'No phone registered',
+                                            style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    editDeleteActions,
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                badgesWrap,
+                                const SizedBox(height: 8),
+                                linkAndMiscActions,
+                              ],
+                            ),
+                          );
+                        }
+
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isMiscMgr ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
+                              width: isMiscMgr ? 1.5 : 1.0,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  avatarWidget,
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(
+                                              name,
+                                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(child: badgesWrap),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.phone_outlined, size: 13, color: Color(0xFF64748B)),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              phone.isNotEmpty ? phone : 'No phone registered',
+                                              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  editDeleteActions,
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              linkAndMiscActions,
+                            ],
+                          ),
+                        );
+                      },
                     );
                   },
                 ),
@@ -3540,7 +3991,7 @@ class _BranchOnboardingPortalScreenState
                             children: [
                               Text('Designated Misc Savings Manager', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
                               SizedBox(height: 2),
-                              Text('Assigns exclusive custody of branch internal misc savings pool (BR-SAV-006).', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
+                              Text('Assigns exclusive custody of branch internal misc savings pool.', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
                             ],
                           ),
                         ),
@@ -3664,6 +4115,31 @@ class _BranchOnboardingPortalScreenState
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B), height: 1.4),
                   ),
+                  if (_scopedOfficer != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.person_pin_outlined, size: 14, color: Color(0xFF1E40AF)),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'Scoped Ingestion Mode: Groups and members in your workbook will be attributed to $_scopedOfficer.',
+                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   if (!isSubmitted)
                     ElevatedButton.icon(
@@ -3734,45 +4210,112 @@ class _BranchOnboardingPortalScreenState
                 ),
                 child: Column(
                   children: [
-                    _buildReviewRow('Credit Officers Provisioned', '${_officers.length} officers'),
-                    const Divider(height: 16, color: Color(0xFFF1F5F9)),
-                    _buildReviewRow('Solidarity Groups', '${_groups.length} groups created'),
-                    const Divider(height: 16, color: Color(0xFFF1F5F9)),
-                    _buildReviewRow('Registered Members', '${_members.length} clients'),
-                    const Divider(height: 16, color: Color(0xFFF1F5F9)),
-                    _buildReviewRow('Initial Opening Savings', CurrencyFormatter.formatNaira(_totalSavings)),
-                    if (_miscSavings > 0) ...[
+                    if (_scopedOfficer != null) ...[
+                      _buildReviewRow('Portfolio Credit Officer', _scopedOfficer!),
                       const Divider(height: 16, color: Color(0xFFF1F5F9)),
-                      _buildReviewRow('Branch Misc Savings (BR-SAV-006)', CurrencyFormatter.formatNaira(_miscSavings)),
-                    ],
-                    if (_lapsSavings > 0) ...[
+                      _buildReviewRow('Solidarity Groups', '${_scopedGroups.length} groups'),
                       const Divider(height: 16, color: Color(0xFFF1F5F9)),
-                      _buildReviewRow('Branch LAPS Risk Reserve', CurrencyFormatter.formatNaira(_lapsSavings)),
-                    ],
-                    if (_totalPrincipalLoan > 0) ...[
+                      _buildReviewRow('Registered Members', '${_scopedMembers.length} clients'),
                       const Divider(height: 16, color: Color(0xFFF1F5F9)),
-                      _buildReviewRow('Total Principal Disbursed', CurrencyFormatter.formatNaira(_totalPrincipalLoan)),
+                      _buildReviewRow('Individual Member Savings', CurrencyFormatter.formatNaira(_displayMemberSavings)),
+                      if (_displayGroupSavings > 0) ...[
+                        const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                        _buildReviewRow('Group Savings Pool', CurrencyFormatter.formatNaira(_displayGroupSavings)),
+                      ],
+                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      _buildReviewRow('Total Portfolio Savings', CurrencyFormatter.formatNaira(_displayTotalSavings)),
+                      if (_displayPrincipalLoan > 0) ...[
+                        const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                        _buildReviewRow('Total Principal Disbursed', CurrencyFormatter.formatNaira(_displayPrincipalLoan)),
+                      ],
+                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      _buildReviewRow('Total Active Credit (With Interest)', CurrencyFormatter.formatNaira(_displayActiveCredit)),
+                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      _buildReviewRow('Total Current Balance', CurrencyFormatter.formatNaira(_displayCurrentBalance)),
+                    ] else ...[
+                      _buildReviewRow('Credit Officers Provisioned', '${_officers.length} officers'),
+                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      _buildReviewRow('Solidarity Groups', '${_groups.length} groups created'),
+                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      _buildReviewRow('Registered Members', '${_members.length} clients'),
+                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      _buildReviewRow('Individual Member Savings', CurrencyFormatter.formatNaira(_totalMemberSavings)),
+                      if (_totalGroupSavings > 0) ...[
+                        const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                        _buildReviewRow('Group Savings Pool', CurrencyFormatter.formatNaira(_totalGroupSavings)),
+                      ],
+                      if (_miscSavings > 0) ...[
+                        const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                        _buildReviewRow('Branch Misc Savings', CurrencyFormatter.formatNaira(_miscSavings)),
+                      ],
+                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      _buildReviewRow('Total Combined Savings', CurrencyFormatter.formatNaira(_totalSavings)),
+                      if (_lapsSavings > 0) ...[
+                        const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                        _buildReviewRow('Branch LAPS Risk Reserve', CurrencyFormatter.formatNaira(_lapsSavings)),
+                      ],
+                      if (_totalPrincipalLoan > 0) ...[
+                        const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                        _buildReviewRow('Total Principal Disbursed', CurrencyFormatter.formatNaira(_totalPrincipalLoan)),
+                      ],
+                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      _buildReviewRow('Total Active Credit (With Interest)', CurrencyFormatter.formatNaira(_totalActiveCredit)),
+                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      _buildReviewRow('Total Current Balance', CurrencyFormatter.formatNaira(_totalCurrentBalance)),
                     ],
-                    const Divider(height: 16, color: Color(0xFFF1F5F9)),
-                    _buildReviewRow('Total Active Credit (With Interest)', CurrencyFormatter.formatNaira(_totalActiveCredit)),
-                    const Divider(height: 16, color: Color(0xFFF1F5F9)),
-                    _buildReviewRow('Total Current Balance', CurrencyFormatter.formatNaira(_totalCurrentBalance)),
                   ],
                 ),
               ),
               const SizedBox(height: 24),
 
-              if (!isSubmitted)
-                SizedBox(
-                  width: double.infinity,
-                  height: 44,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
-                    onPressed: _isSaving ? null : _submitPackage,
-                    icon: const Icon(Icons.verified, size: 18),
-                    label: const Text('Submit Package for Administrative Sign-Off', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+              if (!isSubmitted) ...[
+                if (_scopedOfficer != null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Credit Officer Workspace Status',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1E40AF)),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'You are viewing your scoped roster ($_scopedOfficer). Your groups and members are saved to the branch draft. Final administrative submission and branch sign-off is completed by the Area Manager once all officers have completed their rosters.',
+                          style: const TextStyle(fontSize: 11.5, color: Color(0xFF3B82F6)),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+                      onPressed: _isSaving ? null : _saveDraft,
+                      icon: const Icon(Icons.save_outlined, size: 18),
+                      label: const Text('Save My Groups & Members', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ] else
+                  SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+                      onPressed: _isSaving ? null : _submitPackage,
+                      icon: const Icon(Icons.verified, size: 18),
+                      label: const Text('Submit Package for Administrative Sign-Off', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+              ],
               const SizedBox(height: 16),
               Center(
                 child: TextButton.icon(

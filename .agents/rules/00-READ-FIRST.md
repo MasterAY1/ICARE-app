@@ -49,6 +49,7 @@
 8. **Dashboard & Report Integrity**: All dashboards and reports must query authoritative sources. No hardcoded financial metrics or faked reconciliation totals.
 9. **Strict Zero-Emoji Directive (SVG Icons Only)**: Emojis are strictly forbidden anywhere in the system UI (tab headers, buttons, cards, expanders, tables, alerts, dialogs, form controls, or markdown text). Do NOT use emoji characters. Use clean, professional corporate typography or SVG icons instead.
 10. **Flutter-First Primary Architecture & Sunset Streamlit**: Flutter (`frontend_flutter/`) is the authoritative primary frontend application for all user roles, design enhancements, bug fixes, and feature additions. Streamlit (`app.py`) is deprecated and serves strictly as an archival/read-only reference for legacy financial formulas. Dual-frontend parity is superseded; development is now Flutter-first, granting full freedom to design clean, modern, intuitive mobile-first UX without legacy Streamlit visual constraints. All backend changes interface directly with Flutter via FastAPI and Supabase.
+11. **Zero Internal Code/Identity Leaks in Frontend UI**: Internal rule identifiers (e.g. `BR-SAV-*`, `BR-DASH-*`, `FP-*`), internal database table/column names, and Chart of Accounts technical codes (e.g. `Account 1000`) are strictly architectural backend/database concepts. They must NEVER appear in user-facing UI labels, badges, headers, dialogs, helper texts, pill tags, or alert banners. All frontend copy must use clean, professional, intuitive corporate banking terminology.
 
 ---
 

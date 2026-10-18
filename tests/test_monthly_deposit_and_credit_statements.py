@@ -27,25 +27,53 @@ class TestMonthlyDepositAndCreditStatements:
         tot = rows[-1]
         assert tot["programme"] == "Total"
         assert tot["member_prev"] == 303
-        assert tot["member_curr"] == 64
-        assert tot["member_total"] == 367
+        assert tot["member_curr"] == 38
+        assert tot["member_total"] == 341
 
         assert tot["deposit_curr"] == 4292225.0
-        assert tot["deposit_total"] == 110954310.0
+        assert tot["deposit_prev"] == 106665860.0
+        assert tot["deposit_total"] == 110958085.0
 
+        assert tot["withdrawal_curr_no"] == 66
+        assert tot["withdrawal_curr_amount"] == 3111800.0
+        assert tot["return_curr_no"] == 22
+        assert tot["return_curr_amount"] == 385500.0
         assert round(tot["withdrawal_curr_amount"] + tot["return_curr_amount"], 2) == 3497300.0
+        assert tot["balance_no"] == 319
         assert tot["balance_amount"] == 11485785.0
+
+        # Cycle asserts
+        prog_map = {r["programme"]: r for r in rows}
+        assert prog_map["Monthly"]["deposit_curr"] == 9000.0
+        assert prog_map["Monthly"]["balance_amount"] == 36000.0
+
+        assert prog_map["Weekly"]["deposit_curr"] == 1915125.0
+        assert prog_map["Weekly"]["withdrawal_curr_no"] == 15
+        assert prog_map["Weekly"]["withdrawal_curr_amount"] == 1758000.0
+        assert prog_map["Weekly"]["return_curr_no"] == 14
+        assert prog_map["Weekly"]["return_curr_amount"] == 226450.0
+        assert prog_map["Weekly"]["balance_no"] == 169
+        assert prog_map["Weekly"]["balance_amount"] == 4308405.0
+
+        assert prog_map["Daily"]["deposit_curr"] == 2368100.0
+        assert prog_map["Daily"]["withdrawal_curr_no"] == 51
+        assert prog_map["Daily"]["withdrawal_curr_amount"] == 1353800.0
+        assert prog_map["Daily"]["return_curr_no"] == 8
+        assert prog_map["Daily"]["return_curr_amount"] == 159050.0
+        assert prog_map["Daily"]["balance_no"] == 148
+        assert prog_map["Daily"]["balance_amount"] == 7141380.0
 
     def test_september_credit_statement_exact_paper_parity(self):
         """
-        Validates Statement B against September database records:
-        - Col 7 Total Net Loans: 283 Prev + 105 Curr - 21 Settled = 367 Active Loans
-        - Col 8 Total Net Disbursed: ₦47,085,000 + ₦18,966,000 - ₦2,867,346.16 = ₦63,183,653.84
-        - Col 11 Total Excess: ₦71,284,300 + ₦2,961,408.04 = ₦74,245,708.04
+        Validates Statement B against September official physical paper reports:
+        - Col 7 Total Net Loans: 283 Prev + 117 Curr - 107 Settled = 293 Active Loans
+        - Col 8 Total Net Disbursed: ₦47,085,000 + ₦18,966,000 - ₦17,628,000 = ₦48,423,000.00
+        - Col 11 Total Excess: ₦71,284,300 + ₦703,225 = ₦71,987,525.00
         - Col 13 Current Month Installments: ₦17,465,675.00
-        - Col 14 Total Installments: ₦22,192,500 + ₦17,465,675 - ₦2,867,346.16 = ₦36,790,828.84
-        - Col 23 Active Loans Count: 367
-        - Col 24 Active Credit Balance: ₦63,183,653.84 - ₦36,790,828.84 = ₦26,392,825.00
+        - Col 14 Total Installments: ₦22,192,500 + ₦17,465,675 - ₦17,628,000 = ₦22,030,175.00
+        - Col 23 Active Loans Count: 293
+        - Col 24 Active Credit Balance: ₦48,423,000.00 - ₦22,030,175.00 = ₦26,392,825.00
+        - Col 27/28 Settled Loans: 107 settled loans, ₦17,628,000.00
         """
         credit_data = ReportService.get_monthly_credit_statement(
             self.uow, self.ogijo_branch_id, 2026, 9
@@ -53,31 +81,55 @@ class TestMonthlyDepositAndCreditStatements:
         rows_map = {r["item"]: r for r in credit_data["rows"]}
 
         row_tot_loans = rows_map["• Total Net Loans Count (Col 7 = 3+5-27)"]
-        assert row_tot_loans["monthly"] == 5
-        assert row_tot_loans["weekly"] == 199
-        assert row_tot_loans["daily"] == 163
-        assert row_tot_loans["total"] == 367
+        assert row_tot_loans["monthly"] == 3
+        assert row_tot_loans["weekly"] == 155
+        assert row_tot_loans["daily"] == 135
+        assert row_tot_loans["total"] == 293
 
         row_tot_disb = rows_map["• Total Net Disbursed (₦) (Col 8 = 4+6-28)"]
-        assert row_tot_disb["total"] == 63183653.84
+        assert row_tot_disb["monthly"] == 402000.0
+        assert row_tot_disb["weekly"] == 25560000.0
+        assert row_tot_disb["daily"] == 22461000.0
+        assert row_tot_disb["total"] == 48423000.0
 
         row_tot_excess = rows_map["• Total Excess Collection (₦) (Col 11 = 9+10)"]
-        assert row_tot_excess["total"] == 74245708.04
+        assert row_tot_excess["total"] == 71987525.0
 
-        row_cur_inst = rows_map["• Current Month Installments (₦) (Col 13)"]
+        row_cur_inst = rows_map["• Current Month Installment (₦) (Col 13)"]
+        assert row_cur_inst["monthly"] == 264000.0
+        assert row_cur_inst["weekly"] == 8556625.0
+        assert row_cur_inst["daily"] == 8645050.0
         assert row_cur_inst["total"] == 17465675.0
 
-        row_tot_inst = rows_map["• Total Installments (₦) (Col 14 = 12+13-28)"]
-        assert row_tot_inst["total"] == 36790828.84
+        row_tot_inst = rows_map["• Total Net Installments (₦) (Col 14 = 12+13-28)"]
+        assert row_tot_inst["monthly"] == 256000.0
+        assert row_tot_inst["weekly"] == 11025125.0
+        assert row_tot_inst["daily"] == 10749050.0
+        assert row_tot_inst["total"] == 22030175.0
 
-        row_bal_loans = rows_map["• Active Loans Count (Col 23 = Col 7)"]
-        assert row_bal_loans["total"] == 367
+        row_bal_loans = rows_map["• Active Loans Balance Count (Col 23 = Col 7)"]
+        assert row_bal_loans["monthly"] == 3
+        assert row_bal_loans["weekly"] == 155
+        assert row_bal_loans["daily"] == 135
+        assert row_bal_loans["total"] == 293
 
-        row_bal_credit = rows_map["• Active Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]
-        assert row_bal_credit["monthly"] == 392000.0
+        row_bal_credit = rows_map["• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]
+        assert row_bal_credit["monthly"] == 146000.0
         assert row_bal_credit["weekly"] == 14534875.0
-        assert row_bal_credit["daily"] == 11465950.0
+        assert row_bal_credit["daily"] == 11711950.0
         assert row_bal_credit["total"] == 26392825.0
+
+        row_full_rep_cnt = rows_map["• Current Full Repayment Count (Col 27)"]
+        assert row_full_rep_cnt["monthly"] == 3
+        assert row_full_rep_cnt["weekly"] == 56
+        assert row_full_rep_cnt["daily"] == 48
+        assert row_full_rep_cnt["total"] == 107
+
+        row_full_rep_amt = rows_map["• Current Full Repayment Amount (₦) (Col 28)"]
+        assert row_full_rep_amt["monthly"] == 408000.0
+        assert row_full_rep_amt["weekly"] == 9036000.0
+        assert row_full_rep_amt["daily"] == 8184000.0
+        assert row_full_rep_amt["total"] == 17628000.0
 
     def test_automatic_rollover_next_month_zero_manual_input(self):
         """
@@ -89,8 +141,8 @@ class TestMonthlyDepositAndCreditStatements:
         )
         assert "rows" in oct_dep and len(oct_dep["rows"]) == 4
         tot_row = oct_dep["rows"][-1]
-        assert tot_row["member_prev"] == 367, "October member_prev must equal September member_total"
-        assert tot_row["deposit_prev"] == 110954310.0, "October deposit_prev must equal September deposit_total"
+        assert tot_row["member_prev"] == 341, "October member_prev must equal September member_total"
+        assert tot_row["deposit_prev"] == 110958085.0, "October deposit_prev must equal September deposit_total"
         assert tot_row["balance_amount"] == 11485785.0, "October opening balance must equal September closing balance"
 
         oct_credit = ReportService.get_monthly_credit_statement(
@@ -99,15 +151,15 @@ class TestMonthlyDepositAndCreditStatements:
         assert "rows" in oct_credit
         oct_rows_map = {r["item"]: r for r in oct_credit["rows"]}
         prev_loans_row = oct_rows_map["• Previous Loans Count (B/F)"]
-        assert prev_loans_row["total"] == 367, "October previous loans count must equal September total net loans (367)"
+        assert prev_loans_row["total"] == 293, "October previous loans count must equal September total net loans (293)"
 
         prev_disb_row = oct_rows_map["• Previous Disbursed Amount (₦)"]
-        assert prev_disb_row["total"] == 63183653.84
+        assert prev_disb_row["total"] == 48423000.0
 
         prev_inst_row = oct_rows_map["• Previous Installments (₦) (Col 12)"]
-        assert prev_inst_row["total"] == 36790828.84
+        assert prev_inst_row["total"] == 22030175.0
 
-        bal_credit_row = oct_rows_map["• Active Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]
+        bal_credit_row = oct_rows_map["• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]
         assert bal_credit_row["total"] == 26392825.0, "October opening credit balance must equal September closing credit"
 
     def test_september_cross_tab_parity_and_portfolio_payoffs(self):
@@ -151,7 +203,7 @@ class TestMonthlyDepositAndCreditStatements:
 
         # Assert Collection Parity: ₦17,465,675.00
         assert cards["collections"] == 17465675.0
-        assert crd_map["• Current Month Installments (₦) (Col 13)"]["total"] == 17465675.0
+        assert crd_map["• Current Month Installment (₦) (Col 13)"]["total"] == 17465675.0
         assert rp_rec_map["Installments (Finance Repayments)"] == 17465675.0
         assert p_sum["total_actual_collection"] == 17465675.0
 
@@ -171,7 +223,7 @@ class TestMonthlyDepositAndCreditStatements:
 
         # Assert Closing Credit Parity: ₦26,392,825.00
         assert cards["closing_credit"] == 26392825.0
-        assert crd_map["• Active Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["total"] == 26392825.0
+        assert crd_map["• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["total"] == 26392825.0
 
         # Assert Portfolio Full Payments and Excess Payments
         assert p_sum["full_payments"]["count"] == 22
@@ -199,8 +251,8 @@ class TestMonthlyDepositAndCreditStatements:
             self.uow, self.ogijo_branch_id, 2026, 9, officer_name="Dorcas"
         )
         dorcas_crd_map = {r["item"]: r for r in dorcas_crd["rows"]}
-        assert dorcas_crd_map["• Current Month Installments (₦) (Col 13)"]["total"] == 5067250.0
-        assert dorcas_crd_map["• Active Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["total"] == 8021500.0
+        assert dorcas_crd_map["• Current Month Installment (₦) (Col 13)"]["total"] == 5067250.0
+        assert dorcas_crd_map["• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["total"] == 8021500.0
 
         # Filter by product 'Weekly 12W'
         prod_dep = ReportService.get_monthly_deposit_statement(
@@ -224,8 +276,8 @@ class TestMonthlyDepositAndCreditStatements:
         )
         tot_dep = oct_dep["rows"][-1]
         # B/F values match September closing
-        assert tot_dep["member_prev"] == 367
-        assert tot_dep["deposit_prev"] == 110954310.0
+        assert tot_dep["member_prev"] == 341
+        assert tot_dep["deposit_prev"] == 110958085.0
         # Balance = open_bal + deposit_curr - withdrawals - returns
         expected_dep_bal = round(11485785.0 + tot_dep["deposit_curr"] - tot_dep["withdrawal_curr_amount"] - tot_dep["return_curr_amount"], 2)
         assert tot_dep["balance_amount"] == expected_dep_bal
@@ -236,13 +288,13 @@ class TestMonthlyDepositAndCreditStatements:
         )
         oct_crd_map = {r["item"]: r for r in oct_crd["rows"]}
         # B/F values match September closing
-        assert oct_crd_map["• Previous Loans Count (B/F)"]["total"] == 367
-        assert oct_crd_map["• Previous Disbursed Amount (₦)"]["total"] == 63183653.84
-        assert oct_crd_map["• Previous Installments (₦) (Col 12)"]["total"] == 36790828.84
+        assert oct_crd_map["• Previous Loans Count (B/F)"]["total"] == 293
+        assert oct_crd_map["• Previous Disbursed Amount (₦)"]["total"] == 48423000.0
+        assert oct_crd_map["• Previous Installments (₦) (Col 12)"]["total"] == 22030175.0
         # Active Credit Balance = Col 8 (net disbursed) - Col 14 (net installments)
         net_disb = oct_crd_map["• Total Net Disbursed (₦) (Col 8 = 4+6-28)"]["total"]
-        net_inst = oct_crd_map["• Total Installments (₦) (Col 14 = 12+13-28)"]["total"]
-        assert oct_crd_map["• Active Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["total"] == round(net_disb - net_inst, 2)
+        net_inst = oct_crd_map["• Total Net Installments (₦) (Col 14 = 12+13-28)"]["total"]
+        assert oct_crd_map["• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["total"] == round(net_disb - net_inst, 2)
 
     def test_october_trial_balance_and_receipts_payments_rollover(self):
         """
@@ -268,15 +320,15 @@ class TestMonthlyDepositAndCreditStatements:
         assert tb_map["Office Rent"]["debit"] == 400000.0
         assert tb_map["Training Expenses"]["debit"] == 1890652.0
         assert tb_map["Transport Allowance"]["debit"] == 1405600.0
-        assert tb_map["Sales Profit"]["credit"] == 3757769.0
+        assert tb_map["Sales Profit"]["credit"] == 16401680.0
         assert tb_map["Retained Earnings"]["credit"] == 26351209.0
-        assert tb_map["Head Office (Asset Allocation)"]["credit"] == 14730282.0
+        assert tb_map["Head Office (Asset Allocation)"]["credit"] == 0.0
         assert tb_map["Head Office (Main)"]["debit"] == 36553628.0
         assert tb_map["Deposit Balance"]["credit"] == 11485785.0
         assert tb_map["Credit Balance (Debtors)"]["debit"] == 26392825.0
-        # Total debits match September baseline
+        # Total debits and credits
         assert tb["total_debits"] == 73678366.0
-        assert tb["total_credits"] == 74788157.0
+        assert tb["total_credits"] == 72004312.0
 
     def test_co_summary_october_rollover_and_filter_responsiveness(self):
         """

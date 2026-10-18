@@ -206,6 +206,10 @@ class MonthlyParitySummaryCards(BaseModel):
     savings_withdrawals: float
     closing_savings: float
     bank_deposits: float
+    transport_expenses: Optional[float] = 0.0
+    stationery_expenses: Optional[float] = 0.0
+    entertainment_expenses: Optional[float] = 0.0
+    utilities_expenses: Optional[float] = 0.0
     office_expenses: float
     active_loans: int
     active_savers: int
@@ -326,4 +330,31 @@ class MonthlyReconciliationPayload(BaseModel):
     year: int
     month: int
     data: Dict[str, Any]
+
+
+# --- ANNEX-1 SUNDRY ACCOUNTS SCHEMAS ---
+
+class Annex1LineItem(BaseModel):
+    code: str
+    name: str
+    amount: float
+
+
+class Annex1CategoryGroup(BaseModel):
+    category_code: str
+    category_name: str
+    subtotal: float
+    items: List[Annex1LineItem]
+
+
+class Annex1ReportResponse(BaseModel):
+    branch_name: str
+    year: int
+    month: int
+    month_label: str
+    sundry_receipts: List[Annex1LineItem]
+    total_sundry_receipts: float
+    sundry_payments_groups: List[Annex1CategoryGroup]
+    total_sundry_payments: float
+
 

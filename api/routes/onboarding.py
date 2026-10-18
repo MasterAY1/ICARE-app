@@ -4,7 +4,7 @@ Exposes tokenized endpoints for public field onboarding entry and
 RBAC-protected administrative endpoints for review, approval, and atomic commitment.
 """
 from typing import Dict, Any, Optional, List
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body, status, Query
 from pydantic import BaseModel, Field
 
 from api.dependencies import get_uow, get_current_user
@@ -28,6 +28,7 @@ class CreateSessionRequest(BaseModel):
 
 class SaveDraftRequest(BaseModel):
     payload: Dict[str, Any] = Field(..., description="Onboarding payload containing officers, groups, and members")
+    scoped_officer: Optional[str] = Field(None, description="Optional credit officer scope for isolated, multi-officer draft merging")
 
 
 class ApproveSessionRequest(BaseModel):
@@ -45,6 +46,7 @@ class RejectSessionRequest(BaseModel):
 @router.get("/session/{token}", summary="Retrieve onboarding session by token")
 def get_onboarding_session(
     token: str,
+    officer: Optional[str] = Query(None, description="Optional credit officer scope"),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
@@ -52,7 +54,7 @@ def get_onboarding_session(
     and current draft progress into the Branch Onboarding Web Portal.
     """
     try:
-        return OnboardingService.get_session_by_token(uow, token)
+        return OnboardingService.get_session_by_token(uow, token, officer=officer)
     except ValueError as e:
         err_msg = str(e)
         if "expired" in err_msg.lower():
@@ -68,10 +70,11 @@ def save_onboarding_draft(
 ):
     """
     Saves intermediate progress from the interactive grid or excel uploader.
+    If scoped_officer is supplied, merges without overwriting other officers' data.
     Automatically extends link validity by 14 days from active edit time.
     """
     try:
-        return OnboardingService.save_draft(uow, token, req.payload)
+        return OnboardingService.save_draft(uow, token, req.payload, scoped_officer=req.scoped_officer)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -79,6 +82,7 @@ def save_onboarding_draft(
 @router.post("/session/{token}/upload-excel", summary="Upload and parse onboarding Excel template")
 async def upload_onboarding_excel(
     token: str,
+    scoped_officer: Optional[str] = Query(None, description="Optional credit officer scope"),
     file: UploadFile = File(...),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
@@ -94,13 +98,13 @@ async def upload_onboarding_excel(
 
     try:
         contents = await file.read()
-        parsed_payload = OnboardingService.parse_excel_bytes(contents, uow)
-        # Automatically persist as draft
-        draft_res = OnboardingService.save_draft(uow, token, parsed_payload)
+        parsed_payload = OnboardingService.parse_excel_bytes(contents, uow, scoped_officer=scoped_officer)
+        # Automatically persist as draft with scoped merge
+        draft_res = OnboardingService.save_draft(uow, token, parsed_payload, scoped_officer=scoped_officer)
         return {
             "status": "success",
             "message": f"Successfully parsed {len(parsed_payload['groups'])} groups and {len(parsed_payload['members'])} members.",
-            "payload": parsed_payload,
+            "payload": draft_res.get("payload", parsed_payload),
             "aggregates": draft_res["aggregates"],
             "validation_summary": draft_res["validation_summary"]
         }

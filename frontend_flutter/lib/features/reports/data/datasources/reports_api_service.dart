@@ -375,6 +375,27 @@ class ReportsApiService {
     );
     return response.data as Map<String, dynamic>;
   }
+
+  /// 15. Retrieve Annex-1 Sundry Accounts & OpEx Analysis
+  Future<Annex1ReportData> getAnnex1Report({
+    String? branchName,
+    int year = 2026,
+    int month = 9,
+  }) async {
+    final params = <String, dynamic>{
+      'year': year,
+      'month': month,
+    };
+    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+      params['branch_name'] = branchName;
+    }
+
+    final response = await _apiClient.get(
+      '/api/v1/reports/annex-1',
+      queryParameters: params,
+    );
+    return Annex1ReportData.fromJson(response.data as Map<String, dynamic>);
+  }
 }
 
 

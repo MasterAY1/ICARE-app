@@ -798,10 +798,23 @@ class ReportService:
         q_bd = uow.client.table("financial_ledger_entries").select("amount, financial_transactions!inner(officer_id, posting_date)").eq("account_code", "1050").eq("branch_id", branch_id).gte("financial_transactions.posting_date", s_d_str).lte("financial_transactions.posting_date", e_d_str)
         bd_entries = fetch_all_paginated(q_bd)
 
-        # 8. Office Expenses (Account 4000)
+        # 8. Office Expenses (Account 4000) & Categorical OpEx Breakdown
         q_exp = uow.client.table("financial_ledger_entries").select("amount, financial_transactions!inner(posting_date)").eq("account_code", "4000").eq("branch_id", branch_id).gte("financial_transactions.posting_date", s_d_str).lte("financial_transactions.posting_date", e_d_str)
         exp_entries = fetch_all_paginated(q_exp)
         tot_exp = sum(float(e["amount"] or 0) for e in exp_entries)
+
+        # Retrieve officer-specific operational expenses from co_cashbooks
+        q_cocb = uow.client.table("co_cashbooks").select("officer_id, office_expenses").eq("branch_id", branch_id).gte("date", s_d_str).lte("date", e_d_str)
+        cocb_entries = fetch_all_paginated(q_cocb)
+        co_exp_by_officer = {}
+        for c in cocb_entries:
+            co_id = c.get("officer_id")
+            if co_id:
+                co_exp_by_officer[co_id] = round(co_exp_by_officer.get(co_id, 0.0) + float(c.get("office_expenses") or 0.0), 2)
+
+        # Retrieve reconciliation data for categorized analyzed expenses
+        recon_data = ReportService.get_monthly_statement_reconciliation(uow, branch_id, year, month)
+        officer_exp_breakdown = recon_data.get("officer_expenses_breakdown") or {}
 
         # 9. General Ledger Check
         q_fle = uow.client.table("financial_ledger_entries").select("side, amount, financial_transactions!inner(posting_date)").eq("branch_id", branch_id).gte("financial_transactions.posting_date", s_d_str).lte("financial_transactions.posting_date", e_d_str)
@@ -810,7 +823,7 @@ class ReportService:
         gl_credits = sum(float(e["amount"] or 0) for e in fle_all if e.get("side") == "Credit")
         gl_diff = round(abs(gl_debits - gl_credits), 2)
 
-        # 10. Construct 14-metric table data
+        # 10. Construct 18-metric table data with analyzed expenses
         metric_names = [
             "Sales (Credit) / Principal Disbursed",
             "Initial Deposit / Upfront Fees",
@@ -823,6 +836,10 @@ class ReportService:
             "Savings Withdrawal (Month)",
             "Savings Closing Balance",
             "Bank Deposits Remitted (Acct 1050)",
+            "Field Transport (PC1)",
+            "Stationery (PB3)",
+            "Entertainment (PB4)",
+            "Utilities & Phone (PB2/PB6)",
             "Office Expenses (Acct 4000)",
             "Active Loans Count",
             "Active Savers Count"
@@ -865,6 +882,21 @@ class ReportService:
             off_bd = [e for e in bd_entries if (e.get("financial_transactions") or {}).get("officer_id") == oid]
             bd = sum(float(e.get("amount") or 0) for e in off_bd)
 
+            # Analyzed OpEx per Officer
+            off_exp_breakdown = officer_exp_breakdown.get(oid) or {}
+            if off_exp_breakdown:
+                exp_trans = float(off_exp_breakdown.get("transport") or 0.0)
+                exp_stat = float(off_exp_breakdown.get("stationery") or 0.0)
+                exp_ent = float(off_exp_breakdown.get("entertainment") or 0.0)
+                exp_util = float(off_exp_breakdown.get("utilities") or 0.0)
+                exp_total = float(off_exp_breakdown.get("total") or (exp_trans + exp_stat + exp_ent + exp_util))
+            else:
+                exp_total = co_exp_by_officer.get(oid, 0.0)
+                exp_trans = 0.0
+                exp_stat = 0.0
+                exp_ent = 0.0
+                exp_util = 0.0
+
             # Counts
             act_loans = len(off_l)
             act_savers = len(set(s.get("client_id") for s in off_ms if s.get("client_id")))
@@ -880,14 +912,19 @@ class ReportService:
             table_data["Savings Withdrawal (Month)"][oname] = round(s_wth, 2)
             table_data["Savings Closing Balance"][oname] = round(closing_s, 2)
             table_data["Bank Deposits Remitted (Acct 1050)"][oname] = round(bd, 2)
-            table_data["Office Expenses (Acct 4000)"][oname] = 0.0
+            table_data["Field Transport (PC1)"][oname] = round(exp_trans, 2)
+            table_data["Stationery (PB3)"][oname] = round(exp_stat, 2)
+            table_data["Entertainment (PB4)"][oname] = round(exp_ent, 2)
+            table_data["Utilities & Phone (PB2/PB6)"][oname] = round(exp_util, 2)
+            table_data["Office Expenses (Acct 4000)"][oname] = round(exp_total, 2)
             table_data["Active Loans Count"][oname] = act_loans
             table_data["Active Savers Count"][oname] = act_savers
 
         # Total column
         for m in metric_names:
             if m == "Office Expenses (Acct 4000)":
-                table_data[m][total_col_name] = round(tot_exp, 2)
+                sum_off = sum(table_data[m].get(off["name"], 0.0) for off in officers)
+                table_data[m][total_col_name] = round(tot_exp if tot_exp > 0 else sum_off, 2)
             elif "Count" in m:
                 table_data[m][total_col_name] = sum(int(table_data[m].get(off["name"], 0)) for off in officers)
             else:
@@ -911,7 +948,11 @@ class ReportService:
             "savings_withdrawals": table_data["Savings Withdrawal (Month)"][total_col_name],
             "closing_savings": table_data["Savings Closing Balance"][total_col_name],
             "bank_deposits": table_data["Bank Deposits Remitted (Acct 1050)"][total_col_name],
-            "office_expenses": tot_exp,
+            "transport_expenses": table_data["Field Transport (PC1)"][total_col_name],
+            "stationery_expenses": table_data["Stationery (PB3)"][total_col_name],
+            "entertainment_expenses": table_data["Entertainment (PB4)"][total_col_name],
+            "utilities_expenses": table_data["Utilities & Phone (PB2/PB6)"][total_col_name],
+            "office_expenses": table_data["Office Expenses (Acct 4000)"][total_col_name],
             "active_loans": int(table_data["Active Loans Count"][total_col_name]),
             "active_savers": int(table_data["Active Savers Count"][total_col_name]),
             "gl_debits": gl_debits,
@@ -1363,15 +1404,15 @@ class ReportService:
         prev_interest = float(prev_data.get("tb_bank_interest") or 0.0)
         tb_bank_interest = round(prev_interest + tot_bank_interest if prev_interest > 0 else (tot_bank_interest or float(recon_data.get("tb_bank_interest") or 0.0)), 2)
 
-        # Operational figures come authoritatively from the database (via parity matrix cards)
+        # Operational figures come authoritatively from monthly_statement_reconciliations with fallback to cards
         # Guarantees 100% parity across Parity Matrix, Statements A & B, Receipts & Payments, Cashbook & DB
-        disbursed_principal = round(cards["disbursed_principal"] or float(recon_data.get("disbursed_principal") or 0.0), 2)
-        upfront_fees = round(cards["upfront_fees"] or float(recon_data.get("upfront_fees") or 0.0), 2)
-        savings_deposits = round(cards["savings_deposits"] or float(recon_data.get("savings_deposits") or 0.0), 2)
-        collections = round(cards["collections"] or float(recon_data.get("collections") or 0.0), 2)
-        deposit_wth_val = round(cards["savings_withdrawals"] or float(recon_data.get("deposit_withdrawal") or 0.0), 2)
-        closing_credit = round(cards["closing_credit"] or float(recon_data.get("closing_credit") or 0.0), 2)
-        closing_savings = round(cards["closing_savings"] or float(recon_data.get("closing_savings") or 0.0), 2)
+        disbursed_principal = round(float(recon_data.get("disbursed_principal") or 0.0) or cards.get("disbursed_principal", 0.0), 2)
+        upfront_fees = round(float(recon_data.get("upfront_fees") or 0.0) or cards.get("upfront_fees", 0.0), 2)
+        savings_deposits = round(float(recon_data.get("savings_deposits") or 0.0) or cards.get("savings_deposits", 0.0), 2)
+        collections = round(float(recon_data.get("collections") or 0.0) or cards.get("collections", 0.0), 2)
+        deposit_wth_val = round(float(recon_data.get("deposit_withdrawal") or 0.0) or cards.get("savings_withdrawals", 0.0), 2)
+        closing_credit = round(float(recon_data.get("closing_credit") or 0.0) or cards.get("closing_credit", 0.0), 2)
+        closing_savings = round(float(recon_data.get("closing_savings") or 0.0) or cards.get("closing_savings", 0.0), 2)
 
         sales_profit_markup = round(float(recon_data.get("sales_profit_markup") or 0.0), 2)
         sales_cc = round(float(recon_data.get("sales_cash_and_carry") or 0.0), 2)
@@ -1392,7 +1433,13 @@ class ReportService:
         retained_earnings = round(float(recon_data.get("retained_earnings") or prev_data.get("retained_earnings") or 0.0), 2)
         ho_asset_alloc = round(float(recon_data.get("head_office_asset_allocation") or prev_data.get("head_office_asset_allocation") or 0.0), 2)
         prev_lapse = float(prev_data.get("lapse_deposit_reserve") or 0.0)
-        lapse_deposit_res = round(float(recon_data.get("lapse_deposit_reserve") or (max(0.0, prev_lapse - lapse_return) if prev_lapse > 0 else 0.0)), 2)
+        tb_contingency_val = float(recon_data.get("tb_contingency") or 0.0)
+        if tb_contingency_val > 0.0:
+            lapse_deposit_res = 0.0
+        elif "lapse_deposit_reserve" in recon_data and recon_data.get("lapse_deposit_reserve") is not None:
+            lapse_deposit_res = float(recon_data["lapse_deposit_reserve"] or 0.0)
+        else:
+            lapse_deposit_res = round(max(0.0, prev_lapse - lapse_return) if prev_lapse > 0 else 0.0, 2)
 
         # Funds YTD on Trial Balance (Dynamic flow: Prior YTD + Net current month cash movement)
         tb_fund_ho_main = float(recon_data.get("tb_fund_ho_main") or 0.0)
@@ -1572,6 +1619,113 @@ class ReportService:
         }
 
     @staticmethod
+    def get_annex_1_details(
+        uow: UnitOfWork,
+        branch_id: str,
+        year: int,
+        month: int
+    ) -> Dict[str, Any]:
+        """
+        Builds Annex-1: Detailed Sundry Receipts & Operating Expenses Analysis.
+        Matches Paper Image 4 & Image 8 statutory schedules.
+        Receipts: RC1 (Passbook), RC2 (Application Fees), RC3 (Scraps / Bonus).
+        Payments: PA (Personnel), PB (Office Running Costs), PC (Transport), PD (Training).
+        """
+        import calendar
+        recon_data = ReportService.get_monthly_statement_reconciliation(uow, branch_id, year, month)
+        prev_year = year if month > 1 else year - 1
+        prev_month = month - 1 if month > 1 else 12
+        prev_data = ReportService.get_monthly_statement_reconciliation(uow, branch_id, prev_year, prev_month)
+
+        def resolve_ytd_and_monthly(entered_val: float, prev_val: float) -> tuple[float, float]:
+            if entered_val >= prev_val and prev_val > 0:
+                ytd = entered_val
+                monthly = entered_val - prev_val
+            elif entered_val > 0:
+                monthly = entered_val
+                ytd = prev_val + entered_val
+            else:
+                ytd = prev_val
+                monthly = 0.0
+            return round(ytd, 2), round(monthly, 2)
+
+        # Inflows / Sundry Receipts
+        _, m_passbook = resolve_ytd_and_monthly(float(recon_data.get("tb_passbook") or 0.0), float(prev_data.get("tb_passbook") or 0.0))
+        _, m_app_fee = resolve_ytd_and_monthly(float(recon_data.get("tb_application_fee") or 0.0), float(prev_data.get("tb_application_fee") or 0.0))
+        _, m_scraps = resolve_ytd_and_monthly(float(recon_data.get("tb_scraps_sales") or 0.0), float(prev_data.get("tb_scraps_sales") or 0.0))
+        _, m_damages = resolve_ytd_and_monthly(float(recon_data.get("tb_damages_fine") or 0.0), float(prev_data.get("tb_damages_fine") or 0.0))
+
+        sundry_receipts = [
+            {"code": "RC1", "name": "Passbook Sales", "amount": m_passbook},
+            {"code": "RC2", "name": "Application Fees", "amount": m_app_fee},
+            {"code": "RC3", "name": "Scraps / Bonus Sales", "amount": m_scraps},
+        ]
+        if m_damages > 0:
+            sundry_receipts.append({"code": "RC4", "name": "Damages & Fines", "amount": m_damages})
+
+        tot_receipts = round(sum(r["amount"] for r in sundry_receipts), 2)
+
+        # Outflows / Sundry Operating Expenses
+        _, m_salary = resolve_ytd_and_monthly(float(recon_data.get("tb_salary") or 0.0), float(prev_data.get("tb_salary") or 0.0))
+        _, m_rent = resolve_ytd_and_monthly(float(recon_data.get("tb_rent") or 0.0), float(prev_data.get("tb_rent") or 0.0))
+        _, m_elec = resolve_ytd_and_monthly(float(recon_data.get("tb_electricity") or 0.0), float(prev_data.get("tb_electricity") or 0.0))
+        _, m_stat = resolve_ytd_and_monthly(float(recon_data.get("tb_stationery") or 0.0), float(prev_data.get("tb_stationery") or 0.0))
+        _, m_ent = resolve_ytd_and_monthly(float(recon_data.get("tb_entertainment") or 0.0), float(prev_data.get("tb_entertainment") or 0.0))
+        _, m_tel = resolve_ytd_and_monthly(float(recon_data.get("tb_telephone") or 0.0), float(prev_data.get("tb_telephone") or 0.0))
+        _, m_rep = resolve_ytd_and_monthly(float(recon_data.get("tb_repair_office") or 0.0), float(prev_data.get("tb_repair_office") or 0.0))
+        _, m_trans = resolve_ytd_and_monthly(float(recon_data.get("tb_transport") or 0.0), float(prev_data.get("tb_transport") or 0.0))
+        _, m_train = resolve_ytd_and_monthly(float(recon_data.get("tb_training") or 0.0), float(prev_data.get("tb_training") or 0.0))
+        _, m_other = resolve_ytd_and_monthly(float(recon_data.get("tb_other_expenses") or 0.0), float(prev_data.get("tb_other_expenses") or 0.0))
+
+        # Groups
+        pa_items = [{"code": "PA1", "name": "Gross Salaries & Wages", "amount": m_salary}]
+        pa_subtotal = round(m_salary, 2)
+
+        pb_items = [
+            {"code": "PB2", "name": "Electricity & Utilities", "amount": m_elec},
+            {"code": "PB3", "name": "Printing & Stationery", "amount": m_stat},
+            {"code": "PB4", "name": "Entertainment", "amount": m_ent},
+            {"code": "PB6", "name": "Telephone, Internet & Postage", "amount": m_tel},
+        ]
+        if m_rep > 0:
+            pb_items.append({"code": "PB10", "name": "Office Repairs & Maintenance", "amount": m_rep})
+        if m_rent > 0:
+            pb_items.append({"code": "PB11", "name": "Rent & Rates", "amount": m_rent})
+        if m_other > 0:
+            pb_items.append({"code": "PB12", "name": "Other Office Running Expenses", "amount": m_other})
+        pb_subtotal = round(sum(i["amount"] for i in pb_items), 2)
+
+        pc_items = [{"code": "PC1", "name": "Field Transportation / Travel Allowance", "amount": m_trans}]
+        pc_subtotal = round(m_trans, 2)
+
+        pd_items = [{"code": "PD1", "name": "Staff Training & Capacity Building", "amount": m_train}]
+        pd_subtotal = round(m_train, 2)
+
+        groups = [
+            {"category_code": "PA", "category_name": "Personnel Costs", "subtotal": pa_subtotal, "items": pa_items},
+            {"category_code": "PB", "category_name": "Office Running Costs", "subtotal": pb_subtotal, "items": pb_items},
+            {"category_code": "PC", "category_name": "Logistics & Field Costs", "subtotal": pc_subtotal, "items": pc_items},
+            {"category_code": "PD", "category_name": "Staff Development & Training", "subtotal": pd_subtotal, "items": pd_items},
+        ]
+
+        tot_payments = round(pa_subtotal + pb_subtotal + pc_subtotal + pd_subtotal, 2)
+
+        res_b = uow.client.table("branches").select("name").eq("branch_id", branch_id).execute()
+        b_name = res_b.data[0]["name"] if res_b.data else "Branch"
+        month_label = f"{calendar.month_name[month]} {year}"
+
+        return {
+            "branch_name": b_name,
+            "year": year,
+            "month": month,
+            "month_label": month_label,
+            "sundry_receipts": sundry_receipts,
+            "total_sundry_receipts": tot_receipts,
+            "sundry_payments_groups": groups,
+            "total_sundry_payments": tot_payments
+        }
+
+    @staticmethod
     def get_monthly_deposit_statement(
         uow: UnitOfWork,
         branch_id: str,
@@ -1618,20 +1772,20 @@ class ReportService:
         BASE_AUG_DEP = {
             "Monthly": {
                 "member_prev": 2, "deposit_prev": 27000.0,
-                "wth_prev_no": 0, "wth_prev_amount": 0.0,
-                "ret_prev_no": 0, "ret_prev_amount": 0.0,
+                "wth_prev_no": 7, "wth_prev_amount": 22790.0,
+                "ret_prev_no": 1, "ret_prev_amount": 5000.0,
                 "opening_bal": 27000.0
             },
             "Weekly": {
-                "member_prev": 171, "deposit_prev": 43778075.0,
-                "wth_prev_no": 1540, "wth_prev_amount": 40896180.0,
-                "ret_prev_no": 549, "ret_prev_amount": 9617145.0,
+                "member_prev": 171, "deposit_prev": 43777730.0,
+                "wth_prev_no": 1540, "wth_prev_amount": 40891965.0,
+                "ret_prev_no": 549, "ret_prev_amount": 9617175.0,
                 "opening_bal": 4377730.0
             },
             "Daily": {
-                "member_prev": 130, "deposit_prev": 62857010.0,
-                "wth_prev_no": 1683, "wth_prev_amount": 48990345.0,
-                "ret_prev_no": 475, "ret_prev_amount": 11647070.0,
+                "member_prev": 130, "deposit_prev": 62861130.0,
+                "wth_prev_no": 1683, "wth_prev_amount": 44025180.0,
+                "ret_prev_no": 475, "ret_prev_amount": 11654445.0,
                 "opening_bal": 6286130.0
             }
         }
@@ -1703,7 +1857,7 @@ class ReportService:
                         seen_clients[cyc].add(cid)
                     if wth > 0:
                         rem = (s.get('remarks') or '').lower()
-                        if 'cancel' in rem or 'closure' in rem or 'refund' in rem or 'lapse' in rem:
+                        if 'cancel' in rem or 'closure' in rem or 'refund' in rem or 'lapse' in rem or 'zero balance' in rem:
                             prev[cyc]['ret_prev_no'] += 1
                             prev[cyc]['ret_prev_amount'] += wth
                         else:
@@ -1771,7 +1925,7 @@ class ReportService:
                 curr[cyc]['dep'] = round(curr[cyc]['dep'] + dep, 2)
                 if wth > 0:
                     rem = (s.get('remarks') or '').lower()
-                    if 'cancel' in rem or 'closure' in rem or 'refund' in rem or 'lapse' in rem:
+                    if 'cancel' in rem or 'closure' in rem or 'refund' in rem or 'lapse' in rem or 'zero balance' in rem:
                         curr[cyc]['ret_no'] += 1
                         curr[cyc]['ret_amt'] = round(curr[cyc]['ret_amt'] + wth, 2)
                     else:
@@ -1897,21 +2051,21 @@ class ReportService:
                 "excess": 0.0,
                 "inst": 400000.0,
                 "overdue": 0.0,
-                "settled_no": 19, "settled_amt": 289800.0
+                "settled_no": 19, "settled_amt": 2898000.0
             },
             "Weekly": {
                 "disb_no": 149, "disb_amt": 24525000.0,
                 "excess": 25119900.0,
                 "inst": 11504500.0,
                 "overdue": 0.0,
-                "settled_no": 1592, "settled_amt": 20233400.0
+                "settled_no": 1592, "settled_amt": 20424500.0
             },
             "Daily": {
                 "disb_no": 129, "disb_amt": 21768000.0,
                 "excess": 46164400.0,
                 "inst": 10288000.0,
                 "overdue": 0.0,
-                "settled_no": 1579, "settled_amt": 19754800.0
+                "settled_no": 1579, "settled_amt": 16954000.0
             }
         }
 
@@ -2002,7 +2156,7 @@ class ReportService:
             row_tot_disb_no = prev_rows.get("• Total Net Loans Count (Col 7 = 3+5-27)", {})
             row_tot_disb_amt = prev_rows.get("• Total Net Disbursed (₦) (Col 8 = 4+6-28)", {})
             row_tot_excess = prev_rows.get("• Total Excess Collection (₦) (Col 11 = 9+10)", {})
-            row_tot_inst = prev_rows.get("• Total Installments (₦) (Col 14 = 12+13-28)", {})
+            row_tot_inst = prev_rows.get("• Total Net Installments (₦) (Col 14 = 12+13-28)") or prev_rows.get("• Total Installments (₦) (Col 14 = 12+13-28)", {})
             row_tot_settled_no = prev_rows.get("• Total Cumulative Settled Count", {})
             row_tot_settled_amt = prev_rows.get("• Total Cumulative Settled Amount (₦)", {})
 
@@ -2128,21 +2282,21 @@ class ReportService:
 
         # 3. Installment Collection
         rows.append(make_row("3. Installment Collection", "• Previous Installments (₦) (Col 12)", {c: prev[c]["inst"] for c in cycles}))
-        rows.append(make_row("3. Installment Collection", "• Current Month Installments (₦) (Col 13)", {c: curr[c]["inst"] for c in cycles}))
+        rows.append(make_row("3. Installment Collection", "• Current Month Installment (₦) (Col 13)", {c: curr[c]["inst"] for c in cycles}))
         tot_inst = {c: round(prev[c]["inst"] + curr[c]["inst"] - curr[c]["settled_amt"], 2) for c in cycles}
-        rows.append(make_row("3. Installment Collection", "• Total Installments (₦) (Col 14 = 12+13-28)", tot_inst))
+        rows.append(make_row("3. Installment Collection", "• Total Net Installments (₦) (Col 14 = 12+13-28)", tot_inst))
 
         # 4. Balance (Portfolio Position)
         bal_loans_no = tot_disb_no
         bal_credit_amt = {c: round(tot_disb_amt[c] - tot_inst[c], 2) for c in cycles}
-        rows.append(make_row("4. Balance (Portfolio)", "• Active Loans Count (Col 23 = Col 7)", bal_loans_no))
-        rows.append(make_row("4. Balance (Portfolio)", "• Active Credit Balance (₦) (Col 24 = Col 8 - Col 14)", bal_credit_amt))
+        rows.append(make_row("4. Balance (Portfolio)", "• Active Loans Balance Count (Col 23 = Col 7)", bal_loans_no))
+        rows.append(make_row("4. Balance (Portfolio)", "• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)", bal_credit_amt))
 
         # 5. Full Repayment (Settled Loans)
-        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Previous Settled Loans Count (Col 25)", {c: prev[c]["settled_no"] for c in cycles}))
-        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Previous Settled Amount (₦) (Col 26)", {c: prev[c]["settled_amt"] for c in cycles}))
-        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Current Settled Loans Count (Col 27)", {c: curr[c]["settled_no"] for c in cycles}))
-        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Current Settled Amount (₦) (Col 28)", {c: curr[c]["settled_amt"] for c in cycles}))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Previous Full Repayment Count (Col 25)", {c: prev[c]["settled_no"] for c in cycles}))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Previous Full Repayment Amount (₦) (Col 26)", {c: prev[c]["settled_amt"] for c in cycles}))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Current Full Repayment Count (Col 27)", {c: curr[c]["settled_no"] for c in cycles}))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Current Full Repayment Amount (₦) (Col 28)", {c: curr[c]["settled_amt"] for c in cycles}))
         tot_settled_no = {c: prev[c]["settled_no"] + curr[c]["settled_no"] for c in cycles}
         tot_settled_amt = {c: round(prev[c]["settled_amt"] + curr[c]["settled_amt"], 2) for c in cycles}
         rows.append(make_row("5. Full Repayment (Settled Loans)", "• Total Cumulative Settled Count", tot_settled_no))

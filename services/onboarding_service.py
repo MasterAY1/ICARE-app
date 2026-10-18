@@ -70,10 +70,11 @@ class OnboardingService:
         return session_data
 
     @staticmethod
-    def get_session_by_token(uow: SupabaseUnitOfWork, token: str) -> Dict[str, Any]:
+    def get_session_by_token(uow: SupabaseUnitOfWork, token: str, officer: Optional[str] = None) -> Dict[str, Any]:
         """
         Retrieves an onboarding session by token.
         Checks expiration and attaches reference catalogs (loan products, meeting days).
+        If officer is supplied, attaches scoped_officer indicator to session metadata.
         """
         res = uow.client.table("branch_onboarding_sessions").select("*").eq("token", token).execute()
         if not res.data:
@@ -116,13 +117,17 @@ class OnboardingService:
                 next_group_num = max(nums) + 1
         session["next_branch_group_number"] = next_group_num
 
+        clean_officer = officer.strip() if officer and officer.strip() else None
+        session["scoped_officer"] = clean_officer
+
         # Standard meeting days
         meeting_days = ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Monthly"]
 
         return {
             "session": session,
             "loan_products": products,
-            "meeting_days": meeting_days
+            "meeting_days": meeting_days,
+            "scoped_officer": clean_officer
         }
 
     @staticmethod
@@ -205,15 +210,23 @@ class OnboardingService:
             total_active_credit += a_cred
             total_current_balance += c_bal
 
+        total_member_savings = total_savings
+        total_group_savings = sum(float(g.get("group_savings") or 0.0) for g in groups)
+        misc_savings = float(payload.get("misc_savings") or 0.0)
+        laps_savings = float(payload.get("laps_savings") or 0.0)
+        total_combined_savings = total_member_savings + total_group_savings + misc_savings
+
         aggregates = {
             "total_groups": len(groups),
             "total_members": len(members),
             "total_officers": len(officers),
-            "total_savings": round(total_savings, 2),
+            "total_savings": round(total_combined_savings, 2),
+            "total_member_savings": round(total_member_savings, 2),
+            "total_group_savings": round(total_group_savings, 2),
+            "misc_savings": round(misc_savings, 2),
+            "laps_savings": round(laps_savings, 2),
             "total_active_credit": round(total_active_credit, 2),
-            "total_current_balance": round(total_current_balance, 2),
-            "misc_savings": float(payload.get("misc_savings") or 0.0),
-            "laps_savings": float(payload.get("laps_savings") or 0.0)
+            "total_current_balance": round(total_current_balance, 2)
         }
 
         validation_summary = {
@@ -227,9 +240,11 @@ class OnboardingService:
         return validation_summary, aggregates
 
     @staticmethod
-    def save_draft(uow: SupabaseUnitOfWork, token: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def save_draft(uow: SupabaseUnitOfWork, token: str, payload: Dict[str, Any], scoped_officer: Optional[str] = None) -> Dict[str, Any]:
         """
         Saves updated groups, members, and officers draft payload.
+        If scoped_officer is specified, merges that officer's groups and members
+        with the existing branch payload without clobbering other officers' data.
         Auto-extends link expiration by 14 days and returns updated validation summary.
         """
         s_res = uow.client.table("branch_onboarding_sessions").select("*").eq("token", token).execute()
@@ -240,17 +255,80 @@ class OnboardingService:
         if session["status"] == "approved":
             raise ValueError("This onboarding session has already been approved and committed.")
 
+        final_payload = payload
+        if scoped_officer and str(scoped_officer).strip():
+            target_officer = str(scoped_officer).strip()
+            target_low = target_officer.lower()
+            existing_payload = session.get("payload") or {}
+
+            # Keep other officers' groups
+            other_groups = [
+                g for g in existing_payload.get("groups", [])
+                if (g.get("officer_name") or "").strip().lower() != target_low
+            ]
+            other_group_refs = {(g.get("group_reference") or "").strip().upper() for g in other_groups if (g.get("group_reference") or "").strip()}
+            other_group_names = {(g.get("name") or g.get("group_name") or "").strip().lower() for g in other_groups if (g.get("name") or g.get("group_name") or "").strip()}
+
+            # Keep other officers' members
+            other_members = [
+                m for m in existing_payload.get("members", [])
+                if ((m.get("group_reference") or "").strip().upper() in other_group_refs)
+                or ((m.get("group_name") or "").strip().lower() in other_group_names)
+            ]
+
+            # Current officer's incoming groups (ensure tagged with this officer)
+            incoming_groups = payload.get("groups", [])
+            for g in incoming_groups:
+                g["officer_name"] = target_officer
+
+            incoming_members = payload.get("members", [])
+
+            # Merge officers list
+            existing_officers = existing_payload.get("officers", [])
+            incoming_officers = payload.get("officers", [])
+            officers_by_name = {
+                (o.get("name") or o.get("officer_name") or "").strip().lower(): o
+                for o in existing_officers
+            }
+            for o in incoming_officers:
+                k = (o.get("name") or o.get("officer_name") or "").strip().lower()
+                if k:
+                    officers_by_name[k] = o
+            if target_low not in officers_by_name:
+                officers_by_name[target_low] = {
+                    "name": target_officer,
+                    "phone": "",
+                    "role": "Credit Officer",
+                    "is_misc_savings_manager": False
+                }
+
+            # Preserve pooled branch reserves if not explicitly submitted by officer
+            misc_s = payload.get("misc_savings")
+            if misc_s is None or float(misc_s or 0.0) == 0.0:
+                misc_s = existing_payload.get("misc_savings", 0.0)
+            laps_s = payload.get("laps_savings")
+            if laps_s is None or float(laps_s or 0.0) == 0.0:
+                laps_s = existing_payload.get("laps_savings", 0.0)
+
+            final_payload = {
+                "groups": other_groups + incoming_groups,
+                "members": other_members + incoming_members,
+                "officers": list(officers_by_name.values()),
+                "misc_savings": float(misc_s or 0.0),
+                "laps_savings": float(laps_s or 0.0),
+            }
+
         # Pre-load loan products for validation
         p_res = uow.client.table("loan_products").select("name").execute()
         products_map = {p["name"].strip().lower(): True for p in (p_res.data or [])}
 
-        validation_summary, aggregates = OnboardingService.validate_payload(payload, products_map)
+        validation_summary, aggregates = OnboardingService.validate_payload(final_payload, products_map)
 
         now = datetime.datetime.now(datetime.timezone.utc)
         new_expires_at = now + datetime.timedelta(days=14)
 
         update_data = {
-            "payload": payload,
+            "payload": final_payload,
             "total_groups": aggregates["total_groups"],
             "total_members": aggregates["total_members"],
             "total_savings": aggregates["total_savings"],
@@ -266,15 +344,17 @@ class OnboardingService:
         return {
             "status": "success",
             "message": "Draft saved successfully. Link validity extended by 14 days.",
+            "payload": final_payload,
             "aggregates": aggregates,
             "validation_summary": validation_summary
         }
 
     @staticmethod
-    def parse_excel_bytes(file_bytes: bytes, uow: SupabaseUnitOfWork) -> Dict[str, Any]:
+    def parse_excel_bytes(file_bytes: bytes, uow: SupabaseUnitOfWork, scoped_officer: Optional[str] = None) -> Dict[str, Any]:
         """
         Parses an uploaded onboarding Excel workbook conforming to the
         icare-group-member-onboarding-template-Ogijo-Oct2026.xlsx layout.
+        If scoped_officer is supplied, tags groups without an explicit officer to scoped_officer.
         """
         import io
         import openpyxl
@@ -319,6 +399,7 @@ class OnboardingService:
         ws_groups = wb["Groups"]
         groups = []
         officers_dict = {}
+        clean_scoped = scoped_officer.strip() if scoped_officer and str(scoped_officer).strip() else None
 
         for r in range(4, ws_groups.max_row + 1):
             g_ref = ws_groups.cell(r, 1).value
@@ -337,6 +418,9 @@ class OnboardingService:
                 g_sav_num = float(g_sav)
             except Exception:
                 g_sav_num = 0.0
+
+            if clean_scoped and (not o_name or str(o_name).strip() in ("None", "")):
+                o_name = clean_scoped
 
             if o_name and str(o_name).strip() not in officers_dict:
                 officers_dict[str(o_name).strip()] = str(o_phone or "").strip()

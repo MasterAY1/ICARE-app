@@ -23,8 +23,12 @@ class IcareApp extends ConsumerWidget {
             (uri.path.contains('onboarding') ||
                 uri.queryParameters.containsKey('token'))) {
           final token = uri.queryParameters['token'] ?? '';
+          final officer = uri.queryParameters['officer'];
           return MaterialPageRoute(
-            builder: (_) => BranchOnboardingPortalScreen(token: token),
+            builder: (_) => BranchOnboardingPortalScreen(
+              token: token,
+              initialOfficer: officer,
+            ),
             settings: settings,
           );
         }

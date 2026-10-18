@@ -96,7 +96,9 @@ class TestOnboardingPortalApi(unittest.TestCase):
         save_data = res_save.json()
         self.assertEqual(save_data["aggregates"]["total_groups"], 1)
         self.assertEqual(save_data["aggregates"]["total_members"], 1)
-        self.assertEqual(save_data["aggregates"]["total_savings"], 5000.0)
+        self.assertEqual(save_data["aggregates"]["total_member_savings"], 5000.0)
+        self.assertEqual(save_data["aggregates"]["total_group_savings"], 25000.0)
+        self.assertEqual(save_data["aggregates"]["total_savings"], 30000.0)
         self.assertEqual(save_data["aggregates"]["total_active_credit"], 99000.0)
         self.assertEqual(save_data["aggregates"]["total_current_balance"], 49500.0)
         self.assertTrue(save_data["validation_summary"]["is_valid"])
@@ -418,6 +420,135 @@ class TestOnboardingPortalApi(unittest.TestCase):
         laps_res = self.uow.client.table("laps_savings").select("*").eq("branch_id", b_id).execute()
         self.assertEqual(len(laps_res.data), 1)
         self.assertEqual(float(laps_res.data[0]["deposit_amount"]), 18500.0)
+
+        self._cleanup()
+
+    def test_co_specific_scoped_workspace_and_draft_merging(self):
+        """
+        Verifies:
+        1. When an onboarding session link with ?officer=Officer%20A is opened,
+           get_session_by_token attaches scoped_officer: "Officer A".
+        2. When Officer A saves a draft containing their group and member,
+           and then Officer B saves a draft with scoped_officer="Officer B",
+           Officer A's groups and members are fully preserved and NOT clobbered.
+        3. Total savings accurately sums member savings, group savings, and misc savings.
+        """
+        self._cleanup()
+
+        # 1. Create a session
+        session = OnboardingService.create_session(
+            uow=self.uow,
+            branch_name="Scoped Branch Test",
+            branch_code="TST",
+            contact_person="Area Manager",
+            contact_phone="08012345678"
+        )
+        token = session["token"]
+
+        # 2. Officer A retrieves session with ?officer=Officer A
+        res_get = client.get(f"/api/v1/onboarding/session/{token}?officer=Officer%20A")
+        self.assertEqual(res_get.status_code, 200)
+        self.assertEqual(res_get.json().get("scoped_officer"), "Officer A")
+
+        # 3. Officer A saves their draft (1 group, 1 member)
+        payload_a = {
+            "officers": [
+                {"name": "Officer A", "phone": "08011111111", "role": "Credit Officer", "is_misc_savings_manager": False}
+            ],
+            "groups": [
+                {
+                    "group_reference": "GRP-01",
+                    "group_name": "Group A",
+                    "officer_name": "Officer A",
+                    "meeting_day": "Daily",
+                    "group_savings": 10000.0
+                }
+            ],
+            "members": [
+                {
+                    "member_reference": "TST-01-001",
+                    "group_reference": "GRP-01",
+                    "member_number": 1,
+                    "full_name": "Member A",
+                    "phone_number": "08011112222",
+                    "savings_balance": 5000.0,
+                    "loan_type": None,
+                    "principal_loan": 0.0,
+                    "active_credit": 0.0,
+                    "current_credit_balance": 0.0
+                }
+            ],
+            "misc_savings": 0.0,
+            "laps_savings": 0.0
+        }
+        res_save_a = client.put(
+            f"/api/v1/onboarding/session/{token}/save-draft",
+            json={"payload": payload_a, "scoped_officer": "Officer A"}
+        )
+        self.assertEqual(res_save_a.status_code, 200)
+        data_a = res_save_a.json()
+        self.assertEqual(data_a["aggregates"]["total_groups"], 1)
+        self.assertEqual(data_a["aggregates"]["total_members"], 1)
+        self.assertEqual(data_a["aggregates"]["total_member_savings"], 5000.0)
+        self.assertEqual(data_a["aggregates"]["total_group_savings"], 10000.0)
+        self.assertEqual(data_a["aggregates"]["total_savings"], 15000.0)
+
+        # 4. Officer B saves their draft with scoped_officer="Officer B" (1 group, 1 member, misc_savings=20000.0)
+        payload_b = {
+            "officers": [
+                {"name": "Officer B", "phone": "08022222222", "role": "Credit Officer", "is_misc_savings_manager": True}
+            ],
+            "groups": [
+                {
+                    "group_reference": "GRP-02",
+                    "group_name": "Group B",
+                    "officer_name": "Officer B",
+                    "meeting_day": "Wednesday",
+                    "group_savings": 15000.0
+                }
+            ],
+            "members": [
+                {
+                    "member_reference": "TST-02-001",
+                    "group_reference": "GRP-02",
+                    "member_number": 1,
+                    "full_name": "Member B",
+                    "phone_number": "08022223333",
+                    "savings_balance": 7000.0,
+                    "loan_type": None,
+                    "principal_loan": 0.0,
+                    "active_credit": 0.0,
+                    "current_credit_balance": 0.0
+                }
+            ],
+            "misc_savings": 20000.0,
+            "laps_savings": 5000.0
+        }
+        res_save_b = client.put(
+            f"/api/v1/onboarding/session/{token}/save-draft",
+            json={"payload": payload_b, "scoped_officer": "Officer B"}
+        )
+        self.assertEqual(res_save_b.status_code, 200)
+        data_b = res_save_b.json()
+
+        # 5. Verify intelligent merge: BOTH Officer A's and Officer B's data exist!
+        self.assertEqual(data_b["aggregates"]["total_groups"], 2)
+        self.assertEqual(data_b["aggregates"]["total_members"], 2)
+        self.assertEqual(data_b["aggregates"]["total_officers"], 2)
+
+        # Verify savings calculation: member (5000 + 7000) + group (10000 + 15000) + misc (20000) = 57000.0
+        self.assertEqual(data_b["aggregates"]["total_member_savings"], 12000.0)
+        self.assertEqual(data_b["aggregates"]["total_group_savings"], 25000.0)
+        self.assertEqual(data_b["aggregates"]["misc_savings"], 20000.0)
+        self.assertEqual(data_b["aggregates"]["total_savings"], 57000.0)
+
+        # 6. Retrieve session as Area Manager (no officer param)
+        res_am = client.get(f"/api/v1/onboarding/session/{token}")
+        self.assertEqual(res_am.status_code, 200)
+        am_data = res_am.json()["session"]["payload"]
+        self.assertEqual(len(am_data["groups"]), 2)
+        self.assertEqual(len(am_data["members"]), 2)
+        self.assertEqual(len(am_data["officers"]), 2)
 
         self._cleanup()
 

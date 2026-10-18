@@ -35,7 +35,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // Monthly Executive Parity State
   int _selectedExecMonth = 9;
   int _selectedExecYear = 2026;
-  int _selectedExecSubTab = 0; // 0: A. Deposit Statement, 1: B. Credit Statement, 2: Receipts & Payments, 3: Trial Balance, 4: CO Summary, 5: Bank Reconciliation
+  int _selectedExecSubTab = 0; // 0: A. Deposit Statement, 1: B. Credit Statement, 2: Receipts & Payments, 3: Annex-1 Sundry, 4: Trial Balance, 5: CO Summary, 6: Bank Reconciliation
+  String _selectedProgramFilter = 'All'; // 'All', 'Monthly', 'Weekly', 'Daily'
+  bool _showRawTableOnMobile = false;
 
   // Futures & Cache
   ReportsMeta? _cachedMeta;
@@ -43,6 +45,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   Future<AreaComparisonData>? _areaFuture;
   Future<MonthlyParityData>? _parityFuture;
   Future<MonthlyExecutiveStatementsData>? _statementsFuture;
+  Future<Annex1ReportData>? _annex1Future;
   Future<MonthlyReconciliationData>? _reconciliationFuture;
 
   final _currencyFormat = NumberFormat('#,##0.00');
@@ -84,6 +87,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       month: _selectedExecMonth,
       officerName: _selectedOfficerName,
       productName: _selectedProductName,
+    );
+    _annex1Future = api.getAnnex1Report(
+      branchName: _selectedBranchName,
+      year: _selectedExecYear,
+      month: _selectedExecMonth,
     );
     _reconciliationFuture = api.getMonthlyReconciliation(
       branchName: _selectedBranchName,
@@ -144,6 +152,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         month: _selectedExecMonth,
         officerName: _selectedOfficerName,
         productName: _selectedProductName,
+      );
+      _annex1Future = api.getAnnex1Report(
+        branchName: _selectedBranchName,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
       );
       _reconciliationFuture = api.getMonthlyReconciliation(
         branchName: _selectedBranchName,
@@ -1133,11 +1146,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           const SizedBox(width: 4),
                           _buildSubTabButton('Receipts & Payments Account', 2, icon: Icons.receipt_long_outlined),
                           const SizedBox(width: 4),
-                          _buildSubTabButton('Official Trial Balance', 3, icon: Icons.balance_outlined),
+                          _buildSubTabButton('Annex-1 Sundry', 3, icon: Icons.pie_chart_outline),
                           const SizedBox(width: 4),
-                          _buildSubTabButton('Credit Officers Summary', 4, icon: Icons.people_alt_outlined),
+                          _buildSubTabButton('Official Trial Balance', 4, icon: Icons.balance_outlined),
                           const SizedBox(width: 4),
-                          _buildSubTabButton('Bank & Treasury Reconciliation', 5, icon: Icons.account_balance_outlined),
+                          _buildSubTabButton('Credit Officers Summary', 5, icon: Icons.people_alt_outlined),
+                          const SizedBox(width: 4),
+                          _buildSubTabButton('Bank & Treasury Reconciliation', 6, icon: Icons.account_balance_outlined),
                         ],
                       ),
                     ),
@@ -1152,8 +1167,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   else if (_selectedExecSubTab == 2)
                     _buildReceiptsAndPaymentsView()
                   else if (_selectedExecSubTab == 3)
-                    _buildOfficialTrialBalanceView()
+                    _buildAnnex1View()
                   else if (_selectedExecSubTab == 4)
+                    _buildOfficialTrialBalanceView()
+                  else if (_selectedExecSubTab == 5)
                     _buildCoMonthlySummaryTable(data)
                   else
                     _buildBankReconciliationView(),
@@ -1209,55 +1226,222 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 
+  Widget _buildProgramFilterChips(List<String> options, ValueChanged<String> onSelected) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        children: options.map((opt) {
+          final isSelected = _selectedProgramFilter == opt;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: ChoiceChip(
+              label: Text(opt, style: TextStyle(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? Colors.white : const Color(0xFF475569),
+              )),
+              selected: isSelected,
+              selectedColor: const Color(0xFF0F766E),
+              backgroundColor: const Color(0xFFF1F5F9),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: isSelected ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0))),
+              onSelected: (val) {
+                if (val) {
+                  onSelected(opt);
+                }
+              },
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildMobileDetailRow(String label, String value, {bool isPrimary = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: isPrimary ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                fontWeight: isPrimary ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: isPrimary ? 13 : 12,
+              fontWeight: isPrimary ? FontWeight.w800 : FontWeight.w600,
+              color: isPrimary ? const Color(0xFF0F766E) : const Color(0xFF0F172A),
+              fontFamily: 'JetBrains Mono',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCoMonthlySummaryTable(MonthlyParityData data) {
     final officers = data.officers;
-    return _buildContainedTable(
-      hint: 'Swipe horizontally to view all credit officers',
-      child: DataTable(
-        headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-        headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 12),
-        dataTextStyle: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
-        columnSpacing: 20,
-            columns: [
-              const DataColumn(label: Text('Financial Metric')),
-              ...officers.map((o) => DataColumn(numeric: true, label: Text(o.name))),
-              DataColumn(numeric: true, label: Text(data.totalColName, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)))),
-            ],
-            rows: data.rows.map((r) {
-              final isCount = r.metric.contains('Count');
-              return DataRow(
-                cells: [
-                  DataCell(Text(r.metric, style: const TextStyle(fontWeight: FontWeight.w600))),
-                  ...officers.map((o) {
-                    final val = r.values[o.name];
-                    String disp;
-                    if (val == null) {
-                      disp = '-';
-                    } else if (isCount) {
-                      disp = '${(val as num).toInt()}';
-                    } else {
-                      disp = _formatNgn((val as num).toDouble());
-                    }
-                    return DataCell(Text(disp));
-                  }),
-                  DataCell(
-                    Builder(builder: (_) {
-                      final val = r.values[data.totalColName];
-                      String disp;
-                      if (val == null) {
-                        disp = '-';
-                      } else if (isCount) {
-                        disp = '${(val as num).toInt()}';
-                      } else {
-                        disp = _formatNgn((val as num).toDouble());
-                      }
-                      return Text(disp, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)));
-                    }),
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (isMobile)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Credit Officers Summary', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                    IconButton(
+                      tooltip: _showRawTableOnMobile ? 'Switch to Cards' : 'Switch to Table',
+                      icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, color: const Color(0xFF0F766E)),
+                      onPressed: () {
+                        setState(() {
+                          _showRawTableOnMobile = !_showRawTableOnMobile;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            if (isMobile && !_showRawTableOnMobile) ...[
+              // Mobile Cards per Officer
+              ...officers.map((o) {
+                double getMetric(String m) => (data.rows.firstWhere((r) => r.metric == m, orElse: () => MonthlyParityMetricRow(metric: m, values: {})).values[o.name] as num? ?? 0.0).toDouble();
+                int getCount(String m) => (data.rows.firstWhere((r) => r.metric == m, orElse: () => MonthlyParityMetricRow(metric: m, values: {})).values[o.name] as num? ?? 0).toInt();
+
+                final disb = getMetric('Sales (Credit) / Principal Disbursed');
+                final col = getMetric('Installment Collection (Repayments)');
+                final closeCredit = getMetric('Closing Credit Balance');
+                final sDep = getMetric('Savings Deposit (Month)');
+                final sWth = getMetric('Savings Withdrawal (Month)');
+                final sClose = getMetric('Savings Closing Balance');
+                final bd = getMetric('Bank Deposits Remitted (Acct 1050)');
+
+                final trans = getMetric('Field Transport (PC1)');
+                final stat = getMetric('Stationery (PB3)');
+                final ent = getMetric('Entertainment (PB4)');
+                final util = getMetric('Utilities & Phone (PB2/PB6)');
+                final totOpEx = getMetric('Office Expenses (Acct 4000)');
+
+                final actLoans = getCount('Active Loans Count');
+                final actSavers = getCount('Active Savers Count');
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 1))],
                   ),
-                ],
-              );
-            }).toList(),
-      ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              o.name,
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF0F766E)),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12)),
+                            child: Text(o.username ?? 'Credit Officer', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 16),
+                      _buildMobileDetailRow('Bank Deposits Remitted (Acct 1050)', _formatNgn(bd), isPrimary: true),
+                      const SizedBox(height: 6),
+                      _buildMobileDetailRow('Active Portfolio', '$actLoans loans | ${_formatNgn(closeCredit)}'),
+                      _buildMobileDetailRow('Month Collections', _formatNgn(col)),
+                      _buildMobileDetailRow('Month Disbursements', _formatNgn(disb)),
+                      const Divider(height: 16),
+                      _buildMobileDetailRow('Active Savers', '$actSavers savers | ${_formatNgn(sClose)}'),
+                      _buildMobileDetailRow('Month Savings (In / Out)', '${_formatNgn(sDep)} / ${_formatNgn(sWth)}'),
+                      const Divider(height: 16),
+                      const Text('Analysed Operational Expenses (OpEx):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                      const SizedBox(height: 4),
+                      _buildMobileDetailRow('  • Field Transport (PC1)', _formatNgn(trans)),
+                      _buildMobileDetailRow('  • Stationery & Print (PB3)', _formatNgn(stat)),
+                      _buildMobileDetailRow('  • Entertainment (PB4)', _formatNgn(ent)),
+                      _buildMobileDetailRow('  • Utilities & Phone (PB2/PB6)', _formatNgn(util)),
+                      _buildMobileDetailRow('Total Analysed OpEx Disbursed', _formatNgn(totOpEx), isPrimary: true),
+                    ],
+                  ),
+                );
+              }),
+            ] else ...[
+              _buildContainedTable(
+                hint: 'Swipe horizontally to view all credit officers',
+                child: DataTable(
+                  headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
+                  headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 12),
+                  dataTextStyle: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
+                  columnSpacing: 20,
+                  columns: [
+                    const DataColumn(label: Text('Financial Metric')),
+                    ...officers.map((o) => DataColumn(numeric: true, label: Text(o.name))),
+                    DataColumn(numeric: true, label: Text(data.totalColName, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)))),
+                  ],
+                  rows: data.rows.map((r) {
+                    final isCount = r.metric.contains('Count');
+                    final isHighlight = r.metric.contains('Total') || r.metric.contains('Expenses') || r.metric.contains('Bank');
+                    return DataRow(
+                      cells: [
+                        DataCell(Text(r.metric, style: TextStyle(fontWeight: isHighlight ? FontWeight.w700 : FontWeight.w600, color: isHighlight ? const Color(0xFF0F766E) : null))),
+                        ...officers.map((o) {
+                          final val = r.values[o.name];
+                          String disp;
+                          if (val == null) {
+                            disp = '-';
+                          } else if (isCount) {
+                            disp = '${(val as num).toInt()}';
+                          } else {
+                            disp = _formatNgn((val as num).toDouble());
+                          }
+                          return DataCell(Text(disp));
+                        }),
+                        DataCell(
+                          Builder(builder: (_) {
+                            final val = r.values[data.totalColName];
+                            String disp;
+                            if (val == null) {
+                              disp = '-';
+                            } else if (isCount) {
+                              disp = '${(val as num).toInt()}';
+                            } else {
+                              disp = _formatNgn((val as num).toDouble());
+                            }
+                            return Text(disp, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)));
+                          }),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
@@ -1282,15 +1466,20 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
         final totRow = ds.rows.firstWhere((r) => r.programme == 'Total', orElse: () => ds.rows.last);
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // KPI Summary cards
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final isMobile = constraints.maxWidth < 600;
-                final cardW = isMobile ? (constraints.maxWidth - 8) / 2 : (constraints.maxWidth - 24) / 4;
-                return Wrap(
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = constraints.maxWidth < 600;
+            final cardW = isMobile ? (constraints.maxWidth - 8) / 2 : (constraints.maxWidth - 24) / 4;
+
+            final filteredRows = _selectedProgramFilter == 'All' || _selectedProgramFilter == 'All Programmes'
+                ? ds.rows
+                : ds.rows.where((r) => r.programme.toLowerCase() == _selectedProgramFilter.toLowerCase() || r.programme == 'Total').toList();
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top KPI Summary cards
+                Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
@@ -1299,63 +1488,218 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     _buildMetricCard('Month Deposits', _formatNgn(totRow.depositCurr), width: cardW),
                     _buildMetricCard('Month Payouts', _formatNgn(totRow.withdrawalCurrAmount + totRow.returnCurrAmount), width: cardW),
                   ],
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-            _buildContainedTable(
-              hint: 'Swipe horizontally to view all deposit columns across programmes',
-              child: DataTable(
-                headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-                headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 11),
-                dataTextStyle: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
-                columnSpacing: 14,
-                columns: const [
-                  DataColumn(label: Text('Programme')),
-                  DataColumn(numeric: true, label: Text('Members\nB/F')),
-                  DataColumn(numeric: true, label: Text('New\nMembers')),
-                  DataColumn(numeric: true, label: Text('Total\nMembers')),
-                  DataColumn(numeric: true, label: Text('Deposit\nB/F (₦)')),
-                  DataColumn(numeric: true, label: Text('Current\nDeposit (₦)')),
-                  DataColumn(numeric: true, label: Text('Total\nDeposit (₦)')),
-                  DataColumn(numeric: true, label: Text('Withdrawals\nB/F (No, ₦)')),
-                  DataColumn(numeric: true, label: Text('Current\nWithdrawals (No, ₦)')),
-                  DataColumn(numeric: true, label: Text('Total\nWithdrawals (No, ₦)')),
-                  DataColumn(numeric: true, label: Text('Cancellations\nB/F (No, ₦)')),
-                  DataColumn(numeric: true, label: Text('Current\nCancellations (No, ₦)')),
-                  DataColumn(numeric: true, label: Text('Total\nCancellations (No, ₦)')),
-                  DataColumn(numeric: true, label: Text('Active\nSavers')),
-                  DataColumn(numeric: true, label: Text('Net Deposit\nBalance (₦)')),
+                ),
+                const SizedBox(height: 16),
+
+                // Program Filter Chips & View Mode Toggle
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildProgramFilterChips(
+                        ['All Programmes', 'Monthly', 'Weekly', 'Daily'],
+                        (val) {
+                          setState(() {
+                            _selectedProgramFilter = val == 'All Programmes' ? 'All' : val;
+                          });
+                        },
+                      ),
+                    ),
+                    if (isMobile)
+                      IconButton(
+                        tooltip: _showRawTableOnMobile ? 'Switch to Cards' : 'Switch to Table',
+                        icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, color: const Color(0xFF0F766E)),
+                        onPressed: () {
+                          setState(() {
+                            _showRawTableOnMobile = !_showRawTableOnMobile;
+                          });
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                if (isMobile && !_showRawTableOnMobile) ...[
+                  ...filteredRows.map((r) {
+                    final isTot = r.programme == 'Total';
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isTot ? const Color(0xFFF0FDF4) : Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: isTot ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
+                        boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 1))],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                isTot ? 'Consolidated Total' : '${r.programme} Programme',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: isTot ? const Color(0xFF166534) : const Color(0xFF0F766E),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: isTot ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  '${r.balanceNo} Active Savers',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: isTot ? const Color(0xFF15803D) : const Color(0xFF475569),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Divider(height: 16),
+                          _buildMobileDetailRow('Net Savings Balance', _formatNgn(r.balanceAmount), isPrimary: true),
+                          const SizedBox(height: 8),
+                          _buildMobileDetailRow('Month Deposits Received', _formatNgn(r.depositCurr)),
+                          _buildMobileDetailRow('Cumulative Deposits (B/F + Month)', _formatNgn(r.depositTotal)),
+                          const Divider(height: 16),
+                          _buildMobileDetailRow('Normal Withdrawals (Partial)', '${r.withdrawalCurrNo} savers (${_formatNgn(r.withdrawalCurrAmount)})'),
+                          _buildMobileDetailRow('Deposit Returns (Zero-Balance)', '${r.returnCurrNo} savers (${_formatNgn(r.returnCurrAmount)})'),
+                          _buildMobileDetailRow('Cumulative Payouts', _formatNgn(r.withdrawalTotalAmount + r.returnTotalAmount)),
+                          const Divider(height: 16),
+                          _buildMobileDetailRow('Members Registered (B/F + Added)', '${r.memberPrev} + ${r.memberCurr} = ${r.memberTotal} members'),
+                        ],
+                      ),
+                    );
+                  }),
+                ] else ...[
+                  _buildContainedTable(
+                    hint: 'Swipe horizontally to view all deposit columns across programmes',
+                    child: DataTable(
+                      headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
+                      headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 11),
+                      dataTextStyle: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
+                      columnSpacing: 14,
+                      columns: const [
+                        DataColumn(label: Text('Programme')),
+                        DataColumn(numeric: true, label: Text('Members\nB/F')),
+                        DataColumn(numeric: true, label: Text('New\nMembers')),
+                        DataColumn(numeric: true, label: Text('Total\nMembers')),
+                        DataColumn(numeric: true, label: Text('Deposit\nB/F (₦)')),
+                        DataColumn(numeric: true, label: Text('Current\nDeposit (₦)')),
+                        DataColumn(numeric: true, label: Text('Total\nDeposit (₦)')),
+                        DataColumn(numeric: true, label: Text('Withdrawals\nB/F (No, ₦)')),
+                        DataColumn(numeric: true, label: Text('Current\nWithdrawals (No, ₦)')),
+                        DataColumn(numeric: true, label: Text('Total\nWithdrawals (No, ₦)')),
+                        DataColumn(numeric: true, label: Text('Cancellations\nB/F (No, ₦)')),
+                        DataColumn(numeric: true, label: Text('Current\nCancellations (No, ₦)')),
+                        DataColumn(numeric: true, label: Text('Total\nCancellations (No, ₦)')),
+                        DataColumn(numeric: true, label: Text('Active\nSavers')),
+                        DataColumn(numeric: true, label: Text('Net Deposit\nBalance (₦)')),
+                      ],
+                      rows: filteredRows.map((r) {
+                        final isTot = r.programme == 'Total';
+                        final boldStyle = isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontSize: 11) : const TextStyle(fontSize: 11);
+                        return DataRow(
+                          color: isTot ? MaterialStateProperty.all(const Color(0xFFF1F5F9)) : null,
+                          cells: [
+                            DataCell(Text(r.programme, style: isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E)) : const TextStyle(fontWeight: FontWeight.w600))),
+                            DataCell(Text('${r.memberPrev}', style: boldStyle)),
+                            DataCell(Text('${r.memberCurr}', style: boldStyle)),
+                            DataCell(Text('${r.memberTotal}', style: boldStyle)),
+                            DataCell(Text(_formatNgn(r.depositPrev), style: boldStyle)),
+                            DataCell(Text(_formatNgn(r.depositCurr), style: boldStyle)),
+                            DataCell(Text(_formatNgn(r.depositTotal), style: boldStyle)),
+                            DataCell(Text('${r.withdrawalPrevNo} (${_formatNgn(r.withdrawalPrevAmount)})', style: boldStyle)),
+                            DataCell(Text('${r.withdrawalCurrNo} (${_formatNgn(r.withdrawalCurrAmount)})', style: boldStyle)),
+                            DataCell(Text('${r.withdrawalTotalNo} (${_formatNgn(r.withdrawalTotalAmount)})', style: boldStyle)),
+                            DataCell(Text('${r.returnPrevNo} (${_formatNgn(r.returnPrevAmount)})', style: boldStyle)),
+                            DataCell(Text('${r.returnCurrNo} (${_formatNgn(r.returnCurrAmount)})', style: boldStyle)),
+                            DataCell(Text('${r.returnTotalNo} (${_formatNgn(r.returnTotalAmount)})', style: boldStyle)),
+                            DataCell(Text('${r.balanceNo}', style: isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E)) : const TextStyle(fontWeight: FontWeight.w700))),
+                            DataCell(Text(_formatNgn(r.balanceAmount), style: isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E)) : const TextStyle(fontWeight: FontWeight.w700))),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
                 ],
-                rows: ds.rows.map((r) {
-                  final isTot = r.programme == 'Total';
-                  final boldStyle = isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontSize: 11) : const TextStyle(fontSize: 11);
-                  return DataRow(
-                    color: isTot ? MaterialStateProperty.all(const Color(0xFFF1F5F9)) : null,
-                    cells: [
-                      DataCell(Text(r.programme, style: isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E)) : const TextStyle(fontWeight: FontWeight.w600))),
-                      DataCell(Text('${r.memberPrev}', style: boldStyle)),
-                      DataCell(Text('${r.memberCurr}', style: boldStyle)),
-                      DataCell(Text('${r.memberTotal}', style: boldStyle)),
-                      DataCell(Text(_formatNgn(r.depositPrev), style: boldStyle)),
-                      DataCell(Text(_formatNgn(r.depositCurr), style: boldStyle)),
-                      DataCell(Text(_formatNgn(r.depositTotal), style: boldStyle)),
-                      DataCell(Text('${r.withdrawalPrevNo} (${_formatNgn(r.withdrawalPrevAmount)})', style: boldStyle)),
-                      DataCell(Text('${r.withdrawalCurrNo} (${_formatNgn(r.withdrawalCurrAmount)})', style: boldStyle)),
-                      DataCell(Text('${r.withdrawalTotalNo} (${_formatNgn(r.withdrawalTotalAmount)})', style: boldStyle)),
-                      DataCell(Text('${r.returnPrevNo} (${_formatNgn(r.returnPrevAmount)})', style: boldStyle)),
-                      DataCell(Text('${r.returnCurrNo} (${_formatNgn(r.returnCurrAmount)})', style: boldStyle)),
-                      DataCell(Text('${r.returnTotalNo} (${_formatNgn(r.returnTotalAmount)})', style: boldStyle)),
-                      DataCell(Text('${r.balanceNo}', style: isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E)) : const TextStyle(fontWeight: FontWeight.w700))),
-                      DataCell(Text(_formatNgn(r.balanceAmount), style: isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E)) : const TextStyle(fontWeight: FontWeight.w700))),
-                    ],
-                  );
-                }).toList(),
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         );
       },
+    );
+  }
+
+  Widget _buildCreditSectionCard(List<CreditStatementRow> rows, String sectionTitle, IconData icon, {bool isHighlight = false}) {
+    final sectionRows = rows.where((r) {
+      final s = r.section.toLowerCase();
+      final target = sectionTitle.toLowerCase();
+      if (target.contains('disbursed')) return s.contains('disbursed');
+      if (target.contains('excess')) return s.contains('excess');
+      if (target.contains('repayment')) return s.contains('repayment') && !s.contains('full');
+      if (target.contains('balance')) return s.contains('balance');
+      if (target.contains('full')) return s.contains('full');
+      return false;
+    }).toList();
+
+    if (sectionRows.isEmpty) return const SizedBox.shrink();
+
+    double getRowVal(CreditStatementRow r) {
+      if (_selectedProgramFilter == 'Monthly') return r.monthly.toDouble();
+      if (_selectedProgramFilter == 'Weekly') return r.weekly.toDouble();
+      if (_selectedProgramFilter == 'Daily') return r.daily.toDouble();
+      return r.total.toDouble();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isHighlight ? const Color(0xFFF0FDF4) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: isHighlight ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
+        boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 1))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: isHighlight ? const Color(0xFF166534) : const Color(0xFF0F766E)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  sectionTitle,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: isHighlight ? const Color(0xFF166534) : const Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(10)),
+                child: Text(_selectedProgramFilter, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+              ),
+            ],
+          ),
+          const Divider(height: 16),
+          ...sectionRows.map((r) {
+            final isCount = r.item.contains('Count');
+            final val = getRowVal(r);
+            final disp = isCount ? '${val.toInt()}' : _formatNgn(val);
+            final isTot = r.item.contains('Total') || r.item.contains('Balance') || r.item.contains('Current');
+            return _buildMobileDetailRow(r.item.replaceAll('•', '').trim(), disp, isPrimary: isTot);
+          }),
+        ],
+      ),
     );
   }
 
@@ -1383,15 +1727,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         final instCurrRow = cs.rows.firstWhere((r) => r.item.contains('Current Month Installments'), orElse: () => cs.rows.first);
         final payoffRow = cs.rows.firstWhere((r) => r.item.contains('Current Settled Loans Count'), orElse: () => cs.rows.first);
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // KPI Summary cards
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final isMobile = constraints.maxWidth < 600;
-                final cardW = isMobile ? (constraints.maxWidth - 8) / 2 : (constraints.maxWidth - 24) / 4;
-                return Wrap(
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = constraints.maxWidth < 600;
+            final cardW = isMobile ? (constraints.maxWidth - 8) / 2 : (constraints.maxWidth - 24) / 4;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top KPI Summary cards
+                Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
@@ -1400,55 +1745,238 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     _buildMetricCard('Month Collections', _formatNgn(instCurrRow.total), width: cardW),
                     _buildMetricCard('Month Full Payoffs', '${payoffRow.total.toInt()} Settled', width: cardW),
                   ],
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-            _buildContainedTable(
-              hint: 'Swipe horizontally to view credit metrics across Monthly, Weekly, Daily programmes',
-              child: DataTable(
-                headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-                headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 11),
-                dataTextStyle: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
-                columnSpacing: 16,
-                columns: const [
-                  DataColumn(label: Text('Category')),
-                  DataColumn(label: Text('Reporting Metric')),
-                  DataColumn(numeric: true, label: Text('Monthly')),
-                  DataColumn(numeric: true, label: Text('Weekly')),
-                  DataColumn(numeric: true, label: Text('Daily')),
-                  DataColumn(numeric: true, label: Text('Consolidated\nTotal')),
+                ),
+                const SizedBox(height: 16),
+
+                // Program Filter Chips & View Mode Toggle
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildProgramFilterChips(
+                        ['Consolidated Total', 'Monthly', 'Weekly', 'Daily'],
+                        (val) {
+                          setState(() {
+                            _selectedProgramFilter = val;
+                          });
+                        },
+                      ),
+                    ),
+                    if (isMobile)
+                      IconButton(
+                        tooltip: _showRawTableOnMobile ? 'Switch to Cards' : 'Switch to Table',
+                        icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, color: const Color(0xFF0F766E)),
+                        onPressed: () {
+                          setState(() {
+                            _showRawTableOnMobile = !_showRawTableOnMobile;
+                          });
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                if (isMobile && !_showRawTableOnMobile) ...[
+                  // Mobile Cards grouped by Section
+                  _buildCreditSectionCard(cs.rows, '1. Disbursed Principal', Icons.payments_outlined),
+                  _buildCreditSectionCard(cs.rows, '2. Excess Collections', Icons.trending_up_outlined),
+                  _buildCreditSectionCard(cs.rows, '3. Installment Repayments', Icons.event_repeat_outlined),
+                  _buildCreditSectionCard(cs.rows, '4. Balance (Portfolio)', Icons.account_balance_wallet_outlined, isHighlight: true),
+                  _buildCreditSectionCard(cs.rows, '5. Full Repayment (Settled Loans)', Icons.task_alt_outlined),
+                ] else ...[
+                  // Desktop / Table View
+                  _buildContainedTable(
+                    hint: 'Swipe horizontally to view credit metrics across Monthly, Weekly, Daily programmes',
+                    child: DataTable(
+                      headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
+                      headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 11),
+                      dataTextStyle: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
+                      columnSpacing: 16,
+                      columns: const [
+                        DataColumn(label: Text('Category')),
+                        DataColumn(label: Text('Reporting Metric')),
+                        DataColumn(numeric: true, label: Text('Monthly')),
+                        DataColumn(numeric: true, label: Text('Weekly')),
+                        DataColumn(numeric: true, label: Text('Daily')),
+                        DataColumn(numeric: true, label: Text('Consolidated\nTotal')),
+                      ],
+                      rows: cs.rows
+                          .where((r) => !r.section.toLowerCase().contains('overdue') && !r.item.toLowerCase().contains('overdue'))
+                          .map((r) {
+                        final isCount = r.item.contains('Count');
+                        final isHighlight = r.item.contains('Total') || r.item.contains('Balance') || r.item.contains('Active');
+                        final rowColor = isHighlight ? const Color(0xFFF8FAFC) : null;
+                        final textStyle = isHighlight ? const TextStyle(fontWeight: FontWeight.w700, fontSize: 11) : const TextStyle(fontSize: 11);
+                        final totStyle = isHighlight ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E), fontSize: 11) : const TextStyle(fontWeight: FontWeight.w600, fontSize: 11);
+
+                        String formatVal(double v) => isCount ? '${v.toInt()}' : (v > 0 ? _formatNgn(v) : '-');
+
+                        var sectionName = r.section;
+                        if (sectionName.startsWith('5. Balance')) sectionName = '4. Balance (Portfolio)';
+                        if (sectionName.startsWith('6. Full Repayment')) sectionName = '5. Full Repayment (Settled Loans)';
+
+                        return DataRow(
+                          color: rowColor != null ? MaterialStateProperty.all(rowColor) : null,
+                          cells: [
+                            DataCell(Text(sectionName, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F766E), fontSize: 11))),
+                            DataCell(Text(r.item, style: textStyle)),
+                            DataCell(Text(formatVal(r.monthly), style: textStyle)),
+                            DataCell(Text(formatVal(r.weekly), style: textStyle)),
+                            DataCell(Text(formatVal(r.daily), style: textStyle)),
+                            DataCell(Text(formatVal(r.total), style: totStyle)),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
                 ],
-                rows: cs.rows
-                    .where((r) => !r.section.toLowerCase().contains('overdue') && !r.item.toLowerCase().contains('overdue'))
-                    .map((r) {
-                  final isCount = r.item.contains('Count');
-                  final isHighlight = r.item.contains('Total') || r.item.contains('Balance') || r.item.contains('Active');
-                  final rowColor = isHighlight ? const Color(0xFFF8FAFC) : null;
-                  final textStyle = isHighlight ? const TextStyle(fontWeight: FontWeight.w700, fontSize: 11) : const TextStyle(fontSize: 11);
-                  final totStyle = isHighlight ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E), fontSize: 11) : const TextStyle(fontWeight: FontWeight.w600, fontSize: 11);
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 
-                  String formatVal(double v) => isCount ? '${v.toInt()}' : (v > 0 ? _formatNgn(v) : '-');
+  Widget _buildAnnex1View() {
+    return FutureBuilder<Annex1ReportData>(
+      future: _annex1Future,
+      builder: (context, snapshot) {
+        if (_annex1Future == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+          if (snapshot.hasError) {
+            return _buildErrorCard(snapshot.error.toString());
+          }
+          return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
+        }
+        final data = snapshot.data!;
 
-                  var sectionName = r.section;
-                  if (sectionName.startsWith('5. Balance')) sectionName = '4. Balance (Portfolio)';
-                  if (sectionName.startsWith('6. Full Repayment')) sectionName = '5. Full Repayment (Settled Loans)';
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = constraints.maxWidth < 600;
+            final cardW = isMobile ? (constraints.maxWidth - 8) / 2 : (constraints.maxWidth - 16) / 3;
 
-                  return DataRow(
-                    color: rowColor != null ? MaterialStateProperty.all(rowColor) : null,
-                    cells: [
-                      DataCell(Text(sectionName, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F766E), fontSize: 11))),
-                      DataCell(Text(r.item, style: textStyle)),
-                      DataCell(Text(formatVal(r.monthly), style: textStyle)),
-                      DataCell(Text(formatVal(r.weekly), style: textStyle)),
-                      DataCell(Text(formatVal(r.daily), style: textStyle)),
-                      DataCell(Text(formatVal(r.total), style: totStyle)),
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top KPI Summary cards
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildMetricCard('Sundry Receipts', _formatNgn(data.totalSundryReceipts), width: cardW),
+                    _buildMetricCard('OpEx Paid (Annex-1)', _formatNgn(data.totalSundryPayments), width: cardW),
+                    _buildMetricCard('Branch & Period', '${data.branchName} (${data.monthLabel})', width: isMobile ? constraints.maxWidth : cardW),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Section A: Sundry Receipts
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 1))],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.arrow_downward, color: Color(0xFF166534), size: 18),
+                              SizedBox(width: 8),
+                              Text(
+                                'Section A: Sundry Inflows / Auxiliary Receipts',
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            _formatNgn(data.totalSundryReceipts),
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF166534), fontFamily: 'JetBrains Mono'),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 20),
+                      ...data.sundryReceipts.map((r) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(4)),
+                              child: Text(r.code, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF475569))),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(child: Text(r.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
+                            Text(_formatNgn(r.amount), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFamily: 'JetBrains Mono')),
+                          ],
+                        ),
+                      )),
                     ],
+                  ),
+                ),
+
+                // Section B: Sundry Payments / Operating Expenses Groups
+                ...data.sundryPaymentsGroups.map((g) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 1))],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(4)),
+                                  child: Text(g.categoryCode, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF1D4ED8))),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  g.categoryName,
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                ),
+                              ],
+                            ),
+                            Text(
+                              _formatNgn(g.subtotal),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF1D4ED8), fontFamily: 'JetBrains Mono'),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 16),
+                        ...g.items.map((item) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3.0),
+                          child: Row(
+                            children: [
+                              Text(item.code, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+                              const SizedBox(width: 10),
+                              Expanded(child: Text(item.name, style: const TextStyle(fontSize: 12, color: Color(0xFF334155)))),
+                              Text(_formatNgn(item.amount), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'JetBrains Mono')),
+                            ],
+                          ),
+                        )),
+                      ],
+                    ),
                   );
-                }).toList(),
-              ),
-            ),
-          ],
+                }),
+              ],
+            );
+          },
         );
       },
     );

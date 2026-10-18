@@ -14,22 +14,38 @@ class OnboardingApiService {
   OnboardingApiService(this._client);
 
   /// GET /api/v1/onboarding/session/{token}
-  Future<Map<String, dynamic>> getSession(String token) async {
-    final response = await _client.get('/api/v1/onboarding/session/$token');
+  Future<Map<String, dynamic>> getSession(String token, {String? officer}) async {
+    final response = await _client.get(
+      '/api/v1/onboarding/session/$token',
+      queryParameters: officer != null && officer.trim().isNotEmpty ? {'officer': officer.trim()} : null,
+    );
     return response.data as Map<String, dynamic>;
   }
 
   /// PUT /api/v1/onboarding/session/{token}/save-draft
-  Future<Map<String, dynamic>> saveDraft(String token, Map<String, dynamic> payload) async {
+  Future<Map<String, dynamic>> saveDraft(
+    String token,
+    Map<String, dynamic> payload, {
+    String? scopedOfficer,
+  }) async {
     final response = await _client.put(
       '/api/v1/onboarding/session/$token/save-draft',
-      data: {'payload': payload},
+      data: {
+        'payload': payload,
+        if (scopedOfficer != null && scopedOfficer.trim().isNotEmpty)
+          'scoped_officer': scopedOfficer.trim(),
+      },
     );
     return response.data as Map<String, dynamic>;
   }
 
   /// POST /api/v1/onboarding/session/{token}/upload-excel
-  Future<Map<String, dynamic>> uploadExcelBytes(String token, Uint8List fileBytes, String filename) async {
+  Future<Map<String, dynamic>> uploadExcelBytes(
+    String token,
+    Uint8List fileBytes,
+    String filename, {
+    String? scopedOfficer,
+  }) async {
     final formData = FormData.fromMap({
       'file': MultipartFile.fromBytes(
         fileBytes,
@@ -40,6 +56,9 @@ class OnboardingApiService {
     final response = await _client.post(
       '/api/v1/onboarding/session/$token/upload-excel',
       data: formData,
+      queryParameters: scopedOfficer != null && scopedOfficer.trim().isNotEmpty
+          ? {'scoped_officer': scopedOfficer.trim()}
+          : null,
       options: Options(
         contentType: 'multipart/form-data',
       ),

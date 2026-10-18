@@ -597,6 +597,10 @@ class MonthlyParitySummaryCards {
   final double savingsWithdrawals;
   final double closingSavings;
   final double bankDeposits;
+  final double transportExpenses;
+  final double stationeryExpenses;
+  final double entertainmentExpenses;
+  final double utilitiesExpenses;
   final double officeExpenses;
   final int activeLoans;
   final int activeSavers;
@@ -617,6 +621,10 @@ class MonthlyParitySummaryCards {
     required this.savingsWithdrawals,
     required this.closingSavings,
     required this.bankDeposits,
+    this.transportExpenses = 0.0,
+    this.stationeryExpenses = 0.0,
+    this.entertainmentExpenses = 0.0,
+    this.utilitiesExpenses = 0.0,
     required this.officeExpenses,
     required this.activeLoans,
     required this.activeSavers,
@@ -639,6 +647,10 @@ class MonthlyParitySummaryCards {
       savingsWithdrawals: (json['savings_withdrawals'] as num? ?? 0.0).toDouble(),
       closingSavings: (json['closing_savings'] as num? ?? 0.0).toDouble(),
       bankDeposits: (json['bank_deposits'] as num? ?? 0.0).toDouble(),
+      transportExpenses: (json['transport_expenses'] as num? ?? 0.0).toDouble(),
+      stationeryExpenses: (json['stationery_expenses'] as num? ?? 0.0).toDouble(),
+      entertainmentExpenses: (json['entertainment_expenses'] as num? ?? 0.0).toDouble(),
+      utilitiesExpenses: (json['utilities_expenses'] as num? ?? 0.0).toDouble(),
       officeExpenses: (json['office_expenses'] as num? ?? 0.0).toDouble(),
       activeLoans: json['active_loans'] as int? ?? 0,
       activeSavers: json['active_savers'] as int? ?? 0,
@@ -1360,4 +1372,91 @@ class MonthlyReconciliationData {
     };
   }
 }
+
+// --- ANNEX-1 SUNDRY ACCOUNTS MODELS ---
+
+class Annex1LineItem {
+  final String code;
+  final String name;
+  final double amount;
+
+  const Annex1LineItem({
+    required this.code,
+    required this.name,
+    required this.amount,
+  });
+
+  factory Annex1LineItem.fromJson(Map<String, dynamic> json) {
+    return Annex1LineItem(
+      code: (json['code'] ?? '') as String,
+      name: (json['name'] ?? '') as String,
+      amount: (json['amount'] as num? ?? 0.0).toDouble(),
+    );
+  }
+}
+
+class Annex1CategoryGroup {
+  final String categoryCode;
+  final String categoryName;
+  final double subtotal;
+  final List<Annex1LineItem> items;
+
+  const Annex1CategoryGroup({
+    required this.categoryCode,
+    required this.categoryName,
+    required this.subtotal,
+    required this.items,
+  });
+
+  factory Annex1CategoryGroup.fromJson(Map<String, dynamic> json) {
+    return Annex1CategoryGroup(
+      categoryCode: (json['category_code'] ?? '') as String,
+      categoryName: (json['category_name'] ?? '') as String,
+      subtotal: (json['subtotal'] as num? ?? 0.0).toDouble(),
+      items: (json['items'] as List<dynamic>? ?? [])
+          .map((e) => Annex1LineItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+class Annex1ReportData {
+  final String branchName;
+  final int year;
+  final int month;
+  final String monthLabel;
+  final List<Annex1LineItem> sundryReceipts;
+  final double totalSundryReceipts;
+  final List<Annex1CategoryGroup> sundryPaymentsGroups;
+  final double totalSundryPayments;
+
+  const Annex1ReportData({
+    required this.branchName,
+    required this.year,
+    required this.month,
+    required this.monthLabel,
+    required this.sundryReceipts,
+    required this.totalSundryReceipts,
+    required this.sundryPaymentsGroups,
+    required this.totalSundryPayments,
+  });
+
+  factory Annex1ReportData.fromJson(Map<String, dynamic> json) {
+    return Annex1ReportData(
+      branchName: (json['branch_name'] ?? '') as String,
+      year: json['year'] as int? ?? 2026,
+      month: json['month'] as int? ?? 9,
+      monthLabel: (json['month_label'] ?? '') as String,
+      sundryReceipts: (json['sundry_receipts'] as List<dynamic>? ?? [])
+          .map((e) => Annex1LineItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      totalSundryReceipts: (json['total_sundry_receipts'] as num? ?? 0.0).toDouble(),
+      sundryPaymentsGroups: (json['sundry_payments_groups'] as List<dynamic>? ?? [])
+          .map((e) => Annex1CategoryGroup.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      totalSundryPayments: (json['total_sundry_payments'] as num? ?? 0.0).toDouble(),
+    );
+  }
+}
+
 

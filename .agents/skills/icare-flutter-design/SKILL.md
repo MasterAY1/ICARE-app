@@ -178,6 +178,18 @@ Emojis are **strictly prohibited** across all UI elements:
 
 ---
 
+## 7.1 Strict Zero Internal Code/Identity Leaks in Frontend UI (Rule 12)
+
+Technical rule codes, database identities, and chart-of-accounts internal numbers belong exclusively to backend engines, database migrations, and architectural documentation:
+* **Prohibited in UI**: Never show raw rule codes (e.g. `BR-SAV-002`, `BR-SAV-006`, `BR-DASH-005`, `FP-001`), database table/column names (`internal_savings`, `co_cashbooks`), or Chart of Accounts account numbers (`Account 1000`) in user-facing labels, badges, headers, dialogs, helper texts, pill tags, or alert banners.
+* **Required in UI**: Use clean, human-friendly corporate banking terminology:
+  * Instead of `"Designated Misc Manager (BR-SAV-006)"` $\longrightarrow$ `"Designated Misc Manager"`
+  * Instead of `"BR-SAV-002 • BR-SAV-006"` $\longrightarrow$ `"Branch Reserve"` or `"Internal Fund"`
+  * Instead of `"Inflows must flow via Account 1000"` $\longrightarrow$ `"All inflows are secured in primary vault cash."`
+  * Instead of `"Account 1000 Vault"` $\longrightarrow$ `"Vault Cash (Primary Ledger)"` or `"Branch Vault Cash"`
+
+---
+
 ## 8. Interactive Prototyping Workflow (`generative_ui`)
 
 When proposing significant layout overhauls or exploring UX simplifications with the user:
