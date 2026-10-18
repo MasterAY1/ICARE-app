@@ -148,7 +148,24 @@ class CollectionPerformanceService:
         part = sum(1 for r in records if r.get("status") == "Partial")
         not_paid = sum(1 for r in records if r.get("status") in ["Pending", "Overdue"])
         total_expected = sum(float(r.get("total_due", 0)) for r in records)
-        total_collected = sum(float(r.get("paid_amount", 0)) for r in records)
+
+        # Query actual repayments collected for the branch on meeting date
+        total_collected = 0.0
+        try:
+            s_d_str = f"{m_date_str}T00:00:00"
+            e_d_str = f"{m_date_str}T23:59:59"
+            rep_res = uow.client.table("repayments").select("amount_paid, transaction_type, note") \
+                .eq("branch_id", branch_id).gte("date", s_d_str).lte("date", e_d_str).execute()
+            raw_reps = rep_res.data or []
+            valid_reps = [
+                r for r in raw_reps
+                if str(r.get("transaction_type", "")).upper() != "ONBOARDING_LEGACY"
+                and str(r.get("note", "")).strip() != "Legacy Repayments Onboarded"
+            ]
+            total_collected = sum(float(r.get("amount_paid") or 0.0) for r in valid_reps)
+        except Exception:
+            total_collected = sum(float(r.get("paid_amount", 0)) for r in records)
+
         compliance_pct = (total_collected / total_expected * 100) if total_expected > 0 else 100.0
 
         return {
@@ -158,7 +175,7 @@ class CollectionPerformanceService:
             "paid": paid,
             "part_payment": part,
             "not_paid": not_paid,
-            "total_expected": total_expected,
-            "total_collected": total_collected,
+            "total_expected": round(total_expected, 2),
+            "total_collected": round(total_collected, 2),
             "compliance_pct": round(compliance_pct, 2)
         }

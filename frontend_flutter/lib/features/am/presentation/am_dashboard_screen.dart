@@ -88,7 +88,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               controller: notesController,
               decoration: const InputDecoration(
                 labelText: 'Supervisory Notes (Optional)',
-                hintText: 'e.g. Account 1000 vault reconciled with zero variance.',
+                hintText: 'e.g. Vault cash reconciled with zero variance.',
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
@@ -140,7 +140,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B)),
-            child: const Text('Lock & Seal Area 1', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: Text('Lock & Seal $areaName', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -481,7 +481,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                           children: [
                             _buildInspectionMiniCard('Active Borrowers', '${summary['active_clients'] ?? 0}'),
                             const SizedBox(height: 8),
-                            _buildInspectionMiniCard('Vault Cash (Acct 1000)', CurrencyFormatter.format((cashPos['closing_balance'] as num?)?.toDouble() ?? 0.0)),
+                            _buildInspectionMiniCard('Branch Vault Cash', CurrencyFormatter.format((cashPos['closing_balance'] as num?)?.toDouble() ?? 0.0)),
                             const SizedBox(height: 8),
                             _buildInspectionMiniCard('Cashbook Status', cashPos['status'] ?? 'Balanced', isStatus: true),
                           ],
@@ -491,7 +491,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                         children: [
                           Expanded(child: _buildInspectionMiniCard('Active Borrowers', '${summary['active_clients'] ?? 0}')),
                           const SizedBox(width: 10),
-                          Expanded(child: _buildInspectionMiniCard('Vault Cash (Acct 1000)', CurrencyFormatter.format((cashPos['closing_balance'] as num?)?.toDouble() ?? 0.0))),
+                          Expanded(child: _buildInspectionMiniCard('Branch Vault Cash', CurrencyFormatter.format((cashPos['closing_balance'] as num?)?.toDouble() ?? 0.0))),
                           const SizedBox(width: 10),
                           Expanded(child: _buildInspectionMiniCard('Cashbook Status', cashPos['status'] ?? 'Balanced', isStatus: true)),
                         ],
@@ -544,6 +544,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             style: TextStyle(
               fontSize: 13.5,
               fontWeight: FontWeight.bold,
+              fontFeatures: const [FontFeature.tabularFigures()],
               color: isStatus ? (value == 'Balanced' ? const Color(0xFF15803D) : const Color(0xFFDC2626)) : const Color(0xFF0F172A),
             ),
           ),
@@ -643,7 +644,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               ],
 
               if (!isMobile || _mobileSectionTab == 'Approvals') ...[
-                _buildAreaApprovalsHub(data.approvalsHub, isMobile),
+                _buildAreaApprovalsHub(data.approvalsHub, isMobile, areaName: data.regionalSummary.areaName),
                 const SizedBox(height: 24),
               ],
 
@@ -686,7 +687,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                         color: const Color(0xFF0F766E),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text('AREA 1', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.5)),
+                      child: Text(reg.areaName.toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.5)),
                     ),
                     const SizedBox(width: 8),
                     const Text(
@@ -785,7 +786,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(color: const Color(0xFF0F766E), borderRadius: BorderRadius.circular(6)),
-                      child: const Text('Area 1 Supervision', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
+                      child: Text('${reg.areaName} Supervision', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
                     ),
                     const SizedBox(width: 8),
                     const Flexible(
@@ -943,7 +944,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: _buildModernMetricCard(
-                      title: 'Vault Cash (1000)',
+                      title: 'Vault Cash Reserve',
                       value: CurrencyFormatter.format(reg.vaultCashAcct1000),
                       subtitle: 'Ledger Cash Position',
                       icon: Icons.account_balance_wallet_outlined,
@@ -1018,15 +1019,15 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           iconBg: const Color(0xFFECFDF5),
         );
         final c5 = _buildModernMetricCard(
-          title: 'Vault Cash (Acct 1000)',
+          title: 'Vault Cash Reserve',
           value: CurrencyFormatter.format(reg.vaultCashAcct1000),
-          subtitle: 'Area 1 Cash Position',
+          subtitle: '${reg.areaName} Cash Position',
           icon: Icons.account_balance_wallet_outlined,
           iconColor: const Color(0xFFD97706),
           iconBg: const Color(0xFFFFFBEB),
         );
         final c6 = _buildModernMetricCard(
-          title: 'Regional PAR 30%',
+          title: 'Regional PAR > 30d',
           value: reg.par,
           subtitle: '${reg.defaultersCount} Defaulters',
           icon: Icons.warning_amber_rounded,
@@ -1035,7 +1036,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           isAlert: reg.defaultersCount > 0,
         );
 
-        if (w < 1100) {
+        if (w < 1500) {
           return Column(
             children: [
               Row(children: [Expanded(child: c1), const SizedBox(width: 10), Expanded(child: c2), const SizedBox(width: 10), Expanded(child: c3)]),
@@ -1163,7 +1164,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       ),
                       SizedBox(height: 3),
                       Text(
-                        'Issue cryptographically secure 14-day links to incoming branch teams, inspect staged member & loan rosters, and sign off on core banking activation.',
+                        'Issue 14-day links, inspect rosters, and sign off on branch activation.',
                         style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
                       ),
                     ],
@@ -1373,7 +1374,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   // =========================================================================
   // SECTION 2: AREA APPROVALS HUB
   // =========================================================================
-  Widget _buildAreaApprovalsHub(AreaApprovalsHubModel approvals, bool isMobile) {
+  Widget _buildAreaApprovalsHub(AreaApprovalsHubModel approvals, bool isMobile, {String areaName = 'Area 1'}) {
     final eodCount = approvals.pendingBranchEods.length;
     final loanCount = approvals.pendingHighValueLoans.length;
     final transferCount = approvals.pendingBranchTransfers.length;
@@ -1402,15 +1403,15 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               children: [
                 const Text('Area Governance & Approvals Hub', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
                 const SizedBox(height: 3),
-                const Text('Two-tier EOD reconciliation sign-off, high-value loan escalation, and inter-branch transfers.', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                const Text('Operational sign-off, loan escalations, and branch transfers.', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
                 if (approvals.canLockArea) ...[
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: _isProcessing ? null : () => _handleConfirmAreaClosure('Area 1', DateFormat('yyyy-MM-dd').format(ref.read(amSelectedDateProvider))),
+                      onPressed: _isProcessing ? null : () => _handleConfirmAreaClosure(areaName, DateFormat('yyyy-MM-dd').format(ref.read(amSelectedDateProvider))),
                       icon: const Icon(Icons.lock, size: 15, color: Colors.white),
-                      label: const Text('Lock & Seal Area 1 EOD', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                      label: Text('Lock & Seal $areaName EOD', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF064E3B),
                         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1430,14 +1431,14 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   children: [
                     Text('Area Governance & Approvals Hub', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
                     SizedBox(height: 3),
-                    Text('Two-tier EOD reconciliation sign-off, high-value loan escalation, and inter-branch transfers.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                    Text('Operational sign-off, loan escalations, and branch transfers.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
                   ],
                 ),
                 if (approvals.canLockArea)
                   ElevatedButton.icon(
-                    onPressed: _isProcessing ? null : () => _handleConfirmAreaClosure('Area 1', DateFormat('yyyy-MM-dd').format(ref.read(amSelectedDateProvider))),
+                    onPressed: _isProcessing ? null : () => _handleConfirmAreaClosure(areaName, DateFormat('yyyy-MM-dd').format(ref.read(amSelectedDateProvider))),
                     icon: const Icon(Icons.lock, size: 15, color: Colors.white),
-                    label: const Text('Lock & Seal Area 1 EOD', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                    label: Text('Lock & Seal $areaName EOD', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B)),
                   ),
               ],
@@ -1569,11 +1570,17 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Account 1000 Vault', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
+                          const Text('Primary Vault Cash', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
                           const SizedBox(height: 2),
                           Text(
                             CurrencyFormatter.format(e.vaultCash),
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A), fontFamily: 'monospace'),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF0F172A),
+                              fontFamily: 'monospace',
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
                           ),
                         ],
                       ),
@@ -1589,6 +1596,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                               fontWeight: FontWeight.bold,
                               color: e.cashVariance == 0 ? const Color(0xFF15803D) : const Color(0xFFDC2626),
                               fontFamily: 'monospace',
+                              fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
                         ],
@@ -1674,7 +1682,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Account 1000 Vault: ${CurrencyFormatter.format(e.vaultCash)} | Variance: ${CurrencyFormatter.format(e.cashVariance)}',
+                      'Vault Cash: ${CurrencyFormatter.format(e.vaultCash)} | Variance: ${CurrencyFormatter.format(e.cashVariance)}',
                       style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                     ),
                   ],
@@ -2003,7 +2011,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     DataColumn(label: Text('Expected (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
                     DataColumn(label: Text('Collected (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
                     DataColumn(label: Text('Compliance %', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('Vault Cash Acct 1000 (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                    DataColumn(label: Text('Vault Cash (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
                     DataColumn(label: Text('PAR %', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
                     DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
                     DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
@@ -2014,8 +2022,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       cells: [
                         DataCell(Text(b.branchName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
                         DataCell(Text(b.bmName, style: const TextStyle(fontSize: 12))),
-                        DataCell(Text(CurrencyFormatter.format(b.expectedCollection), style: const TextStyle(fontSize: 12))),
-                        DataCell(Text(CurrencyFormatter.format(b.collected), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF15803D)))),
+                        DataCell(Text(CurrencyFormatter.format(b.expectedCollection), style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
+                        DataCell(Text(CurrencyFormatter.format(b.collected), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF15803D), fontFeatures: [FontFeature.tabularFigures()]))),
                         DataCell(
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -2023,10 +2031,10 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                               color: isHealthy ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            child: Text('${b.compliancePct}%', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isHealthy ? const Color(0xFF15803D) : const Color(0xFFDC2626))),
+                            child: Text('${b.compliancePct}%', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isHealthy ? const Color(0xFF15803D) : const Color(0xFFDC2626), fontFeatures: const [FontFeature.tabularFigures()])),
                           ),
                         ),
-                        DataCell(Text(CurrencyFormatter.format(b.vaultCashAcct1000), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)))),
+                        DataCell(Text(CurrencyFormatter.format(b.vaultCashAcct1000), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF2563EB), fontFeatures: [FontFeature.tabularFigures()]))),
                         DataCell(Text(b.par, style: const TextStyle(fontSize: 12))),
                         DataCell(Text(b.operationalStatus, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: isHealthy ? const Color(0xFF15803D) : const Color(0xFFDC2626)))),
                         DataCell(
@@ -2152,7 +2160,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           ),
           const SizedBox(height: 10),
 
-          // 2 mini tiles: Vault Cash (Acct 1000) & PAR
+          // 2 mini tiles: Vault Cash & PAR
           Row(
             children: [
               Expanded(
@@ -2166,14 +2174,20 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Vault Cash (Acct 1000)', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                      const Text('Vault Cash', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
                       const SizedBox(height: 2),
                       FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
                         child: Text(
                           CurrencyFormatter.format(b.vaultCashAcct1000),
-                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB), fontFamily: 'monospace'),
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF2563EB),
+                            fontFamily: 'monospace',
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
                         ),
                       ),
                     ],

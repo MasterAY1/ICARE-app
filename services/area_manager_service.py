@@ -147,6 +147,7 @@ class AreaManagerService:
                     .select("amount, side") \
                     .eq("branch_id", bid) \
                     .eq("account_code", "1000") \
+                    .lte("created_at", f"{date_str}T23:59:59") \
                     .execute()
                 leg_rows = res_leg.data or []
                 debits = sum(float(r["amount"]) for r in leg_rows if r.get("side") == "Debit")
@@ -252,6 +253,7 @@ class AreaManagerService:
                     .select("amount, side") \
                     .eq("branch_id", bid) \
                     .eq("account_code", "1000") \
+                    .lte("created_at", f"{date_str}T23:59:59") \
                     .execute()
                 leg_rows = res_leg.data or []
                 deb = sum(float(r["amount"]) for r in leg_rows if r.get("side") == "Debit")
