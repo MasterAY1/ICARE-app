@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -248,12 +249,17 @@ class _BranchOnboardingPortalScreenState
   }
 
   Future<void> _submitPackage() async {
+    final unsubmitted = _officers.where((o) => (o['status'] ?? 'draft') != 'submitted').length;
+    final warningNotice = unsubmitted > 0
+        ? '\n\nNote: $unsubmitted credit officer(s) have not yet marked their rosters as submitted to BM.'
+        : '';
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Onboarding Submission'),
+        title: const Text('Confirm Submission to Area Manager'),
         content: Text(
-          'You are about to submit ${_groups.length} groups, ${_members.length} members, and ${_officers.length} credit officers for administrative approval. Once submitted, changes cannot be made until reviewed.',
+          'You are about to submit ${_groups.length} groups, ${_members.length} members, and ${_officers.length} credit officers to the Area Manager for final sign-off and database posting.$warningNotice',
           style: const TextStyle(fontSize: 13),
         ),
         actions: [
@@ -264,7 +270,7 @@ class _BranchOnboardingPortalScreenState
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Submit for Sign-Off', style: TextStyle(color: Colors.white)),
+            child: const Text('Submit to Area Manager', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -285,16 +291,76 @@ class _BranchOnboardingPortalScreenState
       };
       await api.saveDraft(_currentToken, payload);
 
-      // 2. Submit
-      final res = await api.submitSession(_currentToken);
+      // 2. Submit to AM
+      final res = await api.bmSubmitPackage(_currentToken);
       setState(() {
         _isSaving = false;
         _sessionData?['status'] = 'submitted';
       });
-      _showBanner(res['message']?.toString() ?? 'Submitted successfully!', isSuccess: true);
+      _showBanner(res['message']?.toString() ?? 'Branch package successfully submitted to Area Manager!', isSuccess: true);
     } catch (e) {
       setState(() => _isSaving = false);
       _showBanner('Submission error: $e', isSuccess: false);
+    }
+  }
+
+  Future<void> _amApprovePackage() async {
+    final notesCtrl = TextEditingController();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm Area Manager Sign-Off'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'You are about to commit ${_groups.length} groups, ${_members.length} members, and ${_officers.length} officers directly into the live core banking database. This operation is permanent.',
+              style: const TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: notesCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Approval Notes (Optional)',
+                hintText: 'e.g. Verified and approved by Area Manager',
+                border: OutlineInputBorder(),
+              ),
+              style: const TextStyle(fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669)),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Approve & Commit', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isSaving = true);
+    try {
+      final api = ref.read(onboardingApiServiceProvider);
+      final res = await api.amApprovePackage(
+        _currentToken,
+        notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
+      );
+      setState(() {
+        _isSaving = false;
+        _sessionData?['status'] = 'approved';
+      });
+      _showBanner(res['message']?.toString() ?? 'Branch onboarding successfully committed to live core database!', isSuccess: true);
+    } catch (e) {
+      setState(() => _isSaving = false);
+      _showBanner('Approval error: $e', isSuccess: false);
     }
   }
 
@@ -2253,23 +2319,54 @@ class _BranchOnboardingPortalScreenState
                     ),
                     onPressed: _isSaving ? null : _submitPackage,
                     icon: const Icon(Icons.send_outlined, size: 14),
-                    label: const Text('Submit', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    label: const Text('Submit to AM', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ] else if (status.toLowerCase() == 'submitted') ...[
+                if (_scopedOfficer == null) ...[
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF059669),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: _isSaving ? null : _amApprovePackage,
+                    icon: const Icon(Icons.check_circle_outline, size: 14),
+                    label: const Text('Approve & Commit', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.check_circle, size: 13, color: Color(0xFF059669)),
+                        SizedBox(width: 4),
+                        Text('Submitted to AM', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                      ],
+                    ),
                   ),
                 ],
               ] else ...[
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
+                    color: const Color(0xFFECFDF5),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                    border: Border.all(color: const Color(0xFFA7F3D0)),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.check_circle, size: 13, color: Color(0xFF059669)),
+                      Icon(Icons.verified, size: 13, color: Color(0xFF059669)),
                       SizedBox(width: 4),
-                      Text('Submitted for Review', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                      Text('Committed to Core Banking', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF065F46))),
                     ],
                   ),
                 ),
@@ -3361,11 +3458,6 @@ class _BranchOnboardingPortalScreenState
                           'Branch Pooled Reserves & Accounting Buffers',
                           style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
                         ),
-                        SizedBox(height: 2),
-                        Text(
-                          'Centralized branch operational funds. All inflows are secured in primary vault cash.',
-                          style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                        ),
                       ],
                     ),
                   ),
@@ -3388,7 +3480,7 @@ class _BranchOnboardingPortalScreenState
                     subtitle: isOfficerScoped
                         ? 'Managed by Area Manager & Designated Officer'
                         : 'Exclusive managing officer: $designatedMgrName',
-                    description: 'Special pooled branch fund for internal operations and contingencies. Managed by exactly one designated Credit Officer.',
+                    description: '',
                     icon: Icons.savings_outlined,
                     iconColor: const Color(0xFF059669),
                     iconBg: const Color(0xFFECFDF5),
@@ -3408,7 +3500,7 @@ class _BranchOnboardingPortalScreenState
                     badgeBg: const Color(0xFFEFF6FF),
                     amount: _lapsSavings,
                     subtitle: 'Official Risk Protection Reserve',
-                    description: 'Loan Additional Protection Scheme risk reserve protecting against defaults and contingencies.',
+                    description: '',
                     icon: Icons.shield_outlined,
                     iconColor: const Color(0xFF2563EB),
                     iconBg: const Color(0xFFEFF6FF),
@@ -3466,13 +3558,9 @@ class _BranchOnboardingPortalScreenState
                             'Credit Officers Roster (${_officers.length})',
                             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
                           ),
-                          const SizedBox(height: 2),
-                          const Text(
-                            'Field officers handling solidarity groups, client loans, and daily collections',
-                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                          ),
                         ],
                       ),
+
                     ],
                   ),
                   if (!isSubmitted)
@@ -3573,6 +3661,22 @@ class _BranchOnboardingPortalScreenState
                                 style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8)),
                               ),
                             ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: (off['status'] == 'submitted') ? const Color(0xFFEFF6FF) : const Color(0xFFFFFBEB),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: (off['status'] == 'submitted') ? const Color(0xFFBFDBFE) : const Color(0xFFFDE68A)),
+                              ),
+                              child: Text(
+                                (off['status'] == 'submitted') ? 'SUBMITTED TO BM' : 'DRAFTING',
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: (off['status'] == 'submitted') ? const Color(0xFF1D4ED8) : const Color(0xFFB45309),
+                                ),
+                              ),
+                            ),
                             if (isMiscMgr)
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -3647,14 +3751,47 @@ class _BranchOnboardingPortalScreenState
                                 visualDensity: VisualDensity.compact,
                               ),
                               onPressed: () {
-                                final origin = Uri.base.origin;
-                                final coUrl = '$origin/#/onboarding?token=$_currentToken&officer=${Uri.encodeComponent(name.trim())}';
+                                final origin = (kIsWeb && Uri.base.origin.isNotEmpty && !Uri.base.origin.startsWith('file://'))
+                                    ? Uri.base.origin
+                                    : 'http://localhost:8000';
+                                final coToken = off['token'] ?? off['co_token'];
+                                final coUrl = (coToken != null && coToken.toString().startsWith('onb_co_'))
+                                    ? '$origin/#/onboarding/officer?token=$coToken'
+                                    : '$origin/#/onboarding?token=$_currentToken&officer=${Uri.encodeComponent(name.trim())}';
                                 Clipboard.setData(ClipboardData(text: coUrl));
-                                _showBanner('Onboarding link for $name copied to clipboard!', isSuccess: true);
+                                _showBanner('Dedicated officer link for $name copied to clipboard!', isSuccess: true);
                               },
                               icon: const Icon(Icons.link, size: 13),
                               label: const Text('Copy Officer Link', style: TextStyle(fontSize: 11)),
                             ),
+                            if (off['status'] == 'submitted' && !isSubmitted) ...[
+                              const SizedBox(width: 8),
+                              OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFFD97706),
+                                  side: const BorderSide(color: Color(0xFFFCD34D)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: () async {
+                                  final offId = off['id'] ?? off['officer_id'];
+                                  if (offId != null) {
+                                    try {
+                                      final api = ref.read(onboardingApiServiceProvider);
+                                      await api.unlockOfficer(_currentToken, offId.toString());
+                                      setState(() {
+                                        off['status'] = 'drafting';
+                                      });
+                                      _showBanner('Unlocked $name for roster edits.', isSuccess: true);
+                                    } catch (e) {
+                                      _showBanner('Failed to unlock officer: $e', isSuccess: false);
+                                    }
+                                  }
+                                },
+                                icon: const Icon(Icons.lock_open_outlined, size: 13),
+                                label: const Text('Unlock Roster', style: TextStyle(fontSize: 11)),
+                              ),
+                            ],
                             const Spacer(),
                             if (!isSubmitted && !isMiscMgr && _scopedOfficer == null)
                               TextButton.icon(
@@ -3677,6 +3814,7 @@ class _BranchOnboardingPortalScreenState
                               ),
                           ],
                         );
+
 
                         if (isMobileCard) {
                           return Container(
@@ -3853,11 +3991,14 @@ class _BranchOnboardingPortalScreenState
             subtitle,
             style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
           ),
-          const SizedBox(height: 8),
-          Text(
-            description,
-            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), height: 1.3),
-          ),
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              description,
+              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), height: 1.3),
+            ),
+          ],
+
           if (!isSubmitted) ...[
             const SizedBox(height: 12),
             OutlinedButton.icon(
@@ -4188,6 +4329,7 @@ class _BranchOnboardingPortalScreenState
   // =========================================================================
 
   Widget _buildReviewSignOffTab(bool isSubmitted) {
+    final status = (_sessionData?['status'] as String? ?? 'draft').toLowerCase();
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Center(
@@ -4311,10 +4453,99 @@ class _BranchOnboardingPortalScreenState
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
                       onPressed: _isSaving ? null : _submitPackage,
-                      icon: const Icon(Icons.verified, size: 18),
-                      label: const Text('Submit Package for Administrative Sign-Off', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      icon: const Icon(Icons.send_outlined, size: 18),
+                      label: const Text('Confirm Totals & Submit to Area Manager', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                     ),
                   ),
+              ] else if (status == 'submitted') ...[
+                if (_scopedOfficer == null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFBBF7D0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.verified_user_outlined, size: 20, color: Color(0xFF16A34A)),
+                            SizedBox(width: 8),
+                            Text(
+                              'Area Manager Review & Commitment',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF166534)),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Branch Manager has verified officer rosters and combined balances. As Area Manager, you can complete the final review and commit all groups, members, savings, and loan portfolios into the live core database.',
+                          style: TextStyle(fontSize: 12, color: Color(0xFF15803D)),
+                        ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 44,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669), foregroundColor: Colors.white),
+                            onPressed: _isSaving ? null : _amApprovePackage,
+                            icon: const Icon(Icons.check_circle_outline, size: 18),
+                            label: const Text('Approve & Commit to Live Core Database', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: const Text(
+                      'Branch package has been submitted to the Area Manager for live database activation.',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                    ),
+                  ),
+                ],
+              ] else if (status == 'approved') ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFECFDF5),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFA7F3D0)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.verified, size: 24, color: Color(0xFF059669)),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Branch Onboarding Completed',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF065F46)),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'All solidarity groups, member accounts, savings reserves, and active loan balances have been committed to the live database.',
+                              style: TextStyle(fontSize: 12, color: Color(0xFF047857)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
               const SizedBox(height: 16),
               Center(

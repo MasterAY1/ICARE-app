@@ -848,6 +848,21 @@ class ReportService:
         table_data = {m: {} for m in metric_names}
         total_col_name = f"{branch_name} Branch Total"
 
+        # Prior month parity matrix for recursive B/F cascade
+        prev_matrix_closing_credit = {}
+        if year > 2026 or (year == 2026 and month > 9):
+            prev_year = year if month > 1 else year - 1
+            prev_month = month - 1 if month > 1 else 12
+            try:
+                prev_m_data = ReportService.get_monthly_parity_matrix(uow, branch_id, prev_year, prev_month, product_name=product_name)
+                for r in prev_m_data.get("rows", []):
+                    if r.get("metric") == "Closing Credit Balance":
+                        prev_matrix_closing_credit = r.get("values", {})
+                        break
+            except Exception as e:
+                import traceback
+                print(f"DEBUG CASCADE EXCEPTION: {e}\n{traceback.format_exc()}")
+
         for off in officers:
             oid = off["officer_id"]
             oname = off["name"]
@@ -858,10 +873,13 @@ class ReportService:
             act = sum(float(l.get("active_credit") or 0) for l in off_l)
             upfront = disb - act
 
-            # Open Credit
-            off_ol = [l for l in open_loans if l.get("officer_id") == oid]
-            off_or = [r for r in open_reps if r.get("officer_id") == oid]
-            open_c = sum(float(l.get("active_credit") or 0) for l in off_ol) - sum(float(r.get("amount_paid") or 0) for r in off_or)
+            # Open Credit (dynamically cascading from prior month closing balance)
+            if prev_matrix_closing_credit and oname in prev_matrix_closing_credit:
+                open_c = float(prev_matrix_closing_credit[oname])
+            else:
+                off_ol = [l for l in open_loans if l.get("officer_id") == oid]
+                off_or = [r for r in open_reps if r.get("officer_id") == oid]
+                open_c = sum(float(l.get("active_credit") or 0) for l in off_ol) - sum(float(r.get("amount_paid") or 0) for r in off_or)
 
             # Repayments
             off_r = [r for r in month_reps if r.get("officer_id") == oid]
@@ -1241,11 +1259,16 @@ class ReportService:
         """
         from datetime import datetime, timezone
         try:
+            # Preserve existing keys (e.g. deposit_statement, credit_statement) if not in new data
+            res_cur = uow.client.table("monthly_statement_reconciliations").select("data").eq("branch_id", branch_id).eq("year", year).eq("month", month).execute()
+            merged_data = dict(res_cur.data[0]["data"]) if res_cur.data and isinstance(res_cur.data[0].get("data"), dict) else {}
+            merged_data.update(data)
+
             uow.client.table("monthly_statement_reconciliations").upsert({
                 "branch_id": branch_id,
                 "year": year,
                 "month": month,
-                "data": data,
+                "data": merged_data,
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }, on_conflict="branch_id,year,month").execute()
             return True
@@ -1342,7 +1365,7 @@ class ReportService:
                     elif item == "Branch Office": prev_data["tb_fund_branch"] = val
                     elif item == "Other Area": prev_data["tb_fund_other_area"] = val
                     elif item == "Internal": prev_data["tb_fund_internal"] = val
-                    elif item == "Lapse Deposit": prev_data["lapse_deposit_reserve"] = val
+                    elif item in ("Lapse Deposit", "Contingency") and val > 0: prev_data["lapse_deposit_reserve"] = val
 
                 prev_payments = prev_official.get("receipts_and_payments", {}).get("payments", [])
                 prev_closing_liquid = prev_payments[-1]["amount"] if prev_payments else 0.0
@@ -1546,8 +1569,8 @@ class ReportService:
 
             # C: LIABILITY RESERVED (Normal Balance: Credit)
             {"section": "C. LIABILITY RESERVED", "item": "Deposit Balance", "debit": 0.0, "credit": closing_savings},
-            {"section": "C. LIABILITY RESERVED", "item": "Lapse Deposit", "debit": 0.0, "credit": lapse_deposit_res},
-            {"section": "C. LIABILITY RESERVED", "item": "Contingency", "debit": 0.0, "credit": float(recon_data.get("tb_contingency") or 0.0)},
+            {"section": "C. LIABILITY RESERVED", "item": "Lapse Deposit", "debit": 0.0, "credit": 0.0},
+            {"section": "C. LIABILITY RESERVED", "item": "Contingency", "debit": 0.0, "credit": (tb_contingency_val if tb_contingency_val > 0.0 else lapse_deposit_res)},
 
             # D: FUND (CASH)
             {"section": "D. FUND (CASH)", "item": "Head Office (Asset Allocation)", "debit": 0.0, "credit": ho_asset_alloc},

@@ -589,10 +589,10 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Column(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 650;
+          const titleBlock = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
@@ -601,12 +601,13 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
               ),
               SizedBox(height: 4),
               Text(
-                'Issue secure 14-day links to branch teams, monitor progress, and approve live core banking activation.',
+                'Active branch digital onboarding and core banking activations.',
                 style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
               ),
             ],
-          ),
-          ElevatedButton.icon(
+          );
+
+          final generateBtn = ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: IcareColors.primary,
               foregroundColor: Colors.white,
@@ -625,11 +626,32 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
               'Generate Branch Link',
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
             ),
-          ),
-        ],
+          );
+
+          if (isNarrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                titleBlock,
+                const SizedBox(height: 12),
+                generateBtn,
+              ],
+            );
+          }
+
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Expanded(child: titleBlock),
+              const SizedBox(width: 12),
+              generateBtn,
+            ],
+          );
+        },
       ),
     );
   }
+
 
   Widget _buildMetricCards(int total, int drafts, int submitted, int approved) {
     return LayoutBuilder(
@@ -832,116 +854,174 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
           const SizedBox(height: 14),
 
           // Aggregates Grid
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Row(
-              children: [
-                _buildCardMetric('Groups', '$groupsCount'),
-                _buildCardMetric('Members', '$membersCount'),
-                _buildCardMetric('Savings', CurrencyFormatter.formatNaira(savings)),
-                _buildCardMetric('Active Credit', CurrencyFormatter.formatNaira(activeCredit)),
-                _buildCardMetric('Outstanding', CurrencyFormatter.formatNaira(balance)),
-              ],
-            ),
+          LayoutBuilder(
+            builder: (context, cardConstraints) {
+              final isNarrow = cardConstraints.maxWidth < 620;
+              final metricItems = [
+                _buildCardMetricItem('Groups', '$groupsCount'),
+                _buildCardMetricItem('Members', '$membersCount'),
+                _buildCardMetricItem('Savings', CurrencyFormatter.formatNaira(savings)),
+                _buildCardMetricItem('Active Credit', CurrencyFormatter.formatNaira(activeCredit)),
+                _buildCardMetricItem('Outstanding', CurrencyFormatter.formatNaira(balance)),
+              ];
+
+              if (isNarrow) {
+                return Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Wrap(
+                    spacing: 16,
+                    runSpacing: 12,
+                    children: metricItems.map((item) {
+                      final itemWidth = (cardConstraints.maxWidth - 56) / 2 > 130
+                          ? (cardConstraints.maxWidth - 56) / 2
+                          : 130.0;
+                      return SizedBox(width: itemWidth, child: item);
+                    }).toList(),
+                  ),
+                );
+              }
+
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  children: metricItems.map((item) => Expanded(child: item)).toList(),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 14),
 
           // Footer Row with Actions
-          Row(
-            children: [
-              Icon(Icons.timer_outlined, size: 14, color: expiresAt != null && expiresAt.isBefore(DateTime.now()) ? Colors.red : const Color(0xFF64748B)),
-              const SizedBox(width: 4),
-              Text(
-                expiresAt != null
-                    ? (expiresAt.isBefore(DateTime.now())
-                        ? 'Expired on ${DateFormat('MMM dd, yyyy').format(expiresAt)}'
-                        : 'Expires ${DateFormat('MMM dd, yyyy').format(expiresAt)}')
-                    : 'Active',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: expiresAt != null && expiresAt.isBefore(DateTime.now()) ? Colors.red : const Color(0xFF64748B),
-                ),
-              ),
-              const Spacer(),
-
-              // Copy Link
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  minimumSize: const Size(0, 32),
-                ),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: fullUrl));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Onboarding link copied to clipboard!'), duration: Duration(seconds: 2)),
-                  );
-                },
-                icon: const Icon(Icons.copy, size: 13),
-                label: const Text('Copy Link', style: TextStyle(fontSize: 11)),
-              ),
-              const SizedBox(width: 8),
-
-              // Open Portal
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F2744),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  minimumSize: const Size(0, 32),
-                ),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => BranchOnboardingPortalScreen(token: token),
+          LayoutBuilder(
+            builder: (context, footerConstraints) {
+              final isNarrow = footerConstraints.maxWidth < 540;
+              final timerBadge = Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.timer_outlined, size: 14, color: expiresAt != null && expiresAt.isBefore(DateTime.now()) ? Colors.red : const Color(0xFF64748B)),
+                  const SizedBox(width: 4),
+                  Text(
+                    expiresAt != null
+                        ? (expiresAt.isBefore(DateTime.now())
+                            ? 'Expired on ${DateFormat('MMM dd, yyyy').format(expiresAt)}'
+                            : 'Expires ${DateFormat('MMM dd, yyyy').format(expiresAt)}')
+                        : 'Active',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: expiresAt != null && expiresAt.isBefore(DateTime.now()) ? Colors.red : const Color(0xFF64748B),
                     ),
-                  );
-                },
-                icon: const Icon(Icons.open_in_browser, size: 14),
-                label: const Text('Open Portal', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-              ),
-
-              // Approve & Activate (if submitted)
-              if (status == 'submitted') ...[
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF059669),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    minimumSize: const Size(0, 32),
                   ),
-                  onPressed: () => _handleApprove(s),
-                  icon: const Icon(Icons.verified, size: 14),
-                  label: const Text('Review & Activate', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                ),
-              ],
-            ],
+                ],
+              );
+
+              final actionButtons = Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      minimumSize: const Size(0, 32),
+                    ),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: fullUrl));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Onboarding link copied to clipboard!'), duration: Duration(seconds: 2)),
+                      );
+                    },
+                    icon: const Icon(Icons.copy, size: 13),
+                    label: const Text('Copy Link', style: TextStyle(fontSize: 11)),
+                  ),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0F2744),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      minimumSize: const Size(0, 32),
+                    ),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => BranchOnboardingPortalScreen(token: token),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.open_in_browser, size: 14),
+                    label: const Text('Open Portal', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                  ),
+                  if (status == 'submitted')
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF059669),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        minimumSize: const Size(0, 32),
+                      ),
+                      onPressed: () => _handleApprove(s),
+                      icon: const Icon(Icons.verified, size: 14),
+                      label: const Text('Review & Activate', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    ),
+                ],
+              );
+
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    timerBadge,
+                    const SizedBox(height: 10),
+                    actionButtons,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  timerBadge,
+                  const Spacer(),
+                  actionButtons,
+                ],
+              );
+            },
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCardMetric(String label, String value) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A), fontFeatures: [FontFeature.tabularFigures()]),
-            overflow: TextOverflow.ellipsis,
+  Widget _buildCardMetricItem(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          softWrap: true,
+          style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          softWrap: true,
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF0F172A),
+            fontFeatures: [FontFeature.tabularFigures()],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
+
 
   Widget _buildErrorNotice() {
     return Container(

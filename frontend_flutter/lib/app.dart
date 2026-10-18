@@ -6,6 +6,7 @@ import 'core/theme/icare_theme.dart';
 import 'features/auth/presentation/login_screen.dart';
 import 'features/auth/presentation/splash_screen.dart';
 import 'features/onboarding/presentation/branch_onboarding_portal_screen.dart';
+import 'features/onboarding/presentation/credit_officer_portal_screen.dart';
 import 'features/shared/presentation/co_app_scaffold.dart';
 
 class IcareApp extends ConsumerWidget {
@@ -24,6 +25,17 @@ class IcareApp extends ConsumerWidget {
                 uri.queryParameters.containsKey('token'))) {
           final token = uri.queryParameters['token'] ?? '';
           final officer = uri.queryParameters['officer'];
+
+          // Route dedicated Credit Officer links to CreditOfficerPortalScreen
+          if (token.startsWith('onb_co_') || uri.path.contains('officer')) {
+            return MaterialPageRoute(
+              builder: (_) => CreditOfficerPortalScreen(
+                coToken: token,
+              ),
+              settings: settings,
+            );
+          }
+
           return MaterialPageRoute(
             builder: (_) => BranchOnboardingPortalScreen(
               token: token,
@@ -34,6 +46,7 @@ class IcareApp extends ConsumerWidget {
         }
         return null;
       },
+
       home: const SplashScreen(),
     );
   }

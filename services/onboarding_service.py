@@ -143,18 +143,21 @@ class OnboardingService:
         members = payload.get("members", [])
         officers = payload.get("officers", [])
 
-        # Validate Groups
+        # Validate Groups (Scoped per Credit Officer)
         group_refs = set()
+        officer_group_refs = set()
         for idx, g in enumerate(groups, 1):
-            g_ref = str(g.get("group_reference") or "").strip()
+            g_ref = str(g.get("group_reference") or "").strip().upper()
             g_name = str(g.get("group_name") or "").strip()
             m_day = str(g.get("meeting_day") or "").strip()
+            off_name = str(g.get("officer_name") or "").strip().lower()
 
             if not g_ref:
                 errors.append(f"Group row #{idx}: Group Reference is required.")
-            elif g_ref in group_refs:
-                errors.append(f"Group row #{idx}: Duplicate Group Reference '{g_ref}'.")
+            elif (off_name, g_ref) in officer_group_refs:
+                errors.append(f"Group row #{idx}: Duplicate Group Reference '{g_ref}' for officer '{g.get('officer_name') or 'Default'}'.")
             else:
+                officer_group_refs.add((off_name, g_ref))
                 group_refs.add(g_ref)
 
             if not g_name:
@@ -170,7 +173,8 @@ class OnboardingService:
         names_by_group = {}
         for idx, m in enumerate(members, 1):
             m_name = str(m.get("full_name") or "").strip()
-            g_ref = str(m.get("group_reference") or "").strip()
+            g_ref = str(m.get("group_reference") or "").strip().upper()
+            m_off_name = str(m.get("officer_name") or "").strip().lower()
             phone = str(m.get("phone_number") or "").strip()
             s_bal = float(m.get("savings_balance") or 0.0)
             a_cred = float(m.get("active_credit") or 0.0)
@@ -181,11 +185,11 @@ class OnboardingService:
                 errors.append(f"Member row #{idx}: Full Name is required.")
             if not g_ref:
                 errors.append(f"Member row #{idx} ({m_name}): Group Reference is required.")
-            elif g_ref not in group_refs:
+            elif (m_off_name, g_ref) not in officer_group_refs and g_ref not in group_refs:
                 errors.append(f"Member row #{idx} ({m_name}): References non-existent group '{g_ref}'.")
 
-            # Check duplicate names within same group
-            group_key = (g_ref, m_name.lower())
+            # Check duplicate names within same officer's group
+            group_key = (m_off_name, g_ref, m_name.lower())
             if group_key in names_by_group:
                 warnings.append(f"Member '{m_name}' appears multiple times in group '{g_ref}'.")
             names_by_group[group_key] = True
@@ -348,6 +352,376 @@ class OnboardingService:
             "aggregates": aggregates,
             "validation_summary": validation_summary
         }
+
+    @staticmethod
+    def provision_officer(uow: SupabaseUnitOfWork, token: str, officer_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Branch Manager provisions a Credit Officer and generates a dedicated,
+        cryptographically isolated token (onb_co_...) for that officer.
+        """
+        s_res = uow.client.table("branch_onboarding_sessions").select("*").eq("token", token).execute()
+        if not s_res.data:
+            raise ValueError("Branch onboarding session not found.")
+
+        session = s_res.data[0]
+        if session["status"] == "approved":
+            raise ValueError("This onboarding session has already been approved.")
+
+        payload = session.get("payload") or {}
+        officers = payload.get("officers", [])
+
+        name = str(officer_data.get("name") or "").strip()
+        if not name:
+            raise ValueError("Credit Officer full name is required.")
+
+        phone = str(officer_data.get("phone") or officer_data.get("phone_number") or "").strip()
+        is_misc = bool(officer_data.get("is_misc_savings_manager", False))
+
+        # Check duplicate officer name
+        for off in officers:
+            existing_name = (off.get("name") or off.get("officer_name") or "").strip().lower()
+            if existing_name == name.lower():
+                raise ValueError(f"Credit Officer '{name}' already exists in this branch session.")
+
+        officer_id = str(uuid.uuid4())
+        co_token = f"onb_co_{secrets.token_hex(12)}"
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        new_off = {
+            "id": officer_id,
+            "officer_id": officer_id,
+            "name": name,
+            "officer_name": name,
+            "phone": phone,
+            "phone_number": phone,
+            "role": "Credit Officer",
+            "is_misc_savings_manager": is_misc,
+            "token": co_token,
+            "co_token": co_token,
+            "status": "drafting",
+            "created_at": now.isoformat()
+        }
+
+        officers.append(new_off)
+        payload["officers"] = officers
+
+        # Re-validate with new officer
+        p_res = uow.client.table("loan_products").select("name").execute()
+        products_map = {p["name"].strip().lower(): True for p in (p_res.data or [])}
+        validation_summary, aggregates = OnboardingService.validate_payload(payload, products_map)
+
+        uow.client.table("branch_onboarding_sessions").update({
+            "payload": payload,
+            "validation_summary": validation_summary,
+            "updated_at": now.isoformat()
+        }).eq("id", session["id"]).execute()
+
+        return new_off
+
+    @staticmethod
+    def find_session_by_co_token(uow: SupabaseUnitOfWork, co_token: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Locates the parent session and target officer by CO token."""
+        clean_token = str(co_token or "").strip()
+        if not clean_token:
+            raise ValueError("Credit Officer token is required.")
+
+        res = uow.client.table("branch_onboarding_sessions").select("*").neq("status", "deleted").execute()
+        for session in (res.data or []):
+            payload = session.get("payload") or {}
+            officers = payload.get("officers", [])
+            for off in officers:
+                if off.get("token") == clean_token or off.get("co_token") == clean_token:
+                    return session, off
+
+        raise ValueError("Invalid Credit Officer link or officer token not found.")
+
+    @staticmethod
+    def get_officer_workspace(uow: SupabaseUnitOfWork, co_token: str) -> Dict[str, Any]:
+        """
+        Retrieves the isolated workspace for a Credit Officer.
+        Guarantees 100% data isolation: zero visibility into other officers,
+        other officers' solidarity groups, member rosters, or branch-wide reserves.
+        """
+        session, target_officer = OnboardingService.find_session_by_co_token(uow, co_token)
+
+        # Check expiration
+        exp_str = session.get("expires_at")
+        if exp_str:
+            try:
+                exp_dt = datetime.datetime.fromisoformat(exp_str.replace("Z", "+00:00"))
+                now = datetime.datetime.now(datetime.timezone.utc)
+                if now > exp_dt:
+                    raise ValueError("This onboarding link has expired. Please contact your Branch Manager.")
+            except (ValueError, TypeError) as e:
+                if "expired" in str(e).lower():
+                    raise e
+
+        payload = session.get("payload") or {}
+        all_groups = payload.get("groups", [])
+        all_members = payload.get("members", [])
+        off_name_clean = (target_officer.get("name") or "").strip().lower()
+
+        # Extract only this officer's groups
+        my_groups = [
+            g for g in all_groups
+            if (g.get("officer_name") or "").strip().lower() == off_name_clean
+            or g.get("officer_token") == co_token
+        ]
+        my_group_refs = {str(g.get("group_reference") or "").strip().upper() for g in my_groups if (g.get("group_reference") or "").strip()}
+
+        # Extract only this officer's members
+        my_members = [
+            m for m in all_members
+            if (m.get("officer_name") or "").strip().lower() == off_name_clean
+            or m.get("officer_token") == co_token
+            or str(m.get("group_reference") or "").strip().upper() in my_group_refs
+        ]
+
+        # Calculate officer specific portfolio aggregates
+        indiv_savings = sum(float(m.get("savings_balance") or 0.0) for m in my_members)
+        grp_savings = sum(float(g.get("group_savings") or 0.0) for g in my_groups)
+        tot_savings = indiv_savings + grp_savings
+        active_credit = sum(float(m.get("active_credit") or 0.0) for m in my_members)
+        curr_balance = sum(float(m.get("current_credit_balance") or 0.0) for m in my_members)
+
+        aggregates = {
+            "portfolio_groups": len(my_groups),
+            "portfolio_members": len(my_members),
+            "individual_member_savings": round(indiv_savings, 2),
+            "group_savings_pool": round(grp_savings, 2),
+            "total_portfolio_savings": round(tot_savings, 2),
+            "active_credit": round(active_credit, 2),
+            "outstanding_balance": round(curr_balance, 2)
+        }
+
+        # Loan products and meeting days
+        p_res = uow.client.table("loan_products").select("product_id, name, repayment_cycle, installments, interest_rate").order("name").execute()
+        products = p_res.data or []
+        meeting_days = ["Daily", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Monthly"]
+
+        is_submitted = (target_officer.get("status") == "submitted")
+        is_session_locked = session.get("status") in ("submitted", "bm_submitted", "approved")
+
+        return {
+            "officer": {
+                "id": target_officer.get("id"),
+                "name": target_officer.get("name"),
+                "phone": target_officer.get("phone"),
+                "role": target_officer.get("role", "Credit Officer"),
+                "status": target_officer.get("status", "drafting"),
+                "is_misc_savings_manager": bool(target_officer.get("is_misc_savings_manager", False)),
+                "submitted_at": target_officer.get("submitted_at")
+            },
+            "branch_name": session.get("branch_name"),
+            "branch_code": session.get("branch_code"),
+            "session_status": session.get("status"),
+            "expires_at": session.get("expires_at"),
+            "groups": my_groups,
+            "members": my_members,
+            "aggregates": aggregates,
+            "loan_products": products,
+            "meeting_days": meeting_days,
+            "is_locked": is_submitted or is_session_locked
+        }
+
+    @staticmethod
+    def save_officer_draft(uow: SupabaseUnitOfWork, co_token: str, officer_payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Saves updated groups and members belonging exclusively to this Credit Officer.
+        Guarantees other officers' data remains completely untouched.
+        """
+        session, target_officer = OnboardingService.find_session_by_co_token(uow, co_token)
+
+        if target_officer.get("status") == "submitted":
+            raise ValueError("Your roster is currently submitted and locked. Contact your Branch Manager to unlock it for edits.")
+
+        if session.get("status") in ("submitted", "bm_submitted", "approved"):
+            raise ValueError("The branch onboarding session is currently submitted or approved.")
+
+        payload = session.get("payload") or {}
+        existing_groups = payload.get("groups", [])
+        existing_members = payload.get("members", [])
+        off_name = target_officer.get("name")
+        off_name_clean = off_name.strip().lower()
+
+        # Incoming groups for this officer
+        incoming_groups = officer_payload.get("groups", [])
+        for g in incoming_groups:
+            g["officer_name"] = off_name
+            g["officer_token"] = co_token
+
+        # Incoming members for this officer
+        incoming_members = officer_payload.get("members", [])
+        for m in incoming_members:
+            m["officer_name"] = off_name
+            m["officer_token"] = co_token
+
+        # Keep other officers' groups
+        other_groups = [
+            g for g in existing_groups
+            if (g.get("officer_name") or "").strip().lower() != off_name_clean
+            and g.get("officer_token") != co_token
+        ]
+        # Keep other officers' members
+        other_members = [
+            m for m in existing_members
+            if (m.get("officer_name") or "").strip().lower() != off_name_clean
+            and m.get("officer_token") != co_token
+        ]
+
+        final_payload = {
+            "groups": other_groups + incoming_groups,
+            "members": other_members + incoming_members,
+            "officers": payload.get("officers", []),
+            "misc_savings": float(payload.get("misc_savings") or 0.0),
+            "laps_savings": float(payload.get("laps_savings") or 0.0)
+        }
+
+        p_res = uow.client.table("loan_products").select("name").execute()
+        products_map = {p["name"].strip().lower(): True for p in (p_res.data or [])}
+        validation_summary, aggregates = OnboardingService.validate_payload(final_payload, products_map)
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        uow.client.table("branch_onboarding_sessions").update({
+            "payload": final_payload,
+            "total_groups": aggregates["total_groups"],
+            "total_members": aggregates["total_members"],
+            "total_savings": aggregates["total_savings"],
+            "total_active_credit": aggregates["total_active_credit"],
+            "total_current_balance": aggregates["total_current_balance"],
+            "validation_summary": validation_summary,
+            "updated_at": now.isoformat()
+        }).eq("id", session["id"]).execute()
+
+        return OnboardingService.get_officer_workspace(uow, co_token)
+
+    @staticmethod
+    def submit_officer_roster(uow: SupabaseUnitOfWork, co_token: str) -> Dict[str, Any]:
+        """
+        Credit Officer submits their completed groups and members to the Branch Manager.
+        Locks the officer workspace from further edits until Branch Manager unlocks.
+        """
+        session, target_officer = OnboardingService.find_session_by_co_token(uow, co_token)
+
+        if target_officer.get("status") == "submitted":
+            return {"status": "success", "message": "Roster already submitted."}
+
+        payload = session.get("payload") or {}
+        officers = payload.get("officers", [])
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        for off in officers:
+            if off.get("token") == co_token or off.get("co_token") == co_token:
+                off["status"] = "submitted"
+                off["submitted_at"] = now.isoformat()
+                break
+
+        payload["officers"] = officers
+        uow.client.table("branch_onboarding_sessions").update({
+            "payload": payload,
+            "updated_at": now.isoformat()
+        }).eq("id", session["id"]).execute()
+
+        return {
+            "status": "success",
+            "message": "Your roster has been successfully submitted to your Branch Manager."
+        }
+
+    @staticmethod
+    def unlock_officer_roster(uow: SupabaseUnitOfWork, branch_token: str, officer_id: str) -> Dict[str, Any]:
+        """
+        Branch Manager supervisor action to unlock a submitted officer's roster for corrections.
+        """
+        s_res = uow.client.table("branch_onboarding_sessions").select("*").eq("token", branch_token).execute()
+        if not s_res.data:
+            raise ValueError("Branch session not found.")
+
+        session = s_res.data[0]
+        if session["status"] == "approved":
+            raise ValueError("This branch session has already been approved.")
+
+        payload = session.get("payload") or {}
+        officers = payload.get("officers", [])
+        target_off = None
+        for off in officers:
+            if str(off.get("id")) == str(officer_id) or str(off.get("officer_id")) == str(officer_id):
+                target_off = off
+                off["status"] = "drafting"
+                off.pop("submitted_at", None)
+                break
+
+        if not target_off:
+            raise ValueError(f"Credit Officer with ID '{officer_id}' not found.")
+
+        payload["officers"] = officers
+        now = datetime.datetime.now(datetime.timezone.utc)
+        update_data = {
+            "payload": payload,
+            "updated_at": now.isoformat()
+        }
+        # If session was submitted to AM, revert session status to draft
+        if session["status"] in ("bm_submitted", "submitted"):
+            update_data["status"] = "draft"
+
+        uow.client.table("branch_onboarding_sessions").update(update_data).eq("id", session["id"]).execute()
+
+        return {
+            "status": "success",
+            "message": f"Credit Officer '{target_off.get('name')}' roster unlocked for corrections.",
+            "officer": target_off
+        }
+
+    @staticmethod
+    def bm_submit_session(uow: SupabaseUnitOfWork, branch_token: str) -> Dict[str, Any]:
+        """
+        Branch Manager confirms total combined officer balances and submits package to Area Manager.
+        """
+        s_res = uow.client.table("branch_onboarding_sessions").select("*").eq("token", branch_token).execute()
+        if not s_res.data:
+            raise ValueError("Branch session not found.")
+
+        session = s_res.data[0]
+        if session["status"] == "approved":
+            raise ValueError("This onboarding session has already been approved.")
+
+        payload = session.get("payload") or {}
+        p_res = uow.client.table("loan_products").select("name").execute()
+        products_map = {p["name"].strip().lower(): True for p in (p_res.data or [])}
+
+        validation_summary, aggregates = OnboardingService.validate_payload(payload, products_map)
+        if not validation_summary["is_valid"]:
+            first_err = validation_summary["errors"][0] if validation_summary["errors"] else "Validation failed."
+            raise ValueError(f"Cannot submit with validation errors: {first_err}")
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        uow.client.table("branch_onboarding_sessions").update({
+            "status": "submitted",
+            "submitted_at": now.isoformat(),
+            "updated_at": now.isoformat()
+        }).eq("id", session["id"]).execute()
+
+        return {
+            "status": "success",
+            "message": "Branch package submitted to Area Manager for final approval.",
+            "aggregates": aggregates
+        }
+
+    @staticmethod
+    def am_approve_session(uow: SupabaseUnitOfWork, branch_token: str, approved_by_id: Optional[str] = None, approval_notes: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Area Manager reviews the BM-confirmed branch package and commits it to the live core banking database.
+        """
+        s_res = uow.client.table("branch_onboarding_sessions").select("*").eq("token", branch_token).execute()
+        if not s_res.data:
+            raise ValueError("Branch session not found.")
+
+        session = s_res.data[0]
+        return OnboardingService.commit_session(
+            uow=uow,
+            session_id=session["id"],
+            approved_by_id=approved_by_id,
+            approval_notes=approval_notes or "Approved and committed by Area Manager."
+        )
 
     @staticmethod
     def parse_excel_bytes(file_bytes: bytes, uow: SupabaseUnitOfWork, scoped_officer: Optional[str] = None) -> Dict[str, Any]:
@@ -788,35 +1162,56 @@ class OnboardingService:
                 if num > max_existing_group_num:
                     max_existing_group_num = num
 
+        # 4. Migrate Groups (Contiguous Officer-Block Global Group Sequencer)
+        # Groups are sequentially distributed by Credit Officer in contiguous blocks:
+        # e.g., CO1 groups (GRP-01 to GRP-06) -> Group 1 to 6
+        # CO2 groups (GRP-01 to GRP-09) -> Group 7 to 15
+        ordered_groups_with_officer = []
+        assigned_group_ids = set()
+
+        # Iterate through officers in the BM-established order
+        session_officers = payload.get("officers", [])
+        for off in session_officers:
+            off_name_clean = (off.get("name") or off.get("officer_name") or "").strip().lower()
+            off_token = off.get("token") or off.get("co_token")
+            # Collect all groups assigned to this officer
+            off_groups = [
+                g for g in groups
+                if ((g.get("officer_name") or "").strip().lower() == off_name_clean and off_name_clean != "")
+                or (off_token and g.get("officer_token") == off_token)
+            ]
+            # Sort this officer's groups by their local reference or numeric value
+            def _group_sort_key(item):
+                ref_str = str(item.get("group_reference") or "")
+                digits = re.findall(r'\d+', ref_str)
+                return int(digits[-1]) if digits else 999999
+            off_groups.sort(key=_group_sort_key)
+            for g in off_groups:
+                g_key = id(g)
+                if g_key not in assigned_group_ids:
+                    assigned_group_ids.add(g_key)
+                    ordered_groups_with_officer.append((off, g))
+
+        # Append any groups not claimed by a specific officer
+        for g in groups:
+            if id(g) not in assigned_group_ids:
+                assigned_group_ids.add(id(g))
+                ordered_groups_with_officer.append((None, g))
+
+        next_gn = max_existing_group_num + 1
         group_ref_map = {}
-        for idx, g in enumerate(groups, 1):
-            g_ref = str(g.get("group_reference") or f"GRP-{str(idx).zfill(2)}").strip()
-            g_name = str(g.get("group_name") or f"Group {idx}").strip()
+        for off, g in ordered_groups_with_officer:
+            g_ref = str(g.get("group_reference") or f"GRP-{str(next_gn).zfill(2)}").strip()
+            g_name = str(g.get("group_name") or f"Group {next_gn}").strip()
             m_day = str(g.get("meeting_day") or "Daily").strip()
             leader = g.get("leader_name")
             g_sav = float(g.get("group_savings") or 0.0)
-            g_off_name = str(g.get("officer_name") or "").strip()
+            g_off_name = str(g.get("officer_name") or (off.get("name") if off else "")).strip()
             g_officer_id = officer_map.get(g_off_name.lower()) or first_officer_id
 
-            # Extract requested group number from g_ref or fallback to idx
-            digits = re.findall(r'\d+', g_ref)
-            try:
-                raw_gn = int(digits[-1]) if digits else idx
-            except Exception:
-                raw_gn = idx
+            gn = next_gn
+            next_gn += 1
 
-            # Option B Collision Guard:
-            # If raw_gn already exists in this branch, or has already been assigned in this batch:
-            if raw_gn in existing_group_numbers:
-                max_existing_group_num += 1
-                gn = max_existing_group_num
-            else:
-                gn = raw_gn
-                if gn > max_existing_group_num:
-                    max_existing_group_num = gn
-            existing_group_numbers.add(gn)
-
-            # Always insert a fresh group record - zero overwrite guarantee
             g_id = str(uuid.uuid4())
             uow.client.table("groups").insert({
                 "group_id": g_id,
@@ -830,7 +1225,6 @@ class OnboardingService:
                 "current_member_sequence": 0
             }).execute()
 
-            # Group opening savings
             if g_sav > 0:
                 uow.client.table("group_savings").insert({
                     "id": str(uuid.uuid4()),
@@ -844,12 +1238,19 @@ class OnboardingService:
                     "remarks": "Initial Onboarding Group Savings"
                 }).execute()
 
-            group_ref_map[g_ref] = {
+            g_entry = {
                 "group_id": g_id,
                 "group_number": gn,
                 "meeting_day": m_day,
                 "officer_id": g_officer_id
             }
+            # Key composite (officer_name, g_ref) to prevent namespace collision across officers
+            if g_off_name:
+                group_ref_map[(g_off_name.lower(), g_ref.upper())] = g_entry
+            if g_ref.upper() not in group_ref_map:
+                group_ref_map[g_ref.upper()] = g_entry
+            if g_ref not in group_ref_map:
+                group_ref_map[g_ref] = g_entry
 
         # Canonical lifecycle status IDs
         ON_LOAN_STATUS_ID = "11111111-1111-1111-1111-111111110003"
@@ -867,8 +1268,11 @@ class OnboardingService:
         # 5. Migrate Members
         for m_idx, m in enumerate(members, 1):
             f_name = str(m.get("full_name") or "").strip()
-            g_ref = str(m.get("group_reference") or "GRP-01").strip()
-            g_info = group_ref_map.get(g_ref)
+            g_ref = str(m.get("group_reference") or "GRP-01").strip().upper()
+            m_off_name = str(m.get("officer_name") or "").strip().lower()
+
+            # Lookup group by composite (officer_name, g_ref) or fallback g_ref
+            g_info = group_ref_map.get((m_off_name, g_ref)) or group_ref_map.get(g_ref)
             if not g_info:
                 continue
 
@@ -877,11 +1281,11 @@ class OnboardingService:
             m_day_str = g_info["meeting_day"]
             m_officer_id = g_info.get("officer_id") or first_officer_id
 
-            m_num = m.get("member_number") or m_idx
-            try:
-                seq = int(m_num)
-            except Exception:
-                seq = m_idx
+            m_num = m.get("member_number")
+            if m_num is not None and str(m_num).strip().isdigit():
+                seq = int(str(m_num).strip())
+            else:
+                seq = group_max_seq.get(g_id, 0) + 1
 
             # Find next free sequence for this group to avoid code duplication
             target_client_code = f"{branch_code}-{str(gn).zfill(2)}-{str(seq).zfill(3)}"

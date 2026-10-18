@@ -552,6 +552,184 @@ class TestOnboardingPortalApi(unittest.TestCase):
 
         self._cleanup()
 
+    def test_three_tier_provisioning_and_isolation(self):
+        # 1. Create a session
+        session = OnboardingService.create_session(
+            uow=self.uow,
+            branch_name="Test Isolation Branch",
+            branch_code="TST",
+            contact_person="BM Johnson",
+            contact_phone="08011112222"
+        )
+        branch_token = session["token"]
+
+        # 2. BM provisions Officer 1
+        res_off1 = client.post(
+            f"/api/v1/onboarding/session/{branch_token}/officers",
+            json={"name": "Babatunde Adeleke", "phone": "08033334444", "is_misc_savings_manager": False}
+        )
+        self.assertEqual(res_off1.status_code, 200)
+        off1_data = res_off1.json()
+        token1 = off1_data["token"]
+        self.assertTrue(token1.startswith("onb_co_"))
+
+        # 3. BM provisions Officer 2
+        res_off2 = client.post(
+            f"/api/v1/onboarding/session/{branch_token}/officers",
+            json={"name": "Olajumoke Fashola", "phone": "08055556666", "is_misc_savings_manager": True}
+        )
+        self.assertEqual(res_off2.status_code, 200)
+        off2_data = res_off2.json()
+        token2 = off2_data["token"]
+        self.assertTrue(token2.startswith("onb_co_"))
+
+        # 4. Officer 1 loads workspace
+        res_ws1 = client.get(f"/api/v1/onboarding/officer/{token1}")
+        self.assertEqual(res_ws1.status_code, 200)
+        ws1 = res_ws1.json()
+        self.assertEqual(ws1["officer"]["name"], "Babatunde Adeleke")
+        self.assertEqual(len(ws1["groups"]), 0)
+        self.assertEqual(len(ws1["members"]), 0)
+
+        # 5. Officer 1 saves 2 groups and 2 members
+        payload_off1 = {
+            "groups": [
+                {"group_reference": "GRP-01", "group_name": "Progress 1", "meeting_day": "Daily", "group_savings": 5000.0},
+                {"group_reference": "GRP-02", "group_name": "Progress 2", "meeting_day": "Tuesday", "group_savings": 6000.0}
+            ],
+            "members": [
+                {"member_reference": "TST-01-001", "group_reference": "GRP-01", "full_name": "Ayodele Bello", "savings_balance": 1000.0},
+                {"member_reference": "TST-02-001", "group_reference": "GRP-02", "full_name": "Folashade Ade", "savings_balance": 2000.0}
+            ]
+        }
+        res_save1 = client.put(f"/api/v1/onboarding/officer/{token1}/save-draft", json={"payload": payload_off1})
+        self.assertEqual(res_save1.status_code, 200)
+        ws1_updated = res_save1.json()
+        self.assertEqual(len(ws1_updated["groups"]), 2)
+        self.assertEqual(len(ws1_updated["members"]), 2)
+        self.assertEqual(ws1_updated["aggregates"]["total_portfolio_savings"], 14000.0) # 5000+6000+1000+2000
+
+        # 6. Officer 2 loads workspace -> MUST HAVE 100% DATA ISOLATION (ZERO visibility of Officer 1's data)
+        res_ws2 = client.get(f"/api/v1/onboarding/officer/{token2}")
+        self.assertEqual(res_ws2.status_code, 200)
+        ws2 = res_ws2.json()
+        self.assertEqual(ws2["officer"]["name"], "Olajumoke Fashola")
+        self.assertEqual(len(ws2["groups"]), 0)
+        self.assertEqual(len(ws2["members"]), 0)
+        self.assertEqual(ws2["aggregates"]["total_portfolio_savings"], 0.0)
+
+        # 7. Officer 1 submits roster
+        res_sub1 = client.post(f"/api/v1/onboarding/officer/{token1}/submit")
+        self.assertEqual(res_sub1.status_code, 200)
+
+        # Officer 1 editing after submission is locked (400 Bad Request)
+        res_edit_locked = client.put(f"/api/v1/onboarding/officer/{token1}/save-draft", json={"payload": payload_off1})
+        self.assertEqual(res_edit_locked.status_code, 400)
+
+        # BM unlocks Officer 1's roster
+        res_unlock = client.post(f"/api/v1/onboarding/session/{branch_token}/officers/{off1_data['id']}/unlock")
+        self.assertEqual(res_unlock.status_code, 200)
+
+        # Officer 1 can now edit again
+        res_edit_unlocked = client.put(f"/api/v1/onboarding/officer/{token1}/save-draft", json={"payload": payload_off1})
+        self.assertEqual(res_edit_unlocked.status_code, 200)
+
+        self._cleanup()
+
+    def test_contiguous_officer_block_sequencing(self):
+        # Test Case matching user specification:
+        # CO1 has GRP-01 to GRP-06 (6 groups)
+        # CO2 has GRP-01 to GRP-09 (9 groups)
+        # Global database group numbers must be:
+        # CO1 groups: 1 to 6 (GRP-01 to GRP-06)
+        # CO2 groups: 7 to 15 (GRP-01 to GRP-09)
+        session = OnboardingService.create_session(
+            uow=self.uow,
+            branch_name="Contiguous Test Branch",
+            branch_code="TST",
+            contact_person="BM Adebayo",
+            contact_phone="08011112222"
+        )
+        branch_token = session["token"]
+
+        # Provision Officer 1 (CO1)
+        res_off1 = client.post(
+            f"/api/v1/onboarding/session/{branch_token}/officers",
+            json={"name": "Babatunde Adeleke", "phone": "08033334444"}
+        )
+        off1 = res_off1.json()
+        token1 = off1["token"]
+
+        # Provision Officer 2 (CO2)
+        res_off2 = client.post(
+            f"/api/v1/onboarding/session/{branch_token}/officers",
+            json={"name": "Olajumoke Fashola", "phone": "08055556666"}
+        )
+        off2 = res_off2.json()
+        token2 = off2["token"]
+
+        # CO1 creates 6 groups (GRP-01 to GRP-06)
+        co1_groups = [{"group_reference": f"GRP-{str(i).zfill(2)}", "group_name": f"CO1 Group {i}", "meeting_day": "Daily"} for i in range(1, 7)]
+        co1_members = [{"member_reference": f"TST-01-{str(i).zfill(3)}", "group_reference": f"GRP-{str(i).zfill(2)}", "full_name": f"CO1 Client {i}", "savings_balance": 100.0} for i in range(1, 7)]
+        res_s1 = client.put(f"/api/v1/onboarding/officer/{token1}/save-draft", json={"payload": {"groups": co1_groups, "members": co1_members}})
+        self.assertEqual(res_s1.status_code, 200)
+
+        # CO2 creates 9 groups (GRP-01 to GRP-09)
+        co2_groups = [{"group_reference": f"GRP-{str(i).zfill(2)}", "group_name": f"CO2 Group {i}", "meeting_day": "Tuesday"} for i in range(1, 10)]
+        co2_members = [{"member_reference": f"TST-01-{str(i).zfill(3)}", "group_reference": f"GRP-{str(i).zfill(2)}", "full_name": f"CO2 Client {i}", "savings_balance": 200.0} for i in range(1, 10)]
+        res_s2 = client.put(f"/api/v1/onboarding/officer/{token2}/save-draft", json={"payload": {"groups": co2_groups, "members": co2_members}})
+        self.assertEqual(res_s2.status_code, 200)
+
+        # Both submit to BM
+        client.post(f"/api/v1/onboarding/officer/{token1}/submit")
+        client.post(f"/api/v1/onboarding/officer/{token2}/submit")
+
+        # BM confirms total 15 groups and submits to AM
+        res_bm = client.post(f"/api/v1/onboarding/session/{branch_token}/bm-submit")
+        self.assertEqual(res_bm.status_code, 200)
+        self.assertEqual(res_bm.json()["aggregates"]["total_groups"], 15)
+        self.assertEqual(res_bm.json()["aggregates"]["total_members"], 15)
+
+        # AM Approves & Commits to Core Database via link
+        res_approve = client.post(f"/api/v1/onboarding/session/{branch_token}/am-approve")
+        self.assertEqual(res_approve.status_code, 200)
+        commit_data = res_approve.json()
+        self.assertEqual(commit_data["groups_migrated"], 15)
+        self.assertEqual(commit_data["clients_created"], 15)
+
+        # Verify live database table 'groups' for contiguous distribution:
+        # CO1 groups: 1 to 6
+        # CO2 groups: 7 to 15
+        b_res = self.uow.client.table("branches").select("branch_id").eq("code", "TST").execute()
+        branch_id = b_res.data[0]["branch_id"]
+        g_res = self.uow.client.table("groups").select("name, group_number, officer_id").eq("branch_id", branch_id).execute()
+        self.assertEqual(len(g_res.data), 15)
+
+        # Sort by integer group_number
+        sorted_groups = sorted(g_res.data, key=lambda g: int(g["group_number"]))
+        group_numbers = [int(g["group_number"]) for g in sorted_groups]
+        self.assertEqual(group_numbers, list(range(1, 16))) # [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+
+        # First 6 groups are CO1 groups
+        for g in sorted_groups[:6]:
+            self.assertIn("CO1 Group", g["name"])
+
+        # Groups 7 to 15 are CO2 groups
+        for g in sorted_groups[6:]:
+            self.assertIn("CO2 Group", g["name"])
+
+        # Verify client codes:
+        c_res = self.uow.client.table("clients").select("client_code, name").eq("branch_id", branch_id).execute()
+        self.assertEqual(len(c_res.data), 15)
+        client_codes = {c["name"]: c["client_code"] for c in c_res.data}
+        self.assertEqual(client_codes["CO1 Client 1"], "TST-01-001")
+        self.assertEqual(client_codes["CO1 Client 6"], "TST-06-001")
+        self.assertEqual(client_codes["CO2 Client 1"], "TST-07-001") # Sequenced into Group 7!
+        self.assertEqual(client_codes["CO2 Client 9"], "TST-15-001") # Sequenced into Group 15!
+
+        self._cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()
 

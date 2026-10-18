@@ -328,7 +328,8 @@ class TestMonthlyDepositAndCreditStatements:
         assert tb_map["Credit Balance (Debtors)"]["debit"] == 26392825.0
         # Total debits and credits
         assert tb["total_debits"] == 73678366.0
-        assert tb["total_credits"] == 72004312.0
+        assert tb["total_credits"] == 73678366.0
+        assert tb["is_balanced"] is True
 
     def test_co_summary_october_rollover_and_filter_responsiveness(self):
         """

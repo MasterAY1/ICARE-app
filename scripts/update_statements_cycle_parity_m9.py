@@ -1,3 +1,6 @@
+import sys, os
+sys.path.insert(0, os.getcwd())
+
 import json
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from datetime import datetime, timezone
@@ -278,6 +281,39 @@ def update_statements_cycle_parity_september_2026():
 
     existing_data["deposit_statement"] = deposit_statement
     existing_data["credit_statement"] = credit_statement
+    existing_data["closing_credit"] = 26392825.0
+    existing_data["closing_savings"] = 11485785.0
+    existing_data["collections"] = 17465675.0
+    existing_data["officer_expenses_breakdown"] = {
+        "573eca5f-958a-4ad4-950a-4108b0a798dc": { # Dorcas (OGI_CO1)
+            "transport": 8000.0,
+            "stationery": 2700.0,
+            "entertainment": 0.0,
+            "utilities": 0.0,
+            "total": 10700.0
+        },
+        "c32125e1-c7e5-4a85-8948-12d05b40eaa9": { # Ayomide (OGI_CO2)
+            "transport": 0.0,
+            "stationery": 0.0,
+            "entertainment": 0.0,
+            "utilities": 0.0,
+            "total": 0.0
+        },
+        "60fa48a4-16a2-4ab8-b9c5-d13d72a040cc": { # Olajumoke (OGI_CO3)
+            "transport": 105000.0,
+            "stationery": 26000.0,
+            "entertainment": 5000.0,
+            "utilities": 6100.0,
+            "total": 142100.0
+        },
+        "0ad2a283-3ed1-42ea-ae7f-5b33b665389d": { # Oluwaseun (OGI_CO4)
+            "transport": 42000.0,
+            "stationery": 9700.0,
+            "entertainment": 2000.0,
+            "utilities": 1100.0,
+            "total": 54800.0
+        }
+    }
 
     uow.client.table("monthly_statement_reconciliations").upsert({
         "branch_id": branch_id,

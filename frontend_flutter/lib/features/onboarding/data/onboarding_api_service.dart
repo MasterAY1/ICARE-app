@@ -73,6 +73,97 @@ class OnboardingApiService {
   }
 
   // =========================================================================
+  // CREDIT OFFICER ENDPOINTS (100% Data Isolation)
+  // =========================================================================
+
+  /// GET /api/v1/onboarding/officer/{co_token}
+  Future<Map<String, dynamic>> getOfficerWorkspace(String coToken) async {
+    final response = await _client.get('/api/v1/onboarding/officer/$coToken');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// PUT /api/v1/onboarding/officer/{co_token}/save-draft
+  Future<Map<String, dynamic>> saveOfficerDraft(String coToken, Map<String, dynamic> payload) async {
+    final response = await _client.put(
+      '/api/v1/onboarding/officer/$coToken/save-draft',
+      data: {'payload': payload},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/v1/onboarding/officer/{co_token}/upload-excel
+  Future<Map<String, dynamic>> uploadOfficerExcelBytes(
+    String coToken,
+    Uint8List fileBytes,
+    String filename,
+  ) async {
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromBytes(
+        fileBytes,
+        filename: filename,
+      ),
+    });
+
+    final response = await _client.post(
+      '/api/v1/onboarding/officer/$coToken/upload-excel',
+      data: formData,
+      options: Options(
+        contentType: 'multipart/form-data',
+      ),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/v1/onboarding/officer/{co_token}/submit
+  Future<Map<String, dynamic>> submitOfficerRoster(String coToken) async {
+    final response = await _client.post('/api/v1/onboarding/officer/$coToken/submit');
+    return response.data as Map<String, dynamic>;
+  }
+
+  // =========================================================================
+  // BRANCH MANAGER & SUPERVISOR MANAGEMENT METHODS
+  // =========================================================================
+
+  /// POST /api/v1/onboarding/session/{token}/officers
+  Future<Map<String, dynamic>> provisionOfficer(
+    String branchToken, {
+    required String name,
+    String? phone,
+    bool isMiscManager = false,
+  }) async {
+    final response = await _client.post(
+      '/api/v1/onboarding/session/$branchToken/officers',
+      data: {
+        'name': name.trim(),
+        'phone': phone?.trim(),
+        'is_misc_savings_manager': isMiscManager,
+      },
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/v1/onboarding/session/{token}/officers/{officer_id}/unlock
+  Future<Map<String, dynamic>> unlockOfficer(String branchToken, String officerId) async {
+    final response = await _client.post('/api/v1/onboarding/session/$branchToken/officers/$officerId/unlock');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/v1/onboarding/session/{token}/bm-submit
+  Future<Map<String, dynamic>> bmSubmitPackage(String branchToken) async {
+    final response = await _client.post('/api/v1/onboarding/session/$branchToken/bm-submit');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/v1/onboarding/session/{token}/am-approve
+  Future<Map<String, dynamic>> amApprovePackage(String branchToken, {String? notes}) async {
+    final response = await _client.post(
+      '/api/v1/onboarding/session/$branchToken/am-approve',
+      data: {'approval_notes': notes},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  // =========================================================================
   // ADMINISTRATIVE METHODS (RBAC-Protected)
   // =========================================================================
 
@@ -115,3 +206,4 @@ class OnboardingApiService {
     return response.data as Map<String, dynamic>;
   }
 }
+
