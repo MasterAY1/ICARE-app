@@ -1,102 +1,58 @@
 ---
 name: icare-flutter-design
-description: Authoritative multi-platform design, responsiveness, and UI/UX skill for the ICARE Flutter frontend. Enforces mobile-first simplicity, multi-platform responsiveness (<600px phone, 600-899px tablet, >=900px desktop/web), financial typography standards, zero-emoji corporate aesthetics, shared component governance, and generative UI prototyping. Activate before designing, creating, or modifying any Flutter UI screen, layout, or widget.
+description: Upgrade Flutter mobile, tablet, and web interfaces with a modern responsive design system while preserving existing application behavior, data contracts, and financial controls. Use for ICARE Core Banking UI/UX work and comparable Flutter app design tasks.
 ---
 
-# ICARE Flutter Multi-Platform Design & Responsiveness Skill
+# Flutter UI/UX for Antigravity
 
-## Overview
-This skill defines the authoritative design principles, multi-platform responsiveness guidelines, financial typography standards, and UI/UX simplification rules for the **ICARE Flutter application**.
+Create polished, calm, task-oriented Flutter experiences that work equally well on phones, tablets, and desktop web. For ICARE Core Banking, favor speed, clarity, error prevention, traceability, and accessible data density over decorative complexity.
 
-ICARE is a production core-banking and microfinance system. The Flutter application (`frontend_flutter/`) is the **sole primary frontend** across all user roles (CO, BM, AM, Admin, Director, Auditor). Legacy Streamlit (`app.py`) is officially **deprecated and sunsetted**; it serves solely as an archival/read-only logic reference for historical financial formulas.
+## Scope and non-negotiable safeguards
 
-Whenever you design, simplify, create, refactor, or review any Flutter screen, widget, dialog, or layout, you **MUST** strictly adhere to this skill.
+This skill changes presentation and interaction design only unless the user separately authorizes a business or backend change. Before modifying a screen, identify the existing route, state source, actions, roles, and data models. Reuse them rather than replacing them.
 
----
+Do not change, bypass, simulate, or duplicate:
 
-## 0. The Core Rule: Priority Order
+- CO workflows, authorization levels, maker-checker/confirmation rules, or role-based access;
+- Account 1000 behavior, cashbook rules, journal posting, double-entry balancing, reconciliation, or approval states;
+- transaction calculations, validation, dates, identifiers, audit fields, reports, exports, or financial totals;
+- Supabase schema, RLS policies, RPCs, Edge Functions, authentication/session behavior, API payloads, repositories, or backend error semantics;
+- production, testing, or branch database configuration, environment files, secrets, migrations, or data.
 
-> [!IMPORTANT]
-> **A beautiful screen that misleads on financial numbers or hides critical data is a failed implementation.**
-> **A simple, clean screen that ensures fast, accurate operations across mobile, tablet, and desktop is a successful implementation.**
->
-> Always prioritize:
-> $$\text{CORRECTNESS} \longrightarrow \text{READABILITY} \longrightarrow \text{USABILITY} \longrightarrow \text{RESPONSIVENESS} \longrightarrow \text{POLISH}$$
->
-> 1. **Correctness**: Financial data, ledger balances (Account 1000), client lifecycle statuses, and transactional state must be 100% accurate.
-> 2. **Readability**: Financial numbers and labels must be legible without awkward wrapping, microscopic fonts, or clipping.
-> 3. **Usability**: Workflows must be intuitive, frictionless, and fast—especially for field officers using mobile devices under sunlight and network constraints.
-> 4. **Responsiveness**: The interface must adapt natively to Phones (<600px), Tablets (600–899px), and Desktop/Web (≥900px).
-> 5. **Polish**: Clean typography, consistent spacing, high contrast, subtle borders, and professional corporate styling.
+Never replace a real balance, status, ledger entry, confirmation, or permission decision with client-side display logic. A redesigned control must call the same approved command, service, or callback and preserve its loading, success, error, disabled, and retry behavior. If a UI improvement requires any change above, stop and state the dependency and the smallest safe proposed change.
 
 ---
 
-## 1. Flutter-First Modern Fintech Architecture
+## Start with the screen contract
 
-With Streamlit sunsetted:
-1. **Full Design Freedom**: You are completely liberated from Streamlit's desktop-first tables, cramped web expanders, and cluttered legacy layouts.
-2. **Mobile-First Simplification**: Design for a field officer holding a phone with one hand. Eliminate unnecessary clicks, dense multi-column spreadsheets, and redundant metric cards.
-3. **No Dual-Frontend UI Burden**: UI code is written exclusively in Flutter. Do not write, port, or maintain UI code in Streamlit.
-4. **Logic Reference Only**: If historical calculation rules need clarification, inspect the Python services (`services/`) or `app.py` for underlying math, but design the Flutter presentation freely and modernly.
+Inspect the screen and its adjacent flows before coding. Record a concise UI contract in the change plan or PR description:
 
----
+1. **Users and roles** who can view or act.
+2. **Inputs, read-only values, formatting rules**, and required confirmations.
+3. **Existing commands, state transitions, backend calls**, and errors.
+4. **Critical invariants**: amount/currency integrity, balanced entries, auditability, status accuracy, and no accidental submission.
+5. **Target form factors** and the acceptance checks below.
 
-## 2. Presentation Layer Separation
-
-Flutter is strictly the **presentation and client application layer**.
-
-### Prohibited in Flutter:
-Do **not** move backend financial or business invariants into Flutter. Flutter must never implement or alter:
-* Double-entry bookkeeping logic or Account 1000 vault rules
-* Amortization, interest formulas, penalty calculations, or excess payoff derivation
-* Database foreign keys, triggers, or schema definitions
-* Direct database updates bypassing FastAPI/atomic RPCs
-* Role permissions and authorization matrix (governed by backend RBAC)
-* Business date closure or operational locks
-
-**Rule**: Address UI and UX challenges at the presentation, state management, and layout level using Riverpod, clean widgets, and responsive layouts. Backend APIs provide the authoritative data contracts.
+Treat unknown financial meaning as an open question, not a design assumption. Do not infer that two statuses, amounts, or actions are interchangeable because they look similar.
 
 ---
 
-## 3. Multi-Platform Responsive Design Engine
+## Design direction
 
-ICARE runs across three distinct form factors: **Mobile Phones**, **Tablets**, and **Desktop/Web Browsers**. Mobile must **never** feel like a squeezed desktop, and desktop must **never** feel like a stretched mobile phone.
+Use Material 3 as the implementation baseline, adapted to the product's existing brand rather than overwritten wholesale. Build a restrained financial-product visual language:
 
-### A. Responsive Breakpoints
+- **Clear visual hierarchy**: page title and primary action first; totals and exceptions next; supporting detail last.
+- **Semantic colors**: Use semantic colors for success, warning, error, info, and neutral surfaces. Never use color alone to convey a financial status.
+- **Restrained token set**: Prefer a small token set: `colorScheme`, text styles, spacing, radii, elevations, state overlays, and component themes. Extend the existing theme before adding local hard-coded values.
+- **Rhythm & Touch Targets**: Use a 4 or 8 dp spacing rhythm, generous touch targets ($\ge 44 \times 44\text{ dp}$), readable numeric typography, and aligned columns for amounts.
+- **Clarity over Prominence**: Keep account numbers, balances, posting dates, status, and confirmation state visually distinct but never overly prominent in ways that could cause misreading.
+- **Vector Icons Only**: Use familiar icons only when paired with a label or accessible tooltip for important actions. Avoid novelty, excessive animation, gradients that reduce contrast, and dense card nesting.
 
-| Platform Target | Viewport Width ($W$) | Navigation Pattern | Form Layout | Metrics & Cards | Data Presentation |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Mobile Phone** | $W < 600\text{ px}$ | Clean Bottom Nav (3–4 tabs max) OR Top `AppBar` with slide-out `Drawer` | Single-column (full width), sticky action buttons at bottom | 1-column cards or compact 2-column grid. Never 3–4 cards per row. | Card lists, expandable summary cards, swipeable rows. Wrap raw tables in horizontal scroll. |
-| **Tablet** | $600\text{ px} \le W < 900\text{ px}$ | Collapsible Navigation Rail or slide-out Drawer | 2 balanced columns | 2-column or 3-column grid with generous breathing room. | Responsive cards or hybrid data tables with fixed key columns. |
-| **Desktop / Web** | $W \ge 900\text{ px}$ | Permanent Sidebar ($240\text{–}280\text{ px}$) with corporate branding | Multi-column grids (2–3 columns), right-side detail panes | 3 to 5 KPI cards per row in fluid grid containers. | Rich data tables with sorting, filtering, and fixed sticky headers. |
-
-### B. Mobile Phone Implementation Rules ($W < 600\text{ px}$)
-* **Touch Target Size**: Minimum interactive target size is $48 \times 48\text{ dp}$ (buttons, chips, list items, checkboxes).
-* **Thumb Zone Architecture**: Place primary action buttons (e.g., "Submit Collection", "Approve Loan", "Add Entry") at the bottom of the screen within comfortable thumb reach.
-* **Eliminate Horizontal Scroll Fatigue**: Avoid wide tabular data on phones. Convert rows of tables into clean, readable **Client Cards** showing Name, ID, Expected Amount, and Status.
-* **Avoid Nested Scroll Conflicts**: Never place unconstrained `ListView` inside `SingleChildScrollView` without `shrinkWrap: true` and `physics: const NeverScrollableScrollPhysics()`.
-* **Keyboard Insets**: Wrap forms in `SafeArea` and ensure inputs scroll automatically into view above the virtual keyboard (`resizeToAvoidBottomInset: true`).
-
-### C. Tablet Implementation Rules ($600\text{ px} \le W < 900\text{ px}$)
-* Take advantage of additional screen width by showing master-detail splits or 2-column forms.
-* Ensure dialogs and modal bottom sheets have maximum width constraints (`maxWidth: 560`) rather than stretching awkwardly across the screen.
-
-### D. Desktop & Web Implementation Rules ($W \ge 900\text{ px}$)
-* Use a fixed corporate sidebar containing user profile, branch badge, online/offline pill, and menu links.
-* Provide maximum content width clamping (e.g., `max-width: 1400px` centered) on ultra-wide monitors to prevent content from stretching across 4K displays.
-* Support mouse wheel scrolling, hover states on interactive buttons, and keyboard navigation (Tab through form inputs).
-
----
-
-## 4. Financial Typography & Metric Cards
-
-Financial numbers represent real money and must **never** be visually truncated, clipped, or ambiguously wrapped.
-
-### A. Non-Negotiable Financial Value Formatting
-* **Currency Symbol**: Standard Nigerian Naira (`₦`) prefix.
-* **Thousand Separators**: Required for all numbers $\ge 1,000$ (e.g., `₦5,000`, `₦150,000`, `₦2,500,000`).
-* **Decimals**: Whole Naira (`0` decimals) for standard repayments, savings, and loan balances unless fractional kobo values exist.
-* **Anti-Wrapping Invariant**: A financial amount must **never wrap across lines** character-by-character:
+### Financial Value Formatting & Anti-Wrapping Invariant
+- **Currency Symbol**: Standard Nigerian Naira (`₦`) prefix.
+- **Thousand Separators**: Required for all numbers $\ge 1,000$ (e.g., `₦5,000`, `₦150,000`, `₦2,500,000`).
+- **Decimals**: Whole Naira (`0` decimals) for standard repayments, savings, and loan balances unless fractional kobo values exist.
+- **Anti-Wrapping Invariant**: A financial amount must **never wrap across lines** character-by-character:
   ```text
   // FORBIDDEN WRAPPING:
   ₦
@@ -106,126 +62,128 @@ Financial numbers represent real money and must **never** be visually truncated,
   // STRICTLY REQUIRED:
   ₦50,000
   ```
+- **Tabular Figures**: Use tabular figures (`fontFeatures: [FontFeature.tabularFigures()]`) or monospaced font features that align digits vertically in tables and lists.
 
-### B. Metric Card Sizing & Typography Rules:
-* Value font size: `20–24px` on desktop, `16–18px` on mobile phones. Never use micro-text below `13px` for financial numbers.
-* Number text styles must specify `softWrap: false`, `overflow: TextOverflow.ellipsis` with a tooltip/modal if container is constrained.
-* Labels may wrap to 2 lines cleanly:
-  ```dart
-  Text(
-    'Total Collections (Today)',
-    style: theme.textTheme.bodySmall,
-    maxLines: 2,
-    overflow: TextOverflow.ellipsis,
-  )
-  ```
-* Cards within the same section must share uniform height, padding (`14px horizontal, 12px vertical`), border radius (`12px`), and subtle border strokes (`1px solid #E2E8F0`).
+### Information patterns for banking screens
+
+- **Dashboards**: show actionable exceptions and a concise status summary; make data provenance and refresh state visible when relevant.
+- **Lists and registers**: use search, filters, sort, pagination/virtualization as already supported, visible empty/loading/error states, and stable column labels. Preserve exact server order and filter semantics unless separately authorized.
+- **Financial rows**: use tabular figures or another font feature that aligns digits; right-align amounts, label currency consistently, preserve signs and decimal precision, and do not truncate critical identifiers without an accessible full value.
+- **Detail pages**: group identity, amounts, entries, approvals, and audit information into clearly named sections. Keep status history and immutable references available.
+- **Destructive or irreversible actions**: require the existing confirmation flow, describe the consequence plainly, and prevent double submission. A dialog must not create a new confirmation or authorization rule.
+- **Forms**: label every field persistently, mark required fields in text, validate close to the field, retain entered data after non-destructive errors, and focus the first actionable error on submit.
 
 ---
 
-## 5. UI/UX Simplification & Cognitive Load Reduction
+## Responsive layout rules
 
-The most common field complaint is that screens "look complicated" because too much raw data is dumped onto one screen. Apply these 4 principles to simplify every interface:
+Use the available width, not a device name, to select layout. Preserve the same data, permissions, and action semantics at every size.
 
-### 1. The One Primary Action Rule
-Every screen must have **ONE obvious primary action**.
-* **Collections Screen**: Primary action is "Record Collection" or "Submit Group". Everything else (history, filters, exports) is secondary.
-* **Dashboard**: Primary action is "View Today's Schedule" or "Start Field Collection".
-* Highlight primary actions with solid brand buttons (`ElevatedButton` in primary blue/indigo); secondary actions use outline or ghost styles.
+| Available width | Layout intent | Navigation and content |
+| :--- | :--- | :--- |
+| **Compact: under 600 dp** | One-handed, sequential tasks | Bottom navigation for 3-5 top-level destinations; single-column forms; sheets for supporting filters/details; primary action fixed only when it cannot obscure fields. |
+| **Medium: 600-1023 dp** | Tablet and narrow desktop | Navigation rail when it reduces context switching; two-column detail/form layouts when each column remains readable; master-detail only for complementary content. |
+| **Expanded: 1024 dp and above** | Desktop web, high information density | Persistent rail or drawer; constrained readable content width; table/list + detail split where useful; inline secondary actions and keyboard-friendly data work. |
 
-### 2. Progressive Disclosure
-* Do not display 20 fields or 8 metric cards at once on mobile.
-* Show the essential high-level summary upfront.
-* Use clean **collapsible accordions**, **tabs**, or **modal bottom sheets** to reveal granular audit trails, loan history, or fee breakdowns on demand.
+Do not branch by platform alone or hard-code common device widths. Use `LayoutBuilder`, `MediaQuery.sizeOf`, and design tokens; keep breakpoints centralized. Test widths immediately below and above each breakpoint, plus large text and browser zoom. On web, set sensible max widths for forms and readable text while allowing data tables to use space or scroll horizontally with an obvious affordance.
 
-### 3. Clutter Pruning
-* If a metric card is rarely used by a field officer (e.g., complex variance percentages, redundant sub-totals), move it to a dedicated "Analytics/Report" tab or detail sheet.
-* Keep the main operational viewport focused on what the officer needs **right now**.
+### Adaptive navigation
 
-### 4. Fast Data Entry Patterns
-* For group collections: auto-fill expected amounts with 1-tap "Mark Paid All" or "Mark Paid", allowing manual entry only for exceptions (part-paid or excess).
-* Numeric fields must automatically open the numeric keyboard (`keyboardType: const TextInputType.numberWithOptions(decimal: true)`).
+- Keep destinations, badges, selected state, deep links, and role visibility identical across bottom navigation, rail, and drawer variants.
+- Do not hide a required workflow merely because the layout changes. Move secondary destinations into an explicit "More"/drawer destination only when discoverability remains adequate.
+- Preserve the current route and unsaved form state when navigation adapts after resize or rotation.
+- Give each destination a text label, current-location indication, accessible name, and predictable back behavior.
 
 ---
 
-## 6. Shared Component Architecture
+## Flutter component patterns
 
-Never create screen-specific layout hacks. All screens must be built using modular, shared components located in `frontend_flutter/lib/core/` and `features/shared/`:
+Compose reusable, semantic components around existing models and controllers. Favor small presentation widgets with explicit inputs and callbacks; do not relocate domain logic into widgets.
 
-1. **`AppScaffold` / `ResponsiveScaffold`**:
-   * Handles platform detection, adaptive drawer/sidebar, offline banner, and sync status bar.
-2. **`MetricCard`**:
-   * Standardized KPI card with icon, title, formatted value, subtitle badge, and optional tap callback.
-3. **`StatusBadge`**:
-   * Standard color-coded badges for loan/client/sync states:
-     * **Success (Green)**: `Active`, `Paid`, `Synced`, `Completed`
-     * **Warning (Amber)**: `Part Paid`, `Pending Approval`, `Pending Sync`
-     * **Danger (Red)**: `Overdue`, `Not Paid`, `Defaulter`, `Failed`
-     * **Neutral (Slate/Blue)**: `Registered`, `Dormant`, `Draft`
-4. **`AmountInputField`**:
-   * Formatted currency text field with Naira prefix, auto-formatting, and validation.
-5. **`OfflineIndicatorBar`**:
-   * Persistent top banner indicating network mode (Online, Offline Cache, Pending Outbox Count).
+- **App shell**: adaptive navigation, responsive content constraints, consistent page title/actions, and a safe place for feedback banners.
+- **Page scaffold**: handles loading, empty, error, and content states without changing the data-fetching contract.
+- **Metric/summary card**: label, formatted value, context, semantic state, and optional drill-down callback; never calculates financial values itself.
+- **Data table/list**: stable row identity, keyboard/focus support on web, responsive columns, and a compact row alternative that exposes the same fields/actions.
+- **Status badge**: maps existing canonical statuses to label/icon/color in one location; unknown states remain explicit rather than silently mapped.
+- **Amount display**: receives an already-correct amount, currency, and precision; formats according to existing product rules only.
+- **Form field group**: label, help text, error text, enabled/read-only state, and validation supplied by the established form/controller layer.
+- **Confirm action**: reuses the current authorization and command path, displays the provided impact summary, blocks repeat taps while pending, and reports the backend outcome verbatim enough to remain actionable.
+
+Use `const` widgets where practical, keys for stateful/reorderable financial rows, and theme extensions only when repeated semantics need them. Avoid a new state-management framework, new dependency, new routing package, or generic "design system rewrite" unless the user approves it separately.
 
 ---
 
-## 7. Strict Zero-Emoji Corporate Governance (Rule 10)
+## Accessibility and inclusive operation
 
-Emojis are **strictly prohibited** across all UI elements:
-* Buttons, tab bars, headers, alerts, badges, dialogs, empty states, and toast messages.
-* **Use Material Icons or clean SVG vector assets only.**
-* Maintain a polished, professional fintech appearance suitable for central bank audits and corporate enterprise use.
+Meet WCAG 2.2 AA intent for user-facing screens, including Flutter web:
+
+- **Contrast**: Maintain at least 4.5:1 contrast for normal text and 3:1 for large text and meaningful UI boundaries; verify custom brand colors.
+- **Text Scaling**: Support text scaling to at least 200% without clipped controls, hidden errors, or lost primary actions.
+- **Target Sizes**: Ensure all actionable targets are at least $44 \times 44$ logical pixels where feasible, with visible focus indicators and logical keyboard traversal on web.
+- **Semantics**: Supply meaningful `Semantics` labels, hints, values, selected/expanded state, and button names. Exclude purely decorative icons from semantics.
+- **Non-Color Indicators**: Do not convey success, warning, error, balance direction, or required fields using color, position, or icon alone.
+- **Live Regions**: Announce asynchronous status/error changes appropriately; avoid auto-dismissing important financial errors before users can read them.
+- **Reduced Motion**: Respect reduced motion and avoid animation that obscures number changes or confirmation outcomes.
 
 ---
 
-## 7.1 Strict Zero Internal Code/Identity Leaks in Frontend UI (Rule 12)
+## ICARE Governance Standards
 
+### 1. Strict Zero-Emoji Corporate Governance (Rule 10)
+Emojis are **strictly prohibited** across all UI elements (tab headers, buttons, cards, expanders, tables, alerts, dialogs, form controls, or markdown text). Do NOT use emoji characters. Use clean, professional corporate typography or SVG vector / Material Icons instead.
+
+### 2. Strict Zero Internal Code/Identity Leaks in Frontend UI (Rule 12)
 Technical rule codes, database identities, and chart-of-accounts internal numbers belong exclusively to backend engines, database migrations, and architectural documentation:
-* **Prohibited in UI**: Never show raw rule codes (e.g. `BR-SAV-002`, `BR-SAV-006`, `BR-DASH-005`, `FP-001`), database table/column names (`internal_savings`, `co_cashbooks`), or Chart of Accounts account numbers (`Account 1000`) in user-facing labels, badges, headers, dialogs, helper texts, pill tags, or alert banners.
-* **Required in UI**: Use clean, human-friendly corporate banking terminology:
-  * Instead of `"Designated Misc Manager (BR-SAV-006)"` $\longrightarrow$ `"Designated Misc Manager"`
-  * Instead of `"BR-SAV-002 • BR-SAV-006"` $\longrightarrow$ `"Branch Reserve"` or `"Internal Fund"`
-  * Instead of `"Inflows must flow via Account 1000"` $\longrightarrow$ `"All inflows are secured in primary vault cash."`
-  * Instead of `"Account 1000 Vault"` $\longrightarrow$ `"Vault Cash (Primary Ledger)"` or `"Branch Vault Cash"`
+- **Prohibited in UI**: Never show raw rule codes (e.g. `BR-SAV-002`, `BR-SAV-006`, `BR-DASH-005`, `FP-001`), database table/column names (`internal_savings`, `co_cashbooks`), or Chart of Accounts account numbers (`Account 1000`) in user-facing labels, badges, headers, dialogs, helper texts, pill tags, or alert banners.
+- **Required in UI**: Use clean, human-friendly corporate banking terminology:
+  - Instead of `"Designated Misc Manager (BR-SAV-006)"` $\longrightarrow$ `"Designated Misc Manager"`
+  - Instead of `"BR-SAV-002 • BR-SAV-006"` $\longrightarrow$ `"Branch Reserve"` or `"Internal Fund"`
+  - Instead of `"Inflows must flow via Account 1000"` $\longrightarrow$ `"All inflows are secured in primary vault cash."`
+  - Instead of `"Account 1000 Vault"` $\longrightarrow$ `"Vault Cash (Primary Ledger)"` or `"Branch Vault Cash"`
 
 ---
 
-## 8. Interactive Prototyping Workflow (`generative_ui`)
+## Implementation workflow
 
-When proposing significant layout overhauls or exploring UX simplifications with the user:
-1. **Interactive HTML Prototype**: Use the `generative_ui` skill to create a self-contained, interactive Tailwind CSS HTML artifact in the conversation directory.
-2. **Simulate Mobile & Desktop**: Include an interactive toggle or responsive container in the prototype showing both Phone (<600px) and Desktop views.
-3. **Solicit User Feedback**: Let the user review, interact with, and approve the simplified UX prototype before modifying production Flutter widgets.
-4. **Implement in Flutter**: Once approved, translate the validated layout into clean, production-grade Flutter widgets.
+1. **Inspect**: Inspect existing theme, routes, responsive utilities, screen state, tests, and backend-facing code. Reuse local conventions.
+2. **Define UI Contract**: Define the UI contract and a narrow visual plan. Name every screen/component to change and explicitly list the logic/data layers left untouched.
+3. **Extend Tokens**: Establish or extend tokens and common components only when they eliminate real duplication across the requested scope.
+4. **Responsive Composition**: Implement layouts with responsive composition, not duplicate feature flows per device class.
+5. **Preserve Integrations**: Preserve integration points, command handlers, permission checks, selectors, error handling, analytics/audit hooks, and test identifiers.
+6. **Validate Visual States**: Validate visual states: loading, populated, empty, slow/network error, validation error, permission-denied, pending, success, and backend-rejected using existing mechanisms.
+7. **Run Tests & Checks**: Run the project's existing formatter, analyzer, unit/widget/integration tests, plus focused responsive and accessibility checks. Report any test that cannot be run.
 
 ---
 
-## 9. Page Design & Responsiveness Verification Checklist
+## Definition of done / acceptance criteria
 
-Before considering any Flutter UI task complete, verify this checklist:
+Accept UI work only when all applicable checks pass:
 
-- [ ] **Mobile Responsiveness (<600px)**:
-  * No horizontal page scroll or overflow errors (`RenderFlex overflowed`).
-  * Primary action buttons sticky or comfortably in thumb zone.
-  * Inputs and cards collapse into clean single-column or 2-column grid.
-  * Interactive elements $\ge 48\text{ dp}$ touch target.
-- [ ] **Tablet Responsiveness (600–899px)**:
-  * 2-column balanced layouts.
-  * Dialogs and modal sheets constrained to comfortable widths (`<560px`).
-- [ ] **Desktop/Web Responsiveness (≥900px)**:
-  * Persistent sidebar navigation with active route highlighting.
-  * Fluid multi-column cards and full-featured data tables.
-  * Max width container applied on ultra-wide screens.
-- [ ] **Financial Value Integrity**:
-  * Naira symbol (`₦`) and commas formatted correctly.
-  * Anti-wrapping applied; zero character-split amounts.
-  * Real API data bound; zero fake/hardcoded numbers.
-- [ ] **Clutter & Usability**:
-  * Screen has ONE clear primary action.
-  * Secondary details tucked into progressive disclosure (bottom sheets/accordions).
-  * High contrast typography and legible text.
-- [ ] **Zero-Emoji Compliance**:
-  * 100% SVG or Material Icons. Zero emoji characters anywhere in UI.
-- [ ] **Clean Code & Shared Components**:
-  * Reusable widgets utilized; no duplicate parallel styling systems.
-  * Flutter test suite passes without compilation or layout assertion errors.
+- The same role sees the same allowable actions and receives the same backend authorization outcome before and after the UI change.
+- Identical input produces identical request payloads, calculations, transaction/posting behavior, ledger/cashbook effects, and audit data.
+- No schema, RLS, RPC, API, environment, database-selection, migration, or secret change is included.
+- Compact, medium, and expanded layouts expose the complete required workflow without overflow, clipped controls, accidental horizontal scrolling, or state loss.
+- Financial amounts, signs, currency, precision, status, account identifiers, and timestamps render accurately and remain readable at 200% text scaling.
+- Loading, empty, error, permission, pending, success, and double-tap/duplicate-submit behavior are explicit and correct.
+- Keyboard navigation, focus visibility, semantic labels, contrast, and non-color status cues work for every changed interactive element.
+- Existing automated tests pass; add or update widget/golden/integration tests for changed responsive layouts and critical visual states when the project test setup supports them.
+- The handoff notes identify changed UI files, unchanged business/backend surfaces, tested form factors, and any remaining design assumptions.
+
+---
+
+## Antigravity request template
+
+Use this prompt structure when delegating a UI task to Antigravity. Fill the bracketed fields from the actual project; do not invent business rules.
+
+```text
+Use $icare-flutter-design to improve the UI/UX of [screen/flow] in this Flutter app.
+
+Scope: [specific UI files/screens and target roles].
+Responsive targets: compact <600dp, medium 600-1023dp, expanded >=1024dp.
+Preserve: existing routes, state management, API/Supabase contracts, role checks, commands, financial calculations, Account 1000, cashbook, double-entry ledger, reconciliation, confirmations, audit behavior, and all test/branch/production database configuration.
+
+Deliver: a modern Material 3 presentation using existing theming where possible; adaptive navigation/layout; accessible fields, statuses, tables, and error states; and focused tests for changed states/layouts.
+Do not change any business logic, backend/schema/RLS/RPCs, payloads, migrations, environments, secrets, or dependencies. If a desired design needs one, stop and explain the smallest safe dependency.
+
+Before coding, state the UI contract and the integration points that will remain unchanged. After coding, report the tested widths, accessibility checks, test results, and confirmation that no financial/data-contract files changed.
+```
