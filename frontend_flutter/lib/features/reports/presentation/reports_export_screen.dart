@@ -38,6 +38,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   int _selectedExecSubTab = 0; // 0: A. Deposit Statement, 1: B. Credit Statement, 2: Receipts & Payments, 3: Annex-1 Sundry, 4: Trial Balance, 5: CO Summary, 6: Bank Reconciliation
   String _selectedProgramFilter = 'All'; // 'All', 'Monthly', 'Weekly', 'Daily'
   bool _showRawTableOnMobile = false;
+  String _selectedTbSectionFilter = 'All';
+  int _selectedRpSegmentIndex = 0; // 0: All Movements, 1: Receipts (Inflows), 2: Payments (Outflows)
 
   // Futures & Cache
   ReportsMeta? _cachedMeta;
@@ -1982,6 +1984,25 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 
+  String _cleanTbItemName(String item) {
+    return item
+        .replaceAll('(Account 1000)', '')
+        .replaceAll('(Acct 1000)', '')
+        .replaceAll('Account 1000', '')
+        .replaceAll('(1000)', '')
+        .trim();
+  }
+
+  IconData _getSectionIcon(String section) {
+    final s = section.toUpperCase();
+    if (s.contains('ASSET')) return Icons.account_balance;
+    if (s.contains('LIABILIT')) return Icons.receipt_long;
+    if (s.contains('CAPITAL') || s.contains('RESERVE')) return Icons.corporate_fare;
+    if (s.contains('INCOME')) return Icons.arrow_downward;
+    if (s.contains('EXPENSE')) return Icons.arrow_upward;
+    return Icons.folder_outlined;
+  }
+
   Widget _buildOfficialTrialBalanceView() {
     return FutureBuilder<MonthlyExecutiveStatementsData>(
       future: _statementsFuture,
@@ -1990,58 +2011,356 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           if (snapshot.hasError) {
             return _buildErrorCard(snapshot.error.toString());
           }
-          return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
+          return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
         }
         final data = snapshot.data!;
-
         final tb = data.trialBalance;
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: tb.isBalanced ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: tb.isBalanced ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5)),
-              ),
-              child: Text(
-                'TRIAL BALANCE STATUS: ${tb.isBalanced ? "BALANCED" : "OUT OF BALANCE"} | TOTAL DEBITS: ${_formatNgn(tb.totalDebits)} | TOTAL CREDITS: ${_formatNgn(tb.totalCredits)}',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: tb.isBalanced ? const Color(0xFF166534) : const Color(0xFF991B1B),
+        // Group rows by section
+        final Map<String, List<OfficialTrialBalanceRow>> groupedRows = {};
+        for (final row in tb.rows) {
+          groupedRows.putIfAbsent(row.section, () => []).add(row);
+        }
+
+        final sectionNames = ['All Sections', ...groupedRows.keys];
+        final activeSections = (_selectedTbSectionFilter == 'All' || _selectedTbSectionFilter == 'All Sections')
+            ? groupedRows
+            : {
+                if (groupedRows.containsKey(_selectedTbSectionFilter))
+                  _selectedTbSectionFilter: groupedRows[_selectedTbSectionFilter]!
+              };
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = constraints.maxWidth < 600;
+            final isExpanded = constraints.maxWidth >= 1024;
+            final cardW = isMobile ? (constraints.maxWidth - 8) / 2 : (constraints.maxWidth - 24) / 4;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top Executive KPI Strip
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildMetricCard(
+                      'Total Debits',
+                      _formatNgn(tb.totalDebits),
+                      subtitle: 'Assets & Operating Expenses',
+                      width: cardW,
+                    ),
+                    _buildMetricCard(
+                      'Total Credits',
+                      _formatNgn(tb.totalCredits),
+                      subtitle: 'Liabilities, Equity & Income',
+                      width: cardW,
+                    ),
+                    _buildMetricCard(
+                      'Equality Status',
+                      tb.isBalanced ? 'Balanced' : 'Unbalanced',
+                      subtitle: tb.isBalanced ? 'Zero Variance (₦0.00)' : 'Diff: ${_formatNgn(tb.variance)}',
+                      isAccent: tb.isBalanced,
+                      width: cardW,
+                    ),
+                    _buildMetricCard(
+                      'Ledger Accounts',
+                      '${tb.rows.length} Accounts',
+                      subtitle: '${groupedRows.keys.length} Categories',
+                      width: cardW,
+                    ),
+                  ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildContainedTable(
-              hint: 'Swipe horizontally to view full trial balance',
-              child: DataTable(
-                headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-                headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 12),
-                dataTextStyle: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
-                columnSpacing: 24,
-                columns: const [
-                  DataColumn(label: Text('Section')),
-                  DataColumn(label: Text('Item Description')),
-                  DataColumn(numeric: true, label: Text('Debit (₦)')),
-                  DataColumn(numeric: true, label: Text('Credit (₦)')),
+                const SizedBox(height: 16),
+
+                // Filter Chips & Mobile View Toggle
+                Row(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        child: Row(
+                          children: sectionNames.map((sec) {
+                            final isSel = _selectedTbSectionFilter == sec;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: ChoiceChip(
+                                label: Text(sec),
+                                selected: isSel,
+                                onSelected: (val) {
+                                  if (val) {
+                                    setState(() => _selectedTbSectionFilter = sec);
+                                  }
+                                },
+                                selectedColor: const Color(0xFF0F766E),
+                                labelStyle: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
+                                  color: isSel ? Colors.white : const Color(0xFF334155),
+                                ),
+                                backgroundColor: const Color(0xFFF1F5F9),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  side: BorderSide(
+                                    color: isSel ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                    if (isMobile)
+                      IconButton(
+                        tooltip: _showRawTableOnMobile ? 'Switch to Cards' : 'Switch to Table',
+                        icon: Icon(
+                          _showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined,
+                          color: const Color(0xFF0F766E),
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _showRawTableOnMobile = !_showRawTableOnMobile;
+                          });
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                if (isMobile && !_showRawTableOnMobile) ...[
+                  // Mobile Cards grouped by Section
+                  ...activeSections.entries.map((entry) {
+                    final secName = entry.key;
+                    final rows = entry.value;
+                    final secDebits = rows.fold<double>(0.0, (sum, r) => sum + r.debit);
+                    final secCredits = rows.fold<double>(0.0, (sum, r) => sum + r.credit);
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 1))],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Section Header
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
+                              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(_getSectionIcon(secName), size: 16, color: const Color(0xFF0F766E)),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      secName,
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  secDebits > 0 ? _formatNgn(secDebits) : _formatNgn(secCredits),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    fontFeatures: [FontFeature.tabularFigures()],
+                                    color: Color(0xFF0F766E),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Section Items
+                          ...rows.map((r) {
+                            final cleanTitle = _cleanTbItemName(r.item);
+                            final hasDebit = r.debit > 0;
+                            final hasCredit = r.credit > 0;
+
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      cleanTitle,
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  if (hasDebit)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF0FDF4),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                                      ),
+                                      child: Text(
+                                        'Dr ${_formatNgn(r.debit)}',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF166534),
+                                          fontFeatures: [FontFeature.tabularFigures()],
+                                        ),
+                                      ),
+                                    ),
+                                  if (hasCredit)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEFF6FF),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                                      ),
+                                      child: Text(
+                                        'Cr ${_formatNgn(r.credit)}',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF1E40AF),
+                                          fontFeatures: [FontFeature.tabularFigures()],
+                                        ),
+                                      ),
+                                    ),
+                                  if (!hasDebit && !hasCredit)
+                                    const Text('-', style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    );
+                  }),
+                ] else ...[
+                  // Desktop / Tablet Structured Material 3 Table
+                  _buildContainedTable(
+                    hint: 'Swipe horizontally to view full trial balance ledger accounts',
+                    child: DataTable(
+                      headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
+                      headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 12),
+                      dataTextStyle: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
+                      columnSpacing: isExpanded ? 32 : 18,
+                      columns: const [
+                        DataColumn(label: Text('Section')),
+                        DataColumn(label: Text('Account / Line Item')),
+                        DataColumn(numeric: true, label: Text('Debit (₦)')),
+                        DataColumn(numeric: true, label: Text('Credit (₦)')),
+                      ],
+                      rows: [
+                        ...activeSections.entries.expand((entry) {
+                          return entry.value.map((r) {
+                            return DataRow(
+                              cells: [
+                                DataCell(
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      r.section,
+                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
+                                    ),
+                                  ),
+                                ),
+                                DataCell(
+                                  Text(
+                                    _cleanTbItemName(r.item),
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                DataCell(
+                                  Text(
+                                    r.debit > 0 ? _formatNgn(r.debit) : '-',
+                                    style: TextStyle(
+                                      fontWeight: r.debit > 0 ? FontWeight.w700 : FontWeight.normal,
+                                      color: r.debit > 0 ? const Color(0xFF166534) : const Color(0xFF94A3B8),
+                                      fontFeatures: const [FontFeature.tabularFigures()],
+                                    ),
+                                  ),
+                                ),
+                                DataCell(
+                                  Text(
+                                    r.credit > 0 ? _formatNgn(r.credit) : '-',
+                                    style: TextStyle(
+                                      fontWeight: r.credit > 0 ? FontWeight.w700 : FontWeight.normal,
+                                      color: r.credit > 0 ? const Color(0xFF1E40AF) : const Color(0xFF94A3B8),
+                                      fontFeatures: const [FontFeature.tabularFigures()],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          });
+                        }),
+                        // Grand Total Row
+                        DataRow(
+                          color: MaterialStateProperty.all(const Color(0xFFF0FDF4)),
+                          cells: [
+                            const DataCell(
+                              Text(
+                                'TOTALS',
+                                style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF166534), fontSize: 12),
+                              ),
+                            ),
+                            DataCell(
+                              Row(
+                                children: [
+                                  const Icon(Icons.verified, size: 14, color: Color(0xFF166534)),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    tb.isBalanced ? 'Trial Balance Balanced' : 'Unbalanced Variance',
+                                    style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF166534), fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                _formatNgn(tb.totalDebits),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF166534),
+                                  fontSize: 12,
+                                  fontFeatures: [FontFeature.tabularFigures()],
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                _formatNgn(tb.totalCredits),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF166534),
+                                  fontSize: 12,
+                                  fontFeatures: [FontFeature.tabularFigures()],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
-                rows: tb.rows.map((r) {
-                  return DataRow(
-                    cells: [
-                      DataCell(Text(r.section, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F766E)))),
-                      DataCell(Text(r.item)),
-                      DataCell(Text(r.debit > 0 ? _formatNgn(r.debit) : '-')),
-                      DataCell(Text(r.credit > 0 ? _formatNgn(r.credit) : '-')),
-                    ],
-                  );
-                }).toList(),
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         );
       },
     );
@@ -2055,117 +2374,360 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           if (snapshot.hasError) {
             return _buildErrorCard(snapshot.error.toString());
           }
-          return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
+          return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
         }
         final data = snapshot.data!;
-
         final rp = data.receiptsAndPayments;
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final isMobile = constraints.maxWidth < 600;
-                final receiptsCard = Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0FDF4),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFF86EFAC)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Total Receipts (Inflows)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
-                      const SizedBox(height: 4),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(_formatNgn(rp.totalReceipts), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF166534), fontFamily: 'JetBrains Mono')),
-                      ),
-                    ],
-                  ),
-                );
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = constraints.maxWidth < 600;
+            final isExpanded = constraints.maxWidth >= 1024;
 
-                final paymentsCard = Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFF93C5FD)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Total Payments (Outflows)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E40AF))),
-                      const SizedBox(height: 4),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(_formatNgn(rp.totalPayments), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF1E40AF), fontFamily: 'JetBrains Mono')),
-                      ),
-                    ],
-                  ),
-                );
+            final cardW = isMobile
+                ? (constraints.maxWidth - 8) / 2
+                : (constraints.maxWidth - 16) / 3;
 
-                if (isMobile) {
-                  return Column(
-                    children: [
-                      receiptsCard,
-                      const SizedBox(height: 8),
-                      paymentsCard,
-                    ],
-                  );
-                }
-
-                return Row(
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top Cash Flow KPI Strip
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    Expanded(child: receiptsCard),
-                    const SizedBox(width: 12),
-                    Expanded(child: paymentsCard),
+                    _buildMetricCard(
+                      'Total Inflows',
+                      _formatNgn(rp.totalReceipts),
+                      subtitle: 'Collections, Deposits & Sundry',
+                      width: cardW,
+                    ),
+                    _buildMetricCard(
+                      'Total Outflows',
+                      _formatNgn(rp.totalPayments),
+                      subtitle: 'Disbursements, Payouts & OpEx',
+                      width: cardW,
+                    ),
+                    _buildMetricCard(
+                      'Net Cash Float',
+                      _formatNgn(rp.variance),
+                      subtitle: rp.variance == 0.0 ? 'Balanced Reconciled Float' : 'Float Variance',
+                      isAccent: rp.variance == 0.0,
+                      width: isMobile ? constraints.maxWidth : cardW,
+                    ),
                   ],
+                ),
+                const SizedBox(height: 16),
+
+                if (isExpanded) ...[
+                  // Desktop Web: Two Balanced Side-by-Side Inflow & Outflow Cards
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Left: Cash Receipts (Inflows)
+                      Expanded(
+                        child: _buildCashFlowSideCard(
+                          title: 'Cash Inflows (Receipts)',
+                          icon: Icons.arrow_downward,
+                          accentColor: const Color(0xFF166534),
+                          headerBg: const Color(0xFFF0FDF4),
+                          borderColor: const Color(0xFF86EFAC),
+                          items: rp.receipts,
+                          totalAmount: rp.totalReceipts,
+                          isReceipt: true,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      // Right: Cash Payments (Outflows)
+                      Expanded(
+                        child: _buildCashFlowSideCard(
+                          title: 'Cash Outflows (Payments)',
+                          icon: Icons.arrow_upward,
+                          accentColor: const Color(0xFF1E40AF),
+                          headerBg: const Color(0xFFEFF6FF),
+                          borderColor: const Color(0xFF93C5FD),
+                          items: rp.payments,
+                          totalAmount: rp.totalPayments,
+                          isReceipt: false,
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  // Mobile & Tablet: Segmented Toggle View
+                  Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    padding: const EdgeInsets.all(4),
+                    child: Row(
+                      children: [
+                        _buildRpSegmentBtn('All Movements', 0, Icons.swap_vert),
+                        const SizedBox(width: 4),
+                        _buildRpSegmentBtn('Inflows (Receipts)', 1, Icons.arrow_downward),
+                        const SizedBox(width: 4),
+                        _buildRpSegmentBtn('Outflows (Payments)', 2, Icons.arrow_upward),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  if (_selectedRpSegmentIndex == 0) ...[
+                    // Combined List
+                    _buildCashFlowCardList(
+                      receipts: rp.receipts,
+                      payments: rp.payments,
+                      totalInflows: rp.totalReceipts,
+                      totalOutflows: rp.totalPayments,
+                    ),
+                  ] else if (_selectedRpSegmentIndex == 1) ...[
+                    // Receipts Only
+                    _buildCashFlowSideCard(
+                      title: 'Cash Inflows (Receipts)',
+                      icon: Icons.arrow_downward,
+                      accentColor: const Color(0xFF166534),
+                      headerBg: const Color(0xFFF0FDF4),
+                      borderColor: const Color(0xFF86EFAC),
+                      items: rp.receipts,
+                      totalAmount: rp.totalReceipts,
+                      isReceipt: true,
+                    ),
+                  ] else ...[
+                    // Payments Only
+                    _buildCashFlowSideCard(
+                      title: 'Cash Outflows (Payments)',
+                      icon: Icons.arrow_upward,
+                      accentColor: const Color(0xFF1E40AF),
+                      headerBg: const Color(0xFFEFF6FF),
+                      borderColor: const Color(0xFF93C5FD),
+                      items: rp.payments,
+                      totalAmount: rp.totalPayments,
+                      isReceipt: false,
+                    ),
+                  ],
+                ],
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildRpSegmentBtn(String label, int index, IconData icon) {
+    final isSelected = _selectedRpSegmentIndex == index;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _selectedRpSegmentIndex = index),
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: isSelected
+                ? const [BoxShadow(color: Color(0x10000000), blurRadius: 4, offset: Offset(0, 1))]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 13, color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF64748B)),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                    color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF64748B),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCashFlowSideCard({
+    required String title,
+    required IconData icon,
+    required Color accentColor,
+    required Color headerBg,
+    required Color borderColor,
+    required List<ReceiptsPaymentsItem> items,
+    required double totalAmount,
+    required bool isReceipt,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 1))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: headerBg,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+              border: Border(bottom: BorderSide(color: borderColor)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, size: 16, color: accentColor),
+                    const SizedBox(width: 8),
+                    Text(
+                      title,
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: accentColor),
+                    ),
+                  ],
+                ),
+                Text(
+                  _formatNgn(totalAmount),
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    color: accentColor,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Items
+          if (items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24.0),
+              child: Center(
+                child: Text(
+                  'No transactions recorded in this category.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                ),
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: items.length,
+              separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
+              itemBuilder: (context, index) {
+                final it = items[index];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              it.item,
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                            ),
+                            if (it.subDetail != null && it.subDetail!.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                it.subDetail!,
+                                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        _formatNgn(it.amount),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: isReceipt ? const Color(0xFF166534) : const Color(0xFF1E40AF),
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ),
                 );
               },
             ),
-            const SizedBox(height: 16),
-            _buildContainedTable(
-              hint: 'Swipe horizontally to view full ledger rows',
-              child: DataTable(
-                headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-                headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 12),
-                dataTextStyle: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
-                columnSpacing: 18,
-                columns: const [
-                  DataColumn(label: Text('Receipts Item')),
-                  DataColumn(label: Text('Receipts Detail')),
-                  DataColumn(numeric: true, label: Text('Receipts (₦)')),
-                  DataColumn(label: Text('Payments Item')),
-                  DataColumn(label: Text('Payments Detail')),
-                  DataColumn(numeric: true, label: Text('Payments (₦)')),
-                ],
-                rows: List.generate(
-                  math.max(rp.receipts.length, rp.payments.length),
-                  (index) {
-                    final r = index < rp.receipts.length ? rp.receipts[index] : null;
-                    final p = index < rp.payments.length ? rp.payments[index] : null;
-                    return DataRow(
-                      cells: [
-                        DataCell(Text(r?.item ?? '', style: const TextStyle(fontWeight: FontWeight.w500))),
-                        DataCell(Text(r?.subDetail ?? '', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))),
-                        DataCell(Text(r != null ? _formatNgn(r.amount) : '-')),
-                        DataCell(Text(p?.item ?? '', style: const TextStyle(fontWeight: FontWeight.w500))),
-                        DataCell(Text(p?.subDetail ?? '', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))),
-                        DataCell(Text(p != null ? _formatNgn(p.amount) : '-')),
-                      ],
-                    );
-                  },
-                ),
-              ),
+          // Subtotal footer
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(10)),
+              border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
             ),
-          ],
-        );
-      },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Subtotal',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                ),
+                Text(
+                  _formatNgn(totalAmount),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    color: accentColor,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCashFlowCardList({
+    required List<ReceiptsPaymentsItem> receipts,
+    required List<ReceiptsPaymentsItem> payments,
+    required double totalInflows,
+    required double totalOutflows,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildCashFlowSideCard(
+          title: 'Cash Inflows (Receipts)',
+          icon: Icons.arrow_downward,
+          accentColor: const Color(0xFF166534),
+          headerBg: const Color(0xFFF0FDF4),
+          borderColor: const Color(0xFF86EFAC),
+          items: receipts,
+          totalAmount: totalInflows,
+          isReceipt: true,
+        ),
+        const SizedBox(height: 14),
+        _buildCashFlowSideCard(
+          title: 'Cash Outflows (Payments)',
+          icon: Icons.arrow_upward,
+          accentColor: const Color(0xFF1E40AF),
+          headerBg: const Color(0xFFEFF6FF),
+          borderColor: const Color(0xFF93C5FD),
+          items: payments,
+          totalAmount: totalOutflows,
+          isReceipt: false,
+        ),
+      ],
     );
   }
 

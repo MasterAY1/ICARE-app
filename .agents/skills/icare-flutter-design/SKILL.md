@@ -141,6 +141,13 @@ Technical rule codes, database identities, and chart-of-accounts internal number
   - Instead of `"Inflows must flow via Account 1000"` $\longrightarrow$ `"All inflows are secured in primary vault cash."`
   - Instead of `"Account 1000 Vault"` $\longrightarrow$ `"Vault Cash (Primary Ledger)"` or `"Branch Vault Cash"`
 
+### 3. Strict Conciseness & Zero Verbosity (Avoid Lengthy Descriptions)
+Avoid lengthy descriptive paragraphs, wordy tutorial banners, and redundant subheadings. Financial professionals and banking operators require high-density, low-noise interfaces:
+- **Microcopy Over Walls of Text**: Replace multi-line introductory paragraphs with concise, punchy titles and compact status badges.
+- **Progressive Tooltips**: Place supplementary explanations, formula notes, or audit hints inside accessible tooltips (`Tooltip`) or contextual helper icons rather than printing paragraphs directly onto the main screen canvas.
+- **Short Helper Text**: Field helper copy, subheaders, and card subtitles must remain under 60 characters and focus strictly on operational action.
+- **One-Sentence Empty States**: Empty states must consist of exactly 1 clear sentence explaining the current state and 1 clear primary action button, avoiding decorative narratives.
+
 ---
 
 ## Implementation workflow
