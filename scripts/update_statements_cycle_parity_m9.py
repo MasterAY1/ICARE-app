@@ -23,11 +23,11 @@ def update_statements_cycle_parity_september_2026():
                 "deposit_curr": 9000.0,
                 "deposit_total": 36000.0,
                 "withdrawal_prev_no": 7,
-                "withdrawal_prev_amount": 22790.0,
+                "withdrawal_prev_amount": 227900.0,
                 "withdrawal_curr_no": 0,
                 "withdrawal_curr_amount": 0.0,
                 "withdrawal_total_no": 7,
-                "withdrawal_total_amount": 22790.0,
+                "withdrawal_total_amount": 227900.0,
                 "return_prev_no": 1,
                 "return_prev_amount": 5000.0,
                 "return_curr_no": 0,
@@ -42,15 +42,15 @@ def update_statements_cycle_parity_september_2026():
                 "member_prev": 171,
                 "member_curr": 12,
                 "member_total": 183,
-                "deposit_prev": 43777730.0,
+                "deposit_prev": 4377730.0,
                 "deposit_curr": 1915125.0,
-                "deposit_total": 45692855.0,
+                "deposit_total": 6292855.0,
                 "withdrawal_prev_no": 1540,
-                "withdrawal_prev_amount": 40891965.0,
+                "withdrawal_prev_amount": 40849865.0,
                 "withdrawal_curr_no": 15,
                 "withdrawal_curr_amount": 1758000.0,
                 "withdrawal_total_no": 1555,
-                "withdrawal_total_amount": 42649965.0,
+                "withdrawal_total_amount": 42607865.0,
                 "return_prev_no": 549,
                 "return_prev_amount": 9617175.0,
                 "return_curr_no": 14,
@@ -65,9 +65,9 @@ def update_statements_cycle_parity_september_2026():
                 "member_prev": 130,
                 "member_curr": 26,
                 "member_total": 156,
-                "deposit_prev": 62861130.0,
+                "deposit_prev": 6286130.0,
                 "deposit_curr": 2368100.0,
-                "deposit_total": 65229230.0,
+                "deposit_total": 8654230.0,
                 "withdrawal_prev_no": 1683,
                 "withdrawal_prev_amount": 44025180.0,
                 "withdrawal_curr_no": 51,
@@ -88,15 +88,15 @@ def update_statements_cycle_parity_september_2026():
                 "member_prev": 303,
                 "member_curr": 38,
                 "member_total": 341,
-                "deposit_prev": 106665860.0,
+                "deposit_prev": 10690860.0,
                 "deposit_curr": 4292225.0,
-                "deposit_total": 110958085.0,
+                "deposit_total": 14983085.0,
                 "withdrawal_prev_no": 3230,
-                "withdrawal_prev_amount": 84939935.0,
+                "withdrawal_prev_amount": 85102945.0,
                 "withdrawal_curr_no": 66,
                 "withdrawal_curr_amount": 3111800.0,
                 "withdrawal_total_no": 3296,
-                "withdrawal_total_amount": 88051735.0,
+                "withdrawal_total_amount": 88214745.0,
                 "return_prev_no": 1025,
                 "return_prev_amount": 21276620.0,
                 "return_curr_no": 22,
@@ -236,9 +236,9 @@ def update_statements_cycle_parity_september_2026():
                 "section": "5. Full Repayment (Settled Loans)",
                 "item": "• Previous Full Repayment Amount (₦) (Col 26)",
                 "monthly": 2898000.0,
-                "weekly": 20424500.0,
-                "daily": 16954000.0,
-                "total": 40276500.0,
+                "weekly": 202326000.0,
+                "daily": 197541000.0,
+                "total": 402765000.0,
             },
             {
                 "section": "5. Full Repayment (Settled Loans)",
@@ -268,14 +268,14 @@ def update_statements_cycle_parity_september_2026():
                 "section": "5. Full Repayment (Settled Loans)",
                 "item": "• Total Cumulative Settled Amount (₦)",
                 "monthly": 3306000.0,
-                "weekly": 29460500.0,
-                "daily": 25138000.0,
-                "total": 57904500.0,
+                "weekly": 211362000.0,
+                "daily": 205725000.0,
+                "total": 420393000.0,
             },
         ]
     }
 
-    # Fetch current record to merge
+    # 1. Update September 2026 Reconciliation
     res = uow.client.table("monthly_statement_reconciliations").select("data").eq("branch_id", branch_id).eq("year", year).eq("month", month).execute()
     existing_data = res.data[0]["data"] if res.data else {}
 
@@ -323,7 +323,41 @@ def update_statements_cycle_parity_september_2026():
         "updated_at": datetime.now(timezone.utc).isoformat()
     }, on_conflict="branch_id,year,month").execute()
 
-    print("SUCCESS: Updated monthly_statement_reconciliations for September 2026 with 100% paper parity.")
+    # 2. Update August 2026 Baseline in DB (M-1)
+    aug_res = uow.client.table("monthly_statement_reconciliations").select("data").eq("branch_id", branch_id).eq("year", 2026).eq("month", 8).execute()
+    aug_data = aug_res.data[0]["data"] if aug_res.data else {}
+    aug_data["deposit_statement"] = {
+        "rows": [
+            {"programme": "Monthly", "member_total": 2, "deposit_total": 27000.0, "withdrawal_total_no": 7, "withdrawal_total_amount": 227900.0, "return_total_no": 1, "return_total_amount": 5000.0, "balance_amount": 27000.0},
+            {"programme": "Weekly", "member_total": 171, "deposit_total": 4377730.0, "withdrawal_total_no": 1540, "withdrawal_total_amount": 40849865.0, "return_total_no": 549, "return_total_amount": 9617175.0, "balance_amount": 4377730.0},
+            {"programme": "Daily", "member_total": 130, "deposit_total": 6286130.0, "withdrawal_total_no": 1683, "withdrawal_total_amount": 44025180.0, "return_total_no": 475, "return_total_amount": 11654445.0, "balance_amount": 6286130.0},
+            {"programme": "Total", "member_total": 303, "deposit_total": 10690860.0, "withdrawal_total_no": 3230, "withdrawal_total_amount": 85102945.0, "return_total_no": 1025, "return_total_amount": 21276620.0, "balance_amount": 10690860.0},
+        ]
+    }
+    aug_data["credit_statement"] = {
+        "rows": [
+            {"section": "1. Credit Disbursed", "item": "• Previous Loans Count (B/F)", "monthly": 5, "weekly": 149, "daily": 129, "total": 283},
+            {"section": "1. Credit Disbursed", "item": "• Previous Disbursed Amount (₦)", "monthly": 792000.0, "weekly": 24525000.0, "daily": 21768000.0, "total": 47085000.0},
+            {"section": "1. Credit Disbursed", "item": "• Total Net Loans Count (Col 7 = 3+5-27)", "monthly": 5, "weekly": 149, "daily": 129, "total": 283},
+            {"section": "1. Credit Disbursed", "item": "• Total Net Disbursed (₦) (Col 8 = 4+6-28)", "monthly": 792000.0, "weekly": 24525000.0, "daily": 21768000.0, "total": 47085000.0},
+            {"section": "2. Excess Collection", "item": "• Total Excess Collection (₦) (Col 11 = 9+10)", "monthly": 0.0, "weekly": 25119900.0, "daily": 46164400.0, "total": 71284300.0},
+            {"section": "3. Installment Collection", "item": "• Total Net Installments (₦) (Col 14 = 12+13-28)", "monthly": 400000.0, "weekly": 11504500.0, "daily": 10288000.0, "total": 22192500.0},
+            {"section": "4. Balance (Portfolio)", "item": "• Active Loans Balance Count (Col 23 = Col 7)", "monthly": 5, "weekly": 149, "daily": 129, "total": 283},
+            {"section": "4. Balance (Portfolio)", "item": "• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)", "monthly": 392000.0, "weekly": 13020500.0, "daily": 11480000.0, "total": 24892500.0},
+            {"section": "5. Full Repayment (Settled Loans)", "item": "• Total Cumulative Settled Count", "monthly": 19, "weekly": 1592, "daily": 1579, "total": 3190},
+            {"section": "5. Full Repayment (Settled Loans)", "item": "• Total Cumulative Settled Amount (₦)", "monthly": 2898000.0, "weekly": 202326000.0, "daily": 197541000.0, "total": 402765000.0},
+        ]
+    }
+    uow.client.table("monthly_statement_reconciliations").upsert({
+        "branch_id": branch_id,
+        "year": 2026,
+        "month": 8,
+        "data": aug_data,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }, on_conflict="branch_id,year,month").execute()
+
+    print("SUCCESS: Updated monthly_statement_reconciliations for September 2026 and August 2026 baseline with 100% paper parity.")
+
 
 if __name__ == "__main__":
     update_statements_cycle_parity_september_2026()

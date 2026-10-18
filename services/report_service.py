@@ -1797,18 +1797,18 @@ class ReportService:
         BASE_AUG_DEP = {
             "Monthly": {
                 "member_prev": 2, "deposit_prev": 27000.0,
-                "wth_prev_no": 7, "wth_prev_amount": 22790.0,
+                "wth_prev_no": 7, "wth_prev_amount": 227900.0,
                 "ret_prev_no": 1, "ret_prev_amount": 5000.0,
                 "opening_bal": 27000.0
             },
             "Weekly": {
-                "member_prev": 171, "deposit_prev": 43777730.0,
-                "wth_prev_no": 1540, "wth_prev_amount": 40891965.0,
+                "member_prev": 171, "deposit_prev": 4377730.0,
+                "wth_prev_no": 1540, "wth_prev_amount": 40849865.0,
                 "ret_prev_no": 549, "ret_prev_amount": 9617175.0,
                 "opening_bal": 4377730.0
             },
             "Daily": {
-                "member_prev": 130, "deposit_prev": 62861130.0,
+                "member_prev": 130, "deposit_prev": 6286130.0,
                 "wth_prev_no": 1683, "wth_prev_amount": 44025180.0,
                 "ret_prev_no": 475, "ret_prev_amount": 11654445.0,
                 "opening_bal": 6286130.0
@@ -2083,14 +2083,14 @@ class ReportService:
                 "excess": 25119900.0,
                 "inst": 11504500.0,
                 "overdue": 0.0,
-                "settled_no": 1592, "settled_amt": 20424500.0
+                "settled_no": 1592, "settled_amt": 202326000.0
             },
             "Daily": {
                 "disb_no": 129, "disb_amt": 21768000.0,
                 "excess": 46164400.0,
                 "inst": 10288000.0,
                 "overdue": 0.0,
-                "settled_no": 1579, "settled_amt": 16954000.0
+                "settled_no": 1579, "settled_amt": 197541000.0
             }
         }
 

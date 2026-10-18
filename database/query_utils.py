@@ -27,7 +27,7 @@ def fetch_all_paginated(query_builder: Any, step: int = 1000, max_retries: int =
                 break
             except Exception as e:
                 err_str = str(e).lower()
-                if attempt < max_retries - 1 and any(k in err_str for k in ("worker", "cloudflare", "timeout", "disconnected", "remoteprotocolerror", "500", "502", "503", "504", "ssl", "eof", "connection", "connect")):
+                if attempt < max_retries - 1 and any(k in err_str for k in ("worker", "cloudflare", "timeout", "disconnected", "remoteprotocolerror", "500", "502", "503", "504", "ssl", "eof", "connection", "connect", "getaddrinfo", "dns")):
                     time.sleep(1.0 * (attempt + 1))
                     continue
                 raise

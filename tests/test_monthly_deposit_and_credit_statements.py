@@ -31,11 +31,13 @@ class TestMonthlyDepositAndCreditStatements:
         assert tot["member_total"] == 341
 
         assert tot["deposit_curr"] == 4292225.0
-        assert tot["deposit_prev"] == 106665860.0
-        assert tot["deposit_total"] == 110958085.0
+        assert tot["deposit_prev"] == 10690860.0
+        assert tot["deposit_total"] == 14983085.0
 
+        assert tot["withdrawal_prev_amount"] == 85102945.0
         assert tot["withdrawal_curr_no"] == 66
         assert tot["withdrawal_curr_amount"] == 3111800.0
+        assert tot["withdrawal_total_amount"] == 88214745.0
         assert tot["return_curr_no"] == 22
         assert tot["return_curr_amount"] == 385500.0
         assert round(tot["withdrawal_curr_amount"] + tot["return_curr_amount"], 2) == 3497300.0
@@ -131,6 +133,18 @@ class TestMonthlyDepositAndCreditStatements:
         assert row_full_rep_amt["daily"] == 8184000.0
         assert row_full_rep_amt["total"] == 17628000.0
 
+        row_full_rep_prev_amt = rows_map["• Previous Full Repayment Amount (₦) (Col 26)"]
+        assert row_full_rep_prev_amt["monthly"] == 2898000.0
+        assert row_full_rep_prev_amt["weekly"] == 202326000.0
+        assert row_full_rep_prev_amt["daily"] == 197541000.0
+        assert row_full_rep_prev_amt["total"] == 402765000.0
+
+        row_cum_settled_amt = rows_map["• Total Cumulative Settled Amount (₦)"]
+        assert row_cum_settled_amt["monthly"] == 3306000.0
+        assert row_cum_settled_amt["weekly"] == 211362000.0
+        assert row_cum_settled_amt["daily"] == 205725000.0
+        assert row_cum_settled_amt["total"] == 420393000.0
+
     def test_automatic_rollover_next_month_zero_manual_input(self):
         """
         Verifies that for future months (e.g. October 2026), the system automatically
@@ -142,7 +156,7 @@ class TestMonthlyDepositAndCreditStatements:
         assert "rows" in oct_dep and len(oct_dep["rows"]) == 4
         tot_row = oct_dep["rows"][-1]
         assert tot_row["member_prev"] == 341, "October member_prev must equal September member_total"
-        assert tot_row["deposit_prev"] == 110958085.0, "October deposit_prev must equal September deposit_total"
+        assert tot_row["deposit_prev"] == 14983085.0, "October deposit_prev must equal September deposit_total"
         assert tot_row["balance_amount"] == 11485785.0, "October opening balance must equal September closing balance"
 
         oct_credit = ReportService.get_monthly_credit_statement(
@@ -277,7 +291,7 @@ class TestMonthlyDepositAndCreditStatements:
         tot_dep = oct_dep["rows"][-1]
         # B/F values match September closing
         assert tot_dep["member_prev"] == 341
-        assert tot_dep["deposit_prev"] == 110958085.0
+        assert tot_dep["deposit_prev"] == 14983085.0
         # Balance = open_bal + deposit_curr - withdrawals - returns
         expected_dep_bal = round(11485785.0 + tot_dep["deposit_curr"] - tot_dep["withdrawal_curr_amount"] - tot_dep["return_curr_amount"], 2)
         assert tot_dep["balance_amount"] == expected_dep_bal

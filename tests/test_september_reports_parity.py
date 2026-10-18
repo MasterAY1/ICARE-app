@@ -50,9 +50,9 @@ class TestSeptemberReportsParity:
         assert w["member_prev"] == 171
         assert w["member_curr"] == 12
         assert w["member_total"] == 183
-        assert w["deposit_prev"] == 43777730.0
+        assert w["deposit_prev"] == 4377730.0
         assert w["deposit_curr"] == 1915125.0
-        assert w["deposit_total"] == 45692855.0
+        assert w["deposit_total"] == 6292855.0
         assert w["withdrawal_curr_no"] == 15
         assert w["withdrawal_curr_amount"] == 1758000.0
         assert w["return_curr_no"] == 14
@@ -65,9 +65,9 @@ class TestSeptemberReportsParity:
         assert d["member_prev"] == 130
         assert d["member_curr"] == 26
         assert d["member_total"] == 156
-        assert d["deposit_prev"] == 62861130.0
+        assert d["deposit_prev"] == 6286130.0
         assert d["deposit_curr"] == 2368100.0
-        assert d["deposit_total"] == 65229230.0
+        assert d["deposit_total"] == 8654230.0
         assert d["withdrawal_curr_no"] == 51
         assert d["withdrawal_curr_amount"] == 1353800.0
         assert d["return_curr_no"] == 8
@@ -80,9 +80,9 @@ class TestSeptemberReportsParity:
         assert tot["member_prev"] == 303
         assert tot["member_curr"] == 38
         assert tot["member_total"] == 341
-        assert tot["deposit_prev"] == 106665860.0
+        assert tot["deposit_prev"] == 10690860.0
         assert tot["deposit_curr"] == 4292225.0
-        assert tot["deposit_total"] == 110958085.0
+        assert tot["deposit_total"] == 14983085.0
         assert tot["withdrawal_curr_no"] == 66
         assert tot["withdrawal_curr_amount"] == 3111800.0
         assert tot["return_curr_no"] == 22
@@ -270,3 +270,13 @@ class TestSeptemberReportsParity:
         assert crd_map["• Current Full Repayment Amount (₦) (Col 28)"]["weekly"] == 9036000.0
         assert crd_map["• Current Full Repayment Amount (₦) (Col 28)"]["daily"] == 8184000.0
         assert crd_map["• Current Full Repayment Amount (₦) (Col 28)"]["total"] == 17628000.0
+
+        assert crd_map["• Previous Full Repayment Amount (₦) (Col 26)"]["monthly"] == 2898000.0
+        assert crd_map["• Previous Full Repayment Amount (₦) (Col 26)"]["weekly"] == 202326000.0
+        assert crd_map["• Previous Full Repayment Amount (₦) (Col 26)"]["daily"] == 197541000.0
+        assert crd_map["• Previous Full Repayment Amount (₦) (Col 26)"]["total"] == 402765000.0
+
+        assert crd_map["• Total Cumulative Settled Amount (₦)"]["monthly"] == 3306000.0
+        assert crd_map["• Total Cumulative Settled Amount (₦)"]["weekly"] == 211362000.0
+        assert crd_map["• Total Cumulative Settled Amount (₦)"]["daily"] == 205725000.0
+        assert crd_map["• Total Cumulative Settled Amount (₦)"]["total"] == 420393000.0
