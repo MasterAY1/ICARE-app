@@ -853,15 +853,17 @@ class ReportService:
         if year > 2026 or (year == 2026 and month > 9):
             prev_year = year if month > 1 else year - 1
             prev_month = month - 1 if month > 1 else 12
-            try:
-                prev_m_data = ReportService.get_monthly_parity_matrix(uow, branch_id, prev_year, prev_month, product_name=product_name)
-                for r in prev_m_data.get("rows", []):
-                    if r.get("metric") == "Closing Credit Balance":
-                        prev_matrix_closing_credit = r.get("values", {})
-                        break
-            except Exception as e:
-                import traceback
-                print(f"DEBUG CASCADE EXCEPTION: {e}\n{traceback.format_exc()}")
+            for _attempt in range(3):
+                try:
+                    prev_m_data = ReportService.get_monthly_parity_matrix(uow, branch_id, prev_year, prev_month, product_name=product_name)
+                    for r in prev_m_data.get("rows", []):
+                        if r.get("metric") == "Closing Credit Balance":
+                            prev_matrix_closing_credit = r.get("values", {})
+                            break
+                    break
+                except Exception:
+                    import time
+                    time.sleep(0.5)
 
         for off in officers:
             oid = off["officer_id"]
