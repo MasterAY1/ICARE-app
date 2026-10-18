@@ -30,7 +30,11 @@ class ApiClient {
     String defaultUrl = 'https://icare-app.onrender.com';
     if (kIsWeb) {
       final origin = Uri.base.origin;
-      if (origin.isNotEmpty && !origin.startsWith('file://')) {
+      final host = Uri.base.host.toLowerCase();
+      final isLocalDev = host == 'localhost' || host == '127.0.0.1';
+      // When running in a local Flutter dev server (not port 8000), target cloud backend
+      // Otherwise, when hosted on Vercel/Production or local reverse proxy, use origin
+      if (origin.isNotEmpty && !origin.startsWith('file://') && (!isLocalDev || Uri.base.port == 8000)) {
         defaultUrl = origin;
       }
     }

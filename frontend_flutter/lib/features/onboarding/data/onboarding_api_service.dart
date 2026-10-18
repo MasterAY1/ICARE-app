@@ -22,13 +22,13 @@ class OnboardingApiService {
     return response.data as Map<String, dynamic>;
   }
 
-  /// PUT /api/v1/onboarding/session/{token}/save-draft
+  /// POST /api/v1/onboarding/session/{token}/save-draft
   Future<Map<String, dynamic>> saveDraft(
     String token,
     Map<String, dynamic> payload, {
     String? scopedOfficer,
   }) async {
-    final response = await _client.put(
+    final response = await _client.post(
       '/api/v1/onboarding/session/$token/save-draft',
       data: {
         'payload': payload,
@@ -82,9 +82,9 @@ class OnboardingApiService {
     return response.data as Map<String, dynamic>;
   }
 
-  /// PUT /api/v1/onboarding/officer/{co_token}/save-draft
+  /// POST /api/v1/onboarding/officer/{co_token}/save-draft
   Future<Map<String, dynamic>> saveOfficerDraft(String coToken, Map<String, dynamic> payload) async {
-    final response = await _client.put(
+    final response = await _client.post(
       '/api/v1/onboarding/officer/$coToken/save-draft',
       data: {'payload': payload},
     );

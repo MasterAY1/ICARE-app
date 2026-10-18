@@ -73,6 +73,7 @@ def get_onboarding_session(
 
 
 @router.put("/session/{token}/save-draft", summary="Auto-save onboarding draft progress")
+@router.post("/session/{token}/save-draft", summary="Auto-save onboarding draft progress (POST alias)")
 def save_onboarding_draft(
     token: str,
     req: SaveDraftRequest,
@@ -161,6 +162,7 @@ def get_officer_workspace(
 
 
 @router.put("/officer/{co_token}/save-draft", summary="Save Credit Officer draft groups and members")
+@router.post("/officer/{co_token}/save-draft", summary="Save Credit Officer draft groups and members (POST alias)")
 def save_officer_draft(
     co_token: str,
     req: SaveOfficerDraftRequest,
