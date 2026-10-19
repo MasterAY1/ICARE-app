@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'core/auth/auth_controller.dart';
-import 'core/auth/auth_state.dart';
 import 'core/theme/icare_theme.dart';
-import 'features/auth/presentation/login_screen.dart';
 import 'features/auth/presentation/splash_screen.dart';
 import 'features/onboarding/presentation/branch_onboarding_portal_screen.dart';
 import 'features/onboarding/presentation/credit_officer_portal_screen.dart';
-import 'features/shared/presentation/co_app_scaffold.dart';
 
 class IcareApp extends ConsumerWidget {
   const IcareApp({super.key});
@@ -19,26 +15,36 @@ class IcareApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       theme: IcareTheme.lightTheme,
       onGenerateRoute: (settings) {
-        final uri = Uri.tryParse(settings.name ?? '');
+        final rawName = settings.name ?? '';
+        final uri = Uri.tryParse(rawName);
         if (uri != null &&
             (uri.path.contains('onboarding') ||
-                uri.queryParameters.containsKey('token'))) {
-          final token = uri.queryParameters['token'] ?? '';
-          final officer = uri.queryParameters['officer'];
+                rawName.contains('onboarding') ||
+                uri.queryParameters.containsKey('token') ||
+                uri.fragment.contains('token'))) {
+          String? token = uri.queryParameters['token'];
+          String? officer = uri.queryParameters['officer'];
+          bool isOfficerRoute = uri.path.contains('officer') || uri.fragment.contains('officer');
 
-          // Route dedicated Credit Officer links to CreditOfficerPortalScreen
-          if (token.startsWith('onb_co_') || uri.path.contains('officer')) {
+          if (uri.fragment.isNotEmpty) {
+            final fragUri = Uri.tryParse(uri.fragment.startsWith('/') ? uri.fragment : '/${uri.fragment}');
+            if (fragUri != null) {
+              token ??= fragUri.queryParameters['token'];
+              officer ??= fragUri.queryParameters['officer'];
+            }
+          }
+
+          final cleanToken = token?.trim() ?? '';
+          if (cleanToken.startsWith('onb_co_') || isOfficerRoute) {
             return MaterialPageRoute(
-              builder: (_) => CreditOfficerPortalScreen(
-                coToken: token,
-              ),
+              builder: (_) => CreditOfficerPortalScreen(coToken: cleanToken),
               settings: settings,
             );
           }
 
           return MaterialPageRoute(
             builder: (_) => BranchOnboardingPortalScreen(
-              token: token,
+              token: cleanToken,
               initialOfficer: officer,
             ),
             settings: settings,

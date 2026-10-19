@@ -11,6 +11,7 @@ import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/platform_file_picker.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../data/onboarding_api_service.dart';
+import 'credit_officer_portal_screen.dart';
 
 class BranchOnboardingPortalScreen extends ConsumerStatefulWidget {
   final String token;
@@ -71,17 +72,44 @@ class _BranchOnboardingPortalScreenState
   void initState() {
     super.initState();
     _currentToken = widget.token.trim();
+
+    // Resolve token and officer scope from constructor, URL query parameters, or hash fragments
+    final uri = Uri.base;
+    String? tokenFromUrl = uri.queryParameters['token'];
+    String? officerFromUrl = uri.queryParameters['officer'];
+
+    if (uri.fragment.isNotEmpty) {
+      final frag = uri.fragment;
+      final fragUri = Uri.tryParse(frag.startsWith('/') ? frag : '/$frag');
+      if (fragUri != null) {
+        tokenFromUrl ??= fragUri.queryParameters['token'];
+        officerFromUrl ??= fragUri.queryParameters['officer'];
+      }
+    }
+
+    if (_currentToken.isEmpty && tokenFromUrl != null && tokenFromUrl.trim().isNotEmpty) {
+      _currentToken = tokenFromUrl.trim();
+    }
     _tokenCtrl = TextEditingController(text: _currentToken);
 
-    // Resolve CO scope from constructor or URL query parameters
-    final uri = Uri.base;
-    final officerFromUrl = uri.queryParameters['officer'];
     if (widget.initialOfficer != null && widget.initialOfficer!.trim().isNotEmpty) {
       _scopedOfficer = widget.initialOfficer!.trim();
       _isEnforcedOfficerScope = true;
     } else if (officerFromUrl != null && officerFromUrl.trim().isNotEmpty) {
       _scopedOfficer = Uri.decodeComponent(officerFromUrl.trim());
       _isEnforcedOfficerScope = true;
+    }
+
+    // Auto-redirect to dedicated Credit Officer Portal Screen if an officer token is supplied
+    if (_currentToken.startsWith('onb_co_')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => CreditOfficerPortalScreen(coToken: _currentToken)),
+          );
+        }
+      });
+      return;
     }
 
     final isOfficer = _scopedOfficer != null && _scopedOfficer!.isNotEmpty;
@@ -101,6 +129,17 @@ class _BranchOnboardingPortalScreenState
   }
 
   Future<void> _loadSessionData() async {
+    if (_currentToken.startsWith('onb_co_')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => CreditOfficerPortalScreen(coToken: _currentToken)),
+          );
+        }
+      });
+      return;
+    }
+
     if (_currentToken.isEmpty) {
       setState(() {
         _isLoading = false;
@@ -2086,8 +2125,8 @@ class _BranchOnboardingPortalScreenState
                   TextField(
                     controller: _tokenCtrl,
                     decoration: InputDecoration(
-                      labelText: 'Onboarding Invitation Token',
-                      hintText: 'e.g. onboard_...',
+                      labelText: 'Branch Manager or Officer Token',
+                      hintText: 'e.g. onb_branch_... or onb_co_...',
                       prefixIcon: const Icon(Icons.key, size: 16),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -2108,8 +2147,15 @@ class _BranchOnboardingPortalScreenState
                         foregroundColor: Colors.white,
                       ),
                       onPressed: () {
+                        final inputToken = _tokenCtrl.text.trim();
+                        if (inputToken.startsWith('onb_co_')) {
+                          Navigator.of(context).pushReplacement(
+                            MaterialPageRoute(builder: (_) => CreditOfficerPortalScreen(coToken: inputToken)),
+                          );
+                          return;
+                        }
                         setState(() {
-                          _currentToken = _tokenCtrl.text.trim();
+                          _currentToken = inputToken;
                         });
                         _loadSessionData();
                       },
@@ -2331,6 +2377,10 @@ class _BranchOnboardingPortalScreenState
                           ]
                         : [
                             Tab(
+                              icon: const Icon(Icons.badge_outlined, size: 18),
+                              text: 'Credit Officers & Links (${_officers.length})',
+                            ),
+                            Tab(
                               icon: const Icon(Icons.groups_outlined, size: 18),
                               text: 'Member Roster (${_members.length})',
                             ),
@@ -2338,17 +2388,13 @@ class _BranchOnboardingPortalScreenState
                               icon: const Icon(Icons.hub_outlined, size: 18),
                               text: 'Solidarity Groups (${_groups.length})',
                             ),
-                            Tab(
-                              icon: const Icon(Icons.badge_outlined, size: 18),
-                              text: 'Officers & Reserves (${_officers.length})',
-                            ),
                             const Tab(
                               icon: Icon(Icons.upload_file_outlined, size: 18),
                               text: 'Excel Uploader',
                             ),
                             const Tab(
                               icon: Icon(Icons.verified_outlined, size: 18),
-                              text: 'Review & Sign-Off',
+                              text: 'Review & Submit to AM',
                             ),
                           ],
                   );
@@ -2368,9 +2414,9 @@ class _BranchOnboardingPortalScreenState
                         _buildReviewSignOffTab(isSubmitted),
                       ]
                     : [
+                        _buildOfficersAndReservesTab(isSubmitted),
                         _buildMembersGridTab(isSubmitted),
                         _buildGroupsTab(isSubmitted),
-                        _buildOfficersAndReservesTab(isSubmitted),
                         _buildExcelUploaderTab(isSubmitted),
                         _buildReviewSignOffTab(isSubmitted),
                       ],
@@ -2441,10 +2487,31 @@ class _BranchOnboardingPortalScreenState
                             ),
                           ),
                         ),
+                        if (_scopedOfficer == null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0F2744),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'BRANCH MANAGER PORTAL',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     Text(
-                      '$branchName ($branchCode) — Branch Onboarding',
+                      _scopedOfficer == null
+                          ? '$branchName ($branchCode) — Branch Manager Portal'
+                          : '$branchName ($branchCode) — Credit Officer: $_scopedOfficer',
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
@@ -4352,6 +4419,7 @@ class _BranchOnboardingPortalScreenState
                   final cleanName = nameCtrl.text.trim();
                   final cleanPhone = phoneCtrl.text.trim();
 
+                  String? generatedCoId;
                   setState(() {
                     if (isMiscMgr) {
                       for (var o in _officers) {
@@ -4367,6 +4435,7 @@ class _BranchOnboardingPortalScreenState
                       officerToEdit['is_misc_savings_manager'] = isMiscMgr;
                     } else {
                       final coId = 'onb_co_${DateTime.now().millisecondsSinceEpoch.toRadixString(16)}';
+                      generatedCoId = coId;
                       _officers.add({
                         'id': coId,
                         'officer_id': coId,
@@ -4386,12 +4455,95 @@ class _BranchOnboardingPortalScreenState
                   Navigator.of(ctx).pop();
                   _saveDraft();
                   _showBanner(isEditing ? 'Officer updated successfully.' : 'Officer added successfully.');
+                  if (!isEditing && generatedCoId != null) {
+                    final origin = (kIsWeb && Uri.base.origin.isNotEmpty && !Uri.base.origin.startsWith('file://'))
+                        ? Uri.base.origin
+                        : 'http://localhost:8000';
+                    final coUrl = '$origin/#/onboarding/officer?token=$generatedCoId';
+                    _showOfficerLinkModal(cleanName, coUrl);
+                  }
                 }
               },
               child: Text(isEditing ? 'Save Changes' : 'Add Officer'),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showOfficerLinkModal(String name, String coUrl) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Icon(Icons.link, size: 18, color: Color(0xFF1D4ED8)),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Dedicated Link for $name',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'A dedicated, cryptographically isolated onboarding workspace has been created for $name. Copy and deliver this link to the officer:',
+              style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFFCBD5E1)),
+              ),
+              child: SelectableText(
+                coUrl,
+                style: const TextStyle(fontSize: 12, fontFamily: 'monospace', fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'When the officer opens this link, they will see strictly their own groups and members, with zero visibility into other officers.',
+              style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: IcareColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: coUrl));
+              Navigator.of(ctx).pop();
+              _showBanner('Dedicated officer link for $name copied to clipboard!', isSuccess: true);
+            },
+            icon: const Icon(Icons.copy, size: 14),
+            label: const Text('Copy Officer Link'),
+          ),
+        ],
       ),
     );
   }

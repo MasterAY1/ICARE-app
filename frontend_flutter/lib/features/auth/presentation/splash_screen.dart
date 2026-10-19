@@ -9,6 +9,7 @@ import '../../../core/theme/icare_colors.dart';
 import '../../../core/theme/icare_typography.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 import '../../onboarding/presentation/branch_onboarding_portal_screen.dart';
+import '../../onboarding/presentation/credit_officer_portal_screen.dart';
 import 'login_screen.dart';
 
 /// Institutional Welcome Splash Screen for ICARE Core Banking.
@@ -81,15 +82,23 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     if (!mounted) return;
 
     // 5. Inspect URL parameters / hash fragments for public branch onboarding link
-    String? onboardingToken;
-    if (Uri.base.queryParameters.containsKey('token')) {
-      onboardingToken = Uri.base.queryParameters['token'];
-    }
-    if ((onboardingToken == null || onboardingToken.isEmpty) && Uri.base.fragment.isNotEmpty) {
+    String? onboardingToken = Uri.base.queryParameters['token'];
+    String? officerName = Uri.base.queryParameters['officer'];
+    bool isOfficerRoute = Uri.base.path.contains('officer');
+
+    if (Uri.base.fragment.isNotEmpty) {
       final fragment = Uri.base.fragment;
       final fragUri = Uri.tryParse(fragment.startsWith('/') ? fragment : '/$fragment');
-      if (fragUri != null && fragUri.queryParameters.containsKey('token')) {
-        onboardingToken = fragUri.queryParameters['token'];
+      if (fragUri != null) {
+        if ((onboardingToken == null || onboardingToken.isEmpty) && fragUri.queryParameters.containsKey('token')) {
+          onboardingToken = fragUri.queryParameters['token'];
+        }
+        if ((officerName == null || officerName.isEmpty) && fragUri.queryParameters.containsKey('officer')) {
+          officerName = fragUri.queryParameters['officer'];
+        }
+        if (fragUri.path.contains('officer')) {
+          isOfficerRoute = true;
+        }
       }
     }
 
@@ -99,7 +108,15 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
     Widget targetScreen;
     if (isExplicitOnboarding) {
-      targetScreen = BranchOnboardingPortalScreen(token: onboardingToken ?? '');
+      final cleanToken = onboardingToken?.trim() ?? '';
+      if (cleanToken.startsWith('onb_co_') || isOfficerRoute) {
+        targetScreen = CreditOfficerPortalScreen(coToken: cleanToken);
+      } else {
+        targetScreen = BranchOnboardingPortalScreen(
+          token: cleanToken,
+          initialOfficer: officerName,
+        );
+      }
     } else {
       final authState = ref.read(authControllerProvider);
       targetScreen = (authState is AuthStateAuthenticated)

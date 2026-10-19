@@ -5,7 +5,9 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/theme/icare_colors.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../auth/presentation/login_screen.dart';
 import '../data/onboarding_api_service.dart';
+import 'branch_onboarding_portal_screen.dart';
 
 /// Dedicated, cryptographically isolated onboarding workspace for Credit Officers.
 /// Enforces 100% data privacy: Credit Officers can only view and manage their
@@ -24,6 +26,8 @@ class CreditOfficerPortalScreen extends ConsumerStatefulWidget {
 
 class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  late String _currentToken;
+  final TextEditingController _tokenCtrl = TextEditingController();
   bool _isLoading = true;
   bool _isSaving = false;
   String? _errorMessage;
@@ -49,12 +53,36 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    _loadWorkspace();
+    _currentToken = widget.coToken.trim();
+
+    if (_currentToken.isEmpty) {
+      final uri = Uri.base;
+      String? tokenFromUrl = uri.queryParameters['token'];
+      if (uri.fragment.isNotEmpty) {
+        final frag = uri.fragment;
+        final fragUri = Uri.tryParse(frag.startsWith('/') ? frag : '/$frag');
+        if (fragUri != null && fragUri.queryParameters.containsKey('token')) {
+          tokenFromUrl ??= fragUri.queryParameters['token'];
+        }
+      }
+      if (tokenFromUrl != null && tokenFromUrl.trim().isNotEmpty) {
+        _currentToken = tokenFromUrl.trim();
+      }
+    }
+
+    _tokenCtrl.text = _currentToken;
+
+    if (_currentToken.isNotEmpty) {
+      _loadWorkspace();
+    } else {
+      _isLoading = false;
+    }
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _tokenCtrl.dispose();
     super.dispose();
   }
 
@@ -66,7 +94,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
 
     try {
       final api = ref.read(onboardingApiServiceProvider);
-      final data = await api.getOfficerWorkspace(widget.coToken);
+      final data = await api.getOfficerWorkspace(_currentToken);
 
       setState(() {
         _officer = Map<String, dynamic>.from(data['officer'] ?? {});
@@ -115,7 +143,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
         'members': _members,
       };
 
-      final data = await api.saveOfficerDraft(widget.coToken, payload);
+      final data = await api.saveOfficerDraft(_currentToken, payload);
 
       if (mounted) {
         setState(() {
@@ -221,9 +249,9 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     try {
       final api = ref.read(onboardingApiServiceProvider);
       // Auto-save any pending changes first
-      await api.saveOfficerDraft(widget.coToken, {'groups': _groups, 'members': _members});
+      await api.saveOfficerDraft(_currentToken, {'groups': _groups, 'members': _members});
       // Submit
-      await api.submitOfficerRoster(widget.coToken);
+      await api.submitOfficerRoster(_currentToken);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -259,7 +287,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
 
       final api = ref.read(onboardingApiServiceProvider);
       final res = await api.uploadOfficerExcelBytes(
-        widget.coToken,
+        _currentToken,
         picked.bytes,
         picked.name,
       );
@@ -683,41 +711,104 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
       );
     }
 
-    if (_errorMessage != null) {
+    if (_currentToken.isEmpty || _errorMessage != null) {
       return Scaffold(
         backgroundColor: const Color(0xFFF8FAFC),
         body: Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 480),
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFFECACA)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.error_outline, size: 48, color: Color(0xFFDC2626)),
-                const SizedBox(height: 16),
-                const Text(
-                  'Access Restriction',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _errorMessage!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.4),
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
-                  onPressed: _loadWorkspace,
-                  icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('Retry Connection'),
-                ),
-              ],
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 480),
+              padding: const EdgeInsets.all(28),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x0A000000),
+                    blurRadius: 16,
+                    offset: Offset(0, 4),
+                  )
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: const Icon(Icons.badge_outlined, size: 26, color: Color(0xFF1D4ED8)),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Credit Officer Portal Access',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _errorMessage ?? 'Please provide your dedicated Credit Officer invitation token to access your assigned workspace.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: _errorMessage != null ? const Color(0xFFDC2626) : const Color(0xFF475569),
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: _tokenCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Credit Officer Token',
+                      hintText: 'e.g. onb_co_...',
+                      prefixIcon: const Icon(Icons.key, size: 16),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 42,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: IcareColors.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () {
+                        final input = _tokenCtrl.text.trim();
+                        if (input.startsWith('onb_branch_')) {
+                          Navigator.of(context).pushReplacement(
+                            MaterialPageRoute(builder: (_) => BranchOnboardingPortalScreen(token: input)),
+                          );
+                          return;
+                        }
+                        setState(() {
+                          _currentToken = input;
+                        });
+                        _loadWorkspace();
+                      },
+                      icon: const Icon(Icons.login, size: 16),
+                      label: const Text('Access Officer Workspace', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      );
+                    },
+                    icon: const Icon(Icons.arrow_back, size: 14),
+                    label: const Text('Return to Staff Login', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -844,6 +935,23 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF059669),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'CREDIT OFFICER PORTAL',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Text(
                     officerName,
                     style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
@@ -867,6 +975,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                   ),
                 ],
               ),
+              const SizedBox(height: 2),
               Text(
                 'Credit Officer • $_branchName • Branch: ${_sessionStatus.toUpperCase()}${_expiresAt != null ? " • Due: ${DateFormat('dd MMM').format(_expiresAt!.toLocal())}" : ""}',
                 style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),

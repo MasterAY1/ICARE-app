@@ -589,7 +589,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             },
             icon: const Icon(Icons.domain_add_outlined, size: 14, color: Color(0xD9FFFFFF)),
             label: const Text(
-              'Have a Branch Onboarding Link? Open Portal',
+              'Have an Onboarding Link or Token? Open Portal',
               style: TextStyle(
                 fontSize: 11.5,
                 color: Color(0xD9FFFFFF),
