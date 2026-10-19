@@ -13,10 +13,18 @@ import '../../shared/presentation/co_app_scaffold.dart';
 import '../../shared/utils/file_download_helper.dart';
 import '../../onboarding/presentation/branch_onboarding_admin_screen.dart';
 import '../../reports/data/datasources/reports_api_service.dart';
+import '../../reports/data/models/report_models.dart';
 import '../../reports/presentation/reports_export_screen.dart';
 
 /// Provider for selected business date in AM dashboard
 final amSelectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
+
+/// Provider for supervised branches monthly workflow submissions in AM Approvals Hub
+final amMonthlyWorkflowSubmissionsProvider = FutureProvider.autoDispose<List<MonthlyWorkflowPendingBranchModel>>((ref) async {
+  final api = ref.watch(reportsApiServiceProvider);
+  final selectedDate = ref.watch(amSelectedDateProvider);
+  return api.getPendingAmMonthlySubmissions(year: selectedDate.year, month: selectedDate.month);
+});
 
 /// Provider for loading AM Dashboard data
 final amDashboardDataProvider = FutureProvider.autoDispose<AmDashboardDataModel>((ref) async {
@@ -123,6 +131,178 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       ref.invalidate(amDashboardDataProvider);
     } catch (e) {
       _showFlash('Failed to confirm branch EOD: $e');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _handleAmEndorseSubmission(MonthlyWorkflowPendingBranchModel b) async {
+    final notesController = TextEditingController();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Endorse Monthly Report — ${b.branchName}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Confirm and sign off on monthly books for ${b.branchName} (${b.year}-${b.month.toString().padLeft(2, '0')})?',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
+            const SizedBox(height: 12),
+            TextField(
+              controller: notesController,
+              decoration: const InputDecoration(
+                labelText: 'Supervisory Remarks (Optional)',
+                hintText: 'e.g. Month-end figures inspected and reconciled.',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
+            child: const Text('Endorse Report', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isProcessing = true);
+    try {
+      final reportsApi = ref.read(reportsApiServiceProvider);
+      final res = await reportsApi.endorseMonthlyWorkflow(
+        branchName: b.branchName,
+        year: b.year,
+        month: b.month,
+        notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
+      );
+      _showFlash(res['message'] ?? 'Branch monthly report successfully endorsed.');
+      ref.invalidate(amMonthlyWorkflowSubmissionsProvider);
+    } catch (e) {
+      _showFlash('Failed to endorse report: $e');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _handleAmReturnSubmission(MonthlyWorkflowPendingBranchModel b) async {
+    final queryController = TextEditingController();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Return Report for Correction — ${b.branchName}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Specify required adjustments or query for ${b.bmName ?? "Branch Manager"}:',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
+            const SizedBox(height: 12),
+            TextField(
+              controller: queryController,
+              decoration: const InputDecoration(
+                labelText: 'Supervisory Query Notes (Required)',
+                hintText: 'e.g. Reconcile vault cash variance before final sign-off.',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              if (queryController.text.trim().isEmpty) return;
+              Navigator.pop(ctx, true);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            child: const Text('Return Report', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || queryController.text.trim().isEmpty) return;
+
+    setState(() => _isProcessing = true);
+    try {
+      final reportsApi = ref.read(reportsApiServiceProvider);
+      final res = await reportsApi.returnMonthlyWorkflow(
+        branchName: b.branchName,
+        year: b.year,
+        month: b.month,
+        queryNotes: queryController.text.trim(),
+      );
+      _showFlash(res['message'] ?? 'Report returned to Branch Manager with queries.');
+      ref.invalidate(amMonthlyWorkflowSubmissionsProvider);
+    } catch (e) {
+      _showFlash('Failed to return report: $e');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _handleSealAreaMonthlyPackage(String areaName) async {
+    final selectedDate = ref.read(amSelectedDateProvider);
+    final notesController = TextEditingController();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Seal $areaName Month-End Regional Package', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Seal and lock the consolidated monthly package for $areaName (${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')})?\n\nAll supervised branches are certified and endorsed. Once sealed, the package will be transmitted to Executive Admin for final institutional lock.',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
+            const SizedBox(height: 12),
+            TextField(
+              controller: notesController,
+              decoration: const InputDecoration(
+                labelText: 'Regional Package Notes (Optional)',
+                hintText: 'e.g. All branch accounts verified with zero unresolved queries.',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B)),
+            child: const Text('Seal Area Package', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isProcessing = true);
+    try {
+      final reportsApi = ref.read(reportsApiServiceProvider);
+      final res = await reportsApi.sealAreaMonthlyWorkflow(
+        areaName: areaName,
+        year: selectedDate.year,
+        month: selectedDate.month,
+        notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
+      );
+      _showFlash(res['message'] ?? '$areaName monthly package successfully sealed.');
+      ref.invalidate(amMonthlyWorkflowSubmissionsProvider);
+    } catch (e) {
+      _showFlash('Failed to seal regional package: $e');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -1514,10 +1694,15 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     final loanCount = approvals.pendingHighValueLoans.length;
     final transferCount = approvals.pendingBranchTransfers.length;
 
+    final monthlyWorkflowAsync = ref.watch(amMonthlyWorkflowSubmissionsProvider);
+    final monthlyList = monthlyWorkflowAsync.value ?? [];
+    final monthlyPendingCount = monthlyList.where((b) => b.status == 'BM_SUBMITTED').length;
+
     final tabs = [
       'Branch EOD Sign-Off ($eodCount)',
       'High-Value Loans > ₦300k ($loanCount)',
       'Inter-Branch Transfers ($transferCount)',
+      'Monthly Reports ($monthlyPendingCount)',
     ];
 
     return Container(
@@ -1622,8 +1807,10 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             _buildBranchEodApprovalsTab(approvals.pendingBranchEods, isMobile)
           else if (_activeApprovalTab.startsWith('High-Value Loans'))
             _buildHighValueLoansApprovalsTab(approvals.pendingHighValueLoans, isMobile)
+          else if (_activeApprovalTab.startsWith('Inter-Branch Transfers'))
+            _buildTransfersApprovalsTab(approvals.pendingBranchTransfers, isMobile)
           else
-            _buildTransfersApprovalsTab(approvals.pendingBranchTransfers, isMobile),
+            _buildMonthlyReportApprovalsTab(monthlyWorkflowAsync, isMobile, areaName: areaName),
         ],
       ),
     );
@@ -2086,6 +2273,370 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           ),
         );
       }).toList(),
+    );
+  }
+
+  Widget _buildMonthlyReportApprovalsTab(AsyncValue<List<MonthlyWorkflowPendingBranchModel>> asyncData, bool isMobile, {String areaName = 'Area 1'}) {
+    return asyncData.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+              SizedBox(width: 12),
+              Text('Loading supervised monthly submissions...', style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B))),
+            ],
+          ),
+        ),
+      ),
+      error: (err, _) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFEF2F2),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFFECACA)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.info_outline, color: Color(0xFFDC2626), size: 18),
+              const SizedBox(width: 10),
+              Expanded(child: Text('Failed to load monthly submissions: $err', style: const TextStyle(color: Color(0xFF991B1B), fontSize: 12))),
+              TextButton(
+                onPressed: () => ref.invalidate(amMonthlyWorkflowSubmissionsProvider),
+                child: const Text('Retry', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ),
+            ],
+          ),
+        ),
+      ),
+      data: (branches) {
+        if (branches.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(
+              child: Text(
+                'Zero supervised branches found for Area Manager monthly verification.',
+                style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+              ),
+            ),
+          );
+        }
+
+        final allEndorsed = branches.isNotEmpty && branches.every((b) => b.status == 'AM_VERIFIED' || b.status == 'AREA_SEALED' || b.status == 'ADMIN_LOCKED');
+        final isAreaSealed = branches.isNotEmpty && branches.every((b) => b.status == 'AREA_SEALED' || b.status == 'ADMIN_LOCKED');
+
+        return Column(
+          children: [
+            // Regional Package Sealing Card when all branches are AM_VERIFIED
+            if (allEndorsed && !isAreaSealed)
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF86EFAC)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(8)),
+                      child: const Icon(Icons.verified, color: Color(0xFF166534), size: 24),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('All $areaName Branches Endorsed', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF166534))),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'All assigned branches have completed Area Manager review. Seal the consolidated regional package for Executive Admin archival.',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF334155)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    ElevatedButton.icon(
+                      onPressed: _isProcessing ? null : () => _handleSealAreaMonthlyPackage(areaName),
+                      icon: const Icon(Icons.lock, size: 14, color: Colors.white),
+                      label: Text('Seal $areaName Month-End', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B)),
+                    ),
+                  ],
+                ),
+              )
+            else if (isAreaSealed)
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF93C5FD)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.folder_special, color: Color(0xFF1D4ED8), size: 20),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Regional month-end package is sealed and submitted to Executive Admin for institutional archival.',
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // Branch Submissions List
+            ...branches.map((b) => _buildMonthlyBranchSubmissionCard(b, isMobile)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMonthlyBranchSubmissionCard(MonthlyWorkflowPendingBranchModel b, bool isMobile) {
+    Color pillBg;
+    Color pillColor;
+    String pillText;
+    IconData icon;
+    Color iconColor;
+
+    switch (b.status) {
+      case 'BM_SUBMITTED':
+        pillBg = const Color(0xFFFEF3C7);
+        pillColor = const Color(0xFF92400E);
+        pillText = 'SUBMITTED FOR SIGN-OFF';
+        icon = Icons.pending_actions;
+        iconColor = const Color(0xFFB45309);
+        break;
+      case 'AM_VERIFIED':
+        pillBg = const Color(0xFFDCFCE7);
+        pillColor = const Color(0xFF166534);
+        pillText = 'ENDORSED';
+        icon = Icons.check_circle;
+        iconColor = const Color(0xFF15803D);
+        break;
+      case 'RETURNED_FOR_CORRECTION':
+        pillBg = const Color(0xFFFEE2E2);
+        pillColor = const Color(0xFF991B1B);
+        pillText = 'RETURNED WITH QUERIES';
+        icon = Icons.assignment_return;
+        iconColor = const Color(0xFFDC2626);
+        break;
+      case 'AREA_SEALED':
+        pillBg = const Color(0xFFDBEAFE);
+        pillColor = const Color(0xFF1D4ED8);
+        pillText = 'AREA SEALED';
+        icon = Icons.folder_special;
+        iconColor = const Color(0xFF1D4ED8);
+        break;
+      case 'ADMIN_LOCKED':
+        pillBg = const Color(0xFFE2E8F0);
+        pillColor = const Color(0xFF0F172A);
+        pillText = 'ARCHIVED';
+        icon = Icons.lock;
+        iconColor = const Color(0xFF0F172A);
+        break;
+      default: // DRAFT
+        pillBg = const Color(0xFFF1F5F9);
+        pillColor = const Color(0xFF475569);
+        pillText = 'DRAFT (OPEN)';
+        icon = Icons.edit_note;
+        iconColor = const Color(0xFF475569);
+        break;
+    }
+
+    final isSubmitted = b.status == 'BM_SUBMITTED';
+
+    if (isMobile) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isSubmitted ? const Color(0xFFFDE68A) : const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(6)),
+                      child: Icon(icon, color: iconColor, size: 16),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(b.branchName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(4)),
+                  child: Text(pillText, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: pillColor)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'BM: ${b.bmName ?? "Unassigned"}${b.submittedAt != null ? " • Submitted: ${(b.submittedAt!.length > 10 ? b.submittedAt!.substring(0, 10) : b.submittedAt!)}" : ""}',
+              style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFE2E8F0))),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Collections: ${CurrencyFormatter.format(b.collections)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                      Text('Vault Cash: ${CurrencyFormatter.format(b.vaultCash)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Active Credit: ${CurrencyFormatter.format(b.closingCredit)}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF2563EB), fontWeight: FontWeight.bold)),
+                      Text(
+                        b.isGlBalanced ? 'GL: Balanced' : 'GL: Unbalanced',
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: b.isGlBalanced ? const Color(0xFF15803D) : const Color(0xFFDC2626)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (b.amQueryNotes != null && b.amQueryNotes!.isNotEmpty && b.status == 'RETURNED_FOR_CORRECTION') ...[
+              const SizedBox(height: 6),
+              Text('Query: ${b.amQueryNotes}', style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626))),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      ref.read(reportsTargetBranchProvider.notifier).state = b.branchName;
+                      ref.read(reportsTargetTabProvider.notifier).state = 0;
+                      ref.read(activeCoPageProvider.notifier).state = 'Reports & Export';
+                    },
+                    icon: const Icon(Icons.visibility_outlined, size: 14),
+                    label: const Text('Review Books', style: TextStyle(fontSize: 11.5)),
+                  ),
+                ),
+                if (isSubmitted) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _isProcessing ? null : () => _handleAmReturnSubmission(b),
+                      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626), side: const BorderSide(color: Color(0xFFFCA5A5))),
+                      child: const Text('Query', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _isProcessing ? null : () => _handleAmEndorseSubmission(b),
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
+                      child: const Text('Endorse', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isSubmitted ? const Color(0xFFFFFBEB) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: isSubmitted ? const Color(0xFFFDE68A) : const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(8)),
+            child: Icon(icon, color: iconColor, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(b.branchName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(4)),
+                      child: Text(pillText, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: pillColor)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'BM: ${b.bmName ?? "Unassigned"}${b.submittedAt != null ? " • Submitted: ${(b.submittedAt!.length > 16 ? b.submittedAt!.substring(0, 16) : b.submittedAt!)}" : ""} | Collections: ${CurrencyFormatter.format(b.collections)} | Vault: ${CurrencyFormatter.format(b.vaultCash)} | Credit: ${CurrencyFormatter.format(b.closingCredit)}',
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                ),
+                if (b.amQueryNotes != null && b.amQueryNotes!.isNotEmpty && b.status == 'RETURNED_FOR_CORRECTION')
+                  Text('Query: ${b.amQueryNotes}', style: const TextStyle(fontSize: 11.5, color: Color(0xFFDC2626))),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () {
+                  ref.read(reportsTargetBranchProvider.notifier).state = b.branchName;
+                  ref.read(reportsTargetTabProvider.notifier).state = 0;
+                  ref.read(activeCoPageProvider.notifier).state = 'Reports & Export';
+                },
+                icon: const Icon(Icons.visibility_outlined, size: 14),
+                label: const Text('Review Books', style: TextStyle(fontSize: 11.5)),
+              ),
+              if (isSubmitted) ...[
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: _isProcessing ? null : () => _handleAmReturnSubmission(b),
+                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626), side: const BorderSide(color: Color(0xFFFCA5A5))),
+                  child: const Text('Query', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: _isProcessing ? null : () => _handleAmEndorseSubmission(b),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
+                  child: const Text('Endorse', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
     );
   }
 

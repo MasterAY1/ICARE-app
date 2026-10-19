@@ -1459,4 +1459,154 @@ class Annex1ReportData {
   }
 }
 
+// =============================================================================
+// THREE-TIER MONTHLY REPORT VERIFICATION, SUBMISSION & ARCHIVAL WORKFLOW
+// =============================================================================
+
+class MonthlyWorkflowStatusModel {
+  final String? id;
+  final String branchId;
+  final String areaName;
+  final int year;
+  final int month;
+  final String status;
+  final double disbursedPrincipal;
+  final double upfrontFees;
+  final double netActiveCredit;
+  final double collections;
+  final double closingCredit;
+  final double closingSavings;
+  final double vaultCashAcct1000;
+  final double bankDepositsAcct1050;
+  final bool isGlBalanced;
+  final double glVariance;
+  final String? bmName;
+  final String? bmNotes;
+  final String? bmSubmittedAt;
+  final String? amName;
+  final String? amNotes;
+  final String? amEndorsedAt;
+  final String? amQueryNotes;
+  final String? adminName;
+  final String? adminNotes;
+  final String? adminLockedAt;
+
+  const MonthlyWorkflowStatusModel({
+    this.id,
+    required this.branchId,
+    required this.areaName,
+    required this.year,
+    required this.month,
+    required this.status,
+    required this.disbursedPrincipal,
+    required this.upfrontFees,
+    required this.netActiveCredit,
+    required this.collections,
+    required this.closingCredit,
+    required this.closingSavings,
+    required this.vaultCashAcct1000,
+    required this.bankDepositsAcct1050,
+    required this.isGlBalanced,
+    required this.glVariance,
+    this.bmName,
+    this.bmNotes,
+    this.bmSubmittedAt,
+    this.amName,
+    this.amNotes,
+    this.amEndorsedAt,
+    this.amQueryNotes,
+    this.adminName,
+    this.adminNotes,
+    this.adminLockedAt,
+  });
+
+  factory MonthlyWorkflowStatusModel.fromJson(Map<String, dynamic> json) {
+    return MonthlyWorkflowStatusModel(
+      id: json['id'] as String?,
+      branchId: (json['branch_id'] ?? '') as String,
+      areaName: (json['area_name'] ?? '') as String,
+      year: json['year'] as int? ?? 2026,
+      month: json['month'] as int? ?? 9,
+      status: (json['status'] ?? 'DRAFT') as String,
+      disbursedPrincipal: (json['disbursed_principal'] as num? ?? 0.0).toDouble(),
+      upfrontFees: (json['upfront_fees'] as num? ?? 0.0).toDouble(),
+      netActiveCredit: (json['net_active_credit'] as num? ?? 0.0).toDouble(),
+      collections: (json['collections'] as num? ?? 0.0).toDouble(),
+      closingCredit: (json['closing_credit'] as num? ?? 0.0).toDouble(),
+      closingSavings: (json['closing_savings'] as num? ?? 0.0).toDouble(),
+      vaultCashAcct1000: (json['vault_cash_acct_1000'] as num? ?? 0.0).toDouble(),
+      bankDepositsAcct1050: (json['bank_deposits_acct_1050'] as num? ?? 0.0).toDouble(),
+      isGlBalanced: json['is_gl_balanced'] as bool? ?? false,
+      glVariance: (json['gl_variance'] as num? ?? 0.0).toDouble(),
+      bmName: json['bm_name'] as String?,
+      bmNotes: json['bm_notes'] as String?,
+      bmSubmittedAt: json['bm_submitted_at'] as String?,
+      amName: json['am_name'] as String?,
+      amNotes: json['am_notes'] as String?,
+      amEndorsedAt: json['am_endorsed_at'] as String?,
+      amQueryNotes: json['am_query_notes'] as String?,
+      adminName: json['admin_name'] as String?,
+      adminNotes: json['admin_notes'] as String?,
+      adminLockedAt: json['admin_locked_at'] as String?,
+    );
+  }
+}
+
+class MonthlyWorkflowPendingBranchModel {
+  final String branchId;
+  final String branchName;
+  final int year;
+  final int month;
+  final String status;
+  final double disbursedPrincipal;
+  final double collections;
+  final double closingCredit;
+  final double closingSavings;
+  final double vaultCash;
+  final bool isGlBalanced;
+  final String? bmName;
+  final String? bmNotes;
+  final String? submittedAt;
+  final String? amQueryNotes;
+
+  const MonthlyWorkflowPendingBranchModel({
+    required this.branchId,
+    required this.branchName,
+    required this.year,
+    required this.month,
+    required this.status,
+    required this.disbursedPrincipal,
+    required this.collections,
+    required this.closingCredit,
+    required this.closingSavings,
+    required this.vaultCash,
+    required this.isGlBalanced,
+    this.bmName,
+    this.bmNotes,
+    this.submittedAt,
+    this.amQueryNotes,
+  });
+
+  factory MonthlyWorkflowPendingBranchModel.fromJson(Map<String, dynamic> json) {
+    return MonthlyWorkflowPendingBranchModel(
+      branchId: (json['branch_id'] ?? '') as String,
+      branchName: (json['branch_name'] ?? '') as String,
+      year: json['year'] as int? ?? 2026,
+      month: json['month'] as int? ?? 9,
+      status: (json['status'] ?? 'DRAFT') as String,
+      disbursedPrincipal: (json['disbursed_principal'] as num? ?? 0.0).toDouble(),
+      collections: (json['collections'] as num? ?? 0.0).toDouble(),
+      closingCredit: (json['closing_credit'] as num? ?? 0.0).toDouble(),
+      closingSavings: (json['closing_savings'] as num? ?? 0.0).toDouble(),
+      vaultCash: (json['vault_cash'] as num? ?? 0.0).toDouble(),
+      isGlBalanced: json['is_gl_balanced'] as bool? ?? false,
+      bmName: json['bm_name'] as String?,
+      bmNotes: json['bm_notes'] as String?,
+      submittedAt: json['submitted_at'] as String?,
+      amQueryNotes: json['am_query_notes'] as String?,
+    );
+  }
+}
+
+
 

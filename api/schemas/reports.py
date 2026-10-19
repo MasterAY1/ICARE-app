@@ -358,3 +358,86 @@ class Annex1ReportResponse(BaseModel):
     total_sundry_payments: float
 
 
+class MonthlyWorkflowStatusResponse(BaseModel):
+    id: Optional[str] = None
+    branch_id: str
+    area_name: str
+    year: int
+    month: int
+    status: str
+    disbursed_principal: float
+    upfront_fees: float
+    net_active_credit: float
+    collections: float
+    closing_credit: float
+    closing_savings: float
+    vault_cash_acct_1000: float
+    bank_deposits_acct_1050: float
+    is_gl_balanced: bool
+    gl_variance: float
+    bm_name: Optional[str] = None
+    bm_notes: Optional[str] = None
+    bm_submitted_at: Optional[str] = None
+    am_name: Optional[str] = None
+    am_notes: Optional[str] = None
+    am_endorsed_at: Optional[str] = None
+    am_query_notes: Optional[str] = None
+    admin_name: Optional[str] = None
+    admin_notes: Optional[str] = None
+    admin_locked_at: Optional[str] = None
+
+
+class MonthlyWorkflowSubmitRequest(BaseModel):
+    branch_name: Optional[str] = None
+    year: int = 2026
+    month: int = 9
+    notes: Optional[str] = None
+
+
+class MonthlyWorkflowEndorseRequest(BaseModel):
+    branch_name: Optional[str] = None
+    year: int = 2026
+    month: int = 9
+    notes: Optional[str] = None
+
+
+class MonthlyWorkflowReturnRequest(BaseModel):
+    branch_name: Optional[str] = None
+    year: int = 2026
+    month: int = 9
+    query_notes: str
+
+
+class MonthlyWorkflowSealAreaRequest(BaseModel):
+    area_name: str = "Area 1"
+    year: int = 2026
+    month: int = 9
+    notes: Optional[str] = None
+
+
+class MonthlyWorkflowLockRequest(BaseModel):
+    branch_name: Optional[str] = None
+    year: int = 2026
+    month: int = 9
+    notes: Optional[str] = None
+
+
+class MonthlyWorkflowPendingBranchItem(BaseModel):
+    branch_id: str
+    branch_name: str
+    year: int
+    month: int
+    status: str
+    disbursed_principal: float
+    collections: float
+    closing_credit: float
+    closing_savings: float
+    vault_cash: float
+    is_gl_balanced: bool
+    bm_name: Optional[str] = None
+    bm_notes: Optional[str] = None
+    submitted_at: Optional[str] = None
+    am_query_notes: Optional[str] = None
+
+
+

@@ -396,6 +396,165 @@ class ReportsApiService {
     );
     return Annex1ReportData.fromJson(response.data as Map<String, dynamic>);
   }
+
+  // ===========================================================================
+  // MONTHLY REPORT THREE-TIER WORKFLOW ENDPOINTS (BM -> AM -> ADMIN)
+  // ===========================================================================
+
+  /// 16. Get current monthly workflow submission status for a branch
+  Future<MonthlyWorkflowStatusModel> getMonthlyWorkflowStatus({
+    String? branchName,
+    int year = 2026,
+    int month = 9,
+  }) async {
+    final params = <String, dynamic>{
+      'year': year,
+      'month': month,
+    };
+    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+      params['branch_name'] = branchName;
+    }
+
+    final response = await _apiClient.get(
+      '/api/v1/reports/monthly-workflow/status',
+      queryParameters: params,
+    );
+    return MonthlyWorkflowStatusModel.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// 17. Tier 1: Branch Manager verifies and submits monthly report to Area Manager
+  Future<Map<String, dynamic>> submitMonthlyWorkflow({
+    String? branchName,
+    int year = 2026,
+    int month = 9,
+    String? notes,
+  }) async {
+    final payload = <String, dynamic>{
+      'year': year,
+      'month': month,
+      if (notes != null) 'notes': notes,
+    };
+    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+      payload['branch_name'] = branchName;
+    }
+
+    final response = await _apiClient.post(
+      '/api/v1/reports/monthly-workflow/submit',
+      data: payload,
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// 18. Tier 2: Area Manager endorses and signs off on branch monthly report
+  Future<Map<String, dynamic>> endorseMonthlyWorkflow({
+    String? branchName,
+    int year = 2026,
+    int month = 9,
+    String? notes,
+  }) async {
+    final payload = <String, dynamic>{
+      'year': year,
+      'month': month,
+      if (notes != null) 'notes': notes,
+    };
+    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+      payload['branch_name'] = branchName;
+    }
+
+    final response = await _apiClient.post(
+      '/api/v1/reports/monthly-workflow/endorse',
+      data: payload,
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// 19. Tier 2: Area Manager returns branch report for correction with query notes
+  Future<Map<String, dynamic>> returnMonthlyWorkflow({
+    String? branchName,
+    int year = 2026,
+    int month = 9,
+    required String queryNotes,
+  }) async {
+    final payload = <String, dynamic>{
+      'year': year,
+      'month': month,
+      'query_notes': queryNotes,
+    };
+    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+      payload['branch_name'] = branchName;
+    }
+
+    final response = await _apiClient.post(
+      '/api/v1/reports/monthly-workflow/return',
+      data: payload,
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// 20. Tier 2: Area Manager seals regional package once all supervised branches are endorsed
+  Future<Map<String, dynamic>> sealAreaMonthlyWorkflow({
+    String areaName = 'Area 1',
+    int year = 2026,
+    int month = 9,
+    String? notes,
+  }) async {
+    final payload = <String, dynamic>{
+      'area_name': areaName,
+      'year': year,
+      'month': month,
+      if (notes != null) 'notes': notes,
+    };
+
+    final response = await _apiClient.post(
+      '/api/v1/reports/monthly-workflow/seal-area',
+      data: payload,
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// 21. Tier 3: Executive Admin locks and permanently archives monthly reports
+  Future<Map<String, dynamic>> lockMonthlyWorkflow({
+    String? branchName,
+    int year = 2026,
+    int month = 9,
+    String? notes,
+  }) async {
+    final payload = <String, dynamic>{
+      'year': year,
+      'month': month,
+      if (notes != null) 'notes': notes,
+    };
+    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+      payload['branch_name'] = branchName;
+    }
+
+    final response = await _apiClient.post(
+      '/api/v1/reports/monthly-workflow/lock',
+      data: payload,
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// 22. Area Manager Approvals Hub: List supervised branches monthly submission statuses
+  Future<List<MonthlyWorkflowPendingBranchModel>> getPendingAmMonthlySubmissions({
+    int year = 2026,
+    int month = 9,
+  }) async {
+    final params = <String, dynamic>{
+      'year': year,
+      'month': month,
+    };
+
+    final response = await _apiClient.get(
+      '/api/v1/reports/monthly-workflow/pending-am',
+      queryParameters: params,
+    );
+    final list = response.data as List<dynamic>? ?? [];
+    return list
+        .map((e) => MonthlyWorkflowPendingBranchModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
 }
+
 
 

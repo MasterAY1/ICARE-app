@@ -57,6 +57,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   Future<MonthlyExecutiveStatementsData>? _statementsFuture;
   Future<Annex1ReportData>? _annex1Future;
   Future<MonthlyReconciliationData>? _reconciliationFuture;
+  Future<MonthlyWorkflowStatusModel>? _workflowStatusFuture;
+  bool _isWorkflowSubmitting = false;
 
   final _currencyFormat = NumberFormat('#,##0.00');
   final _intFormat = NumberFormat('#,##0');
@@ -131,6 +133,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       year: _selectedExecYear,
       month: _selectedExecMonth,
     );
+    _workflowStatusFuture = api.getMonthlyWorkflowStatus(
+      branchName: _selectedBranchName,
+      year: _selectedExecYear,
+      month: _selectedExecMonth,
+    );
     _areaFuture = api.getAreaComparison(
       productName: _selectedProductName,
       asOfDate: asOfStr,
@@ -192,6 +199,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         month: _selectedExecMonth,
       );
       _reconciliationFuture = api.getMonthlyReconciliation(
+        branchName: _selectedBranchName,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+      );
+      _workflowStatusFuture = api.getMonthlyWorkflowStatus(
         branchName: _selectedBranchName,
         year: _selectedExecYear,
         month: _selectedExecMonth,
@@ -1126,6 +1138,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             },
           ),
         ),
+        const SizedBox(height: 16),
+
+        // Monthly Verification & Sign-Off Workflow Status Banner
+        _buildWorkflowStatusCard(isAdmin, isBm, isAm),
         const SizedBox(height: 16),
 
         // Future Builder for Data
@@ -3161,6 +3177,880 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to download CSV: $e')));
       }
+    }
+  }
+
+  // ===========================================================================
+  // MONTHLY REPORT THREE-TIER WORKFLOW (BM -> AM -> ADMIN)
+  // ===========================================================================
+
+  String _formatDateTime(String? isoStr) {
+    if (isoStr == null || isoStr.isEmpty) return '-';
+    try {
+      final dt = DateTime.parse(isoStr).toLocal();
+      return DateFormat('yyyy-MM-dd HH:mm').format(dt);
+    } catch (_) {
+      return isoStr;
+    }
+  }
+
+  Widget _buildSnapshotRow(String label, String value, {bool isAccent = false, bool isDanger = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569))),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: isAccent ? FontWeight.w800 : FontWeight.w600,
+              fontFeatures: const [FontFeature.tabularFigures()],
+              color: isDanger
+                  ? const Color(0xFFDC2626)
+                  : (isAccent ? const Color(0xFF065F46) : const Color(0xFF0F172A)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWorkflowStatusCard(bool isAdmin, bool isBm, bool isAm) {
+    if (_selectedBranchName == null || _selectedBranchName!.startsWith('All')) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.verified_outlined, size: 20, color: Color(0xFF0F766E)),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Monthly Statement Verification & Sign-Off Workflow',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Select an individual branch from the dropdown above to review certification status, submit books, or execute supervisory endorsements.',
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return FutureBuilder<MonthlyWorkflowStatusModel>(
+      future: _workflowStatusFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Row(
+              children: [
+                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                SizedBox(width: 12),
+                Text('Checking monthly verification & sign-off status...', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+              ],
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF2F2),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFFECACA)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline, size: 18, color: Color(0xFFDC2626)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('Workflow status unavailable: ${snapshot.error}', style: const TextStyle(fontSize: 12, color: Color(0xFF991B1B))),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final st = snapshot.data;
+        if (st == null) return const SizedBox.shrink();
+
+        return _renderWorkflowBanner(st, isAdmin, isBm, isAm);
+      },
+    );
+  }
+
+  Widget _renderWorkflowBanner(MonthlyWorkflowStatusModel st, bool isAdmin, bool isBm, bool isAm) {
+    final status = st.status;
+
+    Color bg;
+    Color border;
+    Color pillBg;
+    Color pillText;
+    String pillLabel;
+    IconData icon;
+    Color iconColor;
+    String title;
+    String description;
+    List<Widget> actions = [];
+
+    switch (status) {
+      case 'BM_SUBMITTED':
+        bg = const Color(0xFFFFFBEB);
+        border = const Color(0xFFFDE68A);
+        pillBg = const Color(0xFFFEF3C7);
+        pillText = const Color(0xFF92400E);
+        pillLabel = 'SUBMITTED FOR AM SIGN-OFF';
+        icon = Icons.pending_actions;
+        iconColor = const Color(0xFFB45309);
+        title = 'Submitted for Area Manager Endorsement';
+        description = 'Certified by ${st.bmName ?? "Branch Manager"} on ${_formatDateTime(st.bmSubmittedAt)}. Books are locked pending Area Manager review.';
+
+        if (isAm || isAdmin) {
+          actions.add(
+            OutlinedButton.icon(
+              onPressed: _isWorkflowSubmitting ? null : () => _showAmReturnDialog(st),
+              icon: const Icon(Icons.assignment_return_outlined, size: 14, color: Color(0xFFDC2626)),
+              label: const Text('Query / Return', style: TextStyle(color: Color(0xFFDC2626), fontSize: 12, fontWeight: FontWeight.bold)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFFFCA5A5)),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              ),
+            ),
+          );
+          actions.add(const SizedBox(width: 8));
+          actions.add(
+            ElevatedButton.icon(
+              onPressed: _isWorkflowSubmitting ? null : () => _showAmEndorseDialog(st),
+              icon: const Icon(Icons.check_circle_outline, size: 14, color: Colors.white),
+              label: const Text('Endorse & Sign Off', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF065F46),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+            ),
+          );
+        } else {
+          actions.add(
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(6)),
+              child: const Text('Awaiting Supervisory Endorsement', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF92400E))),
+            ),
+          );
+        }
+        break;
+
+      case 'RETURNED_FOR_CORRECTION':
+        bg = const Color(0xFFFEF2F2);
+        border = const Color(0xFFFCA5A5);
+        pillBg = const Color(0xFFFEE2E2);
+        pillText = const Color(0xFF991B1B);
+        pillLabel = 'RETURNED FOR CORRECTION';
+        icon = Icons.assignment_return_outlined;
+        iconColor = const Color(0xFFDC2626);
+        title = 'Returned with Supervisory Queries';
+        description = 'Area Manager ${st.amName != null ? "(${st.amName}) " : ""}has requested adjustments before sign-off.';
+
+        if (isBm || isAdmin) {
+          actions.add(
+            ElevatedButton.icon(
+              onPressed: _isWorkflowSubmitting ? null : () => _showBmSubmitDialog(st),
+              icon: const Icon(Icons.refresh, size: 14, color: Colors.white),
+              label: const Text('Re-verify & Resubmit', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F766E),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+            ),
+          );
+        }
+        break;
+
+      case 'AM_VERIFIED':
+        bg = const Color(0xFFF0FDF4);
+        border = const Color(0xFF86EFAC);
+        pillBg = const Color(0xFFDCFCE7);
+        pillText = const Color(0xFF166534);
+        pillLabel = 'ENDORSED BY AREA MANAGER';
+        icon = Icons.verified;
+        iconColor = const Color(0xFF15803D);
+        title = 'Supervisory Sign-Off Granted';
+        description = 'Endorsed by Area Manager ${st.amName ?? ""} on ${_formatDateTime(st.amEndorsedAt)}. Awaiting regional package seal.';
+
+        if (isAdmin) {
+          actions.add(
+            ElevatedButton.icon(
+              onPressed: _isWorkflowSubmitting ? null : () => _showAdminLockDialog(st),
+              icon: const Icon(Icons.lock_outline, size: 14, color: Colors.white),
+              label: const Text('Lock & Archive', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F172A),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+            ),
+          );
+        } else {
+          actions.add(
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(6)),
+              child: const Text('Endorsed • Awaiting Regional Seal', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
+            ),
+          );
+        }
+        break;
+
+      case 'AREA_SEALED':
+        bg = const Color(0xFFEFF6FF);
+        border = const Color(0xFF93C5FD);
+        pillBg = const Color(0xFFDBEAFE);
+        pillText = const Color(0xFF1D4ED8);
+        pillLabel = 'REGIONAL PACKAGE SEALED';
+        icon = Icons.folder_special;
+        iconColor = const Color(0xFF1D4ED8);
+        title = 'Regional Month-End Package Sealed';
+        description = 'Sealed by Area Manager. Awaiting Executive Admin permanent archival lock.';
+
+        if (isAdmin) {
+          actions.add(
+            ElevatedButton.icon(
+              onPressed: _isWorkflowSubmitting ? null : () => _showAdminLockDialog(st),
+              icon: const Icon(Icons.lock_outline, size: 14, color: Colors.white),
+              label: const Text('Execute Institutional Lock', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F172A),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+            ),
+          );
+        } else {
+          actions.add(
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(color: const Color(0xFFDBEAFE), borderRadius: BorderRadius.circular(6)),
+              child: const Text('Sealed • Awaiting Admin Archival', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8))),
+            ),
+          );
+        }
+        break;
+
+      case 'ADMIN_LOCKED':
+        bg = const Color(0xFFF8FAFC);
+        border = const Color(0xFFCBD5E1);
+        pillBg = const Color(0xFFE2E8F0);
+        pillText = const Color(0xFF0F172A);
+        pillLabel = 'LOCKED & ARCHIVED';
+        icon = Icons.lock;
+        iconColor = const Color(0xFF0F172A);
+        title = 'Permanent Institutional Record';
+        description = 'Permanently archived by ${st.adminName ?? "Administrator"} on ${_formatDateTime(st.adminLockedAt)}. Books are permanently closed.';
+        actions.add(
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(color: const Color(0xFFE2E8F0), borderRadius: BorderRadius.circular(6)),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock, size: 13, color: Color(0xFF0F172A)),
+                SizedBox(width: 4),
+                Text('Permanent Audit Record', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+              ],
+            ),
+          ),
+        );
+        break;
+
+      default: // DRAFT
+        bg = const Color(0xFFF8FAFC);
+        border = const Color(0xFFE2E8F0);
+        pillBg = const Color(0xFFF1F5F9);
+        pillText = const Color(0xFF475569);
+        pillLabel = 'DRAFT — BOOKS OPEN';
+        icon = Icons.edit_note;
+        iconColor = const Color(0xFF475569);
+        title = 'Month-End Statements in Preparation';
+        description = 'Operational books are open for reconciliation. Ready to certify and submit to Area Manager?';
+
+        if (isBm || isAdmin) {
+          actions.add(
+            ElevatedButton.icon(
+              onPressed: _isWorkflowSubmitting ? null : () => _showBmSubmitDialog(st),
+              icon: const Icon(Icons.assignment_turned_in_outlined, size: 14, color: Colors.white),
+              label: const Text('Verify & Submit to Area Manager', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF065F46),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+            ),
+          );
+        } else {
+          actions.add(
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(6)),
+              child: const Text('Awaiting Branch Submission', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+            ),
+          );
+        }
+        break;
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: border),
+      ),
+      child: LayoutBuilder(
+        builder: (ctx, constraints) {
+          final isNarrow = constraints.maxWidth < 650;
+
+          final headerDetails = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: border),
+                    ),
+                    child: Icon(icon, color: iconColor, size: 18),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    title,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(4)),
+                    child: Text(
+                      pillLabel,
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: pillText),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(description, style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
+              if (st.amQueryNotes != null && st.amQueryNotes!.isNotEmpty && status == 'RETURNED_FOR_CORRECTION') ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFFECACA)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.help_outline, size: 15, color: Color(0xFFDC2626)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Query: ${st.amQueryNotes}',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF991B1B)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          );
+
+          if (isNarrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                headerDetails,
+                if (actions.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Wrap(spacing: 8, runSpacing: 8, children: actions),
+                ],
+              ],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: headerDetails),
+              if (actions.isNotEmpty) ...[
+                const SizedBox(width: 16),
+                Row(mainAxisSize: MainAxisSize.min, children: actions),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showBmSubmitDialog(MonthlyWorkflowStatusModel st) async {
+    final notesController = TextEditingController();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(6)),
+              child: const Icon(Icons.assignment_turned_in_outlined, color: Color(0xFF065F46), size: 20),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Verify & Submit Monthly Report',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Container(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Branch: ${_selectedBranchName ?? "Current"} • Period: $_selectedExecYear-${_selectedExecMonth.toString().padLeft(2, '0')}',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildSnapshotRow('Disbursed Principal', _formatNgn(st.disbursedPrincipal)),
+                      _buildSnapshotRow('Upfront Fees Deducted', _formatNgn(st.upfrontFees)),
+                      _buildSnapshotRow('Period Loan Collections', _formatNgn(st.collections)),
+                      _buildSnapshotRow('Closing Active Credit', _formatNgn(st.closingCredit), isAccent: true),
+                      _buildSnapshotRow('Closing Savings Balance', _formatNgn(st.closingSavings)),
+                      _buildSnapshotRow('Physical Vault Cash', _formatNgn(st.vaultCashAcct1000)),
+                      const Divider(height: 12),
+                      _buildSnapshotRow(
+                        'General Ledger Status',
+                        st.isGlBalanced ? 'Balanced (₦0.00)' : 'Variance: ${_formatNgn(st.glVariance)}',
+                        isDanger: !st.isGlBalanced,
+                        isAccent: st.isGlBalanced,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Color(0xFF1D4ED8)),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Submitting certifies the branch books and locks the statement for Area Manager review.',
+                          style: TextStyle(fontSize: 11.5, color: Color(0xFF1E40AF)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: notesController,
+                  decoration: const InputDecoration(
+                    labelText: 'Manager Verification Notes (Optional)',
+                    hintText: 'e.g. Month-end collections verified and cash balanced.',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.send, size: 14, color: Colors.white),
+            label: const Text('Certify & Submit', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isWorkflowSubmitting = true);
+    try {
+      final api = ref.read(reportsApiServiceProvider);
+      final res = await api.submitMonthlyWorkflow(
+        branchName: _selectedBranchName,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+        notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['message'] ?? 'Monthly report certified and submitted to Area Manager.'),
+            backgroundColor: const Color(0xFF065F46),
+          ),
+        );
+        _refreshCurrentTabData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Submission failed: $e'), backgroundColor: const Color(0xFFDC2626)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isWorkflowSubmitting = false);
+    }
+  }
+
+  Future<void> _showAmEndorseDialog(MonthlyWorkflowStatusModel st) async {
+    final notesController = TextEditingController();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(6)),
+              child: const Icon(Icons.check_circle_outline, color: Color(0xFF15803D), size: 20),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Endorse & Sign Off Monthly Report',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Container(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Branch: ${_selectedBranchName ?? "Current"} • Certified by: ${st.bmName ?? "Branch Manager"}',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildSnapshotRow('Disbursed Principal', _formatNgn(st.disbursedPrincipal)),
+                      _buildSnapshotRow('Period Loan Collections', _formatNgn(st.collections)),
+                      _buildSnapshotRow('Closing Active Credit', _formatNgn(st.closingCredit), isAccent: true),
+                      _buildSnapshotRow('Closing Savings Balance', _formatNgn(st.closingSavings)),
+                      _buildSnapshotRow('Physical Vault Cash', _formatNgn(st.vaultCashAcct1000)),
+                      _buildSnapshotRow(
+                        'General Ledger Status',
+                        st.isGlBalanced ? 'Balanced (₦0.00)' : 'Variance: ${_formatNgn(st.glVariance)}',
+                        isDanger: !st.isGlBalanced,
+                        isAccent: st.isGlBalanced,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: notesController,
+                  decoration: const InputDecoration(
+                    labelText: 'Area Supervisory Remarks (Optional)',
+                    hintText: 'e.g. Month-end figures inspected and approved.',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.check, size: 14, color: Colors.white),
+            label: const Text('Confirm Endorsement', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isWorkflowSubmitting = true);
+    try {
+      final api = ref.read(reportsApiServiceProvider);
+      final res = await api.endorseMonthlyWorkflow(
+        branchName: _selectedBranchName,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+        notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['message'] ?? 'Branch monthly report successfully endorsed.'),
+            backgroundColor: const Color(0xFF065F46),
+          ),
+        );
+        _refreshCurrentTabData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Endorsement failed: $e'), backgroundColor: const Color(0xFFDC2626)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isWorkflowSubmitting = false);
+    }
+  }
+
+  Future<void> _showAmReturnDialog(MonthlyWorkflowStatusModel st) async {
+    final queryController = TextEditingController();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(color: const Color(0xFFFEE2E2), borderRadius: BorderRadius.circular(6)),
+              child: const Icon(Icons.assignment_return_outlined, color: Color(0xFFDC2626), size: 20),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Return Report with Queries',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Container(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Specify corrections or discrepancies required from ${st.bmName ?? "Branch Manager"} before endorsement.',
+                style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: queryController,
+                decoration: const InputDecoration(
+                  labelText: 'Supervisory Query Notes (Required)',
+                  hintText: 'e.g. Please reconcile vault cash difference with bank deposit slips.',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton.icon(
+            onPressed: () {
+              if (queryController.text.trim().isEmpty) return;
+              Navigator.pop(ctx, true);
+            },
+            icon: const Icon(Icons.send, size: 14, color: Colors.white),
+            label: const Text('Return to Branch', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || queryController.text.trim().isEmpty) return;
+
+    setState(() => _isWorkflowSubmitting = true);
+    try {
+      final api = ref.read(reportsApiServiceProvider);
+      final res = await api.returnMonthlyWorkflow(
+        branchName: _selectedBranchName,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+        queryNotes: queryController.text.trim(),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['message'] ?? 'Report returned to Branch Manager with queries.'),
+            backgroundColor: const Color(0xFFB45309),
+          ),
+        );
+        _refreshCurrentTabData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Action failed: $e'), backgroundColor: const Color(0xFFDC2626)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isWorkflowSubmitting = false);
+    }
+  }
+
+  Future<void> _showAdminLockDialog(MonthlyWorkflowStatusModel st) async {
+    final notesController = TextEditingController();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(color: const Color(0xFFE2E8F0), borderRadius: BorderRadius.circular(6)),
+              child: const Icon(Icons.lock, color: Color(0xFF0F172A), size: 20),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Institutional Lock & Permanent Archival',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Container(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'This executive action permanently locks the monthly statements into institutional archive records. Once locked, no further adjustments or operational entries can be posted.',
+                style: TextStyle(fontSize: 12.5, color: Color(0xFF475569)),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: notesController,
+                decoration: const InputDecoration(
+                  labelText: 'Executive Archival Remarks (Optional)',
+                  hintText: 'e.g. Approved and filed in institutional ledger archives.',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                maxLines: 2,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.lock, size: 14, color: Colors.white),
+            label: const Text('Execute Lock', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isWorkflowSubmitting = true);
+    try {
+      final api = ref.read(reportsApiServiceProvider);
+      final res = await api.lockMonthlyWorkflow(
+        branchName: _selectedBranchName,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+        notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['message'] ?? 'Monthly report permanently locked and archived.'),
+            backgroundColor: const Color(0xFF0F172A),
+          ),
+        );
+        _refreshCurrentTabData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lock failed: $e'), backgroundColor: const Color(0xFFDC2626)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isWorkflowSubmitting = false);
     }
   }
 

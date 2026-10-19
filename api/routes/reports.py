@@ -16,6 +16,7 @@ from database.repositories.unit_of_work import SupabaseUnitOfWork
 from api.dependencies import get_uow, get_current_user, CurrentUser
 from domain.queries import LoanFilter, RepaymentFilter
 from services.report_service import ReportService
+from services.monthly_report_workflow_service import MonthlyReportWorkflowService
 from services.client_risk_rating_service import ClientRiskRatingService
 from services.rbac_scope_service import RBACScopeService
 from utils.reports import (
@@ -45,6 +46,13 @@ from api.schemas.reports import (
     CreditStatementData,
     MonthlyReconciliationPayload,
     Annex1ReportResponse,
+    MonthlyWorkflowStatusResponse,
+    MonthlyWorkflowSubmitRequest,
+    MonthlyWorkflowEndorseRequest,
+    MonthlyWorkflowReturnRequest,
+    MonthlyWorkflowSealAreaRequest,
+    MonthlyWorkflowLockRequest,
+    MonthlyWorkflowPendingBranchItem,
 )
 
 router = APIRouter(prefix="/api/v1/reports", tags=["Reports & Export"])
@@ -1137,4 +1145,234 @@ def export_monthly_parity_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+# -----------------------------------------------------------------------------
+# 13. Three-Tier Month-End Report Workflow (BM -> AM -> Admin)
+# -----------------------------------------------------------------------------
+
+@router.get("/monthly-workflow/status", response_model=MonthlyWorkflowStatusResponse)
+def get_monthly_workflow_status(
+    branch_name: Optional[str] = Query(None),
+    year: int = Query(2026),
+    month: int = Query(9),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """Retrieves month-end submission status, certified snapshot, and verification audit trail."""
+    _check_reports_permission(current_user)
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
+
+    bid = None
+    if isinstance(resolved_branch_id, str):
+        bid = resolved_branch_id
+    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
+        bid = resolved_branch_id[0]
+    else:
+        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
+        if res_b.data:
+            bid = res_b.data[0]["branch_id"]
+
+    if not bid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found.")
+
+    res = MonthlyReportWorkflowService.get_submission_status(uow, bid, year, month)
+    return MonthlyWorkflowStatusResponse(**res)
+
+
+@router.post("/monthly-workflow/submit")
+def submit_monthly_workflow(
+    payload: MonthlyWorkflowSubmitRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """Tier 1: Branch Manager verifies and submits the monthly report to the Area Manager."""
+    _check_reports_permission(current_user)
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
+
+    bid = None
+    if isinstance(resolved_branch_id, str):
+        bid = resolved_branch_id
+    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
+        bid = resolved_branch_id[0]
+    else:
+        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
+        if res_b.data:
+            bid = res_b.data[0]["branch_id"]
+
+    if not bid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found.")
+
+    try:
+        return MonthlyReportWorkflowService.submit_by_bm(
+            uow=uow,
+            bm_user_id=current_user.id,
+            branch_id=bid,
+            year=payload.year,
+            month=payload.month,
+            notes=payload.notes
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/monthly-workflow/endorse")
+def endorse_monthly_workflow(
+    payload: MonthlyWorkflowEndorseRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """Tier 2: Area Manager reviews and endorses branch monthly report."""
+    role = (current_user.role or "").strip()
+    if role not in ["AM", "Area Manager", "Admin", "Super Admin", "Director"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: Only Area Managers or Admins can endorse monthly reports.")
+
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
+    bid = None
+    if isinstance(resolved_branch_id, str):
+        bid = resolved_branch_id
+    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
+        bid = resolved_branch_id[0]
+
+    if not bid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found.")
+
+    try:
+        return MonthlyReportWorkflowService.endorse_by_am(
+            uow=uow,
+            am_user_id=current_user.id,
+            branch_id=bid,
+            year=payload.year,
+            month=payload.month,
+            notes=payload.notes
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/monthly-workflow/return")
+def return_monthly_workflow(
+    payload: MonthlyWorkflowReturnRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """Tier 2: Area Manager returns report to Branch Manager with audit query notes."""
+    role = (current_user.role or "").strip()
+    if role not in ["AM", "Area Manager", "Admin", "Super Admin", "Director"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: Only Area Managers or Admins can query monthly reports.")
+
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
+    bid = None
+    if isinstance(resolved_branch_id, str):
+        bid = resolved_branch_id
+    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
+        bid = resolved_branch_id[0]
+
+    if not bid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found.")
+
+    try:
+        return MonthlyReportWorkflowService.return_by_am(
+            uow=uow,
+            am_user_id=current_user.id,
+            branch_id=bid,
+            year=payload.year,
+            month=payload.month,
+            query_notes=payload.query_notes
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/monthly-workflow/seal-area")
+def seal_area_monthly_workflow(
+    payload: MonthlyWorkflowSealAreaRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """Tier 2: Area Manager seals regional package once all assigned branches are endorsed."""
+    role = (current_user.role or "").strip()
+    if role not in ["AM", "Area Manager", "Admin", "Super Admin", "Director"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: Only Area Managers or Admins can seal area monthly packages.")
+
+    try:
+        return MonthlyReportWorkflowService.seal_area_by_am(
+            uow=uow,
+            am_user_id=current_user.id,
+            area_name=payload.area_name,
+            year=payload.year,
+            month=payload.month,
+            notes=payload.notes
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/monthly-workflow/lock")
+def lock_monthly_workflow(
+    payload: MonthlyWorkflowLockRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """Tier 3: Executive Admin locks and archives monthly report in institutional records."""
+    role = (current_user.role or "").strip()
+    if role not in ["Admin", "Super Admin", "Director"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: Only Administrators or Directors can execute institutional lock.")
+
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
+    bid = None
+    if isinstance(resolved_branch_id, str):
+        bid = resolved_branch_id
+    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
+        bid = resolved_branch_id[0]
+
+    if not bid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found.")
+
+    try:
+        return MonthlyReportWorkflowService.lock_by_admin(
+            uow=uow,
+            admin_user_id=current_user.id,
+            branch_id=bid,
+            year=payload.year,
+            month=payload.month,
+            notes=payload.notes
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get("/monthly-workflow/pending-am", response_model=List[MonthlyWorkflowPendingBranchItem])
+def get_pending_am_monthly_submissions(
+    year: int = Query(2026),
+    month: int = Query(9),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """Fetches all supervised branches and their monthly report submission status for the Area Manager Approvals Hub."""
+    role = (current_user.role or "").strip()
+    if role not in ["AM", "Area Manager", "Admin", "Super Admin", "Director"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: Only Area Managers or Admins can access supervised submissions.")
+
+    try:
+        items = MonthlyReportWorkflowService.get_pending_am_submissions(
+            uow=uow,
+            am_user_id=current_user.id,
+            year=year,
+            month=month
+        )
+        return [MonthlyWorkflowPendingBranchItem(**item) for item in items]
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 
