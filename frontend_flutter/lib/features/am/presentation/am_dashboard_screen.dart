@@ -12,6 +12,8 @@ import '../data/models/am_dashboard_models.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 import '../../shared/utils/file_download_helper.dart';
 import '../../onboarding/presentation/branch_onboarding_admin_screen.dart';
+import '../../reports/data/datasources/reports_api_service.dart';
+import '../../reports/presentation/reports_export_screen.dart';
 
 /// Provider for selected business date in AM dashboard
 final amSelectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
@@ -315,11 +317,85 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       final api = ref.read(amApiServiceProvider);
       final dateStr = DateFormat('yyyy-MM-dd').format(ref.read(amSelectedDateProvider));
       final bytes = await api.downloadAreaExcel(businessDate: dateStr);
-      final fileName = 'Area_1_Regional_Report_$dateStr.xlsx';
+      final areaData = ref.read(amDashboardDataProvider).value;
+      final areaName = areaData?.regionalSummary.areaName ?? 'Regional';
+      final cleanArea = areaName.replaceAll(' ', '_');
+      final fileName = '${cleanArea}_Report_$dateStr.xlsx';
       downloadBlobFile(bytes, fileName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      _showFlash('Area 1 report downloaded successfully.');
+      _showFlash('$areaName report downloaded successfully.');
     } catch (e) {
       _showFlash('Failed to download Area Excel: $e');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  void _navigateToBranchReport(String reportType, String branchName) {
+    ref.read(reportsTargetBranchProvider.notifier).state = branchName;
+
+    if (reportType == 'collections_workbook') {
+      ref.read(reportsTargetTabProvider.notifier).state = 2; // Data Exports & Downloads
+    } else if (reportType == 'master_cashbook_ledger') {
+      ref.read(reportsTargetTabProvider.notifier).state = 0; // Monthly Executive Statements
+      ref.read(reportsTargetSubTabProvider.notifier).state = 2; // Receipts & Payments Account
+    } else if (reportType == 'executive_parity') {
+      ref.read(reportsTargetTabProvider.notifier).state = 0; // Monthly Executive Statements
+      ref.read(reportsTargetSubTabProvider.notifier).state = 4; // Official Trial Balance
+    } else if (reportType == 'officer_portfolio') {
+      ref.read(reportsTargetTabProvider.notifier).state = 0; // Monthly Executive Statements
+      ref.read(reportsTargetSubTabProvider.notifier).state = 5; // Credit Officers Summary
+    } else {
+      ref.read(reportsTargetTabProvider.notifier).state = 0;
+    }
+
+    ref.read(activeCoPageProvider.notifier).state = 'Reports & Export';
+  }
+
+  Future<void> _handleDownloadHandoverReport(String reportType, String branchName) async {
+    setState(() => _isProcessing = true);
+    try {
+      final reportsApi = ref.read(reportsApiServiceProvider);
+      final selectedDate = ref.read(amSelectedDateProvider);
+      final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
+      final cleanBranch = branchName.replaceAll(' ', '_');
+
+      if (reportType == 'executive_parity') {
+        final bytes = await reportsApi.downloadMonthlyParityExcel(
+          branchName: branchName,
+          year: selectedDate.year,
+          month: selectedDate.month,
+        );
+        downloadBlobFile(
+          bytes,
+          'Executive_Monthly_Report_${cleanBranch}_${selectedDate.year}_${selectedDate.month.toString().padLeft(2, '0')}.xlsx',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+      } else if (reportType == 'officer_portfolio') {
+        final bytes = await reportsApi.downloadMonthlyParityCsv(
+          branchName: branchName,
+          year: selectedDate.year,
+          month: selectedDate.month,
+        );
+        downloadBlobFile(
+          bytes,
+          'CO_Monthly_Summary_${cleanBranch}_${selectedDate.year}_${selectedDate.month.toString().padLeft(2, '0')}.csv',
+          'text/csv',
+        );
+      } else {
+        // collections_workbook or master_cashbook_ledger
+        final bytes = await reportsApi.downloadExcel(
+          branchName: branchName,
+          asOfDate: dateStr,
+        );
+        downloadBlobFile(
+          bytes,
+          'Master_Report_${cleanBranch}_$dateStr.xlsx',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+      }
+      _showFlash('$branchName report downloaded successfully.');
+    } catch (e) {
+      _showFlash('Failed to download report: $e');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -332,7 +408,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
-        constraints: const BoxConstraints(maxWidth: 650),
+        constraints: const BoxConstraints(maxWidth: 680),
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -381,33 +457,92 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(6)),
-                            child: const Icon(Icons.file_present_outlined, color: Color(0xFF065F46), size: 20),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isNarrow = constraints.maxWidth < 450;
+                          final actionRow = Row(
+                            mainAxisSize: isNarrow ? MainAxisSize.max : MainAxisSize.min,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.pop(ctx);
+                                  _navigateToBranchReport(rep.reportType, branchName);
+                                },
+                                icon: const Icon(Icons.visibility_outlined, size: 14),
+                                label: const Text('View', style: TextStyle(fontSize: 11.5)),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                onPressed: _isProcessing
+                                    ? null
+                                    : () {
+                                        Navigator.pop(ctx);
+                                        _handleDownloadHandoverReport(rep.reportType, branchName);
+                                      },
+                                icon: const Icon(Icons.download, size: 14, color: Colors.white),
+                                label: const Text('Download', style: TextStyle(fontSize: 11.5, color: Colors.white)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF065F46),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                ),
+                              ),
+                            ],
+                          );
+
+                          if (isNarrow) {
+                            return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(rep.title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
-                                Text(rep.description, style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(6)),
+                                      child: const Icon(Icons.file_present_outlined, color: Color(0xFF065F46), size: 20),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(rep.title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
+                                          Text(rep.description, style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                actionRow,
                               ],
-                            ),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              Navigator.pop(ctx);
-                              // Navigate to Reports & Export scoped to this branch
-                              ref.read(activeCoPageProvider.notifier).state = 'Reports & Export';
-                            },
-                            icon: const Icon(Icons.visibility_outlined, size: 14),
-                            label: const Text('View / Download', style: TextStyle(fontSize: 11.5)),
-                          ),
-                        ],
+                            );
+                          }
+
+                          return Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(6)),
+                                child: const Icon(Icons.file_present_outlined, color: Color(0xFF065F46), size: 20),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(rep.title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
+                                    Text(rep.description, style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              actionRow,
+                            ],
+                          );
+                        },
                       ),
                     )),
               ],

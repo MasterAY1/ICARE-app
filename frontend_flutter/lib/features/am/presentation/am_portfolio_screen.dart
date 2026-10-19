@@ -5,6 +5,7 @@ import '../../../../core/utils/currency_formatter.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 import '../data/datasources/am_api_service.dart';
 import '../data/models/am_dashboard_models.dart';
+import '../../reports/presentation/reports_export_screen.dart';
 
 class AmPortfolioScreen extends ConsumerStatefulWidget {
   const AmPortfolioScreen({super.key});
@@ -683,6 +684,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: () {
+                    ref.read(reportsTargetBranchProvider.notifier).state = b.branchName;
                     ref.read(activeCoPageProvider.notifier).state = 'Reports & Export';
                   },
                   icon: const Icon(Icons.bar_chart_outlined, size: 14, color: Colors.white),

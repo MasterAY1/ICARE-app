@@ -1,5 +1,4 @@
 // ignore_for_file: deprecated_member_use
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -10,6 +9,15 @@ import '../data/datasources/reports_api_service.dart';
 import '../data/models/report_models.dart';
 import '../../shared/utils/file_download_helper.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
+
+/// Target branch filter passed from external navigation (AM Dashboard, AM Portfolio, etc.)
+final reportsTargetBranchProvider = StateProvider<String?>((ref) => null);
+
+/// Target tab index (0: Monthly Executive Statements, 1: Area Branches Comparison, 2: Data Exports & Downloads)
+final reportsTargetTabProvider = StateProvider<int?>((ref) => null);
+
+/// Target sub-tab index within Monthly Executive Statements (0: Deposits, 1: Credit, 2: Receipts & Payments, 3: Annex-1, 4: Trial Balance, 5: CO Summary, 6: Bank Rec)
+final reportsTargetSubTabProvider = StateProvider<int?>((ref) => null);
 
 class ReportsExportScreen extends ConsumerStatefulWidget {
   const ReportsExportScreen({super.key});
@@ -66,6 +74,29 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         _selectedBranchName = user.branch;
       }
     }
+
+    // Resolve external target parameters if passed from AM dashboard or portfolio
+    final targetBranch = ref.read(reportsTargetBranchProvider);
+    if (targetBranch != null) {
+      _selectedBranchName = targetBranch;
+    }
+    final targetTab = ref.read(reportsTargetTabProvider);
+    if (targetTab != null) {
+      _selectedTabIndex = targetTab;
+    }
+    final targetSubTab = ref.read(reportsTargetSubTabProvider);
+    if (targetSubTab != null) {
+      _selectedExecSubTab = targetSubTab;
+    }
+
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(reportsTargetBranchProvider.notifier).state = null;
+        ref.read(reportsTargetTabProvider.notifier).state = null;
+        ref.read(reportsTargetSubTabProvider.notifier).state = null;
+      }
+    });
+
     _initFutures();
   }
 
@@ -172,6 +203,37 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Reactive listeners for context updates while already mounted
+    ref.listen<String?>(reportsTargetBranchProvider, (prev, next) {
+      if (next != null) {
+        setState(() => _selectedBranchName = next);
+        _refreshCurrentTabData();
+        Future.microtask(() {
+          if (mounted) ref.read(reportsTargetBranchProvider.notifier).state = null;
+        });
+      }
+    });
+
+    ref.listen<int?>(reportsTargetTabProvider, (prev, next) {
+      if (next != null) {
+        setState(() => _selectedTabIndex = next);
+        _refreshCurrentTabData();
+        Future.microtask(() {
+          if (mounted) ref.read(reportsTargetTabProvider.notifier).state = null;
+        });
+      }
+    });
+
+    ref.listen<int?>(reportsTargetSubTabProvider, (prev, next) {
+      if (next != null) {
+        setState(() => _selectedExecSubTab = next);
+        _refreshCurrentTabData();
+        Future.microtask(() {
+          if (mounted) ref.read(reportsTargetSubTabProvider.notifier).state = null;
+        });
+      }
+    });
+
     final authState = ref.watch(authControllerProvider);
     final user = authState is AuthStateAuthenticated ? authState.user : null;
 
