@@ -160,6 +160,24 @@ class AmApiService {
     return response.data as Map<String, dynamic>;
   }
 
+  /// Approve branch-level reversal / correction request
+  Future<Map<String, dynamic>> approveBranchReversal(String requestId) async {
+    final response = await _apiClient.post(
+      '/api/v1/am/approve-branch-reversal',
+      data: {'request_id': requestId},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// Reject branch-level reversal / correction request
+  Future<Map<String, dynamic>> rejectBranchReversal(String requestId, String reason) async {
+    final response = await _apiClient.post(
+      '/api/v1/am/reject-branch-reversal',
+      data: {'request_id': requestId, 'reason': reason},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   /// Fetch Branch Handover Summary for read-only inspection & downloads
   Future<BranchHandoverSummaryModel> getBranchHandover({
     required String branchId,

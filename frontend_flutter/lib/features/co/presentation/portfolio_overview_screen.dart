@@ -80,6 +80,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
   String? _selectedRepaymentForReversal;
   final TextEditingController _reversalReasonCtrl = TextEditingController();
   bool _isSubmittingReversal = false;
+  bool _hideCancelledTransactions = true;
 
   @override
   void initState() {
@@ -2382,6 +2383,9 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     } else if (s.contains('OVERDUE') || s.contains('DEFAULT')) {
       bg = const Color(0xFFFEE2E2);
       fg = const Color(0xFFB91C1C);
+    } else if (s.contains('REVERSED') || s.contains('CANCELLED')) {
+      bg = const Color(0xFFFEF3C7);
+      fg = const Color(0xFFB45309);
     }
 
     return Container(
@@ -2818,6 +2822,10 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   // 3. Repayment Ledger Subtab
   Widget _buildRepaymentLedgerSubtab(List<dynamic> repayments) {
+    final visibleReps = _hideCancelledTransactions
+        ? repayments.where((r) => r['is_reversed'] != true && (r['amount_collected'] as num? ?? 0) > 0).toList()
+        : repayments;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
@@ -2828,12 +2836,58 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text('Repayment Ledger & Transaction History', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF0F172A))),
-              Text('${repayments.length} Payments Recorded', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+              Row(
+                children: [
+                  Text(' Payments Recorded', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                  const SizedBox(width: 12),
+                  InkWell(
+                    onTap: () => setState(() => _hideCancelledTransactions = !_hideCancelledTransactions),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _hideCancelledTransactions ? const Color(0xFFEFF6FF) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: _hideCancelledTransactions ? const Color(0xFF93C5FD) : const Color(0xFFCBD5E1)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _hideCancelledTransactions ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            size: 14,
+                            color: _hideCancelledTransactions ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _hideCancelledTransactions ? 'Hide Cancelled' : 'Show All (Audit)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: _hideCancelledTransactions ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 16),
-          if (repayments.isEmpty)
-            const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('No repayments recorded for this client yet.', style: TextStyle(color: Color(0xFF64748B)))))
+          if (visibleReps.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  _hideCancelledTransactions && repayments.isNotEmpty
+                      ? 'All  repayments have been reversed or cancelled.'
+                      : 'No repayments recorded for this client yet.',
+                  style: const TextStyle(color: Color(0xFF64748B)),
+                ),
+              ),
+            )
           else
             Scrollbar(
               thumbVisibility: true,
@@ -2848,11 +2902,22 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                     DataColumn(label: Text('Transaction Type', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
                     DataColumn(label: Text('Notes', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
                   ],
-                  rows: repayments.map((r) {
+                  rows: visibleReps.map((r) {
+                    final isRev = r['is_reversed'] == true;
+                    final amt = (r['amount_collected'] as num?)?.toDouble() ?? 0.0;
                     return DataRow(cells: [
                       DataCell(Text(r['date']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                      DataCell(Text(CurrencyFormatter.formatNaira((r['amount_collected'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF059669), fontFeatures: [FontFeature.tabularFigures()]))),
-                      DataCell(_buildStatusBadge(r['status']?.toString() ?? 'Completed')),
+                      DataCell(Text(
+                        CurrencyFormatter.formatNaira(amt),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: isRev ? const Color(0xFF94A3B8) : const Color(0xFF059669),
+                          decoration: isRev ? TextDecoration.lineThrough : null,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      )),
+                      DataCell(_buildStatusBadge(isRev ? 'REVERSED' : (r['status']?.toString() ?? 'Completed'))),
                       DataCell(Text(r['transaction_type']?.toString() ?? 'Repayment', style: const TextStyle(fontSize: 12))),
                       DataCell(Text(r['notes']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
                     ]);
@@ -2865,7 +2930,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
           // Flag for Reversal Expander
           ExpansionTile(
             title: const Text('Flag a Repayment for Reversal', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFFDC2626))),
-            subtitle: const Text('Submit a formal correction request under ledger immutability FP-002.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+            subtitle: const Text('Submit a formal correction request for Branch Manager review.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
             children: [
               Padding(
                 padding: const EdgeInsets.all(16),
@@ -2878,7 +2943,9 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                       decoration: const InputDecoration(labelText: 'Select Repayment Transaction', border: OutlineInputBorder()),
                       items: repayments.where((r) {
                         final id = r['repayment_id']?.toString() ?? r['id']?.toString() ?? '';
-                        return id.isNotEmpty;
+                        final isRev = r['is_reversed'] == true;
+                        final amt = (r['amount_collected'] as num?)?.toDouble() ?? 0.0;
+                        return id.isNotEmpty && !isRev && amt > 0;
                       }).map((r) {
                         final id = r['repayment_id']?.toString() ?? r['id']?.toString() ?? '';
                         final amt = CurrencyFormatter.formatNaira((r['amount_collected'] as num?)?.toDouble() ?? 0.0);
@@ -2934,7 +3001,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error submitting reversal: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Error submitting reversal: '), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -2944,11 +3011,27 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   // 4. Savings Ledger Subtab (Running Balance)
   Widget _buildSavingsLedgerSubtab(List<dynamic> savings) {
-    if (savings.isEmpty) {
+    final visibleSavings = _hideCancelledTransactions
+        ? savings.where((s) => s['is_reversed'] != true).toList()
+        : savings;
+
+    if (visibleSavings.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
-        child: const Center(child: Text('No savings transactions recorded for this client.', style: TextStyle(color: Color(0xFF64748B)))),
+        child: Column(
+          children: [
+            const Center(child: Text('No active savings transactions recorded for this client.', style: TextStyle(color: Color(0xFF64748B)))),
+            if (savings.isNotEmpty && _hideCancelledTransactions) ...[
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: () => setState(() => _hideCancelledTransactions = false),
+                icon: const Icon(Icons.history, size: 14),
+                label: const Text('Show Cancelled History', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ],
+        ),
       );
     }
 
@@ -2962,7 +3045,43 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text('Savings Ledger & Running Balance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF0F172A))),
-              Text('${savings.length} Entries', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+              Row(
+                children: [
+                  Text(' Entries', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                  const SizedBox(width: 12),
+                  InkWell(
+                    onTap: () => setState(() => _hideCancelledTransactions = !_hideCancelledTransactions),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _hideCancelledTransactions ? const Color(0xFFEFF6FF) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: _hideCancelledTransactions ? const Color(0xFF93C5FD) : const Color(0xFFCBD5E1)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _hideCancelledTransactions ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            size: 14,
+                            color: _hideCancelledTransactions ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _hideCancelledTransactions ? 'Hide Cancelled' : 'Show All (Audit)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: _hideCancelledTransactions ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -2977,24 +3096,49 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                   DataColumn(label: Text('Deposit (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
                   DataColumn(label: Text('Withdrawal (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
                   DataColumn(label: Text('Net Balance (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+                  DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
                   DataColumn(label: Text('Remarks', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
                 ],
-                rows: savings.map((s) {
+                rows: visibleSavings.map((s) {
                   final dep = (s['deposit'] as num?)?.toDouble() ?? 0.0;
                   final wd = (s['withdrawal'] as num?)?.toDouble() ?? 0.0;
-                  final bal = (s['running_balance'] as num?)?.toDouble() ?? 0.0;
+                  final bal = (s['net_balance'] as num?)?.toDouble() ?? (s['running_balance'] as num?)?.toDouble() ?? 0.0;
+                  final isRev = s['is_reversed'] == true;
 
                   return DataRow(cells: [
                     DataCell(Text(s['date']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                    DataCell(Text(dep > 0 ? CurrencyFormatter.formatNaira(dep) : '—', style: const TextStyle(fontSize: 12, color: Color(0xFF059669), fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]))),
-                    DataCell(Text(wd > 0 ? CurrencyFormatter.formatNaira(wd) : '—', style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]))),
-                    DataCell(Text(CurrencyFormatter.formatNaira(bal), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0284C7), fontFeatures: [FontFeature.tabularFigures()]))),
+                    DataCell(Text(
+                      dep != 0 ? CurrencyFormatter.formatNaira(dep) : '—',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isRev ? const Color(0xFF94A3B8) : const Color(0xFF059669),
+                        fontWeight: FontWeight.w600,
+                        decoration: isRev ? TextDecoration.lineThrough : null,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    )),
+                    DataCell(Text(
+                      wd != 0 ? CurrencyFormatter.formatNaira(wd) : '—',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isRev ? const Color(0xFF94A3B8) : const Color(0xFFDC2626),
+                        fontWeight: FontWeight.w600,
+                        decoration: isRev ? TextDecoration.lineThrough : null,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    )),
+                    DataCell(Text(
+                      CurrencyFormatter.formatNaira(bal),
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0284C7), fontFeatures: [FontFeature.tabularFigures()]),
+                    )),
+                    DataCell(_buildStatusBadge(isRev ? 'REVERSED' : 'Posted')),
                     DataCell(Text(s['remarks']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
                   ]);
                 }).toList(),
               ),
             ),
           ),
+          const SizedBox(height: 20),
         ],
       ),
     );

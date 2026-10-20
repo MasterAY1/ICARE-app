@@ -245,6 +245,9 @@ class MasterPendingReversalData {
   final String reason;
   final String requestedBy;
   final String requestedByName;
+  final double amount;
+  final String? clientName;
+  final String? clientCode;
   final String createdAt;
   final String status;
 
@@ -255,6 +258,9 @@ class MasterPendingReversalData {
     required this.reason,
     required this.requestedBy,
     required this.requestedByName,
+    this.amount = 0.0,
+    this.clientName,
+    this.clientCode,
     required this.createdAt,
     required this.status,
   });
@@ -267,6 +273,9 @@ class MasterPendingReversalData {
       reason: json['reason']?.toString() ?? '',
       requestedBy: json['requested_by']?.toString() ?? '',
       requestedByName: json['requested_by_name']?.toString() ?? 'Officer',
+      amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
+      clientName: json['client_name']?.toString(),
+      clientCode: json['client_code']?.toString(),
       createdAt: json['created_at']?.toString() ?? '',
       status: json['status']?.toString() ?? 'Pending',
     );

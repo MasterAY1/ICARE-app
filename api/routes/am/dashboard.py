@@ -27,6 +27,7 @@ from api.schemas.am_dashboard import (
     PendingHighValueLoanItem,
     PendingBranchTransferItem,
     PendingBranchEodItem,
+    PendingBranchReversalItem,
     BranchHandoverSummary,
     ConfirmBranchEodRequest,
     RejectBranchEodRequest,
@@ -35,6 +36,8 @@ from api.schemas.am_dashboard import (
     RejectLoanRequest,
     SignOffTransferRequest,
     RejectTransferRequest,
+    ApproveBranchReversalRequest,
+    RejectBranchReversalRequest,
     AmActionResponse
 )
 
@@ -82,6 +85,7 @@ def get_am_dashboard(
             pending_high_value_loans=[PendingHighValueLoanItem(**l) for l in appr_dict["pending_high_value_loans"]],
             pending_branch_transfers=[PendingBranchTransferItem(**t) for t in appr_dict["pending_branch_transfers"]],
             pending_branch_eods=[PendingBranchEodItem(**e) for e in appr_dict["pending_branch_eods"]],
+            pending_branch_reversals=[PendingBranchReversalItem(**r) for r in appr_dict.get("pending_branch_reversals", [])],
             can_lock_area=appr_dict.get("can_lock_area", False)
         )
 
@@ -120,6 +124,7 @@ def get_am_approvals_hub(
             pending_high_value_loans=[PendingHighValueLoanItem(**l) for l in appr_dict["pending_high_value_loans"]],
             pending_branch_transfers=[PendingBranchTransferItem(**t) for t in appr_dict["pending_branch_transfers"]],
             pending_branch_eods=[PendingBranchEodItem(**e) for e in appr_dict["pending_branch_eods"]],
+            pending_branch_reversals=[PendingBranchReversalItem(**r) for r in appr_dict.get("pending_branch_reversals", [])],
             can_lock_area=appr_dict.get("can_lock_area", False)
         )
     except Exception as e:
@@ -371,6 +376,61 @@ def get_branch_inspection(
         return AreaManagerService.get_branch_inspection_data(uow, current_user.id, branch_id, target_d)
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/approve-branch-reversal", response_model=AmActionResponse)
+def approve_branch_reversal(
+    payload: ApproveBranchReversalRequest,
+    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin", "Director"])),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Area Manager signs off on a branch-level correction / treasury reversal (BR-ERR-001).
+    """
+    _check_am_permissions(current_user)
+    try:
+        res = AreaManagerService.approve_branch_reversal(
+            uow=uow,
+            am_user_id=current_user.id,
+            request_id=payload.request_id
+        )
+        return AmActionResponse(
+            success=True,
+            message=res["message"],
+            details=res
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/reject-branch-reversal", response_model=AmActionResponse)
+def reject_branch_reversal(
+    payload: RejectBranchReversalRequest,
+    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin", "Director"])),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Area Manager rejects a branch-level correction / treasury reversal.
+    """
+    _check_am_permissions(current_user)
+    try:
+        res = AreaManagerService.reject_branch_reversal(
+            uow=uow,
+            am_user_id=current_user.id,
+            request_id=payload.request_id,
+            reason=payload.reason
+        )
+        return AmActionResponse(
+            success=True,
+            message=res["message"],
+            details=res
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 

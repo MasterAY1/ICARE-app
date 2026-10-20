@@ -242,10 +242,64 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     }
   }
 
-  Future<void> _handleApproveReversal(String requestId) async {
+  Future<void> _handleApproveReversal(MasterPendingReversalData req) async {
+    final amtStr = CurrencyFormatter.format(req.amount);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Confirm Reversal — [${req.recordType}]', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (req.clientName != null && req.clientName!.isNotEmpty) ...[
+              Text('Client / Entity: ${req.clientName!} ${req.clientCode != null && req.clientCode!.isNotEmpty ? "(${req.clientCode})" : ""}',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+              const SizedBox(height: 4),
+            ],
+            Text('Amount to Reverse: $amtStr', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+            const SizedBox(height: 6),
+            Text('Reason: ${req.reason}', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Color(0xFF475569))),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline, size: 16, color: Color(0xFFB45309)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Approving this reversal will deduct $amtStr from Vault Cash. Ensure physical cash has been counted and aligned.',
+                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF92400E)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669)),
+            child: const Text('Approve Reversal', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     try {
       final api = ref.read(masterCashbookApiServiceProvider);
-      final res = await api.approveReversal(requestId);
+      final res = await api.approveReversal(req.id);
       _showBanner(
         res['message'] ?? 'Reversal approved and executed atomically!',
         const Color(0xFF065F46),
@@ -263,10 +317,29 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     }
   }
 
-  Future<void> _handleRejectReversal(String requestId) async {
+  Future<void> _handleRejectReversal(MasterPendingReversalData req) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Reject Reversal Request', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        content: Text('Are you sure you want to reject this reversal request for [${req.recordType}] (Ref: #${req.recordId.length > 8 ? req.recordId.substring(0, 8) : req.recordId})?',
+            style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            child: const Text('Reject Request', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     try {
       final api = ref.read(masterCashbookApiServiceProvider);
-      final res = await api.rejectReversal(requestId);
+      final res = await api.rejectReversal(req.id);
       _showBanner(
         res['message'] ?? 'Reversal rejected.',
         const Color(0xFF1E40AF),
@@ -2094,6 +2167,18 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         style: const TextStyle(fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.w600, color: Color(0xFF475569)),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Text(
+                      CurrencyFormatter.format(req.amount),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFFDC2626), fontFamily: 'monospace'),
+                    ),
+                    if (req.clientName != null && req.clientName!.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        '• ${req.clientName!} ${req.clientCode != null && req.clientCode!.isNotEmpty ? "(${req.clientCode})" : ""}',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -2163,7 +2248,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               OutlinedButton.icon(
-                onPressed: () => _handleRejectReversal(req.id),
+                onPressed: () => _handleRejectReversal(req),
                 icon: const Icon(Icons.close, size: 14, color: Color(0xFF475569)),
                 label: const Text('Reject', style: TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.w600)),
                 style: OutlinedButton.styleFrom(
@@ -2174,7 +2259,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               ),
               const SizedBox(width: 8),
               ElevatedButton.icon(
-                onPressed: () => _handleApproveReversal(req.id),
+                onPressed: () => _handleApproveReversal(req),
                 icon: const Icon(Icons.check, size: 14, color: Colors.white),
                 label: const Text('Approve Reversal', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
                 style: ElevatedButton.styleFrom(

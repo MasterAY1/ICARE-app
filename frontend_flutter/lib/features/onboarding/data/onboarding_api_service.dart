@@ -8,6 +8,11 @@ final onboardingApiServiceProvider = Provider<OnboardingApiService>((ref) {
   return OnboardingApiService(client);
 });
 
+final adminOnboardingSessionsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  final api = ref.watch(onboardingApiServiceProvider);
+  return api.listAdminSessions();
+});
+
 class OnboardingApiService {
   final ApiClient _client;
 

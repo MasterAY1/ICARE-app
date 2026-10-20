@@ -296,17 +296,69 @@ def get_daily_master_cashbook(
         )
 
     # 9. Pending Branch Reversal Requests (app.py L11591-11609)
+    # Batch enrich pending reversals with amount and client details
+    r_rep_ids = [str(r["record_id"]) for r in raw_pending_rev if r.get("record_type") in ["Repayment", "Loan"]]
+    r_sav_ids = [str(r["record_id"]) for r in raw_pending_rev if r.get("record_type") in ["Savings", "SavingsDeposit", "individual_savings"]]
+    r_try_ids = [str(r["record_id"]) for r in raw_pending_rev if r.get("record_type") in ["Treasury", "TreasuryTransaction", "Expense", "Salary", "Fee", "FeeCharged"]]
+
+    r_rep_meta = {}
+    if r_rep_ids:
+        try:
+            r_res = uow.client.table("repayments").select("id, amount_paid, clients(name, client_code)").in_("id", r_rep_ids).execute()
+            for r in (r_res.data or []):
+                c_info = r.get("clients") or {} if isinstance(r.get("clients"), dict) else {}
+                r_rep_meta[str(r["id"])] = {
+                    "amount": float(r.get("amount_paid") or 0.0),
+                    "client_name": c_info.get("name") or "Member",
+                    "client_code": c_info.get("client_code") or ""
+                }
+        except Exception:
+            pass
+
+    r_sav_meta = {}
+    if r_sav_ids:
+        try:
+            s_res = uow.client.table("individual_savings").select("id, deposit_amount, clients(name, client_code)").in_("id", r_sav_ids).execute()
+            for s in (s_res.data or []):
+                c_info = s.get("clients") or {} if isinstance(s.get("clients"), dict) else {}
+                r_sav_meta[str(s["id"])] = {
+                    "amount": float(s.get("deposit_amount") or 0.0),
+                    "client_name": c_info.get("name") or "Member",
+                    "client_code": c_info.get("client_code") or ""
+                }
+        except Exception:
+            pass
+
+    r_try_meta = {}
+    if r_try_ids:
+        try:
+            t_res = uow.client.table("treasury_transactions").select("id, amount, remarks, transaction_type").in_("id", r_try_ids).execute()
+            for t in (t_res.data or []):
+                r_try_meta[str(t["id"])] = {
+                    "amount": float(t.get("amount") or 0.0),
+                    "client_name": str(t.get("remarks") or t.get("transaction_type") or "Branch Treasury"),
+                    "client_code": str(t.get("transaction_type") or "TREASURY")
+                }
+        except Exception:
+            pass
+
     pending_reversals: List[PendingReversalItem] = []
     for req in raw_pending_rev:
         u_data = req.get("app_users")
         req_user = (u_data.get("full_name") or u_data.get("username")) if isinstance(u_data, dict) else "Officer"
+        rec_id_str = str(req.get("record_id") or "")
+        meta = r_rep_meta.get(rec_id_str) or r_sav_meta.get(rec_id_str) or r_try_meta.get(rec_id_str) or {}
+
         pending_reversals.append(PendingReversalItem(
             id=str(req.get("id")),
-            record_id=str(req.get("record_id")),
+            record_id=rec_id_str,
             record_type=str(req.get("record_type")),
             reason=str(req.get("reason") or ""),
             requested_by=str(req.get("requested_by") or ""),
             requested_by_name=req_user,
+            amount=meta.get("amount", 0.0),
+            client_name=meta.get("client_name"),
+            client_code=meta.get("client_code"),
             created_at=str(req.get("created_at") or ""),
             status=str(req.get("status") or "Pending")
         ))

@@ -306,6 +306,20 @@ class AreaManagerService:
             else:
                 op_status = "Normal"
 
+            # 7. Error Reversals & Corrections Count
+            b_rev_cnt = 0
+            try:
+                res_rv = uow.client.table("correction_requests") \
+                    .select("id") \
+                    .eq("branch_id", bid) \
+                    .gte("approval_date", f"{date_str}T00:00:00") \
+                    .lte("approval_date", f"{date_str}T23:59:59") \
+                    .eq("status", "Approved") \
+                    .execute()
+                b_rev_cnt = len(res_rv.data or [])
+            except Exception:
+                pass
+
             matrix.append({
                 "branch_id": bid,
                 "branch_name": bname,
@@ -321,7 +335,8 @@ class AreaManagerService:
                 "defaulters_count": b_defaulters,
                 "cash_variance": cash_diff,
                 "eod_status": eod_status,
-                "operational_status": op_status
+                "operational_status": op_status,
+                "reversals_count": b_rev_cnt
             })
 
         return matrix
@@ -453,12 +468,140 @@ class AreaManagerService:
                 "notes": eod_record.get("notes") if eod_record else None
             })
 
+        # 4. Branch Treasury & Escalated Reversal Requests (BM-initiated or Treasury)
+        pending_reversals = []
+        if assigned_bids:
+            try:
+                res_cor = uow.client.table("correction_requests") \
+                    .select("id, record_id, record_type, branch_id, reason, created_at, requested_by, app_users!correction_requests_requested_by_fkey(username, full_name, role), branches(name)") \
+                    .in_("branch_id", assigned_bids) \
+                    .eq("status", "Pending") \
+                    .order("created_at", desc=False) \
+                    .execute()
+
+                cor_data = res_cor.data or []
+                t_ids = [str(c["record_id"]) for c in cor_data if c.get("record_type") in ["Treasury", "TreasuryTransaction", "Expense", "Salary", "Fee", "FeeCharged"]]
+                r_ids = [str(c["record_id"]) for c in cor_data if c.get("record_type") in ["Repayment", "Loan"]]
+                s_ids = [str(c["record_id"]) for c in cor_data if c.get("record_type") in ["Savings", "SavingsDeposit", "individual_savings"]]
+
+                am_t_meta = {}
+                if t_ids:
+                    try:
+                        tr_res = uow.client.table("treasury_transactions").select("id, amount, remarks, transaction_type").in_("id", t_ids).execute()
+                        for t in (tr_res.data or []):
+                            am_t_meta[str(t["id"])] = {
+                                "amount": float(t.get("amount") or 0.0),
+                                "description": f"{t.get('transaction_type') or 'Treasury'}: {t.get('remarks') or ''}"
+                            }
+                    except Exception:
+                        pass
+
+                am_r_meta = {}
+                if r_ids:
+                    try:
+                        rp_res = uow.client.table("repayments").select("id, amount_paid, clients(name)").in_("id", r_ids).execute()
+                        for r in (rp_res.data or []):
+                            cl_name = (r.get("clients") or {}).get("name") if isinstance(r.get("clients"), dict) else "Member"
+                            am_r_meta[str(r["id"])] = {
+                                "amount": float(r.get("amount_paid") or 0.0),
+                                "description": f"Loan Repayment: {cl_name}"
+                            }
+                    except Exception:
+                        pass
+
+                am_s_meta = {}
+                if s_ids:
+                    try:
+                        sp_res = uow.client.table("individual_savings").select("id, deposit_amount, clients(name)").in_("id", s_ids).execute()
+                        for s in (sp_res.data or []):
+                            cl_name = (s.get("clients") or {}).get("name") if isinstance(s.get("clients"), dict) else "Member"
+                            am_s_meta[str(s["id"])] = {
+                                "amount": float(s.get("deposit_amount") or 0.0),
+                                "description": f"Savings Deposit: {cl_name}"
+                            }
+                    except Exception:
+                        pass
+
+                for c in cor_data:
+                    u_info = c.get("app_users") or {} if isinstance(c.get("app_users"), dict) else {}
+                    b_info = c.get("branches") or {} if isinstance(c.get("branches"), dict) else {}
+                    r_type = c.get("record_type") or "Transaction"
+                    rec_id = str(c.get("record_id") or "")
+                    m_info = am_t_meta.get(rec_id) or am_r_meta.get(rec_id) or am_s_meta.get(rec_id) or {}
+
+                    pending_reversals.append({
+                        "request_id": str(c["id"]),
+                        "branch_id": str(c.get("branch_id") or ""),
+                        "branch_name": b_info.get("name") or "Assigned Branch",
+                        "record_id": rec_id,
+                        "record_type": r_type,
+                        "amount": m_info.get("amount", 0.0),
+                        "description": m_info.get("description") or f"{r_type} #{rec_id[:8]}",
+                        "requested_by": u_info.get("full_name") or u_info.get("username") or "Staff",
+                        "reason": str(c.get("reason") or ""),
+                        "created_at": str(c.get("created_at") or "")
+                    })
+            except Exception:
+                pass
+
         return {
             "pending_high_value_loans": pending_loans,
             "pending_branch_transfers": pending_transfers,
             "pending_branch_eods": pending_eods,
+            "pending_branch_reversals": pending_reversals,
             "can_lock_area": all(e["is_confirmed"] for e in pending_eods) if pending_eods else False
         }
+
+    @classmethod
+    def approve_branch_reversal(
+        cls,
+        uow: UnitOfWork,
+        am_user_id: str,
+        request_id: str
+    ) -> Dict[str, Any]:
+        """
+        Area Manager signs off on a branch-level correction / treasury reversal (BR-ERR-001).
+        """
+        from services.correction_service import CorrectionService
+        res_req = uow.client.table("correction_requests").select("branch_id").eq("id", request_id).execute()
+        if not res_req.data:
+            raise ValueError(f"Correction request {request_id} not found.")
+        bid = res_req.data[0].get("branch_id")
+        assigned = cls.get_assigned_branches(uow, am_user_id)
+        valid_bids = [b["branch_id"] for b in assigned if b.get("branch_id")]
+        if bid and bid not in valid_bids:
+            raise ValueError("Forbidden: Correction request belongs to a branch outside your supervisory area.")
+
+        user = uow.users.find_by_id(am_user_id)
+        approver_ident = user.username if user else am_user_id
+        CorrectionService.approve_correction(uow, request_id, approved_by=approver_ident)
+        return {"success": True, "message": "Branch reversal approved and executed atomically by Area Manager."}
+
+    @classmethod
+    def reject_branch_reversal(
+        cls,
+        uow: UnitOfWork,
+        am_user_id: str,
+        request_id: str,
+        reason: str
+    ) -> Dict[str, Any]:
+        """
+        Area Manager rejects a branch-level reversal request.
+        """
+        from services.correction_service import CorrectionService
+        res_req = uow.client.table("correction_requests").select("branch_id").eq("id", request_id).execute()
+        if not res_req.data:
+            raise ValueError(f"Correction request {request_id} not found.")
+        bid = res_req.data[0].get("branch_id")
+        assigned = cls.get_assigned_branches(uow, am_user_id)
+        valid_bids = [b["branch_id"] for b in assigned if b.get("branch_id")]
+        if bid and bid not in valid_bids:
+            raise ValueError("Forbidden: Correction request belongs to a branch outside your supervisory area.")
+
+        user = uow.users.find_by_id(am_user_id)
+        approver_ident = user.username if user else am_user_id
+        CorrectionService.reject_correction(uow, request_id, approved_by=approver_ident)
+        return {"success": True, "message": "Branch reversal rejected by Area Manager."}
 
     @classmethod
     def confirm_branch_eod(

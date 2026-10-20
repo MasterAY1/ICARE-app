@@ -324,16 +324,68 @@ def get_bm_dashboard(
                 created_at=str(wr.get("created_at")) if wr.get("created_at") else None
             ))
 
+        # Batch enrich pending corrections with transaction amount and client details
+        rep_ids = [str(c["record_id"]) for c in (res_corr.data or []) if c.get("record_type") in ["Repayment", "Loan"]]
+        sav_ids = [str(c["record_id"]) for c in (res_corr.data or []) if c.get("record_type") in ["Savings", "SavingsDeposit", "individual_savings"]]
+        try_ids = [str(c["record_id"]) for c in (res_corr.data or []) if c.get("record_type") in ["Treasury", "TreasuryTransaction", "Expense", "Salary", "Fee", "FeeCharged"]]
+
+        rep_meta = {}
+        if rep_ids:
+            try:
+                r_res = uow.client.table("repayments").select("id, amount_paid, clients(name, client_code)").in_("id", rep_ids).execute()
+                for r in (r_res.data or []):
+                    c_info = r.get("clients") or {} if isinstance(r.get("clients"), dict) else {}
+                    rep_meta[str(r["id"])] = {
+                        "amount": float(r.get("amount_paid") or 0.0),
+                        "client_name": c_info.get("name") or "Member",
+                        "client_code": c_info.get("client_code") or ""
+                    }
+            except Exception:
+                pass
+
+        sav_meta = {}
+        if sav_ids:
+            try:
+                s_res = uow.client.table("individual_savings").select("id, deposit_amount, clients(name, client_code)").in_("id", sav_ids).execute()
+                for s in (s_res.data or []):
+                    c_info = s.get("clients") or {} if isinstance(s.get("clients"), dict) else {}
+                    sav_meta[str(s["id"])] = {
+                        "amount": float(s.get("deposit_amount") or 0.0),
+                        "client_name": c_info.get("name") or "Member",
+                        "client_code": c_info.get("client_code") or ""
+                    }
+            except Exception:
+                pass
+
+        try_meta = {}
+        if try_ids:
+            try:
+                t_res = uow.client.table("treasury_transactions").select("id, amount, remarks, transaction_type").in_("id", try_ids).execute()
+                for t in (t_res.data or []):
+                    try_meta[str(t["id"])] = {
+                        "amount": float(t.get("amount") or 0.0),
+                        "client_name": str(t.get("remarks") or t.get("transaction_type") or "Branch Treasury"),
+                        "client_code": str(t.get("transaction_type") or "TREASURY")
+                    }
+            except Exception:
+                pass
+
         pending_corr_items: List[PendingCorrectionApprovalItem] = []
         for corr in (res_corr.data or []):
             u_data = corr.get("app_users")
             req_u = (u_data.get("full_name") or u_data.get("username")) if isinstance(u_data, dict) else "Officer"
+            rec_id_str = str(corr.get("record_id") or "")
+            meta = rep_meta.get(rec_id_str) or sav_meta.get(rec_id_str) or try_meta.get(rec_id_str) or {}
+
             pending_corr_items.append(PendingCorrectionApprovalItem(
                 id=str(corr["id"]),
-                record_id=str(corr.get("record_id") or ""),
+                record_id=rec_id_str,
                 record_type=str(corr.get("record_type") or "Transaction"),
                 reason=str(corr.get("reason") or ""),
                 requested_by=str(req_u),
+                amount=meta.get("amount", 0.0),
+                client_name=meta.get("client_name"),
+                client_code=meta.get("client_code"),
                 created_at=str(corr.get("created_at")) if corr.get("created_at") else None
             ))
 

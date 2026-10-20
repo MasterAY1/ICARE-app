@@ -187,6 +187,9 @@ class PendingCorrectionApprovalModel {
   final String recordType;
   final String reason;
   final String requestedBy;
+  final double amount;
+  final String? clientName;
+  final String? clientCode;
   final String? createdAt;
 
   PendingCorrectionApprovalModel({
@@ -195,6 +198,9 @@ class PendingCorrectionApprovalModel {
     required this.recordType,
     required this.reason,
     required this.requestedBy,
+    this.amount = 0.0,
+    this.clientName,
+    this.clientCode,
     this.createdAt,
   });
 
@@ -205,6 +211,9 @@ class PendingCorrectionApprovalModel {
       recordType: json['record_type']?.toString() ?? 'Transaction',
       reason: json['reason']?.toString() ?? '',
       requestedBy: json['requested_by']?.toString() ?? 'Officer',
+      amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
+      clientName: json['client_name']?.toString(),
+      clientCode: json['client_code']?.toString(),
       createdAt: json['created_at']?.toString(),
     );
   }

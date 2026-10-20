@@ -87,6 +87,9 @@ class PendingReversalItem(BaseModel):
     reason: str
     requested_by: str
     requested_by_name: str
+    amount: Optional[float] = 0.0
+    client_name: Optional[str] = None
+    client_code: Optional[str] = None
     created_at: str
     status: str
 

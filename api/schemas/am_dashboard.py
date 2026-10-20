@@ -40,6 +40,7 @@ class BranchPerformanceItem(BaseModel):
     cash_variance: float
     eod_status: str
     operational_status: str
+    reversals_count: int = 0
 
 
 class PendingHighValueLoanItem(BaseModel):
@@ -85,10 +86,24 @@ class PendingBranchEodItem(BaseModel):
     notes: Optional[str] = None
 
 
+class PendingBranchReversalItem(BaseModel):
+    request_id: str
+    branch_id: str
+    branch_name: str
+    record_id: str
+    record_type: str
+    amount: float = 0.0
+    description: str
+    requested_by: str
+    reason: str
+    created_at: str
+
+
 class AreaApprovalsHub(BaseModel):
     pending_high_value_loans: List[PendingHighValueLoanItem] = []
     pending_branch_transfers: List[PendingBranchTransferItem] = []
     pending_branch_eods: List[PendingBranchEodItem] = []
+    pending_branch_reversals: List[PendingBranchReversalItem] = []
     can_lock_area: bool = False
 
 
@@ -150,6 +165,15 @@ class SignOffTransferRequest(BaseModel):
 
 class RejectTransferRequest(BaseModel):
     transfer_id: str
+    reason: str
+
+
+class ApproveBranchReversalRequest(BaseModel):
+    request_id: str
+
+
+class RejectBranchReversalRequest(BaseModel):
+    request_id: str
     reason: str
 
 

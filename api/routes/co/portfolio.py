@@ -342,33 +342,67 @@ def get_client_dossier(
     # 4. Formatted Repayment Ledger (Streamlit L12908–12962)
     repayment_rows = []
     if isinstance(r_hist, pd.DataFrame) and not r_hist.empty:
+        reversed_targets = set()
+        for _, row in r_hist.iterrows():
+            note_str = str(row.get("note") or "")
+            amt = float(row.get("amount_paid") or 0.0)
+            if amt < 0 or "REVERSAL of" in note_str:
+                if "REVERSAL of " in note_str:
+                    try:
+                        target_id = note_str.split("REVERSAL of ")[1].split(".")[0].split(" ")[0].strip()
+                        if target_id:
+                            reversed_targets.add(target_id)
+                    except Exception:
+                        pass
+
         for _, row in r_hist.iterrows():
             rid = str(row.get("id") or "")
+            amt = float(row.get("amount_paid") or 0.0)
+            note_str = str(row.get("note") or "")
+            is_rev = (amt < 0) or ("REVERSAL of" in note_str) or (rid in reversed_targets)
             repayment_rows.append({
                 "id": rid,
                 "repayment_id": rid,
                 "date": str(row.get("date") or "")[:10],
-                "amount_collected": float(row.get("amount_paid") or 0.0),
-                "status": str(row.get("payment_status") or "PAID"),
+                "amount_collected": amt,
+                "status": "REVERSED" if is_rev else str(row.get("payment_status") or "PAID"),
                 "transaction_type": str(row.get("transaction_type") or "Repayment"),
-                "notes": str(row.get("note") or "")
+                "notes": note_str,
+                "is_reversed": is_rev
             })
 
     # 5. Formatted Savings Ledger with Running Balance (Streamlit L12964–12989)
     savings_rows = []
     if isinstance(s_hist, pd.DataFrame) and not s_hist.empty:
+        reversed_sav_targets = set()
+        for _, row in s_hist.iterrows():
+            rem_str = str(row.get("remarks") or "")
+            dep = float(row.get("deposit_amount") or 0.0)
+            if dep < 0 or "REVERSAL of" in rem_str:
+                if "REVERSAL of " in rem_str:
+                    try:
+                        target_id = rem_str.split("REVERSAL of ")[1].split(".")[0].split(" ")[0].strip()
+                        if target_id:
+                            reversed_sav_targets.add(target_id)
+                    except Exception:
+                        pass
+
         running_bal = 0.0
         for _, row in s_hist.iterrows():
             dep = float(row.get("deposit_amount") or 0.0)
             wth = float(row.get("withdrawal_amount") or 0.0)
+            rem_str = str(row.get("remarks") or "")
+            sid = str(row.get("id") or "")
+            is_rev = (dep < 0) or ("REVERSAL of" in rem_str) or (sid in reversed_sav_targets)
             running_bal += (dep - wth)
             savings_rows.append({
-                "id": str(row.get("id") or ""),
+                "id": sid,
                 "date": str(row.get("posting_date") or "")[:10],
                 "deposit": dep,
                 "withdrawal": wth,
                 "net_balance": running_bal,
-                "remarks": str(row.get("remarks") or "")
+                "remarks": rem_str,
+                "is_reversed": is_rev
             })
 
     # 6. Meeting Collection History & Compliance (Streamlit L12991–13081)

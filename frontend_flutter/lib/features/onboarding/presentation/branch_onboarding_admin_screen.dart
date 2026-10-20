@@ -940,6 +940,31 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
                   style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: badgeText),
                 ),
               ),
+              if (status != 'approved') ...[
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'Delete Onboarding Package',
+                  child: InkWell(
+                    onTap: _deletingSessionIds.contains(sessionId) ? null : () => _handleDelete(s),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF2F2),
+                        border: Border.all(color: const Color(0xFFFCA5A5)),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: _deletingSessionIds.contains(sessionId)
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFDC2626)),
+                            )
+                          : const Icon(Icons.delete_outline, color: Color(0xFFDC2626), size: 16),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 14),
@@ -993,7 +1018,6 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
           // Footer Row with Actions
           LayoutBuilder(
             builder: (context, footerConstraints) {
-              final isNarrow = footerConstraints.maxWidth < 540;
               final timerBadge = Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -1064,6 +1088,7 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFFDC2626),
+                        backgroundColor: const Color(0xFFFEF2F2),
                         side: const BorderSide(color: Color(0xFFFCA5A5)),
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         minimumSize: const Size(0, 32),
@@ -1084,21 +1109,13 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
                 ],
               );
 
-              if (isNarrow) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    timerBadge,
-                    const SizedBox(height: 10),
-                    actionButtons,
-                  ],
-                );
-              }
-
-              return Row(
+              return Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 12,
+                runSpacing: 10,
                 children: [
                   timerBadge,
-                  const Spacer(),
                   actionButtons,
                 ],
               );

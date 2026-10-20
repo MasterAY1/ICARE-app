@@ -72,6 +72,9 @@ class PendingCorrectionApprovalItem(BaseModel):
     record_type: str
     reason: str
     requested_by: str
+    amount: Optional[float] = 0.0
+    client_name: Optional[str] = None
+    client_code: Optional[str] = None
     created_at: Optional[str] = None
 
 

@@ -81,10 +81,15 @@ class CorrectionService:
         if req["status"] != "Pending":
             raise ValueError(f"Request {request_id} is already {req['status']}.")
 
+        approver_uuid = CorrectionService._resolve_user_id(uow, approved_by)
+
+        # Four-Eyes Principle Guard (BR-ERR-001): Initiator cannot self-approve
+        if req.get("requested_by") and approver_uuid and str(req.get("requested_by")) == str(approver_uuid):
+            raise ValueError("Four-Eyes Principle violation: The initiator of a correction request cannot approve their own request.")
+
         # Guard: Check if another request for the same record_id was already approved
         other_approved = uow.client.table("correction_requests").select("id").eq("record_id", req["record_id"]).eq("status", "Approved").neq("id", request_id).execute()
         if other_approved.data:
-            approver_uuid = CorrectionService._resolve_user_id(uow, approved_by)
             uow.client.table("correction_requests").update({
                 "status": "Rejected",
                 "approved_by": approver_uuid,

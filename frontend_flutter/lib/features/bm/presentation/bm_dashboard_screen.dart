@@ -1955,11 +1955,28 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('[${corr.recordType}] #$rRef', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5), overflow: TextOverflow.ellipsis),
+                                Row(
+                                  children: [
+                                    Text('[${corr.recordType}] #$rRef', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+                                    const Spacer(),
+                                    Text(
+                                      CurrencyFormatter.format(corr.amount),
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Color(0xFFDC2626), fontFamily: 'monospace'),
+                                    ),
+                                  ],
+                                ),
+                                if (corr.clientName != null && corr.clientName!.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${corr.clientName!} ${corr.clientCode != null && corr.clientCode!.isNotEmpty ? "(${corr.clientCode})" : ""}',
+                                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                                  ),
+                                ],
+                                const SizedBox(height: 2),
                                 Text(
                                   corr.reason,
                                   style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Color(0xFF475569)),
-                                  maxLines: 1,
+                                  maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ],
@@ -1979,7 +1996,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                           Text('By: ${corr.requestedBy}', style: const TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8))),
                           const Spacer(),
                           OutlinedButton(
-                            onPressed: _isProcessing ? null : () => _rejectSingleCorrection(corr.id),
+                            onPressed: _isProcessing ? null : () => _rejectSingleCorrection(corr),
                             style: OutlinedButton.styleFrom(
                               side: const BorderSide(color: Color(0xFFCBD5E1)),
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1989,7 +2006,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                           ),
                           const SizedBox(width: 6),
                           ElevatedButton(
-                            onPressed: _isProcessing ? null : () => _approveSingleCorrection(corr.id),
+                            onPressed: _isProcessing ? null : () => _approveSingleCorrection(corr),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF2563EB),
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -2040,6 +2057,18 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                                 decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(4)),
                                 child: Text('Ref: #$rRef', style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Color(0xFF475569))),
                               ),
+                              const SizedBox(width: 10),
+                              Text(
+                                CurrencyFormatter.format(corr.amount),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: Color(0xFFDC2626), fontFamily: 'monospace'),
+                              ),
+                              if (corr.clientName != null && corr.clientName!.isNotEmpty) ...[
+                                const SizedBox(width: 8),
+                                Text(
+                                  '• ${corr.clientName!} ${corr.clientCode != null && corr.clientCode!.isNotEmpty ? "(${corr.clientCode})" : ""}',
+                                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                                ),
+                              ],
                             ],
                           ),
                           const SizedBox(height: 4),
@@ -2063,7 +2092,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     ),
                     const SizedBox(width: 12),
                     ElevatedButton(
-                      onPressed: _isProcessing ? null : () => _approveSingleCorrection(corr.id),
+                      onPressed: _isProcessing ? null : () => _approveSingleCorrection(corr),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2563EB),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -2072,7 +2101,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     ),
                     const SizedBox(width: 8),
                     OutlinedButton(
-                      onPressed: _isProcessing ? null : () => _rejectSingleCorrection(corr.id),
+                      onPressed: _isProcessing ? null : () => _rejectSingleCorrection(corr),
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Color(0xFFCBD5E1)),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -2961,11 +2990,65 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     }
   }
 
-  Future<void> _approveSingleCorrection(String id) async {
+  Future<void> _approveSingleCorrection(PendingCorrectionApprovalModel corr) async {
+    final amtStr = CurrencyFormatter.format(corr.amount);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Confirm Reversal — [${corr.recordType}]', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (corr.clientName != null && corr.clientName!.isNotEmpty) ...[
+              Text('Client: ${corr.clientName!} ${corr.clientCode != null && corr.clientCode!.isNotEmpty ? "(${corr.clientCode})" : ""}',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+              const SizedBox(height: 4),
+            ],
+            Text('Amount to Reverse: $amtStr', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+            const SizedBox(height: 6),
+            Text('Reason: ${corr.reason}', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Color(0xFF475569))),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline, size: 16, color: Color(0xFFB45309)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Approving this reversal will adjust $amtStr from Vault Cash. Ensure physical cash has been counted and aligned.',
+                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF92400E)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669)),
+            child: const Text('Approve Reversal', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     setState(() => _isProcessing = true);
     try {
       final api = ref.read(bmApiServiceProvider);
-      final res = await api.approveCorrection(correctionId: id);
+      final res = await api.approveCorrection(correctionId: corr.id);
       _showFlash(res['message']?.toString() ?? 'Reversal approved and executed atomically!');
       ref.invalidate(bmDashboardDataProvider);
     } catch (e) {
@@ -2976,11 +3059,50 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     }
   }
 
-  Future<void> _rejectSingleCorrection(String id) async {
+  Future<void> _rejectSingleCorrection(PendingCorrectionApprovalModel corr) async {
+    final reasonCtrl = TextEditingController();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Reject Reversal Request', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Are you sure you want to reject this reversal request for [${corr.recordType}] (#${corr.recordId.length >= 8 ? corr.recordId.substring(0, 8) : corr.recordId})?',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Rejection Reason (Optional)',
+                hintText: 'e.g. Transaction verified as valid.',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            child: const Text('Reject Request', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     setState(() => _isProcessing = true);
     try {
       final api = ref.read(bmApiServiceProvider);
-      final res = await api.rejectCorrection(correctionId: id);
+      final res = await api.rejectCorrection(
+        correctionId: corr.id,
+        reason: reasonCtrl.text.trim().isNotEmpty ? reasonCtrl.text.trim() : 'Rejected by BM',
+      );
       _showFlash(res['message']?.toString() ?? 'Reversal rejected.');
       ref.invalidate(bmDashboardDataProvider);
     } catch (e) {
@@ -2992,6 +3114,57 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   }
 
   Future<void> _executeBatchApproveCorrections(List<PendingCorrectionApprovalModel> corrs) async {
+    final selectedCorrs = corrs.where((c) => _selectedCorrIds.contains(c.id)).toList();
+    final totalAmount = selectedCorrs.fold<double>(0.0, (sum, c) => sum + c.amount);
+    final amtStr = CurrencyFormatter.format(totalAmount);
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Approve ${selectedCorrs.length} Reversals', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('You are about to batch approve ${selectedCorrs.length} reversal requests totaling $amtStr.',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A))),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline, size: 16, color: Color(0xFFB45309)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Batch approval will atomically adjust $amtStr from Vault Cash. Please verify all physical cash receipts before proceeding.',
+                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF92400E)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669)),
+            child: const Text('Confirm Batch Approval', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     setState(() => _isProcessing = true);
     try {
       final api = ref.read(bmApiServiceProvider);

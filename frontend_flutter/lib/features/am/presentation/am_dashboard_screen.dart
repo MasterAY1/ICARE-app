@@ -12,6 +12,8 @@ import '../data/models/am_dashboard_models.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 import '../../shared/utils/file_download_helper.dart';
 import '../../onboarding/presentation/branch_onboarding_admin_screen.dart';
+import '../../onboarding/presentation/branch_onboarding_portal_screen.dart';
+import '../../onboarding/data/onboarding_api_service.dart';
 import '../../reports/data/datasources/reports_api_service.dart';
 import '../../reports/data/models/report_models.dart';
 import '../../reports/presentation/reports_export_screen.dart';
@@ -1449,10 +1451,75 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     );
   }
 
+  Future<void> _handleDeleteOnboardingSession(Map<String, dynamic> session) async {
+    final branchName = session['branch_name'] ?? 'Branch';
+    final branchCode = session['branch_code'] ?? '';
+    final sessionId = session['id']?.toString() ?? '';
+    final status = (session['status'] ?? 'draft').toString().toLowerCase();
+
+    if (status == 'approved') {
+      _showFlash('Approved onboarding packages cannot be deleted because core banking records have already been committed.');
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete $branchName ($branchCode)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to permanently delete the onboarding session for $branchName ($branchCode)?',
+              style: const TextStyle(fontSize: 13, height: 1.4, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'All draft groups, credit officer rosters, and unposted member records will be permanently removed. This action cannot be undone.',
+              style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B), height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            icon: const Icon(Icons.delete_outline, size: 16),
+            label: const Text('Delete Session'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isProcessing = true);
+    try {
+      final api = ref.read(onboardingApiServiceProvider);
+      await api.deleteAdminSession(sessionId);
+      _showFlash('Onboarding package for $branchName ($branchCode) deleted successfully.');
+      ref.invalidate(adminOnboardingSessionsProvider);
+    } catch (e) {
+      _showFlash('Failed to delete onboarding package: $e');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
   // =========================================================================
   // ONBOARDING QUICK ACTION & MIGRATION CONSOLE CARD
   // =========================================================================
   Widget _buildOnboardingQuickActionCard(BuildContext context, WidgetRef ref, bool isMobile) {
+    final sessionsAsync = ref.watch(adminOnboardingSessionsProvider);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1461,6 +1528,198 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Row
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDFA),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFCCFBF1)),
+                ),
+                child: const Icon(Icons.domain_add, color: Color(0xFF0F766E), size: 22),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Branch Digital Onboarding & Migration Console',
+                      style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Issue 14-day links, monitor draft/submitted packages, and manage branch activation.',
+                      style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+              if (!isMobile) ...[
+                OutlinedButton.icon(
+                  onPressed: () {
+                    ref.read(activeCoPageProvider.notifier).state = 'Branch Onboarding';
+                  },
+                  icon: const Icon(Icons.tune, size: 14, color: Color(0xFF0F766E)),
+                  label: const Text('Full Console', style: TextStyle(color: Color(0xFF0F766E), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFF0F766E)),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  onPressed: () => showGenerateOnboardingLinkDialog(context, ref, onCreated: () {
+                    ref.invalidate(adminOnboardingSessionsProvider);
+                  }),
+                  icon: const Icon(Icons.add_link, size: 14, color: Colors.white),
+                  label: const Text('+ Generate Link', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0F766E),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  ),
+                ),
+              ],
+            ],
+          ),
+
+          if (isMobile) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      ref.read(activeCoPageProvider.notifier).state = 'Branch Onboarding';
+                    },
+                    icon: const Icon(Icons.tune, size: 14, color: Color(0xFF0F766E)),
+                    label: const Text('Full Console', style: TextStyle(color: Color(0xFF0F766E), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF0F766E)),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => showGenerateOnboardingLinkDialog(context, ref, onCreated: () {
+                      ref.invalidate(adminOnboardingSessionsProvider);
+                    }),
+                    icon: const Icon(Icons.add_link, size: 14, color: Colors.white),
+                    label: const Text('+ Generate Link', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0F766E),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          const SizedBox(height: 12),
+
+          // Active Onboarding Packages Listing (Draft & Submitted)
+          sessionsAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+            ),
+            error: (err, _) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text('Unable to load onboarding sessions: $err', style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626))),
+            ),
+            data: (allSessions) {
+              final unapproved = allSessions.where((s) => (s['status'] ?? '').toString().toLowerCase() != 'approved').toList();
+
+              if (unapproved.isEmpty) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF059669)),
+                      SizedBox(width: 8),
+                      Text(
+                        'Zero pending or draft onboarding sessions. All branches are fully activated.',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Active Draft & Submitted Packages (${unapproved.length})',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                      ),
+                      InkWell(
+                        onTap: () => ref.invalidate(adminOnboardingSessionsProvider),
+                        borderRadius: BorderRadius.circular(4),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.refresh, size: 13, color: Color(0xFF64748B)),
+                              SizedBox(width: 3),
+                              Text('Refresh', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ...unapproved.map((s) => _buildDashboardSessionRow(context, ref, s, isMobile)),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDashboardSessionRow(BuildContext context, WidgetRef ref, Map<String, dynamic> s, bool isMobile) {
+    final branchName = s['branch_name'] ?? 'Branch';
+    final branchCode = s['branch_code'] ?? 'BR';
+    final token = s['token'] ?? '';
+    final status = (s['status'] ?? 'draft').toString().toLowerCase();
+    final groupsCount = s['total_groups'] ?? 0;
+    final membersCount = s['total_members'] ?? 0;
+    final savings = double.tryParse(s['total_savings']?.toString() ?? '0') ?? 0.0;
+    final balance = double.tryParse(s['total_current_balance']?.toString() ?? '0') ?? 0.0;
+
+    final isSubmitted = status == 'submitted';
+    final badgeBg = isSubmitted ? const Color(0xFFEFF6FF) : const Color(0xFFFFFBEB);
+    final badgeText = isSubmitted ? const Color(0xFF1D4ED8) : const Color(0xFFB45309);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: isSubmitted ? const Color(0xFFBFDBFE) : const Color(0xFFE2E8F0)),
+      ),
       child: isMobile
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1468,60 +1727,57 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF0FDFA),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFCCFBF1)),
-                      ),
-                      child: const Icon(Icons.domain_add, color: Color(0xFF0F766E), size: 22),
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Branch Digital Onboarding',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                          ),
-                          SizedBox(height: 2),
-                          Text(
-                            'Issue 14-day links & manage branch activation',
-                            style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          ref.read(activeCoPageProvider.notifier).state = 'Branch Onboarding';
-                        },
-                        icon: const Icon(Icons.tune, size: 14, color: Color(0xFF0F766E)),
-                        label: const Text('Manage Sessions', style: TextStyle(color: Color(0xFF0F766E), fontSize: 11.5, fontWeight: FontWeight.bold)),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Color(0xFF0F766E)),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                        ),
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: const Color(0xFF0F2744), borderRadius: BorderRadius.circular(4)),
+                      child: Text(branchCode, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () => showGenerateOnboardingLinkDialog(context, ref),
-                        icon: const Icon(Icons.add_link, size: 14, color: Colors.white),
-                        label: const Text('+ Generate Link', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0F766E),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                        ),
+                      child: Text(branchName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: badgeBg, borderRadius: BorderRadius.circular(4)),
+                      child: Text(status.toUpperCase(), style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: badgeText)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Groups: $groupsCount • Members: $membersCount • Savings: ${CurrencyFormatter.formatNaira(savings)} • Balance: ${CurrencyFormatter.formatNaira(balance)}',
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: const Size(0, 28),
                       ),
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => BranchOnboardingPortalScreen(token: token),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.open_in_browser, size: 12),
+                      label: const Text('Open Portal', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600)),
+                    ),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFDC2626),
+                        backgroundColor: const Color(0xFFFEF2F2),
+                        side: const BorderSide(color: Color(0xFFFCA5A5)),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: const Size(0, 28),
+                      ),
+                      onPressed: _isProcessing ? null : () => _handleDeleteOnboardingSession(s),
+                      icon: const Icon(Icons.delete_outline, size: 12, color: Color(0xFFDC2626)),
+                      label: const Text('Delete', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
                     ),
                   ],
                 ),
@@ -1530,52 +1786,58 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           : Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0FDFA),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFCCFBF1)),
-                  ),
-                  child: const Icon(Icons.domain_add, color: Color(0xFF0F766E), size: 26),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(color: const Color(0xFF0F2744), borderRadius: BorderRadius.circular(4)),
+                  child: Text(branchCode, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
-                const SizedBox(width: 16),
-                const Expanded(
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 3,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Text(branchName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))),
+                      const SizedBox(height: 2),
                       Text(
-                        'Branch Digital Onboarding & Migration Console',
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                      ),
-                      SizedBox(height: 3),
-                      Text(
-                        'Issue 14-day links, inspect rosters, and sign off on branch activation.',
-                        style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                        'Groups: $groupsCount • Members: $membersCount • Savings: ${CurrencyFormatter.formatNaira(savings)}',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                  decoration: BoxDecoration(color: badgeBg, borderRadius: BorderRadius.circular(4)),
+                  child: Text(status.toUpperCase(), style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: badgeText)),
+                ),
+                const SizedBox(width: 12),
                 OutlinedButton.icon(
-                  onPressed: () {
-                    ref.read(activeCoPageProvider.notifier).state = 'Branch Onboarding';
-                  },
-                  icon: const Icon(Icons.tune, size: 15, color: Color(0xFF0F766E)),
-                  label: const Text('Open Console', style: TextStyle(color: Color(0xFF0F766E), fontSize: 12.5, fontWeight: FontWeight.bold)),
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFF0F766E)),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    minimumSize: const Size(0, 28),
                   ),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => BranchOnboardingPortalScreen(token: token),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.open_in_browser, size: 13),
+                  label: const Text('Open Portal', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
                 ),
                 const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: () => showGenerateOnboardingLinkDialog(context, ref),
-                  icon: const Icon(Icons.add_link, size: 15, color: Colors.white),
-                  label: const Text('+ Generate Branch Link', style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0F766E),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFDC2626),
+                    backgroundColor: const Color(0xFFFEF2F2),
+                    side: const BorderSide(color: Color(0xFFFCA5A5)),
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    minimumSize: const Size(0, 28),
                   ),
+                  onPressed: _isProcessing ? null : () => _handleDeleteOnboardingSession(s),
+                  icon: const Icon(Icons.delete_outline, size: 13, color: Color(0xFFDC2626)),
+                  label: const Text('Delete', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
                 ),
               ],
             ),

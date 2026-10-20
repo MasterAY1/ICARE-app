@@ -90,6 +90,7 @@ class BranchPerformanceItemModel {
   final double cashVariance;
   final String eodStatus;
   final String operationalStatus;
+  final int reversalsCount;
 
   BranchPerformanceItemModel({
     required this.branchId,
@@ -107,6 +108,7 @@ class BranchPerformanceItemModel {
     required this.cashVariance,
     required this.eodStatus,
     required this.operationalStatus,
+    this.reversalsCount = 0,
   });
 
   factory BranchPerformanceItemModel.fromJson(Map<String, dynamic> json) {
@@ -126,6 +128,7 @@ class BranchPerformanceItemModel {
       cashVariance: (json['cash_variance'] as num?)?.toDouble() ?? 0.0,
       eodStatus: json['eod_status'] ?? 'PENDING',
       operationalStatus: json['operational_status'] ?? 'Normal',
+      reversalsCount: (json['reversals_count'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -265,16 +268,59 @@ class PendingBranchEodItemModel {
   }
 }
 
+class PendingBranchReversalItemModel {
+  final String requestId;
+  final String branchId;
+  final String branchName;
+  final String recordId;
+  final String recordType;
+  final double amount;
+  final String description;
+  final String requestedBy;
+  final String reason;
+  final String createdAt;
+
+  PendingBranchReversalItemModel({
+    required this.requestId,
+    required this.branchId,
+    required this.branchName,
+    required this.recordId,
+    required this.recordType,
+    required this.amount,
+    required this.description,
+    required this.requestedBy,
+    required this.reason,
+    required this.createdAt,
+  });
+
+  factory PendingBranchReversalItemModel.fromJson(Map<String, dynamic> json) {
+    return PendingBranchReversalItemModel(
+      requestId: json['request_id'] ?? '',
+      branchId: json['branch_id'] ?? '',
+      branchName: json['branch_name'] ?? 'Branch',
+      recordId: json['record_id'] ?? '',
+      recordType: json['record_type'] ?? 'Transaction',
+      amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
+      description: json['description'] ?? '',
+      requestedBy: json['requested_by'] ?? 'Staff',
+      reason: json['reason'] ?? '',
+      createdAt: json['created_at'] ?? '',
+    );
+  }
+}
+
 class AreaApprovalsHubModel {
   final List<PendingHighValueLoanItemModel> pendingHighValueLoans;
   final List<PendingBranchTransferItemModel> pendingBranchTransfers;
   final List<PendingBranchEodItemModel> pendingBranchEods;
+  final List<PendingBranchReversalItemModel> pendingBranchReversals;
   final bool canLockArea;
 
   AreaApprovalsHubModel({
     required this.pendingHighValueLoans,
     required this.pendingBranchTransfers,
     required this.pendingBranchEods,
+    required this.pendingBranchReversals,
     required this.canLockArea,
   });
 
@@ -290,6 +336,10 @@ class AreaApprovalsHubModel {
           [],
       pendingBranchEods: (json['pending_branch_eods'] as List<dynamic>?)
               ?.map((e) => PendingBranchEodItemModel.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      pendingBranchReversals: (json['pending_branch_reversals'] as List<dynamic>?)
+              ?.map((e) => PendingBranchReversalItemModel.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
       canLockArea: json['can_lock_area'] ?? false,
