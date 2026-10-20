@@ -729,6 +729,113 @@ class TestOnboardingPortalApi(unittest.TestCase):
 
         self._cleanup()
 
+    def test_delete_session_lifecycle(self):
+        """
+        Verifies that draft and submitted sessions can be deleted from the AM dashboard,
+        while approved sessions are permanently protected against deletion.
+        """
+        from api.dependencies import get_current_user
+        from models.user import CurrentUser
+
+        # 1. Create a draft session
+        draft_session = OnboardingService.create_session(
+            uow=self.uow,
+            branch_name="Test Draft Branch",
+            branch_code="TST",
+            contact_person="Draft Manager",
+            contact_phone="08012345678"
+        )
+        draft_id = draft_session["id"]
+
+        # Verify draft exists in database
+        check_res = self.uow.client.table("branch_onboarding_sessions").select("id").eq("id", draft_id).execute()
+        self.assertEqual(len(check_res.data), 1)
+
+        # 2. Delete draft session via OnboardingService.delete_session
+        res_del = OnboardingService.delete_session(uow=self.uow, session_id=draft_id)
+        self.assertEqual(res_del["status"], "success")
+        self.assertEqual(res_del["session_id"], draft_id)
+
+        # Verify draft is completely removed
+        check_after = self.uow.client.table("branch_onboarding_sessions").select("id").eq("id", draft_id).execute()
+        self.assertEqual(len(check_after.data), 0)
+
+        # 3. Create a session, set to 'submitted', and verify it can be deleted
+        sub_session = OnboardingService.create_session(
+            uow=self.uow,
+            branch_name="Test Submitted Branch",
+            branch_code="TST",
+            contact_person="Submitted Manager",
+            contact_phone="08012345679"
+        )
+        sub_id = sub_session["id"]
+        self.uow.client.table("branch_onboarding_sessions").update({"status": "submitted"}).eq("id", sub_id).execute()
+
+        res_del_sub = OnboardingService.delete_session(uow=self.uow, session_id=sub_id)
+        self.assertEqual(res_del_sub["status"], "success")
+
+        # Verify submitted session is removed
+        check_sub = self.uow.client.table("branch_onboarding_sessions").select("id").eq("id", sub_id).execute()
+        self.assertEqual(len(check_sub.data), 0)
+
+        # 4. Create an 'approved' session and assert deletion is strictly blocked
+        appr_session = OnboardingService.create_session(
+            uow=self.uow,
+            branch_name="Test Approved Branch",
+            branch_code="TST",
+            contact_person="Approved Manager",
+            contact_phone="08012345680"
+        )
+        appr_id = appr_session["id"]
+        self.uow.client.table("branch_onboarding_sessions").update({"status": "approved"}).eq("id", appr_id).execute()
+
+        with self.assertRaises(ValueError) as ctx:
+            OnboardingService.delete_session(uow=self.uow, session_id=appr_id)
+        self.assertIn("Approved onboarding sessions cannot be deleted", str(ctx.exception))
+
+        # Clean up the approved test session manually
+        self.uow.client.table("branch_onboarding_sessions").delete().eq("id", appr_id).execute()
+
+        # 5. Non-existent session raises ValueError
+        with self.assertRaises(ValueError) as ctx:
+            OnboardingService.delete_session(uow=self.uow, session_id="00000000-0000-0000-0000-000000000000")
+        self.assertIn("not found", str(ctx.exception).lower())
+
+        # 6. Test REST API endpoint DELETE /api/v1/onboarding/admin/sessions/{session_id}
+        api_session = OnboardingService.create_session(
+            uow=self.uow,
+            branch_name="Test API Delete Branch",
+            branch_code="TST",
+            contact_person="API Manager",
+            contact_phone="08012345681"
+        )
+        api_id = api_session["id"]
+
+        # Mock current user as Area Manager
+        mock_am = CurrentUser(
+            id="am-test-user-id",
+            username="areamanager",
+            role="Area Manager",
+            branch="Head Office",
+            permissions={"manage_branches"}
+        )
+        app.dependency_overrides[get_current_user] = lambda: mock_am
+
+        try:
+            # Delete via API
+            resp = client.delete(f"/api/v1/onboarding/admin/sessions/{api_id}")
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertEqual(data["status"], "success")
+
+            # Try deleting again -> should return 404
+            resp_404 = client.delete(f"/api/v1/onboarding/admin/sessions/{api_id}")
+            self.assertEqual(resp_404.status_code, 404)
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+        self._cleanup()
+
 
 if __name__ == "__main__":
     unittest.main()

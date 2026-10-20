@@ -1544,3 +1544,34 @@ class OnboardingService:
             "misc_savings_posted": misc_sav_val,
             "laps_savings_posted": laps_sav_val
         }
+
+    @staticmethod
+    def delete_session(
+        uow: SupabaseUnitOfWork,
+        session_id: str,
+        deleted_by_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Safely deletes an uncommitted onboarding session (draft, submitted, or bm_submitted).
+        Approved sessions are permanently protected from deletion under core banking immutability rules.
+        """
+        s_res = uow.client.table("branch_onboarding_sessions").select("id, branch_name, branch_code, status").eq("id", session_id).execute()
+        if not s_res.data:
+            raise ValueError("Onboarding session not found.")
+
+        session = s_res.data[0]
+        if session.get("status") == "approved":
+            raise ValueError("Approved onboarding sessions cannot be deleted because core banking records and ledgers have already been committed.")
+
+        branch_name = session.get("branch_name", "Branch")
+        branch_code = session.get("branch_code", "")
+
+        uow.client.table("branch_onboarding_sessions").delete().eq("id", session_id).execute()
+
+        return {
+            "status": "success",
+            "message": f"Onboarding session for '{branch_name}' ({branch_code}) deleted successfully.",
+            "session_id": session_id,
+            "branch_name": branch_name,
+            "branch_code": branch_code
+        }

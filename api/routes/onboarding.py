@@ -375,3 +375,33 @@ def approve_onboarding_session(
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.delete("/admin/sessions/{session_id}", summary="Delete a draft or submitted onboarding session")
+def delete_onboarding_session(
+    session_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Permanently deletes a draft or submitted onboarding session.
+    Approved sessions cannot be deleted because core banking records have already been committed.
+    """
+    if current_user.role not in ("Admin", "Director", "Super Admin", "Area Manager"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only Admins and Area Managers can delete onboarding sessions."
+        )
+
+    try:
+        return OnboardingService.delete_session(
+            uow=uow,
+            session_id=session_id,
+            deleted_by_id=current_user.id
+        )
+    except ValueError as e:
+        err_msg = str(e)
+        if "not found" in err_msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=err_msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err_msg)
+

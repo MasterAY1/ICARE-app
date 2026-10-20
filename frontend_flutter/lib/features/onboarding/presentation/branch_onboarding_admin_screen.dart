@@ -431,6 +431,7 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
   List<Map<String, dynamic>> _sessions = [];
   String _statusFilter = 'All'; // 'All', 'draft', 'submitted', 'approved'
   final TextEditingController _searchCtrl = TextEditingController();
+  final Set<String> _deletingSessionIds = {};
 
   @override
   void initState() {
@@ -526,6 +527,95 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
             backgroundColor: const Color(0xFFDC2626),
           ),
         );
+      }
+    }
+  }
+
+  Future<void> _handleDelete(Map<String, dynamic> session) async {
+    final branchName = session['branch_name'] ?? 'Branch';
+    final branchCode = session['branch_code'] ?? '';
+    final sessionId = session['id']?.toString() ?? '';
+    final status = (session['status'] ?? 'draft').toString().toLowerCase();
+
+    if (status == 'approved') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Approved onboarding packages cannot be deleted because core banking records have already been committed.'),
+          backgroundColor: Color(0xFFDC2626),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete $branchName ($branchCode)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to permanently delete the onboarding session for $branchName ($branchCode)?',
+              style: const TextStyle(fontSize: 13, height: 1.4, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'All draft groups, credit officer rosters, and unposted member records will be permanently removed. This action cannot be undone.',
+              style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B), height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            icon: const Icon(Icons.delete_outline, size: 16),
+            label: const Text('Delete Session'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _deletingSessionIds.add(sessionId);
+    });
+
+    try {
+      final api = ref.read(onboardingApiServiceProvider);
+      await api.deleteAdminSession(sessionId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Onboarding package for $branchName ($branchCode) deleted successfully.'),
+            backgroundColor: const Color(0xFF0F2744),
+          ),
+        );
+      }
+      _loadSessions();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete session: $e'),
+            backgroundColor: const Color(0xFFDC2626),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _deletingSessionIds.remove(sessionId);
+        });
       }
     }
   }
@@ -765,6 +855,7 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
   }
 
   Widget _buildSessionCard(Map<String, dynamic> s) {
+    final sessionId = s['id']?.toString() ?? '';
     final branchName = s['branch_name'] ?? 'Branch';
     final branchCode = s['branch_code'] ?? 'BR';
     final token = s['token'] ?? '';
@@ -968,6 +1059,27 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
                       onPressed: () => _handleApprove(s),
                       icon: const Icon(Icons.verified, size: 14),
                       label: const Text('Review & Activate', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    ),
+                  if (status != 'approved')
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFDC2626),
+                        side: const BorderSide(color: Color(0xFFFCA5A5)),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        minimumSize: const Size(0, 32),
+                      ),
+                      onPressed: _deletingSessionIds.contains(sessionId) ? null : () => _handleDelete(s),
+                      icon: _deletingSessionIds.contains(sessionId)
+                          ? const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFDC2626)),
+                            )
+                          : const Icon(Icons.delete_outline, size: 14, color: Color(0xFFDC2626)),
+                      label: Text(
+                        _deletingSessionIds.contains(sessionId) ? 'Deleting...' : 'Delete',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFDC2626)),
+                      ),
                     ),
                 ],
               );

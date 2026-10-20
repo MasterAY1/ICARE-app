@@ -205,5 +205,11 @@ class OnboardingApiService {
     );
     return response.data as Map<String, dynamic>;
   }
+
+  /// DELETE /api/v1/onboarding/admin/sessions/{session_id}
+  Future<Map<String, dynamic>> deleteAdminSession(String sessionId) async {
+    final response = await _client.delete('/api/v1/onboarding/admin/sessions/$sessionId');
+    return response.data as Map<String, dynamic>;
+  }
 }
 
