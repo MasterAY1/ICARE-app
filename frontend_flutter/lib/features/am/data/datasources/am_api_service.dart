@@ -68,6 +68,23 @@ class AmApiService {
     return response.data as Map<String, dynamic>;
   }
 
+  /// Return/reject individual branch EOD with notes for BM correction
+  Future<Map<String, dynamic>> rejectBranchEod({
+    required String branchId,
+    required String closureDate,
+    required String reason,
+  }) async {
+    final response = await _apiClient.post(
+      '/api/v1/am/reject-branch-eod',
+      data: {
+        'branch_id': branchId,
+        'closure_date': closureDate,
+        'reason': reason,
+      },
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   /// Master Area 1 daily closure lock
   Future<Map<String, dynamic>> confirmAreaClosure({
     required String areaName,

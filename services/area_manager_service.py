@@ -447,9 +447,10 @@ class AreaManagerService:
                 "cash_variance": mc_diff,
                 "vault_cash": mc_vault,
                 "is_confirmed": is_confirmed,
-                "status": eod_record.get("status") if eod_record else ("READY_FOR_CONFIRMATION" if mc_status in ["Closed", "Verified"] else "AWAITING_BM_SUBMISSION"),
+                "status": eod_record.get("status") if eod_record else ("PENDING" if mc_status in ["Closed", "Verified"] else "AWAITING_BM_SUBMISSION"),
                 "confirmed_by": eod_record.get("confirmed_by") if eod_record else None,
-                "confirmed_at": str(eod_record.get("confirmed_at")) if eod_record else None
+                "confirmed_at": str(eod_record.get("confirmed_at")) if eod_record else None,
+                "notes": eod_record.get("notes") if eod_record else None
             })
 
         return {
@@ -480,13 +481,14 @@ class AreaManagerService:
         am_name = user.full_name or user.username if user else "Area Manager"
         date_str = closure_date.isoformat()
 
-        # Derive Account 1000 Vault cash & cash variance
+        # Derive Account 1000 Vault cash & cash variance as of closure date
         vault_cash = 0.0
         try:
             res_leg = uow.client.table("financial_ledger_entries") \
                 .select("amount, side") \
                 .eq("branch_id", branch_id) \
                 .eq("account_code", "1000") \
+                .lte("entry_date", date_str) \
                 .execute()
             leg_rows = res_leg.data or []
             deb = sum(float(r["amount"]) for r in leg_rows if r.get("side") == "Debit")
@@ -503,6 +505,11 @@ class AreaManagerService:
         except Exception:
             pass
 
+        # Check existing notes to preserve BM note
+        existing = uow.client.table("area_eod_confirmations").select("id, notes").eq("branch_id", branch_id).eq("closure_date", date_str).execute()
+        prior_note = existing.data[0].get("notes") if existing.data else None
+        final_notes = notes or (f"{prior_note} • Confirmed by AM {am_name}." if prior_note else f"Confirmed by AM {am_name} with Account 1000 vault balance of ₦{vault_cash:,.2f}.")
+
         # Upsert area_eod_confirmations
         payload = {
             "area_name": "Area 1",
@@ -512,12 +519,10 @@ class AreaManagerService:
             "confirmed_by": am_name,
             "acct_1000_balance": vault_cash,
             "cash_variance": cash_variance,
-            "notes": notes or f"Confirmed by AM {am_name} with Account 1000 vault balance of ₦{vault_cash:,.2f}.",
+            "notes": final_notes,
             "confirmed_at": datetime.now().isoformat()
         }
 
-        # Check existing
-        existing = uow.client.table("area_eod_confirmations").select("id").eq("branch_id", branch_id).eq("closure_date", date_str).execute()
         if existing.data:
             rec_id = existing.data[0]["id"]
             uow.client.table("area_eod_confirmations").update(payload).eq("id", rec_id).execute()
@@ -532,6 +537,56 @@ class AreaManagerService:
             "confirmed_by": am_name,
             "vault_cash": vault_cash,
             "message": f"Branch EOD successfully confirmed for {date_str}."
+        }
+
+    @classmethod
+    def reject_branch_eod(
+        cls,
+        uow: UnitOfWork,
+        am_user_id: str,
+        branch_id: str,
+        closure_date: date,
+        reason: str
+    ) -> Dict[str, Any]:
+        """
+        Area Manager returns/rejects a branch EOD submission with notes for BM correction.
+        """
+        assigned = cls.get_assigned_branches(uow, am_user_id)
+        valid_bids = [b["branch_id"] for b in assigned]
+        if branch_id not in valid_bids:
+            raise ValueError("Forbidden: Target branch is outside your assigned supervisory area.")
+
+        if not reason or not reason.strip():
+            raise ValueError("Supervisory notes/reason are required when returning branch EOD.")
+
+        user = uow.users.find_by_id(am_user_id)
+        am_name = user.full_name or user.username if user else "Area Manager"
+        date_str = closure_date.isoformat()
+
+        payload = {
+            "area_name": "Area 1",
+            "branch_id": branch_id,
+            "closure_date": date_str,
+            "status": "REJECTED",
+            "confirmed_by": am_name,
+            "notes": f"Returned by AM {am_name}: {reason.strip()}",
+            "confirmed_at": datetime.now().isoformat()
+        }
+
+        existing = uow.client.table("area_eod_confirmations").select("id").eq("branch_id", branch_id).eq("closure_date", date_str).execute()
+        if existing.data:
+            rec_id = existing.data[0]["id"]
+            uow.client.table("area_eod_confirmations").update(payload).eq("id", rec_id).execute()
+        else:
+            uow.client.table("area_eod_confirmations").insert(payload).execute()
+
+        return {
+            "success": True,
+            "branch_id": branch_id,
+            "closure_date": date_str,
+            "status": "REJECTED",
+            "returned_by": am_name,
+            "message": f"Branch EOD returned to Branch Manager for correction."
         }
 
     @classmethod

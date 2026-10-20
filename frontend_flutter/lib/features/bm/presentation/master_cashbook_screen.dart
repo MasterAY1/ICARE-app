@@ -324,11 +324,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   // TAB 2 ACTIONS
   // ==========================================
 
-  Future<void> _handleExecuteEod(String dateStr) async {
+  Future<void> _handleExecuteEod(String dateStr, {String? reasonTag, String? notes}) async {
     setState(() => _isExecutingEod = true);
     try {
       final api = ref.read(masterCashbookApiServiceProvider);
-      final res = await api.executeEodClose(dateStr);
+      final res = await api.executeEodClose(dateStr, reasonTag: reasonTag, notes: notes);
       _showBanner(
         res['message'] ?? 'Successfully executed Day Close! Operational date advanced.',
         const Color(0xFF065F46),
@@ -3124,13 +3124,13 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 ),
                 const SizedBox(height: 12),
                 ElevatedButton.icon(
-                  onPressed: _isExecutingEod ? null : () => _confirmAndExecuteEod(dateStr),
+                  onPressed: _isExecutingEod ? null : () => _confirmAndExecuteEod(dateStr, data.closingBalance),
                   icon: _isExecutingEod
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : const Icon(Icons.shield_outlined, size: 16, color: Colors.white),
                   label: const Text('Execute EOD Day Close', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Colors.white)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFDC2626),
+                    backgroundColor: const Color(0xFF065F46),
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -3165,13 +3165,13 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 ),
                 const SizedBox(width: 16),
                 ElevatedButton.icon(
-                  onPressed: _isExecutingEod ? null : () => _confirmAndExecuteEod(dateStr),
+                  onPressed: _isExecutingEod ? null : () => _confirmAndExecuteEod(dateStr, data.closingBalance),
                   icon: _isExecutingEod
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : const Icon(Icons.shield_outlined, size: 16, color: Colors.white),
                   label: const Text('Execute EOD Day Close', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Colors.white)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFDC2626),
+                    backgroundColor: const Color(0xFF065F46),
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -3183,71 +3183,173 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     );
   }
 
-  void _confirmAndExecuteEod(String dateStr) {
+  void _confirmAndExecuteEod(String dateStr, double closingBal) {
+    String selectedTag = closingBal == 0
+        ? 'Balanced'
+        : (closingBal > 0
+            ? 'Cash locked in office safe overnight'
+            : 'Advance payments (loans & savings) banked ahead of schedule');
+    final notesController = TextEditingController();
+
+    final isZero = closingBal == 0;
+    final isPos = closingBal > 0;
+    final statusText = isZero
+        ? 'Balanced (₦0.00)'
+        : (isPos
+            ? 'Cash in Safe / Office (+${_formatCurrency(closingBal)})'
+            : 'Advance Money Banked Ahead (-${_formatCurrency(closingBal.abs())})');
+    final statusColor = isZero
+        ? const Color(0xFF065F46)
+        : (isPos ? const Color(0xFF1E40AF) : const Color(0xFF92400E));
+    final statusBg = isZero
+        ? const Color(0xFFECFDF5)
+        : (isPos ? const Color(0xFFEFF6FF) : const Color(0xFFFFFBEB));
+    final statusBorder = isZero
+        ? const Color(0xFFA7F3D0)
+        : (isPos ? const Color(0xFFBFDBFE) : const Color(0xFFFDE68A));
+
+    final options = isZero
+        ? ['All collections banked today']
+        : (isPos
+            ? [
+                'Cash locked in office safe overnight',
+                'Advance client marked present on sheet',
+                'Other reason'
+              ]
+            : [
+                'Advance payments (loans & savings) banked ahead of schedule',
+                'Savings withdrawals paid out to clients',
+                'Other reason'
+              ]);
+
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Row(
-          children: [
-            Icon(Icons.shield_outlined, color: Color(0xFFDC2626), size: 22),
-            SizedBox(width: 8),
-            Text('Confirm EOD Day Close', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Are you sure you want to execute End of Day (EOD) Close for operational date $dateStr?',
-              style: const TextStyle(fontSize: 13, color: Color(0xFF334155), height: 1.4),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFFBEB),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFFDE68A)),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFD97706)),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'This action is irreversible. All cashbook transactions for this date will be permanently sealed, and the operational date will advance to the next working day.',
-                      style: TextStyle(fontSize: 11.5, color: Color(0xFF92400E)),
-                    ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: const Row(
+            children: [
+              Icon(Icons.shield_outlined, color: Color(0xFF0F172A), size: 22),
+              SizedBox(width: 8),
+              Text('Confirm Day Close', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Are you ready to close business operations for $dateStr?',
+                  style: const TextStyle(fontSize: 13, color: Color(0xFF334155), height: 1.4),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: statusBg,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: statusBorder),
                   ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        statusText,
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: statusColor),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        isZero
+                            ? 'All collections were paid into the commercial bank today.'
+                            : (isPos
+                                ? 'Cash remains in office custody overnight or advance credit logged.'
+                                : 'Cash was banked ahead for future meetings or client savings paid out.'),
+                        style: TextStyle(fontSize: 11.5, color: statusColor.withValues(alpha: 0.9)),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!isZero) ...[
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Reason for Balance:',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                  ),
+                  const SizedBox(height: 6),
+                  ...options.map((opt) => RadioListTile<String>(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    value: opt,
+                    groupValue: selectedTag,
+                    title: Text(opt, style: const TextStyle(fontSize: 12.5, color: Color(0xFF1E293B))),
+                    onChanged: (val) {
+                      if (val != null) setDlgState(() => selectedTag = val);
+                    },
+                  )),
                 ],
+                const SizedBox(height: 10),
+                TextField(
+                  controller: notesController,
+                  decoration: const InputDecoration(
+                    labelText: 'Add Note for Area Manager (Optional)',
+                    hintText: 'e.g. Mama Chinedu paid 4 weeks advance into bank.',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Color(0xFF64748B)),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Closing balance rolls forward as tomorrow morning opening money.',
+                          style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            OutlinedButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFFCBD5E1)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
               ),
+              child: const Text('Cancel', style: TextStyle(color: Color(0xFF475569), fontWeight: FontWeight.w600)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _handleExecuteEod(
+                  dateStr,
+                  reasonTag: selectedTag,
+                  notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF065F46),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              ),
+              child: const Text('Confirm & Close Day', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
             ),
           ],
         ),
-        actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFFCBD5E1)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-            ),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF475569), fontWeight: FontWeight.w600)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _handleExecuteEod(dateStr);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-            ),
-            child: const Text('Confirm & Execute Close', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-          ),
-        ],
       ),
     );
   }

@@ -49,10 +49,18 @@ class MasterCashbookApiService {
   }
 
   /// Execute EOD Day Close to advance operational date
-  Future<Map<String, dynamic>> executeEodClose(String date) async {
+  Future<Map<String, dynamic>> executeEodClose(
+    String date, {
+    String? reasonTag,
+    String? notes,
+  }) async {
     final response = await _apiClient.post(
       '/api/v1/bm/cashbook/eod-close',
-      data: {'date': date},
+      data: {
+        'date': date,
+        if (reasonTag != null && reasonTag.isNotEmpty) 'reason_tag': reasonTag,
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+      },
     );
     return response.data as Map<String, dynamic>;
   }

@@ -136,6 +136,76 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     }
   }
 
+  Future<void> _handleRejectBranchEod(String branchId, String branchName, String closureDate) async {
+    final reasonController = TextEditingController();
+    String? validationError;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('Return EOD — $branchName', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Return the EOD submission for $branchName on $closureDate back to the Branch Manager for correction?',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: reasonController,
+                decoration: InputDecoration(
+                  labelText: 'Reason for Returning (Required)',
+                  hintText: 'e.g. Please clarify cash variance or update bank deposit slips.',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                  errorText: validationError,
+                ),
+                maxLines: 2,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () {
+                if (reasonController.text.trim().isEmpty) {
+                  setDialogState(() {
+                    validationError = 'Please state a reason for returning this EOD.';
+                  });
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+              child: const Text('Return to BM', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isProcessing = true);
+    try {
+      final api = ref.read(amApiServiceProvider);
+      final res = await api.rejectBranchEod(
+        branchId: branchId,
+        closureDate: closureDate,
+        reason: reasonController.text.trim(),
+      );
+      _showFlash(res['message'] ?? 'Branch EOD returned to Branch Manager.');
+      ref.invalidate(amDashboardDataProvider);
+    } catch (e) {
+      _showFlash('Failed to return branch EOD: $e');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
   Future<void> _handleAmEndorseSubmission(MonthlyWorkflowPendingBranchModel b) async {
     final notesController = TextEditingController();
     final confirm = await showDialog<bool>(
@@ -1926,20 +1996,61 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     ],
                   ),
                 ),
+                if (e.notes != null && e.notes!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.sticky_note_2_outlined, size: 14, color: Color(0xFF64748B)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'BM Note: ${e.notes!}',
+                            style: const TextStyle(fontSize: 11.5, color: Color(0xFF334155), fontStyle: FontStyle.italic),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 if (!isConfirmed)
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isProcessing ? null : () => _handleConfirmBranchEod(e.branchId, e.branchName, e.closureDate),
-                      icon: const Icon(Icons.check, size: 15, color: Colors.white),
-                      label: const Text('Confirm & Sign Off Branch EOD', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF065F46),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _isProcessing ? null : () => _handleRejectBranchEod(e.branchId, e.branchName, e.closureDate),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFDC2626),
+                            side: const BorderSide(color: Color(0xFFFCA5A5)),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          child: const Text('Return to BM', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _isProcessing ? null : () => _handleConfirmBranchEod(e.branchId, e.branchName, e.closureDate),
+                          icon: const Icon(Icons.check, size: 15, color: Colors.white),
+                          label: const Text('Confirm EOD', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF065F46),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                    ],
                   )
                 else
                   Row(
@@ -2007,15 +2118,37 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       'Vault Cash: ${CurrencyFormatter.format(e.vaultCash)} | Variance: ${CurrencyFormatter.format(e.cashVariance)}',
                       style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                     ),
+                    if (e.notes != null && e.notes!.trim().isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'BM Note: ${e.notes!}',
+                        style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontStyle: FontStyle.italic),
+                      ),
+                    ],
                   ],
                 ),
               ),
               if (!isConfirmed)
-                ElevatedButton.icon(
-                  onPressed: _isProcessing ? null : () => _handleConfirmBranchEod(e.branchId, e.branchName, e.closureDate),
-                  icon: const Icon(Icons.check, size: 14, color: Colors.white),
-                  label: const Text('Confirm EOD', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    OutlinedButton(
+                      onPressed: _isProcessing ? null : () => _handleRejectBranchEod(e.branchId, e.branchName, e.closureDate),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFDC2626),
+                        side: const BorderSide(color: Color(0xFFFCA5A5)),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      ),
+                      child: const Text('Return to BM', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      onPressed: _isProcessing ? null : () => _handleConfirmBranchEod(e.branchId, e.branchName, e.closureDate),
+                      icon: const Icon(Icons.check, size: 14, color: Colors.white),
+                      label: const Text('Confirm EOD', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
+                    ),
+                  ],
                 )
               else
                 Text('Signed by ${e.confirmedBy ?? "AM"}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF15803D), fontWeight: FontWeight.w600)),

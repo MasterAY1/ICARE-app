@@ -232,6 +232,7 @@ class PendingBranchEodItemModel {
   final String status;
   final String? confirmedBy;
   final String? confirmedAt;
+  final String? notes;
 
   PendingBranchEodItemModel({
     required this.branchId,
@@ -244,6 +245,7 @@ class PendingBranchEodItemModel {
     required this.status,
     this.confirmedBy,
     this.confirmedAt,
+    this.notes,
   });
 
   factory PendingBranchEodItemModel.fromJson(Map<String, dynamic> json) {
@@ -258,6 +260,7 @@ class PendingBranchEodItemModel {
       status: json['status'] ?? 'PENDING',
       confirmedBy: json['confirmed_by'],
       confirmedAt: json['confirmed_at'],
+      notes: json['notes'],
     );
   }
 }

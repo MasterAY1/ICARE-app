@@ -29,6 +29,7 @@ from api.schemas.am_dashboard import (
     PendingBranchEodItem,
     BranchHandoverSummary,
     ConfirmBranchEodRequest,
+    RejectBranchEodRequest,
     ConfirmAreaClosureRequest,
     ApproveLoanRequest,
     RejectLoanRequest,
@@ -146,6 +147,36 @@ def confirm_branch_eod(
             branch_id=payload.branch_id,
             closure_date=closure_d,
             notes=payload.notes
+        )
+        return AmActionResponse(
+            success=True,
+            message=res["message"],
+            details=res
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/reject-branch-eod", response_model=AmActionResponse)
+def reject_branch_eod(
+    payload: RejectBranchEodRequest,
+    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin", "Director"])),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Area Manager returns an individual branch's EOD submission to Branch Manager with notes for correction.
+    """
+    _check_am_permissions(current_user)
+    try:
+        closure_d = date.fromisoformat(payload.closure_date)
+        res = AreaManagerService.reject_branch_eod(
+            uow=uow,
+            am_user_id=current_user.id,
+            branch_id=payload.branch_id,
+            closure_date=closure_d,
+            reason=payload.reason
         )
         return AmActionResponse(
             success=True,

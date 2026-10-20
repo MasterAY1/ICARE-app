@@ -82,6 +82,7 @@ class PendingBranchEodItem(BaseModel):
     status: str
     confirmed_by: Optional[str] = None
     confirmed_at: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class AreaApprovalsHub(BaseModel):
@@ -119,6 +120,12 @@ class ConfirmBranchEodRequest(BaseModel):
     branch_id: str
     closure_date: str
     notes: Optional[str] = None
+
+
+class RejectBranchEodRequest(BaseModel):
+    branch_id: str
+    closure_date: str
+    reason: str
 
 
 class ConfirmAreaClosureRequest(BaseModel):

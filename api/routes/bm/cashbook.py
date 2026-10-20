@@ -673,7 +673,21 @@ def execute_eod_day_close(
         )
 
     try:
-        success = BusinessDateService.close_business_date(uow, branch_id, target_date, closed_by=current_user.username)
+        combined_notes = None
+        if payload.reason_tag and payload.notes:
+            combined_notes = f"[{payload.reason_tag}] {payload.notes.strip()}"
+        elif payload.reason_tag:
+            combined_notes = f"[{payload.reason_tag}]"
+        elif payload.notes:
+            combined_notes = payload.notes.strip()
+
+        success = BusinessDateService.close_business_date(
+            uow,
+            branch_id,
+            target_date,
+            closed_by=current_user.username,
+            notes=combined_notes
+        )
         if success:
             return {"success": True, "message": f"Successfully executed Day Close for {payload.date}! Operational date advanced to next working day."}
         else:

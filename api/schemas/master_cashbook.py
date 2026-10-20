@@ -154,6 +154,8 @@ class CoAggregationResponse(BaseModel):
 
 class EodCloseRequest(BaseModel):
     date: str
+    reason_tag: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class MonthlyLedgerRow(BaseModel):

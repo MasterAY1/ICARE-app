@@ -131,6 +131,23 @@ class BusinessDateService:
                 cls._operational_cache[cache_key] = res
                 return res
 
+            # 5. Area Lock Regional Freeze Check
+            try:
+                target_str = target_d.isoformat()
+                b_id = branch_name_or_id
+                if len(str(branch_name_or_id)) < 36 or str(branch_name_or_id).count("-") != 4:
+                    res_b = uow.client.table("branches").select("branch_id").eq("name", branch_name_or_id).execute()
+                    if res_b.data:
+                        b_id = res_b.data[0]["branch_id"]
+                if b_id:
+                    res_al = uow.client.table("area_eod_confirmations").select("status").eq("branch_id", b_id).eq("closure_date", target_str).execute()
+                    if res_al.data and res_al.data[0].get("status") == "AREA_LOCKED":
+                        res = (False, f"Operations for {target_str} are sealed and locked under Area Manager regional lock.")
+                        cls._operational_cache[cache_key] = res
+                        return res
+            except Exception:
+                pass
+
         res = (True, "Operational business day is open")
         cls._operational_cache[cache_key] = res
         return res
@@ -211,12 +228,19 @@ class BusinessDateService:
         return False
 
     @staticmethod
-    def close_business_date(uow: UnitOfWork, branch_id: str, posting_date: date, closed_by: Optional[str] = None) -> bool:
+    def close_business_date(
+        uow: UnitOfWork,
+        branch_id: str,
+        posting_date: date,
+        closed_by: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> bool:
         """
         Executes Branch Day Close:
-        1. Freezes today's Master Cashbook & CO Cashbooks (status = 'CLOSED').
+        1. Freezes today's Master Cashbook & CO Cashbooks (status = 'Closed').
         2. Carries forward closing balance as tomorrow's opening balance.
         3. Advances branch business date to the next working day.
+        4. Auto-populates area_eod_confirmations with status = 'PENDING' for Area Manager sign-off.
         """
         p_date_str = posting_date.isoformat()
         next_date = BusinessDateService.get_next_working_day(posting_date + timedelta(days=1))
@@ -236,8 +260,9 @@ class BusinessDateService:
                 
         try:
             # 1. Freeze Master Cashbook
-            res_mb = uow.client.table("master_cashbook").select("closing_balance").eq("branch_id", branch_id).eq("date", p_date_str).execute()
+            res_mb = uow.client.table("master_cashbook").select("closing_balance, difference").eq("branch_id", branch_id).eq("date", p_date_str).execute()
             closing_bal = float(res_mb.data[0]["closing_balance"]) if res_mb.data else 0.0
+            cash_diff = float(res_mb.data[0].get("difference") or 0.0) if res_mb.data else 0.0
             
             update_payload = {
                 "status": "Closed",
@@ -262,6 +287,43 @@ class BusinessDateService:
 
             # 4. Advance Branch Business Date to next working day
             BusinessDateService.set_business_date(uow, branch_id, next_date)
+
+            # 5. Derive Account 1000 vault cash as of closure date and auto-populate area_eod_confirmations
+            vault_cash = 0.0
+            try:
+                res_leg = uow.client.table("financial_ledger_entries") \
+                    .select("amount, side") \
+                    .eq("branch_id", branch_id) \
+                    .eq("account_code", "1000") \
+                    .lte("entry_date", p_date_str) \
+                    .execute()
+                leg_rows = res_leg.data or []
+                deb = sum(float(r["amount"]) for r in leg_rows if r.get("side") == "Debit")
+                crd = sum(float(r["amount"]) for r in leg_rows if r.get("side") == "Credit")
+                vault_cash = max(0.0, deb - crd)
+            except Exception:
+                pass
+
+            try:
+                auto_note = notes or (
+                    "Balanced (All collections banked)." if closing_bal == 0
+                    else (f"Cash in safe: ₦{closing_bal:,.2f}." if closing_bal > 0
+                          else f"Advance money banked ahead / savings paid out: ₦{abs(closing_bal):,.2f}.")
+                )
+                uow.client.table("area_eod_confirmations").upsert({
+                    "area_name": "Area 1",
+                    "branch_id": branch_id,
+                    "closure_date": p_date_str,
+                    "status": "PENDING",
+                    "confirmed_by": None,
+                    "acct_1000_balance": vault_cash,
+                    "cash_variance": cash_diff,
+                    "notes": auto_note,
+                    "created_at": datetime.now().isoformat()
+                }, on_conflict="branch_id,closure_date").execute()
+            except Exception as ex_eod:
+                print(f"[EOD BRIDGE] area_eod_confirmations upsert notice: {ex_eod}")
+
             return True
         except Exception as ex:
             print("Error closing business date:", ex)
