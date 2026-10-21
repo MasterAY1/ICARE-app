@@ -14,6 +14,7 @@ import '../../shared/utils/file_download_helper.dart';
 import '../../onboarding/presentation/branch_onboarding_admin_screen.dart';
 import '../../onboarding/presentation/branch_onboarding_portal_screen.dart';
 import '../../onboarding/data/onboarding_api_service.dart';
+import '../../onboarding/presentation/widgets/successful_delete_dialog.dart';
 import '../../reports/data/datasources/reports_api_service.dart';
 import '../../reports/data/models/report_models.dart';
 import '../../reports/presentation/reports_export_screen.dart';
@@ -66,6 +67,7 @@ class AmDashboardScreen extends ConsumerStatefulWidget {
 class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   String? _flashMessage;
   bool _isProcessing = false;
+  final Set<String> _deletingSessionIds = {};
 
   // Approvals Hub Active Tab
   String _activeApprovalTab = 'Branch EOD Sign-Off';
@@ -1501,16 +1503,30 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
     if (confirmed != true) return;
 
-    setState(() => _isProcessing = true);
+    setState(() {
+      _isProcessing = true;
+      _deletingSessionIds.add(sessionId);
+    });
     try {
       final api = ref.read(onboardingApiServiceProvider);
       await api.deleteAdminSession(sessionId);
-      _showFlash('Onboarding package for $branchName ($branchCode) deleted successfully.');
+      if (mounted) {
+        await SuccessfulDeleteAnimationDialog.show(
+          context,
+          branchName: branchName,
+          branchCode: branchCode,
+        );
+      }
       ref.invalidate(adminOnboardingSessionsProvider);
     } catch (e) {
       _showFlash('Failed to delete onboarding package: $e');
     } finally {
-      if (mounted) setState(() => _isProcessing = false);
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _deletingSessionIds.remove(sessionId);
+        });
+      }
     }
   }
 
@@ -1711,8 +1727,15 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     final isSubmitted = status == 'submitted';
     final badgeBg = isSubmitted ? const Color(0xFFEFF6FF) : const Color(0xFFFFFBEB);
     final badgeText = isSubmitted ? const Color(0xFF1D4ED8) : const Color(0xFFB45309);
+    final sessionId = (s['session_id'] ?? s['id'] ?? '').toString();
+    final isDeletingThis = _deletingSessionIds.contains(sessionId);
 
-    return Container(
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 300),
+      opacity: isDeletingThis ? 0.45 : 1.0,
+      child: Stack(
+        children: [
+              Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1841,6 +1864,40 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 ),
               ],
             ),
+    ),
+          if (isDeletingThis)
+            Positioned.fill(
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xB3FFFFFF),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFDC2626)),
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'Deleting session...',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFDC2626),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 

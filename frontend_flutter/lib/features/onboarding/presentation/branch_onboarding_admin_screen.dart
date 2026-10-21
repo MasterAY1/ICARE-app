@@ -8,6 +8,7 @@ import '../../../../core/theme/icare_colors.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../data/onboarding_api_service.dart';
 import 'branch_onboarding_portal_screen.dart';
+import 'widgets/successful_delete_dialog.dart';
 
 /// Modal dialog allowing Admins, Directors, and Area Managers to generate
 /// a cryptographically secure 14-day branch onboarding link.
@@ -594,11 +595,10 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
       final api = ref.read(onboardingApiServiceProvider);
       await api.deleteAdminSession(sessionId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Onboarding package for $branchName ($branchCode) deleted successfully.'),
-            backgroundColor: const Color(0xFF0F2744),
-          ),
+        await SuccessfulDeleteAnimationDialog.show(
+          context,
+          branchName: branchName,
+          branchCode: branchCode,
         );
       }
       _loadSessions();
@@ -887,18 +887,27 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
       badgeText = const Color(0xFFB45309);
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: status == 'submitted' ? const Color(0xFF93C5FD) : const Color(0xFFE2E8F0),
-          width: status == 'submitted' ? 1.4 : 1.0,
-        ),
-      ),
-      child: Column(
+    final isDeletingThis = _deletingSessionIds.contains(sessionId);
+
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 300),
+      opacity: isDeletingThis ? 0.45 : 1.0,
+      child: Stack(
+        children: [
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isDeletingThis
+                    ? const Color(0xFFFCA5A5)
+                    : (status == 'submitted' ? const Color(0xFF93C5FD) : const Color(0xFFE2E8F0)),
+                width: status == 'submitted' ? 1.4 : 1.0,
+              ),
+            ),
+            child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header Row
@@ -1122,6 +1131,40 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
             },
           ),
         ],
+      ),
+    ),
+    if (isDeletingThis)
+      Positioned.fill(
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xB3FFFFFF),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFDC2626)),
+                ),
+                SizedBox(width: 10),
+                Text(
+                  'Deleting session...',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFDC2626),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+  ],
       ),
     );
   }
