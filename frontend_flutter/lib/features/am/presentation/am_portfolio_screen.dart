@@ -1,6 +1,7 @@
 // lib/features/am/presentation/am_portfolio_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 import '../data/datasources/am_api_service.dart';
@@ -18,11 +19,29 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   AmDashboardDataModel? _dashboardData;
+  String _selectedPeriod = 'This Month'; // 'This Month', 'This Week', 'Today'
 
   @override
   void initState() {
     super.initState();
     _loadPortfolioData();
+  }
+
+  (String, String) _getPeriodDates(String period) {
+    final now = DateTime.now();
+    final todayStr = DateFormat('yyyy-MM-dd').format(now);
+    if (period == 'Today') {
+      return (todayStr, todayStr);
+    } else if (period == 'This Week') {
+      final monday = now.subtract(Duration(days: now.weekday - 1));
+      final s = DateFormat('yyyy-MM-dd').format(monday);
+      return (s, todayStr);
+    } else {
+      // This Month (default)
+      final firstDay = DateTime(now.year, now.month, 1);
+      final s = DateFormat('yyyy-MM-dd').format(firstDay);
+      return (s, todayStr);
+    }
   }
 
   Future<void> _loadPortfolioData() async {
@@ -32,8 +51,12 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
     });
 
     try {
+      final (startDate, endDate) = _getPeriodDates(_selectedPeriod);
       final apiService = ref.read(amApiServiceProvider);
-      final data = await apiService.getAmDashboardData();
+      final data = await apiService.getAmDashboardData(
+        startDate: startDate,
+        endDate: endDate,
+      );
       if (!mounted) return;
       setState(() {
         _dashboardData = data;
@@ -48,37 +71,58 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
     }
   }
 
+  void _onPeriodChanged(String newPeriod) {
+    if (_selectedPeriod == newPeriod) return;
+    setState(() {
+      _selectedPeriod = newPeriod;
+    });
+    _loadPortfolioData();
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 600;
-    final isTablet = screenWidth >= 600 && screenWidth < 900;
-    final isDesktop = screenWidth >= 900;
+    final isTablet = screenWidth >= 600 && screenWidth < 1000;
+    final isDesktop = screenWidth >= 1000;
 
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 1. Header Banner
-          _buildHeaderBanner(isMobile),
+          // 1. Executive Regional Command Header
+          _buildExecutiveHeader(isMobile),
           const SizedBox(height: 16),
 
           if (_isLoading)
             const Center(
               child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 48),
-                child: CircularProgressIndicator(color: Color(0xFF0F766E)),
+                padding: EdgeInsets.symmetric(vertical: 56),
+                child: Column(
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFF0F766E)),
+                    SizedBox(height: 14),
+                    Text(
+                      'Aggregating regional portfolio metrics...',
+                      style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
               ),
             )
           else if (_errorMessage != null)
             _buildErrorState()
           else if (_dashboardData != null) ...[
-            // 2. Executive Regional KPI Overview
-            _buildRegionalKpis(_dashboardData!.regionalSummary, isMobile, isTablet, isDesktop),
-            const SizedBox(height: 20),
+            // 2. Portfolio Share Segmented Bar
+            _buildPortfolioShareBar(_dashboardData!.branchPerformance, isMobile),
+            const SizedBox(height: 18),
 
-            // 3. Section Title
+            // 3. 6 Regional KPI Summary Cards
+            _buildRegionalKpis(_dashboardData!.regionalSummary, isMobile, isTablet, isDesktop),
+            const SizedBox(height: 24),
+
+            // 4. Section Header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -86,16 +130,17 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Supervised Branch Summaries',
+                      'Branch Performance Matrix',
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 17,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF0F172A),
+                        letterSpacing: -0.2,
                       ),
                     ),
                     SizedBox(height: 3),
                     Text(
-                      'Aggregated branch portfolios, collections, and risk positions.',
+                      'Capital deployment, active credit progress, and officer productivity.',
                       style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                     ),
                   ],
@@ -109,301 +154,248 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
             ),
             const SizedBox(height: 14),
 
-            // 4. Branch Summary Cards Grid
+            // 5. Branch Summary Cards Grid
             _buildBranchCardsGrid(_dashboardData!.branchPerformance, isMobile, isTablet, isDesktop),
-            const SizedBox(height: 20),
-
-            // 5. Governance Advisory Card
-            _buildGovernanceCard(),
             const SizedBox(height: 24),
+
+            // 6. Governance Advisory Note
+            _buildGovernanceCard(),
+            const SizedBox(height: 32),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildHeaderBanner(bool isMobile) {
-    if (isMobile) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-          boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0F766E),
-                        borderRadius: BorderRadius.circular(6),
+  // 1. Executive Header with Period Selector
+  Widget _buildExecutiveHeader(bool isMobile) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(isMobile ? 16 : 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 2)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDFA),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFCCFBF1)),
+                    ),
+                    child: const Icon(Icons.account_balance, color: Color(0xFF0F766E), size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            'Regional Command Center',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0F766E),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'AREA 1',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.5),
+                            ),
+                          ),
+                        ],
                       ),
-                      child: const Text('AREA 1', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.5)),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Regional Portfolio',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                    ),
-                  ],
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEF3C7),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: const Color(0xFFF59E0B)),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Consolidated branch supervision across Ogijo, Ikorodu, and Kola',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      ),
+                    ],
                   ),
-                  child: const Text(
-                    'EXECUTIVE',
-                    style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xFF92400E)),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Consolidated branch summaries across Ogijo, Ikorodu, and Kola branches.',
-              style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
-            ),
+                ],
+              ),
+              if (!isMobile) _buildPeriodSelector(),
+            ],
+          ),
+          if (isMobile) ...[
+            const SizedBox(height: 12),
+            _buildPeriodSelector(),
           ],
-        ),
-      );
-    }
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPeriodSelector() {
+    final periods = ['This Month', 'This Week', 'Today'];
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: periods.map((p) {
+          final isSelected = _selectedPeriod == p;
+          return InkWell(
+            onTap: () => _onPeriodChanged(p),
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+                boxShadow: isSelected
+                    ? const [BoxShadow(color: Color(0x0D0F172A), blurRadius: 3, offset: Offset(0, 1))]
+                    : null,
+              ),
+              child: Text(
+                p,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF64748B),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  // 2. Portfolio Share Segmented Bar
+  Widget _buildPortfolioShareBar(List<BranchPerformanceItemModel> branches, bool isMobile) {
+    if (branches.isEmpty) return const SizedBox.shrink();
+
+    // Palette for branches
+    final palette = [
+      const Color(0xFF0F766E), // Emerald/Teal for Branch 1
+      const Color(0xFF2563EB), // Royal Blue for Branch 2
+      const Color(0xFF7C3AED), // Purple for Branch 3
+      const Color(0xFFD97706), // Amber for Branch 4
+    ];
+
+    double totalActiveCredit = branches.fold(0.0, (sum, b) => sum + (b.activeCreditDisbursedAmount > 0 ? b.activeCreditDisbursedAmount : 1.0));
+    if (totalActiveCredit <= 0) totalActiveCredit = 1.0;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(color: Color(0x060F172A), blurRadius: 4, offset: Offset(0, 2)),
-        ],
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.account_balance_outlined, color: Color(0xFF2563EB), size: 28),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Text(
-                      'Regional Portfolio — Area 1',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                    ),
-                    const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEF3C7),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: const Color(0xFFF59E0B)),
-                      ),
-                      child: const Text(
-                        'AREA LEVEL',
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF92400E)),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Consolidated branch summaries across Ogijo, Ikorodu, and Kola branches. Executive-level portfolio visibility without individual borrower clutter.',
-                  style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRegionalKpis(RegionalSummaryModel reg, bool isMobile, bool isTablet, bool isDesktop) {
-    if (isMobile) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Hero Regional Portfolio Card
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF022C22), Color(0xFF064E3B), Color(0xFF0F766E)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: const [
-                BoxShadow(color: Color(0x20064E3B), blurRadius: 8, offset: Offset(0, 3)),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'TOTAL ACTIVE PORTFOLIO',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF86EFAC),
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0x33FFFFFF),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '${reg.openBranchesCount} / ${reg.branchesCount} Branches Active',
-                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    CurrencyFormatter.formatNaira(reg.outstandingPortfolio),
-                    style: const TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                      letterSpacing: -0.5,
-                      fontFamily: 'monospace',
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Consolidated Regional Credit Principal (Area 1)',
-                  style: TextStyle(fontSize: 11, color: Color(0xCCFFFFFF)),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // 2x2 Key Metric Grid
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(
-                child: _buildModernPortfolioMetricTile(
-                  label: 'Total Savings',
-                  value: CurrencyFormatter.formatNaira(reg.totalSavings),
-                  subtitle: 'Client Reserves',
-                  icon: Icons.savings_outlined,
-                  iconColor: const Color(0xFF2563EB),
-                  iconBg: const Color(0xFFEFF6FF),
-                ),
+              const Text(
+                'Regional Loan Book Distribution',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildModernPortfolioMetricTile(
-                  label: 'Active Borrowers',
-                  value: '${reg.activeClients}',
-                  subtitle: 'Active Credit',
-                  icon: Icons.people_outline,
-                  iconColor: const Color(0xFF7C3AED),
-                  iconBg: const Color(0xFFF5F3FF),
-                ),
+              Text(
+                'Period: $_selectedPeriod',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _buildModernPortfolioMetricTile(
-                  label: 'Regional PAR > 30d',
-                  value: reg.par,
-                  subtitle: 'Portfolio at Risk',
-                  icon: Icons.warning_amber_rounded,
-                  iconColor: const Color(0xFFDC2626),
-                  iconBg: const Color(0xFFFEF2F2),
-                  isAlert: reg.par != '0.0%',
-                ),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: SizedBox(
+              height: 10,
+              child: Row(
+                children: branches.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final b = entry.value;
+                  final vol = b.activeCreditDisbursedAmount > 0 ? b.activeCreditDisbursedAmount : 1.0;
+                  final flex = ((vol / totalActiveCredit) * 1000).toInt().clamp(1, 1000);
+                  final color = palette[idx % palette.length];
+                  return Expanded(
+                    flex: flex,
+                    child: Container(color: color),
+                  );
+                }).toList(),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildModernPortfolioMetricTile(
-                  label: 'Open Branches',
-                  value: '${reg.openBranchesCount} / ${reg.branchesCount}',
-                  subtitle: 'Area 1 Network',
-                  icon: Icons.business_outlined,
-                  iconColor: const Color(0xFFD97706),
-                  iconBg: const Color(0xFFFFFBEB),
-                ),
-              ),
-            ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: branches.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final b = entry.value;
+              final vol = b.activeCreditDisbursedAmount;
+              final pct = totalActiveCredit > 0 ? (vol / totalActiveCredit * 100).toStringAsFixed(1) : '0.0';
+              final color = palette[idx % palette.length];
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${b.branchName}: $pct% (${CurrencyFormatter.formatNaira(vol)})',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                  ),
+                ],
+              );
+            }).toList(),
           ),
         ],
-      );
-    }
+      ),
+    );
+  }
 
+  // 3. 6 Regional KPI Summary Cards
+  Widget _buildRegionalKpis(RegionalSummaryModel reg, bool isMobile, bool isTablet, bool isDesktop) {
     final kpis = [
-      _KpiItem('Active Portfolio', CurrencyFormatter.formatNaira(reg.outstandingPortfolio), 'Total Outstanding Principal', Icons.trending_up, const Color(0xFF0F766E), const Color(0xFFF0FDFA)),
-      _KpiItem('Total Savings', CurrencyFormatter.formatNaira(reg.totalSavings), 'Client Savings Reserves', Icons.savings_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF)),
+      _KpiItem('Active Portfolio', CurrencyFormatter.formatNaira(reg.outstandingPortfolio), 'Total Outstanding Principal', Icons.account_balance_wallet_outlined, const Color(0xFF0F766E), const Color(0xFFF0FDFA)),
+      _KpiItem('Total Savings Reserve', CurrencyFormatter.formatNaira(reg.totalSavings), 'Client Savings Reserves', Icons.savings_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF)),
       _KpiItem('Active Borrowers', '${reg.activeClients}', 'Clients with active credit', Icons.people_outline, const Color(0xFF7C3AED), const Color(0xFFF5F3FF)),
-      _KpiItem('Regional PAR > 30d', reg.par, 'Portfolio At Risk band', Icons.warning_amber_rounded, const Color(0xFFDC2626), const Color(0xFFFEF2F2)),
-      _KpiItem('Supervised Branches', '${reg.openBranchesCount} / ${reg.branchesCount}', 'Active branches in Area 1', Icons.business_outlined, const Color(0xFFD97706), const Color(0xFFFFFBEB)),
+      _KpiItem('Regional PAR > 30d', reg.par, 'Delinquency Rate', Icons.warning_amber_rounded, const Color(0xFFDC2626), const Color(0xFFFEF2F2)),
+      _KpiItem('Collection Compliance', '${reg.compliancePct.toStringAsFixed(1)}%', 'Period Collection Rate', Icons.verified_outlined, const Color(0xFF059669), const Color(0xFFECFDF5)),
+      _KpiItem('Vault Cash Reserve', CurrencyFormatter.formatNaira(reg.vaultCashAcct1000), 'Consolidated Physical Cash', Icons.store_mall_directory_outlined, const Color(0xFFD97706), const Color(0xFFFFFBEB)),
     ];
 
-    final crossAxisCount = isDesktop ? 5 : (isTablet ? 3 : 2);
+    final crossAxisCount = isDesktop ? 6 : (isTablet ? 3 : 2);
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: kpis.length,
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: isDesktop ? 1.6 : 1.7,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: isDesktop ? 1.55 : 1.65,
       ),
       itemBuilder: (_, index) => _buildKpiCard(kpis[index]),
     );
   }
 
-  Widget _buildModernPortfolioMetricTile({
-    required String label,
-    required String value,
-    required String subtitle,
-    required IconData icon,
-    required Color iconColor,
-    required Color iconBg,
-    bool isAlert = false,
-  }) {
+  Widget _buildKpiCard(_KpiItem kpi) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -414,44 +406,37 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
                 child: Text(
-                  label,
+                  kpi.label,
                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(6)),
-                child: Icon(icon, size: 14, color: iconColor),
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(color: kpi.bgColor, borderRadius: BorderRadius.circular(6)),
+                child: Icon(kpi.icon, size: 14, color: kpi.accentColor),
               ),
             ],
           ),
-          const SizedBox(height: 6),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
-              value,
-              maxLines: 1,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: isAlert ? const Color(0xFFDC2626) : const Color(0xFF0F172A),
-                fontFamily: 'monospace',
-              ),
+              kpi.value,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.3),
             ),
           ),
-          const SizedBox(height: 2),
           Text(
-            subtitle,
-            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: isAlert ? const Color(0xFFEF4444) : const Color(0xFF94A3B8)),
+            kpi.caption,
+            style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -460,40 +445,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
     );
   }
 
-  Widget _buildKpiCard(_KpiItem kpi) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 3, offset: Offset(0, 1))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(kpi.label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(color: kpi.bgColor, borderRadius: BorderRadius.circular(6)),
-                child: Icon(kpi.icon, size: 16, color: kpi.accentColor),
-              ),
-            ],
-          ),
-          Text(
-            kpi.value,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.5),
-          ),
-          Text(kpi.caption, style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
-        ],
-      ),
-    );
-  }
-
+  // 4. Branch Summary Cards Grid
   Widget _buildBranchCardsGrid(List<BranchPerformanceItemModel> branches, bool isMobile, bool isTablet, bool isDesktop) {
     if (branches.isEmpty) {
       return Container(
@@ -525,49 +477,60 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
         crossAxisCount: crossAxisCount,
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
-        childAspectRatio: isDesktop ? 1.05 : 1.15,
+        childAspectRatio: isDesktop ? 0.88 : 0.95,
       ),
       itemBuilder: (_, index) => _buildBranchCard(branches[index]),
     );
   }
 
+  // Individual Branch Card
   Widget _buildBranchCard(BranchPerformanceItemModel b) {
-    final isConfirmed = b.eodStatus == 'BRANCH_CONFIRMED' || b.eodStatus == 'AREA_LOCKED';
-    final statusColor = isConfirmed
-        ? const Color(0xFF16A34A)
-        : (b.eodStatus == 'PENDING' ? const Color(0xFFD97706) : const Color(0xFF64748B));
-    final statusBg = isConfirmed
-        ? const Color(0xFFF0FDF4)
-        : (b.eodStatus == 'PENDING' ? const Color(0xFFFFFBEB) : const Color(0xFFF8FAFC));
+    final isClosed = b.isClosed;
+    final statusColor = isClosed
+        ? const Color(0xFFDC2626)
+        : (b.eodStatus == 'BRANCH_CONFIRMED' || b.eodStatus == 'AREA_LOCKED'
+            ? const Color(0xFF16A34A)
+            : const Color(0xFF0F766E));
+    final statusBg = isClosed
+        ? const Color(0xFFFEF2F2)
+        : (b.eodStatus == 'BRANCH_CONFIRMED' || b.eodStatus == 'AREA_LOCKED'
+            ? const Color(0xFFF0FDF4)
+            : const Color(0xFFF0FDFA));
+    final statusLabel = isClosed ? 'Branch Closed' : (b.eodStatus == 'BRANCH_CONFIRMED' ? 'EOD Confirmed' : 'Active Operations');
+
+    final isNetPositive = b.netLoanCount >= 0;
+    final netColor = isNetPositive ? const Color(0xFF059669) : const Color(0xFFD97706);
+    final netBg = isNetPositive ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB);
+    final netBorder = isNetPositive ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A);
 
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
-          BoxShadow(color: Color(0x060F172A), blurRadius: 4, offset: Offset(0, 2)),
+          BoxShadow(color: Color(0x060F172A), blurRadius: 6, offset: Offset(0, 2)),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Header: Branch Name & Status
+          // 1. Header: Branch Name, BM, Status
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
                 children: [
                   Container(
-                    width: 36,
-                    height: 36,
+                    width: 38,
+                    height: 38,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.location_city, color: Color(0xFF0F172A), size: 18),
+                    child: const Icon(Icons.location_city, color: Color(0xFF0F172A), size: 20),
                   ),
                   const SizedBox(width: 10),
                   Column(
@@ -586,49 +549,165 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                 ],
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                 decoration: BoxDecoration(
                   color: statusBg,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: statusColor.withValues(alpha: 0.3)),
                 ),
                 child: Text(
-                  b.eodStatus,
+                  statusLabel,
                   style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: statusColor),
                 ),
               ),
             ],
           ),
-          const Divider(height: 20, color: Color(0xFFF1F5F9)),
+          const Divider(height: 18, color: Color(0xFFF1F5F9)),
 
-          // 2x2 Metric Matrix
+          // 2. Capital Deployed (Principal Cash Disbursed)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.account_balance_wallet_outlined, size: 16, color: Color(0xFF0F766E)),
+                    const SizedBox(width: 8),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Principal Cash Disbursed',
+                          style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                        ),
+                        Text(
+                          CurrencyFormatter.formatNaira(b.principalDisbursedAmount),
+                          style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${b.loansDisbursedCount} Loans',
+                    style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // 3. Active Loan Book Dynamics (Active Credit vs Full Payments)
           Row(
             children: [
               Expanded(
-                child: _buildMetricTile(
-                  'Active Borrowers',
-                  '${b.defaultersCount > 0 ? b.defaultersCount : b.expectedCollection > 0 ? "Active" : "Stable"}',
-                  Icons.people_outline,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFDCFCE7)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Active Loans Disbursed',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF166534)),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        CurrencyFormatter.formatNaira(b.activeCreditDisbursedAmount),
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF14532D)),
+                      ),
+                      Text(
+                        '${b.loansDisbursedCount} Active Loans',
+                        style: const TextStyle(fontSize: 9.5, color: Color(0xFF15803D)),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _buildMetricTile(
-                  'Vault Cash (Acct 1000)',
-                  CurrencyFormatter.formatNaira(b.vaultCashAcct1000),
-                  Icons.account_balance_wallet_outlined,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFDBEAFE)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Full Payments (Closed)',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        CurrencyFormatter.formatNaira(b.fullPaymentsActiveCredit),
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF1E3A8A)),
+                      ),
+                      Text(
+                        '${b.fullPaymentsCount} Closed Members',
+                        style: const TextStyle(fontSize: 9.5, color: Color(0xFF2563EB)),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
+
+          // 4. Net Loan Progress Badge
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: netBg,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: netBorder),
+            ),
+            child: Row(
+              children: [
+                Icon(isNetPositive ? Icons.trending_up : Icons.trending_down, size: 14, color: netColor),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Net Progress: ${b.netLoanCount >= 0 ? "+" : ""}${b.netLoanCount} Loans (${b.netActiveCreditVolume >= 0 ? "+" : ""}${CurrencyFormatter.formatNaira(b.netActiveCreditVolume)} Active Credit)',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: netColor),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // 5. Collection Progress & Vault Cash
           Row(
             children: [
               Expanded(
                 child: _buildMetricTile(
-                  'Collected Today',
-                  CurrencyFormatter.formatNaira(b.collected),
-                  Icons.payments_outlined,
+                  'Vault Cash',
+                  CurrencyFormatter.formatNaira(b.vaultCashAcct1000),
+                  Icons.store_mall_directory_outlined,
                 ),
               ),
               const SizedBox(width: 8),
@@ -640,11 +719,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                   color: b.compliancePct >= 80 ? const Color(0xFF16A34A) : const Color(0xFFD97706),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
+              const SizedBox(width: 8),
               Expanded(
                 child: _buildMetricTile(
                   'PAR > 30d',
@@ -653,45 +728,40 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                   color: b.par == '0.0%' ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildMetricTile(
-                  'Cash Variance',
-                  CurrencyFormatter.formatNaira(b.cashVariance),
-                  Icons.balance_outlined,
-                  color: b.cashVariance == 0 ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
-                ),
-              ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
+
+          // 6. Action Row: "Inspect Officers" and "Branch Reports"
           Row(
             children: [
               Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    ref.read(activeCoPageProvider.notifier).state = 'Dashboard';
-                  },
-                  icon: const Icon(Icons.dashboard_outlined, size: 14),
-                  label: const Text('Dashboard', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
-                  style: OutlinedButton.styleFrom(
+                flex: 3,
+                child: ElevatedButton.icon(
+                  onPressed: () => _showOfficerProductivitySheet(b),
+                  icon: const Icon(Icons.people_outline, size: 15, color: Colors.white),
+                  label: const Text('Inspect Officers', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0F766E),
                     padding: const EdgeInsets.symmetric(vertical: 10),
+                    elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: ElevatedButton.icon(
+                flex: 2,
+                child: OutlinedButton.icon(
                   onPressed: () {
                     ref.read(reportsTargetBranchProvider.notifier).state = b.branchName;
                     ref.read(activeCoPageProvider.notifier).state = 'Reports & Export';
                   },
-                  icon: const Icon(Icons.bar_chart_outlined, size: 14, color: Colors.white),
-                  label: const Text('Reports', style: TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF065F46),
+                  icon: const Icon(Icons.bar_chart_outlined, size: 14, color: Color(0xFF475569)),
+                  label: const Text('Reports', style: TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontWeight: FontWeight.w600)),
+                  style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 10),
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
@@ -703,9 +773,23 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
     );
   }
 
+  // Officer Productivity Drill-Down Modal Sheet
+  void _showOfficerProductivitySheet(BranchPerformanceItemModel branch) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _OfficerProductivityModalSheet(
+        branch: branch,
+        period: _selectedPeriod,
+        dates: _getPeriodDates(_selectedPeriod),
+      ),
+    );
+  }
+
   Widget _buildMetricTile(String label, String value, IconData icon, {Color? color}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(6),
@@ -721,16 +805,16 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B), overflow: TextOverflow.ellipsis),
+                  style: const TextStyle(fontSize: 10, color: Color(0xFF64748B), overflow: TextOverflow.ellipsis),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 2),
           Text(
             value,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: FontWeight.w700,
               color: color ?? const Color(0xFF0F172A),
             ),
@@ -746,17 +830,28 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.shield_outlined, color: Color(0xFF475569), size: 22),
-          SizedBox(width: 14),
+          Icon(Icons.shield_outlined, color: Color(0xFF475569), size: 20),
+          SizedBox(width: 12),
           Expanded(
-            child: Text(
-              'Governance Note: Individual borrower schedules, collection sheets, and dossier management are performed at the branch level by Credit Officers and Branch Managers. The Area Manager console maintains high-level branch oversight, cashbook inspection, and reconciliation governance.',
-              style: TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Regional Portfolio Governance Invariant',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Individual borrower schedules, collection sheets, and dossier management are performed at the branch level by Credit Officers and Branch Managers. The Area Manager command center maintains executive supervision, capital deployment oversight, and net portfolio growth tracking.',
+                  style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B), height: 1.4),
+                ),
+              ],
             ),
           ),
         ],
@@ -785,6 +880,385 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// -------------------------------------------------------------
+// Officer Productivity Modal Sheet Component
+// -------------------------------------------------------------
+class _OfficerProductivityModalSheet extends ConsumerStatefulWidget {
+  final BranchPerformanceItemModel branch;
+  final String period;
+  final (String, String) dates;
+
+  const _OfficerProductivityModalSheet({
+    required this.branch,
+    required this.period,
+    required this.dates,
+  });
+
+  @override
+  ConsumerState<_OfficerProductivityModalSheet> createState() => _OfficerProductivityModalSheetState();
+}
+
+class _OfficerProductivityModalSheetState extends ConsumerState<_OfficerProductivityModalSheet> {
+  bool _isLoading = true;
+  String? _errorMessage;
+  BranchOfficerProductivityResponseModel? _data;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchOfficers();
+  }
+
+  Future<void> _fetchOfficers() async {
+    try {
+      final apiService = ref.read(amApiServiceProvider);
+      final (startDate, endDate) = widget.dates;
+      final res = await apiService.getBranchOfficerProductivity(
+        branchId: widget.branch.branchId,
+        startDate: startDate,
+        endDate: endDate,
+      );
+      if (!mounted) return;
+      setState(() {
+        _data = res;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final maxH = mediaQuery.size.height * 0.85;
+
+    return Container(
+      constraints: BoxConstraints(maxHeight: maxH),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Grabber Handle
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 6),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFCBD5E1),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 16, 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          '${widget.branch.branchName} — Officer Productivity',
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFBFDBFE)),
+                          ),
+                          child: Text(
+                            widget.period,
+                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Productivity breakdown per active Credit Officer in this branch.',
+                      style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close, size: 20, color: Color(0xFF64748B)),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+          // Body Content
+          Flexible(
+            child: _isLoading
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(color: Color(0xFF0F766E)),
+                          SizedBox(height: 12),
+                          Text('Loading officer productivity metrics...', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                        ],
+                      ),
+                    ),
+                  )
+                : _errorMessage != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text('Error: $_errorMessage', style: const TextStyle(color: Color(0xFFDC2626))),
+                        ),
+                      )
+                    : (_data?.officers.isEmpty ?? true)
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(32),
+                              child: Text('No active Credit Officers found for this branch.', style: TextStyle(color: Color(0xFF64748B))),
+                            ),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(16),
+                            shrinkWrap: true,
+                            itemCount: _data!.officers.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 12),
+                            itemBuilder: (context, idx) {
+                              final o = _data!.officers[idx];
+                              return _buildOfficerCard(o);
+                            },
+                          ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOfficerCard(OfficerProductivityItemModel o) {
+    final isNetPositive = o.netLoanCount >= 0;
+    final netColor = isNetPositive ? const Color(0xFF059669) : const Color(0xFFD97706);
+    final netBg = isNetPositive ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB);
+    final netBorder = isNetPositive ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 3, offset: Offset(0, 1))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Officer Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundColor: const Color(0xFF0F766E).withValues(alpha: 0.1),
+                    child: Text(
+                      o.fullName.isNotEmpty ? o.fullName.substring(0, 1).toUpperCase() : 'O',
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F766E), fontSize: 13),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        o.fullName,
+                        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                      ),
+                      Text(
+                        '@${o.username}',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                    ),
+                    child: Text(
+                      '${o.activeClientsCount} Borrowers',
+                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDFA),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFF99F6E4)),
+                    ),
+                    child: Text(
+                      CurrencyFormatter.formatNaira(o.activePortfolio),
+                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF0F766E)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Dynamics: Capital Principal Disbursed vs Active Credit Disbursed vs Full Payments
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Principal Disbursed',
+                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF166534)),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        CurrencyFormatter.formatNaira(o.principalDisbursedAmount),
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF14532D)),
+                      ),
+                      Text(
+                        '${o.loansDisbursedCount} Loans Disbursed',
+                        style: const TextStyle(fontSize: 9, color: Color(0xFF15803D)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Full Payments (Closed)',
+                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        CurrencyFormatter.formatNaira(o.fullPaymentsActiveCredit),
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF1E3A8A)),
+                      ),
+                      Text(
+                        '${o.fullPaymentsCount} Closed Members',
+                        style: const TextStyle(fontSize: 9, color: Color(0xFF2563EB)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Net Progress Pill & Compliance
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: netBg,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: netBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(isNetPositive ? Icons.trending_up : Icons.trending_down, size: 12, color: netColor),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'Net: ${o.netLoanCount >= 0 ? "+" : ""}${o.netLoanCount} Loans (${o.netActiveCreditVolume >= 0 ? "+" : ""}${CurrencyFormatter.formatNaira(o.netActiveCreditVolume)} Active Credit)',
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: netColor),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                flex: 2,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '${o.compliancePct.toStringAsFixed(1)}% Comp',
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                      ),
+                      Text(
+                        o.parPct,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: o.parPct == '0.0%' ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

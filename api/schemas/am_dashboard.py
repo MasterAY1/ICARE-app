@@ -41,6 +41,38 @@ class BranchPerformanceItem(BaseModel):
     eod_status: str
     operational_status: str
     reversals_count: int = 0
+    loans_disbursed_count: int = 0
+    principal_disbursed_amount: float = 0.0
+    active_credit_disbursed_amount: float = 0.0
+    full_payments_count: int = 0
+    full_payments_active_credit: float = 0.0
+    net_loan_count: int = 0
+    net_active_credit_volume: float = 0.0
+
+
+class OfficerProductivityItem(BaseModel):
+    officer_id: str
+    username: str
+    full_name: str
+    active_clients_count: int = 0
+    active_portfolio: float = 0.0
+    loans_disbursed_count: int = 0
+    principal_disbursed_amount: float = 0.0
+    active_credit_disbursed_amount: float = 0.0
+    full_payments_count: int = 0
+    full_payments_active_credit: float = 0.0
+    net_loan_count: int = 0
+    net_active_credit_volume: float = 0.0
+    compliance_pct: float = 100.0
+    par_pct: str = "0.0%"
+
+
+class BranchOfficerProductivityResponse(BaseModel):
+    branch_id: str
+    branch_name: str
+    start_date: str
+    end_date: str
+    officers: List[OfficerProductivityItem]
 
 
 class PendingHighValueLoanItem(BaseModel):

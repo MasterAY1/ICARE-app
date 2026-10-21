@@ -38,7 +38,9 @@ from api.schemas.am_dashboard import (
     RejectTransferRequest,
     ApproveBranchReversalRequest,
     RejectBranchReversalRequest,
-    AmActionResponse
+    AmActionResponse,
+    OfficerProductivityItem,
+    BranchOfficerProductivityResponse
 )
 
 router = APIRouter(prefix="/api/v1/am", tags=["Area Manager Dashboard & Governance"])
@@ -56,13 +58,15 @@ def _check_am_permissions(current_user: CurrentUser):
 @router.get("/dashboard", response_model=AmDashboardResponse)
 def get_am_dashboard(
     business_date: Optional[str] = Query(None, description="ISO format operational date (YYYY-MM-DD)"),
+    start_date: Optional[str] = Query(None, description="Period start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Period end date (YYYY-MM-DD)"),
     current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin", "Director"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
     Returns the comprehensive Area Manager dashboard:
     1. Regional Executive Summary & KPIs.
-    2. Branch Comparative Performance Matrix.
+    2. Branch Comparative Performance Matrix (including capital deployment & active loan progress).
     3. Area Approvals Hub (High-value loans, transfers, EODs).
     """
     _check_am_permissions(current_user)
@@ -74,9 +78,20 @@ def get_am_dashboard(
         except Exception:
             target_d = date.today()
 
+    s_d = None
+    e_d = None
+    if start_date:
+        try: s_d = date.fromisoformat(start_date)
+        except Exception: pass
+    if end_date:
+        try: e_d = date.fromisoformat(end_date)
+        except Exception: pass
+
     try:
         reg_dict = AreaManagerService.get_regional_summary(uow, current_user.id, target_d)
-        perf_list = AreaManagerService.get_branch_performance_matrix(uow, current_user.id, target_d)
+        perf_list = AreaManagerService.get_branch_performance_matrix(
+            uow, current_user.id, target_date=target_d, start_date=s_d, end_date=e_d
+        )
         appr_dict = AreaManagerService.get_pending_area_approvals(uow, current_user.id, target_d)
 
         regional_summary = RegionalSummary(**reg_dict)
@@ -98,6 +113,42 @@ def get_am_dashboard(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to load Area Manager dashboard: {str(e)}"
+        )
+
+
+@router.get("/branch-officer-productivity/{branch_id}", response_model=BranchOfficerProductivityResponse)
+def get_branch_officer_productivity(
+    branch_id: str,
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin", "Director"])),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Retrieves officer productivity metrics for Credit Officers within an assigned branch.
+    """
+    _check_am_permissions(current_user)
+
+    s_d = None
+    e_d = None
+    if start_date:
+        try: s_d = date.fromisoformat(start_date)
+        except Exception: pass
+    if end_date:
+        try: e_d = date.fromisoformat(end_date)
+        except Exception: pass
+
+    try:
+        data = AreaManagerService.get_branch_officer_productivity(
+            uow, current_user.id, branch_id, start_date=s_d, end_date=e_d
+        )
+        return BranchOfficerProductivityResponse(**data)
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch branch officer productivity: {str(e)}"
         )
 
 

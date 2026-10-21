@@ -91,6 +91,13 @@ class BranchPerformanceItemModel {
   final String eodStatus;
   final String operationalStatus;
   final int reversalsCount;
+  final int loansDisbursedCount;
+  final double principalDisbursedAmount;
+  final double activeCreditDisbursedAmount;
+  final int fullPaymentsCount;
+  final double fullPaymentsActiveCredit;
+  final int netLoanCount;
+  final double netActiveCreditVolume;
 
   BranchPerformanceItemModel({
     required this.branchId,
@@ -109,6 +116,13 @@ class BranchPerformanceItemModel {
     required this.eodStatus,
     required this.operationalStatus,
     this.reversalsCount = 0,
+    this.loansDisbursedCount = 0,
+    this.principalDisbursedAmount = 0.0,
+    this.activeCreditDisbursedAmount = 0.0,
+    this.fullPaymentsCount = 0,
+    this.fullPaymentsActiveCredit = 0.0,
+    this.netLoanCount = 0,
+    this.netActiveCreditVolume = 0.0,
   });
 
   factory BranchPerformanceItemModel.fromJson(Map<String, dynamic> json) {
@@ -129,6 +143,112 @@ class BranchPerformanceItemModel {
       eodStatus: json['eod_status'] ?? 'PENDING',
       operationalStatus: json['operational_status'] ?? 'Normal',
       reversalsCount: (json['reversals_count'] as num?)?.toInt() ?? 0,
+      loansDisbursedCount: (json['loans_disbursed_count'] as num?)?.toInt() ?? 0,
+      principalDisbursedAmount: (json['principal_disbursed_amount'] as num?)?.toDouble() ?? 0.0,
+      activeCreditDisbursedAmount: (json['active_credit_disbursed_amount'] as num?)?.toDouble() ?? 0.0,
+      fullPaymentsCount: (json['full_payments_count'] as num?)?.toInt() ?? 0,
+      fullPaymentsActiveCredit: (json['full_payments_active_credit'] as num?)?.toDouble() ?? 0.0,
+      netLoanCount: (json['net_loan_count'] as num?)?.toInt() ?? 0,
+      netActiveCreditVolume: (json['net_active_credit_volume'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+}
+
+class OfficerProductivityItemModel {
+  final String officerId;
+  final String username;
+  final String fullName;
+  final int activeClientsCount;
+  final double activePortfolio;
+  final int loansDisbursedCount;
+  final double principalDisbursedAmount;
+  final double activeCreditDisbursedAmount;
+  final int fullPaymentsCount;
+  final double fullPaymentsActiveCredit;
+  final int netLoanCount;
+  final double netActiveCreditVolume;
+  final double compliancePct;
+  final String parPct;
+
+  OfficerProductivityItemModel({
+    required this.officerId,
+    required this.username,
+    required this.fullName,
+    required this.activeClientsCount,
+    required this.activePortfolio,
+    required this.loansDisbursedCount,
+    required this.principalDisbursedAmount,
+    required this.activeCreditDisbursedAmount,
+    required this.fullPaymentsCount,
+    required this.fullPaymentsActiveCredit,
+    required this.netLoanCount,
+    required this.netActiveCreditVolume,
+    required this.compliancePct,
+    required this.parPct,
+  });
+
+  factory OfficerProductivityItemModel.fromJson(Map<String, dynamic> json) {
+    return OfficerProductivityItemModel(
+      officerId: json['officer_id'] ?? '',
+      username: json['username'] ?? '',
+      fullName: json['full_name'] ?? json['username'] ?? 'Credit Officer',
+      activeClientsCount: (json['active_clients_count'] as num?)?.toInt() ?? 0,
+      activePortfolio: (json['active_portfolio'] as num?)?.toDouble() ?? 0.0,
+      loansDisbursedCount: (json['loans_disbursed_count'] as num?)?.toInt() ?? 0,
+      principalDisbursedAmount: (json['principal_disbursed_amount'] as num?)?.toDouble() ?? 0.0,
+      activeCreditDisbursedAmount: (json['active_credit_disbursed_amount'] as num?)?.toDouble() ?? 0.0,
+      fullPaymentsCount: (json['full_payments_count'] as num?)?.toInt() ?? 0,
+      fullPaymentsActiveCredit: (json['full_payments_active_credit'] as num?)?.toDouble() ?? 0.0,
+      netLoanCount: (json['net_loan_count'] as num?)?.toInt() ?? 0,
+      netActiveCreditVolume: (json['net_active_credit_volume'] as num?)?.toDouble() ?? 0.0,
+      compliancePct: (json['compliance_pct'] as num?)?.toDouble() ?? 100.0,
+      parPct: json['par_pct'] ?? '0.0%',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'officer_id': officerId,
+    'username': username,
+    'full_name': fullName,
+    'active_clients_count': activeClientsCount,
+    'active_portfolio': activePortfolio,
+    'loans_disbursed_count': loansDisbursedCount,
+    'principal_disbursed_amount': principalDisbursedAmount,
+    'active_credit_disbursed_amount': activeCreditDisbursedAmount,
+    'full_payments_count': fullPaymentsCount,
+    'full_payments_active_credit': fullPaymentsActiveCredit,
+    'net_loan_count': netLoanCount,
+    'net_active_credit_volume': netActiveCreditVolume,
+    'compliance_pct': compliancePct,
+    'par_pct': parPct,
+  };
+}
+
+class BranchOfficerProductivityResponseModel {
+  final String branchId;
+  final String branchName;
+  final String startDate;
+  final String endDate;
+  final List<OfficerProductivityItemModel> officers;
+
+  BranchOfficerProductivityResponseModel({
+    required this.branchId,
+    required this.branchName,
+    required this.startDate,
+    required this.endDate,
+    required this.officers,
+  });
+
+  factory BranchOfficerProductivityResponseModel.fromJson(Map<String, dynamic> json) {
+    return BranchOfficerProductivityResponseModel(
+      branchId: json['branch_id'] ?? '',
+      branchName: json['branch_name'] ?? '',
+      startDate: json['start_date'] ?? '',
+      endDate: json['end_date'] ?? '',
+      officers: (json['officers'] as List<dynamic>?)
+              ?.map((e) => OfficerProductivityItemModel.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
     );
   }
 }

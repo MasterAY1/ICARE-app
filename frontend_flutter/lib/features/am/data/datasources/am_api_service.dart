@@ -16,10 +16,20 @@ class AmApiService {
   AmApiService(this._apiClient);
 
   /// Fetch raw JSON map of AM dashboard data
-  Future<Map<String, dynamic>> getAmDashboardDataRaw({String? businessDate}) async {
+  Future<Map<String, dynamic>> getAmDashboardDataRaw({
+    String? businessDate,
+    String? startDate,
+    String? endDate,
+  }) async {
     final queryParams = <String, dynamic>{};
     if (businessDate != null && businessDate.isNotEmpty) {
       queryParams['business_date'] = businessDate;
+    }
+    if (startDate != null && startDate.isNotEmpty) {
+      queryParams['start_date'] = startDate;
+    }
+    if (endDate != null && endDate.isNotEmpty) {
+      queryParams['end_date'] = endDate;
     }
 
     final response = await _apiClient.get(
@@ -31,9 +41,39 @@ class AmApiService {
   }
 
   /// Fetch presentation-ready AM dashboard data
-  Future<AmDashboardDataModel> getAmDashboardData({String? businessDate}) async {
-    final raw = await getAmDashboardDataRaw(businessDate: businessDate);
+  Future<AmDashboardDataModel> getAmDashboardData({
+    String? businessDate,
+    String? startDate,
+    String? endDate,
+  }) async {
+    final raw = await getAmDashboardDataRaw(
+      businessDate: businessDate,
+      startDate: startDate,
+      endDate: endDate,
+    );
     return AmDashboardDataModel.fromJson(raw);
+  }
+
+  /// Fetch officer productivity metrics for an assigned branch
+  Future<BranchOfficerProductivityResponseModel> getBranchOfficerProductivity({
+    required String branchId,
+    String? startDate,
+    String? endDate,
+  }) async {
+    final queryParams = <String, dynamic>{};
+    if (startDate != null && startDate.isNotEmpty) {
+      queryParams['start_date'] = startDate;
+    }
+    if (endDate != null && endDate.isNotEmpty) {
+      queryParams['end_date'] = endDate;
+    }
+
+    final response = await _apiClient.get(
+      '/api/v1/am/branch-officer-productivity/$branchId',
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+
+    return BranchOfficerProductivityResponseModel.fromJson(response.data as Map<String, dynamic>);
   }
 
   /// Fetch Area Approvals Hub
