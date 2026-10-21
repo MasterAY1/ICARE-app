@@ -1,6 +1,6 @@
 ---
 name: dual-frontend-parity
-description: [SUPERSEDED] Formerly enforced dual-frontend parity between Streamlit and Flutter. Superseded in October 2026 by Flutter-First Primary Architecture. Streamlit is now deprecated and serves as a read-only historical reference.
+description: "[SUPERSEDED] Formerly enforced dual-frontend parity between Streamlit and Flutter. Superseded in October 2026 by Flutter-First Primary Architecture. Streamlit is now deprecated and serves as a read-only historical reference."
 ---
 
 # Dual-Frontend Parity & Zero-Merge Governance Skill [SUPERSEDED]
