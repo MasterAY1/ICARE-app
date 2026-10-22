@@ -832,54 +832,63 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
             // Tab Navigation
             Container(
               color: Colors.white,
-              child: TabBar(
-                controller: _tabController,
-                labelColor: IcareColors.primary,
-                unselectedLabelColor: const Color(0xFF64748B),
-                indicatorColor: IcareColors.primary,
-                labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                tabs: [
-                  Tab(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.groups_outlined, size: 16),
-                        const SizedBox(width: 6),
-                        Text('Solidarity Groups (${_groups.length})'),
-                      ],
-                    ),
-                  ),
-                  Tab(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.person_outline, size: 16),
-                        const SizedBox(width: 6),
-                        Text('Clients Roster (${_members.length})'),
-                      ],
-                    ),
-                  ),
-                  const Tab(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.upload_file_outlined, size: 16),
-                        SizedBox(width: 6),
-                        Text('Excel Ingestion'),
-                      ],
-                    ),
-                  ),
-                  const Tab(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.fact_check_outlined, size: 16),
-                        SizedBox(width: 6),
-                        Text('Review & Sign-Off'),
-                      ],
-                    ),
-                  ),
-                ],
+              child: LayoutBuilder(
+                builder: (context, tabConstraints) {
+                  final isTabScrollable = tabConstraints.maxWidth < 640;
+                  return TabBar(
+                    controller: _tabController,
+                    isScrollable: isTabScrollable,
+                    tabAlignment: isTabScrollable ? TabAlignment.start : TabAlignment.fill,
+                    labelColor: IcareColors.primary,
+                    unselectedLabelColor: const Color(0xFF64748B),
+                    indicatorColor: IcareColors.primary,
+                    indicatorWeight: 2.5,
+                    labelPadding: EdgeInsets.symmetric(horizontal: isTabScrollable ? 14 : 16),
+                    labelStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                    tabs: [
+                      Tab(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.groups_outlined, size: 16),
+                            const SizedBox(width: 6),
+                            Text(isTabScrollable ? 'Groups (${_groups.length})' : 'Solidarity Groups (${_groups.length})'),
+                          ],
+                        ),
+                      ),
+                      Tab(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.person_outline, size: 16),
+                            const SizedBox(width: 6),
+                            Text(isTabScrollable ? 'Clients (${_members.length})' : 'Clients Roster (${_members.length})'),
+                          ],
+                        ),
+                      ),
+                      Tab(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.upload_file_outlined, size: 16),
+                            const SizedBox(width: 6),
+                            Text(isTabScrollable ? 'Excel' : 'Excel Ingestion'),
+                          ],
+                        ),
+                      ),
+                      Tab(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.fact_check_outlined, size: 16),
+                            const SizedBox(width: 6),
+                            Text(isTabScrollable ? 'Review' : 'Review & Sign-Off'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
 
@@ -928,6 +937,145 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
             ),
           );
 
+          final statusPill = Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+            decoration: BoxDecoration(
+              color: isSubmitted ? const Color(0xFFEFF6FF) : const Color(0xFFFFFBEB),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: isSubmitted ? const Color(0xFFBFDBFE) : const Color(0xFFFDE68A)),
+            ),
+            child: Text(
+              isSubmitted ? 'SUBMITTED' : 'DRAFTING',
+              style: TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.bold,
+                color: isSubmitted ? const Color(0xFF1D4ED8) : const Color(0xFFB45309),
+              ),
+            ),
+          );
+
+          if (isNarrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Identity Row
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    branchPill,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF059669),
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                                child: const Text(
+                                  'CREDIT OFFICER',
+                                  style: TextStyle(
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    letterSpacing: 0.4,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  officerName,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF0F172A),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$_branchName Branch${_expiresAt != null ? " • Due: ${DateFormat('dd MMM').format(_expiresAt!.toLocal())}" : ""}',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    statusPill,
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                // Full-width balanced action buttons
+                if (!_isLocked)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            minimumSize: const Size(0, 36),
+                            side: const BorderSide(color: Color(0xFFCBD5E1)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                          ),
+                          onPressed: _isSaving ? null : _saveDraft,
+                          icon: _isSaving
+                              ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.save_outlined, size: 14),
+                          label: const Text('Save Draft', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: IcareColors.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            minimumSize: const Size(0, 36),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                          ),
+                          onPressed: _isSaving ? null : _submitRoster,
+                          icon: const Icon(Icons.send_outlined, size: 14),
+                          label: const Text('Submit to BM', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFECFDF5),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFA7F3D0)),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check_circle_outline, size: 14, color: Color(0xFF059669)),
+                        SizedBox(width: 6),
+                        Text('Roster Submitted & Locked', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF059669))),
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          }
+
+          // Desktop / Wide Header
           final officerTitle = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -957,22 +1105,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                     style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
                   ),
                   const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: isSubmitted ? const Color(0xFFEFF6FF) : const Color(0xFFFFFBEB),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: isSubmitted ? const Color(0xFFBFDBFE) : const Color(0xFFFDE68A)),
-                    ),
-                    child: Text(
-                      isSubmitted ? 'SUBMITTED TO BM' : 'DRAFTING',
-                      style: TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.bold,
-                        color: isSubmitted ? const Color(0xFF1D4ED8) : const Color(0xFFB45309),
-                      ),
-                    ),
-                  ),
+                  statusPill,
                 ],
               ),
               const SizedBox(height: 2),
@@ -983,10 +1116,8 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
             ],
           );
 
-          final actionButtons = Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          final actionButtons = Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               if (!_isLocked) ...[
                 OutlinedButton.icon(
@@ -1000,6 +1131,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                       : const Icon(Icons.save_outlined, size: 14),
                   label: const Text('Save Draft', style: TextStyle(fontSize: 12)),
                 ),
+                const SizedBox(width: 8),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: IcareColors.primary,
@@ -1031,23 +1163,6 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
               ],
             ],
           );
-
-          if (isNarrow) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    branchPill,
-                    const SizedBox(width: 8),
-                    Expanded(child: officerTitle),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                actionButtons,
-              ],
-            );
-          }
 
           return Row(
             children: [
@@ -1089,8 +1204,66 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     final activeCredit = targetMembers.fold<double>(0.0, (sum, m) => sum + (double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0));
     final currentBal = targetMembers.fold<double>(0.0, (sum, m) => sum + (double.tryParse((m['current_credit_balance'] ?? m['current_balance'])?.toString() ?? '0') ?? 0.0));
 
+    final items = [
+      _buildRibbonCard(
+        label: isGroupFiltered ? 'Total Group Savings' : 'Total Savings',
+        value: CurrencyFormatter.formatNaira(totSav),
+        icon: Icons.account_balance_wallet_outlined,
+        isPrimary: true,
+      ),
+      _buildRibbonCard(
+        label: isGroupFiltered ? 'Group Clients' : 'My Clients',
+        value: '${targetMembers.length}',
+        icon: Icons.people_outline,
+      ),
+      if (!isGroupFiltered)
+        _buildRibbonCard(
+          label: 'My Groups',
+          value: '${targetGroups.length}',
+          icon: Icons.groups_outlined,
+        )
+      else
+        _buildRibbonCard(
+          label: 'Filtered Group',
+          value: _selectedGroupFilter,
+          icon: Icons.filter_alt_outlined,
+        ),
+      _buildRibbonCard(
+        label: 'Client Savings',
+        value: CurrencyFormatter.formatNaira(indivSav),
+        icon: Icons.savings_outlined,
+      ),
+      _buildRibbonCard(
+        label: 'Group Savings',
+        value: CurrencyFormatter.formatNaira(grpSav),
+        icon: Icons.group_work_outlined,
+      ),
+      if (miscSav > 0)
+        _buildRibbonCard(
+          label: 'Misc Savings',
+          value: CurrencyFormatter.formatNaira(miscSav),
+          icon: Icons.shield_outlined,
+        ),
+      if (principal > 0)
+        _buildRibbonCard(
+          label: 'Principal',
+          value: CurrencyFormatter.formatNaira(principal),
+          icon: Icons.payments_outlined,
+        ),
+      _buildRibbonCard(
+        label: 'Active Credit',
+        value: CurrencyFormatter.formatNaira(activeCredit),
+        icon: Icons.credit_score_outlined,
+      ),
+      _buildRibbonCard(
+        label: 'Loan Balance',
+        value: CurrencyFormatter.formatNaira(currentBal),
+        icon: Icons.monetization_on_outlined,
+        isAlert: currentBal > 0,
+      ),
+    ];
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: const BoxDecoration(
         color: Color(0xFFF1F5F9),
         border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
@@ -1098,64 +1271,110 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isNarrow = constraints.maxWidth < 650;
-          final items = [
-            if (isGroupFiltered)
-              _buildRibbonKpi('Filtered Group', _selectedGroupFilter)
-            else
-              _buildRibbonKpi('My Groups', '${targetGroups.length}'),
-            _buildRibbonKpi(isGroupFiltered ? 'Group Clients' : 'My Clients', '${targetMembers.length}'),
-            if (isGroupFiltered) ...[
-              _buildRibbonKpi('Group Savings', CurrencyFormatter.formatNaira(grpSav)),
-              _buildRibbonKpi('Client Savings', CurrencyFormatter.formatNaira(indivSav)),
-            ] else ...[
-              _buildRibbonKpi('Client Savings', CurrencyFormatter.formatNaira(indivSav)),
-              _buildRibbonKpi('Group Savings', CurrencyFormatter.formatNaira(grpSav)),
-            ],
-            _buildRibbonKpi(isGroupFiltered ? 'Total Group Savings' : 'Total Savings', CurrencyFormatter.formatNaira(totSav), isPrimary: true),
-            if (principal > 0)
-              _buildRibbonKpi('Principal', CurrencyFormatter.formatNaira(principal)),
-            _buildRibbonKpi('Active Credit', CurrencyFormatter.formatNaira(activeCredit)),
-            _buildRibbonKpi('Loan Balance', CurrencyFormatter.formatNaira(currentBal)),
-          ];
 
           if (isNarrow) {
-            return Wrap(
-              spacing: 14,
-              runSpacing: 8,
-              children: items.map((w) => SizedBox(width: (constraints.maxWidth - 44) / 2 > 120 ? (constraints.maxWidth - 44) / 2 : 120, child: w)).toList(),
+            return Container(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: SizedBox(
+                height: 58,
+                child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (_, idx) => items[idx],
+                ),
+              ),
             );
           }
 
-          return Row(
-            children: items.map((w) => Expanded(child: w)).toList(),
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: items.map((w) => Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 3), child: w))).toList(),
+            ),
           );
         },
       ),
     );
   }
 
-  Widget _buildRibbonKpi(String label, String value, {bool isPrimary = false}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          softWrap: true,
-          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: isPrimary ? const Color(0xFF0F2744) : const Color(0xFF64748B)),
+  Widget _buildRibbonCard({
+    required String label,
+    required String value,
+    required IconData icon,
+    bool isPrimary = false,
+    bool isAlert = false,
+  }) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 120),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+      decoration: BoxDecoration(
+        color: isPrimary ? const Color(0xFFECFDF5) : Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isPrimary
+              ? const Color(0xFF10B981)
+              : (isAlert ? const Color(0xFFFCA5A5) : const Color(0xFFCBD5E1)),
+          width: isPrimary ? 1.4 : 1.0,
         ),
-        const SizedBox(height: 1),
-        Text(
-          value,
-          softWrap: true,
-          style: TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.bold,
-            color: isPrimary ? const Color(0xFF059669) : const Color(0xFF0F172A),
-            fontFeatures: const [FontFeature.tabularFigures()],
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 3,
+            offset: Offset(0, 1),
           ),
-        ),
-      ],
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 11,
+                color: isPrimary
+                    ? const Color(0xFF059669)
+                    : (isAlert ? const Color(0xFFDC2626) : const Color(0xFF64748B)),
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w600,
+                    color: isPrimary
+                        ? const Color(0xFF065F46)
+                        : (isAlert ? const Color(0xFF991B1B) : const Color(0xFF64748B)),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: isPrimary
+                  ? const Color(0xFF047857)
+                  : (isAlert ? const Color(0xFFDC2626) : const Color(0xFF0F172A)),
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
     );
   }
 
@@ -1205,66 +1424,142 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                 final clientCount = _members.where((m) => (m['group_reference'] ?? '').toString().toUpperCase() == gRef.toUpperCase()).length;
 
                 return Container(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: const Color(0xFFCBD5E1)),
-                        ),
-                        child: Text(
-                          gRef,
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
+                  child: LayoutBuilder(
+                    builder: (context, cardConstraints) {
+                      final isCardNarrow = cardConstraints.maxWidth < 520;
+
+                      if (isCardNarrow) {
+                        return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(gName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Meeting: $day • $clientCount registered clients ${leader != null ? "• Rep: $leader" : ""}',
-                              style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                                  ),
+                                  child: Text(
+                                    gRef,
+                                    style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    gName,
+                                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (!_isLocked) ...[
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF2563EB)),
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                    onPressed: () => _openGroupDialog(groupToEdit: g),
+                                    tooltip: 'Edit group',
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, size: 15, color: Color(0xFFDC2626)),
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                    onPressed: () => _confirmDeleteGroup(g),
+                                    tooltip: 'Delete group',
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Meeting: $day • $clientCount clients ${leader != null ? "• Rep: $leader" : ""}',
+                                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Pool: ${CurrencyFormatter.formatNaira(sav)}',
+                                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF059669)),
+                                ),
+                              ],
                             ),
                           ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                        );
+                      }
+
+                      return Row(
                         children: [
-                          const Text('Group Savings Pool', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
-                          Text(
-                            CurrencyFormatter.formatNaira(sav),
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF059669)),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                            ),
+                            child: Text(
+                              gRef,
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                            ),
                           ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(gName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Meeting: $day • $clientCount registered clients ${leader != null ? "• Rep: $leader" : ""}',
+                                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              const Text('Group Savings Pool', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                              Text(
+                                CurrencyFormatter.formatNaira(sav),
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF059669)),
+                              ),
+                            ],
+                          ),
+                          if (!_isLocked) ...[
+                            const SizedBox(width: 10),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF2563EB)),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _openGroupDialog(groupToEdit: g),
+                              tooltip: 'Edit group',
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _confirmDeleteGroup(g),
+                              tooltip: 'Delete group',
+                            ),
+                          ],
                         ],
-                      ),
-                      if (!_isLocked) ...[
-                        const SizedBox(width: 10),
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF2563EB)),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => _openGroupDialog(groupToEdit: g),
-                          tooltip: 'Edit group',
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => _confirmDeleteGroup(g),
-                          tooltip: 'Delete group',
-                        ),
-                      ],
-                    ],
+                      );
+                    },
                   ),
                 );
               },
@@ -1319,25 +1614,58 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                 child: SizedBox(
                   height: 38,
                   child: TextField(
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: 'Search client name or phone...',
-                      prefixIcon: Icon(Icons.search, size: 16),
-                      contentPadding: EdgeInsets.zero,
+                      hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                      prefixIcon: const Icon(Icons.search, size: 16, color: Color(0xFF64748B)),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 14),
+                              onPressed: () => setState(() => _searchQuery = ''),
+                            )
+                          : null,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
                     ),
                     onChanged: (val) => setState(() => _searchQuery = val),
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              DropdownButton<String>(
-                value: _selectedGroupFilter,
-                items: [
-                  const DropdownMenuItem(value: 'All', child: Text('All Groups')),
-                  ..._groups.map((g) => DropdownMenuItem(value: g['group_reference'] ?? '', child: Text(g['group_reference'] ?? ''))),
-                ],
-                onChanged: (val) {
-                  if (val != null) setState(() => _selectedGroupFilter = val);
-                },
+              const SizedBox(width: 8),
+              Container(
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _selectedGroupFilter,
+                    icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF64748B)),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                    items: [
+                      const DropdownMenuItem(value: 'All', child: Text('All Groups')),
+                      ..._groups.map((g) => DropdownMenuItem(
+                            value: g['group_reference'] ?? '',
+                            child: Text(g['group_reference'] ?? ''),
+                          )),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) setState(() => _selectedGroupFilter = val);
+                    },
+                  ),
+                ),
               ),
             ],
           ),
@@ -1358,7 +1686,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                 final phone = (m['phone_number'] ?? '').toString();
                 final sav = double.tryParse(m['savings_balance']?.toString() ?? '0') ?? 0.0;
                 final credit = double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0;
-                final bal = double.tryParse(m['current_credit_balance']?.toString() ?? '0') ?? 0.0;
+                final bal = double.tryParse((m['current_credit_balance'] ?? m['current_balance'])?.toString() ?? '0') ?? 0.0;
                 final lType = m['loan_type'];
 
                 return Container(
@@ -1368,52 +1696,138 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundColor: const Color(0xFFF1F5F9),
-                        child: Text(
-                          name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'C',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
+                  child: LayoutBuilder(
+                    builder: (context, cardConstraints) {
+                      final isCardNarrow = cardConstraints.maxWidth < 500;
+
+                      if (isCardNarrow) {
+                        return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(name, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Group $gRef ${phone.isNotEmpty ? "• $phone" : ""} ${lType != null ? "• $lType" : ""}',
-                              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                            Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 14,
+                                  backgroundColor: const Color(0xFFEFF6FF),
+                                  child: Text(
+                                    name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'C',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 1),
+                                      Text(
+                                        'Group $gRef${phone.isNotEmpty ? " • $phone" : ""}${lType != null ? " • $lType" : ""}',
+                                        style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (!_isLocked) ...[
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF2563EB)),
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                    onPressed: () => _openMemberDialog(memberToEdit: m),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, size: 15, color: Color(0xFFDC2626)),
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                    onPressed: () => _confirmDeleteMember(m),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFF1F5F9)),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Savings: ${CurrencyFormatter.formatNaira(sav)}',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF059669)),
+                                  ),
+                                  if (credit > 0 || bal > 0)
+                                    Text(
+                                      'Balance: ${CurrencyFormatter.formatNaira(bal)}',
+                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFDC2626)),
+                                    ),
+                                ],
+                              ),
                             ),
                           ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                        );
+                      }
+
+                      return Row(
                         children: [
-                          Text('Savings: ${CurrencyFormatter.formatNaira(sav)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF059669))),
-                          if (credit > 0 || bal > 0)
-                            Text('Balance: ${CurrencyFormatter.formatNaira(bal)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: const Color(0xFFF1F5F9),
+                            child: Text(
+                              name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'C',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(name, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Group $gRef ${phone.isNotEmpty ? "• $phone" : ""} ${lType != null ? "• $lType" : ""}',
+                                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text('Savings: ${CurrencyFormatter.formatNaira(sav)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF059669))),
+                              if (credit > 0 || bal > 0)
+                                Text('Balance: ${CurrencyFormatter.formatNaira(bal)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+                            ],
+                          ),
+                          if (!_isLocked) ...[
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF2563EB)),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _openMemberDialog(memberToEdit: m),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 15, color: Color(0xFFDC2626)),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _confirmDeleteMember(m),
+                            ),
+                          ],
                         ],
-                      ),
-                      if (!_isLocked) ...[
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF2563EB)),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => _openMemberDialog(memberToEdit: m),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, size: 15, color: Color(0xFFDC2626)),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => _confirmDeleteMember(m),
-                        ),
-                      ],
-                    ],
+                      );
+                    },
                   ),
                 );
               },
