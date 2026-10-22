@@ -1,11 +1,15 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../onboarding/presentation/branch_onboarding_portal_screen.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 
-/// Screen 0: 1:1 Direct Translation of Streamlit auth/login.py and app.py L598-950
+/// Screen 0: Modernized ICARE Core Banking Authentication Screen
+/// Adheres strictly to the 6 Design Pillars, Zero-Tamper Presentation Sandbox,
+/// and the Row-Text Wrapping & Anti-Clipping Invariant.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -13,16 +17,153 @@ class LoginScreen extends ConsumerStatefulWidget {
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen>
+    with TickerProviderStateMixin {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final FocusNode _usernameFocus = FocusNode();
+  final FocusNode _passwordFocus = FocusNode();
+
   bool _obscurePassword = true;
+  String? _localValidationError;
+
+  // Animation Controllers
+  late final AnimationController _entranceController;
+  late final AnimationController _shakeController;
+  late final AnimationController _pressController;
+
+  // Staggered Entrance Animations
+  late final Animation<double> _brandFade;
+  late final Animation<Offset> _brandSlide;
+  late final Animation<double> _storyFade;
+  late final Animation<Offset> _storySlide;
+  late final Animation<double> _cardFade;
+  late final Animation<Offset> _cardSlide;
+  late final Animation<double> _inputsFade;
+  late final Animation<Offset> _inputsSlide;
+  late final Animation<double> _buttonFade;
+  late final Animation<Offset> _buttonSlide;
+
+  // Interactive Kinetic Animations
+  late final Animation<double> _shakeAnimation;
+  late final Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // 1. Staggered Entrance Choreography (900ms)
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+
+    _brandFade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _entranceController,
+        curve: const Interval(0.0, 0.45, curve: Curves.easeOutCubic),
+      ),
+    );
+    _brandSlide = Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero).animate(
+      CurvedAnimation(
+        parent: _entranceController,
+        curve: const Interval(0.0, 0.45, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    _storyFade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _entranceController,
+        curve: const Interval(0.15, 0.60, curve: Curves.easeOutCubic),
+      ),
+    );
+    _storySlide = Tween<Offset>(begin: const Offset(0, 0.10), end: Offset.zero).animate(
+      CurvedAnimation(
+        parent: _entranceController,
+        curve: const Interval(0.15, 0.60, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    _cardFade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _entranceController,
+        curve: const Interval(0.25, 0.75, curve: Curves.easeOutCubic),
+      ),
+    );
+    _cardSlide = Tween<Offset>(begin: const Offset(0, 0.12), end: Offset.zero).animate(
+      CurvedAnimation(
+        parent: _entranceController,
+        curve: const Interval(0.25, 0.75, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    _inputsFade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _entranceController,
+        curve: const Interval(0.40, 0.85, curve: Curves.easeOutCubic),
+      ),
+    );
+    _inputsSlide = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero).animate(
+      CurvedAnimation(
+        parent: _entranceController,
+        curve: const Interval(0.40, 0.85, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    _buttonFade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _entranceController,
+        curve: const Interval(0.55, 1.0, curve: Curves.easeOutCubic),
+      ),
+    );
+    _buttonSlide = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero).animate(
+      CurvedAnimation(
+        parent: _entranceController,
+        curve: const Interval(0.55, 1.0, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    // 2. Button Press Scale Animation (80ms)
+    _pressController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 80),
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.98).animate(
+      CurvedAnimation(parent: _pressController, curve: Curves.easeInOut),
+    );
+
+    // 3. Horizontal Error Shake Sequence (350ms)
+    _shakeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
+    _shakeAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: -8.0), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: -8.0, end: 8.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 8.0, end: -6.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: -6.0, end: 4.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 4.0, end: 0.0), weight: 1),
+    ]).animate(CurvedAnimation(parent: _shakeController, curve: Curves.easeInOut));
+
+    _entranceController.forward();
+  }
 
   @override
   void dispose() {
+    _entranceController.dispose();
+    _shakeController.dispose();
+    _pressController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _usernameFocus.dispose();
+    _passwordFocus.dispose();
     super.dispose();
+  }
+
+  void _triggerErrorShake(String message) {
+    setState(() => _localValidationError = message);
+    HapticFeedback.vibrate();
+    _shakeController.forward(from: 0.0);
   }
 
   void _handleLogin() async {
@@ -30,14 +171,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final password = _passwordController.text.trim();
 
     if (username.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter both username and password'),
-          backgroundColor: Color(0xFFDC2626),
-        ),
-      );
+      _triggerErrorShake('Please enter both your username and password.');
       return;
     }
+
+    setState(() => _localValidationError = null);
 
     await ref.read(authControllerProvider.notifier).login(
           username: username,
@@ -53,6 +191,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  void _fillDevCredentials(String username) {
+    HapticFeedback.selectionClick();
+    _usernameController.text = username;
+    _passwordController.text = 'admin123';
+    setState(() => _localValidationError = null);
+    _passwordFocus.requestFocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<AuthState>(authControllerProvider, (previous, next) {
@@ -60,97 +206,138 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const CoAppScaffold()),
         );
+      } else if (next is AuthStateError) {
+        _triggerErrorShake(next.message);
       }
     });
 
     final authState = ref.watch(authControllerProvider);
     final isLoading = authState is AuthStateLoading;
-    final isWide = MediaQuery.of(context).size.width > 900;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth >= 980;
 
     return Scaffold(
       body: Stack(
         children: [
-          // 1. Gradient Background (app.py L601)
+          // 1. Ambient Institutional Deep Forest Emerald Mesh
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Color(0xFF0A1628),
-                  Color(0xFF0F2744),
-                  Color(0xFF163B5C),
-                  Color(0xFF1B4F72),
-                  Color(0xFF0F2744),
+                  Color(0xFF022C22), // Deep Forest Emerald
+                  Color(0xFF064E3B), // Core Primary Emerald
+                  Color(0xFF0F766E), // Teal Emerald
+                  Color(0xFF064E3B),
+                  Color(0xFF022C22),
                 ],
               ),
             ),
           ),
 
-          // 2. Glowing Radial Orbs (app.py L605-624)
+          // 2. Glowing Radial Mesh Orbs
           Positioned(
-            top: -100,
-            left: -100,
+            top: -120,
+            left: -120,
             child: Container(
-              width: 500,
-              height: 500,
+              width: 520,
+              height: 520,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF8CC63F).withOpacity(0.12),
+                gradient: RadialGradient(
+                  colors: [
+                    const Color(0xFF10B981).withValues(alpha: 0.16),
+                    Colors.transparent,
+                  ],
+                ),
               ),
             ),
           ),
           Positioned(
-            bottom: -100,
-            right: -100,
+            bottom: -140,
+            right: -140,
             child: Container(
-              width: 500,
-              height: 500,
+              width: 540,
+              height: 540,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF2E86C1).withOpacity(0.15),
+                gradient: RadialGradient(
+                  colors: [
+                    const Color(0xFF0F766E).withValues(alpha: 0.20),
+                    Colors.transparent,
+                  ],
+                ),
               ),
             ),
           ),
 
-          // 3. Floating Particles (app.py L637-662)
+          // 3. Micro Ambient Star Dust Particles
           Positioned.fill(
             child: IgnorePointer(
               child: Stack(
                 children: [
-                  _buildParticle(left: 0.10, top: 0.20, size: 3, color: const Color(0xFF8CC63F).withOpacity(0.30)),
-                  _buildParticle(left: 0.25, top: 0.70, size: 2, color: const Color(0xFF8CC63F).withOpacity(0.25)),
-                  _buildParticle(left: 0.45, top: 0.35, size: 3, color: const Color(0xFF2E86C1).withOpacity(0.25)),
-                  _buildParticle(left: 0.65, top: 0.80, size: 4, color: const Color(0xFF8CC63F).withOpacity(0.20)),
-                  _buildParticle(left: 0.80, top: 0.15, size: 3, color: const Color(0xFF2E86C1).withOpacity(0.20)),
-                  _buildParticle(left: 0.55, top: 0.60, size: 2, color: const Color(0xFF8CC63F).withOpacity(0.25)),
+                  _buildParticle(left: 0.12, top: 0.18, size: 3.0, color: const Color(0xFF10B981).withValues(alpha: 0.35)),
+                  _buildParticle(left: 0.28, top: 0.72, size: 2.5, color: const Color(0xFF34D399).withValues(alpha: 0.30)),
+                  _buildParticle(left: 0.48, top: 0.32, size: 3.5, color: const Color(0xFF0F766E).withValues(alpha: 0.30)),
+                  _buildParticle(left: 0.68, top: 0.82, size: 2.0, color: const Color(0xFF10B981).withValues(alpha: 0.25)),
+                  _buildParticle(left: 0.85, top: 0.14, size: 3.0, color: const Color(0xFF34D399).withValues(alpha: 0.25)),
+                  _buildParticle(left: 0.58, top: 0.62, size: 2.5, color: const Color(0xFF0F766E).withValues(alpha: 0.30)),
                 ],
               ),
             ),
           ),
 
-          // 4. Split Layout (auth/login.py L31-101)
-          Center(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(horizontal: isWide ? 24 : 16, vertical: isWide ? 32 : 20),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1100),
-                child: isWide
-                    ? Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Expanded(flex: 12, child: _buildLeftInfoPanel()),
-                          const SizedBox(width: 48),
-                          Expanded(flex: 9, child: _buildRightLoginForm(isLoading, authState)),
-                        ],
-                      )
-                    : Column(
-                        children: [
-                          _buildRightLoginForm(isLoading, authState),
-                          const SizedBox(height: 32),
-                          _buildLeftInfoPanel(),
-                        ],
-                      ),
+          // 4. Main Responsive Content Canvas
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isDesktop ? 32 : 20,
+                  vertical: isDesktop ? 36 : 24,
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1120),
+                  child: isDesktop
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Left Story & Values Presentation
+                            Expanded(
+                              flex: 11,
+                              child: SlideTransition(
+                                position: _storySlide,
+                                child: FadeTransition(
+                                  opacity: _storyFade,
+                                  child: _buildStoryPanel(),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 56),
+                            // Right Frosted Glass Login Card
+                            Expanded(
+                              flex: 9,
+                              child: _buildAnimatedLoginCard(isLoading, authState),
+                            ),
+                          ],
+                        )
+                      : Column(
+                          children: [
+                            // Centered Frosted Glass Login Card
+                            _buildAnimatedLoginCard(isLoading, authState),
+                            const SizedBox(height: 36),
+                            // Compact Institutional Info Below
+                            SlideTransition(
+                              position: _storySlide,
+                              child: FadeTransition(
+                                opacity: _storyFade,
+                                child: _buildMobileStorySection(),
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
               ),
             ),
           ),
@@ -173,96 +360,638 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  /// Left Info Panel (auth/login.py L34-66)
-  Widget _buildLeftInfoPanel() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Pill Badge (L36)
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-          decoration: BoxDecoration(
-            color: const Color(0xFF8CC63F).withOpacity(0.12),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFF8CC63F).withOpacity(0.20)),
-          ),
-          child: const Text(
-            'Est. 2006 — South-West Nigeria',
-            style: TextStyle(
-              color: Color(0xFF8CC63F),
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.0,
+  /// Right Frosted Glass Card with Entrance & Kinetic Shake Choreography
+  Widget _buildAnimatedLoginCard(bool isLoading, AuthState authState) {
+    return SlideTransition(
+      position: _cardSlide,
+      child: FadeTransition(
+        opacity: _cardFade,
+        child: AnimatedBuilder(
+          animation: _shakeAnimation,
+          builder: (context, child) {
+            return Transform.translate(
+              offset: Offset(_shakeAnimation.value, 0),
+              child: child,
+            );
+          },
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 440),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.14),
+                width: 1.0,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  blurRadius: 36,
+                  offset: const Offset(0, 12),
+                ),
+                BoxShadow(
+                  color: const Color(0xFF022C22).withValues(alpha: 0.40),
+                  blurRadius: 20,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Brand Lockup with Entrance Animation
+                      SlideTransition(
+                        position: _brandSlide,
+                        child: FadeTransition(
+                          opacity: _brandFade,
+                          child: Column(
+                            children: [
+                              // Institution Crest / Logo
+                              Container(
+                                width: 68,
+                                height: 68,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: const Color(0xFF022C22),
+                                  border: Border.all(
+                                    color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                                    width: 2.5,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF10B981).withValues(alpha: 0.25),
+                                      blurRadius: 24,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipOval(
+                                  child: Image.asset(
+                                    'assets/icare_logo.png',
+                                    width: 68,
+                                    height: 68,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (context, error, stackTrace) => const Center(
+                                      child: Text(
+                                        'IC',
+                                        style: TextStyle(
+                                          color: Color(0xFF34D399),
+                                          fontSize: 26,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: -1.0,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              // Core Platform Name
+                              const Text(
+                                'ICARE',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  letterSpacing: 4.5,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              const Text(
+                                'Core Banking Platform',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF94A3B8),
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Decorative Emerald Hairline Divider
+                      Center(
+                        child: Container(
+                          width: 48,
+                          height: 2.5,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF10B981), Color(0xFF0F766E)],
+                            ),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Staggered Form Inputs
+                      SlideTransition(
+                        position: _inputsSlide,
+                        child: FadeTransition(
+                          opacity: _inputsFade,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // Quick Dev Profiles Section
+                              _buildDevCredentialChips(),
+                              const SizedBox(height: 18),
+
+                              // Username Input
+                              _buildInputField(
+                                label: 'Username / Operator ID',
+                                controller: _usernameController,
+                                focusNode: _usernameFocus,
+                                hintText: 'e.g. OGI_CO1, BM_Ogijo, AM_Ogun',
+                                prefixIcon: Icons.person_outline_rounded,
+                                onSubmitted: (_) => _passwordFocus.requestFocus(),
+                              ),
+                              const SizedBox(height: 14),
+
+                              // Password Input
+                              _buildInputField(
+                                label: 'Access Password',
+                                controller: _passwordController,
+                                focusNode: _passwordFocus,
+                                hintText: 'Enter your access credentials',
+                                prefixIcon: Icons.lock_outline_rounded,
+                                isPassword: true,
+                                obscureText: _obscurePassword,
+                                onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
+                                onSubmitted: (_) => _handleLogin(),
+                              ),
+                              const SizedBox(height: 16),
+
+                              // Error Banner (Anti-Clipping Invariant Enforced)
+                              if (_localValidationError != null || authState is AuthStateError) ...[
+                                _buildErrorNoticeBanner(
+                                  _localValidationError ?? (authState as AuthStateError).message,
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Submit Button & Onboarding Section
+                      SlideTransition(
+                        position: _buttonSlide,
+                        child: FadeTransition(
+                          opacity: _buttonFade,
+                          child: Column(
+                            children: [
+                              // Kinetic Morphing Submit Button
+                              _buildMorphingSubmitButton(isLoading),
+                              const SizedBox(height: 14),
+
+                              // Branch Onboarding Portal Link (Zero Clipping Enforced)
+                              GestureDetector(
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => const BranchOnboardingPortalScreen(token: ''),
+                                    ),
+                                  );
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.domain_add_outlined, size: 14, color: Color(0xFF94A3B8)),
+                                      SizedBox(width: 6),
+                                      Flexible(
+                                        child: Text(
+                                          'Have an Onboarding Token? Open Branch Portal',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                            color: Color(0xFF94A3B8),
+                                            decoration: TextDecoration.underline,
+                                            decorationColor: Color(0xFF64748B),
+                                          ),
+                                          textAlign: TextAlign.center,
+                                          softWrap: true,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+
+                              // Security & Audit Footer Bar (Anti-Clipping Enforced)
+                              Container(
+                                padding: const EdgeInsets.only(top: 14),
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    top: BorderSide(
+                                      color: Colors.white.withValues(alpha: 0.08),
+                                      width: 1.0,
+                                    ),
+                                  ),
+                                ),
+                                child: const Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        'Core Banking v2.4.0',
+                                        style: TextStyle(
+                                          color: Color(0xFF64748B),
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        softWrap: true,
+                                      ),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.shield_outlined, size: 11, color: Color(0xFF10B981)),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          '256-Bit SSL Encrypted',
+                                          style: TextStyle(
+                                            color: Color(0xFF64748B),
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),
-        const SizedBox(height: 20),
+      ),
+    );
+  }
 
-        // Headline (L37)
+  /// Modern Input Field with Sunlight Contrast
+  Widget _buildInputField({
+    required String label,
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required String hintText,
+    required IconData prefixIcon,
+    bool isPassword = false,
+    bool obscureText = false,
+    VoidCallback? onToggleVisibility,
+    ValueChanged<String>? onSubmitted,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFFE2E8F0),
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.1,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          focusNode: focusNode,
+          obscureText: isPassword && obscureText,
+          onSubmitted: onSubmitted,
+          style: const TextStyle(
+            color: Color(0xFF0F172A),
+            fontSize: 13.5,
+            fontWeight: FontWeight.w600,
+          ),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Colors.white,
+            hintText: hintText,
+            hintStyle: const TextStyle(
+              color: Color(0xFF94A3B8),
+              fontSize: 13.0,
+              fontWeight: FontWeight.w400,
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            prefixIcon: Icon(prefixIcon, size: 18, color: const Color(0xFF0F766E)),
+            suffixIcon: isPassword
+                ? IconButton(
+                    icon: Icon(
+                      obscureText ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                      color: const Color(0xFF64748B),
+                      size: 18,
+                    ),
+                    onPressed: onToggleVisibility,
+                  )
+                : null,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFF0F766E), width: 2.0),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Quick Dev Credential Chips for Rapid Testing
+  Widget _buildDevCredentialChips() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'QUICK DEV PROFILES',
+              style: TextStyle(
+                color: Color(0xFF94A3B8),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+              ),
+            ),
+            Text(
+              'Click to autofill',
+              style: TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 10,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            _buildDevChip(label: 'Admin', username: 'admin'),
+            _buildDevChip(label: 'BM (Ogijo)', username: 'BM_Ogijo'),
+            _buildDevChip(label: 'CO (OGI_CO1)', username: 'OGI_CO1'),
+            _buildDevChip(label: 'AM (Ogun)', username: 'AM_Ogun'),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDevChip({required String label, required String username}) {
+    return InkWell(
+      onTap: () => _fillDevCredentials(username),
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.12),
+            width: 0.8,
+          ),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF34D399),
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Error Notice Banner strictly adhering to the Row-Text Wrapping Invariant
+  Widget _buildErrorNoticeBanner(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFECACA), width: 1.0),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.error_outline_rounded, color: Color(0xFFB91C1C), size: 16),
+          const SizedBox(width: 8),
+          // MANDATORY ROW-TEXT WRAPPING INVARIANT:
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFF991B1B),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                height: 1.35,
+              ),
+              softWrap: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Morphing Interactive Submit Button
+  Widget _buildMorphingSubmitButton(bool isLoading) {
+    return AnimatedBuilder(
+      animation: _scaleAnimation,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _scaleAnimation.value,
+          child: child,
+        );
+      },
+      child: MouseRegion(
+        cursor: isLoading ? SystemMouseCursors.basic : SystemMouseCursors.click,
+        child: GestureDetector(
+          onTapDown: isLoading ? null : (_) => _pressController.forward(),
+          onTapUp: isLoading
+              ? null
+              : (_) {
+                  _pressController.reverse();
+                  HapticFeedback.mediumImpact();
+                  _handleLogin();
+                },
+          onTapCancel: () => _pressController.reverse(),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOutCubic,
+            height: 48,
+            width: isLoading ? 48 : double.infinity,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF059669), Color(0xFF0F766E)],
+              ),
+              borderRadius: BorderRadius.circular(isLoading ? 24 : 10),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF059669).withValues(alpha: 0.35),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            alignment: Alignment.center,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Row(
+                      key: ValueKey('signin_idle'),
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Sign In to Core Banking',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Icon(Icons.arrow_forward_rounded, size: 16, color: Colors.white),
+                      ],
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Left Story & Institutional Values Presentation (Desktop Web)
+  Widget _buildStoryPanel() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Foundation Pill Tag
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFF10B981).withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: const Color(0xFF10B981).withValues(alpha: 0.30),
+              width: 1.0,
+            ),
+          ),
+          child: const Text(
+            'EST. 2006 • SOUTH-WEST NIGERIA',
+            style: TextStyle(
+              color: Color(0xFF34D399),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+        const SizedBox(height: 22),
+
+        // Headline
         RichText(
           text: const TextSpan(
             style: TextStyle(
-              fontSize: 32,
+              fontSize: 34,
               fontWeight: FontWeight.w800,
               color: Colors.white,
-              letterSpacing: -0.5,
-              height: 1.25,
+              letterSpacing: -0.8,
+              height: 1.2,
             ),
             children: [
               TextSpan(text: 'Empowering Communities,\n'),
               TextSpan(
                 text: 'Growing Together',
-                style: TextStyle(
-                  color: Color(0xFF8CC63F),
-                ),
+                style: TextStyle(color: Color(0xFF34D399)),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
 
-        // Slogan (L38)
+        // Slogan
         const Text(
           '"Building a better community through inspiration, motivation and empowerment"',
           style: TextStyle(
-            color: Color(0xFF8CC63F),
+            color: Color(0xFF34D399),
             fontSize: 13.5,
             fontWeight: FontWeight.w600,
             fontStyle: FontStyle.italic,
-            letterSpacing: 0.3,
-          ),
-        ),
-        const SizedBox(height: 18),
-
-        // Description Paragraph (L39-45)
-        const Text(
-          'ICARE (Initiative for Community Advancement, Relief and Empowerment), founded by Mrs. Alayo L.S., is a Non-Governmental Organization dedicated to the intellectual and socio-economic growth of its members. Operating across South-Western Nigeria, ICARE runs micro-credit programmes for traders and artisans, asset acquisition schemes, agric-enterprise ventures, and skill acquisition programmes for the youths.',
-          style: TextStyle(
-            color: Color(0x8CFFFFFF),
-            fontSize: 12.5,
-            height: 1.8,
+            letterSpacing: 0.2,
           ),
         ),
         const SizedBox(height: 20),
 
-        // Divider (L46)
+        // Institutional Overview
+        const Text(
+          'ICARE (Initiative for Community Advancement, Relief and Empowerment) is dedicated to the intellectual and socio-economic advancement of its members. Operating across South-Western Nigeria, ICARE finances micro-credit programmes for traders and artisans, asset acquisition schemes, and community empowerment initiatives.',
+          style: TextStyle(
+            color: Color(0xFFCBD5E1),
+            fontSize: 13.0,
+            height: 1.7,
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // Gradient Divider
         Container(
-          width: 40,
+          width: 48,
           height: 2,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [Color(0xFF8CC63F), Colors.transparent],
+              colors: [Color(0xFF10B981), Colors.transparent],
             ),
             borderRadius: BorderRadius.circular(2),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
 
-        // Our Vision (L47-51)
+        // Vision Statement
         const Text(
           'OUR VISION',
           style: TextStyle(
-            color: Color(0x59FFFFFF),
+            color: Color(0xFF64748B),
             fontSize: 10,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
@@ -272,28 +1001,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         const Text(
           'To be among the foremost catalysts in initiating and implementing sustainable programmes focused on empowering people for growth and self-reliance.',
           style: TextStyle(
-            color: Color(0xA6FFFFFF),
-            fontSize: 12,
-            height: 1.7,
+            color: Color(0xFFE2E8F0),
+            fontSize: 12.5,
+            height: 1.6,
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
 
-        // Core Values (L52-60)
+        // Core Values
         const Text(
           'CORE VALUES',
           style: TextStyle(
-            color: Color(0x59FFFFFF),
+            color: Color(0xFF64748B),
             fontSize: 10,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
           ),
         ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: const [
+        const SizedBox(height: 8),
+        const Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
             _ValuePill('Integrity'),
             _ValuePill('Commitment'),
             _ValuePill('Competence'),
@@ -302,20 +1031,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ),
         const SizedBox(height: 24),
 
-        // Address (L61-64)
+        // Headquarters Address (Anti-Clipping Enforced)
         Container(
-          padding: const EdgeInsets.only(top: 16),
-          decoration: const BoxDecoration(
-            border: Border(top: BorderSide(color: Color(0x0FFFFFFF))),
+          padding: const EdgeInsets.only(top: 14),
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
           ),
-          child: Row(
-            children: const [
-              Icon(Icons.location_on, size: 12, color: Color(0x59FFFFFF)),
-              SizedBox(width: 4),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.location_on_outlined, size: 14, color: Color(0xFF64748B)),
+              SizedBox(width: 6),
+              // Anti-Clipping Invariant:
               Expanded(
                 child: Text(
                   'H.Q: 7 Ibifiele Street, Aiyegbami, Sagamu, Ogun State, Nigeria',
-                  style: TextStyle(color: Color(0x59FFFFFF), fontSize: 11, height: 1.6),
+                  style: TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 11.5,
+                    height: 1.5,
+                  ),
+                  softWrap: true,
                 ),
               ),
             ],
@@ -325,309 +1061,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  /// Right Form Card (auth/login.py L68-101)
-  Widget _buildRightLoginForm(bool isLoading, AuthState authState) {
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 420),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.10)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.30),
-            blurRadius: 32,
-            offset: const Offset(0, 8),
+  /// Compact Story Section for Mobile / Small Screens
+  Widget _buildMobileStorySection() {
+    return const Column(
+      children: [
+        Text(
+          'Initiative for Community Advancement, Relief and Empowerment',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Color(0xFF94A3B8),
+            fontSize: 11.5,
+            fontWeight: FontWeight.w500,
           ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 40),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Logo (L71-73)
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFF0F2744),
-              border: Border.all(color: Colors.white.withOpacity(0.15), width: 3),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF8CC63F).withOpacity(0.30),
-                  blurRadius: 20,
-                ),
-              ],
-            ),
-            child: ClipOval(
-              child: Image.asset(
-                'assets/icare_logo.png',
-                width: 72,
-                height: 72,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => const Center(
-                  child: Text(
-                    'IC',
-                    style: TextStyle(
-                      color: Color(0xFF8CC63F),
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // Brand Name (L74)
-          const Text(
-            'ICARE',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
-              letterSpacing: 6.0,
-            ),
-          ),
-          const SizedBox(height: 4),
-
-          // Org Name (L75)
-          const Text(
-            'Initiative for Community Advancement,\nRelief and Empowerment',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 10.5,
-              color: Color(0x73FFFFFF),
-              height: 1.6,
-              letterSpacing: 0.3,
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Accent Line (L76)
-          Container(
-            width: 44,
-            height: 3,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF8CC63F), Color(0xFF2E86C1)],
-              ),
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Title (L77-78)
-          const Text(
-            'Welcome Back',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 2),
-          const Text(
-            'ICARE — Growing Together',
-            style: TextStyle(
-              fontSize: 11.5,
-              color: Color(0x66FFFFFF),
-            ),
-          ),
-          const SizedBox(height: 22),
-
-          // Username Field (L81)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: const Text(
-              'Username',
-              style: TextStyle(
-                color: Color(0xD9FFFFFF),
-                fontSize: 12.5,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _usernameController,
-            style: const TextStyle(color: Color(0xFF1A1D23), fontWeight: FontWeight.w500, fontSize: 14),
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.white,
-              hintText: 'e.g. OGI_CO1, BM_Ogijo',
-              hintStyle: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFF2E86C1), width: 2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // Password Field (L82)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: const Text(
-              'Password',
-              style: TextStyle(
-                color: Color(0xD9FFFFFF),
-                fontSize: 12.5,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _passwordController,
-            obscureText: _obscurePassword,
-            style: const TextStyle(color: Color(0xFF1A1D23), fontWeight: FontWeight.w500, fontSize: 14),
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.white,
-              hintText: 'Enter your password',
-              hintStyle: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                  color: const Color(0xFF6B7280),
-                  size: 18,
-                ),
-                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFF2E86C1), width: 2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Error Notification (L91)
-          if (authState is AuthStateError) ...[
-            Container(
-              padding: const EdgeInsets.all(10),
-              margin: const EdgeInsets.only(bottom: 14),
-              decoration: BoxDecoration(
-                color: Colors.red.shade900.withOpacity(0.5),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.error_outline, color: Colors.white, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      authState.message,
-                      style: const TextStyle(color: Colors.white, fontSize: 11.5),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+        ),
+        SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          alignment: WrapAlignment.center,
+          children: [
+            _ValuePill('Integrity'),
+            _ValuePill('Commitment'),
+            _ValuePill('Competence'),
+            _ValuePill('Teamwork'),
           ],
-
-          // SIGN IN Button (L84)
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF8CC63F),
-                foregroundColor: Colors.white,
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              onPressed: isLoading ? null : _handleLogin,
-              child: isLoading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                    )
-                  : const Text(
-                      'SIGN IN',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          TextButton.icon(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const BranchOnboardingPortalScreen(token: ''),
-                ),
-              );
-            },
-            icon: const Icon(Icons.domain_add_outlined, size: 14, color: Color(0xD9FFFFFF)),
-            label: const Text(
-              'Have an Onboarding Link or Token? Open Portal',
-              style: TextStyle(
-                fontSize: 11.5,
-                color: Color(0xD9FFFFFF),
-                decoration: TextDecoration.underline,
-                decorationColor: Color(0x66FFFFFF),
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // Footer Bar (L94-100)
-          Container(
-            padding: const EdgeInsets.only(top: 14),
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0x14FFFFFF))),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: const [
-                Text(
-                  'Core Banking System v2.4.0',
-                  style: TextStyle(color: Color(0x4DFFFFFF), fontSize: 10, letterSpacing: 0.5),
-                ),
-                Row(
-                  children: [
-                    Icon(Icons.lock, size: 10, color: Color(0xFF8CC63F)),
-                    SizedBox(width: 4),
-                    Text(
-                      '256-bit Secured Connection',
-                      style: TextStyle(color: Color(0x4DFFFFFF), fontSize: 10),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -639,16 +1098,19 @@ class _ValuePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        color: Colors.white.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.10),
+          width: 0.8,
+        ),
       ),
       child: Text(
         label,
         style: const TextStyle(
-          color: Color(0x99FFFFFF),
+          color: Color(0xFFCBD5E1),
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),

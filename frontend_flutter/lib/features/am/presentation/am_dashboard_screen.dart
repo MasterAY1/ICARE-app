@@ -1664,12 +1664,16 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF059669)),
                       SizedBox(width: 8),
-                      Text(
-                        'Zero pending or draft onboarding sessions. All branches are fully activated.',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      Expanded(
+                        child: Text(
+                          'Zero pending or draft onboarding sessions. All branches are fully activated.',
+                          style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          softWrap: true,
+                        ),
                       ),
                     ],
                   ),
