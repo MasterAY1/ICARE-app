@@ -2329,3 +2329,145 @@ class ReportService:
 
         return {"rows": rows}
 
+    @staticmethod
+    def generate_monthly_executive_pdf(
+        uow: UnitOfWork,
+        branch_id: str,
+        year: int,
+        month: int,
+        officer_name: Optional[str] = None,
+        product_name: Optional[str] = None
+    ) -> bytes:
+        """Generates an official paper-grade executive monthly financial statement PDF using PyMuPDF (fitz)."""
+        import fitz
+        import calendar
+
+        parity_data = ReportService.get_monthly_parity_matrix(
+            uow, branch_id=branch_id, year=year, month=month, officer_name=officer_name, product_name=product_name
+        )
+        stmts_data = ReportService.get_official_trial_balance_and_receipts_payments(
+            uow, branch_id=branch_id, year=year, month=month, officer_name=officer_name, product_name=product_name
+        )
+
+        cards = parity_data.get("summary_cards", {})
+        branch_name = parity_data.get("branch_name", "Branch")
+        month_label = f"{calendar.month_name[month]} {year}"
+
+        doc = fitz.open()
+        page = doc.new_page(width=595, height=842) # A4
+
+        # Institutional Palette
+        c_emerald_dark = (2/255, 44/255, 34/255)
+        c_emerald_accent = (16/255, 185/255, 129/255)
+        c_text_dark = (15/255, 23/255, 42/255)
+        c_text_muted = (100/255, 116/255, 139/255)
+        c_bg_light = (248/255, 250/255, 252/255)
+        c_border = (226/255, 232/255, 240/255)
+
+        def fmt(val):
+            try:
+                num = float(val or 0)
+                return f"NGN {num:,.2f}"
+            except Exception:
+                return "NGN 0.00"
+
+        # 1. Official Header Bar
+        page.draw_rect(fitz.Rect(30, 30, 565, 80), color=c_emerald_dark, fill=c_emerald_dark)
+        page.insert_text((45, 54), "ICARE CORE BANKING SYSTEM", fontsize=15, color=(1, 1, 1), fontname="helv")
+        page.insert_text((45, 70), "Official Monthly Executive Financial Statement", fontsize=10, color=(167/255, 243/255, 208/255), fontname="helv")
+        page.insert_text((385, 54), f"PERIOD: {month_label.upper()}", fontsize=9.5, color=(1, 1, 1), fontname="helv")
+        page.insert_text((385, 70), f"BRANCH: {branch_name.upper()} BRANCH", fontsize=9.5, color=(203/255, 213/255, 225/255), fontname="helv")
+
+        # 2. Executive Highlights Box
+        page.draw_rect(fitz.Rect(30, 95, 565, 235), color=c_border, fill=c_bg_light)
+        page.insert_text((45, 115), "1. EXECUTIVE SUMMARY & KEY FINANCIAL RATIOS", fontsize=11, color=c_emerald_dark, fontname="helv")
+
+        gl_status = "[BALANCED] Debits == Credits" if cards.get("is_gl_balanced", True) else "[OUT OF BALANCE]"
+
+        metrics = [
+            ("Principal Disbursed", fmt(cards.get("disbursed_principal")), "Net Active Credit", fmt(cards.get("net_active_credit"))),
+            ("Upfront Fees (5%)", fmt(cards.get("upfront_fees")), "Period Collections", fmt(cards.get("collections"))),
+            ("Closing Credit Portfolio", fmt(cards.get("closing_credit")), "Closing Savings Balance", fmt(cards.get("closing_savings"))),
+            ("Transit Bank Deposits", fmt(cards.get("bank_deposits")), "GL Balance Integrity", gl_status),
+        ]
+
+        y = 135
+        for m in metrics:
+            page.insert_text((45, y), m[0], fontsize=8.5, color=c_text_muted, fontname="helv")
+            page.insert_text((180, y), m[1], fontsize=8.5, color=c_text_dark, fontname="helv")
+            page.insert_text((315, y), m[2], fontsize=8.5, color=c_text_muted, fontname="helv")
+            page.insert_text((440, y), m[3], fontsize=8.5, color=(4/255, 120/255, 87/255) if "BALANCED" in m[3] else c_text_dark, fontname="helv")
+            y += 24
+            page.draw_line(fitz.Point(45, y - 10), fitz.Point(550, y - 10), color=c_border)
+
+        # 3. Receipts & Payments Cashbook Summary
+        rp = stmts_data.get("receipts_and_payments", {})
+        page.draw_rect(fitz.Rect(30, 250, 565, 410), color=c_border, fill=(1, 1, 1))
+        page.insert_text((45, 270), "2. RECEIPTS & PAYMENTS CASHBOOK SUMMARY (ACCOUNT 1000)", fontsize=11, color=c_emerald_dark, fontname="helv")
+
+        page.draw_rect(fitz.Rect(45, 280, 290, 300), color=c_border, fill=c_bg_light)
+        page.insert_text((55, 294), "CASH RECEIPTS (INFLOWS)", fontsize=9, color=c_emerald_dark, fontname="helv")
+        page.draw_rect(fitz.Rect(305, 280, 550, 300), color=c_border, fill=c_bg_light)
+        page.insert_text((315, 294), "CASH PAYMENTS (OUTFLOWS)", fontsize=9, color=c_emerald_dark, fontname="helv")
+
+        rp_lines = [
+            ("• Loan Repayments", fmt(cards.get("collections")), "• Loan Disbursements", fmt(cards.get("disbursed_principal"))),
+            ("• Savings Deposits", fmt(cards.get("savings_deposits")), "• Savings Withdrawals", fmt(cards.get("savings_withdrawals"))),
+            ("• Bank Withdrawals", "NGN 0.00", "• Transit Bank Deposits", fmt(cards.get("bank_deposits"))),
+            ("• Total Inflows", fmt(rp.get("total_receipts", 0)), "• Total Outflows", fmt(rp.get("total_payments", 0))),
+        ]
+
+        y = 320
+        for r in rp_lines:
+            page.insert_text((55, y), r[0], fontsize=8.5, color=c_text_dark, fontname="helv")
+            page.insert_text((195, y), r[1], fontsize=8.5, color=c_text_dark, fontname="helv")
+            page.insert_text((315, y), r[2], fontsize=8.5, color=c_text_dark, fontname="helv")
+            page.insert_text((455, y), r[3], fontsize=8.5, color=c_text_dark, fontname="helv")
+            y += 20
+
+        # 4. Deposit & Credit Portfolio Breakdown
+        page.draw_rect(fitz.Rect(30, 425, 565, 555), color=c_border, fill=c_bg_light)
+        page.insert_text((45, 445), "3. DEPOSIT & CREDIT PORTFOLIO BREAKDOWN", fontsize=11, color=c_emerald_dark, fontname="helv")
+
+        dep_credit_lines = [
+            ("Active Savers Count", f"{cards.get('active_savers', 0)} Savers", "Active Loans Count", f"{cards.get('active_loans', 0)} Loans"),
+            ("Opening Savings Balance", fmt(cards.get("opening_savings")), "Opening Credit Balance", fmt(cards.get("opening_credit"))),
+            ("Month Deposit Inflows", fmt(cards.get("savings_deposits")), "Month Principal Disbursed", fmt(cards.get("disbursed_principal"))),
+            ("Month Payout Outflows", fmt(cards.get("savings_withdrawals")), "Month Collections Settled", fmt(cards.get("collections"))),
+            ("Closing Savings Balance", fmt(cards.get("closing_savings")), "Closing Credit Outstanding", fmt(cards.get("closing_credit"))),
+        ]
+
+        y = 465
+        for dc in dep_credit_lines:
+            page.insert_text((45, y), dc[0], fontsize=8.5, color=c_text_muted, fontname="helv")
+            page.insert_text((180, y), dc[1], fontsize=8.5, color=c_text_dark, fontname="helv")
+            page.insert_text((315, y), dc[2], fontsize=8.5, color=c_text_muted, fontname="helv")
+            page.insert_text((440, y), dc[3], fontsize=8.5, color=c_text_dark, fontname="helv")
+            y += 17
+
+        # 5. Supervisory Endorsements & Audit Certification
+        page.draw_rect(fitz.Rect(30, 570, 565, 760), color=c_border, fill=(1, 1, 1))
+        page.insert_text((45, 590), "4. SUPERVISORY ENDORSEMENTS & AUDIT CERTIFICATION", fontsize=11, color=c_emerald_dark, fontname="helv")
+
+        page.draw_rect(fitz.Rect(45, 605, 290, 740), color=c_border, fill=c_bg_light)
+        page.insert_text((55, 625), "BRANCH MANAGER CERTIFICATION", fontsize=9, color=c_emerald_dark, fontname="helv")
+        page.insert_text((55, 645), "I hereby certify that the cashbooks, trial balances,", fontsize=8, color=c_text_muted, fontname="helv")
+        page.insert_text((55, 657), "and portfolio registers for this period are complete,", fontsize=8, color=c_text_muted, fontname="helv")
+        page.insert_text((55, 669), "reconciled with vault cash, and true in all aspects.", fontsize=8, color=c_text_muted, fontname="helv")
+        page.draw_line(fitz.Point(55, 715), fitz.Point(280, 715), color=c_text_muted)
+        page.insert_text((55, 727), "Signature / Date: ________________________", fontsize=8, color=c_text_muted, fontname="helv")
+
+        page.draw_rect(fitz.Rect(305, 605, 550, 740), color=c_border, fill=c_bg_light)
+        page.insert_text((315, 625), "AREA MANAGER SUPERVISORY ENDORSEMENT", fontsize=9, color=c_emerald_dark, fontname="helv")
+        page.insert_text((315, 645), "I confirm that I have reviewed the branch books,", fontsize=8, color=c_text_muted, fontname="helv")
+        page.insert_text((315, 657), "verified the double-entry GL balance integrity, and", fontsize=8, color=c_text_muted, fontname="helv")
+        page.insert_text((315, 669), "endorse these financial statements for executive record.", fontsize=8, color=c_text_muted, fontname="helv")
+        page.draw_line(fitz.Point(315, 715), fitz.Point(540, 715), color=c_text_muted)
+        page.insert_text((315, 727), "Supervisory Seal / Date: __________________", fontsize=8, color=c_text_muted, fontname="helv")
+
+        # Footer
+        page.insert_text((45, 790), "Generated via ICARE Core Banking Engine v2.4.0 — Confidential & Privileged Financial Document", fontsize=7.5, color=c_text_muted, fontname="helv")
+        page.insert_text((470, 790), "Page 1 of 1", fontsize=7.5, color=c_text_muted, fontname="helv")
+
+        return doc.tobytes()
+

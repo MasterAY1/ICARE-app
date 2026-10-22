@@ -224,6 +224,48 @@ def _resolve_scope_and_branches(
             return scope_level, single_id, [requested_branch_name], branch_name_to_id
 
 
+def _resolve_single_branch_id(
+    resolved_branch_id: Optional[Union[str, List[str]]],
+    uow: SupabaseUnitOfWork
+) -> Optional[str]:
+    """
+    Safely resolves a single branch_id from scope.
+    If multiple branch IDs are returned (e.g. Area Manager with Consolidated Area View or Admin),
+    prioritizes an active branch with loans/transactions (such as Ogijo) instead of blindly
+    falling back to an alphabetical branch with zero records (e.g. Kola).
+    """
+    if isinstance(resolved_branch_id, str) and resolved_branch_id:
+        return resolved_branch_id
+
+    if isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
+        for b_id in resolved_branch_id:
+            try:
+                res = uow.client.table("loans").select("loan_id").eq("branch_id", b_id).limit(1).execute()
+                if res.data and len(res.data) > 0:
+                    return b_id
+            except Exception:
+                pass
+        return resolved_branch_id[0]
+
+    # Institution-level fallback: find branch with active data
+    try:
+        res = uow.client.table("loans").select("branch_id").limit(1).execute()
+        if res.data and res.data[0].get("branch_id"):
+            return res.data[0]["branch_id"]
+    except Exception:
+        pass
+
+    try:
+        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
+        if res_b.data:
+            return res_b.data[0]["branch_id"]
+    except Exception:
+        pass
+
+    return None
+
+
+
 # -----------------------------------------------------------------------------
 # 1. Metadata / Filter Options
 # -----------------------------------------------------------------------------
@@ -793,8 +835,8 @@ def export_csv(
 @router.get("/monthly-parity", response_model=MonthlyParityResponse)
 def get_monthly_parity(
     branch_name: Optional[str] = Query(None),
-    year: int = Query(2026),
-    month: int = Query(9),
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
     officer_name: Optional[str] = Query(None),
     product_name: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
@@ -805,21 +847,13 @@ def get_monthly_parity(
     comparing each Credit Officer side-by-side with Branch Total.
     Supports filtering by officer and product.
     """
+    year = year or datetime.now().year
+    month = month or datetime.now().month
+
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    # Resolve single branch ID
-    bid = None
-    if isinstance(resolved_branch_id, str):
-        bid = resolved_branch_id
-    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
-        bid = resolved_branch_id[0]
-    else:
-        # Fallback to Ogijo or first branch
-        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
-        if res_b.data:
-            bid = res_b.data[0]["branch_id"]
-
+    bid = _resolve_single_branch_id(resolved_branch_id, uow)
     if not bid:
         raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch for Monthly Parity report.")
 
@@ -830,8 +864,8 @@ def get_monthly_parity(
 @router.get("/official-statements", response_model=MonthlyExecutiveStatementsResponse)
 def get_official_statements(
     branch_name: Optional[str] = Query(None),
-    year: int = Query(2026),
-    month: int = Query(9),
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
     officer_name: Optional[str] = Query(None),
     product_name: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
@@ -842,19 +876,13 @@ def get_official_statements(
     modeled directly after the official paper reporting templates.
     Supports filtering by officer and product.
     """
+    year = year or datetime.now().year
+    month = month or datetime.now().month
+
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = None
-    if isinstance(resolved_branch_id, str):
-        bid = resolved_branch_id
-    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
-        bid = resolved_branch_id[0]
-    else:
-        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
-        if res_b.data:
-            bid = res_b.data[0]["branch_id"]
-
+    bid = _resolve_single_branch_id(resolved_branch_id, uow)
     if not bid:
         raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
 
@@ -867,8 +895,8 @@ def get_official_statements(
 @router.get("/deposit-statement", response_model=DepositStatementData)
 def get_deposit_statement(
     branch_name: Optional[str] = Query(None),
-    year: int = Query(2026),
-    month: int = Query(9),
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
     officer_name: Optional[str] = Query(None),
     product_name: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
@@ -879,19 +907,13 @@ def get_deposit_statement(
     Fully automated rollover from M-1 closing balances and M operational transactions.
     Supports filtering by officer and product.
     """
+    year = year or datetime.now().year
+    month = month or datetime.now().month
+
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = None
-    if isinstance(resolved_branch_id, str):
-        bid = resolved_branch_id
-    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
-        bid = resolved_branch_id[0]
-    else:
-        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
-        if res_b.data:
-            bid = res_b.data[0]["branch_id"]
-
+    bid = _resolve_single_branch_id(resolved_branch_id, uow)
     if not bid:
         raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
 
@@ -903,8 +925,8 @@ def get_deposit_statement(
 @router.get("/credit-statement", response_model=CreditStatementData)
 def get_credit_statement(
     branch_name: Optional[str] = Query(None),
-    year: int = Query(2026),
-    month: int = Query(9),
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
     officer_name: Optional[str] = Query(None),
     product_name: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
@@ -915,19 +937,13 @@ def get_credit_statement(
     Fully automated rollover from M-1 closing balances and M operational transactions.
     Supports filtering by officer and product.
     """
+    year = year or datetime.now().year
+    month = month or datetime.now().month
+
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = None
-    if isinstance(resolved_branch_id, str):
-        bid = resolved_branch_id
-    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
-        bid = resolved_branch_id[0]
-    else:
-        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
-        if res_b.data:
-            bid = res_b.data[0]["branch_id"]
-
+    bid = _resolve_single_branch_id(resolved_branch_id, uow)
     if not bid:
         raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
 
@@ -939,8 +955,8 @@ def get_credit_statement(
 @router.get("/annex-1", response_model=Annex1ReportResponse)
 def get_annex_1(
     branch_name: Optional[str] = Query(None),
-    year: int = Query(2026),
-    month: int = Query(9),
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
@@ -948,19 +964,13 @@ def get_annex_1(
     Returns Annex-1: Detailed Sundry Receipts and Operational Expenses breakdown.
     Direct statutory parity with Paper Images 4 & 8.
     """
+    year = year or datetime.now().year
+    month = month or datetime.now().month
+
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = None
-    if isinstance(resolved_branch_id, str):
-        bid = resolved_branch_id
-    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
-        bid = resolved_branch_id[0]
-    else:
-        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
-        if res_b.data:
-            bid = res_b.data[0]["branch_id"]
-
+    bid = _resolve_single_branch_id(resolved_branch_id, uow)
     if not bid:
         raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
 
@@ -971,8 +981,8 @@ def get_annex_1(
 def get_monthly_reconciliation(
     branch_name: Optional[str] = Query(None),
     branch_id: Optional[str] = Query(None),
-    year: int = Query(2026),
-    month: int = Query(9),
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
@@ -980,6 +990,9 @@ def get_monthly_reconciliation(
     Retrieves user-entered monthly bank statement reconciliation and treasury adjustments.
     Zero hardcoding.
     """
+    year = year or datetime.now().year
+    month = month or datetime.now().month
+
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
@@ -1037,8 +1050,8 @@ def save_monthly_reconciliation(
 @router.get("/export/monthly-parity-excel")
 def export_monthly_parity_excel(
     branch_name: Optional[str] = Query(None),
-    year: int = Query(2026),
-    month: int = Query(9),
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
     officer_name: Optional[str] = Query(None),
     product_name: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
@@ -1050,19 +1063,13 @@ def export_monthly_parity_excel(
     Sheet 2: Official Trial Balance
     Sheet 3: Receipts & Payments
     """
+    year = year or datetime.now().year
+    month = month or datetime.now().month
+
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = None
-    if isinstance(resolved_branch_id, str):
-        bid = resolved_branch_id
-    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
-        bid = resolved_branch_id[0]
-    else:
-        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
-        if res_b.data:
-            bid = res_b.data[0]["branch_id"]
-
+    bid = _resolve_single_branch_id(resolved_branch_id, uow)
     matrix_res = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name)
     stmts_res = ReportService.get_official_trial_balance_and_receipts_payments(uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name)
 
@@ -1112,27 +1119,21 @@ def export_monthly_parity_excel(
 @router.get("/export/monthly-parity-csv")
 def export_monthly_parity_csv(
     branch_name: Optional[str] = Query(None),
-    year: int = Query(2026),
-    month: int = Query(9),
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
     officer_name: Optional[str] = Query(None),
     product_name: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """Exports the Monthly Parity Matrix table to CSV."""
+    year = year or datetime.now().year
+    month = month or datetime.now().month
+
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = None
-    if isinstance(resolved_branch_id, str):
-        bid = resolved_branch_id
-    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
-        bid = resolved_branch_id[0]
-    else:
-        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
-        if res_b.data:
-            bid = res_b.data[0]["branch_id"]
-
+    bid = _resolve_single_branch_id(resolved_branch_id, uow)
     matrix_res = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name)
     df_parity = matrix_res.get("dataframe", pd.DataFrame())
 
@@ -1147,6 +1148,46 @@ def export_monthly_parity_csv(
     )
 
 
+
+@router.get("/export/monthly-parity-pdf")
+def export_monthly_parity_pdf(
+    branch_name: Optional[str] = Query(None),
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
+    officer_name: Optional[str] = Query(None),
+    product_name: Optional[str] = Query(None),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Exports an official paper-grade executive monthly financial statement PDF
+    generated via PyMuPDF (fitz) matching statutory requirements.
+    """
+    _check_reports_permission(current_user)
+    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
+
+    bid = _resolve_single_branch_id(resolved_branch_id, uow)
+    if not bid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found.")
+
+    y = year or datetime.now().year
+    m = month or datetime.now().month
+
+    pdf_bytes = ReportService.generate_monthly_executive_pdf(
+        uow, branch_id=bid, year=y, month=m, officer_name=officer_name, product_name=product_name
+    )
+
+    matrix_res = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=y, month=m, officer_name=officer_name, product_name=product_name)
+    b_name = matrix_res.get("branch_name", "Branch").replace(" ", "_")
+    filename = f"Official_Executive_Financial_Statement_{b_name}_{y}_{m:02d}.pdf"
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
 # -----------------------------------------------------------------------------
 # 13. Three-Tier Month-End Report Workflow (BM -> AM -> Admin)
 # -----------------------------------------------------------------------------
@@ -1154,25 +1195,19 @@ def export_monthly_parity_csv(
 @router.get("/monthly-workflow/status", response_model=MonthlyWorkflowStatusResponse)
 def get_monthly_workflow_status(
     branch_name: Optional[str] = Query(None),
-    year: int = Query(2026),
-    month: int = Query(9),
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """Retrieves month-end submission status, certified snapshot, and verification audit trail."""
+    year = year or datetime.now().year
+    month = month or datetime.now().month
+
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = None
-    if isinstance(resolved_branch_id, str):
-        bid = resolved_branch_id
-    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
-        bid = resolved_branch_id[0]
-    else:
-        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
-        if res_b.data:
-            bid = res_b.data[0]["branch_id"]
-
+    bid = _resolve_single_branch_id(resolved_branch_id, uow)
     if not bid:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found.")
 
@@ -1190,16 +1225,7 @@ def submit_monthly_workflow(
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
 
-    bid = None
-    if isinstance(resolved_branch_id, str):
-        bid = resolved_branch_id
-    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
-        bid = resolved_branch_id[0]
-    else:
-        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
-        if res_b.data:
-            bid = res_b.data[0]["branch_id"]
-
+    bid = _resolve_single_branch_id(resolved_branch_id, uow)
     if not bid:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found.")
 
@@ -1230,12 +1256,7 @@ def endorse_monthly_workflow(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: Only Area Managers or Admins can endorse monthly reports.")
 
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
-    bid = None
-    if isinstance(resolved_branch_id, str):
-        bid = resolved_branch_id
-    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
-        bid = resolved_branch_id[0]
-
+    bid = _resolve_single_branch_id(resolved_branch_id, uow)
     if not bid:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found.")
 
@@ -1266,12 +1287,7 @@ def return_monthly_workflow(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: Only Area Managers or Admins can query monthly reports.")
 
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
-    bid = None
-    if isinstance(resolved_branch_id, str):
-        bid = resolved_branch_id
-    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
-        bid = resolved_branch_id[0]
-
+    bid = _resolve_single_branch_id(resolved_branch_id, uow)
     if not bid:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found.")
 
@@ -1328,12 +1344,7 @@ def lock_monthly_workflow(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: Only Administrators or Directors can execute institutional lock.")
 
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
-    bid = None
-    if isinstance(resolved_branch_id, str):
-        bid = resolved_branch_id
-    elif isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
-        bid = resolved_branch_id[0]
-
+    bid = _resolve_single_branch_id(resolved_branch_id, uow)
     if not bid:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found.")
 
@@ -1354,12 +1365,15 @@ def lock_monthly_workflow(
 
 @router.get("/monthly-workflow/pending-am", response_model=List[MonthlyWorkflowPendingBranchItem])
 def get_pending_am_monthly_submissions(
-    year: int = Query(2026),
-    month: int = Query(9),
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """Fetches all supervised branches and their monthly report submission status for the Area Manager Approvals Hub."""
+    year = year or datetime.now().year
+    month = month or datetime.now().month
+
     role = (current_user.role or "").strip()
     if role not in ["AM", "Area Manager", "Admin", "Super Admin", "Director"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: Only Area Managers or Admins can access supervised submissions.")

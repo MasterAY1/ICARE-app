@@ -40,12 +40,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   DateTime _endDate = DateTime.now();
 
 
-  // Monthly Executive Parity State
-  int _selectedExecMonth = 9;
-  int _selectedExecYear = 2026;
+  // Monthly Executive Parity State (defaults to current calendar month & year)
+  int _selectedExecMonth = DateTime.now().month;
+  int _selectedExecYear = DateTime.now().year;
   int _selectedExecSubTab = 0; // 0: A. Deposit Statement, 1: B. Credit Statement, 2: Receipts & Payments, 3: Annex-1 Sundry, 4: Trial Balance, 5: CO Summary, 6: Bank Reconciliation
   String _selectedProgramFilter = 'All'; // 'All', 'Monthly', 'Weekly', 'Daily'
   bool _showRawTableOnMobile = false;
+  bool _showAllParityCards = false;
   String _selectedTbSectionFilter = 'All';
   int _selectedRpSegmentIndex = 0; // 0: All Movements, 1: Receipts (Inflows), 2: Payments (Outflows)
 
@@ -153,10 +154,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           if (_selectedBranchName == null) {
             if (meta.scopeLevel == 'BRANCH' && meta.defaultBranch != null) {
               _selectedBranchName = meta.defaultBranch;
-            } else if (meta.scopeLevel == 'AREA') {
-              _selectedBranchName = 'All Assigned Branches (Consolidated Area View)';
             } else {
-              _selectedBranchName = 'All Branches (Consolidated)';
+              // Default to Ogijo or first branch with active records
+              final ogijo = meta.branches.firstWhere(
+                (b) => b.name.toLowerCase().contains('ogijo'),
+                orElse: () => meta.branches.isNotEmpty ? meta.branches.first : const BranchOption(branchId: '', name: 'Ogijo'),
+              );
+              _selectedBranchName = ogijo.name;
             }
             _refreshCurrentTabData();
           }
@@ -842,13 +846,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
 
+    final currentCalendarMonth = DateTime.now().month;
+    final currentCalendarYear = DateTime.now().year;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Controls Row: Month, Year, and Quick Export
+        // 1. Sleek Interactive Period Stepper & Export Action Bar
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(8),
@@ -856,161 +863,156 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           ),
           child: LayoutBuilder(
             builder: (layoutCtx, constraints) {
-              final isMobile = constraints.maxWidth < 650;
-              final monthDropdown = Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Month: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                  const SizedBox(width: 4),
-                  DropdownButton<int>(
-                    value: _selectedExecMonth,
-                    underline: const SizedBox(),
-                    items: List.generate(12, (index) => DropdownMenuItem(
-                      value: index + 1,
-                      child: Text(monthNames[index], style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                    )),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() {
-                          _selectedExecMonth = val;
-                          _refreshCurrentTabData();
-                        });
-                      }
-                    },
-                  ),
-                ],
-              );
+              final isNarrow = constraints.maxWidth < 750;
 
-              final yearDropdown = Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Year: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                  const SizedBox(width: 4),
-                  DropdownButton<int>(
-                    value: _selectedExecYear,
-                    underline: const SizedBox(),
-                    items: [2024, 2025, 2026, 2027, 2028].map((y) => DropdownMenuItem(
-                      value: y,
-                      child: Text('$y', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                    )).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() {
-                          _selectedExecYear = val;
-                          _refreshCurrentTabData();
-                        });
-                      }
-                    },
-                  ),
-                ],
-              );
-
-              Widget? branchControl;
-              if (isAdmin || isAm) {
-                final branches = _cachedMeta?.branches ?? [];
-                final options = isAm
-                    ? ['All Assigned Branches (Consolidated Area View)', ...branches.map((b) => b.name)]
-                    : ['All Branches (Consolidated)', ...branches.map((b) => b.name)];
-                final currBranch = _selectedBranchName ?? (options.isNotEmpty ? options.first : null);
-                branchControl = Row(
+              // Interactive Period Stepper: [ < ] Month Year [ > ]
+              final periodStepper = Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('Branch: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                    const SizedBox(width: 4),
-                    DropdownButton<String>(
-                      value: options.contains(currBranch) ? currBranch : (options.isNotEmpty ? options.first : null),
-                      underline: const SizedBox(),
-                      items: options.map((b) => DropdownMenuItem(
-                        value: b,
-                        child: Text(b, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
-                      )).toList(),
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() {
-                            _selectedBranchName = val;
-                            _refreshCurrentTabData();
-                          });
-                        }
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left, size: 18, color: Color(0xFF0F766E)),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Previous Month',
+                      onPressed: () {
+                        setState(() {
+                          if (_selectedExecMonth == 1) {
+                            _selectedExecMonth = 12;
+                            _selectedExecYear -= 1;
+                          } else {
+                            _selectedExecMonth -= 1;
+                          }
+                          _refreshCurrentTabData();
+                        });
+                      },
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        '${monthNames[_selectedExecMonth - 1]} $_selectedExecYear',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right, size: 18, color: Color(0xFF0F766E)),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Next Month',
+                      onPressed: () {
+                        setState(() {
+                          if (_selectedExecMonth == 12) {
+                            _selectedExecMonth = 1;
+                            _selectedExecYear += 1;
+                          } else {
+                            _selectedExecMonth += 1;
+                          }
+                          _refreshCurrentTabData();
+                        });
                       },
                     ),
                   ],
-                );
-              }
-
-              final branchBadge = isBm
-                  ? Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Text(
-                        'Branch: ${_selectedBranchName ?? 'Current'}',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
-                      ),
-                    )
-                  : null;
-
-              final products = _cachedMeta != null ? ['All Products', ..._cachedMeta!.products] : ['All Products'];
-              final officers = _cachedMeta != null
-                  ? ['All Officers', ..._cachedMeta!.officers.map((o) => o.fullName)]
-                  : ['All Officers'];
-
-              final officerDropdown = Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Officer: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                  const SizedBox(width: 4),
-                  DropdownButton<String>(
-                    value: officers.contains(_selectedOfficerName) ? _selectedOfficerName : officers.first,
-                    underline: const SizedBox(),
-                    items: officers.map((o) => DropdownMenuItem(
-                      value: o,
-                      child: Text(o, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
-                    )).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() {
-                          _selectedOfficerName = val;
-                          _refreshCurrentTabData();
-                        });
-                      }
-                    },
-                  ),
-                ],
+                ),
               );
 
-              final productDropdown = Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Product: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                  const SizedBox(width: 4),
-                  DropdownButton<String>(
-                    value: products.contains(_selectedProductName) ? _selectedProductName : products.first,
-                    underline: const SizedBox(),
-                    items: products.map((p) => DropdownMenuItem(
-                      value: p,
-                      child: Text(p, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
-                    )).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() {
-                          _selectedProductName = val;
-                          _refreshCurrentTabData();
-                        });
-                      }
-                    },
-                  ),
-                ],
+              // Quick Month Selectors: [Jul] [Aug] [Sep] [Oct (Now)]
+              final quickChips = SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (int m = 7; m <= 10; m++) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: ChoiceChip(
+                          label: Text(
+                            m == currentCalendarMonth && _selectedExecYear == currentCalendarYear
+                                ? '${monthNames[m - 1].substring(0, 3)} (Now)'
+                                : monthNames[m - 1].substring(0, 3),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: _selectedExecMonth == m ? FontWeight.w700 : FontWeight.w500,
+                              color: _selectedExecMonth == m ? Colors.white : const Color(0xFF475569),
+                            ),
+                          ),
+                          selected: _selectedExecMonth == m,
+                          selectedColor: const Color(0xFF0F766E),
+                          backgroundColor: const Color(0xFFF1F5F9),
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          side: BorderSide(
+                            color: _selectedExecMonth == m ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0),
+                          ),
+                          onSelected: (selected) {
+                            if (selected && _selectedExecMonth != m) {
+                              setState(() {
+                                _selectedExecMonth = m;
+                                _refreshCurrentTabData();
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+
+              // 3 Export Buttons: PDF, Excel, CSV
+              final pdfBtn = OutlinedButton.icon(
+                icon: const Icon(Icons.picture_as_pdf_outlined, size: 13, color: Color(0xFFDC2626)),
+                label: const Text('PDF Statement', style: TextStyle(fontSize: 11, color: Color(0xFFDC2626), fontWeight: FontWeight.w700)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFFFCA5A5)),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () async {
+                  try {
+                    final bytes = await api.downloadMonthlyParityPdf(
+                      branchName: _selectedBranchName,
+                      year: _selectedExecYear,
+                      month: _selectedExecMonth,
+                      officerName: _selectedOfficerName,
+                      productName: _selectedProductName,
+                    );
+                    downloadBlobFile(
+                      bytes,
+                      'Official_Executive_Financial_Statement_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.pdf',
+                      'application/pdf',
+                    );
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Executive PDF Statement downloaded successfully.')),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('PDF Download failed: $e')),
+                      );
+                    }
+                  }
+                },
               );
 
               final excelBtn = OutlinedButton.icon(
-                icon: const Icon(Icons.download, size: 14, color: Color(0xFF0F766E)),
+                icon: const Icon(Icons.table_view_outlined, size: 13, color: Color(0xFF0F766E)),
                 label: const Text('Excel Workbook', style: TextStyle(fontSize: 11, color: Color(0xFF0F766E), fontWeight: FontWeight.w700)),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Color(0xFF0F766E)),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  visualDensity: VisualDensity.compact,
                 ),
                 onPressed: () async {
                   try {
@@ -1042,11 +1044,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               );
 
               final csvBtn = OutlinedButton.icon(
-                icon: const Icon(Icons.table_chart, size: 14, color: Color(0xFF1E293B)),
+                icon: const Icon(Icons.grid_on_outlined, size: 13, color: Color(0xFF1E293B)),
                 label: const Text('CO Summary CSV', style: TextStyle(fontSize: 11, color: Color(0xFF1E293B), fontWeight: FontWeight.w700)),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Color(0xFFCBD5E1)),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  visualDensity: VisualDensity.compact,
                 ),
                 onPressed: () async {
                   try {
@@ -1077,74 +1080,184 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 },
               );
 
-              if (isMobile) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        monthDropdown,
-                        yearDropdown,
-                        if (branchControl != null) branchControl,
-                        if (branchBadge != null) branchBadge,
-                        officerDropdown,
-                        productDropdown,
-                      ],
+              // Secondary Scope Controls: Branch, Officer, Product
+              Widget? branchControl;
+              if (isAdmin || isAm) {
+                final branches = _cachedMeta?.branches ?? [];
+                final options = isAm
+                    ? ['All Assigned Branches (Consolidated Area View)', ...branches.map((b) => b.name)]
+                    : ['All Branches (Consolidated)', ...branches.map((b) => b.name)];
+                final currBranch = _selectedBranchName ?? (options.isNotEmpty ? options.first : null);
+                branchControl = Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: options.contains(currBranch) ? currBranch : (options.isNotEmpty ? options.first : null),
+                      isDense: true,
+                      items: options.map((b) => DropdownMenuItem(
+                        value: b,
+                        child: Text(b, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)), overflow: TextOverflow.ellipsis),
+                      )).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() {
+                            _selectedBranchName = val;
+                            _refreshCurrentTabData();
+                          });
+                        }
+                      },
                     ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(child: excelBtn),
-                        const SizedBox(width: 8),
-                        Expanded(child: csvBtn),
-                      ],
-                    ),
-                  ],
+                  ),
                 );
               }
 
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              final products = _cachedMeta != null ? ['All Products', ..._cachedMeta!.products] : ['All Products'];
+              final officers = _cachedMeta != null
+                  ? ['All Officers', ..._cachedMeta!.officers.map((o) => o.fullName)]
+                  : ['All Officers'];
+
+              final officerControl = Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: officers.contains(_selectedOfficerName) ? _selectedOfficerName : officers.first,
+                    isDense: true,
+                    items: officers.map((o) => DropdownMenuItem(
+                      value: o,
+                      child: Text(o, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)), overflow: TextOverflow.ellipsis),
+                    )).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          _selectedOfficerName = val;
+                          _refreshCurrentTabData();
+                        });
+                      }
+                    },
+                  ),
+                ),
+              );
+
+              final productControl = Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: products.contains(_selectedProductName) ? _selectedProductName : products.first,
+                    isDense: true,
+                    items: products.map((p) => DropdownMenuItem(
+                      value: p,
+                      child: Text(p, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)), overflow: TextOverflow.ellipsis),
+                    )).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          _selectedProductName = val;
+                          _refreshCurrentTabData();
+                        });
+                      }
+                    },
+                  ),
+                ),
+              );
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Wrap(
-                      spacing: 16,
+                  // Row 1: Period Navigation & Exports
+                  if (isNarrow) ...[
+                    Wrap(
+                      spacing: 8,
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        monthDropdown,
-                        yearDropdown,
-                        if (branchControl != null) branchControl,
-                        if (branchBadge != null) branchBadge,
-                        officerDropdown,
-                        productDropdown,
+                        periodStepper,
+                        quickChips,
                       ],
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      excelBtn,
-                      const SizedBox(width: 8),
-                      csvBtn,
-                    ],
-                  ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (branchControl != null) branchControl,
+                        officerControl,
+                        productControl,
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(child: pdfBtn),
+                        const SizedBox(width: 6),
+                        Expanded(child: excelBtn),
+                        const SizedBox(width: 6),
+                        Expanded(child: csvBtn),
+                      ],
+                    ),
+                  ] else ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            periodStepper,
+                            const SizedBox(width: 10),
+                            quickChips,
+                          ],
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            pdfBtn,
+                            const SizedBox(width: 6),
+                            excelBtn,
+                            const SizedBox(width: 6),
+                            csvBtn,
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        if (branchControl != null) ...[
+                          branchControl,
+                          const SizedBox(width: 8),
+                        ],
+                        officerControl,
+                        const SizedBox(width: 8),
+                        productControl,
+                      ],
+                    ),
+                  ],
                 ],
               );
             },
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
 
         // Monthly Verification & Sign-Off Workflow Status Banner
         _buildWorkflowStatusCard(isAdmin, isBm, isAm),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
 
-        // Future Builder for Data
+        // Data FutureBuilder
         FutureBuilder<MonthlyParityData>(
           future: _parityFuture,
           builder: (context, snapshot) {
@@ -1152,110 +1265,128 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               if (snapshot.hasError) {
                 return _buildErrorCard(snapshot.error.toString());
               }
-              return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
+              return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
             }
             final data = snapshot.data!;
-
             final cards = data.summaryCards;
 
-            return Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Executive Monthly Summary — ${data.branchName} Branch (${data.monthLabel})',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                  ),
-                  const SizedBox(height: 16),
+            return LayoutBuilder(
+              builder: (ctx, constraints) {
+                final isMobile = constraints.maxWidth < 650;
+                final cardW = isMobile
+                    ? (constraints.maxWidth - 8) / 2
+                    : (constraints.maxWidth - 36) / 4;
 
-                  // 8 Summary Cards in Grid (Responsive 2-col on mobile, 4-col on tablet/desktop)
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isMobile = constraints.maxWidth < 600;
-                      final cardW = isMobile
-                          ? (constraints.maxWidth - 10) / 2
-                          : (constraints.maxWidth - 36) / 4;
-                      return Wrap(
-                        spacing: isMobile ? 10 : 12,
-                        runSpacing: isMobile ? 10 : 12,
-                        children: [
-                          _buildMetricCard('Principal Disbursed', _formatNgn(cards.disbursedPrincipal), width: cardW),
-                          _buildMetricCard('Upfront Fees', _formatNgn(cards.upfrontFees), width: cardW),
-                          _buildMetricCard('Net Active Credit', _formatNgn(cards.netActiveCredit), width: cardW),
-                          _buildMetricCard('Collections', _formatNgn(cards.collections), width: cardW),
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Section Header: Branch & Period
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Executive Monthly Summary — ${data.branchName} (${data.monthLabel})',
+                            style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        TextButton.icon(
+                          icon: Icon(
+                            _showAllParityCards ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                            size: 16,
+                            color: const Color(0xFF0F766E),
+                          ),
+                          label: Text(
+                            _showAllParityCards ? 'Less Metrics' : 'More Metrics (4)',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _showAllParityCards = !_showAllParityCards;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Hero 4 KPI Cards (Disbursed, Collections, Net Credit, GL Integrity)
+                    Wrap(
+                      spacing: isMobile ? 8 : 12,
+                      runSpacing: isMobile ? 8 : 12,
+                      children: [
+                        _buildMetricCard('Principal Disbursed', _formatNgn(cards.disbursedPrincipal), width: cardW),
+                        _buildMetricCard('Period Collections', _formatNgn(cards.collections), width: cardW),
+                        _buildMetricCard('Net Active Credit', _formatNgn(cards.netActiveCredit), width: cardW),
+                        _buildMetricCard(
+                          'GL Balance Integrity',
+                          cards.isGlBalanced ? '[BALANCED]' : '[OUT OF BALANCE]',
+                          width: cardW,
+                          isAccent: cards.isGlBalanced,
+                          subtitle: 'Debits == Credits',
+                        ),
+                        if (_showAllParityCards) ...[
+                          _buildMetricCard('Upfront Fees (5%)', _formatNgn(cards.upfrontFees), width: cardW),
                           _buildMetricCard('Closing Credit Portfolio', _formatNgn(cards.closingCredit), width: cardW),
                           _buildMetricCard('Closing Savings Balance', _formatNgn(cards.closingSavings), width: cardW),
-                          _buildMetricCard('Bank Deposits (1050)', _formatNgn(cards.bankDeposits), width: cardW),
-                          _buildMetricCard(
-                            'GL Balance Integrity',
-                            cards.isGlBalanced ? '[BALANCED]' : '[OUT OF BALANCE]',
-                            width: cardW,
-                            isAccent: cards.isGlBalanced,
-                            subtitle: 'Debits == Credits',
-                          ),
+                          _buildMetricCard('Transit Bank Deposits', _formatNgn(cards.bankDeposits), width: cardW),
                         ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Sub-Tab Switcher (Single-line horizontally scrollable pill bar on mobile, no multi-row wrap)
-                  Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ],
                     ),
-                    padding: const EdgeInsets.all(4),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      physics: const BouncingScrollPhysics(),
-                      child: Row(
-                        children: [
-                          _buildSubTabButton('A. Deposit Statement', 0, icon: Icons.savings_outlined),
-                          const SizedBox(width: 4),
-                          _buildSubTabButton('B. Credit Statement', 1, icon: Icons.credit_card_outlined),
-                          const SizedBox(width: 4),
-                          _buildSubTabButton('Receipts & Payments Account', 2, icon: Icons.receipt_long_outlined),
-                          const SizedBox(width: 4),
-                          _buildSubTabButton('Annex-1 Sundry', 3, icon: Icons.pie_chart_outline),
-                          const SizedBox(width: 4),
-                          _buildSubTabButton('Official Trial Balance', 4, icon: Icons.balance_outlined),
-                          const SizedBox(width: 4),
-                          _buildSubTabButton('Credit Officers Summary', 5, icon: Icons.people_alt_outlined),
-                          const SizedBox(width: 4),
-                          _buildSubTabButton('Bank & Treasury Reconciliation', 6, icon: Icons.account_balance_outlined),
-                        ],
+                    const SizedBox(height: 16),
+
+                    // Sub-Tab Switcher (Single-line horizontal scroll)
+                    Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      padding: const EdgeInsets.all(4),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        child: Row(
+                          children: [
+                            _buildSubTabButton('A. Deposit Statement', 0, icon: Icons.savings_outlined),
+                            const SizedBox(width: 4),
+                            _buildSubTabButton('B. Credit Statement', 1, icon: Icons.credit_card_outlined),
+                            const SizedBox(width: 4),
+                            _buildSubTabButton('Receipts & Payments Account', 2, icon: Icons.receipt_long_outlined),
+                            const SizedBox(width: 4),
+                            _buildSubTabButton('Annex-1 Sundry', 3, icon: Icons.pie_chart_outline),
+                            const SizedBox(width: 4),
+                            _buildSubTabButton('Official Trial Balance', 4, icon: Icons.balance_outlined),
+                            const SizedBox(width: 4),
+                            _buildSubTabButton('Credit Officers Summary', 5, icon: Icons.people_alt_outlined),
+                            const SizedBox(width: 4),
+                            _buildSubTabButton('Bank & Treasury Reconciliation', 6, icon: Icons.account_balance_outlined),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 14),
 
-                  // Sub-tab content
-                  if (_selectedExecSubTab == 0)
-                    _buildDepositStatementView()
-                  else if (_selectedExecSubTab == 1)
-                    _buildCreditStatementView()
-                  else if (_selectedExecSubTab == 2)
-                    _buildReceiptsAndPaymentsView()
-                  else if (_selectedExecSubTab == 3)
-                    _buildAnnex1View()
-                  else if (_selectedExecSubTab == 4)
-                    _buildOfficialTrialBalanceView()
-                  else if (_selectedExecSubTab == 5)
-                    _buildCoMonthlySummaryTable(data)
-                  else
-                    _buildBankReconciliationView(),
-                ],
-              ),
+                    // Sub-tab content view
+                    if (_selectedExecSubTab == 0)
+                      _buildDepositStatementView()
+                    else if (_selectedExecSubTab == 1)
+                      _buildCreditStatementView()
+                    else if (_selectedExecSubTab == 2)
+                      _buildReceiptsAndPaymentsView()
+                    else if (_selectedExecSubTab == 3)
+                      _buildAnnex1View()
+                    else if (_selectedExecSubTab == 4)
+                      _buildOfficialTrialBalanceView()
+                    else if (_selectedExecSubTab == 5)
+                      _buildCoMonthlySummaryTable(data)
+                    else
+                      _buildBankReconciliationView(),
+                  ],
+                );
+              },
             );
           },
         ),
@@ -1448,7 +1579,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         ],
                       ),
                       const Divider(height: 16),
-                      _buildMobileDetailRow('Bank Deposits Remitted (Acct 1050)', _formatNgn(bd), isPrimary: true),
+                      _buildMobileDetailRow('Transit Bank Deposits Remitted', _formatNgn(bd), isPrimary: true),
                       const SizedBox(height: 6),
                       _buildMobileDetailRow('Active Portfolio', '$actLoans loans | ${_formatNgn(closeCredit)}'),
                       _buildMobileDetailRow('Month Collections', _formatNgn(col)),

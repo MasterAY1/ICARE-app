@@ -215,14 +215,14 @@ class ReportsApiService {
   /// 9. Get Monthly Parity Matrix
   Future<MonthlyParityData> getMonthlyParity({
     String? branchName,
-    int year = 2026,
-    int month = 9,
+    int? year,
+    int? month,
     String? officerName,
     String? productName,
   }) async {
     final params = <String, dynamic>{
-      'year': year,
-      'month': month,
+      if (year != null) 'year': year,
+      if (month != null) 'month': month,
     };
     if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
@@ -236,7 +236,7 @@ class ReportsApiService {
 
     final response = await _apiClient.get(
       '/api/v1/reports/monthly-parity',
-      queryParameters: params,
+      queryParameters: params.isNotEmpty ? params : null,
     );
     return MonthlyParityData.fromJson(response.data as Map<String, dynamic>);
   }
@@ -244,14 +244,14 @@ class ReportsApiService {
   /// 10. Get Official Executive Statements (Trial Balance & Receipts/Payments)
   Future<MonthlyExecutiveStatementsData> getOfficialStatements({
     String? branchName,
-    int year = 2026,
-    int month = 9,
+    int? year,
+    int? month,
     String? officerName,
     String? productName,
   }) async {
     final params = <String, dynamic>{
-      'year': year,
-      'month': month,
+      if (year != null) 'year': year,
+      if (month != null) 'month': month,
     };
     if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
@@ -265,7 +265,7 @@ class ReportsApiService {
 
     final response = await _apiClient.get(
       '/api/v1/reports/official-statements',
-      queryParameters: params,
+      queryParameters: params.isNotEmpty ? params : null,
     );
     return MonthlyExecutiveStatementsData.fromJson(response.data as Map<String, dynamic>);
   }
@@ -273,14 +273,14 @@ class ReportsApiService {
   /// 11. Download Executive Monthly Excel Workbook
   Future<List<int>> downloadMonthlyParityExcel({
     String? branchName,
-    int year = 2026,
-    int month = 9,
+    int? year,
+    int? month,
     String? officerName,
     String? productName,
   }) async {
     final params = <String, dynamic>{
-      'year': year,
-      'month': month,
+      if (year != null) 'year': year,
+      if (month != null) 'month': month,
     };
     if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
@@ -294,7 +294,7 @@ class ReportsApiService {
 
     final response = await _apiClient.get(
       '/api/v1/reports/export/monthly-parity-excel',
-      queryParameters: params,
+      queryParameters: params.isNotEmpty ? params : null,
       options: Options(responseType: ResponseType.bytes),
     );
     return List<int>.from(response.data as List);
@@ -303,14 +303,14 @@ class ReportsApiService {
   /// 12. Download CO Monthly Summary CSV
   Future<List<int>> downloadMonthlyParityCsv({
     String? branchName,
-    int year = 2026,
-    int month = 9,
+    int? year,
+    int? month,
     String? officerName,
     String? productName,
   }) async {
     final params = <String, dynamic>{
-      'year': year,
-      'month': month,
+      if (year != null) 'year': year,
+      if (month != null) 'month': month,
     };
     if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
@@ -324,7 +324,37 @@ class ReportsApiService {
 
     final response = await _apiClient.get(
       '/api/v1/reports/export/monthly-parity-csv',
-      queryParameters: params,
+      queryParameters: params.isNotEmpty ? params : null,
+      options: Options(responseType: ResponseType.bytes),
+    );
+    return List<int>.from(response.data as List);
+  }
+
+  /// 12b. Download Executive Monthly Financial Statement PDF (Paper Grade)
+  Future<List<int>> downloadMonthlyParityPdf({
+    String? branchName,
+    int? year,
+    int? month,
+    String? officerName,
+    String? productName,
+  }) async {
+    final params = <String, dynamic>{
+      if (year != null) 'year': year,
+      if (month != null) 'month': month,
+    };
+    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+      params['branch_name'] = branchName;
+    }
+    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+      params['officer_name'] = officerName;
+    }
+    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+      params['product_name'] = productName;
+    }
+
+    final response = await _apiClient.get(
+      '/api/v1/reports/export/monthly-parity-pdf',
+      queryParameters: params.isNotEmpty ? params : null,
       options: Options(responseType: ResponseType.bytes),
     );
     return List<int>.from(response.data as List);
@@ -333,12 +363,12 @@ class ReportsApiService {
   /// 13. Get Monthly Reconciliation Data
   Future<MonthlyReconciliationData> getMonthlyReconciliation({
     String? branchName,
-    int year = 2026,
-    int month = 9,
+    int? year,
+    int? month,
   }) async {
     final params = <String, dynamic>{
-      'year': year,
-      'month': month,
+      if (year != null) 'year': year,
+      if (month != null) 'month': month,
     };
     if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
@@ -346,7 +376,7 @@ class ReportsApiService {
 
     final response = await _apiClient.get(
       '/api/v1/reports/monthly-reconciliation',
-      queryParameters: params,
+      queryParameters: params.isNotEmpty ? params : null,
     );
     final body = response.data as Map<String, dynamic>;
     final data = (body['data'] ?? {}) as Map<String, dynamic>;
@@ -356,13 +386,13 @@ class ReportsApiService {
   /// 14. Save Monthly Reconciliation Data
   Future<Map<String, dynamic>> saveMonthlyReconciliation({
     String? branchName,
-    int year = 2026,
-    int month = 9,
+    int? year,
+    int? month,
     required MonthlyReconciliationData data,
   }) async {
     final payload = <String, dynamic>{
-      'year': year,
-      'month': month,
+      if (year != null) 'year': year,
+      if (month != null) 'month': month,
       'data': data.toJson(),
     };
     if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
@@ -379,12 +409,12 @@ class ReportsApiService {
   /// 15. Retrieve Annex-1 Sundry Accounts & OpEx Analysis
   Future<Annex1ReportData> getAnnex1Report({
     String? branchName,
-    int year = 2026,
-    int month = 9,
+    int? year,
+    int? month,
   }) async {
     final params = <String, dynamic>{
-      'year': year,
-      'month': month,
+      if (year != null) 'year': year,
+      if (month != null) 'month': month,
     };
     if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
@@ -392,7 +422,7 @@ class ReportsApiService {
 
     final response = await _apiClient.get(
       '/api/v1/reports/annex-1',
-      queryParameters: params,
+      queryParameters: params.isNotEmpty ? params : null,
     );
     return Annex1ReportData.fromJson(response.data as Map<String, dynamic>);
   }
@@ -404,12 +434,12 @@ class ReportsApiService {
   /// 16. Get current monthly workflow submission status for a branch
   Future<MonthlyWorkflowStatusModel> getMonthlyWorkflowStatus({
     String? branchName,
-    int year = 2026,
-    int month = 9,
+    int? year,
+    int? month,
   }) async {
     final params = <String, dynamic>{
-      'year': year,
-      'month': month,
+      if (year != null) 'year': year,
+      if (month != null) 'month': month,
     };
     if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
@@ -417,7 +447,7 @@ class ReportsApiService {
 
     final response = await _apiClient.get(
       '/api/v1/reports/monthly-workflow/status',
-      queryParameters: params,
+      queryParameters: params.isNotEmpty ? params : null,
     );
     return MonthlyWorkflowStatusModel.fromJson(response.data as Map<String, dynamic>);
   }
@@ -537,17 +567,17 @@ class ReportsApiService {
 
   /// 22. Area Manager Approvals Hub: List supervised branches monthly submission statuses
   Future<List<MonthlyWorkflowPendingBranchModel>> getPendingAmMonthlySubmissions({
-    int year = 2026,
-    int month = 9,
+    int? year,
+    int? month,
   }) async {
     final params = <String, dynamic>{
-      'year': year,
-      'month': month,
+      if (year != null) 'year': year,
+      if (month != null) 'month': month,
     };
 
     final response = await _apiClient.get(
       '/api/v1/reports/monthly-workflow/pending-am',
-      queryParameters: params,
+      queryParameters: params.isNotEmpty ? params : null,
     );
     final list = response.data as List<dynamic>? ?? [];
     return list
