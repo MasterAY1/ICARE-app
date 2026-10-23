@@ -12,6 +12,7 @@ class CurrentUser:
     permissions: Set[str] = field(default_factory=set)
     assigned_branch_ids: List[str] = field(default_factory=list)
     assigned_branches: List[str] = field(default_factory=list)
+    allowed_products: List[str] = field(default_factory=list)
 
     def to_dict(self):
         return {
@@ -23,6 +24,7 @@ class CurrentUser:
             "full_name": self.full_name,
             "assigned_branch_ids": self.assigned_branch_ids,
             "assigned_branches": self.assigned_branches,
+            "allowed_products": self.allowed_products,
         }
 
 

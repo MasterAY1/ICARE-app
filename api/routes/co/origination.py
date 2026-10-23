@@ -528,6 +528,15 @@ def apply_for_loan(
     # Guard: ensure officer is authorized for this client's branch
     check_branch_access(current_user, client.branch_id, "submit loan application for this client")
 
+    # Guard: check allowed products assignment if defined for credit officer
+    if current_user.role in ["CO", "Credit Officer", "Officer"] and current_user.allowed_products:
+        normalized_allowed = [p.strip().lower() for p in current_user.allowed_products]
+        if payload.product_type.strip().lower() not in normalized_allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You are not authorized to originate loans for '{payload.product_type}'. Please select from your assigned products: {', '.join(current_user.allowed_products)}."
+            )
+
     # 2. Check savings balance
     res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", payload.client_id).execute()
     res_wd = uow.client.table("individual_savings").select("withdrawal_amount").eq("client_id", payload.client_id).execute()

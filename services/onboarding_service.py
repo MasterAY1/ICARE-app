@@ -1491,26 +1491,33 @@ class OnboardingService:
                     rem_bal = c_bal
                     schedule_rows = []
 
-                    # Derive starting anchor for next meeting day
+                    # Derive starting anchor for onboarding schedule
                     if cycle == "Weekly" and target_weekday is not None:
                         days_ahead = target_weekday - base_eval_date.weekday()
-                        if days_ahead <= 0:
+                        if days_ahead < 0:
                             days_ahead += 7
                         first_meeting = base_eval_date + datetime.timedelta(days=days_ahead)
-                        current_anchor = first_meeting - datetime.timedelta(weeks=1)
+                        current_anchor = first_meeting
                     else:
                         current_anchor = base_eval_date
 
                     for i in range(1, remaining_count + 1):
                         if cycle == "Daily":
-                            current_anchor += datetime.timedelta(days=1)
-                            current_anchor = get_next_working_day(current_anchor)
-                            current_due_date = current_anchor
+                            if i == 1 and is_working_day(base_eval_date):
+                                current_due_date = base_eval_date
+                                current_anchor = base_eval_date
+                            else:
+                                current_anchor += datetime.timedelta(days=1)
+                                current_anchor = get_next_working_day(current_anchor)
+                                current_due_date = current_anchor
                         elif cycle == "Weekly":
-                            current_anchor += datetime.timedelta(weeks=1)
-                            while not is_working_day(current_anchor):
+                            if i == 1:
+                                current_due_date = current_anchor
+                            else:
                                 current_anchor += datetime.timedelta(weeks=1)
-                            current_due_date = current_anchor
+                                while not is_working_day(current_anchor):
+                                    current_anchor += datetime.timedelta(weeks=1)
+                                current_due_date = current_anchor
                         elif cycle == "Monthly":
                             m_target = add_months(base_eval_date, i)
                             current_due_date = get_next_working_day(m_target)

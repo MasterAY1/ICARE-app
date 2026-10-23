@@ -67,6 +67,11 @@ def login(payload: LoginRequest, uow: SupabaseUnitOfWork = Depends(get_uow)):
     # Generate token
     token = generate_session_token(user.id, user.username)
 
+    # Extract allowed products for user (e.g. Credit Officer assigned loan products)
+    allowed_prods = []
+    if getattr(user, "extra_fields", None) and isinstance(user.extra_fields, dict):
+        allowed_prods = user.extra_fields.get("allowed_products", []) or []
+
     user_info = UserInfo(
         id=user.id,
         username=user.username,
@@ -75,7 +80,8 @@ def login(payload: LoginRequest, uow: SupabaseUnitOfWork = Depends(get_uow)):
         branch=user.branch_name or 'Unknown',
         branch_id=user.branch_id or '',
         assigned_branches=assigned_branches,
-        assigned_branch_ids=assigned_branch_ids
+        assigned_branch_ids=assigned_branch_ids,
+        allowed_products=allowed_prods
     )
 
     return LoginResponse(

@@ -7,6 +7,7 @@ class AuthUser {
   final String? branchId;
   final List<String> assignedBranches;
   final List<String> assignedBranchIds;
+  final List<String> allowedProducts;
 
   AuthUser({
     required this.id,
@@ -17,6 +18,7 @@ class AuthUser {
     this.branchId,
     this.assignedBranches = const [],
     this.assignedBranchIds = const [],
+    this.allowedProducts = const [],
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
@@ -29,6 +31,7 @@ class AuthUser {
       branchId: json['branch_id']?.toString(),
       assignedBranches: (json['assigned_branches'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       assignedBranchIds: (json['assigned_branch_ids'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      allowedProducts: (json['allowed_products'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     );
   }
 
@@ -42,6 +45,7 @@ class AuthUser {
       'branch_id': branchId,
       'assigned_branches': assignedBranches,
       'assigned_branch_ids': assignedBranchIds,
+      'allowed_products': allowedProducts,
     };
   }
 }

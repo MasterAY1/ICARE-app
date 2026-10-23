@@ -891,7 +891,8 @@ class PortfolioService:
                     disb_dt_str = str(l.get("disbursement_date") or l.get("date") or "")[:10]
                     start_dt_str = str(l.get("start_date") or "")[:10]
                     target_dt_str = end_date.isoformat()
-                    is_disbursed_today = (disb_dt_str == target_dt_str)
+                    is_legacy = bool((l.get("extra_fields") or {}).get("is_legacy", False))
+                    is_disbursed_today = (disb_dt_str == target_dt_str) and not is_legacy
                     is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
 
                     # Status label assignment for UI

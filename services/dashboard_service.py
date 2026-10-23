@@ -168,7 +168,8 @@ class DashboardService:
             disb_dt_str = str(l.get("disbursement_date") or l.get("date") or "")[:10]
             start_dt_str = str(l.get("start_date") or "")[:10]
             target_dt_str = target_date.isoformat()
-            is_disbursed_today = (disb_dt_str == target_dt_str)
+            is_legacy = bool((l.get("extra_fields") or {}).get("is_legacy", False))
+            is_disbursed_today = (disb_dt_str == target_dt_str) and not is_legacy
             is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
 
             g_mday = group_mday_map.get(cid) or l.get("meeting_day") or "Daily"
@@ -566,7 +567,8 @@ class DashboardService:
                 disb_dt_str = str(l.get("disbursement_date") or l.get("date") or "")[:10]
                 start_dt_str = str(l.get("start_date") or "")[:10]
                 target_dt_str = target_date.isoformat()
-                is_disbursed_today = (disb_dt_str == target_dt_str)
+                is_legacy = bool((l.get("extra_fields") or {}).get("is_legacy", False))
+                is_disbursed_today = (disb_dt_str == target_dt_str) and not is_legacy
                 is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
 
                 is_meeting_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower() or str(g_mday).strip().lower() == "daily")

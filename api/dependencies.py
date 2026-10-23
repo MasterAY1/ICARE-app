@@ -58,6 +58,10 @@ def get_current_user(
     role = user_record.role
     user_permissions = PERMISSIONS.get(role, set())
 
+    allowed_prods = []
+    if getattr(user_record, "extra_fields", None) and isinstance(user_record.extra_fields, dict):
+        allowed_prods = user_record.extra_fields.get("allowed_products", []) or []
+
     current_user = CurrentUser(
         id=user_record.id,
         username=user_record.username,
@@ -66,6 +70,7 @@ def get_current_user(
         branch_id=user_record.branch_id or '',
         full_name=user_record.full_name or '',
         permissions=user_permissions,
+        allowed_products=allowed_prods,
     )
 
     if role in ["Area Manager", "AM", "AREA_MANAGER"]:

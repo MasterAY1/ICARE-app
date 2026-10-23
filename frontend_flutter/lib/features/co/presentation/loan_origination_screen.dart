@@ -261,6 +261,35 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     }
   }
 
+  List<String> _getCategoryProducts(String category, AuthUser? user) {
+    const allFinance = [
+      'Daily 60 Days',
+      'Daily 120 Days',
+      'Weekly 12W',
+      'Weekly 24W',
+      'Monthly 3M',
+      'Monthly 6M',
+    ];
+    const allAsset = [
+      '60-Day Asset',
+      '120-Day Asset',
+      'Weekly 12W Asset',
+      'Weekly 24W Asset',
+      'Monthly 3M Asset',
+      'Monthly 6M Asset',
+      'Cash and Carry',
+    ];
+
+    final baseList = category == 'Finance' ? allFinance : allAsset;
+    final allowed = user?.allowedProducts ?? [];
+    if (allowed.isNotEmpty) {
+      final allowedSet = allowed.map((e) => e.trim().toLowerCase()).toSet();
+      final filtered = baseList.where((p) => allowedSet.contains(p.trim().toLowerCase())).toList();
+      return filtered;
+    }
+    return baseList;
+  }
+
   // ==========================================
   // ACTIONS: REGISTRATION
   // ==========================================
@@ -1983,6 +2012,23 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
 
   Widget _buildApplicationTab() {
     final isMobile = MediaQuery.of(context).size.width < 600;
+    final authState = ref.watch(authControllerProvider);
+    final user = authState is AuthStateAuthenticated ? authState.user : null;
+
+    final financeProducts = _getCategoryProducts('Finance', user);
+    final assetProducts = _getCategoryProducts('Asset', user);
+
+    if (_loanAppCategory == 'Finance' && financeProducts.isEmpty && assetProducts.isNotEmpty) {
+      _loanAppCategory = 'Asset';
+    } else if (_loanAppCategory == 'Asset' && assetProducts.isEmpty && financeProducts.isNotEmpty) {
+      _loanAppCategory = 'Finance';
+    }
+
+    final currentCategoryProducts = _loanAppCategory == 'Finance' ? financeProducts : assetProducts;
+    if (currentCategoryProducts.isNotEmpty && !currentCategoryProducts.contains(_loanAppProduct)) {
+      _loanAppProduct = currentCategoryProducts.first;
+    }
+
     final amt = _currentAmount;
     final rate = _currentRate;
     final dur = _currentDuration;
@@ -2289,6 +2335,21 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 ),
                 const SizedBox(width: 8),
                 const Text('Loan Product Parameters', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: Color(0xFF0F172A))),
+                if (user != null && user.allowedProducts.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                    ),
+                    child: Text(
+                      'Assigned Products (${user.allowedProducts.length})',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 10),
@@ -2298,32 +2359,41 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               children: [
                 Expanded(
                   child: InkWell(
-                    onTap: () {
-                      setState(() {
-                        _loanAppCategory = 'Finance';
-                        _loanAppProduct = 'Weekly 12W';
-                      });
-                      _recomputeFinanceGapDefault();
-                      _runEligibilityCheck(_selectedAppClient!['client_id']);
-                    },
+                    onTap: financeProducts.isEmpty
+                        ? null
+                        : () {
+                            setState(() {
+                              _loanAppCategory = 'Finance';
+                              if (!financeProducts.contains(_loanAppProduct) && financeProducts.isNotEmpty) {
+                                _loanAppProduct = financeProducts.first;
+                              }
+                            });
+                            _recomputeFinanceGapDefault();
+                            if (_selectedAppClient != null) {
+                              _runEligibilityCheck(_selectedAppClient!['client_id']);
+                            }
+                          },
                     borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 9),
-                      decoration: BoxDecoration(
-                        color: _loanAppCategory == 'Finance' ? const Color(0xFFECFDF5) : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: _loanAppCategory == 'Finance' ? const Color(0xFF059669) : const Color(0xFFCBD5E1),
-                          width: _loanAppCategory == 'Finance' ? 1.5 : 1.0,
+                    child: Opacity(
+                      opacity: financeProducts.isEmpty ? 0.45 : 1.0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 9),
+                        decoration: BoxDecoration(
+                          color: _loanAppCategory == 'Finance' ? const Color(0xFFECFDF5) : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _loanAppCategory == 'Finance' ? const Color(0xFF059669) : const Color(0xFFCBD5E1),
+                            width: _loanAppCategory == 'Finance' ? 1.5 : 1.0,
+                          ),
                         ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          'Finance Loan',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: _loanAppCategory == 'Finance' ? FontWeight.w800 : FontWeight.w600,
-                            color: _loanAppCategory == 'Finance' ? const Color(0xFF065F46) : const Color(0xFF475569),
+                        child: Center(
+                          child: Text(
+                            'Finance Loan',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: _loanAppCategory == 'Finance' ? FontWeight.w800 : FontWeight.w600,
+                              color: _loanAppCategory == 'Finance' ? const Color(0xFF065F46) : const Color(0xFF475569),
+                            ),
                           ),
                         ),
                       ),
@@ -2333,32 +2403,41 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: InkWell(
-                    onTap: () {
-                      setState(() {
-                        _loanAppCategory = 'Asset';
-                        _loanAppProduct = 'Weekly 12W Asset';
-                      });
-                      _recomputeFinanceGapDefault();
-                      _runEligibilityCheck(_selectedAppClient!['client_id']);
-                    },
+                    onTap: assetProducts.isEmpty
+                        ? null
+                        : () {
+                            setState(() {
+                              _loanAppCategory = 'Asset';
+                              if (!assetProducts.contains(_loanAppProduct) && assetProducts.isNotEmpty) {
+                                _loanAppProduct = assetProducts.first;
+                              }
+                            });
+                            _recomputeFinanceGapDefault();
+                            if (_selectedAppClient != null) {
+                              _runEligibilityCheck(_selectedAppClient!['client_id']);
+                            }
+                          },
                     borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 9),
-                      decoration: BoxDecoration(
-                        color: _loanAppCategory == 'Asset' ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: _loanAppCategory == 'Asset' ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
-                          width: _loanAppCategory == 'Asset' ? 1.5 : 1.0,
+                    child: Opacity(
+                      opacity: assetProducts.isEmpty ? 0.45 : 1.0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 9),
+                        decoration: BoxDecoration(
+                          color: _loanAppCategory == 'Asset' ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _loanAppCategory == 'Asset' ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                            width: _loanAppCategory == 'Asset' ? 1.5 : 1.0,
+                          ),
                         ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          'Asset Loan',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: _loanAppCategory == 'Asset' ? FontWeight.w800 : FontWeight.w600,
-                            color: _loanAppCategory == 'Asset' ? const Color(0xFF1D4ED8) : const Color(0xFF475569),
+                        child: Center(
+                          child: Text(
+                            'Asset Loan',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: _loanAppCategory == 'Asset' ? FontWeight.w800 : FontWeight.w600,
+                              color: _loanAppCategory == 'Asset' ? const Color(0xFF1D4ED8) : const Color(0xFF475569),
+                            ),
                           ),
                         ),
                       ),
@@ -2373,33 +2452,26 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               children: [
                 DropdownButtonFormField<String>(
                   isExpanded: true,
-                  value: _loanAppProduct,
-                  decoration: const InputDecoration(labelText: 'Loan Product', border: OutlineInputBorder()),
-                  items: (_loanAppCategory == 'Finance'
-                          ? [
-                              'Daily 60 Days',
-                              'Daily 120 Days',
-                              'Weekly 12W',
-                              'Weekly 24W',
-                              'Monthly 3M',
-                              'Monthly 6M'
-                            ]
-                          : [
-                              '60-Day Asset',
-                              '120-Day Asset',
-                              'Weekly 12W Asset',
-                              'Weekly 24W Asset',
-                              'Monthly 3M Asset',
-                              'Monthly 6M Asset',
-                              'Cash and Carry'
-                            ])
+                  value: currentCategoryProducts.contains(_loanAppProduct)
+                      ? _loanAppProduct
+                      : (currentCategoryProducts.isNotEmpty ? currentCategoryProducts.first : null),
+                  decoration: InputDecoration(
+                    labelText: 'Loan Product',
+                    helperText: (user != null && user.allowedProducts.isNotEmpty)
+                        ? 'Showing products assigned by Branch Manager'
+                        : null,
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: currentCategoryProducts
                       .map((p) => DropdownMenuItem(value: p, child: Text(p, overflow: TextOverflow.ellipsis, maxLines: 1)))
                       .toList(),
                   onChanged: (val) {
                     if (val != null) {
                       setState(() => _loanAppProduct = val);
                       _recomputeFinanceGapDefault();
-                      _runEligibilityCheck(_selectedAppClient!['client_id']);
+                      if (_selectedAppClient != null) {
+                        _runEligibilityCheck(_selectedAppClient!['client_id']);
+                      }
                     }
                   },
                 ),

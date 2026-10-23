@@ -300,7 +300,8 @@ class UserMapper:
             branch_id=str(dto.get("branch_id", "")),
             is_active=dto.get("is_active", True),
             last_login=_parse_datetime(dto.get("last_login")),
-            last_activity=_parse_datetime(dto.get("last_activity"))
+            last_activity=_parse_datetime(dto.get("last_activity")),
+            extra_fields=dto.get("extra_fields") if isinstance(dto.get("extra_fields"), dict) else {}
         )
 
 class CashbookMapper:

@@ -15,3 +15,4 @@ class User:
     is_active: bool = True
     last_login: Optional[datetime] = None
     last_activity: Optional[datetime] = None
+    extra_fields: Optional[dict] = None
