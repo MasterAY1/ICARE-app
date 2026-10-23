@@ -55,7 +55,7 @@ def _resolve_scope(
     current_user: CurrentUser,
     requested_branch_id: Optional[str] = None,
     requested_officer_id: Optional[str] = None
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[Any, Optional[str]]:
     """Enforces strict RBAC scoping rules."""
     role = (current_user.role or "").strip()
     is_officer = role in ["CO", "Officer", "Credit Officer", "CREDIT_OFFICER"]
@@ -74,17 +74,19 @@ def _resolve_scope(
         if requested_officer_id in ["All", "All Officers", ""]:
             final_officer_id = None
     elif is_am:
-        if requested_branch_id in ["All", "All Branches", ""]:
-            final_branch_id = current_user.branch_id
+        allowed_bids = [b for b in getattr(current_user, "assigned_branch_ids", []) if b]
+        if current_user.branch_id and current_user.branch_id not in allowed_bids:
+            allowed_bids.append(current_user.branch_id)
+        if requested_branch_id in ["All", "All Branches", "All Assigned Branches", "", None]:
+            final_branch_id = allowed_bids if allowed_bids else (current_user.branch_id or None)
         else:
-            allowed_bids = getattr(current_user, "assigned_branch_ids", [current_user.branch_id])
             if requested_branch_id not in allowed_bids:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: Requested branch is outside your assigned area.")
             final_branch_id = requested_branch_id
         if requested_officer_id in ["All", "All Officers", ""]:
             final_officer_id = None
     else:  # Admin / Director
-        if requested_branch_id in ["All", "All Branches", ""]:
+        if requested_branch_id in ["All", "All Branches", "All Assigned Branches", ""]:
             final_branch_id = None
         if requested_officer_id in ["All", "All Officers", ""]:
             final_officer_id = None
@@ -122,14 +124,25 @@ def _get_resilient_collection_records(
     d_to_iso = d_to.isoformat() if isinstance(d_to, date) else (str(d_to)[:10] if d_to else None)
 
     branch_officer_ids = []
-    if b_id and b_id not in ["All", "All Branches"]:
+    if b_id and b_id not in ["All", "All Branches", "All Assigned Branches"]:
         try:
-            res_off = uow.client.table("app_users").select("id").eq("branch_id", b_id).execute()
-            branch_officer_ids = [str(u["id"]) for u in (res_off.data or []) if u.get("id")]
+            q_off = uow.client.table("app_users").select("id")
+            if isinstance(b_id, list):
+                valid_bids = [b for b in b_id if b and b not in ["All", "All Branches", "All Assigned Branches"]]
+                if valid_bids:
+                    q_off = q_off.in_("branch_id", valid_bids)
+                else:
+                    q_off = None
+            else:
+                q_off = q_off.eq("branch_id", b_id)
+            if q_off:
+                res_off = q_off.execute()
+                branch_officer_ids = [str(u["id"]) for u in (res_off.data or []) if u.get("id")]
         except Exception:
             pass
 
     cp_records = []
+    fallback_bid = b_id[0] if isinstance(b_id, list) and b_id else (b_id if isinstance(b_id, str) else None)
     try:
         query_cp = uow.client.table("collection_performance").select("*")
         if off_id and off_id not in ["All", "All Officers"]:
@@ -147,7 +160,7 @@ def _get_resilient_collection_records(
         res_cp = query_cp.order("meeting_date", desc=True).limit(limit).execute()
         for r in (res_cp.data or []):
             if b_id and not r.get("branch_id"):
-                r["branch_id"] = b_id
+                r["branch_id"] = fallback_bid
             cp_records.append(r)
     except Exception:
         cp_records = []
@@ -155,8 +168,13 @@ def _get_resilient_collection_records(
     if not cp_records:
         try:
             query_rep = uow.client.table("repayments").select("*")
-            if b_id and b_id not in ["All", "All Branches"]:
-                query_rep = query_rep.eq("branch_id", b_id)
+            if b_id and b_id not in ["All", "All Branches", "All Assigned Branches"]:
+                if isinstance(b_id, list):
+                    valid_bids = [b for b in b_id if b and b not in ["All", "All Branches", "All Assigned Branches"]]
+                    if valid_bids:
+                        query_rep = query_rep.in_("branch_id", valid_bids)
+                else:
+                    query_rep = query_rep.eq("branch_id", b_id)
             if off_id and off_id not in ["All", "All Officers"]:
                 query_rep = query_rep.eq("officer_id", off_id)
             elif branch_officer_ids:
@@ -190,7 +208,7 @@ def _get_resilient_collection_records(
                     "client_id": r.get("client_id"),
                     "loan_id": r.get("loan_id"),
                     "officer_id": r.get("officer_id"),
-                    "branch_id": r.get("branch_id") or b_id,
+                    "branch_id": r.get("branch_id") or fallback_bid,
                     "meeting_date": m_date,
                     "date": m_date,
                     "expected_amount": expected,
@@ -218,8 +236,8 @@ def get_audit_metadata(
 ):
     """Returns branches, officers, and loan products for dropdown filters."""
     role = (current_user.role or "").strip()
-    is_admin = role in ["Admin", "System Admin", "Director", "Auditor", "Super Admin"]
-    is_am = role in ["Area Manager", "AM"]
+    is_admin = role in ["Admin", "System Admin", "Director", "Auditor", "Super Admin", "ADMIN"]
+    is_am = role in ["Area Manager", "AM", "AREA_MANAGER"]
     is_co = role in ["CO", "Officer", "Credit Officer", "CREDIT_OFFICER"]
 
     effective_branch_id = branch_id
@@ -234,8 +252,9 @@ def get_audit_metadata(
             if current_user.branch_id:
                 q_b = q_b.eq("branch_id", current_user.branch_id)
         elif is_am and current_user.assigned_branch_ids:
-            allowed_bids = list(set([current_user.branch_id] + current_user.assigned_branch_ids))
-            q_b = q_b.in_("branch_id", allowed_bids)
+            allowed_bids = list(set([b for b in ([current_user.branch_id] + current_user.assigned_branch_ids) if b]))
+            if allowed_bids:
+                q_b = q_b.in_("branch_id", allowed_bids)
         res_b = q_b.execute()
         for b in (res_b.data or []):
             branches.append(BranchOption(
@@ -265,8 +284,9 @@ def get_audit_metadata(
         elif not is_admin and not is_am and current_user.branch_id:
             q_off = q_off.eq("branch_id", current_user.branch_id)
         elif is_am and current_user.assigned_branch_ids:
-            allowed_bids = list(set([current_user.branch_id] + current_user.assigned_branch_ids))
-            q_off = q_off.in_("branch_id", allowed_bids)
+            allowed_bids = list(set([b for b in ([current_user.branch_id] + current_user.assigned_branch_ids) if b]))
+            if allowed_bids:
+                q_off = q_off.in_("branch_id", allowed_bids)
 
         res_o = q_off.execute()
         for u in (res_o.data or []):
@@ -318,6 +338,8 @@ def get_6way_integrity(
 ):
     """Automated 6-Way mathematical balance verification (app.py L10057-10082)."""
     target_b_id, _ = _resolve_scope(current_user, branch_id)
+    if isinstance(target_b_id, list):
+        target_b_id = target_b_id[0] if target_b_id else current_user.branch_id
     p_date_iso = posting_date or date.today().isoformat()
     try:
         p_date = date.fromisoformat(p_date_iso)

@@ -44,7 +44,12 @@ class SupabaseAuditViewRepository(BaseRepository):
                 else:
                     query = query.eq("fee_type", fee_type)
             if branch_id and branch_id != "All":
-                query = query.eq("branch_id", branch_id)
+                if isinstance(branch_id, list):
+                    valid_bids = [b for b in branch_id if b and b not in ["All", "All Branches", "All Assigned Branches"]]
+                    if valid_bids:
+                        query = query.in_("branch_id", valid_bids)
+                else:
+                    query = query.eq("branch_id", branch_id)
             if officer_id and officer_id != "All":
                 query = query.eq("officer_id", officer_id)
             if client_id:
@@ -83,8 +88,19 @@ class SupabaseAuditViewRepository(BaseRepository):
             pass
 
         def matches_branch(ev_b, target_b):
-            if not target_b or target_b in ["All", "All Branches"]:
+            if not target_b or target_b in ["All", "All Branches", "All Assigned Branches"]:
                 return True
+            if isinstance(target_b, list):
+                if not ev_b:
+                    return True
+                for tb in target_b:
+                    if str(ev_b).lower() == str(tb).lower():
+                        return True
+                    if str(tb) in branch_id_to_name and branch_id_to_name[str(tb)].lower() == str(ev_b).lower():
+                        return True
+                    if str(ev_b) in branch_id_to_name and branch_id_to_name[str(ev_b)].lower() == str(tb).lower():
+                        return True
+                return False
             if not ev_b:
                 return True
             if str(ev_b).lower() == str(target_b).lower():
@@ -249,7 +265,12 @@ class SupabaseAuditViewRepository(BaseRepository):
                 else:
                     query = query.eq("transaction_type", transaction_type)
             if branch_id and branch_id != "All":
-                query = query.eq("branch_id", branch_id)
+                if isinstance(branch_id, list):
+                    valid_bids = [b for b in branch_id if b and b not in ["All", "All Branches", "All Assigned Branches"]]
+                    if valid_bids:
+                        query = query.in_("branch_id", valid_bids)
+                else:
+                    query = query.eq("branch_id", branch_id)
             if officer_id and officer_id != "All":
                 query = query.eq("officer_id", officer_id)
             if date_from:
@@ -286,8 +307,19 @@ class SupabaseAuditViewRepository(BaseRepository):
             pass
 
         def matches_branch(ev_b, target_b):
-            if not target_b or target_b in ["All", "All Branches"]:
+            if not target_b or target_b in ["All", "All Branches", "All Assigned Branches"]:
                 return True
+            if isinstance(target_b, list):
+                if not ev_b:
+                    return True
+                for tb in target_b:
+                    if str(ev_b).lower() == str(tb).lower():
+                        return True
+                    if str(tb) in branch_id_to_name and branch_id_to_name[str(tb)].lower() == str(ev_b).lower():
+                        return True
+                    if str(ev_b) in branch_id_to_name and branch_id_to_name[str(ev_b)].lower() == str(tb).lower():
+                        return True
+                return False
             if not ev_b:
                 return True
             if str(ev_b).lower() == str(target_b).lower():
@@ -675,7 +707,12 @@ class SupabaseAuditViewRepository(BaseRepository):
         """Fetch disbursed/active/completed loan records (excluding legacy onboarding by default)."""
         query = self.client.table("loans").select("*").in_("status", ["Disbursed", "Active", "Completed", "Closed"])
         if branch_id and branch_id != "All":
-            query = query.eq("branch_id", branch_id)
+            if isinstance(branch_id, list):
+                valid_bids = [b for b in branch_id if b and b not in ["All", "All Branches", "All Assigned Branches"]]
+                if valid_bids:
+                    query = query.in_("branch_id", valid_bids)
+            else:
+                query = query.eq("branch_id", branch_id)
         if officer_id and officer_id != "All":
             query = query.eq("officer_id", officer_id)
         if product_id and product_id != "All":
@@ -720,7 +757,12 @@ class SupabaseAuditViewRepository(BaseRepository):
         """Fetch repayment records from public.repayments."""
         query = self.client.table("repayments").select("*")
         if branch_id and branch_id != "All":
-            query = query.eq("branch_id", branch_id)
+            if isinstance(branch_id, list):
+                valid_bids = [b for b in branch_id if b and b not in ["All", "All Branches", "All Assigned Branches"]]
+                if valid_bids:
+                    query = query.in_("branch_id", valid_bids)
+            else:
+                query = query.eq("branch_id", branch_id)
         if officer_id and officer_id != "All":
             query = query.eq("officer_id", officer_id)
         if client_id:
@@ -729,7 +771,12 @@ class SupabaseAuditViewRepository(BaseRepository):
             try:
                 l_q = self.client.table("loans").select("loan_id").eq("product_id", product_id)
                 if branch_id and branch_id != "All":
-                    l_q = l_q.eq("branch_id", branch_id)
+                    if isinstance(branch_id, list):
+                        valid_bids = [b for b in branch_id if b and b not in ["All", "All Branches", "All Assigned Branches"]]
+                        if valid_bids:
+                            l_q = l_q.in_("branch_id", valid_bids)
+                    else:
+                        l_q = l_q.eq("branch_id", branch_id)
                 l_res = l_q.execute()
                 matching_loan_ids = [str(l["loan_id"]) for l in (l_res.data or []) if l.get("loan_id")]
                 if not matching_loan_ids:
@@ -803,7 +850,12 @@ class SupabaseAuditViewRepository(BaseRepository):
             try:
                 query = self.client.table(tbl).select("*")
                 if branch_id and branch_id != "All":
-                    query = query.eq("branch_id", branch_id)
+                    if isinstance(branch_id, list):
+                        valid_bids = [b for b in branch_id if b and b not in ["All", "All Branches", "All Assigned Branches"]]
+                        if valid_bids:
+                            query = query.in_("branch_id", valid_bids)
+                    else:
+                        query = query.eq("branch_id", branch_id)
                 if officer_id and officer_id != "All":
                     query = query.eq("officer_id", officer_id)
                 if d_from_iso:
@@ -842,14 +894,25 @@ class SupabaseAuditViewRepository(BaseRepository):
         d_to_iso = date_to.isoformat() if isinstance(date_to, date) else (str(date_to)[:10] if date_to else None)
 
         branch_officer_ids = []
-        if branch_id and branch_id not in ["All", "All Branches"]:
+        if branch_id and branch_id not in ["All", "All Branches", "All Assigned Branches"]:
             try:
-                res_off = self.client.table("app_users").select("id").eq("branch_id", branch_id).execute()
-                branch_officer_ids = [str(u["id"]) for u in (res_off.data or []) if u.get("id")]
+                q_off = self.client.table("app_users").select("id")
+                if isinstance(branch_id, list):
+                    valid_bids = [b for b in branch_id if b and b not in ["All", "All Branches", "All Assigned Branches"]]
+                    if valid_bids:
+                        q_off = q_off.in_("branch_id", valid_bids)
+                    else:
+                        q_off = None
+                else:
+                    q_off = q_off.eq("branch_id", branch_id)
+                if q_off:
+                    res_off = q_off.execute()
+                    branch_officer_ids = [str(u["id"]) for u in (res_off.data or []) if u.get("id")]
             except Exception:
                 pass
 
         cp_records: List[Dict[str, Any]] = []
+        fallback_bid = branch_id[0] if isinstance(branch_id, list) and branch_id else (branch_id if isinstance(branch_id, str) else None)
 
         # 1. First, attempt query on public.collection_performance
         try:
@@ -869,7 +932,7 @@ class SupabaseAuditViewRepository(BaseRepository):
             res_cp = query_cp.order("meeting_date", desc=True).limit(limit).execute()
             for r in (res_cp.data or []):
                 if branch_id and not r.get("branch_id"):
-                    r["branch_id"] = branch_id
+                    r["branch_id"] = fallback_bid
                 cp_records.append(r)
         except Exception:
             cp_records = []
@@ -878,8 +941,13 @@ class SupabaseAuditViewRepository(BaseRepository):
         if not cp_records:
             try:
                 query_rep = self.client.table("repayments").select("*")
-                if branch_id and branch_id not in ["All", "All Branches"]:
-                    query_rep = query_rep.eq("branch_id", branch_id)
+                if branch_id and branch_id not in ["All", "All Branches", "All Assigned Branches"]:
+                    if isinstance(branch_id, list):
+                        valid_bids = [b for b in branch_id if b and b not in ["All", "All Branches", "All Assigned Branches"]]
+                        if valid_bids:
+                            query_rep = query_rep.in_("branch_id", valid_bids)
+                    else:
+                        query_rep = query_rep.eq("branch_id", branch_id)
                 if officer_id and officer_id not in ["All", "All Officers"]:
                     query_rep = query_rep.eq("officer_id", officer_id)
                 elif branch_officer_ids:
@@ -913,7 +981,7 @@ class SupabaseAuditViewRepository(BaseRepository):
                         "client_id": r.get("client_id"),
                         "loan_id": r.get("loan_id"),
                         "officer_id": r.get("officer_id"),
-                        "branch_id": r.get("branch_id") or branch_id,
+                        "branch_id": r.get("branch_id") or fallback_bid,
                         "meeting_date": m_date,
                         "date": m_date,
                         "expected_amount": expected,

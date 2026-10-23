@@ -34,6 +34,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   late DateTime _collectionsFromDate;
 
   // Per-Tab Filter Values
+  String? _selectedIntegrityBranch;
   String _selectedFeeType = 'ALL';
   String _selectedFeeBranch = 'All Branches';
   String _selectedFeeOfficer = 'All Officers';
@@ -120,12 +121,22 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
         setState(() {
           _meta = meta;
           final userBranch = user?.branch ?? (meta.branches.isNotEmpty ? meta.branches.first.name : 'Ogijo');
-          if (!isAdmin) {
+          if (isAm) {
+            _selectedIntegrityBranch = meta.branches.isNotEmpty ? meta.branches.first.name : userBranch;
+            _selectedFeeBranch = 'All Assigned Branches';
+            _selectedTrBranch = 'All Assigned Branches';
+            _selectedSavBranch = 'All Assigned Branches';
+            _selectedLoanBranch = 'All Assigned Branches';
+            _selectedCpBranch = 'All Assigned Branches';
+          } else if (!isAdmin) {
+            _selectedIntegrityBranch = userBranch;
             _selectedFeeBranch = userBranch;
             _selectedTrBranch = userBranch;
             _selectedSavBranch = userBranch;
             _selectedLoanBranch = userBranch;
             _selectedCpBranch = userBranch;
+          } else {
+            _selectedIntegrityBranch = meta.branches.isNotEmpty ? meta.branches.first.name : userBranch;
           }
         });
       }
@@ -181,7 +192,19 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
       pageTitle = 'Credit Officer Audit Ledger';
       pageCaption = 'Personalized audit trail of your client savings, loans, and collections.';
       availableTabs = ['Savings Ledger', 'Loan Portfolio', 'Collection Performance'];
-    } else if (isBm || isAm) {
+    } else if (isAm) {
+      pageTitle = 'Area Supervisory Audit Ledger';
+      pageCaption = 'Supervisory multi-branch audit trails, 6-way financial integrity verification, and 360° transaction explorer across your assigned area.';
+      availableTabs = [
+        '6-Way Integrity Match',
+        'Fees Audit',
+        'Treasury Audit',
+        'Savings Ledger',
+        'Loan Portfolio',
+        'Collection Performance',
+        '360° Explorer & Timeline'
+      ];
+    } else if (isBm) {
       pageTitle = 'Branch Audit Ledger';
       pageCaption = 'Read-only branch audit trails, 6-way financial integrity verification, and 360° transaction explorer.';
       availableTabs = [
@@ -371,17 +394,17 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }) {
     switch (activeTab) {
       case '6-Way Integrity Match':
-        return _buildTab1Integrity(branchId);
+        return _buildTab1Integrity(branchId, isOfficer, isBm, isAm, isAdmin);
       case 'Fees Audit':
-        return _buildTab2Fees(branchId, isOfficer, isBm, isAdmin);
+        return _buildTab2Fees(branchId, isOfficer, isBm, isAm, isAdmin);
       case 'Treasury Audit':
-        return _buildTab3Treasury(branchId, isOfficer, isBm, isAdmin);
+        return _buildTab3Treasury(branchId, isOfficer, isBm, isAm, isAdmin);
       case 'Savings Ledger':
-        return _buildTab4Savings(branchId, isOfficer, isBm, isAdmin);
+        return _buildTab4Savings(branchId, isOfficer, isBm, isAm, isAdmin);
       case 'Loan Portfolio':
-        return _buildTab5Loans(branchId, isOfficer, isBm, isAdmin);
+        return _buildTab5Loans(branchId, isOfficer, isBm, isAm, isAdmin);
       case 'Collection Performance':
-        return _buildTab6Collections(branchId, isOfficer, isBm, isAdmin);
+        return _buildTab6Collections(branchId, isOfficer, isBm, isAm, isAdmin);
       case 'Exception Reports':
         return _buildTab7Exceptions(branchId);
       case '360° Explorer & Timeline':
@@ -398,9 +421,15 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // =========================================================================
   // TAB 1: 6-WAY FINANCIAL INTEGRITY
   // =========================================================================
-  Widget _buildTab1Integrity(String branchId) {
+  Widget _buildTab1Integrity(String branchId, bool isOfficer, bool isBm, bool isAm, bool isAdmin) {
+    final bOptions = _getBranchOptions(isAdmin, isAm: isAm, includeAll: false);
+    if (_selectedIntegrityBranch == null || !bOptions.contains(_selectedIntegrityBranch)) {
+      _selectedIntegrityBranch = bOptions.isNotEmpty ? bOptions.first : (branchId.isNotEmpty ? branchId : 'Ogijo');
+    }
+    final effectiveBranchId = _resolveTargetBranchId(_selectedIntegrityBranch!, branchId) ?? branchId;
+
     return FutureBuilder<Integrity6WayModel>(
-      future: ref.read(auditApiServiceProvider).get6WayIntegrity(branchId: branchId),
+      future: ref.read(auditApiServiceProvider).get6WayIntegrity(branchId: effectiveBranchId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
@@ -422,6 +451,34 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
             const Text('Live 6-Way Financial Integrity Verification', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
             const SizedBox(height: 4),
             const Text('Automated mathematical balance verification across General Ledger, Audit Views, Cashbooks, Dashboards, and Reports.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+            if (isAdmin || isAm) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.account_balance_outlined, size: 18, color: Color(0xFF64748B)),
+                    const SizedBox(width: 8),
+                    const Text('Branch Scope:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildDropdown(
+                        'Branch',
+                        _selectedIntegrityBranch!,
+                        bOptions,
+                        (v) => setState(() => _selectedIntegrityBranch = v),
+                        enabled: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
 
             // Status Banner (Strict Zero-Emoji, Rule 10)
@@ -530,8 +587,8 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // =========================================================================
   // TAB 2: FEES AUDIT
   // =========================================================================
-  Widget _buildTab2Fees(String branchId, bool isOfficer, bool isBm, bool isAdmin) {
-    final bOptions = _getBranchOptions(isAdmin);
+  Widget _buildTab2Fees(String branchId, bool isOfficer, bool isBm, bool isAm, bool isAdmin) {
+    final bOptions = _getBranchOptions(isAdmin, isAm: isAm);
     final oOptions = _getOfficerOptions();
 
     return Column(
@@ -579,7 +636,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                             _selectedFeeBranch,
                             bOptions,
                             (v) => setState(() => _selectedFeeBranch = v),
-                            enabled: isAdmin,
+                            enabled: isAdmin || isAm,
                           ),
                         ),
                       ],
@@ -628,7 +685,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                       _selectedFeeBranch,
                       bOptions,
                       (v) => setState(() => _selectedFeeBranch = v),
-                      enabled: isAdmin,
+                      enabled: isAdmin || isAm,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -728,8 +785,8 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // =========================================================================
   // TAB 3: TREASURY AUDIT
   // =========================================================================
-  Widget _buildTab3Treasury(String branchId, bool isOfficer, bool isBm, bool isAdmin) {
-    final bOptions = _getBranchOptions(isAdmin);
+  Widget _buildTab3Treasury(String branchId, bool isOfficer, bool isBm, bool isAm, bool isAdmin) {
+    final bOptions = _getBranchOptions(isAdmin, isAm: isAm);
     final oOptions = _getOfficerOptions();
 
     return Column(
@@ -777,7 +834,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                             _selectedTrBranch,
                             bOptions,
                             (v) => setState(() => _selectedTrBranch = v),
-                            enabled: isAdmin,
+                            enabled: isAdmin || isAm,
                           ),
                         ),
                       ],
@@ -826,7 +883,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                       _selectedTrBranch,
                       bOptions,
                       (v) => setState(() => _selectedTrBranch = v),
-                      enabled: isAdmin,
+                      enabled: isAdmin || isAm,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -925,8 +982,8 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // =========================================================================
   // TAB 4: SAVINGS AUDIT
   // =========================================================================
-  Widget _buildTab4Savings(String branchId, bool isOfficer, bool isBm, bool isAdmin) {
-    final bOptions = _getBranchOptions(isAdmin);
+  Widget _buildTab4Savings(String branchId, bool isOfficer, bool isBm, bool isAm, bool isAdmin) {
+    final bOptions = _getBranchOptions(isAdmin, isAm: isAm);
     final oOptions = _getOfficerOptions();
 
     return Column(
@@ -974,7 +1031,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                             _selectedSavBranch,
                             bOptions,
                             (v) => setState(() => _selectedSavBranch = v),
-                            enabled: isAdmin,
+                            enabled: isAdmin || isAm,
                           ),
                         ),
                       ],
@@ -1023,7 +1080,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                       _selectedSavBranch,
                       bOptions,
                       (v) => setState(() => _selectedSavBranch = v),
-                      enabled: isAdmin,
+                      enabled: isAdmin || isAm,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1125,8 +1182,8 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // =========================================================================
   // TAB 5: LOAN AUDIT
   // =========================================================================
-  Widget _buildTab5Loans(String branchId, bool isOfficer, bool isBm, bool isAdmin) {
-    final bOptions = _getBranchOptions(isAdmin);
+  Widget _buildTab5Loans(String branchId, bool isOfficer, bool isBm, bool isAm, bool isAdmin) {
+    final bOptions = _getBranchOptions(isAdmin, isAm: isAm);
     final oOptions = _getOfficerOptions();
     final pOptions = ['All Products'] + (_meta?.products.map((p) => p.name).toList() ?? []);
 
@@ -1188,7 +1245,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                             _selectedLoanBranch,
                             bOptions,
                             (v) => setState(() => _selectedLoanBranch = v),
-                            enabled: isAdmin,
+                            enabled: isAdmin || isAm,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1241,7 +1298,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                       _selectedLoanBranch,
                       bOptions,
                       (v) => setState(() => _selectedLoanBranch = v),
-                      enabled: isAdmin,
+                      enabled: isAdmin || isAm,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1368,8 +1425,8 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // =========================================================================
   // TAB 6: COLLECTION PERFORMANCE
   // =========================================================================
-  Widget _buildTab6Collections(String branchId, bool isOfficer, bool isBm, bool isAdmin) {
-    final bOptions = _getBranchOptions(isAdmin);
+  Widget _buildTab6Collections(String branchId, bool isOfficer, bool isBm, bool isAm, bool isAdmin) {
+    final bOptions = _getBranchOptions(isAdmin, isAm: isAm);
     final oOptions = _getOfficerOptions();
 
     return Column(
@@ -1408,7 +1465,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                             _selectedCpBranch,
                             bOptions,
                             (v) => setState(() => _selectedCpBranch = v),
-                            enabled: isAdmin,
+                            enabled: isAdmin || isAm,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1456,7 +1513,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                       _selectedCpBranch,
                       bOptions,
                       (v) => setState(() => _selectedCpBranch = v),
-                      enabled: isAdmin,
+                      enabled: isAdmin || isAm,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -2240,9 +2297,19 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // SHARED UI HELPERS & WIDGET BUILDERS
   // =========================================================================
 
-  List<String> _getBranchOptions(bool isAdmin) {
+  List<String> _getBranchOptions(bool isAdmin, {bool isAm = false, bool includeAll = true}) {
     final authState = ref.read(authControllerProvider);
     final user = authState is AuthStateAuthenticated ? authState.user : null;
+
+    if (isAm) {
+      final bNames = _meta?.branches.map((b) => b.name).toList() ?? [];
+      if (!includeAll) {
+        if (bNames.isNotEmpty) return bNames;
+        final ub = user?.branch;
+        return (ub != null && ub.isNotEmpty) ? [ub] : ['Ogijo'];
+      }
+      return ['All Assigned Branches', ...bNames];
+    }
 
     if (!isAdmin) {
       final userBranch = user?.branch;
@@ -2255,9 +2322,9 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
       return ['Ogijo'];
     }
 
-    if (_meta == null) return ['All Branches'];
+    if (_meta == null) return includeAll ? ['All Branches'] : ['Ogijo'];
     final bNames = _meta!.branches.map((b) => b.name).toList();
-    return ['All Branches'] + bNames;
+    return includeAll ? ['All Branches', ...bNames] : bNames;
   }
 
   List<String> _getOfficerOptions() {
@@ -2266,7 +2333,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   String? _resolveTargetBranchId(String selectedName, String fallbackId) {
-    if (selectedName == 'All Branches' || selectedName.isEmpty) return null;
+    if (selectedName == 'All Branches' || selectedName == 'All Assigned Branches' || selectedName.isEmpty) return null;
     if (_meta != null) {
       for (final b in _meta!.branches) {
         if (b.name == selectedName) return b.branchId;

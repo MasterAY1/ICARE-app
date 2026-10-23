@@ -68,14 +68,18 @@ def get_current_user(
         permissions=user_permissions,
     )
 
-    if role == "Area Manager":
+    if role in ["Area Manager", "AM", "AREA_MANAGER"]:
         try:
             assignments = uow.users.load_am_assignments(user_record.id)
-            current_user.assigned_branch_ids = [a["branch_id"] for a in assignments]
-            current_user.assigned_branches = [a["name"] for a in assignments]
+            current_user.assigned_branch_ids = [a["branch_id"] for a in assignments if a.get("branch_id")]
+            current_user.assigned_branches = [a["name"] for a in assignments if a.get("name")]
+            if user_record.branch_id and user_record.branch_id not in current_user.assigned_branch_ids:
+                current_user.assigned_branch_ids.append(user_record.branch_id)
+            if user_record.branch_name and user_record.branch_name not in current_user.assigned_branches:
+                current_user.assigned_branches.append(user_record.branch_name)
         except Exception:
-            current_user.assigned_branch_ids = []
-            current_user.assigned_branches = []
+            current_user.assigned_branch_ids = [user_record.branch_id] if user_record.branch_id else []
+            current_user.assigned_branches = [user_record.branch_name] if user_record.branch_name else []
 
     return current_user
 

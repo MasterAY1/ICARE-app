@@ -194,6 +194,39 @@ class TestAuditOfficerScoping(unittest.TestCase):
         self.assertEqual(co1_cp_view[0]["Officer"], "Mrs. Dorcas")
         self.assertEqual(co1_cp_view[0]["Paid_Raw"], 5000.0)
 
+    def test_am_multi_branch_scope_resolution(self):
+        """Verify Area Manager multi-branch scope resolution and fail-closed security (FP-001)."""
+        from api.routes.audit import _resolve_scope
+        from models.user import CurrentUser
+        from fastapi import HTTPException
+
+        am_user = CurrentUser(
+            id="am-uuid-1",
+            username="AM_Remo",
+            role="Area Manager",
+            branch="Ogijo",
+            branch_id="bid-ogijo",
+            full_name="Area Manager Remo",
+            permissions=set()
+        )
+        am_user.assigned_branch_ids = ["bid-ogijo", "bid-sagamu", "bid-ikorodu"]
+
+        # 1. Consolidated Area View (All Assigned Branches / None / All)
+        b_id_all, _ = _resolve_scope(am_user, "All Assigned Branches")
+        self.assertEqual(set(b_id_all), {"bid-ogijo", "bid-sagamu", "bid-ikorodu"})
+
+        b_id_none, _ = _resolve_scope(am_user, None)
+        self.assertEqual(set(b_id_none), {"bid-ogijo", "bid-sagamu", "bid-ikorodu"})
+
+        # 2. Specific Assigned Branch
+        b_id_single, _ = _resolve_scope(am_user, "bid-sagamu")
+        self.assertEqual(b_id_single, "bid-sagamu")
+
+        # 3. Fail-Closed Security: Branch outside supervisory area raises 403 Forbidden
+        with self.assertRaises(HTTPException) as ctx:
+            _resolve_scope(am_user, "bid-outside-area")
+        self.assertEqual(ctx.exception.status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()
