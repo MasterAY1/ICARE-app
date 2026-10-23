@@ -1733,57 +1733,55 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   ...filteredRows.map((r) {
                     final isTot = r.programme == 'Total';
                     return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(14),
+                      margin: const EdgeInsets.only(bottom: 8),
                       decoration: BoxDecoration(
                         color: isTot ? const Color(0xFFF0FDF4) : Colors.white,
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: isTot ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
-                        boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 1))],
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                isTot ? 'Consolidated Total' : '${r.programme} Programme',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                  color: isTot ? const Color(0xFF166534) : const Color(0xFF0F766E),
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: isTot ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  '${r.balanceNo} Active Savers',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: isTot ? const Color(0xFF15803D) : const Color(0xFF475569),
-                                  ),
-                                ),
-                              ),
-                            ],
+                      child: Theme(
+                        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                        child: ExpansionTile(
+                          initiallyExpanded: isTot || filteredRows.length == 1,
+                          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                          title: Text(
+                            isTot ? 'Consolidated Total' : '${r.programme} Programme',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: isTot ? const Color(0xFF166534) : const Color(0xFF0F766E),
+                            ),
                           ),
-                          const Divider(height: 16),
-                          _buildMobileDetailRow('Net Savings Balance', _formatNgn(r.balanceAmount), isPrimary: true),
-                          const SizedBox(height: 8),
-                          _buildMobileDetailRow('Month Deposits Received', _formatNgn(r.depositCurr)),
-                          _buildMobileDetailRow('Cumulative Deposits (B/F + Month)', _formatNgn(r.depositTotal)),
-                          const Divider(height: 16),
-                          _buildMobileDetailRow('Normal Withdrawals (Partial)', '${r.withdrawalCurrNo} savers (${_formatNgn(r.withdrawalCurrAmount)})'),
-                          _buildMobileDetailRow('Deposit Returns (Zero-Balance)', '${r.returnCurrNo} savers (${_formatNgn(r.returnCurrAmount)})'),
-                          _buildMobileDetailRow('Cumulative Payouts', _formatNgn(r.withdrawalTotalAmount + r.returnTotalAmount)),
-                          const Divider(height: 16),
-                          _buildMobileDetailRow('Members Registered (B/F + Added)', '${r.memberPrev} + ${r.memberCurr} = ${r.memberTotal} members'),
-                        ],
+                          trailing: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isTot ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '${r.balanceNo} Savers',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                                color: isTot ? const Color(0xFF15803D) : const Color(0xFF475569),
+                              ),
+                            ),
+                          ),
+                          children: [
+                            const Divider(height: 10),
+                            _buildMobileDetailRow('Net Savings Balance', _formatNgn(r.balanceAmount), isPrimary: true),
+                            const SizedBox(height: 4),
+                            _buildMobileDetailRow('Month Deposits Received', _formatNgn(r.depositCurr)),
+                            _buildMobileDetailRow('Cumulative Deposits (B/F + Month)', _formatNgn(r.depositTotal)),
+                            const Divider(height: 10),
+                            _buildMobileDetailRow('Normal Withdrawals (Partial)', '${r.withdrawalCurrNo} savers (${_formatNgn(r.withdrawalCurrAmount)})'),
+                            _buildMobileDetailRow('Deposit Returns (Zero-Balance)', '${r.returnCurrNo} savers (${_formatNgn(r.returnCurrAmount)})'),
+                            _buildMobileDetailRow('Cumulative Payouts', _formatNgn(r.withdrawalTotalAmount + r.returnTotalAmount)),
+                            const Divider(height: 10),
+                            _buildMobileDetailRow('Members Registered (B/F + Added)', '${r.memberPrev} + ${r.memberCurr} = ${r.memberTotal} members'),
+                          ],
+                        ),
                       ),
                     );
                   }),
@@ -1869,47 +1867,43 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: isHighlight ? const Color(0xFFF0FDF4) : Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: isHighlight ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
-        boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 1))],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 16, color: isHighlight ? const Color(0xFF166534) : const Color(0xFF0F766E)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  sectionTitle,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: isHighlight ? const Color(0xFF166534) : const Color(0xFF0F172A),
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(10)),
-                child: Text(_selectedProgramFilter, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
-              ),
-            ],
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: isHighlight || sectionTitle.contains('Disbursed') || sectionTitle.contains('Closing'),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          leading: Icon(icon, size: 16, color: isHighlight ? const Color(0xFF166534) : const Color(0xFF0F766E)),
+          title: Text(
+            sectionTitle,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: isHighlight ? const Color(0xFF166534) : const Color(0xFF0F172A),
+            ),
           ),
-          const Divider(height: 16),
-          ...sectionRows.map((r) {
-            final isCount = r.item.contains('Count');
-            final val = getRowVal(r);
-            final disp = isCount ? '${val.toInt()}' : _formatNgn(val);
-            final isTot = r.item.contains('Total') || r.item.contains('Balance') || r.item.contains('Current');
-            return _buildMobileDetailRow(r.item.replaceAll('•', '').trim(), disp, isPrimary: isTot);
-          }),
-        ],
+          trailing: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(10)),
+            child: Text(_selectedProgramFilter, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+          ),
+          children: [
+            const Divider(height: 10),
+            ...sectionRows.map((r) {
+              final isCount = r.item.contains('Count');
+              final val = getRowVal(r);
+              final disp = isCount ? '${val.toInt()}' : _formatNgn(val);
+              final isTot = r.item.contains('Total') || r.item.contains('Balance') || r.item.contains('Current');
+              return _buildMobileDetailRow(r.item.replaceAll('•', '').trim(), disp, isPrimary: isTot);
+            }),
+          ],
+        ),
       ),
     );
   }
