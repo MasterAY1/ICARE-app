@@ -1036,11 +1036,11 @@ class ReportService:
 
         # Prior month closing balances -> current month opening B/F
         prev_banks = prev_data.get("banks", [])
-        bank1_name = prev_banks[0].get("bank_name") if len(prev_banks) > 0 else "Sterling Bank"
+        bank1_name = prev_banks[0].get("bank_name") if len(prev_banks) > 0 else ""
         bank1_acc = prev_banks[0].get("account_number") if len(prev_banks) > 0 else ""
         bank1_open = float(prev_banks[0].get("closing_balance") or 0.0) if len(prev_banks) > 0 else 0.0
 
-        bank2_name = prev_banks[1].get("bank_name") if len(prev_banks) > 1 else "Wema Bank"
+        bank2_name = prev_banks[1].get("bank_name") if len(prev_banks) > 1 else ""
         bank2_acc = prev_banks[1].get("account_number") if len(prev_banks) > 1 else ""
         bank2_open = float(prev_banks[1].get("closing_balance") or 0.0) if len(prev_banks) > 1 else 0.0
 

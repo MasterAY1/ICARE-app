@@ -393,6 +393,7 @@ class ReportsApiService {
   /// 14. Save Monthly Reconciliation Data
   Future<Map<String, dynamic>> saveMonthlyReconciliation({
     String? branchName,
+    String? branchId,
     int? year,
     int? month,
     required MonthlyReconciliationData data,
@@ -402,6 +403,9 @@ class ReportsApiService {
       if (month != null) 'month': month,
       'data': data.toJson(),
     };
+    if (branchId != null && branchId.isNotEmpty) {
+      payload['branch_id'] = branchId;
+    }
     if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
       payload['branch_name'] = branchName;
     }

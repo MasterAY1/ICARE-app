@@ -996,7 +996,7 @@ def get_monthly_reconciliation(
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = branch_id or (resolved_branch_id if isinstance(resolved_branch_id, str) else (resolved_branch_id[0] if isinstance(resolved_branch_id, list) and resolved_branch_id else None))
+    bid = branch_id or _resolve_single_branch_id(resolved_branch_id, uow)
     if not bid:
         res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
         if res_b.data:
@@ -1026,7 +1026,11 @@ def save_monthly_reconciliation(
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
 
-    bid = payload.branch_id or (resolved_branch_id if isinstance(resolved_branch_id, str) else (resolved_branch_id[0] if isinstance(resolved_branch_id, list) and resolved_branch_id else None))
+    bid = payload.branch_id or _resolve_single_branch_id(resolved_branch_id, uow)
+    if not bid:
+        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
+        if res_b.data:
+            bid = res_b.data[0]["branch_id"]
     if not bid:
         raise HTTPException(status_code=400, detail="Valid branch_id required.")
 

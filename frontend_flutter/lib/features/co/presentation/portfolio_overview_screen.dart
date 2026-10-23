@@ -1336,7 +1336,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
   Widget _buildExcessPayoffAuditLedger(List<dynamic> rows, Map<String, dynamic> s) {
     final excessCount = (s['excess_payments']?['count'] as num?)?.toInt() ?? 0;
     final fullCount = (s['full_payments']?['count'] as num?)?.toInt() ?? 0;
-    final hasRecords = rows.isNotEmpty && (excessCount > 0 || fullCount > 0);
 
     return Container(
       decoration: BoxDecoration(
