@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 import '../data/datasources/am_api_service.dart';
 import '../data/models/am_dashboard_models.dart';
@@ -99,73 +100,79 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
         _buildExecutiveHeader(isMobile),
         const SizedBox(height: 16),
 
-        if (_isLoading)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 56),
-              child: Column(
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF0F766E)),
-                  SizedBox(height: 14),
-                  Text(
-                    'Aggregating regional portfolio metrics...',
-                    style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 280),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          child: _isLoading
+              ? IcareAmPortfolioSkeleton(
+                  key: const ValueKey('am_portfolio_skeleton'),
+                  isMobile: isMobile,
+                  isTablet: isTablet,
+                  isDesktop: isDesktop,
+                )
+              : _errorMessage != null
+                  ? _buildErrorState()
+                  : _dashboardData != null
+                      ? _buildPortfolioContent(isMobile, isTablet, isDesktop)
+                      : const SizedBox.shrink(key: ValueKey('am_portfolio_empty')),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPortfolioContent(bool isMobile, bool isTablet, bool isDesktop) {
+    return Column(
+      key: const ValueKey('am_portfolio_content'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 2. Portfolio Share Segmented Bar
+        _buildPortfolioShareBar(_dashboardData!.branchPerformance, isMobile),
+        const SizedBox(height: 18),
+
+        // 3. 6 Regional KPI Summary Cards
+        _buildRegionalKpis(_dashboardData!.regionalSummary, isMobile, isTablet, isDesktop),
+        const SizedBox(height: 24),
+
+        // 4. Section Header
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Branch Performance Matrix',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                    letterSpacing: -0.2,
                   ),
-                ],
-              ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Capital deployment, active credit progress, and officer productivity.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                ),
+              ],
             ),
-          )
-        else if (_errorMessage != null)
-          _buildErrorState()
-        else if (_dashboardData != null) ...[
-          // 2. Portfolio Share Segmented Bar
-          _buildPortfolioShareBar(_dashboardData!.branchPerformance, isMobile),
-          const SizedBox(height: 18),
+            IconButton(
+              tooltip: 'Refresh Portfolio',
+              onPressed: _loadPortfolioData,
+              icon: const Icon(Icons.refresh, size: 20, color: Color(0xFF64748B)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
 
-          // 3. 6 Regional KPI Summary Cards
-          _buildRegionalKpis(_dashboardData!.regionalSummary, isMobile, isTablet, isDesktop),
-          const SizedBox(height: 24),
+        // 5. Branch Summary Cards Grid
+        _buildBranchCardsGrid(_dashboardData!.branchPerformance, isMobile, isTablet, isDesktop),
+        const SizedBox(height: 24),
 
-          // 4. Section Header
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Branch Performance Matrix',
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF0F172A),
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                  SizedBox(height: 3),
-                  Text(
-                    'Capital deployment, active credit progress, and officer productivity.',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                  ),
-                ],
-              ),
-              IconButton(
-                tooltip: 'Refresh Portfolio',
-                onPressed: _loadPortfolioData,
-                icon: const Icon(Icons.refresh, size: 20, color: Color(0xFF64748B)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          // 5. Branch Summary Cards Grid
-          _buildBranchCardsGrid(_dashboardData!.branchPerformance, isMobile, isTablet, isDesktop),
-          const SizedBox(height: 24),
-
-          // 6. Governance Advisory Note
-          _buildGovernanceCard(),
-          const SizedBox(height: 32),
-        ],
+        // 6. Governance Advisory Note
+        _buildGovernanceCard(),
+        const SizedBox(height: 32),
       ],
     );
   }
@@ -864,6 +871,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
 
   Widget _buildErrorState() {
     return Center(
+      key: const ValueKey('am_portfolio_error'),
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
