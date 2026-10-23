@@ -147,6 +147,9 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
 
       if (mounted) {
         setState(() {
+          if (data['officer'] != null) {
+            _officer = Map<String, dynamic>.from(data['officer'] as Map);
+          }
           _aggregates = Map<String, dynamic>.from(data['aggregates'] ?? _aggregates);
           _isSaving = false;
         });
@@ -1192,8 +1195,12 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
 
     final indivSav = targetMembers.fold<double>(0.0, (sum, m) => sum + (double.tryParse(m['savings_balance']?.toString() ?? '0') ?? 0.0));
     final grpSav = targetGroups.fold<double>(0.0, (sum, g) => sum + (double.tryParse(g['group_savings']?.toString() ?? '0') ?? 0.0));
-    final isMiscMgr = _officer?['is_misc_savings_manager'] == true;
-    final miscSav = (!isGroupFiltered && isMiscMgr) ? (double.tryParse(_officer?['misc_savings']?.toString() ?? '0') ?? 0.0) : 0.0;
+    final isMiscMgr = _officer?['is_misc_savings_manager'] == true ||
+        _officer?['is_misc_savings_manager']?.toString().toLowerCase() == 'true' ||
+        _officer?['is_misc_savings_manager'] == 1;
+    final officerMiscVal = double.tryParse(_officer?['misc_savings']?.toString() ?? '') ??
+        double.tryParse(_aggregates['misc_savings']?.toString() ?? '') ?? 0.0;
+    final miscSav = (!isGroupFiltered && isMiscMgr) ? officerMiscVal : 0.0;
     final totSav = indivSav + grpSav + miscSav;
 
     final principal = targetMembers.fold<double>(0.0, (sum, m) {
@@ -1903,6 +1910,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
   Widget _buildReviewTab(bool isSubmitted) {
     final indivSav = double.tryParse(_aggregates['individual_member_savings']?.toString() ?? '0') ?? 0.0;
     final grpSav = double.tryParse(_aggregates['group_savings_pool']?.toString() ?? '0') ?? 0.0;
+    final miscSav = double.tryParse(_aggregates['misc_savings']?.toString() ?? _officer?['misc_savings']?.toString() ?? '0') ?? 0.0;
     final totSav = double.tryParse(_aggregates['total_portfolio_savings']?.toString() ?? '0') ?? 0.0;
     final activeCredit = double.tryParse(_aggregates['active_credit']?.toString() ?? '0') ?? 0.0;
     final currentBal = double.tryParse(_aggregates['outstanding_balance']?.toString() ?? '0') ?? 0.0;
@@ -1970,6 +1978,10 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                     const Divider(height: 1),
                     _buildSummaryRow('Group Solidarity Savings Pool', CurrencyFormatter.formatNaira(grpSav)),
                     const Divider(height: 1),
+                    if (miscSav > 0) ...[
+                      _buildSummaryRow('Branch Misc Savings (Designated)', CurrencyFormatter.formatNaira(miscSav)),
+                      const Divider(height: 1),
+                    ],
                     _buildSummaryRow('Total Portfolio Savings', CurrencyFormatter.formatNaira(totSav), isHighlight: true),
                     const Divider(height: 1),
                     _buildSummaryRow('Total Active Loan Credit', CurrencyFormatter.formatNaira(activeCredit)),

@@ -1530,6 +1530,72 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     }
   }
 
+  Future<void> _handleApproveOnboardingSession(Map<String, dynamic> session) async {
+    final branchName = session['branch_name'] ?? 'Branch';
+    final branchCode = session['branch_code'] ?? '';
+    final sessionId = session['id']?.toString() ?? '';
+    final notesCtrl = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Approve & Commit $branchName ($branchCode)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to approve and commit all draft groups, client records, and credit officer portfolios for $branchName ($branchCode) directly into the live core database?',
+              style: const TextStyle(fontSize: 13, height: 1.4, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: notesCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Approval Notes (Optional)',
+                hintText: 'e.g. Verified by Area Manager',
+                border: OutlineInputBorder(),
+              ),
+              style: const TextStyle(fontSize: 12.5),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF059669),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            icon: const Icon(Icons.check_circle_outline, size: 16),
+            label: const Text('Approve & Commit'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isProcessing = true);
+    try {
+      final api = ref.read(onboardingApiServiceProvider);
+      final res = await api.approveAdminSession(
+        sessionId,
+        notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
+      );
+      _showFlash(res['message']?.toString() ?? 'Branch successfully approved and committed to live core database!');
+      ref.invalidate(adminOnboardingSessionsProvider);
+    } catch (e) {
+      _showFlash('Failed to approve onboarding package: $e');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
   // =========================================================================
   // ONBOARDING QUICK ACTION & MIGRATION CONSOLE CARD
   // =========================================================================
@@ -1787,13 +1853,27 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       onPressed: () {
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => BranchOnboardingPortalScreen(token: token),
+                            builder: (_) => BranchOnboardingPortalScreen(token: token, isAmView: true),
                           ),
                         );
                       },
                       icon: const Icon(Icons.open_in_browser, size: 12),
                       label: const Text('Open Portal', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600)),
                     ),
+                    if (status.toLowerCase() == 'submitted') ...[
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF059669),
+                          backgroundColor: const Color(0xFFECFDF5),
+                          side: const BorderSide(color: Color(0xFFA7F3D0)),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: const Size(0, 28),
+                        ),
+                        onPressed: _isProcessing ? null : () => _handleApproveOnboardingSession(s),
+                        icon: const Icon(Icons.check_circle_outline, size: 12, color: Color(0xFF059669)),
+                        label: const Text('Approve', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF059669))),
+                      ),
+                    ],
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFFDC2626),
@@ -1846,13 +1926,28 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) => BranchOnboardingPortalScreen(token: token),
+                        builder: (_) => BranchOnboardingPortalScreen(token: token, isAmView: true),
                       ),
                     );
                   },
                   icon: const Icon(Icons.open_in_browser, size: 13),
                   label: const Text('Open Portal', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
                 ),
+                if (status.toLowerCase() == 'submitted') ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF059669),
+                      backgroundColor: const Color(0xFFECFDF5),
+                      side: const BorderSide(color: Color(0xFFA7F3D0)),
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                      minimumSize: const Size(0, 28),
+                    ),
+                    onPressed: _isProcessing ? null : () => _handleApproveOnboardingSession(s),
+                    icon: const Icon(Icons.check_circle_outline, size: 13, color: Color(0xFF059669)),
+                    label: const Text('Approve', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF059669))),
+                  ),
+                ],
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(

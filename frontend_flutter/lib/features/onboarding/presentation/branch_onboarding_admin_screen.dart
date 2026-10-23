@@ -1074,7 +1074,7 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
                     onPressed: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => BranchOnboardingPortalScreen(token: token),
+                          builder: (_) => BranchOnboardingPortalScreen(token: token, isAmView: true),
                         ),
                       );
                     },

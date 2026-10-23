@@ -80,6 +80,21 @@ def get_current_user(
     return current_user
 
 
+def get_current_user_optional(
+    authorization: Optional[str] = Header(None),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+) -> Optional[CurrentUser]:
+    """
+    Extracts CurrentUser if Authorization header is present and valid; returns None otherwise.
+    """
+    if not authorization:
+        return None
+    try:
+        return get_current_user(authorization=authorization, uow=uow)
+    except Exception:
+        return None
+
+
 def get_current_scope(current_user: CurrentUser = Depends(get_current_user)) -> RBACScope:
     """Resolves authoritative RBACScope from authenticated CurrentUser."""
     user_dict = {

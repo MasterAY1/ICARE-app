@@ -275,7 +275,8 @@ class OnboardingService:
         with the existing branch payload without clobbering other officers' data.
         Auto-extends link expiration by 14 days and returns updated validation summary.
         """
-        s_res = uow.client.table("branch_onboarding_sessions").select("*").eq("token", token).execute()
+        select_cols = "id, status, payload" if (scoped_officer and str(scoped_officer).strip()) else "id, status"
+        s_res = uow.client.table("branch_onboarding_sessions").select(select_cols).eq("token", token).execute()
         if not s_res.data:
             raise ValueError("Onboarding session not found.")
 
@@ -382,7 +383,6 @@ class OnboardingService:
         return {
             "status": "success",
             "message": "Draft saved successfully. Link validity extended by 14 days.",
-            "payload": final_payload,
             "aggregates": aggregates,
             "validation_summary": validation_summary
         }
@@ -510,10 +510,15 @@ class OnboardingService:
             or str(m.get("group_reference") or "").strip().upper() in my_group_refs
         ]
 
+        # Designated branch misc savings check
+        is_misc_mgr = bool(target_officer.get("is_misc_savings_manager", False))
+        branch_misc = float(payload.get("misc_savings") or 0.0)
+        officer_misc = branch_misc if is_misc_mgr else 0.0
+
         # Calculate officer specific portfolio aggregates
         indiv_savings = sum(float(m.get("savings_balance") or 0.0) for m in my_members)
         grp_savings = sum(float(g.get("group_savings") or 0.0) for g in my_groups)
-        tot_savings = indiv_savings + grp_savings
+        tot_savings = indiv_savings + grp_savings + officer_misc
         active_credit = sum(float(m.get("active_credit") or 0.0) for m in my_members)
         curr_balance = sum(float(m.get("current_credit_balance") or 0.0) for m in my_members)
 
@@ -522,6 +527,7 @@ class OnboardingService:
             "portfolio_members": len(my_members),
             "individual_member_savings": round(indiv_savings, 2),
             "group_savings_pool": round(grp_savings, 2),
+            "misc_savings": round(officer_misc, 2),
             "total_portfolio_savings": round(tot_savings, 2),
             "active_credit": round(active_credit, 2),
             "outstanding_balance": round(curr_balance, 2)
@@ -541,7 +547,8 @@ class OnboardingService:
                 "phone": target_officer.get("phone"),
                 "role": target_officer.get("role", "Credit Officer"),
                 "status": target_officer.get("status", "drafting"),
-                "is_misc_savings_manager": bool(target_officer.get("is_misc_savings_manager", False)),
+                "is_misc_savings_manager": is_misc_mgr,
+                "misc_savings": officer_misc,
                 "submitted_at": target_officer.get("submitted_at")
             },
             "branch_name": session.get("branch_name"),
@@ -626,10 +633,15 @@ class OnboardingService:
             "updated_at": now.isoformat()
         }).eq("id", session["id"]).execute()
 
+        # Check misc savings manager status
+        is_misc_mgr = bool(target_officer.get("is_misc_savings_manager", False))
+        branch_misc = float(payload.get("misc_savings") or 0.0)
+        officer_misc = branch_misc if is_misc_mgr else 0.0
+
         # Calculate officer-specific aggregates in-memory to eliminate 3 redundant remote queries
         indiv_savings = sum(float(m.get("savings_balance") or 0.0) for m in incoming_members)
         grp_savings = sum(float(g.get("group_savings") or 0.0) for g in incoming_groups)
-        tot_savings = indiv_savings + grp_savings
+        tot_savings = indiv_savings + grp_savings + officer_misc
         active_credit = sum(float(m.get("active_credit") or 0.0) for m in incoming_members)
         curr_balance = sum(float(m.get("current_credit_balance") or 0.0) for m in incoming_members)
 
@@ -638,6 +650,7 @@ class OnboardingService:
             "portfolio_members": len(incoming_members),
             "individual_member_savings": round(indiv_savings, 2),
             "group_savings_pool": round(grp_savings, 2),
+            "misc_savings": round(officer_misc, 2),
             "total_portfolio_savings": round(tot_savings, 2),
             "active_credit": round(active_credit, 2),
             "outstanding_balance": round(curr_balance, 2)
@@ -657,7 +670,8 @@ class OnboardingService:
                 "phone": target_officer.get("phone"),
                 "role": target_officer.get("role", "Credit Officer"),
                 "status": target_officer.get("status", "drafting"),
-                "is_misc_savings_manager": bool(target_officer.get("is_misc_savings_manager", False)),
+                "is_misc_savings_manager": is_misc_mgr,
+                "misc_savings": officer_misc,
                 "submitted_at": target_officer.get("submitted_at")
             },
             "branch_name": session.get("branch_name"),

@@ -10,17 +10,21 @@ import '../../../../core/theme/icare_typography.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/platform_file_picker.dart';
 import '../../auth/presentation/login_screen.dart';
+import '../../../../core/auth/auth_controller.dart';
+import '../../../../core/auth/auth_state.dart';
 import '../data/onboarding_api_service.dart';
 import 'credit_officer_portal_screen.dart';
 
 class BranchOnboardingPortalScreen extends ConsumerStatefulWidget {
   final String token;
   final String? initialOfficer;
+  final bool isAmView;
 
   const BranchOnboardingPortalScreen({
     super.key,
     required this.token,
     this.initialOfficer,
+    this.isAmView = false,
   });
 
   @override
@@ -31,6 +35,19 @@ class BranchOnboardingPortalScreen extends ConsumerStatefulWidget {
 class _BranchOnboardingPortalScreenState
     extends ConsumerState<BranchOnboardingPortalScreen>
     with SingleTickerProviderStateMixin {
+  bool get _isAmOrAdmin {
+    if (widget.isAmView) return true;
+    final authState = ref.read(authControllerProvider);
+    if (authState is AuthStateAuthenticated) {
+      final role = authState.user.role.toLowerCase();
+      return role.contains('area') ||
+          role.contains('am') ||
+          role.contains('admin') ||
+          role.contains('director') ||
+          role.contains('super');
+    }
+    return false;
+  }
   late TabController _tabController;
 
   bool _isLoading = true;
@@ -2577,7 +2594,7 @@ class _BranchOnboardingPortalScreenState
                   ),
                 ],
               ] else if (status.toLowerCase() == 'submitted') ...[
-                if (_scopedOfficer == null) ...[
+                if (_scopedOfficer == null && _isAmOrAdmin) ...[
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF059669),
@@ -4831,7 +4848,7 @@ class _BranchOnboardingPortalScreenState
                     ),
                   ),
               ] else if (status == 'submitted') ...[
-                if (_scopedOfficer == null) ...[
+                if (_scopedOfficer == null && _isAmOrAdmin) ...[
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
@@ -4875,15 +4892,31 @@ class _BranchOnboardingPortalScreenState
                 ] else ...[
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
                     ),
-                    child: const Text(
-                      'Branch package has been submitted to the Area Manager for live database activation.',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.hourglass_top_outlined, size: 18, color: Color(0xFF1D4ED8)),
+                            SizedBox(width: 8),
+                            Text(
+                              'Submitted to Area Manager',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1E40AF)),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          'Your branch onboarding package has been confirmed and submitted to your Area Manager for final supervisory sign-off and live database activation. Your workspace is locked while awaiting approval.',
+                          style: TextStyle(fontSize: 12.5, color: Color(0xFF1D4ED8), height: 1.4),
+                        ),
+                      ],
                     ),
                   ),
                 ],

@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body, status, Query
 from pydantic import BaseModel, Field
 
-from api.dependencies import get_uow, get_current_user
+from api.dependencies import get_uow, get_current_user, get_current_user_optional
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from models.user import CurrentUser
 from services.onboarding_service import OnboardingService
@@ -290,16 +290,25 @@ def am_review_session(
 def am_approve_session(
     token: str,
     req: ApproveSessionRequest = Body(default=ApproveSessionRequest()),
+    current_user: Optional[CurrentUser] = Depends(get_current_user_optional),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
     Area Manager signs off and atomically commits all groups, clients, memberships,
     savings, loans, and schedules to live database tables.
     """
+    if current_user and current_user.role not in ("Area Manager", "Admin", "Director", "Super Admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Area Managers, Admins, and Directors can execute final onboarding activation."
+        )
+
+    approved_by = current_user.id if current_user else None
     try:
         return OnboardingService.am_approve_session(
             uow=uow,
             branch_token=token,
+            approved_by_id=approved_by,
             approval_notes=req.approval_notes
         )
     except ValueError as e:
@@ -363,7 +372,7 @@ def approve_onboarding_session(
     Executes atomic migration of all groups, clients, memberships, savings,
     loans, and repayment schedules into live core banking tables.
     """
-    if current_user.role not in ("Admin", "Director", "Super Admin"):
+    if current_user.role not in ("Admin", "Director", "Super Admin", "Area Manager"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only Admins and Directors can execute final onboarding activation.")
 
     try:
