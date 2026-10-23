@@ -81,89 +81,92 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(globalRefreshSignalProvider, (prev, next) {
+      if (next != prev) {
+        _loadPortfolioData();
+      }
+    });
+
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 600;
     final isTablet = screenWidth >= 600 && screenWidth < 1000;
     final isDesktop = screenWidth >= 1000;
 
-    return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 1. Executive Regional Command Header
-          _buildExecutiveHeader(isMobile),
-          const SizedBox(height: 16),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1. Executive Regional Command Header
+        _buildExecutiveHeader(isMobile),
+        const SizedBox(height: 16),
 
-          if (_isLoading)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 56),
-                child: Column(
-                  children: [
-                    CircularProgressIndicator(color: Color(0xFF0F766E)),
-                    SizedBox(height: 14),
-                    Text(
-                      'Aggregating regional portfolio metrics...',
-                      style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
-                    ),
-                  ],
-                ),
+        if (_isLoading)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 56),
+              child: Column(
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF0F766E)),
+                  SizedBox(height: 14),
+                  Text(
+                    'Aggregating regional portfolio metrics...',
+                    style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                  ),
+                ],
               ),
-            )
-          else if (_errorMessage != null)
-            _buildErrorState()
-          else if (_dashboardData != null) ...[
-            // 2. Portfolio Share Segmented Bar
-            _buildPortfolioShareBar(_dashboardData!.branchPerformance, isMobile),
-            const SizedBox(height: 18),
-
-            // 3. 6 Regional KPI Summary Cards
-            _buildRegionalKpis(_dashboardData!.regionalSummary, isMobile, isTablet, isDesktop),
-            const SizedBox(height: 24),
-
-            // 4. Section Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Branch Performance Matrix',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF0F172A),
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                    SizedBox(height: 3),
-                    Text(
-                      'Capital deployment, active credit progress, and officer productivity.',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                    ),
-                  ],
-                ),
-                IconButton(
-                  tooltip: 'Refresh Portfolio',
-                  onPressed: _loadPortfolioData,
-                  icon: const Icon(Icons.refresh, size: 20, color: Color(0xFF64748B)),
-                ),
-              ],
             ),
-            const SizedBox(height: 14),
+          )
+        else if (_errorMessage != null)
+          _buildErrorState()
+        else if (_dashboardData != null) ...[
+          // 2. Portfolio Share Segmented Bar
+          _buildPortfolioShareBar(_dashboardData!.branchPerformance, isMobile),
+          const SizedBox(height: 18),
 
-            // 5. Branch Summary Cards Grid
-            _buildBranchCardsGrid(_dashboardData!.branchPerformance, isMobile, isTablet, isDesktop),
-            const SizedBox(height: 24),
+          // 3. 6 Regional KPI Summary Cards
+          _buildRegionalKpis(_dashboardData!.regionalSummary, isMobile, isTablet, isDesktop),
+          const SizedBox(height: 24),
 
-            // 6. Governance Advisory Note
-            _buildGovernanceCard(),
-            const SizedBox(height: 32),
-          ],
+          // 4. Section Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Branch Performance Matrix',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0F172A),
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  SizedBox(height: 3),
+                  Text(
+                    'Capital deployment, active credit progress, and officer productivity.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                ],
+              ),
+              IconButton(
+                tooltip: 'Refresh Portfolio',
+                onPressed: _loadPortfolioData,
+                icon: const Icon(Icons.refresh, size: 20, color: Color(0xFF64748B)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // 5. Branch Summary Cards Grid
+          _buildBranchCardsGrid(_dashboardData!.branchPerformance, isMobile, isTablet, isDesktop),
+          const SizedBox(height: 24),
+
+          // 6. Governance Advisory Note
+          _buildGovernanceCard(),
+          const SizedBox(height: 32),
         ],
-      ),
+      ],
     );
   }
 

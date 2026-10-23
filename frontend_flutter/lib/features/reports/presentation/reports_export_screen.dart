@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import 'package:flutter/services.dart';
-import '../../../core/offline/connectivity_service.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
@@ -365,42 +363,21 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       }
     });
 
-    final isMobile = MediaQuery.of(context).size.width < 750;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1. Role-Specific Header & Identity Banner
+        _buildIdentityBanner(isAdmin, isBm, isAm, user.branch),
+        const SizedBox(height: 16),
 
-    return RefreshIndicator(
-      color: const Color(0xFF0F766E),
-      backgroundColor: Colors.white,
-      displacement: 30,
-      onRefresh: () async {
-        HapticFeedback.lightImpact();
-        try {
-          await ref.read(connectivityServiceProvider).checkActualConnection();
-        } catch (_) {}
-        _refreshCurrentTabData();
-      },
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.symmetric(
-          horizontal: isMobile ? 12 : 24,
-          vertical: isMobile ? 12 : 20,
-        ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 1. Role-Specific Header & Identity Banner
-          _buildIdentityBanner(isAdmin, isBm, isAm, user.branch),
-          const SizedBox(height: 16),
+        // 2. Pill Tabs Navigation
+        _buildPillTabs(tabs),
+        const SizedBox(height: 16),
 
-          // 2. Pill Tabs Navigation
-          _buildPillTabs(tabs),
-          const SizedBox(height: 16),
-
-          // 3. Tab Content
-          _buildActiveTabContent(tabs[_selectedTabIndex], isAdmin, isBm, isAm),
-        ],
-      ),
-    ),
-  );
+        // 3. Tab Content
+        _buildActiveTabContent(tabs[_selectedTabIndex], isAdmin, isBm, isAm),
+      ],
+    );
   }
 
   // ---------------------------------------------------------------------------

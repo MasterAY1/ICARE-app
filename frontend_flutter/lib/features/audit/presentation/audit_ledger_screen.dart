@@ -245,12 +245,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
 
     final isMobile = MediaQuery.of(context).size.width < 750;
 
-    return SingleChildScrollView(
-      padding: EdgeInsets.symmetric(
-        horizontal: isMobile ? 12 : 24,
-        vertical: isMobile ? 12 : 20,
-      ),
-      child: Column(
+    return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Page Header
@@ -286,7 +281,6 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
             user: user,
           ),
         ],
-      ),
     );
   }
 

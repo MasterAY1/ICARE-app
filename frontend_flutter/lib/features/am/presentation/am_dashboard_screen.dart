@@ -981,9 +981,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
         final screenWidth = MediaQuery.of(context).size.width;
         final isMobile = screenWidth < 600;
 
-        return SingleChildScrollView(
-          padding: isMobile ? EdgeInsets.zero : const EdgeInsets.all(24),
-          child: Column(
+        return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (_flashMessage != null) ...[
@@ -1042,7 +1040,6 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 const SizedBox(height: 24),
               ],
             ],
-          ),
         );
       },
     );
