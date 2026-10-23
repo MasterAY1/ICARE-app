@@ -63,11 +63,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   Future<Annex1ReportData>? _annex1Future;
   Future<MonthlyReconciliationData>? _reconciliationFuture;
   Future<MonthlyWorkflowStatusModel>? _workflowStatusFuture;
+  Future<List<MonthlyWorkflowPendingBranchModel>>? _pendingSubmissionsFuture;
   bool _isWorkflowSubmitting = false;
 
   final _currencyFormat = NumberFormat('#,##0.00');
   final _intFormat = NumberFormat('#,##0');
   final _dateFormat = DateFormat('yyyy-MM-dd');
+  static const _monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
 
   @override
   void initState() {
@@ -89,7 +94,20 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     }
     final targetTab = ref.read(reportsTargetTabProvider);
     if (targetTab != null) {
-      _selectedTabIndex = targetTab;
+      final auth = ref.read(authControllerProvider);
+      final u = auth is AuthStateAuthenticated ? auth.user : null;
+      final isAmUser = u?.role == 'Area Manager' || u?.role == 'AM';
+      if (isAmUser) {
+        if (targetTab == 0) {
+          _selectedTabIndex = 1; // Branch Statements & Sign-Off
+        } else if (targetTab == 1) {
+          _selectedTabIndex = 0; // Regional Comparison
+        } else {
+          _selectedTabIndex = 2; // Data Exports
+        }
+      } else {
+        _selectedTabIndex = targetTab;
+      }
     }
     final targetSubTab = ref.read(reportsTargetSubTabProvider);
     if (targetSubTab != null) {
@@ -143,6 +161,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       year: _selectedExecYear,
       month: _selectedExecMonth,
     );
+    final authState = ref.read(authControllerProvider);
+    final user = authState is AuthStateAuthenticated ? authState.user : null;
+    final isAmUser = user?.role == 'Area Manager' || user?.role == 'AM';
+    final isAdminUser = user?.role == 'Admin' || user?.role == 'Super Admin' || user?.role == 'ADMIN' || user?.role == 'Director';
+    if (isAmUser || isAdminUser) {
+      _pendingSubmissionsFuture = api.getPendingAmMonthlySubmissions(
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+      );
+    }
     _areaFuture = api.getAreaComparison(
       productName: _selectedProductName,
       asOfDate: asOfStr,
@@ -216,6 +244,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         year: _selectedExecYear,
         month: _selectedExecMonth,
       );
+      final authState = ref.read(authControllerProvider);
+      final user = authState is AuthStateAuthenticated ? authState.user : null;
+      final isAmUser = user?.role == 'Area Manager' || user?.role == 'AM';
+      final isAdminUser = user?.role == 'Admin' || user?.role == 'Super Admin' || user?.role == 'ADMIN' || user?.role == 'Director';
+      if (isAmUser || isAdminUser) {
+        _pendingSubmissionsFuture = api.getPendingAmMonthlySubmissions(
+          year: _selectedExecYear,
+          month: _selectedExecMonth,
+        );
+      }
     });
   }
 
@@ -236,7 +274,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
     ref.listen<int?>(reportsTargetTabProvider, (prev, next) {
       if (next != null) {
-        setState(() => _selectedTabIndex = next);
+        final auth = ref.read(authControllerProvider);
+        final u = auth is AuthStateAuthenticated ? auth.user : null;
+        final isAmUser = u?.role == 'Area Manager' || u?.role == 'AM';
+        final resolvedIndex = isAmUser
+            ? (next == 0 ? 1 : (next == 1 ? 0 : 2))
+            : next;
+        setState(() => _selectedTabIndex = resolvedIndex);
         _refreshCurrentTabData();
         Future.microtask(() {
           if (mounted) ref.read(reportsTargetTabProvider.notifier).state = null;
@@ -293,6 +337,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
     List<String> tabs;
     if (isAm) {
+      tabs = [
+        'Regional Comparison',
+        'Branch Statements & Sign-Off',
+        'Data Exports & Downloads',
+      ];
+    } else if (isAdmin) {
       tabs = [
         'Monthly Executive Statements',
         'Area Branches Comparison',
@@ -845,11 +895,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // ---------------------------------------------------------------------------
   Widget _buildActiveTabContent(String tabName, bool isAdmin, bool isBm, bool isAm) {
     switch (tabName) {
+      case 'Regional Comparison':
+      case 'Area Branches Comparison':
+        return _buildAreaComparisonTab(isAdmin: isAdmin, isAm: isAm);
+      case 'Branch Statements & Sign-Off':
       case 'Monthly Executive Statements':
       case 'Monthly Executive Parity':
         return _buildMonthlyExecutiveParityTab(isAdmin, isBm, isAm);
-      case 'Area Branches Comparison':
-        return _buildAreaComparisonTab();
       case 'Data Exports & Downloads':
         return _buildDataExportsTab(isAdmin, isBm, isAm);
       default:
@@ -858,9 +910,105 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Supervised Branch Switcher Bar (Area Manager Exclusive)
+  // ---------------------------------------------------------------------------
+  Widget _buildAmBranchSwitcherBar() {
+    final branches = _cachedMeta?.branches ?? [];
+    if (branches.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.apartment, size: 16, color: Color(0xFF0F766E)),
+              const SizedBox(width: 8),
+              const Text(
+                'Supervised Branch Switcher',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF64748B),
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'Viewing: ${_selectedBranchName ?? "Select Branch"}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F766E),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: [
+                for (final b in branches) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      avatar: Icon(
+                        Icons.storefront,
+                        size: 14,
+                        color: _selectedBranchName == b.name ? Colors.white : const Color(0xFF0F766E),
+                      ),
+                      label: Text(
+                        b.name,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: _selectedBranchName == b.name ? FontWeight.w800 : FontWeight.w600,
+                          color: _selectedBranchName == b.name ? Colors.white : const Color(0xFF1E293B),
+                        ),
+                      ),
+                      selected: _selectedBranchName == b.name,
+                      selectedColor: const Color(0xFF0F766E),
+                      backgroundColor: const Color(0xFFF8FAFC),
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      side: BorderSide(
+                        color: _selectedBranchName == b.name ? const Color(0xFF0F766E) : const Color(0xFFCBD5E1),
+                      ),
+                      onSelected: (selected) {
+                        if (selected && _selectedBranchName != b.name) {
+                          setState(() {
+                            _selectedBranchName = b.name;
+                            _refreshCurrentTabData();
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // Tab 0: Monthly Executive Parity Suite
   // ---------------------------------------------------------------------------
   Widget _buildMonthlyExecutiveParityTab(bool isAdmin, bool isBm, bool isAm) {
+    if (isAm && _selectedExecSubTab == 6) {
+      _selectedExecSubTab = 0;
+    }
     final api = ref.read(reportsApiServiceProvider);
     final monthNames = [
       'January', 'February', 'March', 'April', 'May', 'June',
@@ -873,6 +1021,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (isAm) ...[
+          _buildAmBranchSwitcherBar(),
+          const SizedBox(height: 12),
+        ],
         // 1. Sleek Interactive Period Stepper & Export Action Bar
         Container(
           width: double.infinity,
@@ -1382,8 +1534,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             _buildSubTabButton('Official Trial Balance', 4, icon: Icons.balance_outlined),
                             const SizedBox(width: 4),
                             _buildSubTabButton('Credit Officers Summary', 5, icon: Icons.people_alt_outlined),
-                            const SizedBox(width: 4),
-                            _buildSubTabButton('Bank & Treasury Reconciliation', 6, icon: Icons.account_balance_outlined),
+                            if (!isAm) ...[
+                              const SizedBox(width: 4),
+                              _buildSubTabButton('Bank & Treasury Reconciliation', 6, icon: Icons.account_balance_outlined),
+                            ],
                           ],
                         ),
                       ),
@@ -1403,8 +1557,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       _buildOfficialTrialBalanceView()
                     else if (_selectedExecSubTab == 5)
                       _buildCoMonthlySummaryTable(data)
+                    else if (!isAm)
+                      _buildBankReconciliationView()
                     else
-                      _buildBankReconciliationView(),
+                      _buildDepositStatementView(),
                   ],
                 );
               },
@@ -2991,9 +3147,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // Tab 1: Area Branches Comparison (AM Exclusive)
   // ---------------------------------------------------------------------------
-  Widget _buildAreaComparisonTab() {
+  // Tab: Regional Area Branches Comparison
+  // ---------------------------------------------------------------------------
+  Widget _buildAreaComparisonTab({bool isAdmin = false, bool isAm = false}) {
     return FutureBuilder<AreaComparisonData>(
       future: _areaFuture,
       builder: (context, snapshot) {
@@ -3019,12 +3176,43 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Regional Area Performance Matrix', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-              const SizedBox(height: 4),
-              const Text('Side-by-side comparative analysis of all branches under your regional supervision.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Regional Supervisory Area Performance Matrix', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                        SizedBox(height: 4),
+                        Text('Side-by-side comparative analysis of all branches under your regional supervision.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFF86EFAC)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.domain, size: 14, color: Color(0xFF047857)),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${data.totalBranches} Branches Supervised',
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF166534)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 16),
 
-              // Responsive KPI Grid
+              // Responsive 8-Metric KPI Grid
               LayoutBuilder(
                 builder: (context, constraints) {
                   final isMobile = constraints.maxWidth < 600;
@@ -3051,76 +3239,148 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               const Divider(color: Color(0xFFE2E8F0)),
               const SizedBox(height: 12),
 
-              const Text('Branch-by-Branch Comparative Matrix', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-              const SizedBox(height: 12),
+              // Branch Certification & Month-End Sign-Off Ribbon (AM / Admin)
+              if (isAm || isAdmin) ...[
+                _buildCertificationRibbon(isAm),
+                const SizedBox(height: 20),
+                const Divider(color: Color(0xFFE2E8F0)),
+                const SizedBox(height: 12),
+              ],
 
-              // DataTable with mobile scroll cue
-              _buildContainedTable(
-                hint: 'Swipe horizontally to view all branch metrics',
-                child: DataTable(
-                  headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-                  columns: const [
-                    DataColumn(label: Text('Branch', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('People on Loan', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Active Loans', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Active Savers', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Total Savings', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Collections', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Expected', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Efficiency', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Outstanding', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('PAR %', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
-                  ],
-                  rows: data.rows.map((r) {
-                    final isHealthy = r.status == 'HEALTHY';
-                    return DataRow(cells: [
-                      DataCell(Text(r.branch, style: const TextStyle(fontWeight: FontWeight.w600))),
-                      DataCell(Text(_intFormat.format(r.peopleOnLoan))),
-                      DataCell(Text(_intFormat.format(r.activeLoans))),
-                      DataCell(Text(_intFormat.format(r.activeSavers))),
-                      DataCell(Text(_formatNgn(r.totalSavings))),
-                      DataCell(Text(_formatNgn(r.collectionsReceived))),
-                      DataCell(Text(_formatNgn(r.expectedCollections))),
-                      DataCell(Text('${r.collectionEfficiency.toStringAsFixed(1)}%')),
-                      DataCell(Text(_formatNgn(r.outstandingPortfolio))),
-                      DataCell(Text('${r.parPercentage.toStringAsFixed(1)}%')),
-                      DataCell(Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: isHealthy ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: isHealthy ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5)),
-                        ),
-                        child: Text(
-                          r.status,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: isHealthy ? const Color(0xFF166534) : const Color(0xFF991B1B),
+              // Comparative Matrix: Mobile Cards vs Desktop Table
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isMobile = constraints.maxWidth < 650;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Branch-by-Branch Comparative Matrix', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                          if (isMobile)
+                            TextButton.icon(
+                              icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, size: 14, color: const Color(0xFF0F766E)),
+                              label: Text(
+                                _showRawTableOnMobile ? 'Show Cards' : 'Show 11-Col Table',
+                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
+                              ),
+                              onPressed: () => setState(() => _showRawTableOnMobile = !_showRawTableOnMobile),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      if (isMobile && !_showRawTableOnMobile)
+                        Column(
+                          children: data.rows.map((r) => _buildMobileBranchHealthCard(r, isAm)).toList(),
+                        )
+                      else
+                        _buildContainedTable(
+                          hint: 'Swipe horizontally to view all branch metrics',
+                          child: DataTable(
+                            headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
+                            columns: const [
+                              DataColumn(label: Text('Branch', style: TextStyle(fontWeight: FontWeight.bold))),
+                              DataColumn(label: Text('People on Loan', style: TextStyle(fontWeight: FontWeight.bold))),
+                              DataColumn(label: Text('Active Loans', style: TextStyle(fontWeight: FontWeight.bold))),
+                              DataColumn(label: Text('Active Savers', style: TextStyle(fontWeight: FontWeight.bold))),
+                              DataColumn(label: Text('Total Savings', style: TextStyle(fontWeight: FontWeight.bold))),
+                              DataColumn(label: Text('Collections', style: TextStyle(fontWeight: FontWeight.bold))),
+                              DataColumn(label: Text('Expected', style: TextStyle(fontWeight: FontWeight.bold))),
+                              DataColumn(label: Text('Efficiency', style: TextStyle(fontWeight: FontWeight.bold))),
+                              DataColumn(label: Text('Outstanding', style: TextStyle(fontWeight: FontWeight.bold))),
+                              DataColumn(label: Text('PAR %', style: TextStyle(fontWeight: FontWeight.bold))),
+                              DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
+                              DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
+                            ],
+                            rows: data.rows.map((r) {
+                              final isHealthy = r.status == 'HEALTHY';
+                              return DataRow(cells: [
+                                DataCell(Text(r.branch, style: const TextStyle(fontWeight: FontWeight.w600))),
+                                DataCell(Text(_intFormat.format(r.peopleOnLoan))),
+                                DataCell(Text(_intFormat.format(r.activeLoans))),
+                                DataCell(Text(_intFormat.format(r.activeSavers))),
+                                DataCell(Text(_formatNgn(r.totalSavings))),
+                                DataCell(Text(_formatNgn(r.collectionsReceived))),
+                                DataCell(Text(_formatNgn(r.expectedCollections))),
+                                DataCell(Text('${r.collectionEfficiency.toStringAsFixed(1)}%')),
+                                DataCell(Text(_formatNgn(r.outstandingPortfolio))),
+                                DataCell(Text('${r.parPercentage.toStringAsFixed(1)}%')),
+                                DataCell(Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: isHealthy ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: isHealthy ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5)),
+                                  ),
+                                  child: Text(
+                                    r.status,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: isHealthy ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                                    ),
+                                  ),
+                                )),
+                                DataCell(
+                                  OutlinedButton(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: const Color(0xFF0F766E),
+                                      side: const BorderSide(color: Color(0xFF0F766E)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        _selectedBranchName = r.branch;
+                                        _selectedTabIndex = isAm ? 1 : 0;
+                                      });
+                                      _refreshCurrentTabData();
+                                    },
+                                    child: const Text('Review', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                              ]);
+                            }).toList(),
                           ),
                         ),
-                      )),
-                    ]);
-                  }).toList(),
-                ),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 20),
               const Divider(color: Color(0xFFE2E8F0)),
               const SizedBox(height: 12),
 
-              // Download buttons
+              // Regional Actions Bar: Excel & CSV
               Builder(
                 builder: (context) {
                   final isMobile = MediaQuery.of(context).size.width < 750;
-                  return SizedBox(
-                    width: isMobile ? double.infinity : null,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _triggerCsvDownload('area_comparison', 'area_branch_comparison.csv'),
-                      icon: const Icon(Icons.file_download, size: 16),
-                      label: const Text('Download Area Comparison (CSV)'),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A), foregroundColor: Colors.white),
-                    ),
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: [
+                      SizedBox(
+                        width: isMobile ? double.infinity : null,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _triggerCsvDownload('area_comparison', 'area_branch_comparison.csv'),
+                          icon: const Icon(Icons.file_download, size: 16),
+                          label: const Text('Download Area Comparison (CSV)'),
+                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A), foregroundColor: Colors.white),
+                        ),
+                      ),
+                      SizedBox(
+                        width: isMobile ? double.infinity : null,
+                        child: ElevatedButton.icon(
+                          onPressed: _triggerExcelDownload,
+                          icon: const Icon(Icons.table_chart, size: 16),
+                          label: const Text('Download Regional Operational Report (Excel)'),
+                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B), foregroundColor: Colors.white),
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),
@@ -3131,15 +3391,316 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 
+  Widget _buildMobileBranchHealthCard(AreaBranchRow r, bool isAm) {
+    final isHealthy = r.status == 'HEALTHY';
+    final progress = (r.collectionEfficiency / 100.0).clamp(0.0, 1.0);
 
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                r.branch,
+                style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isHealthy ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: isHealthy ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: isHealthy ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      r.status,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: isHealthy ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Collection Progress
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Collection Efficiency', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                  Text(
+                    '${r.collectionEfficiency.toStringAsFixed(1)}%',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      color: isHealthy ? const Color(0xFF166534) : const Color(0xFFB45309),
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 6,
+                  backgroundColor: const Color(0xFFF1F5F9),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    isHealthy ? const Color(0xFF0F766E) : const Color(0xFFD97706),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Key Metrics Grid
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFFF1F5F9)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Collections: ${_formatNgn(r.collectionsReceived)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A), fontFeatures: [FontFeature.tabularFigures()])),
+                    Text('Expected: ${_formatNgn(r.expectedCollections)}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontFeatures: [FontFeature.tabularFigures()])),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Outstanding: ${_formatNgn(r.outstandingPortfolio)}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontFeatures: [FontFeature.tabularFigures()])),
+                    Text('PAR %: ${r.parPercentage.toStringAsFixed(1)}%', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: r.parPercentage > 5.0 ? const Color(0xFFDC2626) : const Color(0xFF166534))),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Active Loans: ${_intFormat.format(r.activeLoans)}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                    Text('Total Savings: ${_formatNgn(r.totalSavings)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF0F766E), fontFeatures: [FontFeature.tabularFigures()])),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.description_outlined, size: 14, color: Color(0xFF0F766E)),
+              label: const Text('Inspect Branch Statements', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F766E))),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFF0F766E)),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+              ),
+              onPressed: () {
+                setState(() {
+                  _selectedBranchName = r.branch;
+                  _selectedTabIndex = isAm ? 1 : 0;
+                });
+                _refreshCurrentTabData();
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCertificationRibbon(bool isAm) {
+    return FutureBuilder<List<MonthlyWorkflowPendingBranchModel>>(
+      future: _pendingSubmissionsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Row(
+              children: [
+                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                SizedBox(width: 12),
+                Text('Checking branch monthly submission & certification status...', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+              ],
+            ),
+          );
+        }
+
+        final list = snapshot.data ?? [];
+        if (list.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0FDF4),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFF86EFAC)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.verified, size: 18, color: Color(0xFF047857)),
+                SizedBox(width: 10),
+                Text('All supervised branches have completed submissions for this period.', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF166534))),
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Branch Certification & Month-End Sign-Off', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                Text('${list.length} Branches Tracked', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F766E))),
+              ],
+            ),
+            const SizedBox(height: 10),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 650;
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
+                  children: list.map((b) {
+                    final isSubmitted = b.status == 'BM_SUBMITTED';
+                    final isEndorsed = b.status == 'AM_VERIFIED';
+                    final isReturned = b.status == 'RETURNED_FOR_CORRECTION';
+
+                    Color cardBg = isSubmitted ? const Color(0xFFFFFBEB) : (isEndorsed ? const Color(0xFFF0FDF4) : (isReturned ? const Color(0xFFFEF2F2) : const Color(0xFFF8FAFC)));
+                    Color cardBorder = isSubmitted ? const Color(0xFFFDE68A) : (isEndorsed ? const Color(0xFF86EFAC) : (isReturned ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0)));
+                    Color pillBg = isSubmitted ? const Color(0xFFFEF3C7) : (isEndorsed ? const Color(0xFFDCFCE7) : (isReturned ? const Color(0xFFFEE2E2) : const Color(0xFFE2E8F0)));
+                    Color pillColor = isSubmitted ? const Color(0xFF92400E) : (isEndorsed ? const Color(0xFF166534) : (isReturned ? const Color(0xFF991B1B) : const Color(0xFF475569)));
+                    String pillText = isSubmitted ? 'AWAITING AM SIGN-OFF' : (isEndorsed ? 'AM ENDORSED' : (isReturned ? 'RETURNED TO BM' : 'PENDING BM SUBMISSION'));
+                    IconData statusIcon = isSubmitted ? Icons.pending_actions : (isEndorsed ? Icons.verified : (isReturned ? Icons.assignment_return_outlined : Icons.edit_note));
+                    Color iconColor = isSubmitted ? const Color(0xFFB45309) : (isEndorsed ? const Color(0xFF047857) : (isReturned ? const Color(0xFFDC2626) : const Color(0xFF64748B)));
+
+                    return Container(
+                      width: isNarrow ? double.infinity : (constraints.maxWidth - 12) / 2,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: cardBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: cardBorder),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(statusIcon, size: 16, color: iconColor),
+                                  const SizedBox(width: 6),
+                                  Text(b.branchName, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: Color(0xFF0F172A))),
+                                ],
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(4)),
+                                child: Text(pillText, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: pillColor)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            isSubmitted
+                                ? 'Certified by ${b.bmName ?? "Branch Manager"}${b.submittedAt != null ? " on ${_formatDateTime(b.submittedAt)}" : ""} • Collections: ${_formatNgn(b.collections)}'
+                                : (isEndorsed
+                                    ? 'Endorsed & locked for supervisory district • Collections: ${_formatNgn(b.collections)}'
+                                    : (isReturned
+                                        ? 'Queried: ${b.amQueryNotes ?? "Corrections requested"}'
+                                        : 'BM reconciling vault • Books open for ${_monthNames[_selectedExecMonth - 1]} $_selectedExecYear')),
+                            style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 10),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  _selectedBranchName = b.branchName;
+                                  _selectedTabIndex = isAm ? 1 : 0;
+                                });
+                                _refreshCurrentTabData();
+                              },
+                              icon: Icon(isSubmitted ? Icons.rate_review_outlined : Icons.visibility_outlined, size: 13),
+                              label: Text(
+                                isSubmitted ? 'Review & Endorse' : (isEndorsed ? 'View Certified Return' : 'Inspect Statements'),
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isSubmitted ? const Color(0xFFB45309) : const Color(0xFF0F766E),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   // ---------------------------------------------------------------------------
-  // Tab: Data Exports & Downloads
+  // Tab: Data Exports & Downloads (Dual-Card Architecture)
   // ---------------------------------------------------------------------------
   Widget _buildDataExportsTab(bool isAdmin, bool isBm, bool isAm) {
+    final isMobile = MediaQuery.of(context).size.width < 750;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isMobile ? 14 : 24),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
@@ -3155,60 +3716,111 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
           // Optional Custom Export Filters
           _buildExportFilterCard(isAdmin, isBm, isAm),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
 
-          // Master Operational Report (Excel)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.table_chart, color: Color(0xFF064E3B), size: 20),
-                    SizedBox(width: 8),
-                    Text('Master Operational Report (Excel)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  isAm
-                      ? 'Contains synchronized worksheets: Area Branch Comparison, Trial Balance, Savings Summary, Repayment Summary, Portfolio Summary, and Raw Loan Records.'
-                      : 'Contains synchronized worksheets: Trial Balance, Savings Summary, Repayment Summary, Portfolio Summary, and Raw Loan Records.',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                ),
-                const SizedBox(height: 14),
-                Builder(
-                  builder: (context) {
-                    final isMobile = MediaQuery.of(context).size.width < 750;
-                    return SizedBox(
-                      width: isMobile ? double.infinity : null,
-                      child: ElevatedButton.icon(
+          // For AM and Admin: Card 1 (Regional Consolidated Datasets)
+          if (isAm || isAdmin) ...[
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFECFDF5),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFA7F3D0)),
+                        ),
+                        child: const Icon(Icons.hub_outlined, color: Color(0xFF065F46), size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Card 1: Regional Consolidated Datasets (Supervisory Area Scope)',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Multi-branch consolidated operational workbooks and raw ledgers across all assigned district branches.',
+                              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Includes: Area Branch Comparison matrix, Consolidated Trial Balance, Savings Summary, Repayments Summary, and Raw Loan Records scoped to your area.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      ElevatedButton.icon(
                         onPressed: _triggerExcelDownload,
-                        icon: const Icon(Icons.download, size: 16),
-                        label: const Text('Download Master Operational Report (Excel)'),
+                        icon: const Icon(Icons.table_chart, size: 16),
+                        label: const Text('Download Master Regional Report (Excel)'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF064E3B),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                         ),
                       ),
-                    );
-                  },
-                ),
-              ],
+                      ElevatedButton.icon(
+                        onPressed: () => _triggerCsvDownload('area_comparison', 'area_branch_comparison.csv'),
+                        icon: const Icon(Icons.file_download, size: 16),
+                        label: const Text('Area Comparison (CSV)'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0F172A),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => _triggerCsvDownload('loans', 'regional_raw_loans.csv'),
+                        icon: const Icon(Icons.file_download, size: 16),
+                        label: const Text('Regional Raw Loans (CSV)'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E293B),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => _triggerCsvDownload('repayments', 'regional_raw_repayments.csv'),
+                        icon: const Icon(Icons.file_download, size: 16),
+                        label: const Text('Regional Raw Repayments (CSV)'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E293B),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 20),
+            const SizedBox(height: 16),
+          ],
 
-          // Raw Operational Records (CSV)
+          // Card 2: Single-Branch Audited Package
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
               color: const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(8),
@@ -3217,58 +3829,161 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Row(
+                Row(
                   children: [
-                    Icon(Icons.description, color: Color(0xFF2563EB), size: 20),
-                    SizedBox(width: 8),
-                    Text('Raw Operational Records (CSV)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                const Text('Individual CSV exports for data analysis and external auditing.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                const SizedBox(height: 14),
-                Builder(
-                  builder: (context) {
-                    final isMobile = MediaQuery.of(context).size.width < 750;
-                    if (isMobile) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                      ),
+                      child: const Icon(Icons.account_balance, color: Color(0xFF1E40AF), size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          ElevatedButton.icon(
-                            onPressed: () => _triggerCsvDownload('loans', 'raw_loans.csv'),
-                            icon: const Icon(Icons.file_download, size: 16),
-                            label: const Text('Download Raw Loans (CSV)'),
-                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E293B), foregroundColor: Colors.white),
+                          Text(
+                            isAm || isAdmin
+                                ? 'Card 2: Single-Branch Audited Package (Individual Extraction)'
+                                : 'Branch Operational Statements & Audited Extraction',
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
                           ),
-                          const SizedBox(height: 8),
-                          ElevatedButton.icon(
-                            onPressed: () => _triggerCsvDownload('repayments', 'raw_repayments.csv'),
-                            icon: const Icon(Icons.file_download, size: 16),
-                            label: const Text('Download Raw Repayments (CSV)'),
-                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E293B), foregroundColor: Colors.white),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Extract official regulatory statements and raw registers for an individual branch (Currently: ${_selectedBranchName ?? "Selected Branch"}).',
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                           ),
                         ],
-                      );
-                    }
-                    return Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: () => _triggerCsvDownload('loans', 'raw_loans.csv'),
-                          icon: const Icon(Icons.file_download, size: 16),
-                          label: const Text('Download Raw Loans (CSV)'),
-                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E293B), foregroundColor: Colors.white),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: () => _triggerCsvDownload('repayments', 'raw_repayments.csv'),
-                          icon: const Icon(Icons.file_download, size: 16),
-                          label: const Text('Download Raw Repayments (CSV)'),
-                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E293B), foregroundColor: Colors.white),
-                        ),
-                      ],
-                    );
-                  },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 14, color: Color(0xFFDC2626)),
+                      label: const Text('Official Statement (PDF Print)', style: TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w700)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFFFCA5A5)),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
+                      onPressed: () async {
+                        try {
+                          final bytes = await ref.read(reportsApiServiceProvider).downloadMonthlyParityPdf(
+                            branchName: _selectedBranchName,
+                            year: _selectedExecYear,
+                            month: _selectedExecMonth,
+                            officerName: _selectedOfficerName,
+                            productName: _selectedProductName,
+                          );
+                          downloadBlobFile(
+                            bytes,
+                            'Official_Executive_Statement_${_selectedBranchName ?? "Branch"}_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.pdf',
+                            'application/pdf',
+                          );
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Executive PDF Statement downloaded successfully.')),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('PDF Download failed: $e')),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.table_view_outlined, size: 14, color: Color(0xFF0F766E)),
+                      label: const Text('Branch Excel Workbook', style: TextStyle(fontSize: 12, color: Color(0xFF0F766E), fontWeight: FontWeight.w700)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFF0F766E)),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
+                      onPressed: () async {
+                        try {
+                          final bytes = await ref.read(reportsApiServiceProvider).downloadMonthlyParityExcel(
+                            branchName: _selectedBranchName,
+                            year: _selectedExecYear,
+                            month: _selectedExecMonth,
+                            officerName: _selectedOfficerName,
+                            productName: _selectedProductName,
+                          );
+                          downloadBlobFile(
+                            bytes,
+                            'Branch_Monthly_Workbook_${_selectedBranchName ?? "Branch"}_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.xlsx',
+                            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                          );
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Branch Workbook downloaded successfully.')),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Download failed: $e')),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.people_alt_outlined, size: 14, color: Color(0xFF1E293B)),
+                      label: const Text('Credit Officer Summary (CSV)', style: TextStyle(fontSize: 12, color: Color(0xFF1E293B), fontWeight: FontWeight.w700)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
+                      onPressed: () async {
+                        try {
+                          final bytes = await ref.read(reportsApiServiceProvider).downloadMonthlyParityCsv(
+                            branchName: _selectedBranchName,
+                            year: _selectedExecYear,
+                            month: _selectedExecMonth,
+                            officerName: _selectedOfficerName,
+                            productName: _selectedProductName,
+                          );
+                          downloadBlobFile(
+                            bytes,
+                            'CO_Summary_${_selectedBranchName ?? "Branch"}_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.csv',
+                            'text/csv',
+                          );
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('CO Summary CSV downloaded successfully.')),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Download failed: $e')),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () => _triggerCsvDownload('loans', '${_selectedBranchName ?? "branch"}_loans.csv'),
+                      icon: const Icon(Icons.file_download, size: 14),
+                      label: const Text('Branch Loans (CSV)', style: TextStyle(fontSize: 12)),
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF334155), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () => _triggerCsvDownload('repayments', '${_selectedBranchName ?? "branch"}_repayments.csv'),
+                      icon: const Icon(Icons.file_download, size: 14),
+                      label: const Text('Branch Repayments (CSV)', style: TextStyle(fontSize: 12)),
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF334155), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
+                    ),
+                  ],
                 ),
               ],
             ),
