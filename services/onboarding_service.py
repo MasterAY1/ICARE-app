@@ -1541,11 +1541,45 @@ class OnboardingService:
         now = datetime.datetime.now(datetime.timezone.utc)
         uow.client.table("branch_onboarding_sessions").update({
             "status": "approved",
+            "branch_id": branch_id,
             "approved_at": now.isoformat(),
             "approved_by": approved_by_id,
             "approval_notes": approval_notes or "Approved and committed to core banking ledger.",
             "updated_at": now.isoformat()
         }).eq("id", session_id).execute()
+
+        # 7.5. Automatically assign Area Manager to this newly committed branch
+        candidates = []
+        if approved_by_id and str(approved_by_id).strip():
+            candidates.append(str(approved_by_id).strip())
+        created_by_id = session.get("created_by")
+        if created_by_id and str(created_by_id).strip() not in candidates:
+            candidates.append(str(created_by_id).strip())
+
+        for candidate_id in candidates:
+            try:
+                is_am = False
+                approver = uow.users.find_by_id(candidate_id) if hasattr(uow, "users") and uow.users else None
+                if approver and (approver.role or "").strip().title() == "Area Manager":
+                    is_am = True
+                else:
+                    r_check = uow.client.table("user_roles").select("roles(name)").eq("user_id", candidate_id).execute()
+                    for r_row in (r_check.data or []):
+                        r_name = ((r_row.get("roles") or {}).get("name") or "").strip().title()
+                        if r_name == "Area Manager":
+                            is_am = True
+                            break
+
+                if is_am:
+                    ex_assign = uow.client.table("area_manager_assignments").select("am_id").eq("am_id", candidate_id).eq("branch_id", branch_id).execute()
+                    if not ex_assign.data:
+                        uow.client.table("area_manager_assignments").insert({
+                            "am_id": candidate_id,
+                            "branch_id": branch_id
+                        }).execute()
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("Failed to auto-assign AM %s to branch %s: %s", candidate_id, branch_id, e)
 
         return {
             "status": "success",
