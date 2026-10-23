@@ -366,8 +366,9 @@ class TestOnboardingPortalApi(unittest.TestCase):
         b_assignments = b_res.data[0].get("officer_assignments") or []
 
         u_res = self.uow.client.table("app_users").select("id, username, full_name, extra_fields").eq("branch_id", b_id).execute()
-        self.assertEqual(len(u_res.data), 2)
+        self.assertEqual(len(u_res.data), 3)
         user_by_name = {u["full_name"]: u for u in u_res.data}
+        self.assertIn("Admin Coordinator", user_by_name)
         self.assertIn("Olajumoke Bakare", user_by_name)
         self.assertIn("Babatunde Lawal", user_by_name)
 

@@ -17,9 +17,22 @@ class SupabaseUserRepository(BaseRepository[User], UserRepository):
         return UserMapper.to_domain(data) if data else None
 
     def find_by_username(self, username: str) -> Optional[User]:
-        query = self.client.table(self.table_name).select(self.columns).ilike("username", username)
+        clean = (username or "").strip()
+        if not clean:
+            return None
+        query = self.client.table(self.table_name).select(self.columns).ilike("username", clean)
         res = self._execute(query)
         data = self._single_or_none(res.data)
+        if not data:
+            # Allow login via full_name (case-insensitive)
+            query_fn = self.client.table(self.table_name).select(self.columns).ilike("full_name", clean)
+            res_fn = self._execute(query_fn)
+            data = self._single_or_none(res_fn.data)
+        if not data:
+            # Allow login via phone number in extra_fields
+            query_ph = self.client.table(self.table_name).select(self.columns).contains("extra_fields", {"phone": clean})
+            res_ph = self._execute(query_ph)
+            data = self._single_or_none(res_ph.data)
         return UserMapper.to_domain(data) if data else None
 
     def find_all(self) -> List[User]:

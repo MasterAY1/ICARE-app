@@ -1216,6 +1216,37 @@ class OnboardingService:
             designated_misc_officer_id = first_officer_id
             designated_misc_officer_name = first_officer_name
 
+        # 3.6. Provision Branch Manager (BM) user if contact_person is defined
+        bm_contact_name = (session.get("contact_person") or "").strip()
+        bm_contact_phone = (session.get("contact_phone") or "").strip()
+        if bm_contact_name:
+            bm_role_res = uow.client.table("roles").select("role_id").eq("name", "Branch Manager").execute()
+            bm_role_id = bm_role_res.data[0]["role_id"] if bm_role_res.data else "3ea1496a-0498-4a1d-872a-1c7ecdf77b06"
+            bm_username = f"BM_{branch_name.replace(' ', '_')}"
+
+            # Check if BM already provisioned
+            ex_bm = uow.client.table("app_users").select("id").eq("branch_id", branch_id).ilike("username", bm_username).execute()
+            if not ex_bm.data:
+                ex_bm_fn = uow.client.table("app_users").select("id").eq("branch_id", branch_id).ilike("full_name", bm_contact_name).execute()
+                if not ex_bm_fn.data:
+                    new_bm_id = str(uuid.uuid4())
+                    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    uow.client.table("app_users").insert({
+                        "id": new_bm_id,
+                        "username": bm_username,
+                        "full_name": bm_contact_name,
+                        "branch_id": branch_id,
+                        "password_hash": default_pwd_hash,
+                        "is_active": True,
+                        "created_at": now_str,
+                        "updated_at": now_str,
+                        "extra_fields": {"phone": bm_contact_phone} if bm_contact_phone else {}
+                    }).execute()
+                    uow.client.table("user_roles").insert({
+                        "user_id": new_bm_id,
+                        "role_id": bm_role_id
+                    }).execute()
+
         # Persist officer assignments list into branches.officer_assignments
         try:
             b_curr = uow.client.table("branches").select("officer_assignments").eq("branch_id", branch_id).execute()
