@@ -1,8 +1,10 @@
 // ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'dart:html' as html;
+import 'dart:typed_data';
 
 void downloadBlobFile(List<int> bytes, String fileName, String mimeType) {
-  final blob = html.Blob([bytes], mimeType);
+  final Uint8List u8 = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+  final blob = html.Blob([u8], mimeType);
   final url = html.Url.createObjectUrlFromBlob(blob);
   final anchor = html.document.createElement('a') as html.AnchorElement
     ..href = url

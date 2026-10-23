@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/api_client.dart';
@@ -12,6 +13,12 @@ class ReportsApiService {
   final ApiClient _apiClient;
 
   ReportsApiService(this._apiClient);
+
+  List<int> _extractBytes(dynamic data) {
+    if (data is Uint8List) return data;
+    if (data is List<int>) return Uint8List.fromList(data);
+    return Uint8List.fromList((data as List).cast<int>());
+  }
 
   /// 1. Dynamic metadata (branches, products, officers) scoped to role
   Future<ReportsMeta> getReportsMeta() async {
@@ -177,7 +184,7 @@ class ReportsApiService {
       queryParameters: params.isNotEmpty ? params : null,
       options: Options(responseType: ResponseType.bytes),
     );
-    return List<int>.from(response.data as List);
+    return _extractBytes(response.data);
   }
 
   /// 8. Download Individual CSV
@@ -209,7 +216,7 @@ class ReportsApiService {
       queryParameters: params,
       options: Options(responseType: ResponseType.bytes),
     );
-    return List<int>.from(response.data as List);
+    return _extractBytes(response.data);
   }
 
   /// 9. Get Monthly Parity Matrix
@@ -297,7 +304,7 @@ class ReportsApiService {
       queryParameters: params.isNotEmpty ? params : null,
       options: Options(responseType: ResponseType.bytes),
     );
-    return List<int>.from(response.data as List);
+    return _extractBytes(response.data);
   }
 
   /// 12. Download CO Monthly Summary CSV
@@ -327,7 +334,7 @@ class ReportsApiService {
       queryParameters: params.isNotEmpty ? params : null,
       options: Options(responseType: ResponseType.bytes),
     );
-    return List<int>.from(response.data as List);
+    return _extractBytes(response.data);
   }
 
   /// 12b. Download Executive Monthly Financial Statement PDF (Paper Grade)
@@ -357,7 +364,7 @@ class ReportsApiService {
       queryParameters: params.isNotEmpty ? params : null,
       options: Options(responseType: ResponseType.bytes),
     );
-    return List<int>.from(response.data as List);
+    return _extractBytes(response.data);
   }
 
   /// 13. Get Monthly Reconciliation Data
