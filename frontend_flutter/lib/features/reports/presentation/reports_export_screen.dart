@@ -420,8 +420,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   subtitle,
                   style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                 ),
-                const SizedBox(height: 12),
-                badgeWidget,
+
               ],
             )
           : Row(
@@ -3661,6 +3660,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(6),
@@ -3672,17 +3672,25 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     child: Icon(icon, color: iconColor, size: 18),
                   ),
                   const SizedBox(width: 10),
-                  Text(
-                    title,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(4)),
-                    child: Text(
-                      pillLabel,
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: pillText),
+                  Expanded(
+                    child: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(4)),
+                          child: Text(
+                            pillLabel,
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: pillText),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
