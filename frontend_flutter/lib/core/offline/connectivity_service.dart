@@ -126,7 +126,7 @@ class ConnectivityService {
     }
     const envBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
     final cleanUrl = envBaseUrl.isNotEmpty ? envBaseUrl : defaultUrl;
-    return cleanUrl.endsWith('/') ? '${cleanUrl}health' : '$cleanUrl/health';
+    return cleanUrl.endsWith('/') ? '${cleanUrl}api/health' : '$cleanUrl/api/health';
   }
 
   /// Pings backend health endpoint or reliable DNS to check true connectivity.

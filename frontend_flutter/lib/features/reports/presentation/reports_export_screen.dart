@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import 'package:flutter/services.dart';
+import '../../../core/offline/connectivity_service.dart';
+import '../../shared/presentation/co_app_scaffold.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../data/datasources/reports_api_service.dart';
@@ -305,14 +308,31 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       _selectedTabIndex = 0;
     }
 
+    ref.listen<int>(globalRefreshSignalProvider, (prev, next) {
+      if (next != prev) {
+        _refreshCurrentTabData();
+      }
+    });
+
     final isMobile = MediaQuery.of(context).size.width < 750;
 
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: EdgeInsets.symmetric(
-        horizontal: isMobile ? 12 : 24,
-        vertical: isMobile ? 12 : 20,
-      ),
+    return RefreshIndicator(
+      color: const Color(0xFF0F766E),
+      backgroundColor: Colors.white,
+      displacement: 30,
+      onRefresh: () async {
+        HapticFeedback.lightImpact();
+        try {
+          await ref.read(connectivityServiceProvider).checkActualConnection();
+        } catch (_) {}
+        _refreshCurrentTabData();
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.symmetric(
+          horizontal: isMobile ? 12 : 24,
+          vertical: isMobile ? 12 : 20,
+        ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -328,7 +348,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           _buildActiveTabContent(tabs[_selectedTabIndex], isAdmin, isBm, isAm),
         ],
       ),
-    );
+    ),
+  );
   }
 
   // ---------------------------------------------------------------------------

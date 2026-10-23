@@ -105,6 +105,7 @@ app.include_router(onboarding.router)
 
 
 @app.get("/health")
+@app.get("/api/health")
 def health_check():
     """Service health check."""
     return {"status": "healthy", "service": "ICARE Core Banking API", "version": "1.0.0"}

@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -22,6 +23,9 @@ import '../../onboarding/presentation/branch_onboarding_admin_screen.dart';
 import '../../auth/presentation/login_screen.dart';
 
 /// Active page state provider for Streamlit-style radio navigation
+/// Global signal provider to trigger refresh across all sub-views and future builders
+final globalRefreshSignalProvider = StateProvider<int>((ref) => 0);
+
 final activeCoPageProvider = StateProvider<String>((ref) => 'Dashboard');
 
 /// Selected group provider when navigating from Dashboard quick action into Collections
@@ -30,6 +34,58 @@ final selectedCollectionGroupProvider = StateProvider<String?>((ref) => null);
 /// Main Application Shell for Credit Officer (1:1 replica of app.py L1925-2000 & media_1788063430479.png)
 class CoAppScaffold extends ConsumerWidget {
   const CoAppScaffold({super.key});
+
+  Future<void> _triggerPageRefresh(WidgetRef ref, String activePage, bool isBm, bool isAm) async {
+    try {
+      await ref.read(connectivityServiceProvider).checkActualConnection();
+    } catch (_) {}
+
+    ref.read(globalRefreshSignalProvider.notifier).state++;
+
+    switch (activePage) {
+      case 'Dashboard':
+        if (isAm) {
+          ref.invalidate(amDashboardDataProvider);
+          ref.invalidate(amMonthlyWorkflowSubmissionsProvider);
+        } else if (isBm) {
+          ref.invalidate(bmDashboardDataProvider);
+        } else {
+          ref.invalidate(coDashboardProvider);
+        }
+        break;
+      case 'Loan Origination':
+        ref.invalidate(originationGroupsProvider);
+        ref.invalidate(pendingDisbursementsProvider);
+        break;
+      case 'Collections':
+        ref.invalidate(collectionSheetFutureProvider);
+        ref.invalidate(collectionsHistoryProvider);
+        ref.invalidate(reversalOptionsProvider);
+        ref.invalidate(reversalRequestsProvider);
+        break;
+      case 'Withdrawal Operations':
+        ref.invalidate(dailyWithdrawalsProvider);
+        ref.invalidate(pendingApprovalsProvider);
+        ref.invalidate(miscBalanceProvider);
+        ref.invalidate(individualOptionsProvider);
+        ref.invalidate(groupOptionsProvider);
+        ref.invalidate(lapsOptionsProvider);
+        break;
+      case 'Portfolio':
+        ref.invalidate(portfolioDataProvider);
+        break;
+      case 'CO Cashbook':
+        ref.invalidate(coCashbookDataProvider);
+        break;
+      case 'Master Cashbook':
+        ref.invalidate(masterDailyCashbookProvider);
+        ref.invalidate(coAggregationProvider);
+        ref.invalidate(monthlyLedgerProvider);
+        break;
+      default:
+        break;
+    }
+  }
 
   void _handleSignOut(BuildContext context, WidgetRef ref) {
     ref.read(activeCoPageProvider.notifier).state = 'Dashboard';
@@ -124,6 +180,29 @@ class CoAppScaffold extends ConsumerWidget {
     final isAdmin = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN';
     final isAm = role == 'Area Manager' || role == 'AM';
 
+    ref.listen<bool>(isOnlineProvider, (previous, next) {
+      if (previous == false && next == true) {
+        _triggerPageRefresh(ref, activePage, isBm, isAm);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.wifi, color: Colors.white, size: 16),
+                  SizedBox(width: 8),
+                  Text('Connection restored. Data synchronized.', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                ],
+              ),
+              backgroundColor: Color(0xFF065F46),
+              duration: Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    });
+
     final roleBadge = isBm
         ? 'Branch Manager'
         : (isAdmin
@@ -217,44 +296,108 @@ class CoAppScaffold extends ConsumerWidget {
                 ],
               ),
               actions: [
-                // 1. Online / Offline Pill
+                // 1. Online / Offline Pill (Interactive Tap-to-Check)
                 Consumer(
                   builder: (context, ref, child) {
                     final isOnline = ref.watch(isOnlineProvider);
-                    return Container(
-                      margin: const EdgeInsets.symmetric(vertical: 13, horizontal: 4),
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: isOnline ? const Color(0xFF065F46) : const Color(0xFF92400E),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isOnline ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A),
-                          width: 0.8,
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () async {
+                        HapticFeedback.lightImpact();
+                        final connected = await ref.read(connectivityServiceProvider).checkActualConnection();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  Icon(
+                                    connected ? Icons.wifi : Icons.wifi_off,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    connected ? 'Connection verified online. Synchronizing...' : 'No internet detected. Working in offline mode.',
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                              backgroundColor: connected ? const Color(0xFF065F46) : const Color(0xFF92400E),
+                              duration: const Duration(seconds: 2),
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          );
+                        }
+                        if (connected) {
+                          _triggerPageRefresh(ref, activePage, isBm, isAm);
+                        }
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 13, horizontal: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isOnline ? const Color(0xFF065F46) : const Color(0xFF92400E),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isOnline ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isOnline ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              isOnline ? 'Online' : 'Offline',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: isOnline ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            isOnline ? 'Online' : 'Offline',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
                     );
+                  },
+                ),
+
+                // 2. Explicit Refresh Action Button
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 20, color: Colors.white),
+                  tooltip: 'Refresh Page',
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  constraints: const BoxConstraints(),
+                  onPressed: () async {
+                    HapticFeedback.lightImpact();
+                    await _triggerPageRefresh(ref, activePage, isBm, isAm);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Row(
+                            children: [
+                              Icon(Icons.check_circle_outline, color: Colors.white, size: 16),
+                              SizedBox(width: 8),
+                              Text('Page data refreshed.', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                          backgroundColor: Color(0xFF065F46),
+                          duration: Duration(seconds: 2),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
                   },
                 ),
 
@@ -379,37 +522,57 @@ class CoAppScaffold extends ConsumerWidget {
 
                       // ================= CONTENT AREA =================
                       Expanded(
-                        child: SingleChildScrollView(
-                          padding: contentPadding,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Welcome Banner
-                              _buildWelcomeBanner(displayName, branchName, roleBadge),
-                              const SizedBox(height: 24),
+                        child: RefreshIndicator(
+                          color: const Color(0xFF0F766E),
+                          backgroundColor: Colors.white,
+                          displacement: 30,
+                          onRefresh: () async {
+                            HapticFeedback.lightImpact();
+                            await _triggerPageRefresh(ref, activePage, isBm, isAm);
+                          },
+                          child: SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: contentPadding,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Welcome Banner
+                                _buildWelcomeBanner(displayName, branchName, roleBadge),
+                                const SizedBox(height: 24),
 
-                              // Active View Dispatcher
-                              _buildActiveView(activePage, isBm, isAm),
-                            ],
+                                // Active View Dispatcher
+                                _buildActiveView(activePage, isBm, isAm),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ],
                   )
-                : SingleChildScrollView(
-                    padding: contentPadding,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Welcome Banner
-                        if (!isMobile || activePage != 'Dashboard') ...[
-                          _buildWelcomeBanner(displayName, branchName, roleBadge, isMobile: isMobile),
-                          SizedBox(height: isMobile ? 12 : 20),
-                        ],
+                : RefreshIndicator(
+                    color: const Color(0xFF0F766E),
+                    backgroundColor: Colors.white,
+                    displacement: 30,
+                    onRefresh: () async {
+                      HapticFeedback.lightImpact();
+                      await _triggerPageRefresh(ref, activePage, isBm, isAm);
+                    },
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: contentPadding,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Welcome Banner
+                          if (!isMobile || activePage != 'Dashboard') ...[
+                            _buildWelcomeBanner(displayName, branchName, roleBadge, isMobile: isMobile),
+                            SizedBox(height: isMobile ? 12 : 20),
+                          ],
 
-                        // Active View Dispatcher
-                        _buildActiveView(activePage, isBm, isAm),
-                      ],
+                          // Active View Dispatcher
+                          _buildActiveView(activePage, isBm, isAm),
+                        ],
+                      ),
                     ),
                   ),
           ),

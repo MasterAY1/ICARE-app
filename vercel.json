@@ -21,6 +21,7 @@
     }
   ],
   "rewrites": [
+    { "source": "/health", "destination": "https://icare-app.onrender.com/health" },
     { "source": "/api/(.*)", "destination": "https://icare-app.onrender.com/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]

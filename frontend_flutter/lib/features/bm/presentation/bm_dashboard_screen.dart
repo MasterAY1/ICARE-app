@@ -12,7 +12,7 @@ import '../../shared/presentation/co_app_scaffold.dart';
 
 final bmDashboardDataProvider = FutureProvider.autoDispose<BmDashboardDataModel>((ref) async {
   final api = ref.watch(bmApiServiceProvider);
-  final isOnline = ref.read(isOnlineProvider);
+  final isOnline = ref.watch(isOnlineProvider);
   final dbService = ref.watch(offlineDatabaseServiceProvider);
 
   if (!isOnline) {
