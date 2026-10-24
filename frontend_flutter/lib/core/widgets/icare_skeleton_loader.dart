@@ -843,3 +843,118 @@ class _BranchCardSkeleton extends StatelessWidget {
   }
 }
 
+// =============================================================================
+// BRANCH ONBOARDING LIVING SKELETON
+// =============================================================================
+
+/// Living skeleton loader for the Branch Onboarding Management screen
+class IcareOnboardingSkeleton extends StatelessWidget {
+  final int cardCount;
+
+  const IcareOnboardingSkeleton({
+    super.key,
+    this.cardCount = 3,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IcareShimmer(
+      child: Column(
+        children: List.generate(
+          cardCount,
+          (_) => Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header row: branch pill & status badge
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        SkeletonShimmerBox(width: 80, height: 24, borderRadius: 4),
+                        SizedBox(width: 8),
+                        SkeletonShimmerBox(width: 140, height: 18, borderRadius: 4),
+                      ],
+                    ),
+                    SkeletonShimmerBox(width: 75, height: 22, borderRadius: 12),
+                  ],
+                ),
+                SizedBox(height: 14),
+
+                // Contact details row
+                Row(
+                  children: [
+                    SkeletonShimmerBox(width: 120, height: 12, borderRadius: 3),
+                    SizedBox(width: 16),
+                    SkeletonShimmerBox(width: 100, height: 12, borderRadius: 3),
+                  ],
+                ),
+                SizedBox(height: 14),
+
+                // Metrics row (Groups, Members, Savings, Balance)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SkeletonShimmerBox(width: 50, height: 10, borderRadius: 2),
+                        SizedBox(height: 4),
+                        SkeletonShimmerBox(width: 65, height: 16, borderRadius: 3),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SkeletonShimmerBox(width: 50, height: 10, borderRadius: 2),
+                        SizedBox(height: 4),
+                        SkeletonShimmerBox(width: 65, height: 16, borderRadius: 3),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SkeletonShimmerBox(width: 50, height: 10, borderRadius: 2),
+                        SizedBox(height: 4),
+                        SkeletonShimmerBox(width: 75, height: 16, borderRadius: 3),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SkeletonShimmerBox(width: 50, height: 10, borderRadius: 2),
+                        SizedBox(height: 4),
+                        SkeletonShimmerBox(width: 75, height: 16, borderRadius: 3),
+                      ],
+                    ),
+                  ],
+                ),
+                SizedBox(height: 16),
+
+                // Action buttons row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    SkeletonShimmerBox(width: 80, height: 30, borderRadius: 6),
+                    SizedBox(width: 8),
+                    SkeletonShimmerBox(width: 100, height: 30, borderRadius: 6),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+

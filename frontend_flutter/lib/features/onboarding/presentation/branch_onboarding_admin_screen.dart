@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +5,8 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/theme/icare_colors.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/utils/app_url_helper.dart';
+import '../../../../core/widgets/icare_skeleton_loader.dart';
 import '../data/onboarding_api_service.dart';
 import 'branch_onboarding_portal_screen.dart';
 import 'widgets/successful_delete_dialog.dart';
@@ -94,9 +95,7 @@ Future<void> showGenerateOnboardingLinkDialog(
 
                           final session = res['session'] as Map<String, dynamic>? ?? {};
                           final token = session['token']?.toString() ?? '';
-                          final origin = kIsWeb && Uri.base.origin.isNotEmpty && !Uri.base.origin.startsWith('file://')
-                              ? Uri.base.origin
-                              : 'http://localhost:8000';
+                          final origin = getAppPublicOrigin();
                           final fullUrl = '$origin/#/onboarding?token=$token';
 
                           setDialogState(() {
@@ -653,20 +652,25 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
         _buildFilterBar(),
         const SizedBox(height: 14),
 
-        // Content Area
-        if (_isLoading)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(40),
-              child: CircularProgressIndicator(color: IcareColors.primary),
-            ),
-          )
-        else if (_errorMessage != null)
-          _buildErrorNotice()
-        else if (filtered.isEmpty)
-          _buildEmptyState()
-        else
-          ...filtered.map((s) => _buildSessionCard(s)),
+        // Content Area with Living Skeleton Shimmer
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 280),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          child: _isLoading
+              ? const IcareOnboardingSkeleton(
+                  key: ValueKey('onboarding_skeleton'),
+                  cardCount: 3,
+                )
+              : _errorMessage != null
+                  ? _buildErrorNotice()
+                  : filtered.isEmpty
+                      ? _buildEmptyState()
+                      : Column(
+                          key: const ValueKey('onboarding_sessions_list'),
+                          children: filtered.map((s) => _buildSessionCard(s)).toList(),
+                        ),
+        ),
       ],
     );
   }
@@ -869,9 +873,7 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
     final balance = double.tryParse(s['total_current_balance']?.toString() ?? '0') ?? 0.0;
     final expiresAt = s['expires_at'] != null ? DateTime.tryParse(s['expires_at']) : null;
 
-    final origin = kIsWeb && Uri.base.origin.isNotEmpty && !Uri.base.origin.startsWith('file://')
-        ? Uri.base.origin
-        : 'http://localhost:8000';
+    final origin = getAppPublicOrigin();
     final fullUrl = '$origin/#/onboarding?token=$token';
 
     Color badgeBg;

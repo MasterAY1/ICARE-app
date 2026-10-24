@@ -1,5 +1,4 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +11,7 @@ import '../../../../core/utils/platform_file_picker.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../../../../core/auth/auth_controller.dart';
 import '../../../../core/auth/auth_state.dart';
+import '../../../../core/utils/app_url_helper.dart';
 import '../data/onboarding_api_service.dart';
 import 'credit_officer_portal_screen.dart';
 
@@ -4030,9 +4030,7 @@ class _BranchOnboardingPortalScreenState
                                 visualDensity: VisualDensity.compact,
                               ),
                               onPressed: () {
-                                final origin = (kIsWeb && Uri.base.origin.isNotEmpty && !Uri.base.origin.startsWith('file://'))
-                                    ? Uri.base.origin
-                                    : 'http://localhost:8000';
+                                final origin = getAppPublicOrigin();
                                 final coToken = off['token'] ?? off['co_token'];
                                 final coUrl = (coToken != null && coToken.toString().startsWith('onb_co_'))
                                     ? '$origin/#/onboarding/officer?token=$coToken'
@@ -4473,9 +4471,7 @@ class _BranchOnboardingPortalScreenState
                   _saveDraft();
                   _showBanner(isEditing ? 'Officer updated successfully.' : 'Officer added successfully.');
                   if (!isEditing && generatedCoId != null) {
-                    final origin = (kIsWeb && Uri.base.origin.isNotEmpty && !Uri.base.origin.startsWith('file://'))
-                        ? Uri.base.origin
-                        : 'http://localhost:8000';
+                    final origin = getAppPublicOrigin();
                     final coUrl = '$origin/#/onboarding/officer?token=$generatedCoId';
                     _showOfficerLinkModal(cleanName, coUrl);
                   }
