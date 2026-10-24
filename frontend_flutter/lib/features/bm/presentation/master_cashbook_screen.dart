@@ -27,9 +27,10 @@ final coAggregationProvider = FutureProvider.family<CoAggregationData, String>((
   final parts = key.split('||');
   final date = parts.isNotEmpty && parts[0] != 'null' && parts[0].isNotEmpty ? parts[0] : null;
   final officer = parts.length > 1 && parts[1] != 'null' && parts[1].isNotEmpty ? parts[1] : null;
+  final branch = parts.length > 2 && parts[2] != 'null' && parts[2].isNotEmpty ? parts[2] : null;
 
   final api = ref.watch(masterCashbookApiServiceProvider);
-  return api.getCoAggregation(date: date, officer: officer);
+  return api.getCoAggregation(date: date, officer: officer, branch: branch);
 });
 
 final monthlyLedgerProvider = FutureProvider.family<MonthlyLedgerData, String>((ref, key) async {
@@ -55,6 +56,22 @@ class MasterCashbookScreen extends ConsumerStatefulWidget {
 class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
+  bool get _isAm {
+    final auth = ref.watch(authControllerProvider);
+    final user = auth is AuthStateAuthenticated ? auth.user : null;
+    final role = (user?.role ?? '').trim().toLowerCase();
+    return role == 'area manager' || role == 'am';
+  }
+
+  void _changeActiveBranch(String newBranch) {
+    setState(() {
+      _selectedBranchTab1 = newBranch;
+      _selectedBranchTab2 = newBranch;
+      _selectedBranchTab3 = newBranch;
+      _selectedOfficerTab2 = null;
+    });
+  }
+
   // Tab 1 state
   // Branch state for multi-branch roles (AM, Admin)
   String? _selectedBranchTab1;
@@ -77,6 +94,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   // Tab 2 state
   DateTime _selectedDateTab2 = DateTime.now();
   String? _selectedOfficerTab2;
+  String? _selectedBranchTab2;
 
   // Tab 3 state
   int _selectedMonth = DateTime.now().month;
@@ -111,6 +129,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     final targetBranch = ref.read(masterCashbookTargetBranchProvider);
     if (targetBranch != null) {
       _selectedBranchTab1 = targetBranch;
+      _selectedBranchTab2 = targetBranch;
       _selectedBranchTab3 = targetBranch;
     }
     Future.microtask(() {
@@ -455,10 +474,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     // Reactive listener for target branch when already mounted
     ref.listen<String?>(masterCashbookTargetBranchProvider, (prev, next) {
       if (next != null) {
-        setState(() {
-          _selectedBranchTab1 = next;
-          _selectedBranchTab3 = next;
-        });
+        _changeActiveBranch(next);
         Future.microtask(() {
           if (mounted) ref.read(masterCashbookTargetBranchProvider.notifier).state = null;
         });
@@ -484,6 +500,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildHeader(bool isMobile) {
+    final isAm = _isAm;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -496,7 +513,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Branch Manager Master Cashbook',
+                    isAm ? 'Area Supervisory Master Cashbook' : 'Branch Manager Master Cashbook',
                     style: TextStyle(
                       fontSize: isMobile ? 20 : 25,
                       fontWeight: FontWeight.w700,
@@ -505,9 +522,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     ),
                   ),
                   const SizedBox(height: 3),
-                  const Text(
-                    'Branch Treasury & Vault Cashbook',
-                    style: TextStyle(
+                  Text(
+                    isAm
+                        ? 'Regional Treasury & Supervised Branch Vault Audit'
+                        : 'Branch Treasury & Vault Cashbook',
+                    style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                       color: Color(0xFF64748B),
@@ -521,18 +540,26 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFECFDF5),
+                  color: isAm ? const Color(0xFFF0FDFA) : const Color(0xFFECFDF5),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFA7F3D0)),
+                  border: Border.all(color: isAm ? const Color(0xFF99F6E4) : const Color(0xFFA7F3D0)),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.verified_user_outlined, size: 14, color: Color(0xFF059669)),
-                    SizedBox(width: 5),
+                    Icon(
+                      isAm ? Icons.visibility_outlined : Icons.verified_user_outlined,
+                      size: 14,
+                      color: isAm ? const Color(0xFF0F766E) : const Color(0xFF059669),
+                    ),
+                    const SizedBox(width: 5),
                     Text(
-                      'Account 1000 Vault Truth',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF065F46)),
+                      isAm ? 'Supervisory Audit Mode • Read-Only' : 'Certified Vault Reserve',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: isAm ? const Color(0xFF0F766E) : const Color(0xFF065F46),
+                      ),
                     ),
                   ],
                 ),
@@ -579,10 +606,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildPillTabs() {
+    final isAm = _isAm;
     final tabs = [
-      (0, 'Daily Cashbook Entry', Icons.account_balance_wallet_outlined),
-      (1, 'CO Cashbooks Aggregation', Icons.groups_outlined),
-      (2, 'Monthly Ledger', Icons.calendar_month_outlined),
+      (0, isAm ? 'Daily Cashbook Audit' : 'Daily Cashbook Entry', Icons.account_balance_wallet_outlined),
+      (1, isAm ? 'CO Cashbooks Inspection' : 'CO Cashbooks Aggregation', Icons.groups_outlined),
+      (2, isAm ? 'Monthly Ledger Review' : 'Monthly Ledger', Icons.calendar_month_outlined),
     ];
 
     return SingleChildScrollView(
@@ -686,19 +714,22 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         child: Text('Error loading Master Cashbook: $err', style: const TextStyle(color: Color(0xFFDC2626))),
       ),
       data: (data) {
+        final isAm = _isAm;
         if (_lastLoadedTab1Key != key) {
           _lastLoadedTab1Key = key;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _populateManualControllers(data);
-          });
+          if (!isAm) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _populateManualControllers(data);
+            });
+          }
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildTab1ControlBar(data, isMobile),
             const SizedBox(height: 16),
-            if (isMobile) _buildTab1MobileSectionSelector(),
-            if (!isMobile || _tab1MobileSection == 0 || _tab1MobileSection == 3) ...[
+            if (isAm) ...[
+              // Area Manager Supervisory Read-Only View: Purely Audit & Inspection
               if (data.tally != null) ...[
                 _buildReconciliationTally(data.tally!, data.branch),
                 const SizedBox(height: 20),
@@ -706,22 +737,34 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 const SizedBox(height: 16),
               ],
               _buildDailyLedgerTAccount(data, isMobile),
-              if (!isMobile || _tab1MobileSection == 3) ...[
-                const SizedBox(height: 28),
-                const Divider(color: Color(0xFFE2E8F0)),
-                const SizedBox(height: 20),
+            ] else ...[
+              // Branch Manager Operational View: With Inputs, Float & Reversals Hub
+              if (isMobile) _buildTab1MobileSectionSelector(),
+              if (!isMobile || _tab1MobileSection == 0 || _tab1MobileSection == 3) ...[
+                if (data.tally != null) ...[
+                  _buildReconciliationTally(data.tally!, data.branch),
+                  const SizedBox(height: 20),
+                  const Divider(color: Color(0xFFE2E8F0)),
+                  const SizedBox(height: 16),
+                ],
+                _buildDailyLedgerTAccount(data, isMobile),
+                if (!isMobile || _tab1MobileSection == 3) ...[
+                  const SizedBox(height: 28),
+                  const Divider(color: Color(0xFFE2E8F0)),
+                  const SizedBox(height: 20),
+                ],
               ],
-            ],
-            if (!isMobile || _tab1MobileSection == 1 || _tab1MobileSection == 3) ...[
-              _buildBmManualInputsForm(data, isMobile),
-              if (!isMobile || _tab1MobileSection == 3) ...[
-                const SizedBox(height: 28),
-                const Divider(color: Color(0xFFE2E8F0)),
-                const SizedBox(height: 20),
+              if (!isMobile || _tab1MobileSection == 1 || _tab1MobileSection == 3) ...[
+                _buildBmManualInputsForm(data, isMobile),
+                if (!isMobile || _tab1MobileSection == 3) ...[
+                  const SizedBox(height: 28),
+                  const Divider(color: Color(0xFFE2E8F0)),
+                  const SizedBox(height: 20),
+                ],
               ],
-            ],
-            if (!isMobile || _tab1MobileSection == 2 || _tab1MobileSection == 3) ...[
-              _buildErrorCorrectionHub(data, isMobile),
+              if (!isMobile || _tab1MobileSection == 2 || _tab1MobileSection == 3) ...[
+                _buildErrorCorrectionHub(data, isMobile),
+              ],
             ],
           ],
         );
@@ -781,10 +824,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         side: BorderSide(color: _selectedBranchTab1 == b ? const Color(0xFF0F766E) : const Color(0xFFCBD5E1)),
                         onSelected: (selected) {
                           if (selected && _selectedBranchTab1 != b) {
-                            setState(() {
-                              _selectedBranchTab1 = b;
-                              _selectedBranchTab3 = b;
-                            });
+                            _changeActiveBranch(b);
                           }
                         },
                       ),
@@ -2430,7 +2470,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   // ==========================================
 
   Widget _buildTab2CoAggregation(bool isMobile) {
-    final key = '${_formatDate(_selectedDateTab2)}||${_selectedOfficerTab2 ?? ""}';
+    final branches = _getAvailableBranches();
+    if (_selectedBranchTab2 == null && branches.isNotEmpty) {
+      _selectedBranchTab2 = _selectedBranchTab1 ?? branches.first;
+    }
+    final activeBranch = _selectedBranchTab2 ?? _selectedBranchTab1;
+    final key = '${_formatDate(_selectedDateTab2)}||${_selectedOfficerTab2 ?? ""}||${activeBranch ?? ""}';
     final asyncCo = ref.watch(coAggregationProvider(key));
 
     return asyncCo.when(
@@ -2516,12 +2561,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Credit Officer Daily Cashbook Ledger',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                      Text(
+                        _isAm ? 'Area Supervisory Credit Officer Inspection' : 'Credit Officer Daily Cashbook Ledger',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
                       ),
                       Text(
-                        '${data.officer.isNotEmpty ? data.officer : "All Officers"} • ${DateFormat("dd MMM yyyy").format(_selectedDateTab2)}',
+                        '${data.officer.isNotEmpty ? data.officer : "All Officers"}${data.branch.isNotEmpty ? " • ${data.branch}" : (activeBranch != null && activeBranch.isNotEmpty ? " • $activeBranch" : "")} • ${DateFormat("dd MMM yyyy").format(_selectedDateTab2)}',
                         style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
                       ),
                     ],
@@ -2716,6 +2761,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     final isToday = curDate == today;
     final isYesterday = curDate == yesterday;
     final isClosed = !data.isOpen && data.openReason.toLowerCase().contains('closed');
+    final branches = _getAvailableBranches();
+    final activeBranch = _selectedBranchTab2 ?? _selectedBranchTab1;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -2734,6 +2781,42 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (branches.length > 1) ...[
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
+                  const Icon(Icons.apartment, size: 16, color: Color(0xFF0F766E)),
+                  const SizedBox(width: 8),
+                  const Text('Supervised Branch:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569))),
+                  const SizedBox(width: 8),
+                  for (final b in branches) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        avatar: Icon(Icons.storefront, size: 14, color: activeBranch == b ? Colors.white : const Color(0xFF0F766E)),
+                        label: Text(b, style: TextStyle(fontSize: 12, fontWeight: activeBranch == b ? FontWeight.w800 : FontWeight.w600, color: activeBranch == b ? Colors.white : const Color(0xFF1E293B))),
+                        selected: activeBranch == b,
+                        selectedColor: const Color(0xFF0F766E),
+                        backgroundColor: const Color(0xFFF8FAFC),
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        side: BorderSide(color: activeBranch == b ? const Color(0xFF0F766E) : const Color(0xFFCBD5E1)),
+                        onSelected: (selected) {
+                          if (selected && activeBranch != b) {
+                            _changeActiveBranch(b);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Divider(height: 18),
+          ],
           if (isMobile) ...[
             // Mobile: Date picker and chips row
             Row(
@@ -3184,6 +3267,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   Widget _buildEodControls(CoAggregationData data, bool isMobile) {
     final dateStr = _formatDate(_selectedDateTab2);
     final isClosed = !data.isOpen && data.openReason.toLowerCase().contains('closed');
+    final isAm = _isAm;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -3213,107 +3297,119 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 child: const Icon(Icons.security_outlined, size: 20, color: Color(0xFF0F172A)),
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Branch Manager End of Day (EOD) Operations', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                    Text('Daily ledger freeze & date rollover.', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                    Text(
+                      isAm ? 'Daily Vault Ledger Supervisory Status' : 'Branch Manager End of Day (EOD) Operations',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                    ),
+                    Text(
+                      isAm ? 'Certified operational status & vault freeze inspection.' : 'Daily ledger freeze & date rollover.',
+                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                    ),
                   ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 14),
-          if (isClosed)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFF6FF),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFBFDBFE)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.check_circle_outline, color: Color(0xFF1E40AF), size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Day Close Executed for $dateStr • Operational date advanced.',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else if (!data.isOpen)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFFBEB),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFFDE68A)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.lock_outlined, color: Color(0xFFD97706), size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Cannot execute Day Close (${data.openReason}).',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF92400E)),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else if (isMobile)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFBFDBFE)),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.info_outline, size: 16, color: Color(0xFF1E40AF)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Operational Date: $dateStr • Freezes daily entries and advances to Next Working Day.',
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF1E40AF), fontWeight: FontWeight.w500),
-                        ),
+          if (isAm) ...[
+            if (isClosed)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFBBF7D0)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.verified_outlined, color: Color(0xFF16A34A), size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Certified Day Close for $dateStr • Vault balance locked and day closed by Branch Manager.',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF166534)),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                ElevatedButton.icon(
-                  onPressed: _isExecutingEod ? null : () => _confirmAndExecuteEod(dateStr, data.closingBalance),
-                  icon: _isExecutingEod
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Icon(Icons.shield_outlined, size: 16, color: Colors.white),
-                  label: const Text('Execute EOD Day Close', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Colors.white)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF065F46),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
+              )
+            else
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDFA),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF99F6E4)),
                 ),
-              ],
-            )
-          else
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
+                child: Row(
+                  children: [
+                    const Icon(Icons.shield_outlined, color: Color(0xFF0F766E), size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Supervisory Inspection Mode • Operational Date: $dateStr. Vault Day Close is an operational control executed exclusively by the Branch Manager.',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF115E59)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ] else ...[
+            if (isClosed)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle_outline, color: Color(0xFF1E40AF), size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Day Close Executed for $dateStr • Operational date advanced.',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (!data.isOpen)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.lock_outlined, color: Color(0xFFD97706), size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Cannot execute Day Close (${data.openReason}).',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF92400E)),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (isMobile)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: const Color(0xFFEFF6FF),
@@ -3334,22 +3430,63 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(width: 16),
-                ElevatedButton.icon(
-                  onPressed: _isExecutingEod ? null : () => _confirmAndExecuteEod(dateStr, data.closingBalance),
-                  icon: _isExecutingEod
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Icon(Icons.shield_outlined, size: 16, color: Colors.white),
-                  label: const Text('Execute EOD Day Close', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Colors.white)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF065F46),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: _isExecutingEod ? null : () => _confirmAndExecuteEod(dateStr, data.closingBalance),
+                    icon: _isExecutingEod
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Icon(Icons.shield_outlined, size: 16, color: Colors.white),
+                    label: const Text('Execute EOD Day Close', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF065F46),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.info_outline, size: 16, color: Color(0xFF1E40AF)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Operational Date: $dateStr • Freezes daily entries and advances to Next Working Day.',
+                              style: const TextStyle(fontSize: 12, color: Color(0xFF1E40AF), fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  ElevatedButton.icon(
+                    onPressed: _isExecutingEod ? null : () => _confirmAndExecuteEod(dateStr, data.closingBalance),
+                    icon: _isExecutingEod
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Icon(Icons.shield_outlined, size: 16, color: Colors.white),
+                    label: const Text('Execute EOD Day Close', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF065F46),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ],
+              ),
+          ],
         ],
       ),
     );
@@ -3690,7 +3827,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                                   style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
                                 ),
                                 Text(
-                                  'Complete 42-column Account 1000 matrix (.xlsx)',
+                                  'Complete 42-column Vault Cash Ledger matrix (.xlsx)',
                                   style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -3838,7 +3975,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       items: data.availableBranches.map((b) => DropdownMenuItem(value: b, child: Text(b, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)))).toList(),
       onChanged: data.availableBranches.length > 1
           ? (val) {
-              if (val != null) setState(() => _selectedBranchTab3 = val);
+              if (val != null) _changeActiveBranch(val);
             }
           : null,
     );
@@ -3875,7 +4012,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Monthly Ledger Parameters', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                  Text('Historical Account 1000 cash flows review.', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                  Text('Historical Vault Cash Reserve review.', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
                 ],
               ),
             ],
