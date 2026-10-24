@@ -1113,7 +1113,7 @@ class CoDashboardScreen extends ConsumerWidget {
               child: _buildMiniStatCard(
                 label: 'Closing Balance',
                 value: CurrencyFormatter.formatNaira(closing),
-                subtext: 'Account 1000',
+                subtext: 'Primary Vault Ledger',
                 valueColor: const Color(0xFF2563EB),
               ),
             ),
@@ -1620,7 +1620,7 @@ class CoDashboardScreen extends ConsumerWidget {
                         ),
                         const SizedBox(width: 8),
                         const Text(
-                          'ACCOUNT 1000 · VAULT CASH',
+                          'PRIMARY VAULT CASH',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
@@ -1680,6 +1680,7 @@ class CoDashboardScreen extends ConsumerWidget {
                           fontWeight: FontWeight.w900,
                           color: Colors.white,
                           letterSpacing: -0.5,
+                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
                     ],
@@ -1798,6 +1799,50 @@ class CoDashboardScreen extends ConsumerWidget {
 
   /// Tactile Quick Action Navigation Shortcuts
   Widget _buildQuickActionShortcuts(BuildContext context, WidgetRef ref) {
+    final isMobile = IcareSpacing.isMobile(context);
+
+    if (isMobile) {
+      return Row(
+        children: [
+          Expanded(
+            child: _buildActionShortcutIconButton(
+              icon: Icons.payments_outlined,
+              iconBg: const Color(0xFFECFDF5),
+              iconColor: const Color(0xFF065F46),
+              tooltip: 'Collections (Post batch)',
+              onTap: () {
+                ref.read(activeCoPageProvider.notifier).state = 'Collections';
+              },
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _buildActionShortcutIconButton(
+              icon: Icons.person_add_alt_1_outlined,
+              iconBg: const Color(0xFFEFF6FF),
+              iconColor: const Color(0xFF1E40AF),
+              tooltip: 'Onboarding (Register client)',
+              onTap: () {
+                ref.read(activeCoPageProvider.notifier).state = 'Loan Origination';
+              },
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _buildActionShortcutIconButton(
+              icon: Icons.account_balance_wallet_outlined,
+              iconBg: const Color(0xFFFFFBEB),
+              iconColor: const Color(0xFF92400E),
+              tooltip: 'Cashbook (EOD Balance)',
+              onTap: () {
+                ref.read(activeCoPageProvider.notifier).state = 'CO Cashbook';
+              },
+            ),
+          ),
+        ],
+      );
+    }
+
     return Row(
       children: [
         Expanded(
@@ -1839,6 +1884,51 @@ class CoDashboardScreen extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildActionShortcutIconButton({
+    required IconData icon,
+    required Color iconBg,
+    required Color iconColor,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            height: 48,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x080F172A),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: iconColor, size: 19),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -2104,6 +2194,7 @@ class CoDashboardScreen extends ConsumerWidget {
               fontWeight: FontWeight.w800,
               color: isAlert ? const Color(0xFF991B1B) : const Color(0xFF0F172A),
               letterSpacing: -0.3,
+              fontFeatures: const [FontFeature.tabularFigures()],
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
