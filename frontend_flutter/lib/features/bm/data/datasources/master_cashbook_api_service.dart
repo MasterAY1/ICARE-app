@@ -36,10 +36,11 @@ class MasterCashbookApiService {
   }
 
   /// Fetch individual Credit Officer Daily Cashbook Ledger
-  Future<CoAggregationData> getCoAggregation({String? date, String? officer}) async {
+  Future<CoAggregationData> getCoAggregation({String? date, String? officer, String? branch}) async {
     final queryParams = <String, dynamic>{};
     if (date != null && date.isNotEmpty) queryParams['date'] = date;
     if (officer != null && officer.isNotEmpty) queryParams['officer'] = officer;
+    if (branch != null && branch.isNotEmpty) queryParams['branch'] = branch;
 
     final response = await _apiClient.get(
       '/api/v1/bm/cashbook/co-aggregation',

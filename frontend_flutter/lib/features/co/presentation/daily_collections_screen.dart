@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -228,8 +229,14 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
   // SUBMISSION HANDLERS
   // =========================================================================
 
-  /// Calculates staging totals and switches to Review Screen (Mode 1)
-  void _calculateAndReviewGroup(List<dynamic> members, String groupName, String dateStr) {
+  /// Calculates staging totals and triggers Animated Collection Flow Modal
+  void _calculateAndReviewGroup(
+    List<dynamic> members,
+    String groupName,
+    String dateStr, [
+    bool isOpen = true,
+    String openReason = 'Open',
+  ]) {
     final toInsert = <Map<String, dynamic>>[];
     final grpSavAmt = double.tryParse(_grpSavingsCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
 
@@ -282,16 +289,88 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
     setState(() {
       _stagedTransactions = toInsert;
-      _isReviewingGroup = true;
     });
+
+    final isLateEntry = ref.read(collectionsLateEntryProvider);
+    _showAnimatedCollectionFlowModal(
+      context: context,
+      groupName: groupName,
+      dateStr: dateStr,
+      isOpen: isOpen,
+      openReason: openReason,
+      isLateEntry: isLateEntry,
+    );
   }
 
-  /// Atomically confirms & posts batch group collections to ledger (app.py L6081)
-  /// Features offline-first fallback with local SQLite outbox queuing when disconnected.
-  Future<void> _confirmAndSaveBatch(String groupName, String dateStr) async {
-    setState(() => _isSubmitting = true);
+  /// Displays the 4-phase animated collection confirmation, posting, and receipt modal
+  void _showAnimatedCollectionFlowModal({
+    required BuildContext context,
+    required String groupName,
+    required String dateStr,
+    required bool isOpen,
+    required String openReason,
+    required bool isLateEntry,
+  }) {
     final grpSavAmt = double.tryParse(_grpSavingsCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+    final isOnline = ref.read(isOnlineProvider);
 
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: 'Collection Flow',
+      barrierColor: const Color(0x8C000000),
+      transitionDuration: const Duration(milliseconds: 320),
+      pageBuilder: (dialogCtx, anim1, anim2) {
+        return _CollectionFlowModal(
+          groupName: groupName,
+          dateStr: dateStr,
+          isOpen: isOpen,
+          openReason: openReason,
+          isLateEntry: isLateEntry,
+          stagedTransactions: List<Map<String, dynamic>>.from(_stagedTransactions),
+          grpSavings: grpSavAmt,
+          isOnline: isOnline,
+          onConfirmPost: () => _executeBatchPost(groupName, dateStr),
+          onDismissAndReset: () {
+            Navigator.of(dialogCtx, rootNavigator: true).pop();
+            setState(() {
+              _isReviewingGroup = false;
+              _stagedTransactions = [];
+              _grpSavingsCtrl.clear();
+              _memberRepaymentCtrls.clear();
+              _memberSavingsCtrls.clear();
+              _memberNotPaidFlags.clear();
+              _expandedMemberCards.clear();
+            });
+            ref.invalidate(collectionSheetFutureProvider);
+            ref.invalidate(singleClientOptionsProvider);
+          },
+          onViewHistory: () {
+            Navigator.of(dialogCtx, rootNavigator: true).pop();
+            setState(() {
+              _isReviewingGroup = false;
+              _stagedTransactions = [];
+              ref.read(collectionsTabProvider.notifier).state = 1; // Tab 1: History
+            });
+          },
+        );
+      },
+      transitionBuilder: (dialogCtx, anim1, anim2, child) {
+        final curved = CurvedAnimation(parent: anim1, curve: Curves.easeOutBack);
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.92, end: 1.0).animate(curved),
+          child: FadeTransition(
+            opacity: anim1,
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  /// Internal batch submission worker executing backend posting or offline queuing
+  Future<Map<String, dynamic>> _executeBatchPost(String groupName, String dateStr) async {
+    final grpSavAmt = double.tryParse(_grpSavingsCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
     final payload = {
       'group_name': groupName,
       'date': dateStr,
@@ -300,69 +379,54 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
       'collections': _stagedTransactions,
     };
 
-    try {
-      final isOnline = ref.read(isOnlineProvider);
-      final syncMgr = ref.read(offlineSyncManagerProvider);
+    final isOnline = ref.read(isOnlineProvider);
+    final syncMgr = ref.read(offlineSyncManagerProvider);
 
-      if (!isOnline) {
-        // Direct offline queuing
+    if (!isOnline) {
+      final offlineRes = await syncMgr.queueOfflineBatch(
+        groupName: groupName,
+        collectionDate: dateStr,
+        payload: payload,
+      );
+      ref.invalidate(collectionSheetFutureProvider);
+      ref.invalidate(singleClientOptionsProvider);
+      return offlineRes;
+    }
+
+    try {
+      final api = ref.read(coApiServiceProvider);
+      final res = await api.submitBatchCollections(payload);
+      ref.invalidate(collectionSheetFutureProvider);
+      ref.invalidate(singleClientOptionsProvider);
+      return res;
+    } catch (e) {
+      if (e is DioException) {
         final offlineRes = await syncMgr.queueOfflineBatch(
           groupName: groupName,
           collectionDate: dateStr,
           payload: payload,
         );
-        setState(() {
-          _isReviewingGroup = false;
-          _stagedTransactions = [];
-          _receiptData = offlineRes['receipt'] as Map<String, dynamic>?;
-          _statusBannerText = 'COLLECTION QUEUED LOCALLY (OFFLINE). Transferred to Outbox for synchronization.';
-        });
-        _showNotification('Offline mode: Collection saved locally on device!', isSuccess: true);
-        return;
+        ref.invalidate(collectionSheetFutureProvider);
+        ref.invalidate(singleClientOptionsProvider);
+        return offlineRes;
       }
+      rethrow;
+    }
+  }
 
-      final api = ref.read(coApiServiceProvider);
-      final res = await api.submitBatchCollections(payload);
-      final receipt = res['receipt'] as Map<String, dynamic>?;
-
+  /// Atomically confirms & posts batch group collections to ledger (app.py L6081)
+  /// Kept for backward compatibility with existing callers.
+  Future<void> _confirmAndSaveBatch(String groupName, String dateStr) async {
+    setState(() => _isSubmitting = true);
+    try {
+      final res = await _executeBatchPost(groupName, dateStr);
       setState(() {
         _isReviewingGroup = false;
         _stagedTransactions = [];
-        _receiptData = receipt ?? {
-          'batch_id': 'COL-$dateStr-OK',
-          'group_name': groupName,
-          'total_cash': res['total_cash_in'] ?? 0.0,
-          'total_repayments': res['total_repayments'] ?? 0.0,
-          'total_savings': res['total_savings'] ?? 0.0,
-          'total_submitted': res['items_processed'] ?? 0,
-          'timestamp': DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now()),
-        };
-        _statusBannerText = null;
+        _receiptData = res['receipt'] as Map<String, dynamic>?;
       });
-
-      ref.invalidate(collectionSheetFutureProvider);
-      ref.invalidate(singleClientOptionsProvider);
+      _showNotification('Collections posted successfully!', isSuccess: true);
     } catch (e) {
-      if (e is DioException) {
-        try {
-          final syncMgr = ref.read(offlineSyncManagerProvider);
-          final offlineRes = await syncMgr.queueOfflineBatch(
-            groupName: groupName,
-            collectionDate: dateStr,
-            payload: payload,
-          );
-          setState(() {
-            _isReviewingGroup = false;
-            _stagedTransactions = [];
-            _receiptData = offlineRes['receipt'] as Map<String, dynamic>?;
-            _statusBannerText = 'NETWORK INTERRUPTED: Collection saved locally in offline outbox.';
-          });
-          _showNotification('Network unavailable. Collection safely stored locally on device!', isSuccess: true);
-          return;
-        } catch (_) {
-          // If local queue fails, surface error
-        }
-      }
       _showNotification('Failed to post batch collections: $e', isSuccess: false);
     } finally {
       setState(() => _isSubmitting = false);
@@ -616,7 +680,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Committing atomic journal entries to Account 1000 and updating client balances...',
+                  'Committing atomic journal entries to Primary Vault Cash and updating client balances...',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 12.5,
@@ -1103,8 +1167,8 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                       const SizedBox(height: 3),
                       Text(
                         isOfflineQueued
-                            ? 'Batch stored in local outbox on device. Final ledger posting to Account 1000 will occur upon network synchronization.'
-                            : 'All member repayments and savings deposits have been committed to the ledger with physical cash recorded in Account 1000.',
+                            ? 'Batch stored in local outbox on device. Final ledger posting to Primary Vault Cash will occur upon network synchronization.'
+                            : 'All member repayments and savings deposits have been committed to the ledger with physical cash recorded in Primary Vault Cash.',
                         style: TextStyle(
                           fontSize: isMobile ? 11.5 : 12.5,
                           color: isOfflineQueued ? const Color(0xFFB45309) : const Color(0xFF047857),
@@ -2043,7 +2107,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton.icon(
-                      onPressed: () => _calculateAndReviewGroup(members, currentGroup, dateStr),
+                      onPressed: () => _calculateAndReviewGroup(members, currentGroup, dateStr, isOpen, openReason),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF064E3B),
                         foregroundColor: Colors.white,
@@ -2790,7 +2854,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                       style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
                     ),
                     const Text(
-                      'Account 1000 Physical Inflow',
+                      'Primary Vault Inflow',
                       style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF059669)),
                     ),
                   ],
@@ -5702,6 +5766,1320 @@ Status: CONFIRMED & POSTED TO LEDGER''';
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// =========================================================================
+// ANIMATED COLLECTION CONFIRMATION, LIVE POSTING & SUCCESS MODAL
+// =========================================================================
+
+enum _ModalStage { confirmation, posting, success, error }
+
+class _CollectionFlowModal extends StatefulWidget {
+  final String groupName;
+  final String dateStr;
+  final bool isOpen;
+  final String openReason;
+  final bool isLateEntry;
+  final List<Map<String, dynamic>> stagedTransactions;
+  final double grpSavings;
+  final bool isOnline;
+  final Future<Map<String, dynamic>> Function() onConfirmPost;
+  final VoidCallback onDismissAndReset;
+  final VoidCallback onViewHistory;
+
+  const _CollectionFlowModal({
+    required this.groupName,
+    required this.dateStr,
+    required this.isOpen,
+    required this.openReason,
+    required this.isLateEntry,
+    required this.stagedTransactions,
+    required this.grpSavings,
+    required this.isOnline,
+    required this.onConfirmPost,
+    required this.onDismissAndReset,
+    required this.onViewHistory,
+  });
+
+  @override
+  State<_CollectionFlowModal> createState() => _CollectionFlowModalState();
+}
+
+class _CollectionFlowModalState extends State<_CollectionFlowModal> {
+  _ModalStage _phase = _ModalStage.confirmation;
+  Map<String, dynamic>? _receiptData;
+  String? _errorMessage;
+  int _postingStep = 0;
+  Timer? _stepTimer;
+  bool _itemizedExpanded = true;
+  bool _whatsappExpanded = false;
+
+  @override
+  void dispose() {
+    _stepTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _startPosting() async {
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _phase = _ModalStage.posting;
+      _postingStep = 0;
+      _errorMessage = null;
+    });
+
+    _stepTimer?.cancel();
+    _stepTimer = Timer.periodic(const Duration(milliseconds: 750), (t) {
+      if (mounted && _phase == _ModalStage.posting) {
+        setState(() {
+          _postingStep = (_postingStep + 1) % 3;
+        });
+      }
+    });
+
+    try {
+      final res = await widget.onConfirmPost();
+      _stepTimer?.cancel();
+      if (mounted) {
+        setState(() {
+          _receiptData = res['receipt'] as Map<String, dynamic>?;
+          _phase = _ModalStage.success;
+        });
+        HapticFeedback.heavyImpact();
+      }
+    } catch (e) {
+      _stepTimer?.cancel();
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString();
+          _phase = _ModalStage.error;
+        });
+        HapticFeedback.vibrate();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final isMobile = media.size.width < 600;
+    final maxDialogWidth = isMobile ? double.infinity : 720.0;
+    final maxDialogHeight = media.size.height * (isMobile ? 0.94 : 0.88);
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 12 : 24,
+        vertical: isMobile ? 12 : 24,
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: maxDialogWidth,
+            maxHeight: maxDialogHeight,
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(isMobile ? 16 : 18),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x260F172A),
+                  blurRadius: 28,
+                  offset: Offset(0, 10),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(isMobile ? 16 : 18),
+              child: Column(
+                children: [
+                  _buildHeader(context, isMobile),
+                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Expanded(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 320),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, anim) {
+                        return FadeTransition(
+                          opacity: anim,
+                          child: ScaleTransition(
+                            scale: Tween<double>(begin: 0.95, end: 1.0).animate(anim),
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: switch (_phase) {
+                        _ModalStage.confirmation => _buildConfirmationView(isMobile),
+                        _ModalStage.posting => _buildPostingView(isMobile),
+                        _ModalStage.success => _buildSuccessView(isMobile),
+                        _ModalStage.error => _buildErrorView(isMobile),
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, bool isMobile) {
+    final title = switch (_phase) {
+      _ModalStage.confirmation => 'Review Group Collections',
+      _ModalStage.posting => 'Posting Collections to Ledger',
+      _ModalStage.success => 'Collection Confirmed',
+      _ModalStage.error => 'Posting Interrupted',
+    };
+
+    final subtitle = switch (_phase) {
+      _ModalStage.confirmation => 'Verify all collection entries for ${widget.groupName} before final ledger commitment.',
+      _ModalStage.posting => 'Atomic double-entry transactions committing in real time.',
+      _ModalStage.success => 'All entries successfully committed to Primary Vault Cash.',
+      _ModalStage.error => 'Ledger communication encountered an issue.',
+    };
+
+    final iconData = switch (_phase) {
+      _ModalStage.confirmation => Icons.fact_check_outlined,
+      _ModalStage.posting => Icons.sync,
+      _ModalStage.success => Icons.check_circle_outline,
+      _ModalStage.error => Icons.error_outline,
+    };
+
+    final iconBg = switch (_phase) {
+      _ModalStage.confirmation => const Color(0xFFEFF6FF),
+      _ModalStage.posting => const Color(0xFFECFDF5),
+      _ModalStage.success => const Color(0xFFECFDF5),
+      _ModalStage.error => const Color(0xFFFEF2F2),
+    };
+
+    final iconColor = switch (_phase) {
+      _ModalStage.confirmation => const Color(0xFF1D4ED8),
+      _ModalStage.posting => const Color(0xFF059669),
+      _ModalStage.success => const Color(0xFF059669),
+      _ModalStage.error => const Color(0xFFDC2626),
+    };
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 20, vertical: 14),
+      color: Colors.white,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: iconBg,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(iconData, size: 20, color: iconColor),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: isMobile ? 15 : 17,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF0F172A),
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: isMobile ? 11.5 : 12.5,
+                    color: const Color(0xFF64748B),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          if (_phase != _ModalStage.posting)
+            IconButton(
+              icon: const Icon(Icons.close, size: 20, color: Color(0xFF64748B)),
+              tooltip: 'Close Modal',
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // STAGE 1: CONFIRMATION VIEW
+  // -------------------------------------------------------------------------
+  Widget _buildConfirmationView(bool isMobile) {
+    double totalRep = 0.0;
+    double totalSav = widget.grpSavings;
+    int paidCount = 0;
+    int notPaidCount = 0;
+    for (var tx in widget.stagedTransactions) {
+      final rep = (tx['loan_repayment_amount'] as num?)?.toDouble() ?? 0.0;
+      final sav = (tx['savings_deposit_amount'] as num?)?.toDouble() ?? 0.0;
+      totalRep += rep;
+      totalSav += sav;
+      if (rep > 0) {
+        paidCount++;
+      } else if (tx['payment_status'] == 'NOT_PAID') {
+        notPaidCount++;
+      }
+    }
+    final netCash = totalRep + totalSav;
+    final canSubmit = widget.isOpen || widget.isLateEntry;
+
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(isMobile ? 14 : 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 3 Executive Summary Tiles
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final w = constraints.maxWidth;
+                    final card1 = _buildSummaryTile(
+                      title: 'Net Cash Expected From Group',
+                      value: CurrencyFormatter.formatNaira(netCash, showDecimals: true),
+                      subtitle: 'Gross physical cash payable to vault',
+                      icon: Icons.payments_outlined,
+                      accentColor: const Color(0xFF059669),
+                      bgColor: const Color(0xFFF0FDF4),
+                      isHero: true,
+                    );
+                    final card2 = _buildSummaryTile(
+                      title: 'Total Loan Repayments',
+                      value: CurrencyFormatter.formatNaira(totalRep, showDecimals: true),
+                      subtitle: '$paidCount paying member(s)${notPaidCount > 0 ? ' • $notPaidCount arrears' : ''}',
+                      icon: Icons.assignment_turned_in_outlined,
+                      accentColor: const Color(0xFF2563EB),
+                      bgColor: const Color(0xFFEFF6FF),
+                    );
+                    final card3 = _buildSummaryTile(
+                      title: 'Total Net Savings',
+                      value: CurrencyFormatter.formatNaira(totalSav, showDecimals: true),
+                      subtitle: widget.grpSavings > 0
+                          ? 'Includes ${CurrencyFormatter.formatNaira(widget.grpSavings)} communal savings'
+                          : 'Individual member savings',
+                      icon: Icons.savings_outlined,
+                      accentColor: const Color(0xFF0D9488),
+                      bgColor: const Color(0xFFF0FDFA),
+                    );
+
+                    if (w < 650) {
+                      return Column(
+                        children: [
+                          card1,
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(child: card2),
+                              const SizedBox(width: 10),
+                              Expanded(child: card3),
+                            ],
+                          ),
+                        ],
+                      );
+                    }
+                    return Row(
+                      children: [
+                        Expanded(flex: 4, child: card1),
+                        const SizedBox(width: 12),
+                        Expanded(flex: 3, child: card2),
+                        const SizedBox(width: 12),
+                        Expanded(flex: 3, child: card3),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 14),
+
+                // Optional Group Communal Savings Callout Banner
+                if (widget.grpSavings > 0) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F9FF),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFBAE6FD)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE0F2FE),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Icon(Icons.account_balance, size: 16, color: Color(0xFF0284C7)),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Group Communal Savings: ${CurrencyFormatter.formatNaira(widget.grpSavings)} entered for ${widget.groupName} will be committed alongside individual collections.',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0369A1)),
+                            softWrap: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+
+                // Staged Collections Member Checklist Table
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Staged Collections Checklist (${widget.stagedTransactions.length} Members)',
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFECFDF5),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFA7F3D0)),
+                              ),
+                              child: const Text(
+                                'Primary Vault Inflow',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF065F46)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minWidth: 580),
+                          child: Table(
+                            columnWidths: const {
+                              0: FlexColumnWidth(2.6),
+                              1: FlexColumnWidth(1.4),
+                              2: FlexColumnWidth(1.8),
+                              3: FlexColumnWidth(1.8),
+                            },
+                            children: [
+                              TableRow(
+                                decoration: const BoxDecoration(color: Color(0xFFF8FAFC)),
+                                children: const [
+                                  Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text('Client / Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5, color: Color(0xFF475569)))),
+                                  Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text('Savings (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5, color: Color(0xFF475569)))),
+                                  Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text('Repayment (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5, color: Color(0xFF475569)))),
+                                  Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text('Payment Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5, color: Color(0xFF475569)))),
+                                ],
+                              ),
+                              if (widget.grpSavings > 0)
+                                TableRow(
+                                  decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFF1F5F9)))),
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      child: Text('${widget.groupName} (Communal)', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF0369A1))),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      child: Text(CurrencyFormatter.formatNaira(widget.grpSavings), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFamily: 'monospace', fontFeatures: [FontFeature.tabularFigures()])),
+                                    ),
+                                    const Padding(
+                                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      child: Text('—', style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                        decoration: BoxDecoration(color: const Color(0xFFE0F2FE), borderRadius: BorderRadius.circular(4), border: Border.all(color: const Color(0xFFBAE6FD))),
+                                        child: const Text('GROUP SAVINGS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF0284C7)), textAlign: TextAlign.center),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ...widget.stagedTransactions.map((tx) {
+                                final cName = tx['client_name']?.toString() ?? '';
+                                final cCode = tx['client_code']?.toString() ?? '';
+                                final sDep = (tx['savings_deposit_amount'] as num?)?.toDouble() ?? 0.0;
+                                final lRep = (tx['loan_repayment_amount'] as num?)?.toDouble() ?? 0.0;
+                                final expAmt = (tx['expected_amount'] as num?)?.toDouble() ?? 0.0;
+                                final pStat = tx['payment_status']?.toString() ?? 'PAID';
+                                final ovAmt = (tx['overdue_amount'] as num?)?.toDouble() ?? 0.0;
+
+                                String badgeText = 'FULL PAID';
+                                Color badgeBg = const Color(0xFFECFDF5);
+                                Color badgeFg = const Color(0xFF065F46);
+                                Color badgeBorder = const Color(0xFFA7F3D0);
+                                String repDisplay = CurrencyFormatter.formatNaira(lRep);
+
+                                if (pStat == 'NOT_PAID') {
+                                  badgeText = 'NOT PAID (₦${ovAmt.toStringAsFixed(0)} Arrears)';
+                                  badgeBg = const Color(0xFFFEF2F2);
+                                  badgeFg = const Color(0xFFDC2626);
+                                  badgeBorder = const Color(0xFFFECACA);
+                                  repDisplay = '₦0 (Exp ₦${expAmt.toStringAsFixed(0)})';
+                                } else if (pStat == 'PART_PAID') {
+                                  badgeText = 'PART PAID (₦${ovAmt.toStringAsFixed(0)} Arrears)';
+                                  badgeBg = const Color(0xFFFFFBEB);
+                                  badgeFg = const Color(0xFFB45309);
+                                  badgeBorder = const Color(0xFFFDE68A);
+                                } else if (pStat == 'EXCESS') {
+                                  badgeText = 'EXCESS (+₦${(lRep - expAmt).toStringAsFixed(0)})';
+                                  badgeBg = const Color(0xFFEFF6FF);
+                                  badgeFg = const Color(0xFF1D4ED8);
+                                  badgeBorder = const Color(0xFFBFDBFE);
+                                }
+
+                                return TableRow(
+                                  decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFF1F5F9)))),
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(cName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF0F172A)), softWrap: true),
+                                          Text(cCode, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+                                        ],
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      child: Text(
+                                        sDep > 0 ? CurrencyFormatter.formatNaira(sDep) : '—',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: sDep > 0 ? FontWeight.w700 : FontWeight.w500,
+                                          color: sDep > 0 ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+                                          fontFamily: 'monospace',
+                                          fontFeatures: const [FontFeature.tabularFigures()],
+                                        ),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      child: Text(
+                                        repDisplay,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: lRep > 0 ? FontWeight.w700 : FontWeight.w500,
+                                          color: pStat == 'NOT_PAID' ? const Color(0xFFDC2626) : const Color(0xFF0F172A),
+                                          fontFamily: 'monospace',
+                                          fontFeatures: const [FontFeature.tabularFigures()],
+                                        ),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                        decoration: BoxDecoration(color: badgeBg, borderRadius: BorderRadius.circular(4), border: Border.all(color: badgeBorder)),
+                                        child: Text(badgeText, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: badgeFg), textAlign: TextAlign.center),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const Divider(height: 1, color: Color(0xFFF1F5F9)),
+
+        // Bottom Action Bar
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 20, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                flex: isMobile ? 2 : 1,
+                child: SizedBox(
+                  height: 48,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back, size: 16),
+                    label: const Text('Edit / Go Back', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF334155),
+                      side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: isMobile ? 3 : 2,
+                child: SizedBox(
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: canSubmit ? _startPosting : null,
+                    icon: const Icon(Icons.check_circle_outline, size: 18),
+                    label: Text(
+                      canSubmit
+                          ? 'Confirm & Save (${CurrencyFormatter.formatNaira(netCash)})'
+                          : 'Operational Suspended (${widget.openReason})',
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF064E3B),
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: const Color(0xFF94A3B8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      elevation: 1,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // STAGE 2: LIVE IN-MODAL POSTING VIEW
+  // -------------------------------------------------------------------------
+  Widget _buildPostingView(bool isMobile) {
+    double totalRep = 0.0;
+    double totalSav = widget.grpSavings;
+    for (var tx in widget.stagedTransactions) {
+      totalRep += (tx['loan_repayment_amount'] as num?)?.toDouble() ?? 0.0;
+      totalSav += (tx['savings_deposit_amount'] as num?)?.toDouble() ?? 0.0;
+    }
+    final netCash = totalRep + totalSav;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const _AnimatedPulsingVaultIcon(),
+            const SizedBox(height: 24),
+            const Text(
+              'Posting Collections to Ledger',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 8),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: Text(
+                switch (_postingStep) {
+                  0 => 'Connecting to Core Banking Engine...',
+                  1 => 'Committing atomic journal entries to Primary Vault Cash...',
+                  _ => 'Securing double-entry ledger lock and client balances...',
+                },
+                key: ValueKey<int>(_postingStep),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF475569),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFCBD5E1)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.group_outlined, size: 14, color: Color(0xFF475569)),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${widget.groupName} • ${widget.stagedTransactions.length} Member(s) • ${CurrencyFormatter.formatNaira(netCash)}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF334155),
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock_outline, size: 13, color: Color(0xFF64748B)),
+                SizedBox(width: 6),
+                Text(
+                  'Idempotency lock active • Please do not close or navigate away',
+                  style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // STAGE 3: SUCCESS CONFIRMED RECEIPT VIEW
+  // -------------------------------------------------------------------------
+  Widget _buildSuccessView(bool isMobile) {
+    final r = _receiptData ?? {};
+    final batchId = r['batch_id']?.toString() ?? 'COL-OK';
+    final groupName = r['group_name']?.toString() ?? widget.groupName;
+    final totalCash = (r['total_cash'] as num?)?.toDouble() ?? 0.0;
+    final totalRep = (r['total_repayment'] ?? r['total_repayments'] as num?)?.toDouble() ?? 0.0;
+    final totalSav = (r['total_savings'] as num?)?.toDouble() ?? 0.0;
+    final totalRecs = r['total_submitted'] ?? r['items_processed'] ?? widget.stagedTransactions.length;
+    final ofcStr = r['officer_name']?.toString() ?? 'Field Credit Officer';
+    final recordedAt = r['timestamp']?.toString() ?? DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
+    final isOfflineQueued = r['is_offline_queued'] == true || r['status'] == 'QUEUED_LOCAL';
+    final items = (r['items'] as List<dynamic>?) ?? widget.stagedTransactions;
+
+    final String totStr = CurrencyFormatter.formatNaira(totalCash, showDecimals: true);
+    final String repStr = CurrencyFormatter.formatNaira(totalRep, showDecimals: true);
+    final String savStr = CurrencyFormatter.formatNaira(totalSav, showDecimals: true);
+    final whatsappText = 'ICARE COLLECTION RECEIPT\\n'
+        'Batch ID: $batchId\\n'
+        'Group: $groupName\\n'
+        'Recorded: $recordedAt\\n'
+        'Officer: $ofcStr\\n'
+        'Total Collected: $totStr\\n'
+        '- Loan Repayments: $repStr\\n'
+        '- Savings Deposits: $savStr\\n'
+        'Records Accounted: $totalRecs\\n'
+        'Status: CONFIRMED & COMMITTED TO PRIMARY VAULT CASH';
+
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(isMobile ? 14 : 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Celebratory Checkmark & Status Header Banner
+                Center(
+                  child: Column(
+                    children: [
+                      const _AnimatedSuccessCheckmark(),
+                      const SizedBox(height: 12),
+                      Text(
+                        isOfflineQueued
+                            ? 'COLLECTION QUEUED LOCALLY (PENDING SYNC)'
+                            : 'COLLECTION POSTED & CONFIRMED IN GENERAL LEDGER',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: isMobile ? 13.5 : 15,
+                          fontWeight: FontWeight.w800,
+                          color: isOfflineQueued ? const Color(0xFF92400E) : const Color(0xFF064E3B),
+                          letterSpacing: 0.1,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        isOfflineQueued
+                            ? 'Batch stored in local outbox on device. Final ledger posting to Primary Vault Cash will occur upon network synchronization.'
+                            : 'All member repayments and savings deposits have been committed to the ledger with physical cash recorded in Primary Vault Cash.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: isMobile ? 11.5 : 12.5,
+                          color: isOfflineQueued ? const Color(0xFFB45309) : const Color(0xFF047857),
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // 4 Metadata Capsules
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final m1 = _buildMetaCapsule('Batch Reference', batchId, isCopyable: true);
+                      final m2 = _buildMetaCapsule('Group / Source', groupName);
+                      final m3 = _buildMetaCapsule('Officer / Branch', ofcStr);
+                      final m4 = _buildMetaCapsule('Recorded At', recordedAt);
+
+                      if (constraints.maxWidth < 600) {
+                        return Column(
+                          children: [
+                            Row(children: [Expanded(child: m1), const SizedBox(width: 8), Expanded(child: m2)]),
+                            const SizedBox(height: 8),
+                            Row(children: [Expanded(child: m3), const SizedBox(width: 8), Expanded(child: m4)]),
+                          ],
+                        );
+                      }
+                      return Row(
+                        children: [
+                          Expanded(child: m1),
+                          const SizedBox(width: 8),
+                          Expanded(child: m2),
+                          const SizedBox(width: 8),
+                          Expanded(child: m3),
+                          const SizedBox(width: 8),
+                          Expanded(child: m4),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // 4 Executive KPI Summary Cards
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final w = constraints.maxWidth;
+                    final c1 = _buildSummaryTile(title: 'Total Cash Collected', value: totStr, subtitle: 'Physical Vault Inflow', icon: Icons.payments_outlined, accentColor: const Color(0xFF059669), bgColor: const Color(0xFFF0FDF4), isHero: true);
+                    final c2 = _buildSummaryTile(title: 'Loan Repayments', value: repStr, subtitle: 'Active credit settlements', icon: Icons.assignment_turned_in_outlined, accentColor: const Color(0xFF2563EB), bgColor: const Color(0xFFEFF6FF));
+                    final c3 = _buildSummaryTile(title: 'Savings Deposits', value: savStr, subtitle: 'Individual & Group Savings', icon: Icons.savings_outlined, accentColor: const Color(0xFF0D9488), bgColor: const Color(0xFFF0FDFA));
+                    final c4 = _buildSummaryTile(title: 'Members Accounted', value: '$totalRecs records', subtitle: 'Processed entries', icon: Icons.group_outlined, accentColor: const Color(0xFF475569), bgColor: const Color(0xFFF8FAFC));
+
+                    if (w < 600) {
+                      return Column(
+                        children: [
+                          Row(children: [Expanded(child: c1), const SizedBox(width: 8), Expanded(child: c2)]),
+                          const SizedBox(height: 8),
+                          Row(children: [Expanded(child: c3), const SizedBox(width: 8), Expanded(child: c4)]),
+                        ],
+                      );
+                    }
+                    return Row(
+                      children: [
+                        Expanded(child: c1),
+                        const SizedBox(width: 10),
+                        Expanded(child: c2),
+                        const SizedBox(width: 10),
+                        Expanded(child: c3),
+                        const SizedBox(width: 10),
+                        Expanded(child: c4),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 14),
+
+                // Collapsible Itemized Member Verification Breakdown
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    children: [
+                      InkWell(
+                        onTap: () => setState(() => _itemizedExpanded = !_itemizedExpanded),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.list_alt, size: 16, color: Color(0xFF065F46)),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'View Itemized Member Verification Breakdown',
+                                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF065F46)),
+                                  ),
+                                ],
+                              ),
+                              Icon(_itemizedExpanded ? Icons.expand_less : Icons.expand_more, size: 18, color: const Color(0xFF065F46)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_itemizedExpanded) ...[
+                        const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(minWidth: 500),
+                            child: Table(
+                              columnWidths: const {
+                                0: FlexColumnWidth(2.4),
+                                1: FlexColumnWidth(1.4),
+                                2: FlexColumnWidth(1.4),
+                                3: FlexColumnWidth(1.2),
+                              },
+                              children: [
+                                TableRow(
+                                  decoration: const BoxDecoration(color: Color(0xFFF8FAFC)),
+                                  children: const [
+                                    Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text('Client / Member', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: Color(0xFF475569)))),
+                                    Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text('Repayment (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: Color(0xFF475569)))),
+                                    Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text('Savings (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: Color(0xFF475569)))),
+                                    Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text('Posting Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: Color(0xFF475569)))),
+                                  ],
+                                ),
+                                ...items.map((it) {
+                                  final cName = it['client_name'] ?? it['client'] ?? 'Member';
+                                  final rep = (it['loan_repayment_amount'] ?? it['repayment'] as num?)?.toDouble() ?? 0.0;
+                                  final sav = (it['savings_deposit_amount'] ?? it['savings'] as num?)?.toDouble() ?? 0.0;
+                                  final stat = it['status']?.toString() ?? 'POSTED';
+                                  return TableRow(
+                                    children: [
+                                      Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text(cName.toString(), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)))),
+                                      Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text(rep > 0 ? CurrencyFormatter.formatNaira(rep, showDecimals: true) : '—', style: const TextStyle(fontSize: 11.5, fontFamily: 'monospace', fontFeatures: [FontFeature.tabularFigures()]))),
+                                      Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text(sav > 0 ? CurrencyFormatter.formatNaira(sav, showDecimals: true) : '—', style: const TextStyle(fontSize: 11.5, fontFamily: 'monospace', fontFeatures: [FontFeature.tabularFigures()]))),
+                                      Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(4), border: Border.all(color: const Color(0xFF86EFAC))), child: Text(stat, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Color(0xFF15803D)), textAlign: TextAlign.center))),
+                                    ],
+                                  );
+                                }),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Collapsible Official WhatsApp Receipt Card
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    children: [
+                      InkWell(
+                        onTap: () => setState(() => _whatsappExpanded = !_whatsappExpanded),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.share, size: 16, color: Color(0xFF10B981)),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'View / Copy WhatsApp Summary',
+                                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF10B981)),
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  TextButton.icon(
+                                    icon: const Icon(Icons.copy, size: 13, color: Color(0xFF10B981)),
+                                    label: const Text('Copy', style: TextStyle(color: Color(0xFF10B981), fontSize: 11.5, fontWeight: FontWeight.w700)),
+                                    style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), minimumSize: Size.zero),
+                                    onPressed: () {
+                                      Clipboard.setData(ClipboardData(text: whatsappText));
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('WhatsApp receipt copied to clipboard!'), duration: Duration(seconds: 2)),
+                                      );
+                                    },
+                                  ),
+                                  Icon(_whatsappExpanded ? Icons.expand_less : Icons.expand_more, size: 18, color: const Color(0xFF94A3B8)),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_whatsappExpanded) ...[
+                        const Divider(height: 1, color: Color(0xFF334155)),
+                        Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: SelectableText(
+                            whatsappText,
+                            style: const TextStyle(fontFamily: 'monospace', fontSize: 11.5, color: Color(0xFFF1F5F9), height: 1.4),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const Divider(height: 1, color: Color(0xFFF1F5F9)),
+
+        // Bottom Actions Bar
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 20, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: widget.onDismissAndReset,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Record Next Group / Return', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF064E3B),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      elevation: 1,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 48,
+                  child: OutlinedButton.icon(
+                    onPressed: widget.onViewHistory,
+                    icon: const Icon(Icons.history, size: 18),
+                    label: const Text('View in History & Audit', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF334155),
+                      side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // STAGE 4: ERROR VIEW
+  // -------------------------------------------------------------------------
+  Widget _buildErrorView(bool isMobile) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: const BoxDecoration(color: Color(0xFFFEF2F2), shape: BoxShape.circle),
+              child: const Icon(Icons.error_outline, size: 36, color: Color(0xFFDC2626)),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Posting Interrupted',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage ?? 'An error occurred while posting collections to the ledger. Staged data has been preserved.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.4),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                OutlinedButton(
+                  onPressed: () => setState(() => _phase = _ModalStage.confirmation),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF334155),
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  child: const Text('Edit Collections', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: _startPosting,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF064E3B),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  child: const Text('Retry Submission', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryTile({
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+    required Color accentColor,
+    required Color bgColor,
+    bool isHero = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border(
+          top: BorderSide(color: accentColor, width: 2.5),
+          left: BorderSide(color: isHero ? accentColor.withValues(alpha: 0.3) : const Color(0xFFE2E8F0)),
+          right: BorderSide(color: isHero ? accentColor.withValues(alpha: 0.3) : const Color(0xFFE2E8F0)),
+          bottom: BorderSide(color: isHero ? accentColor.withValues(alpha: 0.3) : const Color(0xFFE2E8F0)),
+        ),
+        boxShadow: const [
+          BoxShadow(color: Color(0x060F172A), blurRadius: 4, offset: Offset(0, 1)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                  softWrap: true,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(6)),
+                child: Icon(icon, size: 14, color: accentColor),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              maxLines: 1,
+              softWrap: false,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: isHero ? accentColor : const Color(0xFF0F172A),
+                fontFamily: 'monospace',
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500),
+            softWrap: true,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetaCapsule(String label, String value, {bool isCopyable = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+          const SizedBox(height: 2),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  value,
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (isCopyable) ...[
+                const SizedBox(width: 4),
+                InkWell(
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: value));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Copied reference!'), duration: Duration(seconds: 1)),
+                    );
+                  },
+                  child: const Icon(Icons.copy, size: 13, color: Color(0xFF64748B)),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// =========================================================================
+// CELEBRATORY CHECKMARK & PULSING VAULT ANIMATION WIDGETS
+// =========================================================================
+
+class _AnimatedSuccessCheckmark extends StatefulWidget {
+  const _AnimatedSuccessCheckmark();
+
+  @override
+  State<_AnimatedSuccessCheckmark> createState() => _AnimatedSuccessCheckmarkState();
+}
+
+class _AnimatedSuccessCheckmarkState extends State<_AnimatedSuccessCheckmark>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _scaleAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 550));
+    _scaleAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack);
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _scaleAnim,
+      child: Container(
+        width: 58,
+        height: 58,
+        decoration: BoxDecoration(
+          color: const Color(0xFFDCFCE7),
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0xFF86EFAC), width: 2),
+          boxShadow: const [
+            BoxShadow(color: Color(0x1F059669), blurRadius: 14, offset: Offset(0, 4)),
+          ],
+        ),
+        child: const Icon(Icons.check, color: Color(0xFF059669), size: 34),
+      ),
+    );
+  }
+}
+
+class _AnimatedPulsingVaultIcon extends StatefulWidget {
+  const _AnimatedPulsingVaultIcon();
+
+  @override
+  State<_AnimatedPulsingVaultIcon> createState() => _AnimatedPulsingVaultIconState();
+}
+
+class _AnimatedPulsingVaultIconState extends State<_AnimatedPulsingVaultIcon>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _pulseCtrl;
+  late Animation<double> _pulseAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..repeat(reverse: true);
+    _pulseAnim = Tween<double>(begin: 0.94, end: 1.06).animate(
+      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _pulseAnim,
+      child: Container(
+        width: 76,
+        height: 76,
+        decoration: BoxDecoration(
+          color: const Color(0xFFECFDF5),
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0xFFA7F3D0), width: 2),
+          boxShadow: const [
+            BoxShadow(color: Color(0x1F059669), blurRadius: 18, offset: Offset(0, 6)),
+          ],
+        ),
+        child: const Center(
+          child: SizedBox(
+            width: 42,
+            height: 42,
+            child: CircularProgressIndicator(
+              strokeWidth: 3.5,
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF059669)),
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -522,15 +522,17 @@ def save_master_cashbook_manual_entries(
 def get_co_aggregation(
     date_str: Optional[str] = Query(None, alias="date", description="Target ISO date (YYYY-MM-DD)"),
     officer: Optional[str] = Query(None, description="Target Credit Officer username"),
+    branch: Optional[str] = Query(None, description="Branch name override for regional/admin roles"),
     force_rebuild: bool = Query(False, description="Force recomputation of officer projection"),
-    current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
+    current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin", "Director", "Executive"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
-    Returns individual Credit Officer Daily Cashbook Ledger for BM verification (app.py L11694-11870).
+    Returns individual Credit Officer Daily Cashbook Ledger for BM/AM verification (app.py L11694-11870).
     """
-    branch_name = current_user.branch
-    branch_id = uow.cashbook._resolve_branch_id(branch_name)
+    target_branch = branch if (branch and current_user.role in ["AM", "Area Manager", "Admin", "Super Admin", "Director", "Executive"]) else current_user.branch
+    branch_id = uow.cashbook._resolve_branch_id(target_branch)
+    check_branch_access(current_user, branch_id, "view co aggregation")
 
     if date_str:
         try:
@@ -538,7 +540,7 @@ def get_co_aggregation(
         except ValueError:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use YYYY-MM-DD.")
     else:
-        target_date = BusinessDateService.get_business_date(uow, branch_name)
+        target_date = BusinessDateService.get_business_date(uow, target_branch)
 
     iso_date = target_date.isoformat()
     is_open, open_reason = BusinessDateService.is_operational_open(uow, branch_id, target_date)
@@ -549,7 +551,7 @@ def get_co_aggregation(
         all_users = uow.users.find_all()
         branch_cos = [
             u for u in all_users
-            if u.role in ["CO", "Officer", "Credit Officer"] and (not branch_name or u.branch_name == branch_name or u.branch_id == branch_id)
+            if u.role in ["CO", "Officer", "Credit Officer"] and (not target_branch or u.branch_name == target_branch or u.branch_id == branch_id)
         ]
         if not branch_cos:
             branch_cos = [u for u in all_users if u.role in ["CO", "Officer", "Credit Officer"]]
@@ -680,7 +682,7 @@ def get_co_aggregation(
 
     return CoAggregationResponse(
         date=iso_date,
-        branch=branch_name,
+        branch=target_branch,
         officer=target_co,
         officers=officer_options,
         opening_balance=bf_cash,
