@@ -18,6 +18,8 @@ import '../../onboarding/presentation/widgets/successful_delete_dialog.dart';
 import '../../reports/data/datasources/reports_api_service.dart';
 import '../../reports/data/models/report_models.dart';
 import '../../reports/presentation/reports_export_screen.dart';
+import '../../bm/presentation/master_cashbook_screen.dart';
+import '../../bm/data/datasources/master_cashbook_api_service.dart';
 
 /// Provider for selected business date in AM dashboard
 final amSelectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
@@ -585,13 +587,16 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   }
 
   void _navigateToBranchReport(String reportType, String branchName) {
+    if (reportType == 'master_cashbook_ledger') {
+      ref.read(masterCashbookTargetBranchProvider.notifier).state = branchName;
+      ref.read(activeCoPageProvider.notifier).state = 'Master Cashbook';
+      return;
+    }
+
     ref.read(reportsTargetBranchProvider.notifier).state = branchName;
 
     if (reportType == 'collections_workbook') {
       ref.read(reportsTargetTabProvider.notifier).state = 2; // Data Exports & Downloads
-    } else if (reportType == 'master_cashbook_ledger') {
-      ref.read(reportsTargetTabProvider.notifier).state = 0; // Monthly Executive Statements
-      ref.read(reportsTargetSubTabProvider.notifier).state = 2; // Receipts & Payments Account
     } else if (reportType == 'executive_parity') {
       ref.read(reportsTargetTabProvider.notifier).state = 0; // Monthly Executive Statements
       ref.read(reportsTargetSubTabProvider.notifier).state = 4; // Official Trial Balance
@@ -613,7 +618,19 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
       final cleanBranch = branchName.replaceAll(' ', '_');
 
-      if (reportType == 'executive_parity') {
+      if (reportType == 'master_cashbook_ledger') {
+        final mcApi = ref.read(masterCashbookApiServiceProvider);
+        final bytes = await mcApi.downloadMonthlyLedgerExcel(
+          selectedDate.month,
+          selectedDate.year,
+          branchName,
+        );
+        downloadBlobFile(
+          bytes,
+          'ICARE_Master_Cashbook_${cleanBranch}_${selectedDate.year}_${selectedDate.month.toString().padLeft(2, '0')}.xlsx',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+      } else if (reportType == 'executive_parity') {
         final bytes = await reportsApi.downloadMonthlyParityExcel(
           branchName: branchName,
           year: selectedDate.year,
@@ -636,14 +653,14 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           'text/csv',
         );
       } else {
-        // collections_workbook or master_cashbook_ledger
+        // collections_workbook
         final bytes = await reportsApi.downloadExcel(
           branchName: branchName,
           asOfDate: dateStr,
         );
         downloadBlobFile(
           bytes,
-          'Master_Report_${cleanBranch}_$dateStr.xlsx',
+          'Daily_Collections_Workbook_${cleanBranch}_$dateStr.xlsx',
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         );
       }

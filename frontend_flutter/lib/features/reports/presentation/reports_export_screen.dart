@@ -534,7 +534,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           ];
         }
 
-        if (_selectedBranchName != null && !branchOptions.contains(_selectedBranchName)) {
+        if (_selectedBranchName != null && branches.isNotEmpty && !branchOptions.contains(_selectedBranchName)) {
           _selectedBranchName = branchOptions.first;
         }
 

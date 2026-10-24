@@ -7,6 +7,11 @@ import '../data/datasources/master_cashbook_api_service.dart';
 import '../data/models/master_cashbook_models.dart';
 import '../../shared/utils/file_download_helper.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../core/auth/auth_controller.dart';
+import '../../../core/auth/auth_state.dart';
+
+/// Target branch filter passed from external navigation (AM Dashboard, Handover modal, etc.)
+final masterCashbookTargetBranchProvider = StateProvider<String?>((ref) => null);
 
 /// Riverpod family providers using composite keys to eliminate infinite refetches
 final masterDailyCashbookProvider = FutureProvider.family<MasterCashbookDailyData, String>((ref, key) async {
@@ -51,6 +56,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   late TabController _tabController;
 
   // Tab 1 state
+  // Branch state for multi-branch roles (AM, Admin)
+  String? _selectedBranchTab1;
   DateTime _selectedDateTab1 = DateTime.now();
   final TextEditingController _fundsHoCtrl = TextEditingController();
   final TextEditingController _fundsBranchCtrl = TextEditingController();
@@ -101,6 +108,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   @override
   void initState() {
     super.initState();
+    final targetBranch = ref.read(masterCashbookTargetBranchProvider);
+    if (targetBranch != null) {
+      _selectedBranchTab1 = targetBranch;
+      _selectedBranchTab3 = targetBranch;
+    }
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(masterCashbookTargetBranchProvider.notifier).state = null;
+      }
+    });
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging && mounted) {
@@ -229,7 +246,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         const Color(0xFFECFDF5),
         Icons.check_circle_outline,
       );
-      ref.invalidate(masterDailyCashbookProvider('${_formatDate(_selectedDateTab1)}||'));
+      ref.invalidate(masterDailyCashbookProvider);
     } catch (e) {
       _showBanner(
         'Failed to save manual entries: $e',
@@ -306,7 +323,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         const Color(0xFFECFDF5),
         Icons.check_circle_outline,
       );
-      ref.invalidate(masterDailyCashbookProvider('${_formatDate(_selectedDateTab1)}||'));
+      ref.invalidate(masterDailyCashbookProvider);
     } catch (e) {
       _showBanner(
         'Approval failed: $e',
@@ -321,7 +338,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Reject Reversal Request', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        title: const Text('Reject Reversal Request', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         content: Text('Are you sure you want to reject this reversal request for [${req.recordType}] (Ref: #${req.recordId.length > 8 ? req.recordId.substring(0, 8) : req.recordId})?',
             style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
         actions: [
@@ -346,7 +363,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         const Color(0xFFEFF6FF),
         Icons.info_outline,
       );
-      ref.invalidate(masterDailyCashbookProvider('${_formatDate(_selectedDateTab1)}||'));
+      ref.invalidate(masterDailyCashbookProvider);
     } catch (e) {
       _showBanner(
         'Rejection failed: $e',
@@ -380,7 +397,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       );
       _treasuryRevReasonCtrl.clear();
       setState(() => _selectedTreasuryTxId = null);
-      ref.invalidate(masterDailyCashbookProvider('${_formatDate(_selectedDateTab1)}||'));
+      ref.invalidate(masterDailyCashbookProvider);
     } catch (e) {
       _showBanner(
         'Failed to submit request: $e',
@@ -409,7 +426,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         Icons.check_circle_outline,
       );
       ref.invalidate(coAggregationProvider('${_formatDate(_selectedDateTab2)}||${_selectedOfficerTab2 ?? ""}'));
-      ref.invalidate(masterDailyCashbookProvider('${_formatDate(_selectedDateTab1)}||'));
+      ref.invalidate(masterDailyCashbookProvider);
     } catch (e) {
       _showBanner(
         'EOD Day Close failed: $e',
@@ -422,8 +439,32 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     }
   }
 
+  List<String> _getAvailableBranches() {
+    final auth = ref.read(authControllerProvider);
+    final user = auth is AuthStateAuthenticated ? auth.user : null;
+    final role = (user?.role ?? '').trim().toLowerCase();
+    final isAm = role == 'area manager' || role == 'am';
+    if (isAm) {
+      return user?.assignedBranches.isNotEmpty == true ? user!.assignedBranches : (user?.branch.isNotEmpty == true ? [user!.branch] : <String>[]);
+    }
+    return user?.branch.isNotEmpty == true ? [user!.branch] : <String>[];
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Reactive listener for target branch when already mounted
+    ref.listen<String?>(masterCashbookTargetBranchProvider, (prev, next) {
+      if (next != null) {
+        setState(() {
+          _selectedBranchTab1 = next;
+          _selectedBranchTab3 = next;
+        });
+        Future.microtask(() {
+          if (mounted) ref.read(masterCashbookTargetBranchProvider.notifier).state = null;
+        });
+      }
+    });
+
     final isMobile = MediaQuery.of(context).size.width < 650;
 
     return Column(
@@ -629,7 +670,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   // ==========================================
 
   Widget _buildTab1Daily(bool isMobile) {
-    final key = '${_formatDate(_selectedDateTab1)}||';
+    final branches = _getAvailableBranches();
+    if (_selectedBranchTab1 == null && branches.isNotEmpty) {
+      _selectedBranchTab1 = branches.first;
+    }
+    final activeBranch = _selectedBranchTab1;
+    final key = '${_formatDate(_selectedDateTab1)}||${activeBranch ?? ""}';
     final asyncDaily = ref.watch(masterDailyCashbookProvider(key));
 
     return asyncDaily.when(
@@ -691,6 +737,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     final isToday = curDate == today;
     final isYesterday = curDate == yesterday;
 
+    final branches = _getAvailableBranches();
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -708,6 +756,45 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (branches.length > 1) ...[
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
+                  const Icon(Icons.apartment, size: 16, color: Color(0xFF0F766E)),
+                  const SizedBox(width: 8),
+                  const Text('Supervised Branch:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569))),
+                  const SizedBox(width: 8),
+                  for (final b in branches) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        avatar: Icon(Icons.storefront, size: 14, color: _selectedBranchTab1 == b ? Colors.white : const Color(0xFF0F766E)),
+                        label: Text(b, style: TextStyle(fontSize: 12, fontWeight: _selectedBranchTab1 == b ? FontWeight.w800 : FontWeight.w600, color: _selectedBranchTab1 == b ? Colors.white : const Color(0xFF1E293B))),
+                        selected: _selectedBranchTab1 == b,
+                        selectedColor: const Color(0xFF0F766E),
+                        backgroundColor: const Color(0xFFF8FAFC),
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        side: BorderSide(color: _selectedBranchTab1 == b ? const Color(0xFF0F766E) : const Color(0xFFCBD5E1)),
+                        onSelected: (selected) {
+                          if (selected && _selectedBranchTab1 != b) {
+                            setState(() {
+                              _selectedBranchTab1 = b;
+                              _selectedBranchTab3 = b;
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Divider(height: 18),
+          ],
           Row(
             children: [
               // Calendar picker button

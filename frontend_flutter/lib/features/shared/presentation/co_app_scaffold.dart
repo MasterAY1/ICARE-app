@@ -225,7 +225,7 @@ class CoAppScaffold extends ConsumerWidget {
     } else if (isAdmin) {
       navItems = ['Dashboard', 'Portfolio', 'Branch Onboarding', 'Loan Origination', 'Collections', 'Withdrawal Operations', 'CO Cashbook', 'Master Cashbook', 'User Management', 'Audit Ledger', 'Reports & Export'];
     } else if (isAm) {
-      navItems = ['Dashboard', 'Portfolio', 'Branch Onboarding', 'User Management', 'Audit Ledger', 'Reports & Export'];
+      navItems = ['Dashboard', 'Portfolio', 'Master Cashbook', 'Branch Onboarding', 'User Management', 'Audit Ledger', 'Reports & Export'];
     } else {
       navItems = ['Dashboard', 'Loan Origination', 'Collections', 'Withdrawal Operations', 'Portfolio', 'CO Cashbook'];
     }
@@ -603,6 +603,7 @@ class CoAppScaffold extends ConsumerWidget {
       destinations = [
         (key: 'Dashboard', shortLabel: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
         (key: 'Portfolio', shortLabel: 'Portfolio', icon: Icons.pie_chart_outline, activeIcon: Icons.pie_chart),
+        (key: 'Master Cashbook', shortLabel: 'Cashbook', icon: Icons.account_balance_outlined, activeIcon: Icons.account_balance),
         (key: 'Branch Onboarding', shortLabel: 'Onboarding', icon: Icons.domain_add_outlined, activeIcon: Icons.domain_add),
         (key: 'User Management', shortLabel: 'Staff', icon: Icons.people_alt_outlined, activeIcon: Icons.people_alt),
         (key: 'Reports & Export', shortLabel: 'Reports', icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart),
