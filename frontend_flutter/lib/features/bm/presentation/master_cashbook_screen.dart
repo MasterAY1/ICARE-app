@@ -607,6 +607,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
 
   Widget _buildPillTabs() {
     final isAm = _isAm;
+    final activeTabColor = isAm ? const Color(0xFF0F766E) : const Color(0xFF2563EB);
     final tabs = [
       (0, isAm ? 'Daily Cashbook Audit' : 'Daily Cashbook Entry', Icons.account_balance_wallet_outlined),
       (1, isAm ? 'CO Cashbooks Inspection' : 'CO Cashbooks Aggregation', Icons.groups_outlined),
@@ -631,16 +632,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
                 decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF064E3B) : Colors.white,
+                  color: isSelected ? activeTabColor : Colors.white,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: isSelected ? const Color(0xFF064E3B) : const Color(0xFFCBD5E1),
+                    color: isSelected ? activeTabColor : const Color(0xFFCBD5E1),
                     width: isSelected ? 1.5 : 1.0,
                   ),
                   boxShadow: isSelected
                       ? [
                           BoxShadow(
-                            color: const Color(0xFF064E3B).withValues(alpha: 0.22),
+                            color: activeTabColor.withValues(alpha: 0.22),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
                           ),

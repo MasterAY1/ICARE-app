@@ -375,6 +375,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             const SizedBox(height: 16),
           ],
 
+          // 1.5 Hero Vault & Operations Command Card
+          _buildHeroCard(data, isMobile),
+          const SizedBox(height: 18),
+
           // Section Rendering: Mobile Tabs vs Desktop Full View
           if (isMobile) ...[
             _buildMobileSectionSwitcher(
@@ -382,28 +386,8 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               totalOfficers: data.officerCollectionStatus.length,
               hasApprovals: hasApprovals,
             ),
-            if ((_mobileSectionTab == 'Approvals' || _mobileSectionTab == 'All') && hasApprovals) ...[
+            if (_mobileSectionTab == 'Approvals' || _mobileSectionTab == 'All') ...[
               _buildApprovalsHub(data, hasLoans, hasWrs, hasCorrs, isMobile),
-              const SizedBox(height: 16),
-            ] else if (_mobileSectionTab == 'Approvals' && !hasApprovals) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: const Column(
-                  children: [
-                    Icon(Icons.check_circle_outline, size: 36, color: Color(0xFF10B981)),
-                    SizedBox(height: 8),
-                    Text('No Pending Approvals', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                    SizedBox(height: 4),
-                    Text('All loan disbursements, withdrawals, and error corrections are settled.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                  ],
-                ),
-              ),
               const SizedBox(height: 16),
             ],
             if (_mobileSectionTab == 'Overview' || _mobileSectionTab == 'All') ...[
@@ -417,11 +401,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               const SizedBox(height: 16),
             ],
           ] else ...[
-            // 2. Branch Approvals Hub (app.py L2580-3105)
-            if (hasApprovals) ...[
-              _buildApprovalsHub(data, hasLoans, hasWrs, hasCorrs, isMobile),
-              const SizedBox(height: 24),
-            ],
+            // 2. Branch Approvals Hub (Always visible with live tabs)
+            _buildApprovalsHub(data, hasLoans, hasWrs, hasCorrs, isMobile),
+            const SizedBox(height: 24),
 
             // 3. Section A: Branch Summary (app.py L3108-3114)
             _buildBranchSummary(data.branchSummary),
@@ -535,33 +517,210 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   }
 
   // ==========================================
+  // HERO VAULT & OPERATIONS COMMAND CARD
+  // ==========================================
+  Widget _buildHeroCard(BmDashboardDataModel data, bool isMobile) {
+    final closingCash = data.branchCashPosition.closingBalance;
+    final isBalanced = data.branchCashPosition.status == 'Balanced';
+    final collectionToday = data.branchSummary.collectionToday;
+    final activeSavings = data.branchSummary.activeSavings;
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(isMobile ? 16 : 22),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E3A8A), Color(0xFF2563EB)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1E1E3A8A),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: isBalanced ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: (isBalanced ? const Color(0xFF34D399) : const Color(0xFFFBBF24)).withValues(alpha: 0.6),
+                          blurRadius: 6,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${data.branchName.toUpperCase()} BRANCH · VAULT POSITION',
+                    style: const TextStyle(
+                      color: Color(0xFF93C5FD),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isBalanced ? const Color(0x2610B981) : const Color(0x26EF4444),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isBalanced ? const Color(0xFF34D399) : const Color(0xFFF87171),
+                    width: 0.8,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isBalanced ? Icons.verified_user : Icons.warning_amber_rounded,
+                      size: 11,
+                      color: isBalanced ? const Color(0xFF6EE7B7) : const Color(0xFFFCA5A5),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isBalanced ? 'Vault Balanced' : 'Variance Detected',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: isBalanced ? const Color(0xFF6EE7B7) : const Color(0xFFFCA5A5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            CurrencyFormatter.format(closingCash),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.w900,
+              fontFamily: 'monospace',
+              fontFeatures: [FontFeature.tabularFigures()],
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      const Icon(Icons.payments_outlined, size: 14, color: Color(0xFF93C5FD)),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Today: ${CurrencyFormatter.format(collectionToday)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Container(width: 1, height: 14, color: Colors.white.withValues(alpha: 0.2)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Row(
+                    children: [
+                      const Icon(Icons.savings_outlined, size: 14, color: Color(0xFF93C5FD)),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Savings: ${CurrencyFormatter.format(activeSavings)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================
   // BRANCH APPROVALS HUB
   // ==========================================
   Widget _buildApprovalsHub(BmDashboardDataModel data, bool hasLoans, bool hasWrs, bool hasCorrs, bool isMobile) {
-    final tabs = <String>[];
-    if (hasLoans) tabs.add('Loan Disbursements');
-    if (hasWrs) tabs.add('Withdrawals');
-    if (hasCorrs) tabs.add('Error Corrections');
+    final tabs = ['Loan Disbursements', 'Withdrawals', 'Error Corrections'];
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Branch Approvals Hub',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Filter by officer, configure operational disbursement dates, and process batch or individual approvals.',
-            style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Branch Approvals Hub',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Operational disbursement authorization, withdrawals, and error corrections.',
+                    style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                  ),
+                ],
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh, size: 18, color: Color(0xFF64748B)),
+                tooltip: 'Refresh Approvals',
+                onPressed: () => ref.refresh(bmDashboardDataProvider),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
 
@@ -577,21 +736,43 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
 
               return InkWell(
                 onTap: () => setState(() => _activeApprovalTab = t),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(20),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     color: isSel ? const Color(0xFF2563EB) : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: isSel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0)),
                   ),
-                  child: Text(
-                    '$t ($count)',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: isSel ? FontWeight.w600 : FontWeight.w500,
-                      color: isSel ? Colors.white : const Color(0xFF475569),
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        t,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
+                          color: isSel ? Colors.white : const Color(0xFF475569),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: isSel ? Colors.white.withValues(alpha: 0.25) : (count > 0 ? const Color(0xFFDBEAFE) : const Color(0xFFE2E8F0)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: isSel ? Colors.white : (count > 0 ? const Color(0xFF1D4ED8) : const Color(0xFF64748B)),
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               );
@@ -601,12 +782,80 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
           const Divider(color: Color(0xFFE2E8F0), height: 1),
           const SizedBox(height: 16),
 
-          if (_activeApprovalTab == 'Loan Disbursements' && hasLoans)
-            _buildLoanApprovalsTab(data.pendingLoans, isMobile)
-          else if (_activeApprovalTab == 'Withdrawals' && hasWrs)
-            _buildWithdrawalApprovalsTab(data.pendingWithdrawals, isMobile)
-          else if (_activeApprovalTab == 'Error Corrections' && hasCorrs)
-            _buildCorrectionApprovalsTab(data.pendingCorrections, isMobile),
+          if (_activeApprovalTab == 'Loan Disbursements')
+            hasLoans
+                ? _buildLoanApprovalsTab(data.pendingLoans, isMobile)
+                : _buildEmptyQueueCard('Loan Disbursements', Icons.payments_outlined)
+          else if (_activeApprovalTab == 'Withdrawals')
+            hasWrs
+                ? _buildWithdrawalApprovalsTab(data.pendingWithdrawals, isMobile)
+                : _buildEmptyQueueCard('Withdrawals', Icons.savings_outlined)
+          else if (_activeApprovalTab == 'Error Corrections')
+            hasCorrs
+                ? _buildCorrectionApprovalsTab(data.pendingCorrections, isMobile)
+                : _buildEmptyQueueCard('Error Corrections', Icons.build_circle_outlined),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyQueueCard(String queueName, IconData icon) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: const BoxDecoration(
+              color: Color(0xFFEFF6FF),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 28, color: const Color(0xFF2563EB)),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'No Pending $queueName',
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'All operational requests for $queueName in this branch have been reviewed and processed.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => ref.refresh(bmDashboardDataProvider),
+                icon: const Icon(Icons.refresh, size: 14, color: Color(0xFF2563EB)),
+                label: const Text('Refresh Queue', style: TextStyle(color: Color(0xFF2563EB), fontSize: 12, fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFFBFDBFE)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () {
+                  ref.read(activeCoPageProvider.notifier).state = 'Audit Ledger';
+                },
+                icon: const Icon(Icons.shield_outlined, size: 14, color: Color(0xFF475569)),
+                label: const Text('Inspect Audit Ledger', style: TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -2227,20 +2476,18 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     String? subtitle,
     bool isGrand = false,
   }) {
-    final topBorderColor = accentColor ?? (isGrand ? const Color(0xFF10B981) : const Color(0xFF2563EB));
+    final cardAccent = accentColor ?? (isGrand ? const Color(0xFF10B981) : const Color(0xFF2563EB));
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border(
-          top: BorderSide(color: topBorderColor, width: 3),
-          left: BorderSide(color: isGrand ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
-          right: BorderSide(color: isGrand ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
-          bottom: BorderSide(color: isGrand ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isGrand ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
+          width: 1.0,
         ),
         boxShadow: const [
-          BoxShadow(color: Color(0x060F172A), blurRadius: 4, offset: Offset(0, 1)),
+          BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
         ],
       ),
       child: Column(
@@ -2258,7 +2505,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               ),
               if (icon != null) ...[
                 const SizedBox(width: 4),
-                Icon(icon, size: 16, color: topBorderColor),
+                Icon(icon, size: 16, color: cardAccent),
               ],
             ],
           ),
@@ -2837,7 +3084,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 Expanded(
                   child: Text(
                     isBalanced
-                        ? 'Vault Cash is fully reconciled and balanced with Account 1000. Variance: ${CurrencyFormatter.format(cp.difference)}'
+                        ? 'Vault Cash is fully reconciled and balanced with the primary vault ledger. Variance: ${CurrencyFormatter.format(cp.difference)}'
                         : 'Reconciliation Variance Detected: Difference of ${CurrencyFormatter.format(cp.difference)}. Requires physical vault audit.',
                     style: TextStyle(
                       fontSize: 12,
@@ -3064,7 +3311,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Reject Reversal Request', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        title: const Text('Reject Reversal Request', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,

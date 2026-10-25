@@ -183,6 +183,9 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
     final isAm = role == 'AM' || role == 'Area Manager' || role == 'AREA_MANAGER';
     final isAdmin = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN' || role == 'Director' || role == 'Board Director';
 
+    final branchName = user?.branch.isNotEmpty == true ? user!.branch : 'All Branches';
+    final branchId = user?.branchId ?? '';
+
     // Establish Role-Based Available Tabs
     final List<String> availableTabs;
     final String pageTitle;
@@ -206,7 +209,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
       ];
     } else if (isBm) {
       pageTitle = 'Branch Audit Ledger';
-      pageCaption = 'Read-only branch audit trails, 6-way financial integrity verification, and 360° transaction explorer.';
+      pageCaption = 'Audit trail, 6-way financial integrity verification, and 360° transaction explorer for ${branchName.isNotEmpty ? branchName : "Branch"} Branch.';
       availableTabs = [
         '6-Way Integrity Match',
         'Fees Audit',
@@ -239,9 +242,6 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
     } else if (!availableTabs.contains(_activeTab)) {
       _activeTab = availableTabs.first;
     }
-
-    final branchName = user?.branch.isNotEmpty == true ? user!.branch : 'All Branches';
-    final branchId = user?.branchId ?? '';
 
     final isMobile = MediaQuery.of(context).size.width < 750;
 
@@ -316,7 +316,10 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
     final user = authState is AuthStateAuthenticated ? authState.user : null;
     final role = (user?.role ?? '').trim().toLowerCase();
     final isAm = role == 'area manager' || role == 'am';
-    final activeThemeColor = isAm ? const Color(0xFF0F766E) : const Color(0xFF2E86C1);
+    final isBm = role == 'branch manager' || role == 'bm';
+    final activeThemeColor = isAm
+        ? const Color(0xFF0F766E)
+        : (isBm ? const Color(0xFF2563EB) : const Color(0xFF2E86C1));
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,

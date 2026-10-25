@@ -8,6 +8,8 @@ import '../../shared/presentation/co_app_scaffold.dart';
 import '../data/datasources/am_api_service.dart';
 import '../data/models/am_dashboard_models.dart';
 import '../../reports/presentation/reports_export_screen.dart';
+import '../../../core/auth/auth_controller.dart';
+import '../../../core/auth/auth_state.dart';
 
 class AmPortfolioScreen extends ConsumerStatefulWidget {
   const AmPortfolioScreen({super.key});
@@ -88,6 +90,12 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
       }
     });
 
+    final authState = ref.watch(authControllerProvider);
+    final user = authState is AuthStateAuthenticated ? authState.user : null;
+    final role = (user?.role ?? '').trim().toLowerCase();
+    final isBm = role == 'branch manager' || role == 'bm';
+    final branchName = user?.branch.isNotEmpty == true ? user!.branch : 'Branch';
+
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 600;
     final isTablet = screenWidth >= 600 && screenWidth < 1000;
@@ -96,8 +104,8 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. Executive Regional Command Header
-        _buildExecutiveHeader(isMobile),
+        // 1. Executive Command Header
+        _buildExecutiveHeader(isMobile, isBm, branchName),
         const SizedBox(height: 16),
 
         AnimatedSwitcher(
@@ -114,14 +122,14 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
               : _errorMessage != null
                   ? _buildErrorState()
                   : _dashboardData != null
-                      ? _buildPortfolioContent(isMobile, isTablet, isDesktop)
+                      ? _buildPortfolioContent(isMobile, isTablet, isDesktop, isBm, branchName)
                       : const SizedBox.shrink(key: ValueKey('am_portfolio_empty')),
         ),
       ],
     );
   }
 
-  Widget _buildPortfolioContent(bool isMobile, bool isTablet, bool isDesktop) {
+  Widget _buildPortfolioContent(bool isMobile, bool isTablet, bool isDesktop, bool isBm, String branchName) {
     return Column(
       key: const ValueKey('am_portfolio_content'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,22 +146,24 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Column(
+            Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Branch Performance Matrix',
-                  style: TextStyle(
+                  isBm ? '$branchName Portfolio Operations' : 'Branch Performance Matrix',
+                  style: const TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
                     color: Color(0xFF0F172A),
                     letterSpacing: -0.2,
                   ),
                 ),
-                SizedBox(height: 3),
+                const SizedBox(height: 3),
                 Text(
-                  'Capital deployment, active credit progress, and officer productivity.',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  isBm
+                      ? 'Capital deployment, active credit progress, and officer productivity for $branchName.'
+                      : 'Capital deployment, active credit progress, and officer productivity.',
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                 ),
               ],
             ),
@@ -171,14 +181,14 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
         const SizedBox(height: 24),
 
         // 6. Governance Advisory Note
-        _buildGovernanceCard(),
+        _buildGovernanceCard(isBm),
         const SizedBox(height: 32),
       ],
     );
   }
 
   // 1. Executive Header with Period Selector
-  Widget _buildExecutiveHeader(bool isMobile) {
+  Widget _buildExecutiveHeader(bool isMobile, bool isBm, String branchName) {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(isMobile ? 16 : 20),
@@ -201,11 +211,15 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDFA),
+                      color: isBm ? const Color(0xFFEFF6FF) : const Color(0xFFF0FDFA),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFCCFBF1)),
+                      border: Border.all(color: isBm ? const Color(0xFFDBEAFE) : const Color(0xFFCCFBF1)),
                     ),
-                    child: const Icon(Icons.account_balance, color: Color(0xFF0F766E), size: 22),
+                    child: Icon(
+                      Icons.account_balance,
+                      color: isBm ? const Color(0xFF2563EB) : const Color(0xFF0F766E),
+                      size: 22,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Column(
@@ -213,28 +227,30 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                     children: [
                       Row(
                         children: [
-                          const Text(
-                            'Regional Command Center',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                          Text(
+                            isBm ? '$branchName Branch Portfolio' : 'Regional Command Center',
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
                           ),
                           const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF0F766E),
+                              color: isBm ? const Color(0xFF2563EB) : const Color(0xFF0F766E),
                               borderRadius: BorderRadius.circular(6),
                             ),
-                            child: const Text(
-                              'AREA 1',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.5),
+                            child: Text(
+                              isBm ? '${branchName.toUpperCase()} BRANCH' : 'AREA 1',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.5),
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 2),
-                      const Text(
-                        'Consolidated branch supervision across Ogijo, Ikorodu, and Kola',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      Text(
+                        isBm
+                            ? 'Branch credit portfolio, capital deployment, and officer productivity'
+                            : 'Consolidated branch supervision across Ogijo, Ikorodu, and Kola',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                       ),
                     ],
                   ),
@@ -863,7 +879,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
     );
   }
 
-  Widget _buildGovernanceCard() {
+  Widget _buildGovernanceCard(bool isBm) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -872,23 +888,29 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      child: const Row(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.shield_outlined, color: Color(0xFF475569), size: 20),
-          SizedBox(width: 12),
+          Icon(
+            isBm ? Icons.shield_outlined : Icons.info_outline,
+            color: isBm ? const Color(0xFF2563EB) : const Color(0xFF475569),
+            size: 20,
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Regional Portfolio Governance Invariant',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                  isBm ? 'Branch Portfolio Operational Invariant' : 'Regional Portfolio Governance Invariant',
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
                 ),
-                SizedBox(height: 3),
+                const SizedBox(height: 3),
                 Text(
-                  'Individual borrower schedules, collection sheets, and dossier management are performed at the branch level by Credit Officers and Branch Managers. The Area Manager command center maintains executive supervision, capital deployment oversight, and net portfolio growth tracking.',
-                  style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B), height: 1.4),
+                  isBm
+                      ? 'Individual borrower schedules, collection sheets, and dossier management are performed at the branch level by Credit Officers and the Branch Manager. The Branch Manager oversees officer loan book growth, portfolio quality, and daily collections.'
+                      : 'Individual borrower schedules, collection sheets, and dossier management are performed at the branch level by Credit Officers and Branch Managers. The Area Manager command center maintains executive supervision, capital deployment oversight, and net portfolio growth tracking.',
+                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B), height: 1.4),
                 ),
               ],
             ),

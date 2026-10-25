@@ -182,7 +182,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       children: [
         // Header
         Text(
-          isAm ? 'Supervised Staff Directory' : 'User Management',
+          isAm ? 'Supervised Staff Directory' : (isBm ? 'Branch Personnel & Staff Management' : 'User Management'),
           style: TextStyle(
             fontSize: isMobile ? 20 : 24,
             fontWeight: FontWeight.w800,
@@ -194,7 +194,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         Text(
           isAm
               ? 'Supervisory personnel directory across all assigned branches in your region.'
-              : 'Manage application users, reset passwords, and handle officer turnover.',
+              : (isBm
+                  ? 'Manage branch personnel, configure product assignments, and handle password resets for ${user.branch} Branch.'
+                  : 'Manage application users, reset passwords, and handle officer turnover.'),
           style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
         ),
         const SizedBox(height: 16),
@@ -210,7 +212,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         ],
 
         // Pill Tabs Navigation
-        _buildPillTabs(tabs),
+        _buildPillTabs(tabs, _getActiveThemeColor(isAdmin, isBm, isAm)),
         const SizedBox(height: 20),
 
         // Tab Content Area
@@ -305,7 +307,14 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
 
-  Widget _buildPillTabs(List<String> tabs) {
+  Color _getActiveThemeColor(bool isAdmin, bool isBm, bool isAm) {
+    if (isAdmin) return const Color(0xFF7C3AED);
+    if (isBm) return const Color(0xFF2563EB);
+    if (isAm) return const Color(0xFF0F766E);
+    return const Color(0xFF064E3B);
+  }
+
+  Widget _buildPillTabs(List<String> tabs, Color activeThemeColor) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
@@ -323,11 +332,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF064E3B) : Colors.white,
+                  color: isSelected ? activeThemeColor : Colors.white,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: isSelected ? const Color(0xFF064E3B) : const Color(0xFFCBD5E1)),
+                  border: Border.all(color: isSelected ? activeThemeColor : const Color(0xFFCBD5E1)),
                   boxShadow: isSelected
-                      ? [BoxShadow(color: const Color(0xFF064E3B).withValues(alpha: 0.18), blurRadius: 4, offset: const Offset(0, 1))]
+                      ? [BoxShadow(color: activeThemeColor.withValues(alpha: 0.18), blurRadius: 4, offset: const Offset(0, 1))]
                       : null,
                 ),
                 child: Row(

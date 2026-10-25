@@ -826,6 +826,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // 3. Horizontal Pill Tabs Navigation
   // ---------------------------------------------------------------------------
   Widget _buildPillTabs(List<String> tabs) {
+    final auth = ref.watch(authControllerProvider);
+    final u = auth is AuthStateAuthenticated ? auth.user : null;
+    final role = (u?.role ?? '').trim().toLowerCase();
+    final isBm = role == 'branch manager' || role == 'bm';
+    final isAm = role == 'area manager' || role == 'am';
+    final activeThemeColor = isBm
+        ? const Color(0xFF2563EB)
+        : (isAm ? const Color(0xFF0F766E) : const Color(0xFF064E3B));
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
@@ -845,11 +854,20 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF064E3B) : Colors.white,
+                  color: isSelected ? activeThemeColor : Colors.white,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: isSelected ? const Color(0xFF064E3B) : const Color(0xFFE2E8F0),
+                    color: isSelected ? activeThemeColor : const Color(0xFFE2E8F0),
                   ),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: activeThemeColor.withValues(alpha: 0.18),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ]
+                      : null,
                 ),
                 child: Text(
                   title,
