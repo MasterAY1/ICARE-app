@@ -1144,7 +1144,7 @@ class PortfolioService:
         expected_repay_clients = sum(1 for loans in active_loans_by_client.values() if any(float(l.get("loan_repay") or 0.0) > 0 for l in loans))
         paying_clients_count = len(set(str(r.get("client_id")) for r in repayments_today if float(r.get("amount_paid") or 0.0) > 0))
         outstanding_clients_count = len(set(r["Client ID"] for r in client_rows if float(r.get("Outstanding Balance", 0.0)) > 0))
-        par_pct = round((overdue_amt / total_outstanding_balance * 100.0), 2) if total_outstanding_balance > 0 else 0.0
+        par_pct = round((overdue_amt / total_active_credit * 100.0), 2) if total_active_credit > 0 else 0.0
 
         return {
             "summary": {

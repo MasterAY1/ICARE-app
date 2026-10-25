@@ -238,14 +238,27 @@ class FinancialReconciliationService:
                     amt = float(r.get("amount_paid") or 0.0)
                     paid_by_loan[lid] = paid_by_loan.get(lid, 0.0) + amt
 
+            today_str = date.today().isoformat()
+            overdue_by_loan = {}
+            if loan_ids:
+                try:
+                    overdue_res = uow.client.table("loan_schedule").select("loan_id, total_due, paid_amount") \
+                        .in_("loan_id", loan_ids).lt("due_date", today_str).execute()
+                    for item in (overdue_res.data or []):
+                        lid = item.get("loan_id")
+                        d_amt = float(item.get("total_due") or 0.0)
+                        p_amt = float(item.get("paid_amount") or 0.0)
+                        if d_amt > p_amt:
+                            overdue_by_loan[lid] = overdue_by_loan.get(lid, 0.0) + (d_amt - p_amt)
+                except Exception:
+                    pass
+
             overdue_loans = []
             for l in active_loans:
-                ac_val = float(l.get("active_credit") or 0.0)
                 lid = l.get("loan_id")
-                tot_paid_val = paid_by_loan.get(lid, 0.0)
-                rem = max(0.0, ac_val - tot_paid_val)
-                if rem > 0:
-                    overdue_loans.append({**l, "overdue_amount": rem})
+                ov_amt = overdue_by_loan.get(lid, 0.0)
+                if ov_amt > 0:
+                    overdue_loans.append({**l, "overdue_amount": round(ov_amt, 2)})
             exceptions["overdue_repayments"] = overdue_loans
         except Exception:
             exceptions["overdue_repayments"] = []

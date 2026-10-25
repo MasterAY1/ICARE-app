@@ -550,17 +550,25 @@ def submit_single_client(
     date_str = target_date.isoformat()
     sc_batch_id = f"COL-SC-{date_str}-{uuid.uuid4().hex[:6].upper()}"
 
+    is_not_paid = bool(payload.mark_not_paid)
+    rep_amt = 0.0 if is_not_paid else payload.loan_repayment
+    expected_amt = payload.expected_amount if payload.expected_amount > 0 else (payload.loan_repayment if payload.loan_repayment > 0 else 0.0)
+    p_status = "NOT_PAID" if is_not_paid else ("PAID" if rep_amt > 0 else "NOT_PAID")
+    overdue_val = expected_amt if is_not_paid else 0.0
+    note_val = payload.note or ("Marked NOT PAID (Single Client Collection)" if is_not_paid else "Single Client Collection")
+
     prod_low = str(payload.loan_product or "60 day").lower()
     rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
-    if "12 week" in prod_low or "12w" in prod_low: rep_12w = payload.loan_repayment
-    elif "24 week" in prod_low or "24w" in prod_low: rep_24w = payload.loan_repayment
-    elif "60 day" in prod_low or "60-day" in prod_low: rep_60d = payload.loan_repayment
-    elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = payload.loan_repayment
-    elif "month" in prod_low: rep_mth = payload.loan_repayment
-    else: rep_60d = payload.loan_repayment
+    if not is_not_paid:
+        if "12 week" in prod_low or "12w" in prod_low: rep_12w = rep_amt
+        elif "24 week" in prod_low or "24w" in prod_low: rep_24w = rep_amt
+        elif "60 day" in prod_low or "60-day" in prod_low: rep_60d = rep_amt
+        elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep_amt
+        elif "month" in prod_low: rep_mth = rep_amt
+        else: rep_60d = rep_amt
 
     records_to_insert = []
-    if payload.savings_deposit > 0 or payload.loan_repayment > 0 or payload.app_fee > 0 or payload.passbook_fee > 0 or payload.misc_fee > 0 or payload.group_savings_deposit == 0:
+    if is_not_paid or payload.savings_deposit > 0 or rep_amt > 0 or payload.app_fee > 0 or payload.passbook_fee > 0 or payload.misc_fee > 0 or payload.group_savings_deposit == 0:
         records_to_insert.append({
             "batch_id": sc_batch_id,
             "tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{payload.client_id}_rep")),
@@ -576,12 +584,12 @@ def submit_single_client(
             "client_id": payload.client_id,
             "id": payload.client_id,
             "loan_id": payload.loan_id,
-            "Amount Paid": payload.loan_repayment,
-            "Transaction Type": "Loan" if payload.loan_repayment > 0 else "Individual Savings Deposit",
-            "Note": payload.note or "Single Client Collection",
+            "Amount Paid": rep_amt,
+            "Transaction Type": "Loan" if (rep_amt > 0 or is_not_paid) else "Individual Savings Deposit",
+            "Note": note_val,
             "Savings Amount": payload.savings_deposit,
             "Withdrawal Amount": 0.0,
-            "Loan Repayment Amount": payload.loan_repayment,
+            "Loan Repayment Amount": rep_amt,
             "Repayment 12 Weeks": rep_12w,
             "Repayment 24 Weeks": rep_24w,
             "Repayment 60 Days": rep_60d,
@@ -590,8 +598,10 @@ def submit_single_client(
             "App Fee": payload.app_fee,
             "Pass Book Bonus": payload.passbook_fee,
             "Misc Fees": payload.misc_fee,
-            "Payment Status": "PAID" if payload.loan_repayment > 0 else "NOT_PAID",
-            "Expected Amount": payload.loan_repayment
+            "Payment Status": p_status,
+            "Expected Amount": expected_amt,
+            "Overdue Amount": overdue_val,
+            "mark_not_paid": is_not_paid
         })
 
     if payload.group_savings_deposit > 0 and payload.group_name and payload.group_name != "Ungrouped":

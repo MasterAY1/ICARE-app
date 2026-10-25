@@ -80,6 +80,8 @@ class SingleClientSubmitInput(BaseModel):
     misc_fee: float = 0.0
     note: Optional[str] = "Single Client Collection"
     date: Optional[str] = None
+    mark_not_paid: bool = False
+    expected_amount: float = 0.0
 
 
 class SingleClientSubmitResponse(BaseModel):

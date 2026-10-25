@@ -148,6 +148,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
   final TextEditingController _scPbFeeCtrl = TextEditingController();
   final TextEditingController _scMiscFeeCtrl = TextEditingController();
   final TextEditingController _scNoteCtrl = TextEditingController(text: 'Single Client Collection');
+  bool _scMarkNotPaid = false;
 
   // Tab 2 History State
   DateTime _histDate = DateTime.now();
@@ -434,15 +435,15 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
   }
 
   /// Posts single client quick entry (app.py L5377)
-  Future<void> _submitSingleClient(Map<String, dynamic> clientObj, String dateStr) async {
+  Future<void> _submitSingleClient(Map<String, dynamic> clientObj, String dateStr, [double expRep = 0.0]) async {
     final savVal = double.tryParse(_scPersonalSavCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
     final grpSavVal = double.tryParse(_scGroupSavCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
-    final repVal = double.tryParse(_scLoanRepCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
-    final appVal = double.tryParse(_scAppFeeCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
-    final pbVal = double.tryParse(_scPbFeeCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
-    final miscVal = double.tryParse(_scMiscFeeCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+    final repVal = _scMarkNotPaid ? 0.0 : (double.tryParse(_scLoanRepCtrl.text.replaceAll(',', '').trim()) ?? 0.0);
+    final appVal = _scMarkNotPaid ? 0.0 : (double.tryParse(_scAppFeeCtrl.text.replaceAll(',', '').trim()) ?? 0.0);
+    final pbVal = _scMarkNotPaid ? 0.0 : (double.tryParse(_scPbFeeCtrl.text.replaceAll(',', '').trim()) ?? 0.0);
+    final miscVal = _scMarkNotPaid ? 0.0 : (double.tryParse(_scMiscFeeCtrl.text.replaceAll(',', '').trim()) ?? 0.0);
 
-    if (savVal == 0 && grpSavVal == 0 && repVal == 0 && appVal == 0 && pbVal == 0 && miscVal == 0) {
+    if (!_scMarkNotPaid && savVal == 0 && grpSavVal == 0 && repVal == 0 && appVal == 0 && pbVal == 0 && miscVal == 0) {
       _showNotification('Please enter a Personal Savings Deposit, Group Savings Deposit, Loan Repayment, or Fee amount greater than ₦0.', isSuccess: false);
       return;
     }
@@ -464,7 +465,9 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
         'app_fee': appVal,
         'passbook_fee': pbVal,
         'misc_fee': miscVal,
-        'note': _scNoteCtrl.text.trim(),
+        'note': _scMarkNotPaid ? 'Marked NOT PAID (Single Client Collection)' : _scNoteCtrl.text.trim(),
+        'mark_not_paid': _scMarkNotPaid,
+        'expected_amount': expRep,
       };
 
       final res = await api.submitSingleCollection(payload);
@@ -486,6 +489,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
         _scAppFeeCtrl.clear();
         _scPbFeeCtrl.clear();
         _scMiscFeeCtrl.clear();
+        _scMarkNotPaid = false;
         _statusBannerText = null;
       });
 
@@ -3544,6 +3548,66 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                     const SizedBox(height: 16),
                   ],
 
+                  // Delinquency Toggle (Mark as NOT PAID)
+                  if (activeLoan != null) ...[
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _scMarkNotPaid ? const Color(0xFFFEF2F2) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _scMarkNotPaid ? const Color(0xFFF87171) : const Color(0xFFE2E8F0),
+                          width: _scMarkNotPaid ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Checkbox(
+                            value: _scMarkNotPaid,
+                            activeColor: const Color(0xFFDC2626),
+                            onChanged: (val) {
+                              setState(() {
+                                _scMarkNotPaid = val ?? false;
+                                if (_scMarkNotPaid) {
+                                  _scLoanRepCtrl.text = '0';
+                                } else {
+                                  _scLoanRepCtrl.clear();
+                                }
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Mark as NOT PAID today (₦0 Collection)',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: _scMarkNotPaid ? const Color(0xFF991B1B) : const Color(0xFF0F172A),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _scMarkNotPaid
+                                      ? 'Records an official ₦0 non-payment delinquency for this client with ₦${CurrencyFormatter.formatNaira(expRep)} expected arrears.'
+                                      : 'Check this box if the client cannot pay today to officially record the overdue arrears.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: _scMarkNotPaid ? const Color(0xFFB91C1C) : const Color(0xFF64748B),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
                   // Core Inputs: Personal Savings, Group Savings, Loan Repayment
                   LayoutBuilder(
                     builder: (context, constraints) {
@@ -3578,11 +3642,11 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                             const SizedBox(height: 12),
                             TextField(
                               controller: _scLoanRepCtrl,
-                              enabled: activeLoan != null,
+                              enabled: activeLoan != null && !_scMarkNotPaid,
                               keyboardType: TextInputType.number,
                               decoration: InputDecoration(
                                 filled: true,
-                                fillColor: activeLoan != null ? const Color(0xFFF8FAFC) : const Color(0xFFF1F5F9),
+                                fillColor: (activeLoan != null && !_scMarkNotPaid) ? const Color(0xFFF8FAFC) : const Color(0xFFF1F5F9),
                                 labelText: activeLoan != null ? 'Loan Repayment ($prodName) (₦)' : 'No Active Loan (₦0)',
                                 hintText: activeLoan != null ? 'Expected: ${CurrencyFormatter.formatNaira(expRep)}' : '0',
                                 border: const OutlineInputBorder(),
@@ -3626,11 +3690,11 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                           Expanded(
                             child: TextField(
                               controller: _scLoanRepCtrl,
-                              enabled: activeLoan != null,
+                              enabled: activeLoan != null && !_scMarkNotPaid,
                               keyboardType: TextInputType.number,
                               decoration: InputDecoration(
                                 filled: true,
-                                fillColor: activeLoan != null ? const Color(0xFFF8FAFC) : const Color(0xFFF1F5F9),
+                                fillColor: (activeLoan != null && !_scMarkNotPaid) ? const Color(0xFFF8FAFC) : const Color(0xFFF1F5F9),
                                 labelText: activeLoan != null ? 'Loan Repayment ($prodName) (₦)' : 'No Active Loan (₦0)',
                                 hintText: activeLoan != null ? 'Expected: ${CurrencyFormatter.formatNaira(expRep)}' : '0',
                                 border: const OutlineInputBorder(),
@@ -3767,7 +3831,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                     width: double.infinity,
                     height: 46,
                     child: ElevatedButton(
-                      onPressed: _isSubmitting ? null : () => _submitSingleClient(selClient, dateStr),
+                      onPressed: _isSubmitting ? null : () => _submitSingleClient(selClient, dateStr, expRep),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF065F46),
                         foregroundColor: Colors.white,
@@ -4709,11 +4773,11 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                               ),
                               Padding(padding: const EdgeInsets.all(10), child: Text(gname, style: const TextStyle(fontSize: 11))),
                               Padding(padding: const EdgeInsets.all(10), child: Text(prod, style: const TextStyle(fontSize: 11))),
-                              Padding(padding: const EdgeInsets.all(10), child: Text(exp > 0 ? CurrencyFormatter.formatNaira(exp) : '-', style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                              Padding(padding: const EdgeInsets.all(10), child: Text(CurrencyFormatter.formatNaira(repPaid), style: const TextStyle(fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.w600))),
+                              Padding(padding: const EdgeInsets.all(10), child: Text(exp > 0 ? CurrencyFormatter.formatNaira(exp) : '—', style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
+                              Padding(padding: const EdgeInsets.all(10), child: Text(repPaid > 0 ? CurrencyFormatter.formatNaira(repPaid) : '—', style: TextStyle(fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.w600, color: repPaid > 0 ? const Color(0xFF0F172A) : const Color(0xFF94A3B8)))),
                               Padding(padding: const EdgeInsets.all(10), child: _buildStatusBadge(stat)),
-                              Padding(padding: const EdgeInsets.all(10), child: Text(savPaid > 0 ? CurrencyFormatter.formatNaira(savPaid) : '-', style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Color(0xFF065F46), fontWeight: FontWeight.w600))),
-                              Padding(padding: const EdgeInsets.all(10), child: Text(CurrencyFormatter.formatNaira(totalCash), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, fontFamily: 'monospace', color: Color(0xFF0F172A)))),
+                              Padding(padding: const EdgeInsets.all(10), child: Text(savPaid > 0 ? CurrencyFormatter.formatNaira(savPaid) : '—', style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: savPaid > 0 ? const Color(0xFF065F46) : const Color(0xFF94A3B8), fontWeight: FontWeight.w600))),
+                              Padding(padding: const EdgeInsets.all(10), child: Text(totalCash > 0 ? CurrencyFormatter.formatNaira(totalCash) : '—', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, fontFamily: 'monospace', color: totalCash > 0 ? const Color(0xFF0F172A) : const Color(0xFF94A3B8)))),
                               Padding(
                                 padding: const EdgeInsets.all(10),
                                 child: Column(
@@ -4891,12 +4955,12 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                     const Text('Loan Repaid', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
                     const SizedBox(height: 1),
                     Text(
-                      CurrencyFormatter.formatNaira(repPaid),
+                      repPaid > 0 ? CurrencyFormatter.formatNaira(repPaid) : '—',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         fontFamily: 'monospace',
-                        color: repPaid > 0 ? const Color(0xFF065F46) : const Color(0xFF64748B),
+                        color: repPaid > 0 ? const Color(0xFF065F46) : const Color(0xFF94A3B8),
                       ),
                     ),
                   ],
@@ -4907,12 +4971,12 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                     const Text('Savings Deposit', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
                     const SizedBox(height: 1),
                     Text(
-                      CurrencyFormatter.formatNaira(savPaid),
+                      savPaid > 0 ? CurrencyFormatter.formatNaira(savPaid) : '—',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         fontFamily: 'monospace',
-                        color: savPaid > 0 ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                        color: savPaid > 0 ? const Color(0xFF2563EB) : const Color(0xFF94A3B8),
                       ),
                     ),
                   ],
@@ -4923,12 +4987,12 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                     const Text('Total Cash', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
                     const SizedBox(height: 1),
                     Text(
-                      CurrencyFormatter.formatNaira(totalCash),
-                      style: const TextStyle(
+                      totalCash > 0 ? CurrencyFormatter.formatNaira(totalCash) : '—',
+                      style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w800,
                         fontFamily: 'monospace',
-                        color: Color(0xFF0F172A),
+                        color: totalCash > 0 ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
                       ),
                     ),
                   ],
