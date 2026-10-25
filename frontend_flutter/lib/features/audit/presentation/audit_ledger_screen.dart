@@ -312,6 +312,12 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildPillTabsBar(List<String> tabs) {
+    final authState = ref.watch(authControllerProvider);
+    final user = authState is AuthStateAuthenticated ? authState.user : null;
+    final role = (user?.role ?? '').trim().toLowerCase();
+    final isAm = role == 'area manager' || role == 'am';
+    final activeThemeColor = isAm ? const Color(0xFF0F766E) : const Color(0xFF2E86C1);
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
@@ -327,16 +333,16 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                 decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF2E86C1) : Colors.white,
+                  color: isSelected ? activeThemeColor : Colors.white,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: isSelected ? const Color(0xFF2E86C1) : const Color(0xFFE2E8F0),
+                    color: isSelected ? activeThemeColor : const Color(0xFFE2E8F0),
                     width: isSelected ? 1.5 : 1.0,
                   ),
                   boxShadow: isSelected
                       ? [
                           BoxShadow(
-                            color: const Color(0xFF2E86C1).withOpacity(0.25),
+                            color: activeThemeColor.withOpacity(0.25),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
                           ),

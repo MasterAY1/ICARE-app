@@ -216,7 +216,7 @@ class CoAppScaffold extends ConsumerWidget {
         : (isAdmin
             ? const Color(0xFF7C3AED)
             : (isAm
-                ? const Color(0xFFD97706)
+                ? const Color(0xFF0F766E)
                 : const Color(0xFF8CC63F)));
 
     List<String> navItems;
@@ -1166,6 +1166,7 @@ class CoAppScaffold extends ConsumerWidget {
     final hour = DateTime.now().hour;
     final greeting = hour < 12 ? 'Good morning' : (hour < 17 ? 'Good afternoon' : 'Good evening');
     final formattedDate = DateFormat('EEEE, MMMM d, yyyy').format(DateTime.now());
+    final isAm = roleBadge == 'Area Manager' || roleBadge == 'AM';
 
     if (isMobile) {
       return Container(
@@ -1174,17 +1175,23 @@ class CoAppScaffold extends ConsumerWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: isAm ? const Color(0xFFCCFBF1) : const Color(0xFFE2E8F0)),
         ),
         child: Row(
           children: [
-            const Icon(Icons.location_on_outlined, size: 14, color: Color(0xFF064E3B)),
+            Icon(
+              isAm ? Icons.hub_outlined : Icons.location_on_outlined,
+              size: 14,
+              color: isAm ? const Color(0xFF0F766E) : const Color(0xFF064E3B),
+            ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                '$branchName Branch · $formattedDate',
-                style: const TextStyle(
-                  color: Color(0xFF334155),
+                isAm
+                    ? 'Regional Supervisory Command · $formattedDate'
+                    : '$branchName Branch · $formattedDate',
+                style: TextStyle(
+                  color: isAm ? const Color(0xFF0F766E) : const Color(0xFF334155),
                   fontSize: 11.5,
                   fontWeight: FontWeight.w600,
                   overflow: TextOverflow.ellipsis,
@@ -1200,7 +1207,7 @@ class CoAppScaffold extends ConsumerWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       decoration: BoxDecoration(
-        color: const Color(0xFF064E3B),
+        color: isAm ? const Color(0xFF0F766E) : const Color(0xFF064E3B),
         borderRadius: BorderRadius.circular(8),
         boxShadow: const [
           BoxShadow(
@@ -1228,9 +1235,9 @@ class CoAppScaffold extends ConsumerWidget {
               children: [
                 TextSpan(text: '$roleBadge — '),
                 TextSpan(
-                  text: '$branchName Branch',
-                  style: const TextStyle(
-                    color: Color(0xFF8CC63F),
+                  text: isAm ? 'Regional Command Center' : '$branchName Branch',
+                  style: TextStyle(
+                    color: isAm ? const Color(0xFF99F6E4) : const Color(0xFF8CC63F),
                     fontWeight: FontWeight.w600,
                   ),
                 ),

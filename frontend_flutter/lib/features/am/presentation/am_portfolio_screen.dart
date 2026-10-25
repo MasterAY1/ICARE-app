@@ -399,7 +399,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
         crossAxisCount: crossAxisCount,
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
-        childAspectRatio: isDesktop ? 1.55 : 1.65,
+        childAspectRatio: isDesktop ? 1.55 : (isTablet ? 1.55 : 1.40),
       ),
       itemBuilder: (_, index) => _buildKpiCard(kpis[index]),
     );
@@ -441,7 +441,13 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
             alignment: Alignment.centerLeft,
             child: Text(
               kpi.value,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.3),
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+                letterSpacing: -0.3,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
             ),
           ),
           Text(
@@ -785,16 +791,39 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
 
   // Officer Productivity Drill-Down Modal Sheet
   void _showOfficerProductivitySheet(BranchPerformanceItemModel branch) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _OfficerProductivityModalSheet(
-        branch: branch,
-        period: _selectedPeriod,
-        dates: _getPeriodDates(_selectedPeriod),
-      ),
-    );
+    final screenWidth = MediaQuery.of(context).size.width;
+    if (screenWidth >= 600) {
+      showDialog(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680, maxHeight: 720),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: _OfficerProductivityModalSheet(
+                branch: branch,
+                period: _selectedPeriod,
+                dates: _getPeriodDates(_selectedPeriod),
+                isDialog: true,
+              ),
+            ),
+          ),
+        ),
+      );
+    } else {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => _OfficerProductivityModalSheet(
+          branch: branch,
+          period: _selectedPeriod,
+          dates: _getPeriodDates(_selectedPeriod),
+        ),
+      );
+    }
   }
 
   Widget _buildMetricTile(String label, String value, IconData icon, {Color? color}) {
@@ -903,11 +932,13 @@ class _OfficerProductivityModalSheet extends ConsumerStatefulWidget {
   final BranchPerformanceItemModel branch;
   final String period;
   final (String, String) dates;
+  final bool isDialog;
 
   const _OfficerProductivityModalSheet({
     required this.branch,
     required this.period,
     required this.dates,
+    this.isDialog = false,
   });
 
   @override
@@ -955,26 +986,29 @@ class _OfficerProductivityModalSheetState extends ConsumerState<_OfficerProducti
 
     return Container(
       constraints: BoxConstraints(maxHeight: maxH),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: widget.isDialog
+            ? BorderRadius.circular(16)
+            : const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Grabber Handle
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: 10, bottom: 6),
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: const Color(0xFFCBD5E1),
-                borderRadius: BorderRadius.circular(2),
+          // Grabber Handle (Mobile bottom sheet only)
+          if (!widget.isDialog)
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 6),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFCBD5E1),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
 
           // Header
           Padding(

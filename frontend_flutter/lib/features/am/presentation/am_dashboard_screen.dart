@@ -2019,18 +2019,19 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF064E3B), Color(0xFF0F766E)],
+          colors: [Color(0xFF044E3B), Color(0xFF0F766E)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x33A7F3D0), width: 1.0),
         boxShadow: const [
           BoxShadow(
             color: Color(0x18064E3B),
-            blurRadius: 10,
+            blurRadius: 12,
             offset: Offset(0, 4),
           ),
         ],
@@ -2041,41 +2042,56 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'TODAY\'S REGIONAL COLLECTIONS',
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFFA7F3D0),
-                  letterSpacing: 0.8,
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Color(0xFF34D399),
+                    ),
+                  ),
+                  const SizedBox(width: 7),
+                  const Text(
+                    'TODAY\'S REGIONAL COLLECTIONS',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFA7F3D0),
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0x30FFFFFF),
+                  color: const Color(0x2EFFFFFF),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: const Color(0x40FFFFFF)),
                 ),
                 child: Text(
                   '${reg.compliancePct.toStringAsFixed(1)}% Compliance',
                   style: const TextStyle(
-                    fontSize: 10.5,
+                    fontSize: 11,
                     fontWeight: FontWeight.w800,
                     color: Colors.white,
+                    fontFeatures: [FontFeature.tabularFigures()],
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
               CurrencyFormatter.format(reg.todayCollected),
               style: const TextStyle(
-                fontSize: 26,
+                fontSize: 28,
                 fontWeight: FontWeight.w900,
                 color: Colors.white,
                 fontFamily: 'monospace',
@@ -2083,27 +2099,32 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: progress,
-              minHeight: 6,
+              minHeight: 7,
               backgroundColor: const Color(0x30FFFFFF),
               valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF34D399)),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 'Target: ${CurrencyFormatter.format(reg.todayExpected)}',
-                style: const TextStyle(fontSize: 11.5, color: Color(0xFFE2E8F0), fontWeight: FontWeight.w500),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFFE2E8F0),
+                  fontWeight: FontWeight.w600,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               ),
               Text(
                 'Open: ${reg.openBranchesCount} of ${reg.branchesCount} Branches',
-                style: const TextStyle(fontSize: 11.5, color: Color(0xFFA7F3D0), fontWeight: FontWeight.w700),
+                style: const TextStyle(fontSize: 12, color: Color(0xFFA7F3D0), fontWeight: FontWeight.w700),
               ),
             ],
           ),
@@ -2274,6 +2295,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             child: Row(
               children: tabs.map((t) {
                 final tabKey = t.split(' (')[0];
+                final countMatch = RegExp(r'\((\d+)\)').firstMatch(t);
+                final count = countMatch != null ? int.tryParse(countMatch.group(1)!) ?? 0 : 0;
                 final isSel = _activeApprovalTab.startsWith(tabKey);
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
@@ -2283,17 +2306,39 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
-                        color: isSel ? const Color(0xFF064E3B) : const Color(0xFFF1F5F9),
+                        color: isSel ? const Color(0xFF0F766E) : const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: isSel ? const Color(0xFF064E3B) : const Color(0xFFE2E8F0)),
+                        border: Border.all(color: isSel ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0)),
                       ),
-                      child: Text(
-                        t,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
-                          color: isSel ? Colors.white : const Color(0xFF475569),
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            tabKey,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
+                              color: isSel ? Colors.white : const Color(0xFF334155),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: isSel ? const Color(0xFF134E4A) : (count > 0 ? const Color(0xFFE0F2FE) : const Color(0xFFE2E8F0)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$count',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: isSel ? Colors.white : (count > 0 ? const Color(0xFF0369A1) : const Color(0xFF64748B)),
+                                fontFeatures: const [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -2318,11 +2363,48 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     );
   }
 
+  Widget _buildEmptyQueueCard({required IconData icon, required String title, required String subtitle}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color(0xFFF0FDFA),
+            ),
+            child: Icon(icon, size: 28, color: const Color(0xFF0F766E)),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBranchEodApprovalsTab(List<PendingBranchEodItemModel> eods, bool isMobile) {
     if (eods.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(child: Text('No branch EOD submissions pending for today.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13))),
+      return _buildEmptyQueueCard(
+        icon: Icons.check_circle_outline,
+        title: 'Zero Pending EOD Submissions',
+        subtitle: 'All supervised branches are current or have not yet submitted daily reconciliations.',
       );
     }
 
@@ -2593,9 +2675,10 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
   Widget _buildHighValueLoansApprovalsTab(List<PendingHighValueLoanItemModel> loans, bool isMobile) {
     if (loans.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(child: Text('Zero high-value loans (> ₦300k) awaiting Area Manager confirmation.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13))),
+      return _buildEmptyQueueCard(
+        icon: Icons.verified_outlined,
+        title: 'Zero High-Value Loans Awaiting Confirmation',
+        subtitle: 'All disbursements over ₦300k have been reviewed or none are pending.',
       );
     }
 
@@ -2740,9 +2823,10 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
   Widget _buildTransfersApprovalsTab(List<PendingBranchTransferItemModel> transfers, bool isMobile) {
     if (transfers.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(child: Text('Zero inter-branch client transfers awaiting Area sign-off.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13))),
+      return _buildEmptyQueueCard(
+        icon: Icons.swap_horiz_outlined,
+        title: 'Zero Inter-Branch Transfers Pending Sign-Off',
+        subtitle: 'All client route transfers across supervised branches are fully processed.',
       );
     }
 
@@ -2880,14 +2964,10 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       ),
       data: (branches) {
         if (branches.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(
-              child: Text(
-                'Zero supervised branches found for Area Manager monthly verification.',
-                style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
-              ),
-            ),
+          return _buildEmptyQueueCard(
+            icon: Icons.assignment_turned_in_outlined,
+            title: 'Zero Supervised Submissions Found',
+            subtitle: 'No month-end reports have been submitted for verification for this period.',
           );
         }
 

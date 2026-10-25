@@ -7,6 +7,8 @@ import '../../../../core/theme/icare_colors.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/app_url_helper.dart';
 import '../../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../../core/auth/auth_controller.dart';
+import '../../../../core/auth/auth_state.dart';
 import '../data/onboarding_api_service.dart';
 import 'branch_onboarding_portal_screen.dart';
 import 'widgets/successful_delete_dialog.dart';
@@ -686,17 +688,39 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isNarrow = constraints.maxWidth < 650;
-          const titleBlock = Column(
+          final auth = ref.watch(authControllerProvider);
+          final user = auth is AuthStateAuthenticated ? auth.user : null;
+          final role = (user?.role ?? '').trim().toLowerCase();
+          final isAm = role == 'area manager' || role == 'am';
+
+          final titleBlock = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Branch Digital Onboarding Management',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+              Row(
+                children: [
+                  if (isAm) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F766E),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text('REGIONAL OVERSIGHT', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.5)),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Text(
+                    isAm ? 'Regional Branch Setup Oversight' : 'Branch Digital Onboarding Management',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                  ),
+                ],
               ),
-              SizedBox(height: 4),
+              const SizedBox(height: 4),
               Text(
-                'Active branch digital onboarding and core banking activations.',
-                style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                isAm
+                    ? 'Oversee staged branch groups, officer rosters, and authorize core banking activations.'
+                    : 'Active branch digital onboarding and core banking activations.',
+                style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
               ),
             ],
           );
@@ -736,7 +760,7 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
           return Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Expanded(child: titleBlock),
+              Expanded(child: titleBlock),
               const SizedBox(width: 12),
               generateBtn,
             ],

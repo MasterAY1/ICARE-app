@@ -27,6 +27,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   bool _isActionLoading = false;
   final _userSearchController = TextEditingController();
   String _userRoleFilter = 'ALL'; // ALL, ACTIVE, INACTIVE, CO, BM, AM, ADMIN
+  String _selectedBranchFilter = 'ALL';
   bool _useCardView = true;
 
   // Tab 2: Create User
@@ -181,7 +182,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       children: [
         // Header
         Text(
-          'User Management',
+          isAm ? 'Supervised Staff Directory' : 'User Management',
           style: TextStyle(
             fontSize: isMobile ? 20 : 24,
             fontWeight: FontWeight.w800,
@@ -190,9 +191,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           ),
         ),
         const SizedBox(height: 4),
-        const Text(
-          'Manage application users, reset passwords, and handle officer turnover.',
-          style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+        Text(
+          isAm
+              ? 'Supervisory personnel directory across all assigned branches in your region.'
+              : 'Manage application users, reset passwords, and handle officer turnover.',
+          style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
         ),
         const SizedBox(height: 16),
 
@@ -401,9 +404,21 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           return _buildInfoCard('No users found.');
         }
 
+        final branchesSet = allUsers
+            .map((u) => u.branchName)
+            .where((b) => b != null && b.trim().isNotEmpty)
+            .cast<String>()
+            .toSet()
+            .toList()
+          ..sort();
+
         // Apply Search & Filters
         final query = _userSearchController.text.trim().toLowerCase();
         final filteredUsers = allUsers.where((u) {
+          if (_selectedBranchFilter != 'ALL' &&
+              (u.branchName ?? '').trim().toLowerCase() != _selectedBranchFilter.trim().toLowerCase()) {
+            return false;
+          }
           if (query.isNotEmpty) {
             final matchName = u.fullName.toLowerCase().contains(query);
             final matchUser = u.username.toLowerCase().contains(query);
@@ -441,7 +456,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Users Directory (${allUsers.length})',
+                      isAm ? 'Supervised Staff Directory (${filteredUsers.length})' : 'Users Directory (${allUsers.length})',
                       style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
                     ),
                     const SizedBox(height: 2),
@@ -505,6 +520,41 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               ),
             ),
             const SizedBox(height: 10),
+
+            // Branch Scope Filter for AM
+            if (isAm && branchesSet.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.apartment, size: 16, color: Color(0xFF0F766E)),
+                    const SizedBox(width: 8),
+                    const Text('Branch Scope:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+                    const SizedBox(width: 8),
+                    DropdownButton<String>(
+                      value: _selectedBranchFilter,
+                      underline: const SizedBox.shrink(),
+                      isDense: true,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                      items: [
+                        const DropdownMenuItem(value: 'ALL', child: Text('All Supervised Branches')),
+                        ...branchesSet.map((b) => DropdownMenuItem(value: b, child: Text('$b Branch'))),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) setState(() => _selectedBranchFilter = val);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
 
             // Filter Chips
             SingleChildScrollView(

@@ -405,9 +405,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       subtitle = 'Multi-branch regional supervision, cross-branch comparative analysis, and operational performance.';
       badgeTitle = 'SUPERVISED AREA';
       badgeSubtitle = 'Regional Supervised Branches';
-      badgeBg = const Color(0xFFF0FDF4);
-      badgeBorder = const Color(0xFF22C55E);
-      badgeText = const Color(0xFF14532D);
+      badgeBg = const Color(0xFFF0FDFA);
+      badgeBorder = const Color(0xFF0F766E);
+      badgeText = const Color(0xFF0F766E);
     } else {
       title = 'Enterprise Financial & Operational Reports';
       subtitle = 'Consolidated institutional double-entry trial balance, savings portfolios, collections, and multi-branch data exports.';
