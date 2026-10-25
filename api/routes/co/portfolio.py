@@ -22,7 +22,7 @@ from api.schemas.portfolio import (
     ClientPortfolioItem
 )
 from services.rbac_scope_service import RBACScope, RBACScopeService
-from services.portfolio_service import PortfolioService
+from services.portfolio_service import PortfolioService, STATUS_UUID_TO_NAME
 from services.client_status_service import ClientStatusService
 from services.client_service import ClientService
 from services.correction_service import CorrectionService
@@ -503,9 +503,11 @@ def get_client_dossier(
             })
 
     # 7. Lifecycle Status & Audit History (Streamlit L13083–13176)
-    curr_status_res = uow.client.table("clients").select("status_id, status_changed_at, status_note, client_statuses(name, color_code, icon)").eq("client_id", cur_cid).execute()
+    curr_status_res = uow.client.table("clients").select("status, status_id, status_changed_at, status_note, client_statuses(name, color_code, icon)").eq("client_id", cur_cid).execute()
     curr_rec = curr_status_res.data[0] if curr_status_res.data else {}
     cs_dict = curr_rec.get("client_statuses") or {}
+    raw_status_name = cs_dict.get("name") or curr_rec.get("status") or "Registered"
+    resolved_curr_status = STATUS_UUID_TO_NAME.get(raw_status_name, raw_status_name)
 
     history_records = ClientStatusService.get_client_history(uow, str(cur_cid))
     h_rows = []
@@ -562,7 +564,7 @@ def get_client_dossier(
             "rows": coll_rows
         },
         lifecycle_status={
-            "current_status": cs_dict.get("name", "Registered"),
+            "current_status": resolved_curr_status,
             "color_code": cs_dict.get("color_code", "#9CA3AF"),
             "last_changed": str(curr_rec.get("status_changed_at") or "Initial Onboarding")[:19],
             "status_note": curr_rec.get("status_note") or "None",

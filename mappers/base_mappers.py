@@ -440,9 +440,23 @@ class BranchClosureMapper:
             reason=str(dto.get("reason"))
         )
 
+STATUS_UUID_TO_NAME = {
+    "11111111-1111-1111-1111-111111110001": "Registered",
+    "11111111-1111-1111-1111-111111110002": "Pending Loan",
+    "11111111-1111-1111-1111-111111110003": "On Loan",
+    "11111111-1111-1111-1111-111111110004": "Completed",
+    "11111111-1111-1111-1111-111111110005": "Dormant",
+    "11111111-1111-1111-1111-111111110006": "Inactive (Savings Only)",
+    "11111111-1111-1111-1111-111111110007": "Closed",
+    "11111111-1111-1111-1111-111111110008": "Suspended",
+    "11111111-1111-1111-1111-111111110009": "Defaulter",
+}
+
 class ClientMapper:
     @staticmethod
     def to_domain(dto: dict) -> Client:
+        raw_status = str(dto.get("status", "Active"))
+        canonical_status = STATUS_UUID_TO_NAME.get(raw_status, raw_status)
         return Client(
             id=str(dto.get("client_id", "") or dto.get("id", "")),
             name=str(dto.get("name", "")),
@@ -466,7 +480,7 @@ class ClientMapper:
             branch_id=dto.get("branch_id"),
             group_id=dto.get("group_id"),
             officer_id=dto.get("officer_id"),
-            status=str(dto.get("status", "Active")),
+            status=canonical_status,
             status_id=dto.get("status_id"),
             status_changed_at=_parse_datetime(dto.get("status_changed_at")) if "_parse_datetime" in globals() else None,
             status_changed_by=dto.get("status_changed_by"),
@@ -477,6 +491,13 @@ class ClientMapper:
 
     @staticmethod
     def to_database(entity: Client) -> dict:
+        status_val = entity.status or "Registered"
+        target_status_id = entity.status_id
+        if status_val in STATUS_UUID_TO_NAME:
+            if not target_status_id:
+                target_status_id = status_val
+            status_val = STATUS_UUID_TO_NAME[status_val]
+
         db_dict = {
             "client_id": entity.id,
             "name": entity.name,
@@ -500,12 +521,12 @@ class ClientMapper:
             "branch_id": entity.branch_id,
             "group_id": entity.group_id,
             "officer_id": entity.officer_id,
-            "status": entity.status,
+            "status": status_val,
             "average_monthly_income": entity.average_monthly_income,
             "other_obligations": entity.other_obligations
         }
-        if entity.status_id:
-            db_dict["status_id"] = entity.status_id
+        if target_status_id:
+            db_dict["status_id"] = target_status_id
         if entity.status_changed_at:
             db_dict["status_changed_at"] = entity.status_changed_at.isoformat()
         if entity.status_changed_by:

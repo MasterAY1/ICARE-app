@@ -369,7 +369,7 @@ def register_client(
         branch_id=branch_id,
         group_id=final_group_id,
         officer_id=officer_id,
-        status="11111111-1111-1111-1111-111111110001",
+        status="Registered",
         status_id="11111111-1111-1111-1111-111111110001",
         average_monthly_income=float(payload.average_monthly_income or 0.0),
         other_obligations=payload.other_obligations
