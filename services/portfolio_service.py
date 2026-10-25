@@ -15,6 +15,18 @@ from services.savings_service import SavingsService
 from services.schedule_service import ScheduleService
 from database.query_utils import fetch_all_paginated
 
+STATUS_UUID_TO_NAME = {
+    "11111111-1111-1111-1111-111111110001": "Registered",
+    "11111111-1111-1111-1111-111111110002": "Pending Loan",
+    "11111111-1111-1111-1111-111111110003": "On Loan",
+    "11111111-1111-1111-1111-111111110004": "Completed",
+    "11111111-1111-1111-1111-111111110005": "Dormant",
+    "11111111-1111-1111-1111-111111110006": "Inactive (Savings Only)",
+    "11111111-1111-1111-1111-111111110007": "Closed",
+    "11111111-1111-1111-1111-111111110008": "Suspended",
+    "11111111-1111-1111-1111-111111110009": "Defaulter",
+}
+
 
 class PortfolioService:
 
@@ -440,7 +452,8 @@ class PortfolioService:
         for c in clients_raw:
             cid_str = str(c.get("client_id") or c.get("id"))
             cs = c.get("client_statuses")
-            s_name = cs.get("name") if isinstance(cs, dict) else (c.get("status") or "Registered")
+            raw_s = cs.get("name") if isinstance(cs, dict) else (c.get("status") or "Registered")
+            s_name = STATUS_UUID_TO_NAME.get(raw_s, raw_s)
             
             # Dynamic lifecycle synchronization in memory without read-time DB mutations
             if (not selected_product or selected_product == "All") and (not selected_group or selected_group == "All"):
@@ -791,7 +804,9 @@ class PortfolioService:
             c_name = c.get("name") or "N/A"
             c_code = c.get("client_code") or "N/A"
             cs_obj = c.get("client_statuses") or {}
-            c_lifecycle_status = resolved_client_status.get(cid_str, cs_obj.get("name") if isinstance(cs_obj, dict) else (c.get("status") or "Registered"))
+            raw_c_status = cs_obj.get("name") if isinstance(cs_obj, dict) else (c.get("status") or "Registered")
+            resolved_raw = resolved_client_status.get(cid_str, raw_c_status)
+            c_lifecycle_status = STATUS_UUID_TO_NAME.get(resolved_raw, resolved_raw)
             
             group_name = group_map.get(cid_str, "Individual")
             c_savings = savings_map.get(cid_str, {}).get('bal', 0.0)
@@ -1216,6 +1231,28 @@ class PortfolioService:
             info = {}
 
         actual_cid = info.get("id") or info.get("client_id") or client_id
+
+        # Resolve officer and branch names for client profile
+        b_id = info.get("branch_id")
+        o_id = info.get("officer_id")
+        branch_name = "Unassigned"
+        officer_name = "Unassigned"
+        if b_id:
+            try:
+                b_res = uow.client.table("branches").select("name").eq("branch_id", b_id).execute()
+                if b_res.data:
+                    branch_name = b_res.data[0].get("name") or branch_name
+            except Exception:
+                pass
+        if o_id:
+            try:
+                u_res = uow.client.table("app_users").select("full_name, username").eq("id", o_id).execute()
+                if u_res.data:
+                    officer_name = u_res.data[0].get("full_name") or u_res.data[0].get("username") or officer_name
+            except Exception:
+                pass
+        info["branch_name"] = branch_name
+        info["officer_name"] = officer_name
 
         # 2. Loan History
         try:

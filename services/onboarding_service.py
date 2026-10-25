@@ -1426,7 +1426,8 @@ class OnboardingService:
             l_type = str(m.get("loan_type") or "").strip().lower()
 
             has_loan = (a_cred > 0 or c_bal > 0)
-            lifecycle_status = ON_LOAN_STATUS_ID if has_loan else SAVINGS_ONLY_STATUS_ID
+            lifecycle_status_id = ON_LOAN_STATUS_ID if has_loan else SAVINGS_ONLY_STATUS_ID
+            lifecycle_status_name = "On Loan" if has_loan else "Inactive (Savings Only)"
 
             # Always insert as fresh client - zero overwrite guarantee
             c_id = str(uuid.uuid4())
@@ -1439,7 +1440,9 @@ class OnboardingService:
                 "branch_id": branch_id,
                 "group_id": g_id,
                 "officer_id": m_officer_id,
-                "status": lifecycle_status
+                "registration_date": base_eval_date.isoformat(),
+                "status": lifecycle_status_name,
+                "status_id": lifecycle_status_id
             }).execute()
             clients_created += 1
 

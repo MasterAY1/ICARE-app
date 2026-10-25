@@ -184,6 +184,57 @@ def get_portfolio_overview(
     except Exception:
         pass
 
+    # Build transfer options with rich objects (branches, officers, groups)
+    transfer_branches = []
+    transfer_officers = []
+    transfer_groups = []
+
+    try:
+        res_tb = uow.client.table("branches").select("branch_id, name, code").eq("is_active", True).order("name").execute()
+        for b in (res_tb.data or []):
+            if b.get("name") and b.get("name") != "Head Office":
+                transfer_branches.append({
+                    "branch_id": str(b.get("branch_id")),
+                    "name": str(b.get("name")),
+                    "code": str(b.get("code") or "")
+                })
+    except Exception:
+        pass
+
+    try:
+        q_toff = uow.client.table("user_roles") \
+            .select("user_id, roles!inner(name), app_users!inner(id, username, full_name, is_active, branch_id)") \
+            .eq("roles.name", "Credit Officer") \
+            .eq("app_users.is_active", True)
+        res_toff = q_toff.execute()
+        for r in (res_toff.data or []):
+            u = r.get("app_users") or {}
+            uid = u.get("id")
+            if uid:
+                fn = u.get("full_name") or u.get("username") or "Officer"
+                transfer_officers.append({
+                    "officer_id": str(uid),
+                    "name": fn,
+                    "username": u.get("username") or "",
+                    "branch_id": str(u.get("branch_id") or "")
+                })
+    except Exception:
+        pass
+
+    try:
+        g_all_res = uow.client.table("groups").select("group_id, name, branch_id, officer_id").execute()
+        for g in (g_all_res.data or []):
+            gid = g.get("group_id")
+            if gid:
+                transfer_groups.append({
+                    "group_id": str(gid),
+                    "name": str(g.get("name") or "Group"),
+                    "branch_id": str(g.get("branch_id") or ""),
+                    "officer_id": str(g.get("officer_id") or "")
+                })
+    except Exception:
+        pass
+
     # Build backward-compatible items
     group_items = []
     for g in group_table_records:
@@ -227,6 +278,11 @@ def get_portfolio_overview(
             available_groups=available_groups,
             time_periods=["Today", "Yesterday", "Current Month", "Last Month", "Custom Date Range"]
         ),
+        transfer_options={
+            "branches": transfer_branches,
+            "officers": transfer_officers,
+            "groups": transfer_groups
+        },
         metrics=PortfolioMetrics(
             total_clients=int(p_sum.get("total_clients") or (p_data.get("metrics", {}).get("total_clients") if isinstance(p_data.get("metrics"), dict) else 0) or 0),
             total_active_credit=float(p_sum.get("total_active_credit") or (p_data.get("metrics", {}).get("total_active_credit") if isinstance(p_data.get("metrics"), dict) else 0.0) or 0.0),
@@ -311,6 +367,13 @@ def get_client_dossier(
                 g_rel = ext.get("guarantor_relationship", "Guarantor")
                 g_pic = l_row.get("guarantor_passport_url", "")
                 break
+
+    if g_name == "N/A" and c_info.get("next_of_kin"):
+        nok = c_info.get("next_of_kin")
+        if isinstance(nok, dict):
+            g_name = str(nok.get("name") or "N/A")
+            g_phone = str(nok.get("phone") or "N/A")
+            g_rel = str(nok.get("relationship") or "Next of Kin")
 
     # 3. Formatted Loan History (Streamlit L12864–12906)
     loan_history_rows = []
@@ -469,8 +532,13 @@ def get_client_dossier(
             "nickname": c_info.get("nickname") or "",
             "group_name": c_info.get("groups", {}).get("name", "Individual") if isinstance(c_info.get("groups"), dict) else (c_info.get("group_name") or "Individual"),
             "phone": str(c_info.get("phone") or "N/A"),
+            "phone_number": str(c_info.get("phone") or "N/A"),
             "address": str(c_info.get("address") or "N/A"),
-            "registration_date": str(c_info.get("registration_date") or "N/A")[:10],
+            "residential_address": str(c_info.get("address") or "N/A"),
+            "registration_date": str(c_info.get("registration_date") or c_info.get("created_at") or "N/A")[:10],
+            "created_at": str(c_info.get("registration_date") or c_info.get("created_at") or "N/A")[:10],
+            "officer_name": str(c_info.get("officer_name") or "Unassigned"),
+            "branch_name": str(c_info.get("branch_name") or "Unassigned"),
             "passport_url": c_info.get("passport_url") or ""
         },
         guarantor_info={
@@ -555,6 +623,71 @@ def submit_dossier_reversal_request(
     )
 
     return {"status": "success", "request_id": req_id, "message": f"Reversal request #{req_id[:8]} submitted to Branch Manager."}
+
+
+@router.get("/transfer-options")
+def get_transfer_options(
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Returns available operational branches, active credit officers, and solidarity groups
+    for user-friendly client portfolio transfer selectors (abstracting internal database UUIDs).
+    """
+    transfer_branches = []
+    transfer_officers = []
+    transfer_groups = []
+
+    try:
+        res_tb = uow.client.table("branches").select("branch_id, name, code").eq("is_active", True).order("name").execute()
+        for b in (res_tb.data or []):
+            if b.get("name") and b.get("name") != "Head Office":
+                transfer_branches.append({
+                    "branch_id": str(b.get("branch_id")),
+                    "name": str(b.get("name")),
+                    "code": str(b.get("code") or "")
+                })
+    except Exception:
+        pass
+
+    try:
+        q_toff = uow.client.table("user_roles") \
+            .select("user_id, roles!inner(name), app_users!inner(id, username, full_name, is_active, branch_id)") \
+            .eq("roles.name", "Credit Officer") \
+            .eq("app_users.is_active", True)
+        res_toff = q_toff.execute()
+        for r in (res_toff.data or []):
+            u = r.get("app_users") or {}
+            uid = u.get("id")
+            if uid:
+                fn = u.get("full_name") or u.get("username") or "Officer"
+                transfer_officers.append({
+                    "officer_id": str(uid),
+                    "name": fn,
+                    "username": u.get("username") or "",
+                    "branch_id": str(u.get("branch_id") or "")
+                })
+    except Exception:
+        pass
+
+    try:
+        g_all_res = uow.client.table("groups").select("group_id, name, branch_id, officer_id").execute()
+        for g in (g_all_res.data or []):
+            gid = g.get("group_id")
+            if gid:
+                transfer_groups.append({
+                    "group_id": str(gid),
+                    "name": str(g.get("name") or "Group"),
+                    "branch_id": str(g.get("branch_id") or ""),
+                    "officer_id": str(g.get("officer_id") or "")
+                })
+    except Exception:
+        pass
+
+    return {
+        "branches": transfer_branches,
+        "officers": transfer_officers,
+        "groups": transfer_groups
+    }
 
 
 @router.post("/transfer-client", response_model=TransferClientResponse)

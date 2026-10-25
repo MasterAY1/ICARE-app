@@ -58,6 +58,7 @@ class PortfolioOverviewResponse(BaseModel):
     client_codes: List[str] = []
     client_lookup: Dict[str, str] = {}
     filter_options: FilterOptions = FilterOptions()
+    transfer_options: Dict[str, Any] = {}
 
     # Backward-compatible fields
     metrics: PortfolioMetrics = PortfolioMetrics()

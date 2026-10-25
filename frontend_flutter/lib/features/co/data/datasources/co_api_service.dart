@@ -84,6 +84,12 @@ class CoApiService {
     return response.data as Map<String, dynamic>;
   }
 
+  /// GET /api/v1/co/portfolio/transfer-options
+  Future<Map<String, dynamic>> getTransferOptions() async {
+    final response = await _client.get('/api/v1/co/portfolio/transfer-options');
+    return response.data as Map<String, dynamic>;
+  }
+
   /// POST /api/v1/co/portfolio/transfer-client
   Future<Map<String, dynamic>> transferClient({
     required String clientId,
