@@ -82,4 +82,17 @@ class LapsPaidOutEvent(DomainEvent):
     narration: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
-
+@dataclass(kw_only=True)
+class LapsRestoredToSavingsEvent(DomainEvent):
+    event_id: str
+    client_id: str
+    amount: float
+    branch: str
+    officer: str
+    business_date: str
+    reference: str
+    branch_id: Optional[str] = None
+    officer_id: Optional[str] = None
+    classification: str = "LAPS_RETURN_TO_SAVINGS"
+    narration: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None

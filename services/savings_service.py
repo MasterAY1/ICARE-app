@@ -1060,6 +1060,140 @@ class SavingsService:
             raise e
 
     @staticmethod
+    def return_laps_to_savings(
+        uow: SupabaseUnitOfWork,
+        client_id: str,
+        client_name: str,
+        branch: str,
+        officer: str,
+        amount: float,
+        reference: str = None,
+        remarks: str = None,
+        posting_date: Optional[Any] = None
+    ) -> dict:
+        """
+        Executes LAPS restoration / return to customer savings:
+        - Decreases LAPS balance in laps_savings (withdrawal_amount = amount)
+        - Increases Individual Savings balance in individual_savings (deposit_amount = amount)
+        - Emits LapsRestoredToSavings domain event
+        - Re-activates client status from Dormant/Closed/Inactive -> Registered (per BR-CLI-004)
+        - Ledger impact: Debit Account 2030 (LAPS Savings), Credit Account 2000 (Customer Savings)
+        - Physical cash movement: ZERO (Account 1000 untouched per BR-ACCT-002)
+        - Cashbook impact: Inflow savings_deposit (+X) balanced by Outflow laps_returns (+X)
+        """
+        if amount <= 0:
+            raise ValueError("Restoration amount must be greater than zero.")
+
+        p_dt = posting_date if posting_date else datetime.now()
+        ref_code = reference or f"LAPS-RET-{uuid.uuid4().hex[:8].upper()}"
+
+        # 1. Record withdrawal in laps_savings
+        laps_entity = LapsSavings(
+            client_id=client_id,
+            client_name=client_name,
+            branch=branch,
+            officer=officer,
+            deposit_amount=0.0,
+            withdrawal_amount=amount,
+            reference=ref_code,
+            remarks=remarks or f"LAPS restoration to Individual Savings for client {client_name}",
+            date=p_dt
+        )
+        uow.laps_savings.create(laps_entity)
+
+        # 2. Record deposit in individual_savings
+        indiv_entity = IndividualSavings(
+            client_id=client_id,
+            client_name=client_name,
+            branch=branch,
+            officer=officer,
+            deposit_amount=amount,
+            withdrawal_amount=0.0,
+            reference=ref_code,
+            remarks=remarks or f"Restored from LAPS Savings balance",
+            date=p_dt
+        )
+        uow.individual_savings.create(indiv_entity)
+
+        # 3. Client lifecycle re-activation (BR-CLI-004: Dormant/Closed/Inactive -> Registered)
+        try:
+            res_c = uow.client.table("clients").select("status, status_id").eq("client_id", client_id).execute()
+            if res_c.data:
+                curr_status = res_c.data[0].get("status")
+                if curr_status in ["Dormant", "Closed", "Inactive (Savings Only)", "Suspended"]:
+                    reg_status_id = None
+                    try:
+                        res_st = uow.client.table("client_statuses").select("status_id").eq("name", "Registered").execute()
+                        if res_st.data:
+                            reg_status_id = res_st.data[0].get("status_id")
+                    except Exception:
+                        pass
+                    upd_payload = {"status": "Registered"}
+                    if reg_status_id:
+                        upd_payload["status_id"] = reg_status_id
+                    uow.client.table("clients").update(upd_payload).eq("client_id", client_id).execute()
+        except Exception:
+            pass
+
+        try:
+            uow.audit.log_action(
+                officer,
+                "Credit Officer",
+                "LAPS Return to Savings",
+                "laps_savings",
+                laps_entity.id,
+                None,
+                {"amount": amount, "destination": "IndividualSavings", "client_id": client_id}
+            )
+
+            event = DomainEvent(
+                event_id=str(uuid.uuid4()),
+                aggregate_id=laps_entity.id,
+                aggregate_type="LapsSavings",
+                event_type="LapsRestoredToSavings",
+                payload={
+                    "client_id": client_id,
+                    "amount": amount,
+                    "branch": branch,
+                    "officer": officer,
+                    "cash_paid": False,
+                    "reference": ref_code,
+                    "classification": "LAPS_RETURN_TO_SAVINGS",
+                    "narration": remarks or f"LAPS return of {amount:,.2f} to Individual Savings for client {client_name}",
+                    "date": p_dt.isoformat() if hasattr(p_dt, 'isoformat') else str(p_dt)
+                }
+            )
+            uow.event_store.append(event)
+            try:
+                FinancialPostingEngine.post_event(uow, event)
+            except ValueError as ve:
+                if "No active posting rule found" in str(ve):
+                    pass
+                else:
+                    raise ve
+
+            return {
+                "status": "SUCCESS",
+                "event_id": event.event_id,
+                "amount": amount,
+                "laps_savings_id": laps_entity.id,
+                "individual_savings_id": indiv_entity.id,
+                "affects_cash_vault": False
+            }
+        except Exception as e:
+            if laps_entity and laps_entity.id:
+                try:
+                    uow.client.table("laps_savings").delete().eq("id", laps_entity.id).execute()
+                except Exception:
+                    pass
+            if indiv_entity and indiv_entity.id:
+                try:
+                    uow.client.table("individual_savings").delete().eq("id", indiv_entity.id).execute()
+                except Exception:
+                    pass
+            raise e
+
+    @staticmethod
     def reverse_savings(uow: SupabaseUnitOfWork, original_savings_id: str, reason: str, reversed_by: str, reversal_date: Optional[Any] = None):
         """
         Executes a compensating negative savings record to reverse an error (BR-ERR-002).

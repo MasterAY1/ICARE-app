@@ -351,9 +351,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       final opDate = ref.read(withdrawalOpDateProvider);
       final dateStr = DateFormat('yyyy-MM-dd').format(opDate);
 
+      final isReturn = _lapsPayoutMethod == 'Return to Savings';
       final payload = {
         'savings_type': 'LAPS',
-        'operation_type': 'LAPS Payout',
+        'operation_type': isReturn ? 'LAPS Return to Customer Savings' : 'LAPS Payout',
         'client_id': cId,
         'amount': amt,
         'operational_date': dateStr,
@@ -566,7 +567,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   decoration: const InputDecoration(
                     labelText: 'Group Filter',
                     isDense: true,
-                    prefixIcon: Icon(Icons.groups_outlined, size: 18),
+                    
                     border: OutlineInputBorder(),
                     contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
@@ -582,7 +583,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   decoration: const InputDecoration(
                     labelText: 'Select Member',
                     isDense: true,
-                    prefixIcon: Icon(Icons.person_outline_rounded, size: 18),
+                    
                     border: OutlineInputBorder(),
                     contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
@@ -632,27 +633,18 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               decoration: const InputDecoration(
                 labelText: 'Destination',
                 isDense: true,
-                prefixIcon: Icon(Icons.tune_rounded, size: 18),
+                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
               items: _indDestOptions.map((opt) {
                 return DropdownMenuItem<String>(
                   value: opt['value'] as String,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(opt['icon'] as IconData, size: 16, color: const Color(0xFF064E3B)),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          opt['title'] as String,
-                          overflow: TextOverflow.ellipsis,
-                          softWrap: true,
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    opt['title'] as String,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: true,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                   ),
                 );
               }).toList(),
@@ -682,7 +674,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   decoration: const InputDecoration(
                     labelText: 'Target Loan for Debt Offset',
                     isDense: true,
-                    prefixIcon: Icon(Icons.request_quote_outlined, size: 18),
+                    
                     border: OutlineInputBorder(),
                     contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
@@ -725,7 +717,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 decoration: const InputDecoration(
                   labelText: 'Fee Type',
                   isDense: true,
-                  prefixIcon: Icon(Icons.receipt_long_outlined, size: 18),
+                  
                   border: OutlineInputBorder(),
                   contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
@@ -748,7 +740,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 decoration: const InputDecoration(
                   labelText: 'Recipient Member',
                   isDense: true,
-                  prefixIcon: Icon(Icons.swap_horiz_rounded, size: 18),
+                  
                   border: OutlineInputBorder(),
                   contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
@@ -776,7 +768,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 labelText: 'Withdrawal Amount (₦)',
                 hintText: 'Enter amount...',
                 isDense: true,
-                prefixIcon: Icon(Icons.payments_outlined, size: 18),
+                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -791,7 +783,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 labelText: 'Remarks & Authorization Notes',
                 hintText: 'Reason or account details...',
                 isDense: true,
-                prefixIcon: Icon(Icons.notes_rounded, size: 18),
+                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -889,7 +881,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               decoration: const InputDecoration(
                 labelText: 'Select Group',
                 isDense: true,
-                prefixIcon: Icon(Icons.groups_outlined, size: 18),
+                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -916,27 +908,18 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               decoration: const InputDecoration(
                 labelText: 'Destination',
                 isDense: true,
-                prefixIcon: Icon(Icons.tune_rounded, size: 18),
+                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
               items: _grpDestOptions.map((opt) {
                 return DropdownMenuItem<String>(
                   value: opt['value'] as String,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(opt['icon'] as IconData, size: 16, color: const Color(0xFF064E3B)),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          opt['title'] as String,
-                          overflow: TextOverflow.ellipsis,
-                          softWrap: true,
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    opt['title'] as String,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: true,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                   ),
                 );
               }).toList(),
@@ -957,7 +940,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 labelText: 'Amount (₦)',
                 hintText: 'Enter group withdrawal amount...',
                 isDense: true,
-                prefixIcon: Icon(Icons.payments_outlined, size: 18),
+                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -972,7 +955,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 labelText: 'Remarks & Group Resolution Notes',
                 hintText: 'Resolution reference or details...',
                 isDense: true,
-                prefixIcon: Icon(Icons.notes_rounded, size: 18),
+                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -1047,7 +1030,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               label: 'Branch Misc Pool',
               balance: bal,
               tag: 'MISC LEDGER FUND',
-              subtitle: 'Account 1000 Protected Vault Fund',
+              subtitle: 'Protected Vault Cash Reserve',
             ),
             const SizedBox(height: 12),
             Container(
@@ -1134,7 +1117,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               decoration: const InputDecoration(
                 labelText: 'Select LAPS Record',
                 isDense: true,
-                prefixIcon: Icon(Icons.person_search_outlined, size: 18),
+                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -1162,77 +1145,93 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             ),
             const SizedBox(height: 12),
 
-            // 3. Compact Payout Method 2-Segment Toggle
-            Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () => setState(() => _lapsPayoutMethod = 'Cash'),
-                    borderRadius: BorderRadius.circular(6),
+            // 3. Modern 3-Option Payout / Restoration Selector (Rule 10 & 12 compliant)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 640;
+                final options = [
+                  {
+                    'id': 'Cash',
+                    'title': 'Cash Payout',
+                    'subtitle': 'Physical cash disbursement from vault cash',
+                  },
+                  {
+                    'id': 'Bank Transfer',
+                    'title': 'Bank Wire',
+                    'subtitle': 'Electronic transfer payout to client account',
+                  },
+                  {
+                    'id': 'Return to Savings',
+                    'title': 'Return to Customer Savings',
+                    'subtitle': 'Restore balance to client savings & re-activate account (Zero cash impact)',
+                  },
+                ];
+
+                final tiles = options.map((opt) {
+                  final isSelected = _lapsPayoutMethod == opt['id'];
+                  return InkWell(
+                    onTap: () => setState(() => _lapsPayoutMethod = opt['id']!),
+                    borderRadius: BorderRadius.circular(8),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: _lapsPayoutMethod == 'Cash' ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(6),
+                        color: isSelected ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: _lapsPayoutMethod == 'Cash' ? const Color(0xFF15803D) : const Color(0xFFCBD5E1),
-                          width: _lapsPayoutMethod == 'Cash' ? 1.5 : 1.0,
+                          color: isSelected ? const Color(0xFF15803D) : const Color(0xFFCBD5E1),
+                          width: isSelected ? 1.5 : 1.0,
                         ),
                       ),
-                      alignment: Alignment.center,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.payments_rounded, size: 16, color: _lapsPayoutMethod == 'Cash' ? const Color(0xFF15803D) : const Color(0xFF64748B)),
-                          const SizedBox(width: 6),
+                          Row(
+                            children: [
+                              Container(
+                                width: 14,
+                                height: 14,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isSelected ? const Color(0xFF15803D) : const Color(0xFF94A3B8),
+                                    width: isSelected ? 4 : 1.5,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  opt['title']!,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                                    color: isSelected ? const Color(0xFF15803D) : const Color(0xFF0F172A),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
                           Text(
-                            'Cash Payout (Account 1000)',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: _lapsPayoutMethod == 'Cash' ? FontWeight.w700 : FontWeight.w600,
-                              color: _lapsPayoutMethod == 'Cash' ? const Color(0xFF15803D) : const Color(0xFF334155),
-                            ),
+                            opt['subtitle']!,
+                            style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
                           ),
                         ],
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: InkWell(
-                    onTap: () => setState(() => _lapsPayoutMethod = 'Bank Transfer'),
-                    borderRadius: BorderRadius.circular(6),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        color: _lapsPayoutMethod == 'Bank Transfer' ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: _lapsPayoutMethod == 'Bank Transfer' ? const Color(0xFF15803D) : const Color(0xFFCBD5E1),
-                          width: _lapsPayoutMethod == 'Bank Transfer' ? 1.5 : 1.0,
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.account_balance_rounded, size: 16, color: _lapsPayoutMethod == 'Bank Transfer' ? const Color(0xFF15803D) : const Color(0xFF64748B)),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Bank Transfer (Bank 1020)',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: _lapsPayoutMethod == 'Bank Transfer' ? FontWeight.w700 : FontWeight.w600,
-                              color: _lapsPayoutMethod == 'Bank Transfer' ? const Color(0xFF15803D) : const Color(0xFF334155),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+                  );
+                }).toList();
+
+                if (isNarrow) {
+                  return Column(
+                    children: tiles.map((t) => Padding(padding: const EdgeInsets.only(bottom: 6), child: t)).toList(),
+                  );
+                }
+
+                return Row(
+                  children: tiles.map((t) => Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: t))).toList(),
+                );
+              },
             ),
             const SizedBox(height: 10),
 
@@ -1247,7 +1246,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 labelText: 'Payout Amount (₦)',
                 hintText: 'Enter amount...',
                 isDense: true,
-                prefixIcon: Icon(Icons.payments_outlined, size: 18),
+                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -1262,7 +1261,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 labelText: 'Remarks & Client Verification',
                 hintText: 'Identity notes or details...',
                 isDense: true,
-                prefixIcon: Icon(Icons.notes_rounded, size: 18),
+                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -1301,9 +1300,13 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 label: Text(
                   _isSubmitting
                       ? 'Processing...'
-                      : (isManager && _lapsAutoExec)
-                          ? 'Authorize & Post LAPS Payout to Ledger'
-                          : 'Submit LAPS Payout for BM Approval',
+                      : (_lapsPayoutMethod == 'Return to Savings')
+                          ? ((isManager && _lapsAutoExec)
+                              ? 'Authorize & Restore Balance to Customer Savings'
+                              : 'Submit LAPS Restoration for BM Approval')
+                          : ((isManager && _lapsAutoExec)
+                              ? 'Authorize & Post LAPS Payout to Ledger'
+                              : 'Submit LAPS Payout for BM Approval'),
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                   softWrap: true,
                 ),
@@ -2517,38 +2520,23 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             final isSel = activeTab == t || (t.startsWith('Pending Approvals') && activeTab.startsWith('Pending Approvals'));
             final isPending = t.startsWith('Pending Approvals');
 
-            IconData iconData;
-            if (t == 'Individual Savings') {
-              iconData = Icons.person_rounded;
-            } else if (t == 'Group Savings') {
-              iconData = Icons.groups_rounded;
-            } else if (t == 'Misc Savings') {
-              iconData = Icons.savings_rounded;
-            } else if (t == 'LAPS Savings') {
-              iconData = Icons.shield_rounded;
-            } else if (isPending) {
-              iconData = Icons.pending_actions_rounded;
-            } else {
-              iconData = Icons.receipt_long_rounded;
-            }
-
             return Padding(
-              padding: const EdgeInsets.only(right: 4),
+              padding: const EdgeInsets.only(right: 6),
               child: InkWell(
                 onTap: () => onSelectTab(t),
                 borderRadius: BorderRadius.circular(8),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     color: isSel ? Colors.white : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
                     boxShadow: isSel
                         ? [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.06),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 3,
+                              offset: const Offset(0, 1),
                             ),
                           ]
                         : null,
@@ -2556,28 +2544,15 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                         ? Border.all(color: const Color(0xFFCBD5E1))
                         : Border.all(color: Colors.transparent),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        iconData,
-                        size: 16,
-                        color: isSel
-                            ? (isPending ? const Color(0xFFDC2626) : const Color(0xFF064E3B))
-                            : const Color(0xFF64748B),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        t,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
-                          color: isSel
-                              ? (isPending ? const Color(0xFFDC2626) : const Color(0xFF0F172A))
-                              : const Color(0xFF475569),
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    t,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
+                      color: isSel
+                          ? (isPending ? const Color(0xFFDC2626) : const Color(0xFF0F172A))
+                          : const Color(0xFF475569),
+                    ),
                   ),
                 ),
               ),
@@ -2799,44 +2774,30 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF064E3B).withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(6),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF0F172A),
+                  letterSpacing: -0.2,
                 ),
-                child: Icon(icon, size: 15, color: const Color(0xFF064E3B)),
+                softWrap: true,
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
-                      ),
-                      softWrap: true,
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 1),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Color(0xFF64748B),
-                        ),
-                        softWrap: true,
-                      ),
-                    ],
-                  ],
+              if (subtitle != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: Color(0xFF64748B),
+                  ),
+                  softWrap: true,
                 ),
-              ),
+              ],
             ],
           ),
           const SizedBox(height: 10),

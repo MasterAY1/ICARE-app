@@ -942,6 +942,19 @@ class OnboardingService:
 
             resolved_prod = resolve_product_name(l_type) if (a_cred_num > 0 or c_bal_num > 0) else None
 
+            next_rep_cell = ws_members.cell(r, 12).value
+            next_rep_iso = None
+            if next_rep_cell:
+                if isinstance(next_rep_cell, (datetime.date, datetime.datetime)):
+                    next_rep_iso = next_rep_cell.strftime("%Y-%m-%d")
+                else:
+                    try:
+                        clean_str = str(next_rep_cell).strip().split("T")[0]
+                        if len(clean_str) >= 8:
+                            next_rep_iso = clean_str
+                    except Exception:
+                        pass
+
             members.append({
                 "member_reference": str(m_ref).strip() if m_ref else None,
                 "group_reference": str(g_ref).strip() if g_ref else "GRP-01",
@@ -953,7 +966,8 @@ class OnboardingService:
                 "loan_type": resolved_prod,
                 "principal_loan": p_loan_num,
                 "active_credit": a_cred_num,
-                "current_credit_balance": c_bal_num
+                "current_credit_balance": c_bal_num,
+                "next_repayment_date": next_rep_iso
             })
 
         # 3. Parse Branch and Officer List sheet (for officers, laps savings, and misc fees)
@@ -1495,6 +1509,14 @@ class OnboardingService:
                     schedule_rows = []
 
                     # Derive starting anchor for onboarding schedule
+                    next_rep_str = m.get("next_repayment_date") or m.get("first_repayment_date")
+                    first_monthly_anchor = None
+                    if next_rep_str:
+                        try:
+                            first_monthly_anchor = datetime.date.fromisoformat(str(next_rep_str).split("T")[0])
+                        except Exception:
+                            first_monthly_anchor = None
+
                     if cycle == "Weekly" and target_weekday is not None:
                         days_ahead = target_weekday - base_eval_date.weekday()
                         if days_ahead < 0:
@@ -1522,7 +1544,10 @@ class OnboardingService:
                                     current_anchor += datetime.timedelta(weeks=1)
                                 current_due_date = current_anchor
                         elif cycle == "Monthly":
-                            m_target = add_months(base_eval_date, i)
+                            if first_monthly_anchor:
+                                m_target = add_months(first_monthly_anchor, i - 1)
+                            else:
+                                m_target = add_months(base_eval_date, i)
                             current_due_date = get_next_working_day(m_target)
                         else:
                             current_due_date = get_next_working_day(base_eval_date + datetime.timedelta(days=i))

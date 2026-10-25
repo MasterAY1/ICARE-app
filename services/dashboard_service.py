@@ -189,6 +189,9 @@ class DashboardService:
                 is_expected_today = True
             elif loan_cycle == "Weekly":
                 is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower() or str(g_mday).strip().lower() == "daily")
+            elif loan_cycle == "Monthly":
+                sched_rows = schedules_by_loan.get(lid_s, []) if schedules_by_loan else []
+                is_expected_today = any(str(r.get("due_date", "")).split("T")[0] == target_date.isoformat() for r in sched_rows)
             else:
                 is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower())
 
@@ -588,8 +591,10 @@ class DashboardService:
                     is_expected_today = True  # Mon-Fri
                 elif loan_cycle == "Weekly":
                     is_expected_today = is_meeting_today
+                elif loan_cycle == "Monthly":
+                    sched_rows = schedules_by_loan.get(str(lid), []) if schedules_by_loan else []
+                    is_expected_today = any(str(r.get("due_date", "")).split("T")[0] == target_date.isoformat() for r in sched_rows)
                 else:
-                    # Monthly fallback: expected if meeting day matches today
                     is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower())
 
                 # Fetch authoritative loan due breakdown from ScheduleService

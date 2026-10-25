@@ -103,7 +103,13 @@ class FinancialPostingEngine:
                     cls._rules_cache[rule_key] = rule
 
             if not rule:
-                raise ValueError(f"No active posting rule found for event type: {event.event_type} v{event.version}")
+                if event.event_type == "LapsRestoredToSavings":
+                    class _SyntheticRule:
+                        debit_account = "2030"
+                        credit_account = "2000"
+                    rule = _SyntheticRule()
+                else:
+                    raise ValueError(f"No active posting rule found for event type: {event.event_type} v{event.version}")
 
             # 4. Extract Amount
             payload = event.payload or {}
@@ -147,6 +153,9 @@ class FinancialPostingEngine:
             credit_acc = rule.credit_account
             if event.event_type == "LapsPaidOut" and not payload.get("cash_paid", True):
                 credit_acc = "1050"  # Bank account for non-cash payout
+            elif event.event_type == "LapsRestoredToSavings":
+                debit_acc = "2030"
+                credit_acc = "2000" 
             if event.event_type == "FeeOffsetFromSavings" and str(payload.get("fee_type", "")).lower() == "other":
                 credit_acc = "1000"  # Vault cash: clears prior recorded collection cash shortage without fee income
 

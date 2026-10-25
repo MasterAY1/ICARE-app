@@ -636,18 +636,42 @@ def create_withdrawal_request(
         if not payload.client_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="LAPS client ID is required.")
 
+        is_return_to_savings = (
+            op_type in ["Return to Savings", "LAPS Return to Customer Savings"] or
+            (payload.payout_method == "Return to Savings")
+        )
+        laps_op_name = "LAPS Return to Customer Savings" if is_return_to_savings else "LAPS Payout"
+        laps_client_name = payload.remarks.split('\n')[0][:50] if payload.remarks else f"LAPS Client {payload.client_id[:8]}"
+
+        if can_auto_exec:
+            if is_return_to_savings:
+                SavingsService.return_laps_to_savings(
+                    uow=uow, client_id=payload.client_id, client_name=laps_client_name,
+                    branch=posting_branch, officer=current_user.username, amount=float(payload.amount),
+                    reference=ref_code, remarks=f"[BM DIRECT LAPS RETURN] {payload.remarks or ''}",
+                    posting_date=target_dt
+                )
+            else:
+                cash_paid = (payload.payout_method or "Cash") == "Cash"
+                SavingsService.pay_laps(
+                    uow=uow, client_id=payload.client_id, client_name=laps_client_name,
+                    branch=posting_branch, officer=current_user.username, amount=float(payload.amount),
+                    cash_paid=cash_paid, reference=ref_code, remarks=f"[BM DIRECT LAPS] {payload.remarks or ''}",
+                    posting_date=target_dt
+                )
+
         rec = {
             "savings_type": "LAPS",
-            "operation_type": "LAPS Payout",
+            "operation_type": laps_op_name,
             "client_id": payload.client_id,
-            "client_name": payload.remarks.split('\n')[0][:50] if payload.remarks else f"LAPS Client {payload.client_id[:8]}",
+            "client_name": laps_client_name,
             "branch_id": current_user.branch_id,
             "requested_by": current_user.username,
             "amount": float(payload.amount),
             "operational_date": target_dt.isoformat(),
-            "payout_method": payload.payout_method or "Cash",
+            "payout_method": payload.payout_method or ("Return to Savings" if is_return_to_savings else "Cash"),
             "reference": ref_code,
-            "remarks": payload.remarks or f"LAPS payout for {payload.client_id[:8]}",
+            "remarks": payload.remarks or f"{laps_op_name} for {payload.client_id[:8]}",
             "status": "APPROVED" if can_auto_exec else "PENDING",
             "approved_by": current_user.username if can_auto_exec else None,
             "approved_at": datetime.now().isoformat() if can_auto_exec else None
@@ -1074,6 +1098,13 @@ def approve_withdrawal(
                 destination_name=dest_name, destination_type=dest_type,
                 branch=posting_branch, officer=wr_by, amount=wr_amt,
                 reference=wr.get("reference"), remarks=f"[BM APPROVED TRANSFER] {wr_remarks}",
+                posting_date=effective_op_date
+            )
+        elif wr_op in ["Return to Savings", "LAPS Return to Customer Savings"] or (wr.get("payout_method") == "Return to Savings"):
+            SavingsService.return_laps_to_savings(
+                uow=uow, client_id=wr.get("client_id"), client_name=wr_name,
+                branch=posting_branch, officer=wr_by, amount=wr_amt,
+                reference=wr.get("reference"), remarks=f"[BM APPROVED LAPS RETURN] {wr_remarks}",
                 posting_date=effective_op_date
             )
         elif wr_op == "LAPS Payout":

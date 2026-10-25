@@ -384,7 +384,7 @@ class CoCashbookProjectionBuilder:
                             processed_pwd_events.add(ev_id)
                 elif event_type == "BankDeposited":
                     bank_deposit += amount
-                elif event_type == "LapsPaidOut":
+                elif event_type in ["LapsPaidOut", "LapsRestoredToSavings"]:
                     laps_returns += amount
                 elif event_type == "LoanDisbursed":
                     # For cash loans disbursed from vault/bank, record product active credit outflow

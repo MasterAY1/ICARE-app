@@ -263,10 +263,6 @@ class ScheduleService:
             else:
                 # If unassigned group, default to True on evaluation date
                 is_meeting_today = True
-        elif cycle == "Monthly":
-            # Monthly loans check if scheduled due date matches
-            is_meeting_today = True
-
         # 4. Fetch schedule rows if not provided
         if schedule_rows is None:
             try:
@@ -274,6 +270,11 @@ class ScheduleService:
                 schedule_rows = res_sch.data or []
             except Exception:
                 schedule_rows = []
+
+        if cycle == "Monthly":
+            # Monthly loans check if scheduled installment due date matches evaluation date
+            eval_date_str = evaluation_date.isoformat()
+            is_meeting_today = any(str(r.get("due_date", "")).split("T")[0] == eval_date_str for r in (schedule_rows or []))
 
         total_due_base = float(loan_data.get("total_due") if loan_data.get("total_due") is not None else (loan_data.get("active_credit") or loan_data.get("loan_amount") or 0.0))
 
@@ -362,7 +363,7 @@ class ScheduleService:
                         current_installment += shortfall
                         found_exact_today = True
 
-            if is_meeting_today and not found_exact_today and current_installment == 0.0:
+            if is_meeting_today and not found_exact_today and current_installment == 0.0 and cycle != "Monthly":
                 for row in sorted_rows:
                     try:
                         d_due = datetime.strptime(row["due_date"].split("T")[0], "%Y-%m-%d").date()
