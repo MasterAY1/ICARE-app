@@ -146,7 +146,7 @@ def test_am_branch_handover_endpoint(am_auth_headers):
     data = res.json()
     assert data["branch_name"] == "Ogijo"
     assert "available_reports" in data
-    assert len(data["available_reports"]) >= 4
+    assert len(data["available_reports"]) >= 3
 
 
 def test_am_reports_excel_download(am_auth_headers):

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from api.main import app
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from services.onboarding_service import OnboardingService
+from auth.session import generate_session_token
 
 client = TestClient(app)
 
@@ -692,7 +693,12 @@ class TestOnboardingPortalApi(unittest.TestCase):
         self.assertEqual(res_bm.json()["aggregates"]["total_members"], 15)
 
         # AM Approves & Commits to Core Database via link
-        res_approve = client.post(f"/api/v1/onboarding/session/{branch_token}/am-approve")
+        admin_user = self.uow.users.find_by_username("Admin") or self.uow.users.find_by_username("admin")
+        admin_token = generate_session_token(admin_user.id, admin_user.username)
+        res_approve = client.post(
+            f"/api/v1/onboarding/session/{branch_token}/am-approve",
+            headers={"Authorization": f"Bearer {admin_token}"}
+        )
         self.assertEqual(res_approve.status_code, 200)
         commit_data = res_approve.json()
         self.assertEqual(commit_data["groups_migrated"], 15)

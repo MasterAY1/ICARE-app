@@ -20,6 +20,7 @@ import '../../reports/data/models/report_models.dart';
 import '../../reports/presentation/reports_export_screen.dart';
 import '../../bm/presentation/master_cashbook_screen.dart';
 import '../../bm/data/datasources/master_cashbook_api_service.dart';
+import '../../co/presentation/portfolio_overview_screen.dart';
 
 /// Provider for selected business date in AM dashboard
 final amSelectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
@@ -593,16 +594,17 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       return;
     }
 
+    if (reportType == 'officer_portfolio') {
+      ref.read(portfolioTargetBranchProvider.notifier).state = branchName;
+      ref.read(activeCoPageProvider.notifier).state = 'Portfolio';
+      return;
+    }
+
     ref.read(reportsTargetBranchProvider.notifier).state = branchName;
 
-    if (reportType == 'collections_workbook') {
-      ref.read(reportsTargetTabProvider.notifier).state = 2; // Data Exports & Downloads
-    } else if (reportType == 'executive_parity') {
+    if (reportType == 'executive_parity') {
       ref.read(reportsTargetTabProvider.notifier).state = 0; // Monthly Executive Statements
       ref.read(reportsTargetSubTabProvider.notifier).state = 4; // Official Trial Balance
-    } else if (reportType == 'officer_portfolio') {
-      ref.read(reportsTargetTabProvider.notifier).state = 0; // Monthly Executive Statements
-      ref.read(reportsTargetSubTabProvider.notifier).state = 5; // Credit Officers Summary
     } else {
       ref.read(reportsTargetTabProvider.notifier).state = 0;
     }
@@ -642,15 +644,14 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         );
       } else if (reportType == 'officer_portfolio') {
-        final bytes = await reportsApi.downloadMonthlyParityCsv(
+        final bytes = await reportsApi.downloadExcel(
           branchName: branchName,
-          year: selectedDate.year,
-          month: selectedDate.month,
+          asOfDate: dateStr,
         );
         downloadBlobFile(
           bytes,
-          'CO_Monthly_Summary_${cleanBranch}_${selectedDate.year}_${selectedDate.month.toString().padLeft(2, '0')}.csv',
-          'text/csv',
+          'Portfolio_Breakdown_${cleanBranch}_$dateStr.xlsx',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         );
       } else {
         // collections_workbook
@@ -672,154 +673,25 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     }
   }
 
-  void _showBranchHandoverModal(String branchId, String branchName) async {
+  void _showBranchHandoverModal(String branchId, String branchName) {
     final dateStr = DateFormat('yyyy-MM-dd').format(ref.read(amSelectedDateProvider));
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        constraints: const BoxConstraints(maxWidth: 680),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: FutureBuilder<BranchHandoverSummaryModel>(
-          future: ref.read(amApiServiceProvider).getBranchHandover(branchId: branchId, businessDate: dateStr),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const SizedBox(height: 200, child: Center(child: CircularProgressIndicator()));
-            }
-            if (snapshot.hasError) {
-              return Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text('Error loading handover reports: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
-              );
-            }
-            final handover = snapshot.data!;
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.description_outlined, color: Color(0xFF064E3B), size: 22),
-                        const SizedBox(width: 8),
-                        Text('Branch Handover — $branchName', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                      ],
-                    ),
-                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text('Branch Manager: ${handover.bmName} | Date: $dateStr', style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B))),
-                const Divider(height: 24),
-                const Text('Available Official Books (Read-Only)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                const SizedBox(height: 12),
-                ...handover.availableReports.map((rep) => Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final isNarrow = constraints.maxWidth < 450;
-                          final actionRow = Row(
-                            mainAxisSize: isNarrow ? MainAxisSize.max : MainAxisSize.min,
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: () {
-                                  Navigator.pop(ctx);
-                                  _navigateToBranchReport(rep.reportType, branchName);
-                                },
-                                icon: const Icon(Icons.visibility_outlined, size: 14),
-                                label: const Text('View', style: TextStyle(fontSize: 11.5)),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              ElevatedButton.icon(
-                                onPressed: _isProcessing
-                                    ? null
-                                    : () {
-                                        Navigator.pop(ctx);
-                                        _handleDownloadHandoverReport(rep.reportType, branchName);
-                                      },
-                                icon: const Icon(Icons.download, size: 14, color: Colors.white),
-                                label: const Text('Download', style: TextStyle(fontSize: 11.5, color: Colors.white)),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF065F46),
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                ),
-                              ),
-                            ],
-                          );
-
-                          if (isNarrow) {
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(6)),
-                                      child: const Icon(Icons.file_present_outlined, color: Color(0xFF065F46), size: 20),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(rep.title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
-                                          Text(rep.description, style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                actionRow,
-                              ],
-                            );
-                          }
-
-                          return Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(6)),
-                                child: const Icon(Icons.file_present_outlined, color: Color(0xFF065F46), size: 20),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(rep.title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
-                                    Text(rep.description, style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              actionRow,
-                            ],
-                          );
-                        },
-                      ),
-                    )),
-              ],
-            );
-          },
-        ),
+      builder: (ctx) => _BranchHandoverSheet(
+        branchId: branchId,
+        branchName: branchName,
+        businessDate: dateStr,
+        onNavigate: (repType, bName) {
+          Navigator.pop(ctx);
+          _navigateToBranchReport(repType, bName);
+        },
+        onDownload: (repType, bName) {
+          Navigator.pop(ctx);
+          _handleDownloadHandoverReport(repType, bName);
+        },
+        isProcessing: _isProcessing,
       ),
     );
   }
@@ -3586,6 +3458,220 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Dedicated stateful bottom sheet that caches the handover future once in initState,
+/// preventing touch re-renders, flickering spinners, and mobile layout clipping.
+class _BranchHandoverSheet extends ConsumerStatefulWidget {
+  final String branchId;
+  final String branchName;
+  final String businessDate;
+  final void Function(String reportType, String branchName) onNavigate;
+  final void Function(String reportType, String branchName) onDownload;
+  final bool isProcessing;
+
+  const _BranchHandoverSheet({
+    required this.branchId,
+    required this.branchName,
+    required this.businessDate,
+    required this.onNavigate,
+    required this.onDownload,
+    required this.isProcessing,
+  });
+
+  @override
+  ConsumerState<_BranchHandoverSheet> createState() => _BranchHandoverSheetState();
+}
+
+class _BranchHandoverSheetState extends ConsumerState<_BranchHandoverSheet> {
+  late Future<BranchHandoverSummaryModel> _handoverFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _handoverFuture = ref.read(amApiServiceProvider).getBranchHandover(
+      branchId: widget.branchId,
+      businessDate: widget.businessDate,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maxH = MediaQuery.of(context).size.height * 0.85;
+    return SafeArea(
+      child: Center(
+        child: Container(
+          constraints: BoxConstraints(maxWidth: 680, maxHeight: maxH),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          child: FutureBuilder<BranchHandoverSummaryModel>(
+            future: _handoverFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const SizedBox(
+                  height: 200,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (snapshot.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    'Error loading handover reports: ${snapshot.error}',
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                );
+              }
+              final handover = snapshot.data!;
+              return SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              const Icon(Icons.description_outlined, color: Color(0xFF064E3B), size: 22),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Branch Handover — ${widget.branchName}',
+                                  style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Branch Manager: ${handover.bmName} | Date: ${widget.businessDate}',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                    const Divider(height: 24),
+                    const Text(
+                      'Available Official Books (Read-Only)',
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                    ),
+                    const SizedBox(height: 12),
+                    ...handover.availableReports.map((rep) => Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final isNarrow = constraints.maxWidth < 450;
+                              final actionRow = Row(
+                                mainAxisSize: isNarrow ? MainAxisSize.max : MainAxisSize.min,
+                                children: [
+                                  OutlinedButton.icon(
+                                    onPressed: () => widget.onNavigate(rep.reportType, widget.branchName),
+                                    icon: const Icon(Icons.visibility_outlined, size: 14),
+                                    label: const Text('View', style: TextStyle(fontSize: 11.5)),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  ElevatedButton.icon(
+                                    onPressed: widget.isProcessing
+                                        ? null
+                                        : () => widget.onDownload(rep.reportType, widget.branchName),
+                                    icon: const Icon(Icons.download, size: 14, color: Colors.white),
+                                    label: const Text('Download', style: TextStyle(fontSize: 11.5, color: Colors.white)),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF065F46),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    ),
+                                  ),
+                                ],
+                              );
+
+                              if (isNarrow) {
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFECFDF5),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: const Icon(Icons.file_present_outlined, color: Color(0xFF065F46), size: 20),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(rep.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                              Text(rep.description, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    actionRow,
+                                  ],
+                                );
+                              }
+
+                              return Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFECFDF5),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: const Icon(Icons.file_present_outlined, color: Color(0xFF065F46), size: 20),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(rep.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                        Text(rep.description, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  actionRow,
+                                ],
+                              );
+                            },
+                          ),
+                        )),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
       ),
     );
   }

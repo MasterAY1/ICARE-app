@@ -7,10 +7,11 @@ from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body, status, Query
 from pydantic import BaseModel, Field
 
-from api.dependencies import get_uow, get_current_user, get_current_user_optional
+from api.dependencies import get_uow, get_current_user, require_role
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from models.user import CurrentUser
 from services.onboarding_service import OnboardingService
+from services.rbac_scope_service import RBACScopeService
 
 router = APIRouter(prefix="/api/v1/onboarding", tags=["Branch Onboarding"])
 
@@ -272,16 +273,81 @@ def bm_submit_session(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+def _verify_am_onboarding_access(
+    uow: SupabaseUnitOfWork,
+    current_user: CurrentUser,
+    session: Dict[str, Any],
+    action_desc: str = "review"
+) -> None:
+    """
+    Enforces strict multi-branch authorization for onboarding review and approval:
+    - Admin / Super Admin / Director: authorized across all branches.
+    - Area Manager: target branch must fall within assigned supervisory area.
+      First resolves the canonical branch identifier from the branches table.
+      If the branch already exists in the system, verifies that its branch_id is in current_user.assigned_branch_ids.
+      If the branch is brand-new (uncommitted), verifies that its branch_name matches current_user.assigned_branches.
+    - Credit Officer / Branch Manager / Other roles: strictly forbidden (HTTP 403).
+    """
+    if isinstance(session, dict) and "session" in session and isinstance(session["session"], dict):
+        session = session["session"]
+    norm_role = RBACScopeService.normalize_role(current_user.role)
+    if norm_role in ["Admin", "Director"]:
+        return
+
+    if norm_role != "Area Manager":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: Role '{current_user.role}' is not authorized to {action_desc} onboarding sessions."
+        )
+
+    # Establish canonical branch identifier
+    target_branch_id = session.get("branch_id")
+    if not target_branch_id and session.get("branch_code"):
+        b_res = uow.client.table("branches").select("branch_id").eq("code", session.get("branch_code")).execute()
+        if b_res.data:
+            target_branch_id = b_res.data[0]["branch_id"]
+    if not target_branch_id and session.get("branch_name"):
+        b_res = uow.client.table("branches").select("branch_id").eq("name", session.get("branch_name")).execute()
+        if b_res.data:
+            target_branch_id = b_res.data[0]["branch_id"]
+
+    assigned_ids = getattr(current_user, "assigned_branch_ids", []) or []
+    assigned_names = [n.strip().lower() for n in (getattr(current_user, "assigned_branches", []) or []) if n]
+
+    if target_branch_id:
+        if target_branch_id in assigned_ids:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: You are not authorized to {action_desc} onboarding for branch '{session.get('branch_name')}' outside your supervisory area."
+        )
+
+    # If branch does not yet exist in branches table (new branch onboarding), verify against assigned_branches name
+    session_bname = (session.get("branch_name") or "").strip().lower()
+    if session_bname and session_bname in assigned_names:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"Forbidden: You are not authorized to {action_desc} onboarding for branch '{session.get('branch_name')}' outside your supervisory area."
+    )
+
+
 @router.get("/session/{token}/am-review", summary="Area Manager pre-flight package inspection")
 def am_review_session(
     token: str,
+    current_user: CurrentUser = Depends(require_role(["Area Manager", "Admin", "Director", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
     Area Manager pre-flight inspection of complete branch onboarding package.
+    Strictly requires an authenticated Area Manager, Admin, or Director with valid branch scope.
     """
     try:
-        return OnboardingService.get_session_by_token(uow, token)
+        session_data = OnboardingService.get_session_by_token(uow, token)
+        session_record = session_data.get("session") if isinstance(session_data, dict) and "session" in session_data else session_data
+        _verify_am_onboarding_access(uow, current_user, session_record, action_desc="review")
+        return session_data
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
@@ -290,25 +356,25 @@ def am_review_session(
 def am_approve_session(
     token: str,
     req: ApproveSessionRequest = Body(default=ApproveSessionRequest()),
-    current_user: Optional[CurrentUser] = Depends(get_current_user_optional),
+    current_user: CurrentUser = Depends(require_role(["Area Manager", "Admin", "Director", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
     Area Manager signs off and atomically commits all groups, clients, memberships,
     savings, loans, and schedules to live database tables.
+    Strictly requires an authenticated Area Manager, Admin, or Director with valid branch scope.
     """
-    if current_user and current_user.role not in ("Area Manager", "Admin", "Director", "Super Admin"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Area Managers, Admins, and Directors can execute final onboarding activation."
-        )
+    session_res = uow.client.table("branch_onboarding_sessions").select("id, branch_id, branch_name, branch_code, status, expires_at").eq("token", token).execute()
+    if not session_res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid onboarding link or token not found.")
+    session = session_res.data[0]
+    _verify_am_onboarding_access(uow, current_user, session, action_desc="approve")
 
-    approved_by = current_user.id if current_user else None
     try:
         return OnboardingService.am_approve_session(
             uow=uow,
             branch_token=token,
-            approved_by_id=approved_by,
+            approved_by_id=current_user.id,
             approval_notes=req.approval_notes
         )
     except ValueError as e:

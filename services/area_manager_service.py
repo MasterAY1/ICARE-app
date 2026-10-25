@@ -1120,13 +1120,6 @@ class AreaManagerService:
             "cash_variance": mc_diff,
             "available_reports": [
                 {
-                    "title": "Daily Collections Workbook",
-                    "format": "Excel (.xlsx)",
-                    "report_type": "collections_workbook",
-                    "description": "Granular group-by-group and member-by-member collection ledger with expected vs paid amounts.",
-                    "is_ready": True
-                },
-                {
                     "title": "Master Cashbook & Monthly Ledger",
                     "format": "Excel (.xlsx)",
                     "report_type": "master_cashbook_ledger",

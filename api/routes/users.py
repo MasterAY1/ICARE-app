@@ -103,11 +103,7 @@ def create_user(
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """Create a new user (Admin only, app.py L13977–14004)."""
-    if not _is_admin(current_user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Head Office administrators can create new users."
-        )
+    _check_not_co(current_user)
 
     res = UserService.create_user(
         username=payload.username.strip(),
@@ -181,11 +177,7 @@ def delete_user(
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """Permanently delete user from system (Admin only, app.py L13960–13972)."""
-    if not _is_admin(current_user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Unauthorized. Only Administrators can delete users."
-        )
+    _check_not_co(current_user)
 
     res = UserService.remove_user_permanently(user_id, requesting_user=current_user)
     if not res.get("success"):
@@ -441,8 +433,12 @@ def get_branch_closures(
         b_map = {str(b["branch_id"]): b["name"] for b in (res_b.data or [])}
 
         closures = uow.branch_closures.find_all()
-        # Filter for BM
-        if _is_bm(current_user):
+        # Filter for AM and BM
+        u_role = (current_user.role or "").strip()
+        if u_role in ["Area Manager", "AM"]:
+            am_bids = set(str(bid) for bid in (current_user.assigned_branch_ids or []))
+            closures = [c for c in closures if c.branch_id is None or str(c.branch_id) in am_bids]
+        elif _is_bm(current_user):
             closures = [c for c in closures if c.branch_id is None or str(c.branch_id) == str(current_user.branch_id)]
 
         items: List[BranchClosureItem] = []
@@ -471,7 +467,15 @@ def create_branch_closure(
     _check_not_co(current_user)
 
     target_branch_id = payload.branch_id
-    if _is_bm(current_user):
+    u_role = (current_user.role or "").strip()
+    if u_role in ["Area Manager", "AM"]:
+        am_bids = set(str(bid) for bid in (current_user.assigned_branch_ids or []))
+        if not target_branch_id or str(target_branch_id) not in am_bids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Area Managers can only create branch closures for their assigned branches."
+            )
+    elif _is_bm(current_user):
         target_branch_id = current_user.branch_id
 
     try:

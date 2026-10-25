@@ -21,12 +21,21 @@ from api.routes import audit
 from api.routes import users
 from api.routes import reports
 from api.routes import onboarding
+from auth.session import get_auth_secret
 
 app = FastAPI(
     title="ICARE Core Banking Backend API",
     description="Production adapter for Flutter and web clients, strictly backed by Supabase and Python domain engines.",
     version="1.0.0"
 )
+
+@app.on_event("startup")
+def verify_security_configuration():
+    """
+    Validates required production security configuration on startup.
+    Fails closed immediately if ICARE_AUTH_SECRET is missing, empty, or whitespace-only.
+    """
+    get_auth_secret()
 
 # Enable CORS for Flutter Web, iOS, Android, and desktop clients
 app.add_middleware(

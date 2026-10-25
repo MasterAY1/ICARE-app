@@ -142,7 +142,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       );
     }
 
-    // Role-adaptive tab list
+    // Role-adaptive tab list (Admin, AM, and BM)
     List<String> tabs;
     if (isAdmin) {
       tabs = [
@@ -156,16 +156,24 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         'Audit Logs',
         'Login History',
       ];
-    } else if (isBm) {
+    } else if (isAm) {
       tabs = [
         'Branch Staff',
+        'Create User',
         'Password Reset',
         'Product Assignment',
         'Branch Closures',
         'Branch Activity Logs',
       ];
-    } else if (isAm) {
-      tabs = ['Branch Staff (Read Only)'];
+    } else if (isBm) {
+      tabs = [
+        'Branch Staff',
+        'Create User',
+        'Password Reset',
+        'Product Assignment',
+        'Branch Closures',
+        'Branch Activity Logs',
+      ];
     } else {
       tabs = ['Users Directory'];
     }
@@ -373,9 +381,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       case 'Branch Staff (Read Only)':
         return _buildTabUsersDirectory(isAdmin: isAdmin, isBm: isBm, isAm: isAm, isMobile: isMobile);
       case 'Create User':
-        return _buildTabCreateUser();
+        return _buildTabCreateUser(isAdmin: isAdmin, isBm: isBm, isAm: isAm, branchName: branch);
       case 'Password Reset':
-        return _buildTabPasswordReset(isBm: isBm);
+        return _buildTabPasswordReset(isAdmin: isAdmin, isBm: isBm, isAm: isAm);
       case 'Officer Turnover':
         return _buildTabOfficerTurnover();
       case 'Product Assignment':
@@ -383,7 +391,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       case 'AM Assignments':
         return _buildTabAMAssignments();
       case 'Branch Closures':
-        return _buildTabBranchClosures(isAdmin: isAdmin, branchName: branch, isMobile: isMobile);
+        return _buildTabBranchClosures(isAdmin: isAdmin, isBm: isBm, isAm: isAm, branchName: branch, isMobile: isMobile);
       case 'Audit Logs':
       case 'Branch Activity Logs':
         return _buildTabAuditLogs(isBm: isBm, branch: branch, isMobile: isMobile);
@@ -421,9 +429,18 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             .toList()
           ..sort();
 
+        final authUser = ref.watch(authControllerProvider);
+        final currentUid = authUser is AuthStateAuthenticated ? authUser.user.id : null;
+
         // Apply Search & Filters
         final query = _userSearchController.text.trim().toLowerCase();
         final filteredUsers = allUsers.where((u) {
+          // BMs and AMs cannot view their own account in the directory
+          if ((isBm || isAm) && u.id == currentUid) return false;
+
+          // BMs only see Credit Officers in their branch
+          if (isBm && !u.role.toLowerCase().contains('officer')) return false;
+
           if (_selectedBranchFilter != 'ALL' &&
               (u.branchName ?? '').trim().toLowerCase() != _selectedBranchFilter.trim().toLowerCase()) {
             return false;
@@ -615,7 +632,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 child: const Text('No users match the search filter.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
               )
             else if (showAsCards)
-              ...filteredUsers.map((u) => _buildUserCard(u, isAdmin, isBm))
+              ...filteredUsers.map((u) => _buildUserCard(u, isAdmin, isBm, isAm))
             else
               Container(
                 decoration: BoxDecoration(
@@ -636,7 +653,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                       const DataColumn(label: Text('Branch')),
                       const DataColumn(label: Text('Status')),
                       const DataColumn(label: Text('Last Login')),
-                      if (!isAm) const DataColumn(label: Text('Actions')),
+                      if (isAdmin || isBm || isAm) const DataColumn(label: Text('Actions')),
                     ],
                     rows: filteredUsers.map((u) {
                       final roleColor = _getRoleBadgeColor(u.role);
@@ -670,7 +687,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                             ),
                           ),
                           DataCell(Text(u.lastLogin ?? 'Never')),
-                          if (!isAm)
+                          if (isAdmin || isBm || isAm)
                             DataCell(
                               Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -681,7 +698,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                     onPressed: () {
                                       setState(() {
                                         _resetUsername = u.username;
-                                        _selectedTabIndex = isAdmin ? 2 : 1;
+                                        _selectedTabIndex = 2;
                                       });
                                     },
                                   ),
@@ -704,8 +721,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 ),
               ),
 
-            // Status Management (Admin & BM)
-            if (isAdmin || isBm) ...[
+            // Status Management (Admin, AM & BM)
+            if (isAdmin || isAm || isBm) ...[
               const SizedBox(height: 24),
               const Divider(color: Color(0xFFE2E8F0)),
               const SizedBox(height: 16),
@@ -782,8 +799,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                       ],
                     ),
 
-                    // Admin Danger Zone
-                    if (isAdmin) ...[
+                    // Danger Zone (Admin, AM & BM)
+                    if (isAdmin || isAm || isBm) ...[
                       const SizedBox(height: 20),
                       Container(
                         decoration: BoxDecoration(
@@ -847,7 +864,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     );
   }
 
-  Widget _buildUserCard(UserListItemModel u, bool isAdmin, bool isBm) {
+  Widget _buildUserCard(UserListItemModel u, bool isAdmin, bool isBm, bool isAm) {
     final roleColor = _getRoleBadgeColor(u.role);
     final initials = _getInitials(u.fullName);
 
@@ -983,7 +1000,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               ),
             ],
           ),
-          if (isAdmin || isBm) ...[
+          if (isAdmin || isBm || isAm) ...[
             const SizedBox(height: 12),
             Row(
               children: [
@@ -994,7 +1011,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                         : () {
                             setState(() {
                               _resetUsername = u.username;
-                              _selectedTabIndex = isAdmin ? 2 : 1;
+                              _selectedTabIndex = 2;
                             });
                           },
                     icon: const Icon(Icons.lock_reset, size: 14),
@@ -1039,7 +1056,43 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   // =========================================================================
   // TAB 2: CREATE USER (Admin Only)
   // =========================================================================
-  Widget _buildTabCreateUser() {
+  Widget _buildTabCreateUser({
+    required bool isAdmin,
+    required bool isBm,
+    required bool isAm,
+    required String branchName,
+  }) {
+    List<String> roleOptions;
+    List<String> branchOptions;
+
+    if (isBm) {
+      roleOptions = const ['Credit Officer'];
+      branchOptions = [branchName];
+      if (_createRole != 'Credit Officer') _createRole = 'Credit Officer';
+      if (_createBranch != branchName) _createBranch = branchName;
+    } else if (isAm) {
+      roleOptions = const ['Credit Officer', 'Branch Manager'];
+      branchOptions = const ['Ogijo', 'Ikorodu', 'Kola', 'Ibadan'];
+      if (!roleOptions.contains(_createRole)) _createRole = 'Credit Officer';
+      if (!branchOptions.contains(_createBranch)) _createBranch = branchOptions.first;
+    } else {
+      roleOptions = const [
+        'Credit Officer',
+        'Branch Manager',
+        'Area Manager',
+        'Admin',
+        'Super Admin',
+        'Account Manager',
+      ];
+      branchOptions = const ['Ogijo', 'Ikorodu', 'Kola', 'Ibadan', 'Head Office'];
+    }
+
+    final infoMsg = isBm
+        ? 'Register a new Credit Officer for $branchName branch.'
+        : (isAm
+            ? 'Create a Branch Manager or Credit Officer for your supervised branches.'
+            : 'Head Office administrators can create user accounts across all roles.');
+
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -1054,7 +1107,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           children: [
             const Text('Add New User', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
             const SizedBox(height: 4),
-            _buildInfoCard('Only Head Office administrators can create new users.'),
+            _buildInfoCard(infoMsg),
             const SizedBox(height: 20),
 
             // Username
@@ -1081,34 +1134,21 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             const Text('Role', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
             const SizedBox(height: 6),
             DropdownButtonFormField<String>(
-              value: _createRole,
+              value: roleOptions.contains(_createRole) ? _createRole : roleOptions.first,
               decoration: _inputDecoration(),
-              items: const [
-                DropdownMenuItem(value: 'Credit Officer', child: Text('Credit Officer')),
-                DropdownMenuItem(value: 'Branch Manager', child: Text('Branch Manager')),
-                DropdownMenuItem(value: 'Area Manager', child: Text('Area Manager')),
-                DropdownMenuItem(value: 'Admin', child: Text('Admin')),
-                DropdownMenuItem(value: 'Super Admin', child: Text('Super Admin')),
-                DropdownMenuItem(value: 'Account Manager', child: Text('Account Manager')),
-              ],
-              onChanged: (val) => setState(() => _createRole = val ?? 'Credit Officer'),
+              items: roleOptions.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+              onChanged: isBm ? null : (val) => setState(() => _createRole = val ?? roleOptions.first),
             ),
             const SizedBox(height: 16),
 
             // Branch Name
-            const Text('Branch Name (e.g. Ogijo)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+            const Text('Branch Name', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
             const SizedBox(height: 6),
             DropdownButtonFormField<String>(
-              value: _createBranch,
+              value: branchOptions.contains(_createBranch) ? _createBranch : branchOptions.first,
               decoration: _inputDecoration(),
-              items: const [
-                DropdownMenuItem(value: 'Ogijo', child: Text('Ogijo')),
-                DropdownMenuItem(value: 'Ikorodu', child: Text('Ikorodu')),
-                DropdownMenuItem(value: 'Kola', child: Text('Kola')),
-                DropdownMenuItem(value: 'Ibadan', child: Text('Ibadan')),
-                DropdownMenuItem(value: 'Head Office', child: Text('Head Office')),
-              ],
-              onChanged: (val) => setState(() => _createBranch = val ?? 'Ogijo'),
+              items: branchOptions.map((b) => DropdownMenuItem(value: b, child: Text(b))).toList(),
+              onChanged: isBm ? null : (val) => setState(() => _createBranch = val ?? branchOptions.first),
             ),
             const SizedBox(height: 16),
 
@@ -1148,14 +1188,34 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   // =========================================================================
   // TAB 3: PASSWORD RESET
   // =========================================================================
-  Widget _buildTabPasswordReset({required bool isBm}) {
+  Widget _buildTabPasswordReset({required bool isAdmin, required bool isBm, required bool isAm}) {
     return FutureBuilder<UserListResponseModel>(
       future: _usersFuture,
       builder: (context, snapshot) {
-        final users = snapshot.data?.users ?? [];
-        if (_resetUsername == null && users.isNotEmpty) {
+        final all = snapshot.data?.users ?? [];
+        final authUser = ref.watch(authControllerProvider);
+        final currentUid = authUser is AuthStateAuthenticated ? authUser.user.id : null;
+
+        final users = all.where((u) {
+          if (u.id == currentUid) return false; // Cannot reset own password here
+          if (isBm) {
+            return u.role.toLowerCase().contains('officer');
+          }
+          if (isAm) {
+            return u.role.toLowerCase().contains('officer') || u.role.toLowerCase().contains('branch manager');
+          }
+          return true;
+        }).toList();
+
+        if ((_resetUsername == null || !users.any((u) => u.username == _resetUsername)) && users.isNotEmpty) {
           _resetUsername = users.first.username;
         }
+
+        final infoMsg = isBm
+            ? 'You can only reset passwords for Credit Officers in your branch.'
+            : (isAm
+                ? 'You can reset passwords for Branch Managers and Credit Officers in your supervised branches.'
+                : 'Admins can reset passwords for any active user account.');
 
         return Container(
           padding: const EdgeInsets.all(24),
@@ -1169,19 +1229,16 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             children: [
               const Text('Reset Password', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
               const SizedBox(height: 4),
-              if (isBm)
-                _buildInfoCard('You can only reset passwords for staff in your branch.')
-              else
-                _buildInfoCard('Admins can reset passwords for any active user account.'),
+              _buildInfoCard(infoMsg),
               const SizedBox(height: 20),
 
               const Text('Select User', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
-                value: _resetUsername,
+                value: users.any((u) => u.username == _resetUsername) ? _resetUsername : (users.isNotEmpty ? users.first.username : null),
                 decoration: _inputDecoration(),
                 items: users.map((u) {
-                  return DropdownMenuItem(value: u.username, child: Text('${u.username} — ${u.fullName} (${u.branchName ?? "HQ"})'));
+                  return DropdownMenuItem(value: u.username, child: Text('${u.username} — ${u.fullName} (${u.role})'));
                 }).toList(),
                 onChanged: (val) => setState(() => _resetUsername = val),
               ),
@@ -1581,7 +1638,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   // =========================================================================
   // TAB 7: BRANCH CLOSURES & SETTINGS
   // =========================================================================
-  Widget _buildTabBranchClosures({required bool isAdmin, required String branchName, required bool isMobile}) {
+  Widget _buildTabBranchClosures({required bool isAdmin, required bool isBm, required bool isAm, required String branchName, required bool isMobile}) {
     return FutureBuilder<BranchClosuresResponseModel>(
       future: _closuresFuture,
       builder: (context, snapshot) {
@@ -1693,21 +1750,24 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 decoration: _inputDecoration(hint: 'e.g. End of Year Operational Shutdown'),
               ),
               const SizedBox(height: 16),
-              // Branch target
-              if (isAdmin) ...[
-                const Text('Target Branch', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+              // Branch target (Admin and AM choose; BM locked to own branch)
+              if (isAdmin || isAm) ...[
+                Text(
+                  isAm ? 'Target Branch (Supervised Area)' : 'Target Branch',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                ),
                 const SizedBox(height: 4),
                 DropdownButtonFormField<String?>(
                   value: _selectedClosureBranchId,
                   isExpanded: true,
                   decoration: _inputDecoration(),
-                  items: const [
-                    DropdownMenuItem(value: null, child: Text('All Branches (Global)')),
-                    DropdownMenuItem(value: '997d504e-7f5c-4772-887d-fdd5a4c1183b', child: Text('Ogijo')),
-                    DropdownMenuItem(value: '4ab6e1c4-6783-4bb6-904f-9da51cfab505', child: Text('Ikorodu')),
-                    DropdownMenuItem(value: 'dd09c735-3b1e-4eeb-89a8-d27a85e02156', child: Text('Kola')),
-                    DropdownMenuItem(value: '7ca8250a-9077-4bef-8cf3-78cf26c30705', child: Text('Ibadan')),
-                    DropdownMenuItem(value: '1a3b5c7d-9e0f-4a2b-8c4d-6e8f0a2b4c6d', child: Text('Head Office')),
+                  items: [
+                    if (isAdmin) const DropdownMenuItem(value: null, child: Text('All Branches (Global)')),
+                    const DropdownMenuItem(value: '997d504e-7f5c-4772-887d-fdd5a4c1183b', child: Text('Ogijo')),
+                    const DropdownMenuItem(value: '4ab6e1c4-6783-4bb6-904f-9da51cfab505', child: Text('Ikorodu')),
+                    const DropdownMenuItem(value: 'dd09c735-3b1e-4eeb-89a8-d27a85e02156', child: Text('Kola')),
+                    const DropdownMenuItem(value: '7ca8250a-9077-4bef-8cf3-78cf26c30705', child: Text('Ibadan')),
+                    if (isAdmin) const DropdownMenuItem(value: '1a3b5c7d-9e0f-4a2b-8c4d-6e8f0a2b4c6d', child: Text('Head Office')),
                   ],
                   onChanged: (val) => setState(() => _selectedClosureBranchId = val),
                 ),
@@ -2232,6 +2292,14 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
     if (sDate == null || eDate == null || reason.isEmpty) {
       setState(() => _flashError = 'Please select start/end dates and enter a reason.');
+      return;
+    }
+
+    final authState = ref.read(authControllerProvider);
+    final user = authState is AuthStateAuthenticated ? authState.user : null;
+    final isAm = user != null && (user.role == 'Area Manager' || user.role == 'AM');
+    if (isAm && _selectedClosureBranchId == null) {
+      setState(() => _flashError = 'Please select a target branch in your supervised area.');
       return;
     }
 

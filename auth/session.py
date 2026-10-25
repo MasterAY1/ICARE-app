@@ -8,20 +8,45 @@ import os
 from models.user import CurrentUser
 
 SESSION_TIMEOUT_MINUTES = 7 * 24 * 60  # 7-day sliding session window
-SECRET_KEY = os.environ.get("ICARE_AUTH_SECRET", "icare-super-secret-core-banking-auth-token-key-2026")
+
+
+def get_auth_secret() -> str:
+    """
+    Retrieves the authoritative HMAC secret key from the environment.
+    Fails closed with RuntimeError if missing, empty, or whitespace-only.
+    Never exposes or logs the secret.
+    """
+    secret = os.environ.get("ICARE_AUTH_SECRET", "")
+    if not secret or not secret.strip():
+        raise RuntimeError(
+            "CRITICAL SECURITY CONFIGURATION ERROR: 'ICARE_AUTH_SECRET' environment variable "
+            "is missing, empty, or whitespace-only. Application cannot safely start or issue session tokens."
+        )
+    return secret.strip()
+
+
+def __getattr__(name: str):
+    """Dynamically resolves SECRET_KEY to prevent hardcoded fallbacks and ensure fail-closed execution."""
+    if name == "SECRET_KEY":
+        return get_auth_secret()
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
 
 def generate_session_token(user_id: str, username: str) -> str:
     """Generates a tamper-proof HMAC-SHA256 signed session token."""
+    secret = get_auth_secret()
     timestamp = int(datetime.now().timestamp())
     payload_str = f"{user_id}:{username}:{timestamp}"
-    signature = hmac.new(SECRET_KEY.encode('utf-8'), payload_str.encode('utf-8'), hashlib.sha256).hexdigest()
+    signature = hmac.new(secret.encode('utf-8'), payload_str.encode('utf-8'), hashlib.sha256).hexdigest()
     raw_token = f"{payload_str}:{signature}"
     return base64.urlsafe_b64encode(raw_token.encode('utf-8')).decode('utf-8')
+
 
 def validate_session_token(token_str: str):
     """Validates an HMAC-signed session token. Returns dict with user_id, username if valid, else None."""
     if not token_str:
         return None
+    secret = get_auth_secret()
     try:
         raw_token = base64.urlsafe_b64decode(token_str.encode('utf-8')).decode('utf-8')
         parts = raw_token.split(":")
@@ -29,7 +54,7 @@ def validate_session_token(token_str: str):
             return None
         user_id, username, ts_str, sig = parts
         payload_str = f"{user_id}:{username}:{ts_str}"
-        expected_sig = hmac.new(SECRET_KEY.encode('utf-8'), payload_str.encode('utf-8'), hashlib.sha256).hexdigest()
+        expected_sig = hmac.new(secret.encode('utf-8'), payload_str.encode('utf-8'), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig, expected_sig):
             return None
         
@@ -42,6 +67,7 @@ def validate_session_token(token_str: str):
         return {"user_id": user_id, "username": username, "timestamp": ts}
     except Exception:
         return None
+
 
 def create_session(user: CurrentUser):
     st.session_state['user'] = user.username
@@ -61,6 +87,7 @@ def create_session(user: CurrentUser):
     except Exception:
         pass
 
+
 def destroy_session():
     keys_to_remove = ['user', 'role', 'branch', 'current_user', 'session_id', 'last_activity', 'logged_in', 'auth_token']
     for key in keys_to_remove:
@@ -74,12 +101,15 @@ def destroy_session():
     except Exception:
         pass
 
+
 def refresh_session():
     if is_authenticated():
         st.session_state['last_activity'] = datetime.now()
 
+
 def get_current_user() -> CurrentUser:
     return st.session_state.get('current_user')
+
 
 def is_authenticated() -> bool:
     if not st.session_state.get('logged_in'):
