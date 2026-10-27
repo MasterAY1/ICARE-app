@@ -20,7 +20,7 @@ import '../../reports/data/models/report_models.dart';
 import '../../reports/presentation/reports_export_screen.dart';
 import '../../bm/presentation/master_cashbook_screen.dart';
 import '../../bm/data/datasources/master_cashbook_api_service.dart';
-import '../../co/presentation/portfolio_overview_screen.dart';
+import 'branch_inspection_screen.dart';
 
 /// Provider for selected business date in AM dashboard
 final amSelectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
@@ -594,17 +594,14 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       return;
     }
 
-    if (reportType == 'officer_portfolio') {
-      ref.read(portfolioTargetBranchProvider.notifier).state = branchName;
-      ref.read(activeCoPageProvider.notifier).state = 'Portfolio';
-      return;
-    }
-
     ref.read(reportsTargetBranchProvider.notifier).state = branchName;
 
     if (reportType == 'executive_parity') {
       ref.read(reportsTargetTabProvider.notifier).state = 0; // Monthly Executive Statements
       ref.read(reportsTargetSubTabProvider.notifier).state = 4; // Official Trial Balance
+    } else if (reportType == 'officer_portfolio') {
+      ref.read(reportsTargetTabProvider.notifier).state = 0; // Monthly Executive Statements
+      ref.read(reportsTargetSubTabProvider.notifier).state = 5; // Credit Officers Summary
     } else {
       ref.read(reportsTargetTabProvider.notifier).state = 0;
     }
@@ -644,14 +641,15 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         );
       } else if (reportType == 'officer_portfolio') {
-        final bytes = await reportsApi.downloadExcel(
+        final bytes = await reportsApi.downloadMonthlyParityCsv(
           branchName: branchName,
-          asOfDate: dateStr,
+          year: selectedDate.year,
+          month: selectedDate.month,
         );
         downloadBlobFile(
           bytes,
-          'Portfolio_Breakdown_${cleanBranch}_$dateStr.xlsx',
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'CO_Monthly_Summary_${cleanBranch}_${selectedDate.year}_${selectedDate.month.toString().padLeft(2, '0')}.csv',
+          'text/csv',
         );
       } else {
         // collections_workbook
@@ -696,137 +694,16 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     );
   }
 
-  void _showBranchInspectionModal(String branchId, String branchName) async {
+  void _navigateToBranchInspection(String branchId, String branchName) {
     final dateStr = DateFormat('yyyy-MM-dd').format(ref.read(amSelectedDateProvider));
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        constraints: BoxConstraints(
-          maxWidth: 800,
-          maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BranchInspectionScreen(
+          branchId: branchId,
+          branchName: branchName,
+          businessDate: dateStr,
         ),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        padding: const EdgeInsets.all(20),
-        child: SingleChildScrollView(
-          child: FutureBuilder<Map<String, dynamic>>(
-            future: ref.read(amApiServiceProvider).getBranchInspection(branchId: branchId, businessDate: dateStr),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const SizedBox(height: 250, child: Center(child: CircularProgressIndicator()));
-              }
-              if (snapshot.hasError) {
-                return Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text('Error loading branch inspection: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
-                );
-              }
-              final data = snapshot.data!;
-              final officers = (data['officer_collection_status'] as List<dynamic>?) ?? [];
-              final summary = data['branch_summary'] ?? {};
-              final cashPos = data['branch_cash_position'] ?? {};
-
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.analytics_outlined, color: Color(0xFF2563EB), size: 22),
-                          const SizedBox(width: 8),
-                          Text('Branch Inspection — $branchName', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                      IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
-                    ],
-                  ),
-                  Text('Supervisory drill-down as viewed by Branch Manager for $dateStr', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                  const Divider(height: 20),
-
-                  // Quick metrics (Responsive for mobile viewports)
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isModalMobile = constraints.maxWidth < 450;
-                      if (isModalMobile) {
-                        return Column(
-                          children: [
-                            _buildInspectionMiniCard('Active Borrowers', '${summary['active_clients'] ?? 0}'),
-                            const SizedBox(height: 8),
-                            _buildInspectionMiniCard('Branch Vault Cash', CurrencyFormatter.format((cashPos['closing_balance'] as num?)?.toDouble() ?? 0.0)),
-                            const SizedBox(height: 8),
-                            _buildInspectionMiniCard('Cashbook Status', cashPos['status'] ?? 'Balanced', isStatus: true),
-                          ],
-                        );
-                      }
-                      return Row(
-                        children: [
-                          Expanded(child: _buildInspectionMiniCard('Active Borrowers', '${summary['active_clients'] ?? 0}')),
-                          const SizedBox(width: 10),
-                          Expanded(child: _buildInspectionMiniCard('Branch Vault Cash', CurrencyFormatter.format((cashPos['closing_balance'] as num?)?.toDouble() ?? 0.0))),
-                          const SizedBox(width: 10),
-                          Expanded(child: _buildInspectionMiniCard('Cashbook Status', cashPos['status'] ?? 'Balanced', isStatus: true)),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  const Text('Credit Officers Scheduled Today', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  if (officers.isEmpty)
-                    const Text('No credit officers scheduled for this branch today.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13))
-                  else
-                    ...officers.map((o) => Container(
-                          margin: const EdgeInsets.only(bottom: 6),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFE2E8F0))),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(o['Officer Name'] ?? o['Officer'] ?? 'Officer', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                              Text('Exp: ₦${o['Expected'] ?? 0} | Coll: ₦${o['Collected'] ?? 0} (${o['Compliance %'] ?? 0}%)', style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569))),
-                            ],
-                          ),
-                        )),
-                  const SizedBox(height: 16),
-                ],
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInspectionMiniCard(String label, String value, {bool isStatus = false}) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.bold,
-              fontFeatures: const [FontFeature.tabularFigures()],
-              color: isStatus ? (value == 'Balanced' ? const Color(0xFF15803D) : const Color(0xFFDC2626)) : const Color(0xFF0F172A),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -3244,7 +3121,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                           Row(
                             children: [
                               OutlinedButton.icon(
-                                onPressed: () => _showBranchInspectionModal(b.branchId, b.branchName),
+                                onPressed: () => _navigateToBranchInspection(b.branchId, b.branchName),
                                 icon: const Icon(Icons.search, size: 12),
                                 label: const Text('Inspect', style: TextStyle(fontSize: 11)),
                                 style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
@@ -3433,7 +3310,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => _showBranchInspectionModal(b.branchId, b.branchName),
+                  onPressed: () => _navigateToBranchInspection(b.branchId, b.branchName),
                   icon: const Icon(Icons.search, size: 14),
                   label: const Text('Inspect Branch', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
                   style: OutlinedButton.styleFrom(

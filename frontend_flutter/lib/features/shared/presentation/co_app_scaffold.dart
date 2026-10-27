@@ -541,7 +541,7 @@ class CoAppScaffold extends ConsumerWidget {
                                 const SizedBox(height: 24),
 
                                 // Active View Dispatcher
-                                _buildActiveView(ref, activePage, isBm, isAm),
+                                _buildActiveView(activePage, isBm, isAm),
                               ],
                             ),
                           ),
@@ -570,7 +570,7 @@ class CoAppScaffold extends ConsumerWidget {
                           ],
 
                           // Active View Dispatcher
-                          _buildActiveView(ref, activePage, isBm, isAm),
+                          _buildActiveView(activePage, isBm, isAm),
                         ],
                       ),
                     ),
@@ -1253,7 +1253,7 @@ class CoAppScaffold extends ConsumerWidget {
     );
   }
 
-  Widget _buildActiveView(WidgetRef ref, String page, bool isBm, bool isAm) {
+  Widget _buildActiveView(String page, bool isBm, bool isAm) {
     switch (page) {
       case 'Dashboard':
         if (isAm) return const AmDashboardScreen();
@@ -1265,8 +1265,7 @@ class CoAppScaffold extends ConsumerWidget {
       case 'Withdrawal Operations':
         return const WithdrawalOperationsScreen();
       case 'Portfolio':
-        final targetBranch = ref.watch(portfolioTargetBranchProvider);
-        if (isAm && targetBranch == null) return const AmPortfolioScreen();
+        if (isAm) return const AmPortfolioScreen();
         return const PortfolioOverviewScreen();
       case 'CO Cashbook':
         return const DailyCashbookScreen();

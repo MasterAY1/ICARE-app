@@ -13,7 +13,6 @@ final portfolioViewModeProvider = StateProvider<String>((ref) => 'Detailed Clien
 final portfolioQuickFilterProvider = StateProvider<String>((ref) => 'All Active Loans');
 final clientDossierSubTabProvider = StateProvider<String>((ref) => 'Customer Profile');
 final selectedClientCodeProvider = StateProvider<String?>((ref) => null);
-final portfolioTargetBranchProvider = StateProvider<String?>((ref) => null);
 
 final portfolioDataProvider = FutureProvider.family<Map<String, dynamic>, String>((ref, filterKey) async {
   final parts = filterKey.split('||');
@@ -86,10 +85,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
   @override
   void initState() {
     super.initState();
-    final targetBranch = ref.read(portfolioTargetBranchProvider);
-    if (targetBranch != null && targetBranch.isNotEmpty) {
-      _selectedBranch = targetBranch;
-    }
     _computeDatesForPeriod('Current Month');
   }
 
