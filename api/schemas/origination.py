@@ -2,7 +2,7 @@
 Loan Origination and Client Registration schemas.
 """
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class GroupOption(BaseModel):
@@ -123,6 +123,7 @@ class ApplyLoanInput(BaseModel):
     client_id: str = Field(..., min_length=1)
     product_category: str = Field("Finance", description="Finance or Asset")
     product_type: str = Field("Weekly 12W")
+    product_name: Optional[str] = None
     requested_amount: float = Field(..., gt=0)
     downpayment_mode: Optional[str] = "Cash (Physical Payment)"
     cash_downpayment: float = 0.0
@@ -130,6 +131,14 @@ class ApplyLoanInput(BaseModel):
     gap_fee: float = 0.0
     application_date: Optional[str] = None
     notes: Optional[str] = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_product_type(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "product_name" in data and "product_type" not in data:
+                data["product_type"] = data["product_name"]
+        return data
 
 
 class ApplyLoanResponse(BaseModel):

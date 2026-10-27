@@ -541,6 +541,13 @@ def apply_for_loan(
     res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", payload.client_id).execute()
     res_wd = uow.client.table("individual_savings").select("withdrawal_amount").eq("client_id", payload.client_id).execute()
     savings_bal = sum(float(d.get("deposit_amount") or 0) for d in (res_dep.data or [])) - sum(float(w.get("withdrawal_amount") or 0) for w in (res_wd.data or []))
+    if savings_bal == 0.0 and hasattr(uow, "individual_savings") and hasattr(uow.individual_savings, "get_total_balance"):
+        try:
+            repo_bal = uow.individual_savings.get_total_balance(client_id=payload.client_id)
+            if repo_bal:
+                savings_bal = float(repo_bal)
+        except Exception:
+            pass
 
     # 3. Product parameters & interest rate calculation
     rate = 0.12

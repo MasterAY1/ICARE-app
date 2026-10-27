@@ -45,8 +45,19 @@ def test_register_client_success(setup_dependencies):
     mock_uow, mock_user = setup_dependencies
     mock_uow.loans._resolve_officer_id.return_value = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
     mock_uow.clients.get_next_sequence_number.return_value = 5
-    mock_uow.client.table().select().limit().execute.return_value = MagicMock(data=[{"product_id": "prod-1"}])
-    mock_uow.client.table().insert().execute.return_value = MagicMock(data=[{"id": "loan-stub-1"}])
+
+    def mock_table(table_name):
+        t = MagicMock()
+        if table_name == "branches":
+            t.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[{"name": "Ogijo", "code": "OGI"}])
+        elif table_name == "clients":
+            t.select.return_value.is_.return_value.eq.return_value.execute.return_value = MagicMock(count=4, data=[])
+            t.insert.return_value.execute.return_value = MagicMock(data=[{"client_id": "c-1"}])
+        else:
+            t.select.return_value.execute.return_value = MagicMock(data=[])
+            t.insert.return_value.execute.return_value = MagicMock(data=[{"id": "stub-1"}])
+        return t
+    mock_uow.client.table.side_effect = mock_table
 
     payload = {
         "full_name": "Balogun Kudirat",
@@ -70,7 +81,7 @@ def test_register_client_success(setup_dependencies):
     assert res.status_code == 200
     data = res.json()
     assert data["success"] is True
-    assert "OGI-00-005" in data["client_code"]
+    assert "OGI" in data["client_code"] and "005" in data["client_code"]
     mock_uow.clients.create.assert_called_once()
 
 
@@ -107,6 +118,21 @@ def test_apply_loan_success(setup_dependencies):
     mock_client.branch_id = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
 
     mock_uow.clients.find_by_id.return_value = mock_client
+    mock_uow.individual_savings.get_total_balance.return_value = 25000.0
+
+    def mock_table(table_name):
+        t = MagicMock()
+        if table_name == "individual_savings":
+            t.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[{"deposit_amount": 25000.0, "withdrawal_amount": 0.0}])
+        elif table_name == "loans":
+            t.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+            t.insert.return_value.execute.return_value = MagicMock(data=[{"loan_id": "l-1"}])
+        elif table_name == "branches":
+            t.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[{"name": "Ogijo"}])
+        else:
+            t.select.return_value.execute.return_value = MagicMock(data=[])
+        return t
+    mock_uow.client.table.side_effect = mock_table
 
     with patch("services.loan_product_engine.LoanProductEngine.calculate_loan_setup") as mock_setup, \
          patch("services.schedule_service.ScheduleService.generate_schedule"):

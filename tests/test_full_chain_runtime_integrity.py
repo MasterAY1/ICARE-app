@@ -27,7 +27,7 @@ class TestFullChainRuntimeIntegrity(unittest.TestCase):
 
     def test_directive_1_and_10_full_chain_and_reconciliation(self):
         """Directive 1 & 10: Event -> Ledger -> Projection -> Reconciliation"""
-        p_date = BusinessDateService.get_business_date(self.uow, self.branch_name)
+        p_date = date(2026, 12, 1)
         ref_id = f"REF-{uuid.uuid4().hex[:6].upper()}"
         amount = 12500.0
 

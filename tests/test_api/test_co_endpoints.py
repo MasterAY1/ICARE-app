@@ -179,7 +179,7 @@ def test_withdrawal_individual_options(setup_dependencies):
             "client_code": "OGI-01-001",
             "name": "Adebayo Omotola",
             "status": "Active",
-            "client_memberships": [{"groups": {"name": "Market Group"}}]
+            "client_memberships": [{"group_id": "g-1", "groups": {"name": "Market Group"}}]
         }
     ])
     mock_uow.individual_savings.get_total_balance.return_value = 50000.0
@@ -196,6 +196,7 @@ def test_withdrawal_request_insufficient_balance(setup_dependencies):
     mock_uow, mock_user = setup_dependencies
     with patch("services.business_date_service.BusinessDateService.is_operational_open", return_value=(True, "Working Day")):
         mock_uow.individual_savings.get_total_balance.return_value = 5000.0
+        mock_uow.client.table().select().eq().execute.return_value = MagicMock(data=[{"name": "Adebayo Omotola", "branch_id": "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"}])
 
         res = client.post("/api/v1/co/withdrawals/request", json={
             "savings_type": "Individual",
@@ -212,7 +213,7 @@ def test_withdrawal_request_success(setup_dependencies):
     mock_uow, mock_user = setup_dependencies
     with patch("services.business_date_service.BusinessDateService.is_operational_open", return_value=(True, "Working Day")):
         mock_uow.individual_savings.get_total_balance.return_value = 50000.0
-        mock_uow.client.table().select().eq().execute.return_value = MagicMock(data=[{"name": "Adebayo Omotola"}])
+        mock_uow.client.table().select().eq().execute.return_value = MagicMock(data=[{"name": "Adebayo Omotola", "branch_id": "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"}])
         mock_uow.client.table().insert().execute.return_value = MagicMock(data=[{"id": "req-123"}])
 
         res = client.post("/api/v1/co/withdrawals/request", json={

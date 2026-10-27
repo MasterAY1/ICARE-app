@@ -29,7 +29,7 @@ class TestAuditReports(unittest.TestCase):
         self.assertEqual(m["total_amount"], 5000.0)
         self.assertEqual(m["total_count"], 3)
         self.assertEqual(m["average_amount"], 1666.67)
-        self.assertEqual(m["last_transaction_date"], "2026-07-22")
+        self.assertEqual(m["last_transaction_date"], "22 Jul 2026")
         self.assertEqual(m["highest_amount"], 2500.0)
 
     def test_multi_level_drilldown(self):

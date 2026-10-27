@@ -32,6 +32,7 @@ class ICAREException(Exception):
             "error_code": self.error_code,
             "title": self.title,
             "message": self.message,
+            "detail": self.message,
             "action": self.action
         }
         if self.details is not None:
@@ -151,6 +152,7 @@ def translate_error_to_icare_response(exc: Exception) -> Dict[str, Any]:
                 "error_code": "RESOURCE_NOT_FOUND",
                 "title": "Resource Not Found",
                 "message": msg,
+                "detail": msg,
                 "action": "Please verify your selection or search query."
             }
         if exc.status_code in [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN]:
@@ -158,12 +160,14 @@ def translate_error_to_icare_response(exc: Exception) -> Dict[str, Any]:
                 "error_code": "PERM_ACCESS_DENIED",
                 "title": "Access Not Permitted",
                 "message": msg,
+                "detail": msg,
                 "action": "Please log in with appropriate role permissions."
             }
         return {
             "error_code": f"HTTP_{exc.status_code}",
             "title": "Request Failed",
             "message": msg,
+            "detail": msg,
             "action": "Please check your request parameters and retry."
         }
 

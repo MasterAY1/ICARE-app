@@ -260,7 +260,7 @@ class BusinessDateService:
                 
         try:
             # 1. Freeze Master Cashbook
-            res_mb = uow.client.table("master_cashbook").select("closing_balance, difference").eq("branch_id", branch_id).eq("date", p_date_str).execute()
+            res_mb = uow.client.table("master_cashbook").select("closing_balance").eq("branch_id", branch_id).eq("date", p_date_str).execute()
             closing_bal = float(res_mb.data[0]["closing_balance"]) if res_mb.data else 0.0
             cash_diff = float(res_mb.data[0].get("difference") or 0.0) if res_mb.data else 0.0
             

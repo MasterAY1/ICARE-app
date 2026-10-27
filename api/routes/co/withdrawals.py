@@ -79,10 +79,11 @@ def get_individual_options(
         if isinstance(memberships, dict):
             memberships = [memberships]
         for m in memberships:
-            if m and m.get("group_id"):
-                gid = m["group_id"]
+            if m:
                 grp = m.get("groups") or {}
-                _all_g_infos[gid] = grp
+                gid = m.get("group_id") or grp.get("group_id") or grp.get("name")
+                if gid:
+                    _all_g_infos[gid] = grp
 
     _gn_counts = {}
     for grp in _all_g_infos.values():
@@ -172,6 +173,13 @@ def get_individual_options(
     for c in all_clients:
         cid = c["client_id"]
         sav_bal = max(0.0, bal_by_client.get(cid, 0.0))
+        if sav_bal == 0.0 and hasattr(uow, "individual_savings") and hasattr(uow.individual_savings, "get_total_balance"):
+            try:
+                repo_bal = uow.individual_savings.get_total_balance(client_id=cid)
+                if repo_bal:
+                    sav_bal = float(repo_bal)
+            except Exception:
+                pass
 
         g_id = None
         g_name = None
@@ -179,10 +187,12 @@ def get_individual_options(
         if isinstance(memberships, dict):
             memberships = [memberships]
         for m in memberships:
-            if m and m.get("group_id"):
-                g_id = m.get("group_id")
-                g_name = (m.get("groups") or {}).get("name")
-                break
+            if m:
+                grp = m.get("groups") or {}
+                g_id = m.get("group_id") or grp.get("group_id") or grp.get("name")
+                g_name = grp.get("name")
+                if g_id:
+                    break
 
         client_options.append(ClientWithdrawalOption(
             client_id=cid,

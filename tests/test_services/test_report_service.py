@@ -34,6 +34,7 @@ class TestReportService(unittest.TestCase):
             else:
                 query.execute.return_value = MagicMock(data=[])
             query.select.return_value = query
+            query.range.return_value = query
             query.order.return_value = query
             query.eq.return_value = query
             query.in_.return_value = query
@@ -84,6 +85,7 @@ class TestReportService(unittest.TestCase):
             else:
                 query.execute.return_value = MagicMock(data=[])
             query.select.return_value = query
+            query.range.return_value = query
             query.order.return_value = query
             query.eq.return_value = query
             query.in_.return_value = query
@@ -116,6 +118,7 @@ class TestReportService(unittest.TestCase):
             elif table_name == "financial_ledger_entries":
                 query.execute.return_value = MagicMock(data=mock_entries)
             query.select.return_value = query
+            query.range.return_value = query
             query.order.return_value = query
             query.in_.return_value = query
             return query
@@ -151,6 +154,7 @@ class TestReportService(unittest.TestCase):
             else:
                 query.execute.return_value = MagicMock(data=[])
             query.select.return_value = query
+            query.range.return_value = query
             query.eq.return_value = query
             query.in_.return_value = query
             query.gte.return_value = query
@@ -188,6 +192,7 @@ class TestReportService(unittest.TestCase):
             else:
                 query.execute.return_value = MagicMock(data=[])
             query.select.return_value = query
+            query.range.return_value = query
             query.eq.return_value = query
             query.in_.return_value = query
             query.gte.return_value = query
@@ -237,6 +242,7 @@ class TestReportService(unittest.TestCase):
             else:
                 query.execute.return_value = MagicMock(data=[])
             query.select.return_value = query
+            query.range.return_value = query
             query.eq.return_value = query
             query.in_.return_value = query
             query.gte.return_value = query
@@ -284,6 +290,7 @@ class TestReportService(unittest.TestCase):
             elif table_name == "clients":
                 query.execute.return_value = MagicMock(data=[])
             query.select.return_value = query
+            query.range.return_value = query
             query.order.return_value = query
             return query
 
@@ -332,6 +339,7 @@ class TestReportService(unittest.TestCase):
             elif table_name == "repayments":
                 query.execute.return_value = MagicMock(data=mock_reps)
             query.select.return_value = query
+            query.range.return_value = query
             query.in_.return_value = query
             query.gte.return_value = query
             query.lte.return_value = query
