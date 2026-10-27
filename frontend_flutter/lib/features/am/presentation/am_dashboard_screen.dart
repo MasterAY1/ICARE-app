@@ -21,6 +21,7 @@ import '../../reports/presentation/reports_export_screen.dart';
 import '../../bm/presentation/master_cashbook_screen.dart';
 import '../../bm/data/datasources/master_cashbook_api_service.dart';
 import 'branch_inspection_screen.dart';
+import 'officer_productivity_sheet.dart';
 
 /// Provider for selected business date in AM dashboard
 final amSelectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
@@ -596,12 +597,19 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
     ref.read(reportsTargetBranchProvider.notifier).state = branchName;
 
+    if (reportType == 'officer_portfolio') {
+      showOfficerProductivitySheet(
+        context: context,
+        branchId: branchName,
+        branchName: branchName,
+        period: 'This Month',
+      );
+      return;
+    }
+
     if (reportType == 'executive_parity') {
       ref.read(reportsTargetTabProvider.notifier).state = 0; // Monthly Executive Statements
       ref.read(reportsTargetSubTabProvider.notifier).state = 4; // Official Trial Balance
-    } else if (reportType == 'officer_portfolio') {
-      ref.read(reportsTargetTabProvider.notifier).state = 0; // Monthly Executive Statements
-      ref.read(reportsTargetSubTabProvider.notifier).state = 5; // Credit Officers Summary
     } else {
       ref.read(reportsTargetTabProvider.notifier).state = 0;
     }
@@ -682,6 +690,20 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
         branchName: branchName,
         businessDate: dateStr,
         onNavigate: (repType, bName) {
+          if (repType == 'officer_portfolio') {
+            Navigator.pop(ctx);
+            Future.microtask(() {
+              if (mounted) {
+                showOfficerProductivitySheet(
+                  context: context,
+                  branchId: branchId,
+                  branchName: bName,
+                  period: 'This Month',
+                );
+              }
+            });
+            return;
+          }
           Navigator.pop(ctx);
           _navigateToBranchReport(repType, bName);
         },
