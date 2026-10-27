@@ -546,24 +546,17 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
   @override
   Widget build(BuildContext context) {
     final activeTab = ref.watch(collectionsTabProvider);
-    final activeDate = ref.watch(collectionsDateProvider);
-    final isLateEntry = ref.watch(collectionsLateEntryProvider);
 
     return Stack(
       children: [
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Page Title & Caption (app.py L4841-4842)
+            // 1. Page Title (app.py L4841-4842)
             const IcareSectionHeader(
               title: 'Daily Collections',
-              subtitle: 'Record daily repayments and savings.',
             ),
             const SizedBox(height: 12),
-
-            // 2. Top Control Bar (Late Entry toggle & Business Date Display, app.py L4848-4853)
-            _buildTopControlBar(activeDate, isLateEntry),
-            const SizedBox(height: 14),
 
             // Notification / Flash Alert Banner
             if (_statusBannerText != null) ...[
@@ -727,134 +720,121 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
   // TOP CONTROL BAR & TABS
   // =========================================================================
 
-  Widget _buildTopControlBar(DateTime activeDate, bool isLateEntry) {
-    return IcareCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isMobile = constraints.maxWidth < 600;
-
-          final lateEntryToggle = InkWell(
-            onTap: () {
-              final newVal = !isLateEntry;
-              ref.read(collectionsLateEntryProvider.notifier).state = newVal;
-              if (!newVal) {
-                ref.read(collectionsDateProvider.notifier).state = DateTime.now();
-              }
-            },
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: isLateEntry ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: isLateEntry ? const Color(0xFF93C5FD) : const Color(0xFFCBD5E1),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isLateEntry ? Icons.edit_calendar_rounded : Icons.history_rounded,
-                    size: 15,
-                    color: isLateEntry ? const Color(0xFF1D4ED8) : const Color(0xFF64748B),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    isMobile
-                        ? (isLateEntry ? 'Late Entry: ON' : 'Late Entry')
-                        : (isLateEntry ? 'Late Entry: Active' : 'Late Entry / Backdated'),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: isLateEntry ? FontWeight.w700 : FontWeight.w600,
-                      color: isLateEntry ? const Color(0xFF1D4ED8) : const Color(0xFF475569),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Switch(
-                    value: isLateEntry,
-                    activeColor: const Color(0xFF1D4ED8),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    onChanged: (val) {
-                      ref.read(collectionsLateEntryProvider.notifier).state = val;
-                      if (!val) {
-                        ref.read(collectionsDateProvider.notifier).state = DateTime.now();
-                      }
-                    },
-                  ),
-                ],
+  Widget _buildLateEntryToggle(bool isLateEntry) {
+    return InkWell(
+      onTap: () {
+        final newVal = !isLateEntry;
+        ref.read(collectionsLateEntryProvider.notifier).state = newVal;
+        if (!newVal) {
+          ref.read(collectionsDateProvider.notifier).state = DateTime.now();
+        }
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isLateEntry ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isLateEntry ? const Color(0xFF93C5FD) : const Color(0xFFCBD5E1),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isLateEntry ? Icons.edit_calendar_rounded : Icons.history_rounded,
+              size: 14,
+              color: isLateEntry ? const Color(0xFF1D4ED8) : const Color(0xFF64748B),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              isLateEntry ? 'Late Entry: ON' : 'Late Entry',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: isLateEntry ? FontWeight.w700 : FontWeight.w600,
+                color: isLateEntry ? const Color(0xFF1D4ED8) : const Color(0xFF475569),
               ),
             ),
-          );
+            const SizedBox(width: 2),
+            Transform.scale(
+              scale: 0.75,
+              child: Switch(
+                value: isLateEntry,
+                activeColor: const Color(0xFF1D4ED8),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                onChanged: (val) {
+                  ref.read(collectionsLateEntryProvider.notifier).state = val;
+                  if (!val) {
+                    ref.read(collectionsDateProvider.notifier).state = DateTime.now();
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-          final dateDisplay = isLateEntry
-              ? InkWell(
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: activeDate,
-                      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-                      lastDate: DateTime.now(),
-                    );
-                    if (picked != null) {
-                      ref.read(collectionsDateProvider.notifier).state = picked;
-                    }
-                  },
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.calendar_today_outlined, size: 14, color: Color(0xFF2563EB)),
-                        const SizedBox(width: 6),
-                        Text(
-                          DateFormat(isMobile ? 'dd MMM yyyy' : 'dd MMMM yyyy').format(activeDate),
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.arrow_drop_down, size: 16, color: Color(0xFF1D4ED8)),
-                      ],
-                    ),
-                  ),
-                )
-              : Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.today_outlined, size: 14, color: Color(0xFF475569)),
-                      const SizedBox(width: 6),
-                      Text(
-                        isMobile
-                            ? DateFormat('dd MMM yyyy (EEE)').format(activeDate)
-                            : 'Operational Date: ${DateFormat('dd MMMM yyyy (EEEE)').format(activeDate)}',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
-                      ),
-                    ],
-                  ),
-                );
-
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              lateEntryToggle,
-              const SizedBox(width: 8),
-              Flexible(child: Align(alignment: Alignment.centerRight, child: dateDisplay)),
-            ],
+  Widget _buildDateSelectorBadge(DateTime activeDate, bool isLateEntry, {required bool isMobile}) {
+    if (isLateEntry) {
+      return InkWell(
+        onTap: () async {
+          final picked = await showDatePicker(
+            context: context,
+            initialDate: activeDate,
+            firstDate: DateTime.now().subtract(const Duration(days: 365)),
+            lastDate: DateTime.now(),
           );
+          if (picked != null) {
+            ref.read(collectionsDateProvider.notifier).state = picked;
+          }
         },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEFF6FF),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFBFDBFE)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.calendar_today_outlined, size: 13, color: Color(0xFF2563EB)),
+              const SizedBox(width: 5),
+              Text(
+                DateFormat('dd MMM yyyy').format(activeDate),
+                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
+              ),
+              const SizedBox(width: 3),
+              const Icon(Icons.arrow_drop_down, size: 15, color: Color(0xFF1D4ED8)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.today_outlined, size: 13, color: Color(0xFF475569)),
+          const SizedBox(width: 5),
+          Text(
+            isMobile
+                ? DateFormat('dd MMM yyyy').format(activeDate)
+                : 'Date: ${DateFormat('dd MMM yyyy (EEE)').format(activeDate)}',
+            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+          ),
+        ],
       ),
     );
   }
@@ -935,6 +915,8 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
   Widget _buildTab1RecordCollections() {
     final mode = ref.watch(collectionsModeProvider);
+    final activeDate = ref.watch(collectionsDateProvider);
+    final isLateEntry = ref.watch(collectionsLateEntryProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -942,26 +924,25 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
         // A. Persistent Collection Receipt Confirmation Card (app.py L4889-4975)
         if (_receiptData != null) ...[
           _buildPersistentReceiptCard(),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
         ],
 
-        // B. Mode Selector Card (app.py L4992)
+        // B. Operations Control Bar: Group/Single Mode + Late Entry & Date
         IcareCard(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final isMobile = constraints.maxWidth < 600;
+              final isMobile = constraints.maxWidth < 700;
               final modes = ['Group Collection Sheet', 'Single Client Quick Entry'];
+
+              final lateEntryWidget = _buildLateEntryToggle(isLateEntry);
+              final dateWidget = _buildDateSelectorBadge(activeDate, isLateEntry, isMobile: isMobile);
 
               if (isMobile) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'COLLECTION MODE',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF64748B), letterSpacing: 0.5),
-                    ),
-                    const SizedBox(height: 8),
+                    // Mode segmented controller
                     Row(
                       children: modes.map((m) {
                         final isSel = mode == m;
@@ -976,7 +957,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
                               },
                               borderRadius: BorderRadius.circular(8),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                                padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 8),
                                 decoration: BoxDecoration(
                                   color: isSel ? const Color(0xFFECFDF5) : const Color(0xFFF8FAFC),
                                   borderRadius: BorderRadius.circular(8),
@@ -989,8 +970,8 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Icon(
-                                      isGroup ? Icons.groups_outlined : Icons.person_outline,
-                                      size: 16,
+                                      isGroup ? Icons.groups_rounded : Icons.person_rounded,
+                                      size: 15,
                                       color: isSel ? const Color(0xFF065F46) : const Color(0xFF64748B),
                                     ),
                                     const SizedBox(width: 6),
@@ -1014,20 +995,69 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
                         );
                       }).toList(),
                     ),
+                    const SizedBox(height: 10),
+                    const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                    const SizedBox(height: 10),
+                    // Late Entry Toggle & Date Selector Row
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        lateEntryWidget,
+                        const SizedBox(width: 8),
+                        Flexible(child: Align(alignment: Alignment.centerRight, child: dateWidget)),
+                      ],
+                    ),
+                    if (isLateEntry) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFBFDBFE)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, size: 13, color: Color(0xFF1D4ED8)),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Backdated: Posting collections for ${DateFormat('dd MMM yyyy').format(activeDate)}',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 );
               }
 
               return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Collection Mode:',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                  Row(
+                    children: [
+                      const Text(
+                        'Collection Mode:',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                      ),
+                      const SizedBox(width: 14),
+                      _buildModeRadioButton('Group Collection Sheet', mode),
+                      const SizedBox(width: 10),
+                      _buildModeRadioButton('Single Client Quick Entry', mode),
+                    ],
                   ),
-                  const SizedBox(width: 16),
-                  _buildModeRadioButton('Group Collection Sheet', mode),
-                  const SizedBox(width: 16),
-                  _buildModeRadioButton('Single Client Quick Entry', mode),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      lateEntryWidget,
+                      const SizedBox(width: 10),
+                      dateWidget,
+                    ],
+                  ),
                 ],
               );
             },
@@ -3365,13 +3395,8 @@ Status: CONFIRMED & POSTED TO LEDGER''';
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Single Client Collection / Savings Deposit',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-            ),
-            const SizedBox(height: 2),
-            const Text(
-              'Record an ad-hoc savings deposit, loan repayment, or fee for an individual member without affecting other group records.',
-              style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+              'Single Client Quick Entry',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
             ),
             const SizedBox(height: 16),
 
@@ -3688,16 +3713,17 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                                     color: _scMarkNotPaid ? const Color(0xFF991B1B) : const Color(0xFF0F172A),
                                   ),
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _scMarkNotPaid
-                                      ? 'Records an official ₦0 non-payment delinquency for this client with ₦${CurrencyFormatter.formatNaira(expRep)} expected arrears.'
-                                      : 'Check this box if the client cannot pay today to officially record the overdue arrears.',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: _scMarkNotPaid ? const Color(0xFFB91C1C) : const Color(0xFF64748B),
+                                if (_scMarkNotPaid) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Recorded ₦0 delinquency • Overdue Arrears: ${CurrencyFormatter.formatNaira(expRep)}',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFFB91C1C),
+                                    ),
                                   ),
-                                ),
+                                ],
                               ],
                             ),
                           ),
@@ -3952,26 +3978,65 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 }
 
   Widget _buildSingleClientKpiCard(String label, String value, {Color accentColor = const Color(0xFF059669)}) {
+    IconData effectiveIcon = Icons.analytics_outlined;
+    Color effectiveColor = accentColor;
+    if (label.contains('Group Name') || label.contains('Membership')) {
+      effectiveIcon = Icons.groups_rounded;
+      effectiveColor = const Color(0xFF0D9488);
+    } else if (label.contains('Personal Savings')) {
+      effectiveIcon = Icons.account_balance_wallet_rounded;
+      effectiveColor = const Color(0xFF059669);
+    } else if (label.contains('Group Savings Fund')) {
+      effectiveIcon = Icons.savings_rounded;
+      effectiveColor = const Color(0xFF2563EB);
+    } else if (label.contains('Outstanding Loan')) {
+      effectiveIcon = Icons.pending_actions_rounded;
+      effectiveColor = value.contains('No Active') ? const Color(0xFF64748B) : const Color(0xFFD97706);
+    }
+
+    final isLoanOutstanding = label.contains('Outstanding Loan') && !value.contains('No Active');
+
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border(
-          top: BorderSide(color: accentColor, width: 3),
-          left: const BorderSide(color: Color(0xFFE2E8F0)),
-          right: const BorderSide(color: Color(0xFFE2E8F0)),
-          bottom: const BorderSide(color: Color(0xFFE2E8F0)),
-        ),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(color: Color(0x05000000), blurRadius: 4, offset: Offset(0, 1)),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600), softWrap: true, maxLines: 2, overflow: TextOverflow.ellipsis),
-          const SizedBox(height: 4),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: effectiveColor.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(effectiveIcon, size: 14, color: effectiveColor),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label.toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
@@ -3979,12 +4044,12 @@ Status: CONFIRMED & POSTED TO LEDGER''';
               value,
               maxLines: 1,
               softWrap: false,
-              style: const TextStyle(
-                fontSize: 15,
+              style: TextStyle(
+                fontSize: 16,
                 fontWeight: FontWeight.w800,
-                color: Color(0xFF0F172A),
-                fontFamily: 'monospace',
-                fontFeatures: [FontFeature.tabularFigures()],
+                color: isLoanOutstanding ? const Color(0xFFDC2626) : const Color(0xFF0F172A),
+                fontFamily: value.contains('₦') ? 'monospace' : null,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -4257,10 +4322,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                           'Reversed Records on this Date (Audit Trail: ${reversals.length})',
                           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFDC2626)),
                         ),
-                        subtitle: const Text(
-                          'These transactions were reversed and are omitted from active collections and daily totals.',
-                          style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
-                        ),
+
                         children: [
                           SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
@@ -5189,7 +5251,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
               ),
               child: ExpansionTile(
                 title: const Text('Daily EOD Inputs History Log', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                subtitle: const Text('Historical log of daily EOD cashbook inputs and reconciliation submissions.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+
                 children: [
                   if (eodLog.isEmpty)
                     const Padding(

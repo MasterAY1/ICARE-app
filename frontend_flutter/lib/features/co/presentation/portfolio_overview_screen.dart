@@ -155,14 +155,9 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
         // 1. Page Header
         Text(
           pageTitle,
-          style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.4),
         ),
-        const SizedBox(height: 4),
-        const Text(
-          'Comprehensive portfolio oversight, role-scoped performance analytics, and 360° client dossier.',
-          style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-        ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
 
         // 2. Filters & Scope Bar
         _buildFilterBar(portfolioAsync, user),
@@ -263,252 +258,302 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     final isOfficer = role == 'CO' || role == 'Credit Officer' || role == 'Officer' || role == 'CREDIT_OFFICER';
     final isBm = role == 'BM' || role == 'Branch Manager' || role == 'BRANCH_MANAGER';
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Row 1: Scope & Officer Selection
-          if (isOfficer)
-            Row(
-              children: [
-                const Icon(Icons.shield_outlined, size: 16, color: Color(0xFF2563EB)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Scope: Credit Officer Portfolio (${user?.username ?? "CO"}) · Branch: ${user?.branch ?? "Branch"}',
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF1E293B)),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            )
-          else ...[
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final isNarrow = constraints.maxWidth < 600;
-                if (isBm) {
-                  final branchTxt = Text(
-                    'Branch Scope: ${user?.branch ?? "Branch"}',
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF1E293B)),
-                  );
-                  final offDropdown = _buildDropdown(
-                    label: 'Credit Officer Filter',
-                    value: availableOfficers.contains(_selectedOfficer) ? _selectedOfficer : 'All',
-                    items: availableOfficers,
-                    onChanged: (val) {
-                      if (val != null) setState(() => _selectedOfficer = val);
-                    },
-                  );
+    final scopeText = isOfficer
+        ? '${user?.branch ?? "Branch"} · ${user?.username ?? "CO"}'
+        : (isBm ? 'Branch: ${user?.branch ?? "Branch"}' : 'All Branches');
 
-                  if (isNarrow) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        branchTxt,
-                        const SizedBox(height: 10),
-                        offDropdown,
-                      ],
-                    );
-                  }
-                  return Row(
-                    children: [
-                      Expanded(child: branchTxt),
-                      const SizedBox(width: 16),
-                      Expanded(child: offDropdown),
-                    ],
-                  );
-                } else {
-                  final brDropdown = _buildDropdown(
-                    label: 'Branch Filter',
-                    value: availableBranches.contains(_selectedBranch) ? _selectedBranch : 'All',
-                    items: availableBranches,
-                    onChanged: (val) {
-                      if (val != null) setState(() => _selectedBranch = val);
-                    },
-                  );
-                  final offDropdown = _buildDropdown(
-                    label: 'Credit Officer Filter',
-                    value: availableOfficers.contains(_selectedOfficer) ? _selectedOfficer : 'All',
-                    items: availableOfficers,
-                    onChanged: (val) {
-                      if (val != null) setState(() => _selectedOfficer = val);
-                    },
-                  );
+    final filterSummary = '$_selectedTimePeriod${_selectedProduct != "All" ? " • $_selectedProduct" : ""}${_selectedGroup != "All" ? " • $_selectedGroup" : ""}';
 
-                  if (isNarrow) {
-                    return Column(
-                      children: [
-                        brDropdown,
-                        const SizedBox(height: 10),
-                        offDropdown,
-                      ],
-                    );
-                  }
-                  return Row(
-                    children: [
-                      Expanded(child: brDropdown),
-                      const SizedBox(width: 16),
-                      Expanded(child: offDropdown),
-                    ],
-                  );
-                }
-              },
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 650;
+
+        // Build individual filter controls
+        final timeField = _buildDropdown(
+          label: 'Time Period',
+          value: _selectedTimePeriod,
+          items: const ['Today', 'Yesterday', 'Current Month', 'Last Month', 'Custom Date Range'],
+          onChanged: (val) {
+            if (val != null) {
+              setState(() {
+                _selectedTimePeriod = val;
+                _computeDatesForPeriod(val);
+              });
+            }
+          },
+        );
+
+        final dateField = InkWell(
+          onTap: _selectedTimePeriod == 'Custom Date Range' ? _selectCustomDateRange : null,
+          child: InputDecorator(
+            decoration: InputDecoration(
+              labelText: 'Date Range',
+              border: const OutlineInputBorder(),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              enabled: _selectedTimePeriod == 'Custom Date Range',
+              suffixIcon: const Icon(Icons.calendar_month, size: 18),
             ),
-            const SizedBox(height: 12),
-          ],
+            child: Text(
+              _startDate != null && _endDate != null
+                  ? '${_formatDate(_startDate)}  to  ${_formatDate(_endDate)}'
+                  : 'Select range',
+              style: TextStyle(
+                fontSize: 12,
+                color: _selectedTimePeriod == 'Custom Date Range'
+                    ? const Color(0xFF0F172A)
+                    : const Color(0xFF64748B),
+              ),
+            ),
+          ),
+        );
 
-          const SizedBox(height: 12),
+        final prodField = _buildDropdown(
+          label: 'Loan Product',
+          value: availableProducts.contains(_selectedProduct) ? _selectedProduct : 'All',
+          items: availableProducts,
+          onChanged: (val) {
+            if (val != null) setState(() => _selectedProduct = val);
+          },
+        );
 
-          // Row 2: Date, Product & Cascading Group Filters
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final timeField = _buildDropdown(
-                label: 'Time Period',
-                value: _selectedTimePeriod,
-                items: const ['Today', 'Yesterday', 'Current Month', 'Last Month', 'Custom Date Range'],
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() {
-                      _selectedTimePeriod = val;
-                      _computeDatesForPeriod(val);
-                    });
-                  }
-                },
-              );
+        final grpField = _buildDropdown(
+          label: 'Group Filter',
+          value: availableGroups.contains(_selectedGroup) ? _selectedGroup : 'All',
+          items: availableGroups,
+          onChanged: (val) {
+            if (val != null) setState(() => _selectedGroup = val);
+          },
+        );
 
-              final dateField = InkWell(
-                onTap: _selectedTimePeriod == 'Custom Date Range' ? _selectCustomDateRange : null,
-                child: InputDecorator(
-                  decoration: InputDecoration(
-                    labelText: 'Date Range',
-                    border: const OutlineInputBorder(),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    enabled: _selectedTimePeriod == 'Custom Date Range',
-                    suffixIcon: const Icon(Icons.calendar_month, size: 18),
-                  ),
-                  child: Text(
-                    _startDate != null && _endDate != null
-                        ? '${_formatDate(_startDate)}  to  ${_formatDate(_endDate)}'
-                        : 'Select range',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _selectedTimePeriod == 'Custom Date Range'
-                          ? const Color(0xFF0F172A)
-                          : const Color(0xFF64748B),
+        final offDropdown = _buildDropdown(
+          label: 'Credit Officer',
+          value: availableOfficers.contains(_selectedOfficer) ? _selectedOfficer : 'All',
+          items: availableOfficers,
+          onChanged: (val) {
+            if (val != null) setState(() => _selectedOfficer = val);
+          },
+        );
+
+        final brDropdown = _buildDropdown(
+          label: 'Branch',
+          value: availableBranches.contains(_selectedBranch) ? _selectedBranch : 'All',
+          items: availableBranches,
+          onChanged: (val) {
+            if (val != null) setState(() => _selectedBranch = val);
+          },
+        );
+
+        if (isMobile) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: const [
+                BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: () => setState(() => _filtersExpandedOnMobile = !_filtersExpandedOnMobile),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Icon(Icons.shield_outlined, size: 14, color: Color(0xFF2563EB)),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                scopeText,
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                filterSummary,
+                                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _filtersExpandedOnMobile ? const Color(0xFFEFF6FF) : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: _filtersExpandedOnMobile ? const Color(0xFF93C5FD) : const Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.tune_rounded,
+                                size: 13,
+                                color: _filtersExpandedOnMobile ? const Color(0xFF1D4ED8) : const Color(0xFF475569),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                _filtersExpandedOnMobile ? 'Close' : 'Filter',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: _filtersExpandedOnMobile ? const Color(0xFF1D4ED8) : const Color(0xFF475569),
+                                ),
+                              ),
+                              Icon(
+                                _filtersExpandedOnMobile ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                                size: 14,
+                                color: _filtersExpandedOnMobile ? const Color(0xFF1D4ED8) : const Color(0xFF475569),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              );
+                if (_filtersExpandedOnMobile) ...[
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      children: [
+                        if (!isOfficer) ...[
+                          if (!isBm) ...[
+                            brDropdown,
+                            const SizedBox(height: 10),
+                          ],
+                          offDropdown,
+                          const SizedBox(height: 10),
+                        ],
+                        timeField,
+                        if (_selectedTimePeriod == 'Custom Date Range') ...[
+                          const SizedBox(height: 10),
+                          dateField,
+                        ],
+                        const SizedBox(height: 10),
+                        prodField,
+                        const SizedBox(height: 10),
+                        grpField,
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        }
 
-              final prodField = _buildDropdown(
-                label: 'Loan Product Filter',
-                value: availableProducts.contains(_selectedProduct) ? _selectedProduct : 'All',
-                items: availableProducts,
-                onChanged: (val) {
-                  if (val != null) setState(() => _selectedProduct = val);
-                },
-              );
-
-              final grpField = _buildDropdown(
-                label: 'Group Filter',
-                value: availableGroups.contains(_selectedGroup) ? _selectedGroup : 'All',
-                items: availableGroups,
-                onChanged: (val) {
-                  if (val != null) setState(() => _selectedGroup = val);
-                },
-              );
-
-              if (constraints.maxWidth >= 900) {
-                return Row(
+        // Desktop / Tablet layout
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+            boxShadow: const [
+              BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Scope header row
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(Icons.shield_outlined, size: 14, color: Color(0xFF2563EB)),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Scope: $scopeText',
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0F172A)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (constraints.maxWidth >= 950)
+                Row(
                   children: [
+                    if (!isOfficer) ...[
+                      if (!isBm) ...[
+                        Expanded(child: brDropdown),
+                        const SizedBox(width: 10),
+                      ],
+                      Expanded(child: offDropdown),
+                      const SizedBox(width: 10),
+                    ],
                     Expanded(child: timeField),
-                    const SizedBox(width: 12),
-                    Expanded(child: dateField),
-                    const SizedBox(width: 12),
+                    if (_selectedTimePeriod == 'Custom Date Range') ...[
+                      const SizedBox(width: 10),
+                      Expanded(child: dateField),
+                    ],
+                    const SizedBox(width: 10),
                     Expanded(child: prodField),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(child: grpField),
                   ],
-                );
-              } else if (constraints.maxWidth >= 600) {
-                return Column(
+                )
+              else
+                Column(
                   children: [
+                    if (!isOfficer) ...[
+                      Row(
+                        children: [
+                          if (!isBm) ...[
+                            Expanded(child: brDropdown),
+                            const SizedBox(width: 10),
+                          ],
+                          Expanded(child: offDropdown),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                     Row(
                       children: [
                         Expanded(child: timeField),
-                        const SizedBox(width: 12),
-                        Expanded(child: dateField),
+                        if (_selectedTimePeriod == 'Custom Date Range') ...[
+                          const SizedBox(width: 10),
+                          Expanded(child: dateField),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(child: prodField),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         Expanded(child: grpField),
                       ],
                     ),
                   ],
-                );
-              } else {
-                return Column(
-                  children: [
-                    InkWell(
-                      onTap: () => setState(() => _filtersExpandedOnMobile = !_filtersExpandedOnMobile),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFCBD5E1)),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.tune, size: 15, color: Color(0xFF2563EB)),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      'Filters: $_selectedTimePeriod · Prod: $_selectedProduct · Grp: $_selectedGroup',
-                                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Icon(_filtersExpandedOnMobile ? Icons.expand_less : Icons.expand_more, size: 18, color: const Color(0xFF64748B)),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (_filtersExpandedOnMobile) ...[
-                      const SizedBox(height: 12),
-                      timeField,
-                      const SizedBox(height: 12),
-                      dateField,
-                      const SizedBox(height: 12),
-                      prodField,
-                      const SizedBox(height: 12),
-                      grpField,
-                    ],
-                  ],
-                );
-              }
-            },
+                ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -646,10 +691,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                 // Section: Loan Products & Category Intelligence
                 const Divider(color: Color(0xFFE2E8F0)),
                 const SizedBox(height: 12),
-                const Text('Loan Products & Category Intelligence', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                const SizedBox(height: 4),
-                const Text('Consolidated portfolio breakdown across loan product cycles, active credit, and distribution.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                const SizedBox(height: 12),
+                const Text('Loan Products & Category Intelligence', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                const SizedBox(height: 10),
                 _buildCategoryIntelligenceCards(categorySummary),
                 const SizedBox(height: 20),
 
@@ -740,9 +783,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('Loan Products & Category Intelligence', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-            const SizedBox(height: 4),
-            const Text('Consolidated portfolio breakdown across loan product cycles, active credit, and distribution.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             _buildCategoryIntelligenceCards(categorySummary),
             const SizedBox(height: 20),
             _buildGroupDistributionMatrix(groupMatrix),
@@ -1025,45 +1066,29 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
   Widget _buildSectionHeader(String title, {String? subtitle, IconData? icon}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              if (icon != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Icon(icon, size: 14, color: const Color(0xFF475569)),
-                ),
-                const SizedBox(width: 8),
-              ],
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1E293B),
-                  letterSpacing: 0.1,
-                ),
+          if (icon != null) ...[
+            Container(
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-            ],
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(height: 3),
-            Text(
-              subtitle,
-              style: const TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w400,
-                color: Color(0xFF64748B),
-              ),
+              child: Icon(icon, size: 14, color: const Color(0xFF475569)),
             ),
+            const SizedBox(width: 8),
           ],
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1E293B),
+              letterSpacing: 0.1,
+            ),
+          ),
         ],
       ),
     );
@@ -1547,10 +1572,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
             ),
           ],
         ),
-        subtitle: const Text(
-          'Authoritative breakdown of surplus cash collections and full loan payoff settlements within the selected period.',
-          style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-        ),
+
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
@@ -1634,26 +1656,61 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
       final out = (d['outstanding_balance'] as num?)?.toDouble() ?? 0.0;
       final cash = d['cash_count'] ?? 0;
       final asset = d['asset_count'] ?? 0;
+      final title = c['title'] as String;
+
+      IconData cardIcon = Icons.calendar_today_rounded;
+      Color cardColor = const Color(0xFF2563EB);
+      if (title.contains('24-Week')) {
+        cardIcon = Icons.date_range_rounded;
+        cardColor = const Color(0xFF4F46E5);
+      } else if (title.contains('Daily')) {
+        cardIcon = Icons.today_rounded;
+        cardColor = const Color(0xFF0D9488);
+      } else if (title.contains('Monthly')) {
+        cardIcon = Icons.event_note_rounded;
+        cardColor = const Color(0xFF7C3AED);
+      }
 
       return Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: const Border(
-            top: BorderSide(color: Color(0xFF2563EB), width: 3),
-            left: BorderSide(color: Color(0xFFE2E8F0)),
-            right: BorderSide(color: Color(0xFFE2E8F0)),
-            bottom: BorderSide(color: Color(0xFFE2E8F0)),
-          ),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 1)),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: const [
+            BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(c['title'] as String, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: cardColor.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(cardIcon, size: 13, color: cardColor),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    title.toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.4,
+                      color: Color(0xFF64748B),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 6),
             FittedBox(
               fit: BoxFit.scaleDown,
@@ -1665,14 +1722,14 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                   Text(
                     '$count',
                     style: const TextStyle(
-                      fontSize: 22,
+                      fontSize: 20,
                       fontWeight: FontWeight.w800,
                       color: Color(0xFF0F172A),
                       fontFeatures: [FontFeature.tabularFigures()],
                     ),
                   ),
                   const SizedBox(width: 4),
-                  const Text('Active Loans', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                  const Text('Loans', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Color(0xFF64748B))),
                 ],
               ),
             ),
@@ -1681,7 +1738,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
               child: Text(
-                'Active Credit: ${CurrencyFormatter.formatNaira(cred)}',
+                'Credit: ${CurrencyFormatter.formatNaira(cred)}',
                 maxLines: 1,
                 softWrap: false,
                 style: const TextStyle(
@@ -1699,16 +1756,16 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                 'Outstanding: ${CurrencyFormatter.formatNaira(out)}',
                 maxLines: 1,
                 softWrap: false,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFFDC2626),
-                  fontFeatures: [FontFeature.tabularFigures()],
+                  fontWeight: FontWeight.w700,
+                  color: out > 0 ? const Color(0xFFDC2626) : const Color(0xFF059669),
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ),
-            const SizedBox(height: 6),
-            Text('Cash: $cash · Asset: $asset', style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+            const SizedBox(height: 4),
+            Text('Cash: $cash · Asset: $asset', style: const TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8))),
           ],
         ),
       );
@@ -1790,8 +1847,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
       child: ExpansionTile(
         initiallyExpanded: _groupMatrixExpanded,
         onExpansionChanged: (v) => setState(() => _groupMatrixExpanded = v),
-        title: const Text('Group-by-Product Distribution Matrix (Click to Expand / Collapse)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0F172A))),
-        subtitle: const Text('Distribution of active loan products across all groups in the authorized scope.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+        title: const Text('Group-by-Product Distribution Matrix', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0F172A))),
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
@@ -3310,7 +3366,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
           // Flag for Reversal Expander
           ExpansionTile(
             title: const Text('Flag a Repayment for Reversal', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFFDC2626))),
-            subtitle: const Text('Submit a formal correction request for Branch Manager review.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
             children: [
               Padding(
                 padding: const EdgeInsets.all(16),
