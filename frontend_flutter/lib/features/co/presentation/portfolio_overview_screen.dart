@@ -594,33 +594,48 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                 ),
                 const SizedBox(height: 12),
 
-                // Row 1: Client Lifecycle Status Breakdown (8 metrics)
-                const Text('Row 1: Client Lifecycle Status Breakdown', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
+                // Client Lifecycle Status Breakdown (8 metrics)
+                _buildSectionHeader(
+                  'Client Lifecycle Status Breakdown',
+                  subtitle: 'Live portfolio client distribution across active lifecycle stages',
+                  icon: Icons.donut_large_outlined,
+                ),
                 _buildLifecycleMetricsRow(summary),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
-                // Row 2: Savings Summary (Period Flows & Vault Position)', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-                const Text('Row 2: Savings Summary (Period Flows & Vault Position)', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
+                // Savings Summary (Period Flows & Vault Position)
+                _buildSectionHeader(
+                  'Savings & Vault Flows',
+                  subtitle: 'Period deposits, withdrawals, net balance change, and current active savings reserve',
+                  icon: Icons.account_balance_wallet_outlined,
+                ),
                 _buildSavingsMetricsRow(summary),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
-                // Row 3: Disbursement Summary (2 metrics)
-                const Text('Row 3: Disbursement Summary (In Selected Period)', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
+                // Disbursement Summary (2 metrics)
+                _buildSectionHeader(
+                  'Disbursement & Underwriting Activity',
+                  subtitle: 'New credit facilities disbursed in selected operating window',
+                  icon: Icons.payments_outlined,
+                ),
                 _buildDisbursementMetricsRow(summary),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
-                // Row 4: Loan & Collection Summary (4 metrics)
-                const Text('Row 4: Loan & Collection Summary', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
+                // Loan & Collection Summary (4 metrics)
+                _buildSectionHeader(
+                  'Loan Portfolio & Collections',
+                  subtitle: 'Total active credit, scheduled repayment targets, and collections realized to date',
+                  icon: Icons.trending_up_outlined,
+                ),
                 _buildLoanCollectionMetricsRow(summary),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
-                // Row 5: Repayment Status & Risk (4 metrics)
-                const Text('Row 5: Repayment Status & Risk', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
+                // Repayment Status & Risk (4 metrics)
+                _buildSectionHeader(
+                  'Repayment Performance & Arrears Risk',
+                  subtitle: 'Delinquency status, overdue portfolio volume, and Portfolio at Risk (PAR)',
+                  icon: Icons.shield_outlined,
+                ),
                 _buildRepaymentRiskMetricsRow(summary),
                 const SizedBox(height: 20),
 
@@ -679,28 +694,43 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
         tabContent = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Row 1: Client Lifecycle Status Breakdown', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
+            _buildSectionHeader(
+              'Client Lifecycle Status Breakdown',
+              subtitle: 'Live client distribution across active stages',
+              icon: Icons.donut_large_outlined,
+            ),
             _buildLifecycleMetricsRow(summary),
             const SizedBox(height: 16),
 
-            const Text('Row 2: Savings Summary (Period Flows & Vault Position)', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
+            _buildSectionHeader(
+              'Savings & Vault Flows',
+              subtitle: 'Deposits, withdrawals, and current reserve',
+              icon: Icons.account_balance_wallet_outlined,
+            ),
             _buildSavingsMetricsRow(summary),
             const SizedBox(height: 16),
 
-            const Text('Row 3: Disbursement Summary (In Selected Period)', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
+            _buildSectionHeader(
+              'Disbursement & Underwriting',
+              subtitle: 'Credit released in selected period',
+              icon: Icons.payments_outlined,
+            ),
             _buildDisbursementMetricsRow(summary),
             const SizedBox(height: 16),
 
-            const Text('Row 4: Loan & Collection Summary', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
+            _buildSectionHeader(
+              'Loan Portfolio & Collections',
+              subtitle: 'Active credit and realized collections',
+              icon: Icons.trending_up_outlined,
+            ),
             _buildLoanCollectionMetricsRow(summary),
             const SizedBox(height: 16),
 
-            const Text('Row 5: Repayment Status & Risk', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
+            _buildSectionHeader(
+              'Repayment Performance & Risk',
+              subtitle: 'Arrears volume and PAR status',
+              icon: Icons.shield_outlined,
+            ),
             _buildRepaymentRiskMetricsRow(summary),
           ],
         );
@@ -988,7 +1018,86 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     );
   }
 
-  // Row 1: Lifecycle (8 metrics)
+  // =========================================================================
+  // INSTITUTIONAL SECTION HEADERS & MICRO-KPIS
+  // =========================================================================
+
+  Widget _buildSectionHeader(String title, {String? subtitle, IconData? icon}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (icon != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Icon(icon, size: 14, color: const Color(0xFF475569)),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1E293B),
+                  letterSpacing: 0.1,
+                ),
+              ),
+            ],
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w400,
+                color: Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMicroKpi(String label, String value, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 2),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: color,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Lifecycle (8 metrics)
   Widget _buildLifecycleMetricsRow(Map<String, dynamic> s) {
     final c1 = _buildSmallMetricCard('Registered', '${s['total_clients'] ?? 0} Clients', const Color(0xFF0284C7));
     final c2 = _buildSmallMetricCard('On Loan', '${s['active_clients'] ?? 0} Clients', const Color(0xFF059669));
@@ -1079,10 +1188,10 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     final net = (s['period_net_savings'] as num?)?.toDouble() ?? (dep - wd);
     final tot = (s['total_savings_balance'] as num?)?.toDouble() ?? 0.0;
 
-    final c1 = _buildKpiCard('Savings Deposited (Period)', CurrencyFormatter.formatNaira(dep), '${s['period_savings_dep_clients'] ?? 0} Clients', const Color(0xFF059669));
-    final c2 = _buildKpiCard('Savings Withdrawn (Period)', CurrencyFormatter.formatNaira(wd), '${s['period_savings_wd_clients'] ?? 0} Clients', const Color(0xFFDC2626));
-    final c3 = _buildKpiCard('Net Savings (Period)', CurrencyFormatter.formatNaira(net), net != 0 ? '${CurrencyFormatter.formatNaira(net)} (Net)' : '₦0 (Balanced)', const Color(0xFF2563EB));
-    final c4 = _buildKpiCard('Total Savings Balance', CurrencyFormatter.formatNaira(tot), '${s['total_savings_clients'] ?? 0} Active Savers', const Color(0xFF0284C7));
+    final c1 = _buildKpiCard('Savings Deposited (Period)', CurrencyFormatter.formatNaira(dep), '${s['period_savings_dep_clients'] ?? 0} Clients', const Color(0xFF059669), icon: Icons.arrow_downward_rounded);
+    final c2 = _buildKpiCard('Savings Withdrawn (Period)', CurrencyFormatter.formatNaira(wd), '${s['period_savings_wd_clients'] ?? 0} Clients', const Color(0xFFDC2626), icon: Icons.arrow_upward_rounded);
+    final c3 = _buildKpiCard('Net Savings (Period)', CurrencyFormatter.formatNaira(net), net != 0 ? '${CurrencyFormatter.formatNaira(net)} (Net)' : '₦0 (Balanced)', const Color(0xFF2563EB), icon: Icons.swap_vert_rounded);
+    final c4 = _buildKpiCard('Total Savings Balance', CurrencyFormatter.formatNaira(tot), '${s['total_savings_clients'] ?? 0} Active Savers', const Color(0xFF0284C7), icon: Icons.account_balance_wallet_outlined);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1128,8 +1237,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     final amt = (dSum['amount'] as num?)?.toDouble() ?? 0.0;
     final clientCount = dSum['client_count'] ?? count;
 
-    final c1 = _buildKpiCard('Loans Disbursed', '$count Loans', '$clientCount Clients', const Color(0xFF2563EB));
-    final c2 = _buildKpiCard('Total Amount Disbursed', CurrencyFormatter.formatNaira(amt), '$count Loans (Incl. Assets)', const Color(0xFF059669));
+    final c1 = _buildKpiCard('Loans Disbursed', '$count Loans', '$clientCount Clients', const Color(0xFF2563EB), icon: Icons.description_outlined);
+    final c2 = _buildKpiCard('Total Amount Disbursed', CurrencyFormatter.formatNaira(amt), '$count Loans (Incl. Assets)', const Color(0xFF059669), icon: Icons.payments_outlined);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1154,10 +1263,10 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     final actualCol = (s['total_actual_collection'] ?? s['today_collection'] as num?)?.toDouble() ?? 0.0;
     final outBal = (s['total_outstanding_balance'] as num?)?.toDouble() ?? 0.0;
 
-    final c1 = _buildKpiCard('Total Active Credit', CurrencyFormatter.formatNaira(activeCred), '${s['active_loans_count'] ?? 0} Active Loans', const Color(0xFF0F172A));
-    final c2 = _buildKpiCard('Expected Repayment', CurrencyFormatter.formatNaira(expRepay), '${s['expected_repay_clients'] ?? 0} Clients', const Color(0xFF475569));
-    final c3 = _buildKpiCard('Actual Collections (Period)', CurrencyFormatter.formatNaira(actualCol), '${s['paying_clients_count'] ?? 0} Clients Paid', const Color(0xFF059669));
-    final c4 = _buildKpiCard('Total Outstanding Balance', CurrencyFormatter.formatNaira(outBal), '${s['outstanding_clients_count'] ?? 0} Clients', const Color(0xFFDC2626));
+    final c1 = _buildKpiCard('Total Active Credit', CurrencyFormatter.formatNaira(activeCred), '${s['active_loans_count'] ?? 0} Active Loans', const Color(0xFF0F172A), icon: Icons.account_balance_outlined);
+    final c2 = _buildKpiCard('Expected Repayment', CurrencyFormatter.formatNaira(expRepay), '${s['expected_repay_clients'] ?? 0} Clients', const Color(0xFF475569), icon: Icons.event_note_outlined);
+    final c3 = _buildKpiCard('Actual Collections (Period)', CurrencyFormatter.formatNaira(actualCol), '${s['paying_clients_count'] ?? 0} Clients Paid', const Color(0xFF059669), icon: Icons.check_circle_outline);
+    final c4 = _buildKpiCard('Total Outstanding Balance', CurrencyFormatter.formatNaira(outBal), '${s['outstanding_clients_count'] ?? 0} Clients', const Color(0xFFDC2626), icon: Icons.pending_actions_outlined);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1205,10 +1314,10 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     final parStr = s['par']?.toString().replaceAll('%', '') ?? '0.00';
     final parVal = double.tryParse(parStr) ?? 0.0;
 
-    final c1 = _buildKpiCard('Full Payments', CurrencyFormatter.formatNaira((full['amount'] as num?)?.toDouble() ?? 0.0), '${full['count'] ?? 0} Loans Settled', const Color(0xFF059669));
-    final c2 = _buildKpiCard('Excess Payments', CurrencyFormatter.formatNaira((excess['amount'] as num?)?.toDouble() ?? 0.0), '${excess['count'] ?? 0} Surplus Payers', const Color(0xFF2563EB));
-    final c3 = _buildKpiCard('Overdue Portfolio', CurrencyFormatter.formatNaira((overdue['amount'] as num?)?.toDouble() ?? 0.0), '${overdue['count'] ?? 0} Overdue Loans', const Color(0xFFDC2626), isAlert: true);
-    final c4 = _buildKpiCard('Portfolio at Risk (PAR)', '${parVal.toStringAsFixed(2)}%', '${overdue['count'] ?? 0} Overdue', const Color(0xFFDC2626), isAlert: true);
+    final c1 = _buildKpiCard('Full Payments', CurrencyFormatter.formatNaira((full['amount'] as num?)?.toDouble() ?? 0.0), '${full['count'] ?? 0} Loans Settled', const Color(0xFF059669), icon: Icons.task_alt_outlined);
+    final c2 = _buildKpiCard('Excess Payments', CurrencyFormatter.formatNaira((excess['amount'] as num?)?.toDouble() ?? 0.0), '${excess['count'] ?? 0} Surplus Payers', const Color(0xFF2563EB), icon: Icons.trending_up_outlined);
+    final c3 = _buildKpiCard('Overdue Portfolio', CurrencyFormatter.formatNaira((overdue['amount'] as num?)?.toDouble() ?? 0.0), '${overdue['count'] ?? 0} Overdue Loans', const Color(0xFFDC2626), isAlert: (overdue['count'] as num? ?? 0) > 0, icon: Icons.warning_amber_rounded);
+    final c4 = _buildKpiCard('Portfolio at Risk (PAR)', '${parVal.toStringAsFixed(2)}%', '${overdue['count'] ?? 0} Overdue', parVal > 5.0 ? const Color(0xFFDC2626) : const Color(0xFF059669), isAlert: parVal > 5.0, icon: Icons.security_outlined);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1249,25 +1358,40 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   Widget _buildSmallMetricCard(String title, String subtitle, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-        border: Border(
-          top: BorderSide(color: color, width: 2.5),
-          left: const BorderSide(color: Color(0xFFE2E8F0)),
-          right: const BorderSide(color: Color(0xFFE2E8F0)),
-          bottom: const BorderSide(color: Color(0xFFE2E8F0)),
-        ),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 3, offset: const Offset(0, 1)),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x060F172A), blurRadius: 4, offset: Offset(0, 1)),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(title, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)), overflow: TextOverflow.ellipsis),
-          const SizedBox(height: 4),
+          Row(
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
@@ -1275,11 +1399,11 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
               subtitle,
               maxLines: 1,
               softWrap: false,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: color,
-                fontFeatures: const [FontFeature.tabularFigures()],
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+                fontFeatures: [FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -1288,28 +1412,61 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     );
   }
 
-  Widget _buildKpiCard(String title, String value, String subtitle, Color color, {bool isAlert = false}) {
+  Widget _buildKpiCard(
+    String title,
+    String value,
+    String subtitle,
+    Color color, {
+    bool isAlert = false,
+    IconData? icon,
+  }) {
+    final effectiveColor = isAlert ? const Color(0xFFDC2626) : color;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: isAlert ? const Color(0xFFFEF2F2) : Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border(
-          top: BorderSide(color: isAlert ? const Color(0xFFEF4444) : color, width: 3),
-          left: BorderSide(color: isAlert ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0)),
-          right: BorderSide(color: isAlert ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0)),
-          bottom: BorderSide(color: isAlert ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isAlert ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0),
+          width: 1,
         ),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 1)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x060F172A), blurRadius: 4, offset: Offset(0, 1)),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
-          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                    color: isAlert ? const Color(0xFF991B1B) : const Color(0xFF64748B),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (icon != null) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: effectiveColor.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(icon, size: 13, color: effectiveColor),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 8),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
@@ -1320,13 +1477,22 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
-                color: color,
+                color: isAlert ? const Color(0xFFDC2626) : const Color(0xFF0F172A),
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
-          const SizedBox(height: 2),
-          Text(subtitle, style: TextStyle(fontSize: 11, color: isAlert ? const Color(0xFFDC2626) : const Color(0xFF94A3B8), fontWeight: FontWeight.w500)),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 11.5,
+              color: isAlert ? const Color(0xFFDC2626) : const Color(0xFF64748B),
+              fontWeight: FontWeight.w500,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );
@@ -2535,10 +2701,10 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
             const SizedBox(height: 12),
             LayoutBuilder(
               builder: (context, constraints) {
-                final c1 = _buildKpiCard('Total Active Credit', CurrencyFormatter.formatNaira((banner['total_active_credit'] as num?)?.toDouble() ?? 0.0), 'Active Principal + Markup', const Color(0xFF0F172A));
-                final c2 = _buildKpiCard('Outstanding Balance', CurrencyFormatter.formatNaira((banner['outstanding_balance'] as num?)?.toDouble() ?? 0.0), 'Unpaid Balance', const Color(0xFFDC2626));
-                final c3 = _buildKpiCard('Savings Balance', CurrencyFormatter.formatNaira((banner['savings_balance'] as num?)?.toDouble() ?? 0.0), 'Available Balance', const Color(0xFF059669));
-                final c4 = _buildKpiCard('Account Status', banner['account_status']?.toString() ?? 'Active', 'Authoritative Standing', const Color(0xFF2563EB));
+                final c1 = _buildKpiCard('Total Active Credit', CurrencyFormatter.formatNaira((banner['total_active_credit'] as num?)?.toDouble() ?? 0.0), 'Active Principal + Markup', const Color(0xFF0F172A), icon: Icons.credit_card_outlined);
+                final c2 = _buildKpiCard('Outstanding Balance', CurrencyFormatter.formatNaira((banner['outstanding_balance'] as num?)?.toDouble() ?? 0.0), 'Unpaid Balance', const Color(0xFFDC2626), isAlert: ((banner['outstanding_balance'] as num?)?.toDouble() ?? 0.0) > 0, icon: Icons.hourglass_bottom_outlined);
+                final c3 = _buildKpiCard('Savings Balance', CurrencyFormatter.formatNaira((banner['savings_balance'] as num?)?.toDouble() ?? 0.0), 'Available Balance', const Color(0xFF059669), icon: Icons.savings_outlined);
+                final c4 = _buildKpiCard('Account Status', banner['account_status']?.toString() ?? 'Active', 'Authoritative Standing', const Color(0xFF065F46), icon: Icons.verified_user_outlined);
 
                 if (constraints.maxWidth >= 900) {
                   return Row(
@@ -2600,31 +2766,70 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   Widget _buildDossierSubTabBar(String activeTab) {
     final subtabs = [
-      'Customer Profile',
-      'Loan History',
-      'Repayment Ledger',
-      'Savings Ledger',
-      'Collection History',
-      'Lifecycle Status',
-      'Audit Trail',
+      {'name': 'Customer Profile', 'icon': Icons.badge_outlined},
+      {'name': 'Loan History', 'icon': Icons.history_edu_outlined},
+      {'name': 'Repayment Ledger', 'icon': Icons.receipt_long_outlined},
+      {'name': 'Savings Ledger', 'icon': Icons.account_balance_wallet_outlined},
+      {'name': 'Collection History', 'icon': Icons.event_available_outlined},
+      {'name': 'Lifecycle Status', 'icon': Icons.sync_alt_outlined},
+      {'name': 'Audit Trail', 'icon': Icons.security_outlined},
     ];
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: subtabs.map((tab) {
-          final isSel = activeTab == tab;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              label: Text(tab, style: TextStyle(fontSize: 12, fontWeight: isSel ? FontWeight.w700 : FontWeight.w500, color: isSel ? Colors.white : const Color(0xFF475569))),
-              selected: isSel,
-              selectedColor: const Color(0xFF2563EB),
-              backgroundColor: const Color(0xFFF1F5F9),
-              onSelected: (_) => ref.read(clientDossierSubTabProvider.notifier).state = tab,
-            ),
-          );
-        }).toList(),
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: Row(
+          children: subtabs.map((tab) {
+            final name = tab['name'] as String;
+            final icon = tab['icon'] as IconData;
+            final isSel = activeTab == name;
+            return Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: InkWell(
+                onTap: () => ref.read(clientDossierSubTabProvider.notifier).state = name,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSel ? const Color(0xFF064E3B) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: isSel
+                        ? const [
+                            BoxShadow(color: Color(0x1A064E3B), blurRadius: 4, offset: Offset(0, 1)),
+                          ]
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        icon,
+                        size: 15,
+                        color: isSel ? const Color(0xFFA7F3D0) : const Color(0xFF64748B),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        name,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
+                          color: isSel ? Colors.white : const Color(0xFF475569),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
       ),
     );
   }
@@ -2817,43 +3022,113 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
   // 2. Loan History Subtab
   Widget _buildLoanHistorySubtab(List<dynamic> loans) {
     if (loans.isEmpty) {
-      return const Center(child: Padding(padding: EdgeInsets.all(32), child: Text('No historical loan records found for this client.', style: TextStyle(color: Color(0xFF64748B)))));
+      return Container(
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
+        child: const Center(child: Text('No historical loan records found for this client.', style: TextStyle(color: Color(0xFF64748B)))),
+      );
     }
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
-      child: Scrollbar(
-        thumbVisibility: true,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-            columns: const [
-              DataColumn(label: Text('Disbursement Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Product', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Category', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Loan Principal', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-              DataColumn(label: Text('Active Credit', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-              DataColumn(label: Text('Expected Installment', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-              DataColumn(label: Text('Remaining Balance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-              DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-            ],
-            rows: loans.map((l) {
-              return DataRow(cells: [
-                DataCell(Text(l['disbursement_date']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                DataCell(Text(l['product_name']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
-                DataCell(Text(l['category']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                DataCell(Text(CurrencyFormatter.formatNaira((l['principal'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
-                DataCell(Text(CurrencyFormatter.formatNaira((l['active_credit'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]))),
-                DataCell(Text(CurrencyFormatter.formatNaira((l['expected_installment'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
-                DataCell(Text(CurrencyFormatter.formatNaira((l['remaining_balance'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]))),
-                DataCell(_buildStatusBadge(l['status']?.toString() ?? 'Active')),
-              ]);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 750) {
+          return Column(
+            children: loans.map((l) {
+              final princ = (l['principal'] as num?)?.toDouble() ?? 0.0;
+              final cred = (l['active_credit'] as num?)?.toDouble() ?? 0.0;
+              final inst = (l['expected_installment'] as num?)?.toDouble() ?? 0.0;
+              final rem = (l['remaining_balance'] as num?)?.toDouble() ?? 0.0;
+              final status = l['status']?.toString() ?? 'Active';
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x060F172A), blurRadius: 4, offset: Offset(0, 1)),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            l['product_name']?.toString() ?? 'Loan Facility',
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        _buildStatusBadge(status),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Category: ${l['category'] ?? "General"} · Disbursed: ${l['disbursement_date'] ?? "N/A"}',
+                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                    ),
+                    const Divider(color: Color(0xFFF1F5F9), height: 18),
+                    Row(
+                      children: [
+                        Expanded(child: _buildMicroKpi('Loan Principal', CurrencyFormatter.formatNaira(princ), const Color(0xFF0F172A))),
+                        Expanded(child: _buildMicroKpi('Active Credit', CurrencyFormatter.formatNaira(cred), const Color(0xFF1E293B))),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(child: _buildMicroKpi('Expected Installment', CurrencyFormatter.formatNaira(inst), const Color(0xFF0F172A))),
+                        Expanded(child: _buildMicroKpi('Remaining Balance', CurrencyFormatter.formatNaira(rem), rem > 0 ? const Color(0xFFDC2626) : const Color(0xFF059669))),
+                      ],
+                    ),
+                  ],
+                ),
+              );
             }).toList(),
+          );
+        }
+
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
+          child: Scrollbar(
+            thumbVisibility: true,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                columns: const [
+                  DataColumn(label: Text('Disbursement Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                  DataColumn(label: Text('Product', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                  DataColumn(label: Text('Category', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                  DataColumn(label: Text('Loan Principal', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+                  DataColumn(label: Text('Active Credit', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+                  DataColumn(label: Text('Expected Installment', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+                  DataColumn(label: Text('Remaining Balance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+                  DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                ],
+                rows: loans.map((l) {
+                  return DataRow(cells: [
+                    DataCell(Text(l['disbursement_date']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                    DataCell(Text(l['product_name']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
+                    DataCell(Text(l['category']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                    DataCell(Text(CurrencyFormatter.formatNaira((l['principal'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
+                    DataCell(Text(CurrencyFormatter.formatNaira((l['active_credit'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]))),
+                    DataCell(Text(CurrencyFormatter.formatNaira((l['expected_installment'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
+                    DataCell(Text(CurrencyFormatter.formatNaira((l['remaining_balance'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]))),
+                    DataCell(_buildStatusBadge(l['status']?.toString() ?? 'Active')),
+                  ]);
+                }).toList(),
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -2919,48 +3194,116 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                 padding: const EdgeInsets.all(24),
                 child: Text(
                   _hideCancelledTransactions && repayments.isNotEmpty
-                      ? 'All  repayments have been reversed or cancelled.'
+                      ? 'All repayments have been reversed or cancelled.'
                       : 'No repayments recorded for this client yet.',
                   style: const TextStyle(color: Color(0xFF64748B)),
                 ),
               ),
             )
           else
-            Scrollbar(
-              thumbVisibility: true,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                  columns: const [
-                    DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                    DataColumn(label: Text('Amount Collected', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-                    DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                    DataColumn(label: Text('Transaction Type', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                    DataColumn(label: Text('Notes', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  ],
-                  rows: visibleReps.map((r) {
-                    final isRev = r['is_reversed'] == true;
-                    final amt = (r['amount_collected'] as num?)?.toDouble() ?? 0.0;
-                    return DataRow(cells: [
-                      DataCell(Text(r['date']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                      DataCell(Text(
-                        CurrencyFormatter.formatNaira(amt),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: isRev ? const Color(0xFF94A3B8) : const Color(0xFF059669),
-                          decoration: isRev ? TextDecoration.lineThrough : null,
-                          fontFeatures: const [FontFeature.tabularFigures()],
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 750) {
+                  return Column(
+                    children: visibleReps.map((r) {
+                      final isRev = r['is_reversed'] == true;
+                      final amt = (r['amount_collected'] as num?)?.toDouble() ?? 0.0;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: isRev ? const Color(0xFFF8FAFC) : Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
                         ),
-                      )),
-                      DataCell(_buildStatusBadge(isRev ? 'REVERSED' : (r['status']?.toString() ?? 'Completed'))),
-                      DataCell(Text(r['transaction_type']?.toString() ?? 'Repayment', style: const TextStyle(fontSize: 12))),
-                      DataCell(Text(r['notes']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                    ]);
-                  }).toList(),
-                ),
-              ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  r['date']?.toString() ?? '',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                                ),
+                                _buildStatusBadge(isRev ? 'REVERSED' : (r['status']?.toString() ?? 'Completed')),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  CurrencyFormatter.formatNaira(amt),
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: isRev ? const Color(0xFF94A3B8) : const Color(0xFF059669),
+                                    decoration: isRev ? TextDecoration.lineThrough : null,
+                                    fontFeatures: const [FontFeature.tabularFigures()],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    r['transaction_type']?.toString() ?? 'Repayment',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if ((r['notes']?.toString() ?? '').isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text('Note: ${r['notes']}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                            ],
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  );
+                }
+
+                return Scrollbar(
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                      columns: const [
+                        DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                        DataColumn(label: Text('Amount Collected', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+                        DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                        DataColumn(label: Text('Transaction Type', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                        DataColumn(label: Text('Notes', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                      ],
+                      rows: visibleReps.map((r) {
+                        final isRev = r['is_reversed'] == true;
+                        final amt = (r['amount_collected'] as num?)?.toDouble() ?? 0.0;
+                        return DataRow(cells: [
+                          DataCell(Text(r['date']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                          DataCell(Text(
+                            CurrencyFormatter.formatNaira(amt),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: isRev ? const Color(0xFF94A3B8) : const Color(0xFF059669),
+                              decoration: isRev ? TextDecoration.lineThrough : null,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                          )),
+                          DataCell(_buildStatusBadge(isRev ? 'REVERSED' : (r['status']?.toString() ?? 'Completed'))),
+                          DataCell(Text(r['transaction_type']?.toString() ?? 'Repayment', style: const TextStyle(fontSize: 12))),
+                          DataCell(Text(r['notes']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                        ]);
+                      }).toList(),
+                    ),
+                  ),
+                );
+              },
             ),
           const SizedBox(height: 20),
 
@@ -3122,58 +3465,135 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
             ],
           ),
           const SizedBox(height: 16),
-          Scrollbar(
-            thumbVisibility: true,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                columns: const [
-                  DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Deposit (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-                  DataColumn(label: Text('Withdrawal (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-                  DataColumn(label: Text('Net Balance (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-                  DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Remarks', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                ],
-                rows: visibleSavings.map((s) {
-                  final dep = (s['deposit'] as num?)?.toDouble() ?? 0.0;
-                  final wd = (s['withdrawal'] as num?)?.toDouble() ?? 0.0;
-                  final bal = (s['net_balance'] as num?)?.toDouble() ?? (s['running_balance'] as num?)?.toDouble() ?? 0.0;
-                  final isRev = s['is_reversed'] == true;
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 750) {
+                return Column(
+                  children: visibleSavings.map((s) {
+                    final dep = (s['deposit'] as num?)?.toDouble() ?? 0.0;
+                    final wd = (s['withdrawal'] as num?)?.toDouble() ?? 0.0;
+                    final bal = (s['net_balance'] as num?)?.toDouble() ?? (s['running_balance'] as num?)?.toDouble() ?? 0.0;
+                    final isRev = s['is_reversed'] == true;
 
-                  return DataRow(cells: [
-                    DataCell(Text(s['date']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                    DataCell(Text(
-                      dep != 0 ? CurrencyFormatter.formatNaira(dep) : '—',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isRev ? const Color(0xFF94A3B8) : const Color(0xFF059669),
-                        fontWeight: FontWeight.w600,
-                        decoration: isRev ? TextDecoration.lineThrough : null,
-                        fontFeatures: const [FontFeature.tabularFigures()],
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isRev ? const Color(0xFFF8FAFC) : Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
-                    )),
-                    DataCell(Text(
-                      wd != 0 ? CurrencyFormatter.formatNaira(wd) : '—',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isRev ? const Color(0xFF94A3B8) : const Color(0xFFDC2626),
-                        fontWeight: FontWeight.w600,
-                        decoration: isRev ? TextDecoration.lineThrough : null,
-                        fontFeatures: const [FontFeature.tabularFigures()],
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(s['date']?.toString() ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+                              _buildStatusBadge(isRev ? 'REVERSED' : 'Posted'),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    dep > 0 ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                                    size: 16,
+                                    color: dep > 0 ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    dep > 0 ? '+${CurrencyFormatter.formatNaira(dep)}' : (wd > 0 ? '-${CurrencyFormatter.formatNaira(wd)}' : '₦0'),
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                      color: isRev ? const Color(0xFF94A3B8) : (dep > 0 ? const Color(0xFF059669) : const Color(0xFFDC2626)),
+                                      decoration: isRev ? TextDecoration.lineThrough : null,
+                                      fontFeatures: const [FontFeature.tabularFigures()],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  const Text('Balance', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
+                                  Text(
+                                    CurrencyFormatter.formatNaira(bal),
+                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0284C7), fontFeatures: [FontFeature.tabularFigures()]),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          if ((s['remarks']?.toString() ?? '').isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text('Remarks: ${s['remarks']}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                          ],
+                        ],
                       ),
-                    )),
-                    DataCell(Text(
-                      CurrencyFormatter.formatNaira(bal),
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0284C7), fontFeatures: [FontFeature.tabularFigures()]),
-                    )),
-                    DataCell(_buildStatusBadge(isRev ? 'REVERSED' : 'Posted')),
-                    DataCell(Text(s['remarks']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                  ]);
-                }).toList(),
-              ),
-            ),
+                    );
+                  }).toList(),
+                );
+              }
+
+              return Scrollbar(
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                    columns: const [
+                      DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                      DataColumn(label: Text('Deposit (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+                      DataColumn(label: Text('Withdrawal (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+                      DataColumn(label: Text('Net Balance (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+                      DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                      DataColumn(label: Text('Remarks', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                    ],
+                    rows: visibleSavings.map((s) {
+                      final dep = (s['deposit'] as num?)?.toDouble() ?? 0.0;
+                      final wd = (s['withdrawal'] as num?)?.toDouble() ?? 0.0;
+                      final bal = (s['net_balance'] as num?)?.toDouble() ?? (s['running_balance'] as num?)?.toDouble() ?? 0.0;
+                      final isRev = s['is_reversed'] == true;
+
+                      return DataRow(cells: [
+                        DataCell(Text(s['date']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                        DataCell(Text(
+                          dep != 0 ? CurrencyFormatter.formatNaira(dep) : '—',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isRev ? const Color(0xFF94A3B8) : const Color(0xFF059669),
+                            fontWeight: FontWeight.w600,
+                            decoration: isRev ? TextDecoration.lineThrough : null,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        )),
+                        DataCell(Text(
+                          wd != 0 ? CurrencyFormatter.formatNaira(wd) : '—',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isRev ? const Color(0xFF94A3B8) : const Color(0xFFDC2626),
+                            fontWeight: FontWeight.w600,
+                            decoration: isRev ? TextDecoration.lineThrough : null,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        )),
+                        DataCell(Text(
+                          CurrencyFormatter.formatNaira(bal),
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0284C7), fontFeatures: [FontFeature.tabularFigures()]),
+                        )),
+                        DataCell(_buildStatusBadge(isRev ? 'REVERSED' : 'Posted')),
+                        DataCell(Text(s['remarks']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                      ]);
+                    }).toList(),
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 20),
         ],
@@ -3194,10 +3614,10 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
         // 4 Compliance KPIs
         LayoutBuilder(
           builder: (context, constraints) {
-            final c1 = _buildKpiCard('Total Expected', CurrencyFormatter.formatNaira(exp), 'All Scheduled Repayments', const Color(0xFF475569));
-            final c2 = _buildKpiCard('Total Collected', CurrencyFormatter.formatNaira(act), 'Total Paid to Date', const Color(0xFF059669));
-            final c3 = _buildKpiCard('Collection Variance', CurrencyFormatter.formatNaira(variance), variance <= 0 ? 'Surplus / On Target' : 'Deficit / Shortfall', variance <= 0 ? const Color(0xFF059669) : const Color(0xFFDC2626), isAlert: variance > 0);
-            final c4 = _buildKpiCard('Compliance Rate', '${rate.toStringAsFixed(1)}%', 'Collection Efficiency', rate >= 90 ? const Color(0xFF059669) : const Color(0xFFDC2626), isAlert: rate < 90);
+            final c1 = _buildKpiCard('Total Expected', CurrencyFormatter.formatNaira(exp), 'All Scheduled Repayments', const Color(0xFF475569), icon: Icons.event_note_outlined);
+            final c2 = _buildKpiCard('Total Collected', CurrencyFormatter.formatNaira(act), 'Total Paid to Date', const Color(0xFF059669), icon: Icons.check_circle_outline);
+            final c3 = _buildKpiCard('Collection Variance', CurrencyFormatter.formatNaira(variance), variance <= 0 ? 'Surplus / On Target' : 'Deficit / Shortfall', variance <= 0 ? const Color(0xFF059669) : const Color(0xFFDC2626), isAlert: variance > 0, icon: Icons.compare_arrows_rounded);
+            final c4 = _buildKpiCard('Compliance Rate', '${rate.toStringAsFixed(1)}%', 'Collection Efficiency', rate >= 90 ? const Color(0xFF059669) : const Color(0xFFDC2626), isAlert: rate < 90, icon: Icons.speed_outlined);
 
             if (constraints.maxWidth >= 900) {
               return Row(
@@ -3222,13 +3642,9 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
             } else {
               return Column(
                 children: [
-                  c1,
-                  const SizedBox(height: 12),
-                  c2,
-                  const SizedBox(height: 12),
-                  c3,
-                  const SizedBox(height: 12),
-                  c4,
+                  Row(children: [Expanded(child: c1), const SizedBox(width: 8), Expanded(child: c2)]),
+                  const SizedBox(height: 8),
+                  Row(children: [Expanded(child: c3), const SizedBox(width: 8), Expanded(child: c4)]),
                 ],
               );
             }
@@ -3254,39 +3670,91 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
               if (compTable.isEmpty)
                 const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('No collection meeting records found.', style: TextStyle(color: Color(0xFF64748B)))))
               else
-                Scrollbar(
-                  thumbVisibility: true,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: DataTable(
-                      headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                      columns: const [
-                        DataColumn(label: Text('Meeting Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                        DataColumn(label: Text('Expected (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-                        DataColumn(label: Text('Collected (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-                        DataColumn(label: Text('Variance (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-                        DataColumn(label: Text('Officer', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                        DataColumn(label: Text('Compliance Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                        DataColumn(label: Text('Remarks', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                      ],
-                      rows: compTable.map((m) {
-                        final expM = (m['expected'] as num?)?.toDouble() ?? 0.0;
-                        final colM = (m['collected'] as num?)?.toDouble() ?? 0.0;
-                        final varM = (m['variance'] as num?)?.toDouble() ?? (expM - colM);
-                        final st = m['compliance_status']?.toString() ?? 'Compliant';
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxWidth < 750) {
+                      return Column(
+                        children: compTable.map((m) {
+                          final expM = (m['expected'] as num?)?.toDouble() ?? 0.0;
+                          final colM = (m['collected'] as num?)?.toDouble() ?? 0.0;
+                          final varM = (m['variance'] as num?)?.toDouble() ?? (expM - colM);
+                          final st = m['compliance_status']?.toString() ?? 'Compliant';
 
-                        return DataRow(cells: [
-                          DataCell(Text(m['meeting_date']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                          DataCell(Text(CurrencyFormatter.formatNaira(expM), style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
-                          DataCell(Text(CurrencyFormatter.formatNaira(colM), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF059669), fontFeatures: [FontFeature.tabularFigures()]))),
-                          DataCell(Text(CurrencyFormatter.formatNaira(varM), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: varM <= 0 ? const Color(0xFF059669) : const Color(0xFFDC2626), fontFeatures: [FontFeature.tabularFigures()]))),
-                          DataCell(Text(m['officer_name']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                          DataCell(_buildStatusBadge(st)),
-                          DataCell(Text(m['remarks']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                        ]);
-                      }).toList(),
-                    ),
-                  ),
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(m['meeting_date']?.toString() ?? '', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                                    _buildStatusBadge(st),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(child: _buildMicroKpi('Expected', CurrencyFormatter.formatNaira(expM), const Color(0xFF475569))),
+                                    Expanded(child: _buildMicroKpi('Collected', CurrencyFormatter.formatNaira(colM), const Color(0xFF059669))),
+                                    Expanded(child: _buildMicroKpi('Variance', CurrencyFormatter.formatNaira(varM), varM <= 0 ? const Color(0xFF059669) : const Color(0xFFDC2626))),
+                                  ],
+                                ),
+                                if ((m['officer_name']?.toString() ?? '').isNotEmpty || (m['remarks']?.toString() ?? '').isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Officer: ${m['officer_name'] ?? "Unassigned"} · Remarks: ${m['remarks'] ?? "None"}',
+                                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    }
+
+                    return Scrollbar(
+                      thumbVisibility: true,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: DataTable(
+                          headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                          columns: const [
+                            DataColumn(label: Text('Meeting Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                            DataColumn(label: Text('Expected (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+                            DataColumn(label: Text('Collected (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+                            DataColumn(label: Text('Variance (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+                            DataColumn(label: Text('Officer', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                            DataColumn(label: Text('Compliance Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                            DataColumn(label: Text('Remarks', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                          ],
+                          rows: compTable.map((m) {
+                            final expM = (m['expected'] as num?)?.toDouble() ?? 0.0;
+                            final colM = (m['collected'] as num?)?.toDouble() ?? 0.0;
+                            final varM = (m['variance'] as num?)?.toDouble() ?? (expM - colM);
+                            final st = m['compliance_status']?.toString() ?? 'Compliant';
+
+                            return DataRow(cells: [
+                              DataCell(Text(m['meeting_date']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                              DataCell(Text(CurrencyFormatter.formatNaira(expM), style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
+                              DataCell(Text(CurrencyFormatter.formatNaira(colM), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF059669), fontFeatures: [FontFeature.tabularFigures()]))),
+                              DataCell(Text(CurrencyFormatter.formatNaira(varM), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: varM <= 0 ? const Color(0xFF059669) : const Color(0xFFDC2626), fontFeatures: [FontFeature.tabularFigures()]))),
+                              DataCell(Text(m['officer_name']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                              DataCell(_buildStatusBadge(st)),
+                              DataCell(Text(m['remarks']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                            ]);
+                          }).toList(),
+                        ),
+                      ),
+                    );
+                  },
                 ),
             ],
           ),
@@ -3349,7 +3817,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
             children: [
               const Text('Manual Lifecycle Status Transition', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF0F172A))),
               const SizedBox(height: 4),
-              const Text('Transition client state under CLIENT_STATUS_RULES governance. Auto-status is enforced on loan completion.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+              const Text('Transition client status according to primary institutional policy. Automatic updates occur upon full loan payoff.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
               const SizedBox(height: 16),
               LayoutBuilder(
                 builder: (context, constraints) {
@@ -3774,30 +4242,86 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
             ],
           ),
           const SizedBox(height: 16),
-          Scrollbar(
-            thumbVisibility: true,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                columns: const [
-                  DataColumn(label: Text('Timestamp', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Entity', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Performed By', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Details', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                ],
-                rows: auditTrail.map((a) {
-                  return DataRow(cells: [
-                    DataCell(Text(a['timestamp']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                    DataCell(Text(a['action']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Color(0xFF0F172A)))),
-                    DataCell(Text(a['entity']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                    DataCell(Text(a['performed_by']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                    DataCell(Text(a['details']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                  ]);
-                }).toList(),
-              ),
-            ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 750) {
+                return Column(
+                  children: auditTrail.map((a) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                                ),
+                                child: Text(
+                                  a['action']?.toString() ?? 'Action',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
+                                ),
+                              ),
+                              Text(
+                                a['timestamp']?.toString() ?? '',
+                                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            a['details']?.toString() ?? 'No details logged',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF1E293B)),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'By: ${a['performed_by'] ?? "System"} · Entity: ${a['entity'] ?? "Client"}',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                );
+              }
+
+              return Scrollbar(
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                    columns: const [
+                      DataColumn(label: Text('Timestamp', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                      DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                      DataColumn(label: Text('Entity', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                      DataColumn(label: Text('Performed By', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                      DataColumn(label: Text('Details', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                    ],
+                    rows: auditTrail.map((a) {
+                      return DataRow(cells: [
+                        DataCell(Text(a['timestamp']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                        DataCell(Text(a['action']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Color(0xFF0F172A)))),
+                        DataCell(Text(a['entity']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                        DataCell(Text(a['performed_by']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                        DataCell(Text(a['details']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                      ]);
+                    }).toList(),
+                  ),
+                ),
+              );
+            },
           ),
         ],
       ),

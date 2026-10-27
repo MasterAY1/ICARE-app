@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import '../../../core/theme/icare_colors.dart';
 import '../../../core/widgets/icare_card.dart';
 import '../../../core/widgets/icare_section_header.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
@@ -730,29 +729,63 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
   Widget _buildTopControlBar(DateTime activeDate, bool isLateEntry) {
     return IcareCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isMobile = constraints.maxWidth < 600;
-          final lateEntryToggle = Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Switch(
-                value: isLateEntry,
-                activeColor: IcareColors.primary,
-                onChanged: (val) {
-                  ref.read(collectionsLateEntryProvider.notifier).state = val;
-                  if (!val) {
-                    ref.read(collectionsDateProvider.notifier).state = DateTime.now();
-                  }
-                },
+
+          final lateEntryToggle = InkWell(
+            onTap: () {
+              final newVal = !isLateEntry;
+              ref.read(collectionsLateEntryProvider.notifier).state = newVal;
+              if (!newVal) {
+                ref.read(collectionsDateProvider.notifier).state = DateTime.now();
+              }
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: isLateEntry ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isLateEntry ? const Color(0xFF93C5FD) : const Color(0xFFCBD5E1),
+                ),
               ),
-              const SizedBox(width: 8),
-              const Text(
-                'Late Entry / Backdated Entry',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isLateEntry ? Icons.edit_calendar_rounded : Icons.history_rounded,
+                    size: 15,
+                    color: isLateEntry ? const Color(0xFF1D4ED8) : const Color(0xFF64748B),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    isMobile
+                        ? (isLateEntry ? 'Late Entry: ON' : 'Late Entry')
+                        : (isLateEntry ? 'Late Entry: Active' : 'Late Entry / Backdated'),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: isLateEntry ? FontWeight.w700 : FontWeight.w600,
+                      color: isLateEntry ? const Color(0xFF1D4ED8) : const Color(0xFF475569),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Switch(
+                    value: isLateEntry,
+                    activeColor: const Color(0xFF1D4ED8),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    onChanged: (val) {
+                      ref.read(collectionsLateEntryProvider.notifier).state = val;
+                      if (!val) {
+                        ref.read(collectionsDateProvider.notifier).state = DateTime.now();
+                      }
+                    },
+                  ),
+                ],
               ),
-            ],
+            ),
           );
 
           final dateDisplay = isLateEntry
@@ -768,24 +801,24 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
                       ref.read(collectionsDateProvider.notifier).state = picked;
                     }
                   },
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(8),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: const Color(0xFFBFDBFE)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.calendar_today_outlined, size: 15, color: Color(0xFF2563EB)),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Select Date: ${DateFormat('dd MMMM yyyy').format(activeDate)}',
-                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
-                        ),
+                        const Icon(Icons.calendar_today_outlined, size: 14, color: Color(0xFF2563EB)),
                         const SizedBox(width: 6),
+                        Text(
+                          DateFormat(isMobile ? 'dd MMM yyyy' : 'dd MMMM yyyy').format(activeDate),
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
+                        ),
+                        const SizedBox(width: 4),
                         const Icon(Icons.arrow_drop_down, size: 16, color: Color(0xFF1D4ED8)),
                       ],
                     ),
@@ -795,37 +828,30 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.info_outline, size: 14, color: Color(0xFF475569)),
-                      const SizedBox(width: 8),
+                      const Icon(Icons.today_outlined, size: 14, color: Color(0xFF475569)),
+                      const SizedBox(width: 6),
                       Text(
-                        'Operational Date: ${DateFormat('dd MMMM yyyy').format(activeDate)} (${DateFormat('EEEE').format(activeDate)})',
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                        isMobile
+                            ? DateFormat('dd MMM yyyy (EEE)').format(activeDate)
+                            : 'Operational Date: ${DateFormat('dd MMMM yyyy (EEEE)').format(activeDate)}',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
                       ),
                     ],
                   ),
                 );
 
-          if (isMobile) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                lateEntryToggle,
-                const SizedBox(height: 10),
-                dateDisplay,
-              ],
-            );
-          }
           return Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               lateEntryToggle,
-              dateDisplay,
+              const SizedBox(width: 8),
+              Flexible(child: Align(alignment: Alignment.centerRight, child: dateDisplay)),
             ],
           );
         },
@@ -834,49 +860,65 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
   }
 
   Widget _buildPrimaryTabs(int activeTab) {
-    final tabLabels = [
-      'Record Collections',
-      'Collection History & Audit',
-      'Error Correction & Reversals',
+    final tabs = [
+      {'label': 'Record Collections', 'icon': Icons.edit_note_rounded},
+      {'label': 'Collection History & Audit', 'icon': Icons.receipt_long_outlined},
+      {'label': 'Error Correction & Reversals', 'icon': Icons.rule_folder_outlined},
     ];
 
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFE2E8F0),
+        color: const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
         child: Row(
-          children: List.generate(tabLabels.length, (idx) {
+          children: List.generate(tabs.length, (idx) {
             final isSel = activeTab == idx;
-            return InkWell(
-              onTap: () => ref.read(collectionsTabProvider.notifier).state = idx,
-              borderRadius: BorderRadius.circular(8),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                decoration: BoxDecoration(
-                  color: isSel ? Colors.white : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: isSel
-                      ? const [
-                          BoxShadow(
-                            color: Color(0x140F172A),
-                            blurRadius: 4,
-                            offset: Offset(0, 1),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Text(
-                  tabLabels[idx],
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
-                    color: isSel ? const Color(0xFF065F46) : const Color(0xFF64748B),
+            final item = tabs[idx];
+            return Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: InkWell(
+                onTap: () => ref.read(collectionsTabProvider.notifier).state = idx,
+                borderRadius: BorderRadius.circular(8),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSel ? const Color(0xFF064E3B) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: isSel
+                        ? const [
+                            BoxShadow(
+                              color: Color(0x140F172A),
+                              blurRadius: 4,
+                              offset: Offset(0, 1),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        item['icon'] as IconData,
+                        size: 15,
+                        color: isSel ? const Color(0xFFA7F3D0) : const Color(0xFF64748B),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        item['label'] as String,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
+                          color: isSel ? Colors.white : const Color(0xFF475569),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1607,22 +1649,21 @@ Status: CONFIRMED & POSTED TO LEDGER''';
     );
   }
 
-  Widget _buildPulseKpiCard(String label, String value, String subtitle, {Color accentColor = const Color(0xFF2563EB), bool isAlert = false}) {
+  Widget _buildPulseKpiCard(String label, String value, String subtitle, {Color accentColor = const Color(0xFF2563EB), bool isAlert = false, IconData? icon}) {
+    final effectiveColor = isAlert ? const Color(0xFFDC2626) : accentColor;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
         color: isAlert ? const Color(0xFFFEF2F2) : Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border(
-          top: BorderSide(color: isAlert ? const Color(0xFFDC2626) : accentColor, width: 3),
-          left: BorderSide(color: isAlert ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0)),
-          right: BorderSide(color: isAlert ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0)),
-          bottom: BorderSide(color: isAlert ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isAlert ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0),
+          width: 1,
         ),
         boxShadow: const [
           BoxShadow(
             color: Color(0x060F172A),
-            blurRadius: 3,
+            blurRadius: 4,
             offset: Offset(0, 1),
           ),
         ],
@@ -1631,8 +1672,34 @@ Status: CONFIRMED & POSTED TO LEDGER''';
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)), overflow: TextOverflow.ellipsis),
-          const SizedBox(height: 3),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                    color: isAlert ? const Color(0xFF991B1B) : const Color(0xFF64748B),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (icon != null) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: effectiveColor.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Icon(icon, size: 12, color: effectiveColor),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 6),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
@@ -1641,20 +1708,27 @@ Status: CONFIRMED & POSTED TO LEDGER''';
               maxLines: 1,
               softWrap: false,
               style: TextStyle(
-                fontSize: 15,
+                fontSize: 17,
                 fontWeight: FontWeight.w800,
                 color: isAlert ? const Color(0xFFDC2626) : const Color(0xFF0F172A),
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
-          const SizedBox(height: 2),
-          Text(subtitle, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: isAlert ? const Color(0xFFDC2626) : const Color(0xFF94A3B8)), overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 3),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 11,
+              color: isAlert ? const Color(0xFFDC2626) : const Color(0xFF64748B),
+              fontWeight: FontWeight.w500,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );
   }
-
   // =========================================================================
   // MODE 1: GROUP COLLECTION SHEET (app.py L5523–6250)
   // =========================================================================
@@ -1810,81 +1884,105 @@ Status: CONFIRMED & POSTED TO LEDGER''';
             ),
             const SizedBox(height: 16),
 
-            // Communal Group Savings Row (app.py L5767-5781)
+            // Communal Group Savings Row
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFFF0FDF4),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFF86EFAC)),
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x060F172A), blurRadius: 4, offset: Offset(0, 1)),
+                ],
               ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  if (constraints.maxWidth < 600) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Group Communal Savings · Available: ${CurrencyFormatter.formatNaira(grpSavingsBal)}',
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF166534)),
-                        ),
-                        const SizedBox(height: 2),
-                        const Text('Communal group contribution', style: TextStyle(fontSize: 12, color: Color(0xFF15803D))),
-                        const SizedBox(height: 10),
-                        TextField(
-                          controller: _grpSavingsCtrl,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: Colors.white,
-                            labelText: 'Group Savings (₦)',
-                            hintText: '0',
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Color(0xFF86EFAC))),
-                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Color(0xFF86EFAC))),
-                          ),
-                        ),
-                      ],
-                    );
-                  }
-                  return Row(
+                  final isMobile = constraints.maxWidth < 600;
+                  final headerSection = Row(
                     children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFECFDF5),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFA7F3D0)),
+                        ),
+                        child: const Icon(Icons.account_balance_outlined, size: 18, color: Color(0xFF065F46)),
+                      ),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Group Communal Savings · Available: ${CurrencyFormatter.formatNaira(grpSavingsBal)}',
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF166534)),
+                            Row(
+                              children: [
+                                const Text(
+                                  'Group Communal Savings',
+                                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFECFDF5),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text('Reserve', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF065F46))),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 2),
-                            const Text('Communal group contribution', style: TextStyle(fontSize: 12, color: Color(0xFF15803D))),
+                            Text(
+                              'Available Vault Reserve: ${CurrencyFormatter.formatNaira(grpSavingsBal)}',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF047857), fontFeatures: [FontFeature.tabularFigures()]),
+                            ),
                           ],
                         ),
                       ),
-                      SizedBox(
-                        width: 220,
-                        child: TextField(
-                          controller: _grpSavingsCtrl,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: Colors.white,
-                            labelText: 'Group Savings (₦)',
-                            hintText: '0',
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Color(0xFF86EFAC))),
-                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Color(0xFF86EFAC))),
-                          ),
-                        ),
+                    ],
+                  );
+
+                  final inputField = SizedBox(
+                    width: isMobile ? double.infinity : 240,
+                    child: TextField(
+                      controller: _grpSavingsCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        labelText: 'Group Savings (₦)',
+                        hintText: '0',
+                        prefixIcon: const Icon(Icons.payments_outlined, size: 16, color: Color(0xFF64748B)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF064E3B), width: 1.5)),
                       ),
+                    ),
+                  );
+
+                  if (isMobile) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        headerSection,
+                        const SizedBox(height: 12),
+                        inputField,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    children: [
+                      Expanded(child: headerSection),
+                      const SizedBox(width: 16),
+                      inputField,
                     ],
                   );
                 },
               ),
             ),
             const SizedBox(height: 16),
-
             // Group Meeting Pulse Bar (app.py L5650-5750 parity)
             Builder(
               builder: (context) {
@@ -1892,10 +1990,10 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                 final totalArrears = members.fold<double>(0.0, (acc, m) => acc + ((m['overdue_arrears'] as num?)?.toDouble() ?? 0.0));
                 final payingCount = members.where((m) => ((m['expected_repayment'] as num?)?.toDouble() ?? 0.0) > 0).length;
 
-                final p1 = _buildPulseKpiCard('Expected Repayment', CurrencyFormatter.formatNaira(totalExpRep), '$payingCount Members Due', accentColor: const Color(0xFF065F46));
-                final p2 = _buildPulseKpiCard('Overdue Arrears', CurrencyFormatter.formatNaira(totalArrears), totalArrears > 0 ? 'Action Needed' : 'None in Group', accentColor: const Color(0xFFDC2626), isAlert: totalArrears > 0);
-                final p3 = _buildPulseKpiCard('Communal Savings', CurrencyFormatter.formatNaira(grpSavingsBal), 'Group Reserve Fund', accentColor: const Color(0xFF2563EB));
-                final p4 = _buildPulseKpiCard('Group Size', '${members.length} Members', 'Active in Meeting', accentColor: const Color(0xFF475569));
+                final p1 = _buildPulseKpiCard('Expected Repayment', CurrencyFormatter.formatNaira(totalExpRep), '$payingCount Members Due', accentColor: const Color(0xFF065F46), icon: Icons.event_note_outlined);
+                final p2 = _buildPulseKpiCard('Overdue Arrears', CurrencyFormatter.formatNaira(totalArrears), totalArrears > 0 ? 'Action Needed' : 'None in Group', accentColor: const Color(0xFFDC2626), isAlert: totalArrears > 0, icon: Icons.warning_amber_rounded);
+                final p3 = _buildPulseKpiCard('Communal Savings', CurrencyFormatter.formatNaira(grpSavingsBal), 'Group Reserve Fund', accentColor: const Color(0xFF2563EB), icon: Icons.savings_outlined);
+                final p4 = _buildPulseKpiCard('Group Size', '${members.length} Members', 'Active in Meeting', accentColor: const Color(0xFF475569), icon: Icons.groups_outlined);
 
                 return LayoutBuilder(
                   builder: (context, constraints) {
@@ -4227,17 +4325,15 @@ Status: CONFIRMED & POSTED TO LEDGER''';
   }
 
   Widget _buildHistoryKpiCard(String label, String value, String subtitle, {bool isGrand = false, Color? accentColor, IconData? icon}) {
-    final topBorderColor = accentColor ?? (isGrand ? const Color(0xFF10B981) : const Color(0xFF059669));
+    final effectiveColor = accentColor ?? (isGrand ? const Color(0xFF065F46) : const Color(0xFF2563EB));
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border(
-          top: BorderSide(color: topBorderColor, width: 3),
-          left: BorderSide(color: isGrand ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
-          right: BorderSide(color: isGrand ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
-          bottom: BorderSide(color: isGrand ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
+        color: isGrand ? const Color(0xFFF0FDF4) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isGrand ? const Color(0xFFA7F3D0) : const Color(0xFFE2E8F0),
+          width: 1,
         ),
         boxShadow: const [
           BoxShadow(color: Color(0x060F172A), blurRadius: 4, offset: Offset(0, 1)),
@@ -4251,14 +4347,26 @@ Status: CONFIRMED & POSTED TO LEDGER''';
             children: [
               Expanded(
                 child: Text(
-                  label,
-                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                  label.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                    color: isGrand ? const Color(0xFF065F46) : const Color(0xFF64748B),
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (icon != null) ...[
                 const SizedBox(width: 4),
-                Icon(icon, size: 16, color: topBorderColor),
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: effectiveColor.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Icon(icon, size: 14, color: effectiveColor),
+                ),
               ],
             ],
           ),
@@ -4271,21 +4379,27 @@ Status: CONFIRMED & POSTED TO LEDGER''';
               maxLines: 1,
               softWrap: false,
               style: TextStyle(
-                fontSize: 18,
+                fontSize: 17,
                 fontWeight: FontWeight.w800,
-                color: isGrand ? const Color(0xFF15803D) : const Color(0xFF0F172A),
-                fontFamily: 'monospace',
+                color: isGrand ? const Color(0xFF065F46) : const Color(0xFF0F172A),
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
           const SizedBox(height: 3),
-          Text(subtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500)),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 11,
+              color: isGrand ? const Color(0xFF047857) : const Color(0xFF64748B),
+              fontWeight: FontWeight.w500,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );
   }
-
   Widget _buildGroupSummarySection(List<dynamic> groups, int repCount, int savCount) {
     return Container(
       padding: const EdgeInsets.all(16),
