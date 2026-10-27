@@ -120,13 +120,32 @@ class SupabaseUserRepository(BaseRepository[User], UserRepository):
     # Internal helpers (unchanged)
     # ------------------------------------------------------------------
 
+    _branch_cache = {}
+
     def _resolve_branch_id(self, branch_name: str) -> Optional[str]:
         if not branch_name:
             return None
+        import uuid
+        try:
+            u = uuid.UUID(str(branch_name).strip())
+            if u.int != 0:
+                return str(u)
+        except (ValueError, TypeError, AttributeError):
+            pass
+        b_key = str(branch_name).strip().lower()
+        if hasattr(self, "_branch_cache") and b_key in self._branch_cache:
+            return self._branch_cache[b_key]
         try:
             res = self.client.table("branches").select("branch_id").eq("name", branch_name).execute()
             if res.data:
-                return res.data[0]["branch_id"]
+                bid = res.data[0]["branch_id"]
+                if hasattr(self, "_branch_cache"): self._branch_cache[b_key] = bid
+                return bid
+            res_ci = self.client.table("branches").select("branch_id").ilike("name", branch_name).execute()
+            if res_ci.data:
+                bid = res_ci.data[0]["branch_id"]
+                if hasattr(self, "_branch_cache"): self._branch_cache[b_key] = bid
+                return bid
         except Exception as e:
             raise ValueError(f"Failed to resolve branch_id for {branch_name}: {str(e)}")
         raise ValueError(f"Branch '{branch_name}' not found")

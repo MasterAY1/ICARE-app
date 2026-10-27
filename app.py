@@ -1478,14 +1478,6 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
                                 if not is_asset_target:
                                     loan_cache[client_id] = active_loan_id
 
-                if active_loan_id and loan_repay > 0:
-                    from services.schedule_service import ScheduleService
-                    sch_rows = schedule_cache.get(active_loan_id) if schedule_cache else None
-                    try:
-                        ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date, cached_schedule_rows=sch_rows)
-                    except TypeError:
-                        ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date)
-
                 exp_amt = float(data.get('Expected Amount') or data.get('expected_amount') or db_data.get('expected_amount') or 0.0)
                 if exp_amt <= 0 and active_loan_id:
                     l_cached = loan_data_cache.get(active_loan_id) if loan_data_cache else None
@@ -1533,7 +1525,15 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
                 except Exception as re:
                     print(f"[ERROR] Error inserting repayment for {client_id}: {re}")
                     st.error(f"Error inserting repayment for {client_id}: {re}")
-                    return
+                    raise re
+
+                if active_loan_id and loan_repay > 0:
+                    from services.schedule_service import ScheduleService
+                    sch_rows = schedule_cache.get(active_loan_id) if schedule_cache else None
+                    try:
+                        ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date, cached_schedule_rows=sch_rows)
+                    except TypeError:
+                        ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date)
 
                 try:
                     from services.collection_performance_service import CollectionPerformanceService
@@ -1614,44 +1614,63 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
                 uow.event_store.append(ev_exp)
                 FinancialPostingEngine.post_event(uow, ev_exp)
 
-            # Passbook Fee / Bonus
-            pb_amt = float(db_data.get('passbook_bonus') or db_data.get('pass_book_paid') or db_data.get('passbook') or 0.0)
-            if pb_amt > 0:
-                ev_pb = DomainEvent(
+            # Helper for Fee recording with complete client attribution & persistence in public.fees
+            ev_ref = str(data.get('batch_id') or data.get('reference') or str(uuid.uuid4())[:8])
+            c_uuid_str = str(client_id) if _is_valid_uuid(client_id) else None
+
+            def _record_fee_with_client_attribution(amount_val, fee_category, narration_str):
+                if amount_val <= 0:
+                    return
+                event_fee = DomainEvent(
                     event_id=str(uuid.uuid4()),
                     aggregate_id=valid_aggregate_id,
                     aggregate_type="Fee",
                     event_type="FeeCharged",
-                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": pb_amt, "date": p_date_str, "narration": f"Passbook fee from {client_name}"}
+                    payload={
+                        "branch": branch,
+                        "branch_id": branch_uuid,
+                        "officer": officer,
+                        "officer_id": officer_uuid,
+                        "client_id": c_uuid_str,
+                        "client_name": str(client_name),
+                        "client": str(client_name),
+                        "amount": amount_val,
+                        "date": p_date_str,
+                        "classification": fee_category,
+                        "reference": ev_ref,
+                        "narration": narration_str
+                    }
                 )
-                uow.event_store.append(ev_pb)
-                FinancialPostingEngine.post_event(uow, ev_pb)
+                uow.event_store.append(event_fee)
+                FinancialPostingEngine.post_event(uow, event_fee)
+                try:
+                    uow.client.table("fees").insert({
+                        "posting_date": p_date_str,
+                        "client_id": c_uuid_str,
+                        "branch_id": branch_uuid,
+                        "officer_id": officer_uuid,
+                        "fee_type": fee_category,
+                        "amount": amount_val,
+                        "reference": ev_ref,
+                        "remarks": narration_str
+                    }).execute()
+                except Exception as ex_ins:
+                    print(f"[FEES INSERT ERROR - {fee_category}]: {ex_ins}")
+
+            # Passbook Fee / Bonus
+            pb_amt = float(db_data.get('passbook_bonus') or db_data.get('pass_book_paid') or db_data.get('passbook') or 0.0)
+            if pb_amt > 0:
+                _record_fee_with_client_attribution(pb_amt, "PASSBOOK", f"Passbook fee from {client_name}")
 
             # Bonus
             bon_amt = float(db_data.get('bonus', 0))
             if bon_amt > 0:
-                ev_bon = DomainEvent(
-                    event_id=str(uuid.uuid4()),
-                    aggregate_id=valid_aggregate_id,
-                    aggregate_type="Fee",
-                    event_type="FeeCharged",
-                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": bon_amt, "date": p_date_str, "narration": f"Bonus fee from {client_name}"}
-                )
-                uow.event_store.append(ev_bon)
-                FinancialPostingEngine.post_event(uow, ev_bon)
+                _record_fee_with_client_attribution(bon_amt, "BONUS", f"Bonus fee from {client_name}")
 
             # Processing Fee / App Fee
             app_fee_amt = float(db_data.get('processing_fee_paid') or db_data.get('app_fee') or 0.0)
             if app_fee_amt > 0:
-                ev_app = DomainEvent(
-                    event_id=str(uuid.uuid4()),
-                    aggregate_id=valid_aggregate_id,
-                    aggregate_type="Fee",
-                    event_type="FeeCharged",
-                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": app_fee_amt, "date": p_date_str, "narration": f"Processing Fee from {client_name}"}
-                )
-                uow.event_store.append(ev_app)
-                FinancialPostingEngine.post_event(uow, ev_app)
+                _record_fee_with_client_attribution(app_fee_amt, "PROCESSING_FEE", f"Processing Fee from {client_name}")
 
             # Cash and Carry
             cc_amount = float(db_data.get('cash_and_carry', 0))
@@ -1669,28 +1688,12 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
             # Credit Form Damage
             cfd_amount = float(db_data.get('credit_form_damage', 0))
             if cfd_amount > 0:
-                ev_cfd = DomainEvent(
-                    event_id=str(uuid.uuid4()),
-                    aggregate_id=valid_aggregate_id,
-                    aggregate_type="Fee",
-                    event_type="FeeCharged",
-                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": cfd_amount, "date": p_date_str, "narration": f"Credit Form Damage fee from {client_name}"}
-                )
-                uow.event_store.append(ev_cfd)
-                FinancialPostingEngine.post_event(uow, ev_cfd)
+                _record_fee_with_client_attribution(cfd_amount, "CREDIT_FORM_DAMAGE", f"Credit Form Damage fee from {client_name}")
 
             # Credit Form
             cf_amount = float(db_data.get('credit_form', 0))
             if cf_amount > 0:
-                ev_cf = DomainEvent(
-                    event_id=str(uuid.uuid4()),
-                    aggregate_id=valid_aggregate_id,
-                    aggregate_type="Fee",
-                    event_type="FeeCharged",
-                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": cf_amount, "date": p_date_str, "narration": f"Credit Form fee from {client_name}"}
-                )
-                uow.event_store.append(ev_cf)
-                FinancialPostingEngine.post_event(uow, ev_cf)
+                _record_fee_with_client_attribution(cf_amount, "CREDIT_FORM", f"Credit Form fee from {client_name}")
 
             # Asset Credit Sales
             asset_cr_amount = float(db_data.get('asset_credit_sales', 0))
@@ -1713,25 +1716,12 @@ def save_repayment(data, override_uow=None, client_cache=None, loan_cache=None, 
             mm_val = float(db_data.get('monthly_markup') or 0.0)
             cont_val = float(db_data.get('contingency_paid') or 0.0)
 
-            def post_fee_charge(amount_val, narration_str):
-                if amount_val <= 0:
-                    return
-                event_fee = DomainEvent(
-                    event_id=str(uuid.uuid4()),
-                    aggregate_id=valid_aggregate_id,
-                    aggregate_type="Fee",
-                    event_type="FeeCharged",
-                    payload={"branch": branch, "branch_id": branch_uuid, "officer": officer, "officer_id": officer_uuid, "amount": amount_val, "date": p_date_str, "narration": narration_str}
-                )
-                uow.event_store.append(event_fee)
-                FinancialPostingEngine.post_event(uow, event_fee)
-
-            post_fee_charge(d11_val, f"daily 11% markup fee from {client_name}")
-            post_fee_charge(d20_val, f"daily 20% markup fee from {client_name}")
-            post_fee_charge(w11_val, f"weekly 11% markup fee from {client_name}")
-            post_fee_charge(w20_val, f"weekly 20% markup fee from {client_name}")
-            post_fee_charge(mm_val, f"monthly markup risk premium fee from {client_name}")
-            post_fee_charge(cont_val, f"contingency fee from {client_name}")
+            _record_fee_with_client_attribution(d11_val, "MARKUP_11", f"daily 11% markup fee from {client_name}")
+            _record_fee_with_client_attribution(d20_val, "MARKUP_20", f"daily 20% markup fee from {client_name}")
+            _record_fee_with_client_attribution(w11_val, "MARKUP_11", f"weekly 11% markup fee from {client_name}")
+            _record_fee_with_client_attribution(w20_val, "MARKUP_20", f"weekly 20% markup fee from {client_name}")
+            _record_fee_with_client_attribution(mm_val, "MARKUP", f"monthly markup risk premium fee from {client_name}")
+            _record_fee_with_client_attribution(cont_val, "CONTINGENCY", f"contingency fee from {client_name}")
     except Exception as e:
         print(f"[ERROR] Error in save_repayment logic: {e}")
         st.error(f"Error in save_repayment logic: {e}")
