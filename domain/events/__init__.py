@@ -31,6 +31,7 @@ class RepaymentReceivedEvent(DomainEvent):
 EVENT_LOAN_OFFSET_FROM_SAVINGS = "LoanOffsetFromSavings"
 EVENT_LAPS_TRANSFERRED = "LapsTransferred"
 EVENT_LAPS_PAID_OUT = "LapsPaidOut"
+EVENT_FEE_CHARGED = "FeeCharged"
 
 @dataclass(kw_only=True)
 class LoanOffsetFromSavingsEvent(DomainEvent):

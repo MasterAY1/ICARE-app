@@ -138,7 +138,13 @@ class SupabaseAuditViewRepository(BaseRepository):
                 
                 ev_branch = payload.get("branch_id") or payload.get("branch")
                 ev_officer = payload.get("officer_id") or payload.get("officer")
-                ev_client = payload.get("client_id") or payload.get("client")
+                ev_client = payload.get("client_id") or payload.get("client") or payload.get("client_name")
+                if not ev_client:
+                    narr_text = str(payload.get("narration") or "")
+                    if " from " in narr_text:
+                        ev_client = narr_text.split(" from ")[-1].strip()
+                    elif " for client " in narr_text:
+                        ev_client = narr_text.split(" for client ")[-1].strip()
                 ev_date = str(payload.get("date") or str(ev.get("created_at") or "")[:10])[:10]
                 ev_ref = payload.get("reference") or ev.get("event_id")[:8]
                 

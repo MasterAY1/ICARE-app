@@ -168,22 +168,56 @@ class RepaymentService:
                 amt = 0.0
             if amt > 0:
                 handled_keys.add(k.lower())
+                fee_cls = (
+                    "PASSBOOK" if "pass" in k.lower() else
+                    ("PROCESSING_FEE" if ("app" in k.lower() or "form" in k.lower()) and "damage" not in k.lower() else
+                    ("CREDIT_FORM_DAMAGE" if "damage" in k.lower() else
+                    ("BONUS" if "bonus" in k.lower() else
+                    ("CONTINGENCY" if "contingency" in k.lower() else
+                    ("MARKUP_20" if "20" in k.lower() else
+                    ("MARKUP_11" if "11" in k.lower() else
+                    ("MISC_FEE" if "misc" in k.lower() else "FEE")))))))
+                )
+                c_name = getattr(repayment, 'client_name', None) or ""
+                ev_payload = {
+                    "branch": repayment.branch,
+                    "officer": repayment.credit_officer,
+                    "client_id": repayment.client_id,
+                    "client_name": c_name,
+                    "client": c_name,
+                    "amount": amt,
+                    "reference": repayment.id,
+                    "loan_id": repayment.loan_id,
+                    "date": repayment.payment_date.isoformat() if repayment.payment_date else None,
+                    "classification": fee_cls,
+                    "narration": f"{narr} from {c_name}" if c_name else narr
+                }
                 ev = DomainEvent(
                     event_id=str(uuid.uuid4()),
                     aggregate_id=repayment.id,
                     aggregate_type="Repayment",
                     event_type=e_type,
-                    payload={
-                        "branch": repayment.branch,
-                        "officer": repayment.credit_officer,
-                        "amount": amt,
-                        "reference": repayment.id,
-                        "loan_id": repayment.loan_id,
-                        "date": repayment.payment_date.isoformat() if repayment.payment_date else None,
-                        "narration": narr
-                    }
+                    payload=ev_payload
                 )
                 add_event(ev)
+                if e_type == "FeeCharged":
+                    b_uuid = FinancialPostingEngine._resolve_branch_id(uow, repayment.branch)
+                    o_uuid = FinancialPostingEngine._resolve_officer_id(uow, repayment.credit_officer)
+                    operations.append({
+                        "type": "insert",
+                        "table": "fees",
+                        "record": {
+                            "id": str(uuid.uuid4()),
+                            "posting_date": repayment.payment_date.isoformat() if repayment.payment_date else date.today().isoformat(),
+                            "client_id": repayment.client_id if is_valid_uuid(repayment.client_id) else None,
+                            "branch_id": b_uuid,
+                            "officer_id": o_uuid,
+                            "fee_type": fee_cls,
+                            "amount": amt,
+                            "reference": repayment.id,
+                            "remarks": ev_payload["narration"]
+                        }
+                    })
 
         # Execute all accumulated operations atomically
         uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()

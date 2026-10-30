@@ -4935,20 +4935,16 @@ elif page == "Collections":
     with SupabaseUnitOfWork() as uow_date:
         active_b_date = BusinessDateService.get_business_date(uow_date, BRANCH)
 
-    use_late_entry = st.toggle("Late Entry / Backdated Entry")
-    if use_late_entry:
-        view_date = st.date_input("Select Date", active_b_date, key="col_date")
+    use_late_entry = st.session_state.get("col_late_entry", False)
+    if use_late_entry and "col_date" in st.session_state and st.session_state["col_date"]:
+        view_date = st.session_state["col_date"]
     else:
         view_date = active_b_date
-        st.info(f"Operational Business Date: **{view_date.strftime('%d %B %Y')}** ({view_date.strftime('%A')})")
     
     date_str = view_date.strftime("%Y-%m-%d")
 
     with SupabaseUnitOfWork() as uow_chk:
         is_day_open, open_reason = BusinessDateService.is_operational_open(uow_chk, BRANCH_ID, view_date)
-
-    if not is_day_open and not use_late_entry:
-        st.warning(f"**Operational Activity Suspended ({open_reason})**: Collections for **{view_date.strftime('%d %B %Y')}** are locked in Read-Only mode. (To record historical entries, toggle 'Late Entry / Backdated Entry' above).")
     
     all_loans = load_loans()
     repayments = load_repayments()
@@ -5079,7 +5075,20 @@ Status: CONFIRMED & POSTED TO LEDGER"""
             
                 if "collections_mode_radio" not in st.session_state or st.session_state["collections_mode_radio"] not in col_options:
                     st.session_state["collections_mode_radio"] = col_options[0]
-                col_mode = st.radio("Collection Mode", col_options, horizontal=True, key="collections_mode_radio")
+                
+                c_mode_col, c_late_col = st.columns([3, 1])
+                with c_mode_col:
+                    col_mode = st.radio("Collection Mode", col_options, horizontal=True, key="collections_mode_radio")
+                with c_late_col:
+                    use_late_entry = st.toggle("Backdate Entry", value=st.session_state.get("col_late_entry", False), key="col_late_entry")
+                    if use_late_entry:
+                        view_date = st.date_input("Select Backdate", active_b_date, key="col_date")
+                        date_str = view_date.strftime("%Y-%m-%d")
+                    else:
+                        st.caption(f"Date: {active_b_date.strftime('%d %b %Y')}")
+
+                if not is_day_open and not use_late_entry:
+                    st.warning(f"**Operational Activity Suspended ({open_reason})**: Collections for **{view_date.strftime('%d %B %Y')}** are locked in Read-Only mode. (To record historical entries, toggle 'Backdate Entry' above).")
 
                 # Pre-load all active clients for the target officer / branch
                 with SupabaseUnitOfWork() as uow:
@@ -12330,7 +12339,7 @@ elif page == "Portfolio":
         sel_officer = None
         selected_officer_id = None
 
-        with st.container(border=True):
+        with st.expander("Filter Scope & Time Period", expanded=False):
             # Row 1: Scope & Officer Selection
             if p_scope.scope_level == "OFFICER":
                 st.markdown(f"**Scope**: Credit Officer Portfolio (`{p_scope.username}`) &middot; **Branch**: `{p_scope.branch_name}`")

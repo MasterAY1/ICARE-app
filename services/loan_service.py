@@ -170,6 +170,9 @@ class LoanService:
             markup_val = setup.get("markup", 0.0)
             cont_val = setup.get("contingency", 0.0)
             
+            b_uuid_resolved = FinancialPostingEngine._resolve_branch_id(uow, loan.branch)
+            c_uuid_valid = loan.client_id if is_valid_uuid(loan.client_id) else None
+
             if markup_val > 0:
                 rate = setup.get("rate", 0.12)
                 prod_lower = (loan.product_type or "").lower()
@@ -183,7 +186,12 @@ class LoanService:
                     event_type="FeeCharged",
                     payload={
                         "branch": loan.branch,
+                        "branch_id": b_uuid_resolved,
                         "officer": loan.credit_officer,
+                        "officer_id": user_id,
+                        "client_id": c_uuid_valid,
+                        "client_name": str(loan.client_name or ""),
+                        "client": str(loan.client_name or ""),
                         "amount": markup_val,
                         "date": b_date.isoformat(),
                         "reference": ref_id,
@@ -192,6 +200,21 @@ class LoanService:
                     }
                 )
                 add_event(event_markup)
+                operations.append({
+                    "type": "insert",
+                    "table": "fees",
+                    "record": {
+                        "id": str(uuid.uuid4()),
+                        "posting_date": b_date.isoformat(),
+                        "client_id": c_uuid_valid,
+                        "branch_id": b_uuid_resolved,
+                        "officer_id": user_id,
+                        "fee_type": markup_class,
+                        "amount": markup_val,
+                        "reference": ref_id,
+                        "remarks": f"Upfront Markup Charged ({'20%' if is_20_pct else '11%'}) ({loan.product_type}) for client {loan.client_name}"
+                    }
+                })
 
             if cont_val > 0:
                 event_cont = DomainEvent(
@@ -201,7 +224,12 @@ class LoanService:
                     event_type="FeeCharged",
                     payload={
                         "branch": loan.branch,
+                        "branch_id": b_uuid_resolved,
                         "officer": loan.credit_officer,
+                        "officer_id": user_id,
+                        "client_id": c_uuid_valid,
+                        "client_name": str(loan.client_name or ""),
+                        "client": str(loan.client_name or ""),
                         "amount": cont_val,
                         "date": b_date.isoformat(),
                         "reference": ref_id,
@@ -210,6 +238,21 @@ class LoanService:
                     }
                 )
                 add_event(event_cont)
+                operations.append({
+                    "type": "insert",
+                    "table": "fees",
+                    "record": {
+                        "id": str(uuid.uuid4()),
+                        "posting_date": b_date.isoformat(),
+                        "client_id": c_uuid_valid,
+                        "branch_id": b_uuid_resolved,
+                        "officer_id": user_id,
+                        "fee_type": "CONTINGENCY",
+                        "amount": cont_val,
+                        "reference": ref_id,
+                        "remarks": f"Upfront Contingency Fee Charged for client {loan.client_name}"
+                    }
+                })
 
         # Execute all accumulated operations atomically
         uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()

@@ -42,6 +42,7 @@ class AuditEnricher:
         self.uow = uow
         self._clients_by_id: Dict[str, Dict[str, str]] = {}
         self._clients_by_code: Dict[str, Dict[str, str]] = {}
+        self._clients_by_name: Dict[str, Dict[str, str]] = {}
         self._client_branches: Dict[str, str] = {}
         self._officer_branches: Dict[str, str] = {}
         self._groups_by_id: Dict[str, Dict[str, str]] = {}
@@ -81,6 +82,8 @@ class AuditEnricher:
                             self._client_branches[str(c_id)] = str(c["branch_id"])
                     if code:
                         self._clients_by_code[str(code)] = entry
+                    if name:
+                        self._clients_by_name[str(name).strip().lower()] = entry
         except Exception:
             pass
 
@@ -186,6 +189,8 @@ class AuditEnricher:
             return self._clients_by_id[cid]
         if cid in self._clients_by_code:
             return self._clients_by_code[cid]
+        if cid.lower() in getattr(self, "_clients_by_name", {}):
+            return self._clients_by_name[cid.lower()]
 
         if "-" in cid and len(cid) < 20:
             return {"code": cid, "name": cid, "full_label": cid}

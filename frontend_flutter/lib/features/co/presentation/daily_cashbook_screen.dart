@@ -19,6 +19,16 @@ final coCashbookDataProvider = FutureProvider.family<Map<String, dynamic>, Strin
   return api.getCoCashbook(dateStr: dateStr, officer: officer);
 });
 
+/// Riverpod family provider for retrieving today's attributed client fees for the CO
+final clientFeesProvider = FutureProvider.family<List<dynamic>, String>((ref, key) async {
+  final parts = key.split('||');
+  final dateStr = parts.isNotEmpty && parts[0] != 'null' && parts[0].isNotEmpty ? parts[0] : null;
+  final officer = parts.length > 1 && parts[1] != 'null' && parts[1].isNotEmpty ? parts[1] : null;
+
+  final api = ref.watch(coApiServiceProvider);
+  return api.getClientFees(dateStr: dateStr, officer: officer);
+});
+
 /// 1:1 Streamlit Parity Replica of Credit Officer Daily Cashbook & Reconciliation (app.py L10748–11186)
 /// Double-entry physical cashbook verified against Account 1000 Vault Cash.
 /// Strict Zero-Emoji Governance (GEMINI Rule 10: SVG / Material Icons only).
@@ -102,6 +112,397 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     _miscFeeCtrl.text = misc > 0 ? misc.toStringAsFixed(0) : '';
     _cfdCtrl.text = cfd > 0 ? cfd.toStringAsFixed(0) : '';
     _bonusCtrl.text = bon > 0 ? bon.toStringAsFixed(0) : '';
+  }
+
+  Widget _buildClientFeesList() {
+    final feesAsync = ref.watch(clientFeesProvider(_currentKey));
+    return feesAsync.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
+      ),
+      error: (e, _) => const SizedBox(),
+      data: (fees) {
+        if (fees.isEmpty) {
+          return Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.info_outline, size: 16, color: Color(0xFF64748B)),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'No client fees recorded for this date yet. Use "Record Client Fee" to attribute a fee directly to a client.',
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(top: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Recorded Client Fees (${fees.length})',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                    ),
+                    const Text(
+                      'Attributed in Audit View',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF059669)),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+              ...fees.map((f) {
+                final m = f as Map<String, dynamic>;
+                final cName = m['client_name'] ?? 'Unknown';
+                final cCode = m['client_code'] ?? 'N/A';
+                final fType = m['fee_type'] ?? 'FEE';
+                final amt = (m['amount'] as num?)?.toDouble() ?? 0.0;
+
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: const BoxDecoration(
+                    border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: const Color(0xFFDBEAFE)),
+                        ),
+                        child: Text(
+                          fType,
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '$cCode — $cName',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Text(
+                        CurrencyFormatter.formatNaira(amt, showDecimals: true),
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF065F46)),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showRecordClientFeeModal(BuildContext context, bool isOpen, String openReason) {
+    if (!isOpen) {
+      _showBanner('Cannot record fees today ($openReason).', const Color(0xFFDC2626), const Color(0xFFFEF2F2), Icons.error_outline);
+      return;
+    }
+
+    final api = ref.read(coApiServiceProvider);
+    List<dynamic> clientsList = [];
+    bool isLoadingClients = true;
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        String selectedFeeType = 'Credit Form / App Fee';
+        Map<String, dynamic>? selectedClient;
+        final amountCtrl = TextEditingController();
+        final remarksCtrl = TextEditingController();
+        bool isSubmittingFee = false;
+        String? localError;
+
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            if (isLoadingClients && clientsList.isEmpty) {
+              api.getSingleClientOptions().then((res) {
+                if (ctx.mounted) {
+                  setModalState(() {
+                    clientsList = (res['clients'] as List<dynamic>?) ?? [];
+                    isLoadingClients = false;
+                  });
+                }
+              }).catchError((err) {
+                if (ctx.mounted) {
+                  setModalState(() {
+                    isLoadingClients = false;
+                    localError = 'Failed to load branch clients: $err';
+                  });
+                }
+              });
+            }
+
+            final isMobile = MediaQuery.of(ctx).size.width < 600;
+
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              insetPadding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24, vertical: 16),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: isMobile ? double.infinity : 540),
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x260F172A), blurRadius: 24, offset: Offset(0, 8)),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFECFDF5),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.receipt_long_outlined, size: 20, color: Color(0xFF059669)),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Record Client Fee', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                                SizedBox(height: 2),
+                                Text('Attributed revenue fee linked directly to the client.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 20, color: Color(0xFF64748B)),
+                            onPressed: () => Navigator.of(ctx).pop(),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 24, color: Color(0xFFF1F5F9)),
+
+                      if (localError != null)
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(8)),
+                          child: Text(localError!, style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626))),
+                        ),
+
+                      const Text('Select Client', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                      const SizedBox(height: 6),
+                      if (isLoadingClients)
+                        const SizedBox(
+                          height: 48,
+                          child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+                        )
+                      else
+                        DropdownButtonFormField<Map<String, dynamic>>(
+                          isExpanded: true,
+                          value: selectedClient,
+                          hint: const Text('Search / Select Client', style: TextStyle(fontSize: 13, color: Color(0xFF94A3B8))),
+                          decoration: InputDecoration(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            filled: true,
+                            fillColor: const Color(0xFFF8FAFC),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                          ),
+                          items: clientsList.map((c) {
+                            final m = c as Map<String, dynamic>;
+                            final name = m['client_name'] ?? 'Unknown';
+                            final code = m['client_code'] ?? '';
+                            final grp = m['group_name'] ?? '';
+                            return DropdownMenuItem<Map<String, dynamic>>(
+                              value: m,
+                              child: Text(
+                                '$code — $name ($grp)',
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (val) => setModalState(() => selectedClient = val),
+                        ),
+                      const SizedBox(height: 14),
+
+                      const Text('Fee Category', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String>(
+                        value: selectedFeeType,
+                        decoration: InputDecoration(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          filled: true,
+                          fillColor: const Color(0xFFF8FAFC),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'Credit Form / App Fee', child: Text('Credit Form / App Fee (Processing)')),
+                          DropdownMenuItem(value: 'Pass Book', child: Text('Pass Book')),
+                          DropdownMenuItem(value: 'Misc Fee', child: Text('Misc Fee (Misc Savings)')),
+                          DropdownMenuItem(value: 'Credit Form Damage', child: Text('Credit Form Damage (Damage Fee)')),
+                          DropdownMenuItem(value: 'Bonus', child: Text('Bonus')),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setModalState(() => selectedFeeType = v);
+                        },
+                      ),
+                      const SizedBox(height: 14),
+
+                      const Text('Fee Amount (₦)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: amountCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          prefixText: '₦ ',
+                          hintText: 'e.g. 500',
+                          filled: true,
+                          fillColor: const Color(0xFFF8FAFC),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      const Text('Transaction Remarks / Reference (Optional)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: remarksCtrl,
+                        decoration: InputDecoration(
+                          hintText: 'e.g. Passbook issuance during evening collection',
+                          filled: true,
+                          fillColor: const Color(0xFFF8FAFC),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: isSubmittingFee ? null : () => Navigator.of(ctx).pop(),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF475569),
+                                side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: ElevatedButton.icon(
+                              onPressed: isSubmittingFee
+                                  ? null
+                                  : () async {
+                                      if (selectedClient == null) {
+                                        setModalState(() => localError = 'Please select a client.');
+                                        return;
+                                      }
+                                      final amt = double.tryParse(amountCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+                                      if (amt <= 0) {
+                                        setModalState(() => localError = 'Please enter a fee amount greater than ₦0.');
+                                        return;
+                                      }
+
+                                      setModalState(() {
+                                        isSubmittingFee = true;
+                                        localError = null;
+                                      });
+
+                                      try {
+                                        final feePayload = {
+                                          'client_id': selectedClient!['client_id'],
+                                          'fee_type': selectedFeeType,
+                                          'amount': amt,
+                                          'date': _dateStr,
+                                          if (_selectedOfficer != null && _selectedOfficer!.isNotEmpty) 'officer': _selectedOfficer,
+                                          if (remarksCtrl.text.trim().isNotEmpty) 'remarks': remarksCtrl.text.trim(),
+                                        };
+                                        final feeRes = await api.recordClientFee(feePayload);
+                                        if (ctx.mounted) Navigator.of(ctx).pop();
+                                        _showBanner(
+                                          feeRes['message'] ?? 'Fee recorded successfully.',
+                                          const Color(0xFF065F46),
+                                          const Color(0xFFECFDF5),
+                                          Icons.check_circle_outline,
+                                        );
+                                        ref.invalidate(coCashbookDataProvider(_currentKey));
+                                        ref.invalidate(clientFeesProvider(_currentKey));
+                                      } catch (e) {
+                                        if (ctx.mounted) {
+                                          setModalState(() {
+                                            isSubmittingFee = false;
+                                            localError = 'Error recording fee: $e';
+                                          });
+                                        }
+                                      }
+                                    },
+                              icon: isSubmittingFee
+                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                  : const Icon(Icons.check, size: 16),
+                              label: Text(isSubmittingFee ? 'Recording...' : 'Post Client Fee'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF065F46),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _handleSaveEod(bool isOpen, String openReason) async {
@@ -226,7 +627,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         // Page Title & Subtitle (app.py L10749-10750)
         const IcareSectionHeader(
           title: 'Daily Cashbook',
-          subtitle: 'Vault Cash Ledger (Account 1000)',
+          subtitle: 'Primary Vault Ledger',
         ),
         const SizedBox(height: 14),
 
@@ -698,7 +1099,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                         ),
                         const SizedBox(width: 8),
                         const Text(
-                          'ACCOUNT 1000 · VAULT CASH',
+                          'PRIMARY VAULT CASH',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
@@ -1358,9 +1759,26 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                             const SizedBox(height: 12),
                             _buildNumberField('Bank Deposited', _bankDepCtrl, step: 500),
                             const SizedBox(height: 16),
-                            const Text(
-                              'Additional Collections & Fees',
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Additional Collections & Fees',
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: isOpen ? () => _showRecordClientFeeModal(context, isOpen, openReason) : null,
+                                  icon: const Icon(Icons.person_add_alt_1_outlined, size: 14),
+                                  label: const Text('Record Client Fee', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF065F46),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                    elevation: 0,
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 10),
                             _buildNumberField(
@@ -1412,9 +1830,26 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                           const SizedBox(height: 16),
 
                           // Additional Collections Subheading (app.py L10887)
-                          const Text(
-                            'Additional Collections & Fees',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Additional Collections & Fees',
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                              ),
+                              ElevatedButton.icon(
+                                onPressed: isOpen ? () => _showRecordClientFeeModal(context, isOpen, openReason) : null,
+                                icon: const Icon(Icons.person_add_alt_1_outlined, size: 14),
+                                label: const Text('Record Client Fee', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF065F46),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                  elevation: 0,
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 10),
 
@@ -1468,6 +1903,8 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                       );
                     },
                   ),
+                  const SizedBox(height: 10),
+                  _buildClientFeesList(),
                   const SizedBox(height: 18),
 
                   // Submit Action Button (app.py L10898)

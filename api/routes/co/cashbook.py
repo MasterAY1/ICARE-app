@@ -492,3 +492,252 @@ def submit_eod_adjustments(
 
 
 
+
+
+from pydantic import BaseModel, Field
+
+class RecordClientFeeInput(BaseModel):
+    client_id: str
+    fee_type: str  # e.g., 'Credit Form / App Fee', 'Pass Book', 'Misc Fee', 'Cr Form Dmg', 'Bonus'
+    amount: float = Field(..., gt=0)
+    date: Optional[str] = None
+    officer: Optional[str] = None
+    remarks: Optional[str] = None
+
+class RecordClientFeeResponse(BaseModel):
+    success: bool
+    message: str
+    fee_id: str
+    date: str
+    client_name: str
+    fee_type: str
+    amount: float
+
+class ClientFeeItem(BaseModel):
+    id: str
+    date: str
+    client_id: Optional[str] = None
+    client_code: str
+    client_name: str
+    fee_type: str
+    amount: float
+    remarks: Optional[str] = None
+    reference: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+@router.post("/client-fee", response_model=RecordClientFeeResponse)
+def record_client_fee(
+    payload: RecordClientFeeInput,
+    current_user: CurrentUser = Depends(require_role(["CO", "Credit Officer", "Officer", "BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Records an individual client fee (Processing, Passbook, Misc Fee, CFD, Bonus)
+    with full client attribution, immutable persistence in public.fees, and automatic CO cashbook projection update.
+    """
+    import uuid
+    from domain.entities.event_store import DomainEvent
+    from services.posting_engine import FinancialPostingEngine
+
+    target_date = date.today()
+    if payload.date:
+        try:
+            target_date = date.fromisoformat(payload.date)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid date format. Use YYYY-MM-DD."
+            )
+
+    is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id, target_date)
+    if not is_open:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Cannot record client fee today ({open_reason})."
+        )
+
+    date_str = target_date.isoformat()
+    b_uuid = uow.cashbook._resolve_branch_id(current_user.branch)
+
+    # Fetch client to verify existence and get details
+    res_c = uow.client.table("clients").select("client_id, client_code, name, branch_id").eq("client_id", payload.client_id).execute()
+    if not res_c.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Client not found."
+        )
+    c_row = res_c.data[0]
+    client_name = c_row.get("name") or "Unknown Client"
+    client_code = c_row.get("client_code") or "N/A"
+
+    # Scoping target officer
+    mgr_roles = {"BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin", "Director", "Executive"}
+    target_co = current_user.username
+    if current_user.role in mgr_roles and payload.officer:
+        target_co = payload.officer
+
+    officer_uuid = uow.loans._resolve_officer_id(target_co)
+    if not officer_uuid:
+        res_u = uow.client.table("app_users").select("id").eq("username", target_co).execute()
+        officer_uuid = res_u.data[0]["id"] if res_u.data else current_user.id
+
+    # Normalize fee classification & display name
+    ft_low = payload.fee_type.lower()
+    if "pass" in ft_low:
+        fee_cls = "PASSBOOK"
+        fee_name = "Passbook Fee"
+    elif "bonus" in ft_low:
+        fee_cls = "BONUS"
+        fee_name = "Bonus"
+    elif "damage" in ft_low or "dmg" in ft_low or "cfd" in ft_low:
+        fee_cls = "CREDIT_FORM_DAMAGE"
+        fee_name = "Credit Form Damage Fee"
+    elif "misc" in ft_low:
+        fee_cls = "MISC_FEE"
+        fee_name = "Misc Fee"
+    else:
+        fee_cls = "PROCESSING_FEE"
+        fee_name = "Credit Form / App Fee"
+
+    fee_id = str(uuid.uuid4())
+    ev_ref = f"FEE-{date_str}-{uuid.uuid4().hex[:6].upper()}"
+    narr = payload.remarks or f"{fee_name} from {client_code} ({client_name}) recorded at EOD"
+
+    # Route according to authoritative banking rules (BR-ACCT-001, BR-SAV-001, BR-SAV-002, BR-SAV-005)
+    if fee_cls == "MISC_FEE":
+        # 1. Misc Fee is Misc Savings (Internal Savings pool) -> Debit 1000 (Vault Cash), Credit 2020 (Internal Savings)
+        try:
+            from services.savings_service import SavingsService
+            SavingsService.post_misc_savings(
+                uow, payload.client_id, client_name, current_user.branch, target_co,
+                payload.amount, reference=ev_ref, remarks=narr, posting_date=target_date
+            )
+        except Exception as ex_misc:
+            print(f"[MISC SAVINGS POST WARNING]: {ex_misc}")
+
+        # 2. Persist operational fee register entry for dashboard/report visibility without double-posting ledger
+        try:
+            uow.client.table("fees").insert({
+                "id": fee_id,
+                "posting_date": date_str,
+                "client_id": payload.client_id,
+                "branch_id": b_uuid,
+                "officer_id": officer_uuid,
+                "fee_type": fee_cls,
+                "amount": payload.amount,
+                "reference": ev_ref,
+                "remarks": narr
+            }).execute()
+        except Exception as ex_ins:
+            print(f"[FEES TABLE INSERT ERROR]: {ex_ins}")
+    else:
+        # True Fee Revenue (Account 3000: Fee Income) -> Debit 1000 (Vault Cash), Credit 3000 (Fee Income)
+        ev = DomainEvent(
+            event_id=fee_id,
+            aggregate_id=payload.client_id,
+            aggregate_type="Fee",
+            event_type="FeeCharged",
+            payload={
+                "branch": current_user.branch,
+                "branch_id": b_uuid,
+                "officer": target_co,
+                "officer_id": officer_uuid,
+                "client_id": payload.client_id,
+                "client_name": client_name,
+                "client": client_name,
+                "amount": payload.amount,
+                "date": date_str,
+                "classification": fee_cls,
+                "reference": ev_ref,
+                "narration": narr
+            }
+        )
+        uow.event_store.append(ev)
+        FinancialPostingEngine.post_event(uow, ev)
+
+        # Persist directly into public.fees
+        try:
+            uow.client.table("fees").insert({
+                "id": fee_id,
+                "posting_date": date_str,
+                "client_id": payload.client_id,
+                "branch_id": b_uuid,
+                "officer_id": officer_uuid,
+                "fee_type": fee_cls,
+                "amount": payload.amount,
+                "reference": ev_ref,
+                "remarks": narr
+            }).execute()
+        except Exception as ex_ins:
+            print(f"[FEES TABLE INSERT ERROR]: {ex_ins}")
+
+    # Rebuild projection
+    if officer_uuid and b_uuid:
+        uow.cashbook.rebuild_projection(b_uuid, target_date, officer_id=officer_uuid)
+
+    return RecordClientFeeResponse(
+        success=True,
+        message=f"Recorded {fee_name} of ₦{payload.amount:,.2f} for {client_name}.",
+        fee_id=fee_id,
+        date=date_str,
+        client_name=client_name,
+        fee_type=fee_cls,
+        amount=payload.amount
+    )
+
+
+@router.get("/client-fees", response_model=List[ClientFeeItem])
+def get_client_fees(
+    date_str: Optional[str] = Query(None, alias="date"),
+    officer: Optional[str] = Query(None),
+    current_user: CurrentUser = Depends(require_role(["CO", "Credit Officer", "Officer", "BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Returns all client fees recorded for the given officer and date.
+    """
+    target_date = date.today()
+    if date_str:
+        try:
+            target_date = date.fromisoformat(date_str)
+        except ValueError:
+            target_date = date.today()
+    p_date_str = target_date.isoformat()
+
+    b_uuid = uow.cashbook._resolve_branch_id(current_user.branch)
+    mgr_roles = {"BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin", "Director", "Executive"}
+    target_co = current_user.username
+    if current_user.role in mgr_roles and officer:
+        target_co = officer
+
+    officer_uuid = uow.loans._resolve_officer_id(target_co)
+    if not officer_uuid:
+        res_u = uow.client.table("app_users").select("id").eq("username", target_co).execute()
+        officer_uuid = res_u.data[0]["id"] if res_u.data else current_user.id
+
+    # Query public.fees
+    results: List[ClientFeeItem] = []
+    try:
+        res_fees = uow.client.table("fees").select("*, clients(client_code, name)")\
+            .eq("branch_id", b_uuid).eq("officer_id", officer_uuid)\
+            .eq("posting_date", p_date_str)\
+            .order("created_at", desc=True).execute()
+        for f in (res_fees.data or []):
+            cl = f.get("clients") or {}
+            results.append(ClientFeeItem(
+                id=str(f.get("id")),
+                date=str(f.get("posting_date")),
+                client_id=str(f.get("client_id") or ""),
+                client_code=cl.get("client_code") or "N/A",
+                client_name=cl.get("name") or "Unknown Client",
+                fee_type=f.get("fee_type") or "FEE",
+                amount=float(f.get("amount") or 0.0),
+                remarks=f.get("remarks"),
+                reference=f.get("reference"),
+                created_at=str(f.get("created_at") or "")
+            ))
+    except Exception as e:
+        print(f"[CLIENT FEES QUERY WARNING]: {e}")
+
+    return results

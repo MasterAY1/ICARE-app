@@ -200,6 +200,21 @@ class CoApiService {
     return response.data as Map<String, dynamic>;
   }
 
+  /// POST /api/v1/co/cashbook/client-fee
+  Future<Map<String, dynamic>> recordClientFee(Map<String, dynamic> payload) async {
+    final response = await _client.post('/api/v1/co/cashbook/client-fee', data: payload);
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// GET /api/v1/co/cashbook/client-fees
+  Future<List<dynamic>> getClientFees({String? dateStr, String? officer}) async {
+    final queryParams = <String, dynamic>{};
+    if (dateStr != null && dateStr.isNotEmpty) queryParams['date'] = dateStr;
+    if (officer != null && officer.isNotEmpty) queryParams['officer'] = officer;
+    final response = await _client.get('/api/v1/co/cashbook/client-fees', queryParameters: queryParams);
+    return response.data as List<dynamic>;
+  }
+
   /// POST /api/v1/co/cashbook/reversal-request
   Future<Map<String, dynamic>> requestCashbookReversal(Map<String, dynamic> payload) async {
     final response = await _client.post('/api/v1/co/cashbook/reversal-request', data: payload);
