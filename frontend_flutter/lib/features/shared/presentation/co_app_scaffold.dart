@@ -6,6 +6,7 @@ import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/offline/connectivity_service.dart';
 import '../../../core/offline/offline_sync_manager.dart';
+import '../../../core/offline/offline_database_service.dart';
 import '../../co/presentation/co_dashboard_screen.dart';
 import '../../co/presentation/loan_origination_screen.dart';
 import '../../co/presentation/daily_collections_screen.dart';
@@ -180,10 +181,38 @@ class CoAppScaffold extends ConsumerWidget {
     final isAdmin = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN';
     final isAm = role == 'Area Manager' || role == 'AM';
 
-    ref.listen<bool>(isOnlineProvider, (previous, next) {
+    ref.listen<bool>(isOnlineProvider, (previous, next) async {
       if (previous == false && next == true) {
         _triggerPageRefresh(ref, activePage, isBm, isAm);
-        if (context.mounted) {
+        final pendingCount = ref.read(pendingOutboxCountProvider);
+        if (pendingCount > 0) {
+          final syncMgr = ref.read(offlineSyncManagerProvider);
+          final res = await syncMgr.syncOutbox();
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.cloud_done, color: Colors.white, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        res.success
+                            ? 'Connection restored: Automatically synchronized ${res.syncedCount} queued transaction(s) to ledger.'
+                            : 'Connection restored: ${res.message}',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: res.success ? const Color(0xFF065F46) : const Color(0xFFD97706),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+        } else if (context.mounted) {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -191,7 +220,7 @@ class CoAppScaffold extends ConsumerWidget {
                 children: [
                   Icon(Icons.wifi, color: Colors.white, size: 16),
                   SizedBox(width: 8),
-                  Text('Connection restored. Data synchronized.', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  Text('Connection restored. Live sync active.', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                 ],
               ),
               backgroundColor: Color(0xFF065F46),
@@ -1404,14 +1433,119 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Pending batches on device: $pendingCount',
+              'Pending transactions on device: $pendingCount',
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             const Text(
               'Queued transactions will post atomically to primary vault cash and the double-entry financial ledger.',
-              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
             ),
+            if (pendingCount > 0) ...[
+              const SizedBox(height: 10),
+              FutureBuilder<List<Map<String, dynamic>>>(
+                future: ref.read(offlineDatabaseServiceProvider).getPendingOutboxBatches(),
+                builder: (context, snapshot) {
+                  final items = snapshot.data ?? [];
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
+                    );
+                  }
+                  if (items.isEmpty) return const SizedBox.shrink();
+
+                  return Container(
+                    constraints: const BoxConstraints(maxHeight: 180),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: items.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                      itemBuilder: (context, idx) {
+                        final item = items[idx];
+                        final isSingle = item['operation_type'] == 'SINGLE_COLLECTION';
+                        final groupOrClient = item['group_name']?.toString() ?? 'Collection';
+                        final colDate = item['collection_date']?.toString() ?? '';
+                        final statusStr = item['status']?.toString() ?? 'pending';
+                        final isFailed = statusStr == 'failed';
+                        final errMsg = item['error_message']?.toString();
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(5),
+                                    decoration: BoxDecoration(
+                                      color: isSingle ? const Color(0xFFEFF6FF) : const Color(0xFFECFDF5),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Icon(
+                                      isSingle ? Icons.person_outline : Icons.groups_outlined,
+                                      size: 16,
+                                      color: isSingle ? const Color(0xFF2563EB) : const Color(0xFF059669),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          groupOrClient,
+                                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        Text(
+                                          '$colDate · ${isSingle ? "Single Client" : "Group Batch"}',
+                                          style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: isFailed ? const Color(0xFFFEF2F2) : const Color(0xFFFEF3C7),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      isFailed ? 'Failed' : 'Pending',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: isFailed ? const Color(0xFFDC2626) : const Color(0xFFB45309),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (isFailed && errMsg != null && errMsg.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  errMsg,
+                                  style: const TextStyle(fontSize: 10, color: Color(0xFFDC2626)),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ],
             if (_statusMsg != null) ...[
               const SizedBox(height: 12),
               Container(

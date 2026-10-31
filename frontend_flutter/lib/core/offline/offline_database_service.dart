@@ -381,6 +381,85 @@ class OfflineDatabaseService {
   // 2. OUTBOX MANAGEMENT (SYNC-UP)
   // ==========================================
 
+  /// Queues an ad-hoc single client collection into the local outbox when offline.
+  Future<int> queueSingleCollection({
+    required String idempotencyKey,
+    required String clientName,
+    required String collectionDate,
+    required Map<String, dynamic> payload,
+  }) async {
+    final nowIso = DateTime.now().toIso8601String();
+
+    // Persist to SharedPreferences
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rawOutboxStr = prefs.getString('offline_persisted_outbox');
+      final list = rawOutboxStr != null
+          ? (jsonDecode(rawOutboxStr) as List<dynamic>)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList()
+          : <Map<String, dynamic>>[];
+      list.add({
+        'id': idempotencyKey.hashCode.abs(),
+        'idempotency_key': idempotencyKey,
+        'operation_type': 'SINGLE_COLLECTION',
+        'group_name': clientName,
+        'collection_date': collectionDate,
+        'payload_json': jsonEncode(payload),
+        'status': 'pending',
+        'retry_count': 0,
+        'created_at': nowIso,
+        'synced_at': null,
+        'error_message': null,
+      });
+      await prefs.setString('offline_persisted_outbox', jsonEncode(list));
+    } catch (_) {}
+
+    if (kIsWeb || useMemoryStore) {
+      final id = _webIdCounter++;
+      _webOutbox.add({
+        'id': id,
+        'idempotency_key': idempotencyKey,
+        'operation_type': 'SINGLE_COLLECTION',
+        'group_name': clientName,
+        'collection_date': collectionDate,
+        'payload_json': jsonEncode(payload),
+        'status': 'pending',
+        'retry_count': 0,
+        'created_at': nowIso,
+        'synced_at': null,
+        'error_message': null,
+      });
+      return id;
+    }
+
+    try {
+      final db = await database;
+      return await db.insert(
+        'offline_outbox',
+        {
+          'idempotency_key': idempotencyKey,
+          'operation_type': 'SINGLE_COLLECTION',
+          'group_name': clientName,
+          'collection_date': collectionDate,
+          'payload_json': jsonEncode(payload),
+          'status': 'pending',
+          'retry_count': 0,
+          'created_at': nowIso,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (_) {
+      useMemoryStore = true;
+      return queueSingleCollection(
+        idempotencyKey: idempotencyKey,
+        clientName: clientName,
+        collectionDate: collectionDate,
+        payload: payload,
+      );
+    }
+  }
+
   /// Queues a collection batch into the local outbox when offline.
   Future<int> queueBatchCollection({
     required String idempotencyKey,

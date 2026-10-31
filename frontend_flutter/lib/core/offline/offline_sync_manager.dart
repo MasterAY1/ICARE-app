@@ -129,6 +129,58 @@ class OfflineSyncManager {
     };
   }
 
+  /// Enqueues an ad-hoc single client collection into the local outbox when offline or network fails.
+  /// Generates an offline electronic cashier receipt for the client.
+  Future<Map<String, dynamic>> queueOfflineSingleCollection({
+    required String clientName,
+    required String collectionDate,
+    required Map<String, dynamic> payload,
+  }) async {
+    final key = generateIdempotencyKey('SC_$clientName');
+
+    // Inject idempotency key and batch ID into payload
+    final augmentedPayload = Map<String, dynamic>.from(payload);
+    augmentedPayload['idempotency_key'] = key;
+    augmentedPayload['batch_id'] = key;
+
+    final outboxId = await _db.queueSingleCollection(
+      idempotencyKey: key,
+      clientName: clientName,
+      collectionDate: collectionDate,
+      payload: augmentedPayload,
+    );
+
+    await _outboxNotifier.refresh();
+
+    final repAmt = (payload['loan_repayment'] as num?)?.toDouble() ?? 0.0;
+    final savAmt = (payload['savings_deposit'] as num?)?.toDouble() ?? 0.0;
+    final grpSavAmt = (payload['group_savings_deposit'] as num?)?.toDouble() ?? 0.0;
+    final fees = ((payload['app_fee'] as num?)?.toDouble() ?? 0.0) +
+                 ((payload['passbook_fee'] as num?)?.toDouble() ?? 0.0) +
+                 ((payload['misc_fee'] as num?)?.toDouble() ?? 0.0);
+    final totCash = repAmt + savAmt + grpSavAmt + fees;
+
+    return {
+      'success': true,
+      'offline_queued': true,
+      'outbox_id': outboxId,
+      'receipt': {
+        'batch_id': 'OFFLINE-QUEUE-$outboxId',
+        'idempotency_key': key,
+        'group_name': 'Single Client: $clientName',
+        'total_cash': totCash,
+        'total_repayment': repAmt,
+        'total_savings': savAmt + grpSavAmt,
+        'total_submitted': 1,
+        'timestamp': DateTime.now().toIso8601String(),
+        'status': 'QUEUED_LOCAL',
+        'watermark': 'OFFLINE RECORDING - PENDING SYNC',
+        'officer': 'Field Credit Officer',
+        'date': collectionDate,
+      }
+    };
+  }
+
   // ==========================================
   // 3. SYNC-UP (FLUSH PENDING OUTBOX TO SERVER)
   // ==========================================
@@ -157,10 +209,17 @@ class OfflineSyncManager {
         final payload = jsonDecode(payloadJson) as Map<String, dynamic>;
 
         try {
-          // Post to authoritative backend with deterministic idempotency_key
-          final res = await _api.submitBatchCollections(payload);
-          final receipt = res['receipt'] as Map<String, dynamic>?;
-          final serverBatchId = receipt?['batch_id']?.toString() ?? res['batch_id']?.toString() ?? 'SYNCED-$id';
+          final opType = (item['operation_type'] as String?) ?? 'BATCH_COLLECTION';
+          String serverBatchId;
+          if (opType == 'SINGLE_COLLECTION') {
+            final res = await _api.submitSingleCollection(payload);
+            final receipt = res['receipt'] as Map<String, dynamic>?;
+            serverBatchId = receipt?['batch_id']?.toString() ?? res['batch_id']?.toString() ?? 'SYNCED-$id';
+          } else {
+            final res = await _api.submitBatchCollections(payload);
+            final receipt = res['receipt'] as Map<String, dynamic>?;
+            serverBatchId = receipt?['batch_id']?.toString() ?? res['batch_id']?.toString() ?? 'SYNCED-$id';
+          }
           
           await _db.markOutboxBatchSynced(id, serverBatchId);
           syncedCount++;

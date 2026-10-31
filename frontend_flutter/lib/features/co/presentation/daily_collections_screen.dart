@@ -911,47 +911,54 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
           isOnline: isOnline,
 
           onConfirmPost: () async {
-
+            final isOnline = ref.read(isOnlineProvider);
+            final syncMgr = ref.read(offlineSyncManagerProvider);
             final api = ref.read(coApiServiceProvider);
-
             final payload = {
-
               'client_id': clientObj['client_id'],
-
               'client_name': clientObj['client_name'],
-
               'group_id': clientObj['group_id'],
-
               'group_name': clientObj['group_name'],
-
               'loan_id': _scSelectedLoanId,
-
               'date': dateStr,
-
               'savings_deposit': savVal,
-
               'group_savings_deposit': grpSavVal,
-
               'loan_repayment': repVal,
-
               'app_fee': appVal,
-
               'passbook_fee': pbVal,
-
               'misc_fee': miscVal,
-
               'note': note,
-
               'mark_not_paid': isNotPaid,
-
               'expected_amount': expRep,
-
             };
 
-            return await api.submitSingleCollection(payload);
+            if (!isOnline) {
+              final offlineRes = await syncMgr.queueOfflineSingleCollection(
+                clientName: clientObj['client_name']?.toString() ?? 'Client',
+                collectionDate: dateStr,
+                payload: payload,
+              );
+              ref.invalidate(singleClientOptionsProvider);
+              return offlineRes;
+            }
 
+            try {
+              final res = await api.submitSingleCollection(payload);
+              ref.invalidate(singleClientOptionsProvider);
+              return res;
+            } catch (e) {
+              if (e is DioException) {
+                final offlineRes = await syncMgr.queueOfflineSingleCollection(
+                  clientName: clientObj['client_name']?.toString() ?? 'Client',
+                  collectionDate: dateStr,
+                  payload: payload,
+                );
+                ref.invalidate(singleClientOptionsProvider);
+                return offlineRes;
+              }
+              rethrow;
+            }
           },
-
           onDismissAndReset: () {
 
             Navigator.of(dialogCtx, rootNavigator: true).pop();
@@ -15080,121 +15087,113 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
   }
 
   Widget _buildSuccessView(bool isMobile) {
-
     final r = _receiptData ?? {};
-
     final batchId = r['batch_id']?.toString() ?? 'COL-SC-OK';
-
     final clientName = widget.clientObj['client_name']?.toString() ?? 'Client';
-
     final clientCode = widget.clientObj['client_code']?.toString() ?? 'CLI-N/A';
-
     final groupName = widget.clientObj['group_name']?.toString() ?? 'Ungrouped';
-
     final totalCash = (r['total_cash'] as num?)?.toDouble() ?? (widget.repVal + widget.savVal + widget.grpSavVal + widget.appVal + widget.pbVal + widget.miscVal);
-
     final recordedAt = r['timestamp']?.toString() ?? DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
+    final isOfflineQueued = r['offline_queued'] == true || r['status'] == 'QUEUED_LOCAL' || r['watermark'] != null;
 
     return Column(
-
       children: [
-
         Expanded(
-
           child: SingleChildScrollView(
-
             padding: EdgeInsets.all(isMobile ? 14 : 20),
-
             child: Column(
-
               crossAxisAlignment: CrossAxisAlignment.start,
-
               children: [
-
                 Center(
-
                   child: Column(
-
                     children: [
-
-                      const _AnimatedSuccessCheckmark(),
-
+                      if (isOfflineQueued)
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: const Color(0xFFFDE68A), width: 2),
+                          ),
+                          child: const Icon(Icons.cloud_upload_outlined, color: Color(0xFFD97706), size: 28),
+                        )
+                      else
+                        const _AnimatedSuccessCheckmark(),
                       const SizedBox(height: 12),
-
-                      const Text(
-
-                        'COLLECTION POSTED & COMMITTED TO PRIMARY VAULT CASH',
-
-                        textAlign: TextAlign.center,
-
-                        style: TextStyle(
-
-                          fontSize: 14,
-
-                          fontWeight: FontWeight.w800,
-
-                          color: Color(0xFF064E3B),
-
-                          letterSpacing: 0.1,
-
-                        ),
-
-                      ),
-
-                      const SizedBox(height: 4),
-
                       Text(
-
-                        'Transaction recorded with client attribution in fee register and double-entry ledger.',
-
+                        isOfflineQueued
+                            ? 'COLLECTION QUEUED LOCALLY (PENDING SYNC)'
+                            : 'COLLECTION POSTED & COMMITTED TO PRIMARY VAULT CASH',
                         textAlign: TextAlign.center,
-
-                        style: const TextStyle(
-
-                          fontSize: 12,
-
-                          color: Color(0xFF047857),
-
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: isOfflineQueued ? const Color(0xFF92400E) : const Color(0xFF064E3B),
+                          letterSpacing: 0.1,
                         ),
-
                       ),
-
+                      const SizedBox(height: 4),
+                      Text(
+                        isOfflineQueued
+                            ? 'Single client collection stored in local outbox on device. Final ledger posting to Primary Vault Cash will occur upon network synchronization.'
+                            : 'Transaction recorded with client attribution in fee register and double-entry ledger.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isOfflineQueued ? const Color(0xFFB45309) : const Color(0xFF047857),
+                        ),
+                      ),
                     ],
-
                   ),
-
                 ),
-
                 const SizedBox(height: 16),
-
                 // Digital Receipt Card
-
                 Container(
-
                   padding: const EdgeInsets.all(16),
-
                   decoration: BoxDecoration(
-
-                    color: const Color(0xFFF8FAFC),
-
+                    color: isOfflineQueued ? const Color(0xFFFFFBEB) : const Color(0xFFF8FAFC),
                     borderRadius: BorderRadius.circular(12),
-
-                    border: Border.all(color: const Color(0xFFCBD5E1)),
-
+                    border: Border.all(
+                      color: isOfflineQueued ? const Color(0xFFD97706) : const Color(0xFFCBD5E1),
+                      width: isOfflineQueued ? 1.5 : 1.0,
+                    ),
                   ),
-
                   child: Column(
-
                     crossAxisAlignment: CrossAxisAlignment.start,
-
                     children: [
-
+                      if (isOfflineQueued) ...[
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFFDE68A)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.access_time_filled, size: 14, color: Color(0xFFB45309)),
+                              SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'OFFLINE RECEIPT · PENDING RECONCILIATION TO VAULT CASH',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFFB45309),
+                                    letterSpacing: 0.2,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       Row(
-
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
                         children: [
-
                           const Text('Receipt Reference:', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
 
                           Text(batchId, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, fontFamily: 'monospace')),

@@ -82,12 +82,16 @@ class SingleClientSubmitInput(BaseModel):
     date: Optional[str] = None
     mark_not_paid: bool = False
     expected_amount: float = 0.0
+    idempotency_key: Optional[str] = Field(None, description="Unique client transaction key for offline idempotency")
+    batch_id: Optional[str] = Field(None, description="Deterministic batch identifier")
 
 
 class SingleClientSubmitResponse(BaseModel):
     success: bool
     receipt: Optional[Dict[str, Any]] = None
     message: str
+    idempotency_key: Optional[str] = None
+    batch_id: Optional[str] = None
 
 
 # Collection History & Audit Models

@@ -540,6 +540,11 @@ def submit_single_client(
         except ValueError:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use YYYY-MM-DD.")
 
+    # Verify operational open status (honoring offline idempotency key exemption per BR-DATE-002)
+    is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id, target_date)
+    if not is_open and not payload.idempotency_key:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Cannot submit new collections today ({open_reason}).")
+
     # Verify client exists and user is authorized for client's branch
     res_c = uow.client.table("clients").select("branch_id").eq("client_id", payload.client_id).execute()
     if not res_c.data:
@@ -548,7 +553,7 @@ def submit_single_client(
     check_branch_access(current_user, target_branch_id, "submit collections for this client")
 
     date_str = target_date.isoformat()
-    sc_batch_id = f"COL-SC-{date_str}-{uuid.uuid4().hex[:6].upper()}"
+    sc_batch_id = payload.batch_id or payload.idempotency_key or f"COL-SC-{date_str}-{uuid.uuid4().hex[:6].upper()}"
 
     is_not_paid = bool(payload.mark_not_paid)
     rep_amt = 0.0 if is_not_paid else payload.loan_repayment
@@ -629,6 +634,9 @@ def submit_single_client(
     from app import save_repayments
     receipt = save_repayments(records_to_insert, batch_id=sc_batch_id)
     if receipt:
+        receipt["batch_id"] = sc_batch_id
+        if payload.idempotency_key:
+            receipt["idempotency_key"] = payload.idempotency_key
         receipt["group_name"] = f"Single Client: {payload.client_name} ({payload.group_name})" if payload.group_name != "Ungrouped" else f"Single Client: {payload.client_name}"
         receipt["officer"] = current_user.username
         receipt["branch"] = current_user.branch
@@ -638,7 +646,9 @@ def submit_single_client(
     return SingleClientSubmitResponse(
         success=True,
         receipt=receipt,
-        message=f"Successfully posted single client collection for {payload.client_name}!"
+        message=f"Successfully posted single client collection for {payload.client_name}!",
+        idempotency_key=payload.idempotency_key,
+        batch_id=sc_batch_id
     )
 
 

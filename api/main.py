@@ -22,6 +22,7 @@ from api.routes import users
 from api.routes import reports
 from api.routes import onboarding
 from auth.session import get_auth_secret
+from database.connection import verify_supabase_credentials
 
 app = FastAPI(
     title="ICARE Core Banking Backend API",
@@ -34,8 +35,10 @@ def verify_security_configuration():
     """
     Validates required production security configuration on startup.
     Fails closed immediately if ICARE_AUTH_SECRET is missing, empty, or whitespace-only.
+    Fails closed immediately in production if SUPABASE_SERVICE_ROLE_KEY is missing or invalid.
     """
     get_auth_secret()
+    verify_supabase_credentials()
 
 # Enable CORS for Flutter Web, iOS, Android, and desktop clients
 app.add_middleware(
