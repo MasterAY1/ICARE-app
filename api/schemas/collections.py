@@ -24,6 +24,10 @@ class CollectionSheetMember(BaseModel):
     prev_rep: Optional[float] = None
     prev_dep: Optional[float] = None
     prev_status: Optional[str] = None
+    today_repayment: float = 0.0
+    today_savings: float = 0.0
+    today_status: str = "UNRECORDED"
+    today_collected_total: float = 0.0
 
 
 class CollectionSheetResponse(BaseModel):
@@ -58,6 +62,11 @@ class SingleClientOption(BaseModel):
     personal_savings_balance: float
     group_savings_balance: float
     loans: List[SingleClientLoanOption] = []
+    today_repayment: float = 0.0
+    today_savings: float = 0.0
+    today_collected: bool = False
+    today_status: str = "UNRECORDED"
+    today_collected_total: float = 0.0
 
 
 class SingleClientOptionsResponse(BaseModel):

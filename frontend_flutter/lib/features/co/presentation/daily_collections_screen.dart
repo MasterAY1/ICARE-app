@@ -4025,8 +4025,16 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                   double liveSav = double.tryParse(_grpSavingsCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
 
                   int accountedCount = 0;
+                  int alreadyRecordedCount = 0;
+                  double alreadyRecordedTotal = 0.0;
 
                   for (final m in members) {
+                    final tTot = (m['today_collected_total'] as num?)?.toDouble() ?? 0.0;
+                    final tStat = m['today_status']?.toString();
+                    if (tTot > 0 || tStat == 'PAID' || tStat == 'NOT_PAID') {
+                      alreadyRecordedCount++;
+                      alreadyRecordedTotal += tTot;
+                    }
 
                     final cid = m['client_id']?.toString() ?? '';
 
@@ -4179,6 +4187,29 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                           ],
 
                         ),
+                        if (alreadyRecordedCount > 0) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFECFDF5),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFA7F3D0)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.check_circle_outline, size: 14, color: Color(0xFF065F46)),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Already Recorded Today: $alreadyRecordedCount of ${members.length} Members (${CurrencyFormatter.formatNaira(alreadyRecordedTotal)})',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF065F46)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
 
                       ],
 
@@ -4304,6 +4335,12 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
     final isFutureLoan = m['is_future_loan'] == true;
 
+    final tRep = (m['today_repayment'] as num?)?.toDouble() ?? 0.0;
+    final tSav = (m['today_savings'] as num?)?.toDouble() ?? 0.0;
+    final tStat = m['today_status']?.toString() ?? 'UNRECORDED';
+    final tTot = (m['today_collected_total'] as num?)?.toDouble() ?? (tRep + tSav);
+    final isAlreadyRecorded = tTot > 0 || tStat == 'PAID' || tStat == 'NOT_PAID';
+
     // Initialize state controllers for member
 
     _memberRepaymentCtrls.putIfAbsent(cid, () => TextEditingController(text: expRep > 0 ? expRep.toStringAsFixed(0) : '0'));
@@ -4356,9 +4393,11 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                   ? const Color(0xFFFCA5A5)
 
-                  : (hasOverdue ? const Color(0xFFFCD34D) : (clientTotal > 0 ? const Color(0xFFA7F3D0) : const Color(0xFFE2E8F0)))),
+                  : (isAlreadyRecorded
+                      ? const Color(0xFFA7F3D0)
+                      : (hasOverdue ? const Color(0xFFFCD34D) : (clientTotal > 0 ? const Color(0xFFA7F3D0) : const Color(0xFFE2E8F0))))),
 
-          width: isExpanded ? 1.8 : (isNotPaid || hasOverdue || clientTotal > 0 ? 1.5 : 1),
+          width: isExpanded ? 1.8 : (isAlreadyRecorded || isNotPaid || hasOverdue || clientTotal > 0 ? 1.5 : 1),
 
         ),
 
@@ -4430,7 +4469,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                                 ? const Color(0xFFFEE2E2)
 
-                                : (hasOverdue ? const Color(0xFFFEF3C7) : (isExpanded ? const Color(0xFFECFDF5) : const Color(0xFFF0FDF4))),
+                                : (isAlreadyRecorded ? const Color(0xFFECFDF5) : (hasOverdue ? const Color(0xFFFEF3C7) : (isExpanded ? const Color(0xFFECFDF5) : const Color(0xFFF0FDF4)))),
 
                             border: Border.all(
 
@@ -4546,6 +4585,38 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                                 ),
 
+                              if (isAlreadyRecorded) ...[
+                                if (tStat == 'NOT_PAID')
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(4), border: Border.all(color: const Color(0xFFFDE68A))),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.info_outline, size: 11, color: Color(0xFFB45309)),
+                                        SizedBox(width: 3),
+                                        Text('Marked Unpaid Today', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFFB45309))),
+                                      ],
+                                    ),
+                                  )
+                                else
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(4), border: Border.all(color: const Color(0xFFA7F3D0))),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.check_circle_outline, size: 11, color: Color(0xFF065F46)),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          'Recorded Today: ${tRep > 0 ? CurrencyFormatter.formatNaira(tRep) + " Rep" : ""}${tRep > 0 && tSav > 0 ? " · " : ""}${tSav > 0 ? CurrencyFormatter.formatNaira(tSav) + " Sav" : ""}',
+                                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF065F46)),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+
                             ],
 
                           ),
@@ -4562,7 +4633,20 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                     if (!isExpanded) ...[
 
-                      if (isNotPaid)
+                      if (isAlreadyRecorded && tTot > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                          decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFA7F3D0))),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.check, size: 12, color: Color(0xFF065F46)),
+                              const SizedBox(width: 4),
+                              Text(CurrencyFormatter.formatNaira(tTot), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF065F46))),
+                            ],
+                          ),
+                        )
+                      else if (isNotPaid)
 
                         Container(
 
@@ -6449,6 +6533,11 @@ Status: CONFIRMED & POSTED TO LEDGER''';
         final expRep = activeLoan != null ? (activeLoan['expected_repayment'] as num?)?.toDouble() ?? 0.0 : 0.0;
 
         final prodName = activeLoan != null ? activeLoan['product']?.toString() ?? 'Loan' : 'No Active Loan';
+        final scTodayRep = selClient != null ? ((selClient['today_repayment'] as num?)?.toDouble() ?? 0.0) : 0.0;
+        final scTodaySav = selClient != null ? ((selClient['today_savings'] as num?)?.toDouble() ?? 0.0) : 0.0;
+        final scTodayTot = selClient != null ? ((selClient['today_collected_total'] as num?)?.toDouble() ?? (scTodayRep + scTodaySav)) : 0.0;
+        final scTodayStat = selClient != null ? (selClient['today_status']?.toString() ?? 'UNRECORDED') : 'UNRECORDED';
+        final scIsRecordedToday = selClient != null && (selClient['today_collected'] == true || scTodayTot > 0 || scTodayStat == 'PAID' || scTodayStat == 'NOT_PAID');
 
         return Column(
 
@@ -6720,20 +6809,40 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                         final cgname = c['group_name']?.toString() ?? 'Ungrouped';
 
+                        final isDone = c['today_collected'] == true ||
+                            ((c['today_collected_total'] as num?)?.toDouble() ?? 0.0) > 0 ||
+                            c['today_status'] == 'PAID' ||
+                            c['today_status'] == 'NOT_PAID';
+
                         return DropdownMenuItem(
 
                           value: cid,
 
-                          child: Text(
-
-                            '$cname ($ccode) — Group: $cgname',
-
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-
-                            overflow: TextOverflow.ellipsis,
-
-                            maxLines: 1,
-
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '$cname ($ccode) — Group: $cgname',
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ),
+                              if (isDone)
+                                Container(
+                                  margin: const EdgeInsets.only(left: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFECFDF5),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: const Color(0xFFA7F3D0)),
+                                  ),
+                                  child: const Text(
+                                    'Recorded Today',
+                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF065F46)),
+                                  ),
+                                ),
+                            ],
                           ),
 
                         );
@@ -6932,6 +7041,102 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
               },
 
+            ),
+
+            // Today's Collection Status Banner
+            Container(
+              margin: const EdgeInsets.only(top: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: scIsRecordedToday
+                    ? (scTodayStat == 'NOT_PAID' ? const Color(0xFFFEF3C7) : const Color(0xFFECFDF5))
+                    : const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: scIsRecordedToday
+                      ? (scTodayStat == 'NOT_PAID' ? const Color(0xFFFDE68A) : const Color(0xFFA7F3D0))
+                      : const Color(0xFFE2E8F0),
+                  width: scIsRecordedToday ? 1.5 : 1.0,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: scIsRecordedToday
+                          ? (scTodayStat == 'NOT_PAID' ? const Color(0xFFFDE68A) : const Color(0xFFA7F3D0))
+                          : const Color(0xFFE2E8F0),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      scIsRecordedToday
+                          ? (scTodayStat == 'NOT_PAID' ? Icons.info_outline : Icons.check_circle_outline)
+                          : Icons.schedule,
+                      size: 18,
+                      color: scIsRecordedToday
+                          ? (scTodayStat == 'NOT_PAID' ? const Color(0xFFB45309) : const Color(0xFF065F46))
+                          : const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              scIsRecordedToday
+                                  ? (scTodayStat == 'NOT_PAID'
+                                      ? 'MARKED UNPAID TODAY ($dateStr)'
+                                      : 'RECORDED TODAY ($dateStr)')
+                                  : 'NOT YET RECORDED TODAY ($dateStr)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: scIsRecordedToday
+                                    ? (scTodayStat == 'NOT_PAID' ? const Color(0xFF92400E) : const Color(0xFF064E3B))
+                                    : const Color(0xFF475569),
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                            const Spacer(),
+                            if (scIsRecordedToday && scTodayStat != 'NOT_PAID')
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF065F46),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  CurrencyFormatter.formatNaira(scTodayTot),
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          scIsRecordedToday
+                              ? (scTodayStat == 'NOT_PAID'
+                                  ? 'Client attendance logged with ₦0 payment. Overdue tracked in arrears.'
+                                  : 'Loan Repayment: ${CurrencyFormatter.formatNaira(scTodayRep)} · Personal Savings: ${CurrencyFormatter.formatNaira(scTodaySav)} · Confirmed to Primary Vault Cash.')
+                              : (expRep > 0
+                                  ? 'Expected loan repayment for this meeting cycle: ${CurrencyFormatter.formatNaira(expRep)}.'
+                                  : 'No scheduled installment due today. You may record savings deposit or custom repayment below.'),
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: scIsRecordedToday
+                                ? (scTodayStat == 'NOT_PAID' ? const Color(0xFFB45309) : const Color(0xFF047857))
+                                : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
 
             const SizedBox(height: 16),

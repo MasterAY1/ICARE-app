@@ -165,14 +165,19 @@ def get_collection_sheet(
             except Exception:
                 group_savings_balance = 0.0
 
-    # Today's repayments for this officer
+    # Today's repayments for this officer (ISO timestamp & date-prefix tolerant)
     date_iso = target_date.isoformat()
+    today_reps_data = []
     try:
-        today_reps_res = uow.client.table("repayments").select("client_id, loan_id, amount_paid, payment_status, date").gte("date", f"{date_iso} 00:00:00").lte("date", f"{date_iso} 23:59:59").eq("officer_id", officer_id).execute()
-        today_reps_data = today_reps_res.data or []
+        res1 = uow.client.table("repayments").select("client_id, loan_id, amount_paid, payment_status, date").gte("date", f"{date_iso}T00:00:00").lte("date", f"{date_iso}T23:59:59").eq("officer_id", officer_id).execute()
+        today_reps_data = res1.data or []
+        if not today_reps_data:
+            res2 = uow.client.table("repayments").select("client_id, loan_id, amount_paid, payment_status, date").like("date", f"{date_iso}%").eq("officer_id", officer_id).execute()
+            today_reps_data = res2.data or []
     except Exception:
         today_reps_data = []
 
+    today_sav_data = []
     try:
         today_sav_res = uow.client.table("individual_savings").select("client_id, deposit_amount").eq("posting_date", date_iso).eq("officer_id", officer_id).execute()
         today_sav_data = today_sav_res.data or []
@@ -180,14 +185,25 @@ def get_collection_sheet(
         today_sav_data = []
 
     today_reps_by_cid = {}
+    today_reps_by_lid = {}
+    today_rep_status_by_cid = {}
     for r in today_reps_data:
-        cid = r.get("client_id")
+        cid = str(r.get("client_id") or "")
+        lid = str(r.get("loan_id") or "")
+        amt = float(r.get("amount_paid") or 0.0)
+        p_stat = str(r.get("payment_status") or "").upper()
         if cid:
-            today_reps_by_cid[cid] = today_reps_by_cid.get(cid, 0.0) + float(r.get("amount_paid") or 0.0)
+            today_reps_by_cid[cid] = today_reps_by_cid.get(cid, 0.0) + amt
+            if p_stat == "NOT_PAID" or amt == 0:
+                today_rep_status_by_cid[cid] = "NOT_PAID"
+            elif amt > 0:
+                today_rep_status_by_cid[cid] = "PAID"
+        if lid:
+            today_reps_by_lid[lid] = today_reps_by_lid.get(lid, 0.0) + amt
 
     today_sav_by_cid = {}
     for s in today_sav_data:
-        cid = s.get("client_id")
+        cid = str(s.get("client_id") or "")
         if cid:
             today_sav_by_cid[cid] = today_sav_by_cid.get(cid, 0.0) + float(s.get("deposit_amount") or 0.0)
 
@@ -260,8 +276,16 @@ def get_collection_sheet(
         sav_bal = group_sav_map.get(cid, 0.0)
 
         if not c_loans:
-            prev_rep_val = today_reps_by_cid.get(cid, 0.0)
-            prev_dep_val = today_sav_by_cid.get(cid, 0.0)
+            actual_t_rep = today_reps_by_cid.get(cid, 0.0)
+            actual_t_sav = today_sav_by_cid.get(cid, 0.0)
+            t_tot = actual_t_rep + actual_t_sav
+            t_stat = "UNRECORDED"
+            if cid in today_rep_status_by_cid or cid in today_sav_by_cid:
+                if t_tot > 0:
+                    t_stat = "PAID"
+                elif today_rep_status_by_cid.get(cid) == "NOT_PAID":
+                    t_stat = "NOT_PAID"
+
             members.append(CollectionSheetMember(
                 client_id=cid,
                 client_code=c["client_code"],
@@ -278,9 +302,13 @@ def get_collection_sheet(
                 current_installment=0.0,
                 is_future_loan=False,
                 start_date=None,
-                prev_rep=prev_rep_val,
-                prev_dep=prev_dep_val,
-                prev_status="NOT_PAID"
+                prev_rep=actual_t_rep,
+                prev_dep=actual_t_sav,
+                prev_status=t_stat if t_stat != "UNRECORDED" else "NOT_PAID",
+                today_repayment=actual_t_rep,
+                today_savings=actual_t_sav,
+                today_status=t_stat,
+                today_collected_total=t_tot
             ))
         else:
             for l_idx, loan_row in enumerate(c_loans):
@@ -340,8 +368,19 @@ def get_collection_sheet(
                 row_cname = c["name"] if l_idx == 0 else f"{c['name']} (LOAN {l_idx+1})"
                 row_sav = sav_bal if l_idx == 0 else 0.0
 
-                prev_rep_val = today_reps_by_cid.get(row_cid, 0.0) or (exp_rep if exp_rep > 0 else 0.0)
-                prev_dep_val = today_sav_by_cid.get(row_cid, 0.0)
+                actual_t_rep = today_reps_by_lid.get(str(lid), today_reps_by_cid.get(cid, 0.0))
+                actual_t_sav = today_sav_by_cid.get(cid, 0.0) if l_idx == 0 else 0.0
+                t_tot = actual_t_rep + actual_t_sav
+
+                t_stat = "UNRECORDED"
+                if cid in today_rep_status_by_cid or cid in today_sav_by_cid or str(lid) in today_reps_by_lid:
+                    if t_tot > 0:
+                        t_stat = "PAID"
+                    elif today_rep_status_by_cid.get(cid) == "NOT_PAID":
+                        t_stat = "NOT_PAID"
+
+                prev_rep_val = actual_t_rep or (exp_rep if exp_rep > 0 else 0.0)
+                prev_dep_val = actual_t_sav
 
                 members.append(CollectionSheetMember(
                     client_id=row_cid,
@@ -361,7 +400,11 @@ def get_collection_sheet(
                     start_date=s_date_str[:10] if s_date_str else None,
                     prev_rep=prev_rep_val,
                     prev_dep=prev_dep_val,
-                    prev_status="PAID" if exp_rep > 0 else "NOT_PAID"
+                    prev_status=t_stat if t_stat != "UNRECORDED" else ("PAID" if exp_rep > 0 else "NOT_PAID"),
+                    today_repayment=actual_t_rep,
+                    today_savings=actual_t_sav,
+                    today_status=t_stat,
+                    today_collected_total=t_tot
                 ))
 
     return CollectionSheetResponse(
@@ -395,6 +438,39 @@ def get_single_client_options(
         return SingleClientOptionsResponse(clients=[])
 
     client_ids = [c["client_id"] for c in all_c]
+
+    # Pre-fetch today's collections for all clients of this officer
+    today_str = date.today().isoformat()
+    today_sc_reps = {}
+    today_sc_rep_status = {}
+    try:
+        res_tr1 = uow.client.table("repayments").select("client_id, amount_paid, payment_status, date").gte("date", f"{today_str}T00:00:00").lte("date", f"{today_str}T23:59:59").eq("officer_id", officer_id).execute()
+        sc_reps_data = res_tr1.data or []
+        if not sc_reps_data:
+            res_tr2 = uow.client.table("repayments").select("client_id, amount_paid, payment_status, date").like("date", f"{today_str}%").eq("officer_id", officer_id).execute()
+            sc_reps_data = res_tr2.data or []
+        for r in sc_reps_data:
+            cid = str(r.get("client_id") or "")
+            amt = float(r.get("amount_paid") or 0.0)
+            p_stat = str(r.get("payment_status") or "").upper()
+            if cid:
+                today_sc_reps[cid] = today_sc_reps.get(cid, 0.0) + amt
+                if p_stat == "NOT_PAID" or amt == 0:
+                    today_sc_rep_status[cid] = "NOT_PAID"
+                elif amt > 0:
+                    today_sc_rep_status[cid] = "PAID"
+    except Exception:
+        pass
+
+    today_sc_sav = {}
+    try:
+        res_ts = uow.client.table("individual_savings").select("client_id, deposit_amount").eq("posting_date", today_str).eq("officer_id", officer_id).execute()
+        for s in (res_ts.data or []):
+            cid = str(s.get("client_id") or "")
+            if cid:
+                today_sc_sav[cid] = today_sc_sav.get(cid, 0.0) + float(s.get("deposit_amount") or 0.0)
+    except Exception:
+        pass
 
     sav_map = {}
     try:
@@ -508,6 +584,16 @@ def get_single_client_options(
                 expected_repayment=exp_rep
             ))
 
+        t_rep = today_sc_reps.get(str(cid), 0.0)
+        t_sav = today_sc_sav.get(str(cid), 0.0)
+        t_tot = t_rep + t_sav
+        t_stat = "UNRECORDED"
+        if str(cid) in today_sc_rep_status or str(cid) in today_sc_sav:
+            if t_tot > 0:
+                t_stat = "PAID"
+            elif today_sc_rep_status.get(str(cid)) == "NOT_PAID":
+                t_stat = "NOT_PAID"
+
         client_items.append(SingleClientOption(
             client_id=cid,
             client_code=c.get("client_code") or str(cid)[:8],
@@ -518,7 +604,12 @@ def get_single_client_options(
             is_in_group=is_in_grp,
             personal_savings_balance=p_sav,
             group_savings_balance=g_sav,
-            loans=loan_options
+            loans=loan_options,
+            today_repayment=t_rep,
+            today_savings=t_sav,
+            today_collected=(t_stat in ["PAID", "NOT_PAID"]),
+            today_status=t_stat,
+            today_collected_total=t_tot
         ))
 
     return SingleClientOptionsResponse(clients=client_items)
