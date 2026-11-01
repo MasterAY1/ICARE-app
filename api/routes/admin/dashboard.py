@@ -3,7 +3,7 @@ api/routes/admin/dashboard.py
 Global Administrator Dashboard, Approvals Clearinghouse & Performance Engine.
 Strict Zero-Emoji Governance & Corporate Banking Abstraction.
 """
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from pydantic import BaseModel, Field
@@ -15,6 +15,7 @@ from services.institution_performance_service import InstitutionPerformanceServi
 from services.correction_service import CorrectionService
 from services.loan_service import LoanService
 from services.dashboard_service import DashboardService
+from services.business_date_service import BusinessDateService
 
 
 router = APIRouter(prefix="/api/v1/admin/dashboard", tags=["Global Administrator Dashboard"])
@@ -255,8 +256,65 @@ def get_admin_operations(
     except Exception:
         pass
 
+    # Working Day Verification (BR-DATE-001, BR-DATE-004)
+    is_working_day, status_reason = BusinessDateService.is_working_day(target_date)
+    next_working_day = BusinessDateService.get_next_working_day(
+        target_date if is_working_day else target_date + timedelta(days=1)
+    ).isoformat()
+
+    # Overview Totals (BR-DASH-001, BR-CLI-001)
+    total_clients_count = 0
+    try:
+        c_res = uow.client.table("clients").select("id", count="exact").execute()
+        cnt = getattr(c_res, "count", None)
+        if isinstance(cnt, int):
+            total_clients_count = cnt
+        elif isinstance(getattr(c_res, "data", None), list):
+            total_clients_count = len(c_res.data)
+    except Exception:
+        pass
+    total_clients_display = "10,000+" if total_clients_count >= 10000 else f"{total_clients_count:,}"
+
+    total_active_portfolio = 0.0
+    try:
+        res_ac = uow.client.table("loans").select("active_credit").in_("status", ["ACTIVE", "Active"]).execute()
+        total_active_portfolio = sum(float(r.get("active_credit") or 0.0) for r in (res_ac.data or []))
+    except Exception:
+        pass
+
+    # Working Week Financial Activity (Mon-Fri active, Sat-Sun frozen per BR-DATE-004)
+    financial_activity_week = InstitutionPerformanceService.get_working_days_financial_activity(uow, target_date)
+
+    # Branch Performance Progress Summary
+    max_b_vol = max([b.get("collections_today", 0.0) for b in branch_statuses] or [1.0])
+    branch_performance_summary = []
+    for b in branch_statuses:
+        vol = b.get("collections_today", 0.0)
+        rel_pct = round((vol / max_b_vol), 2) if max_b_vol > 0 else 0.0
+        branch_performance_summary.append({
+            "branch_id": b["branch_id"],
+            "branch_name": b["name"],
+            "volume": vol,
+            "relative_pct": rel_pct,
+            "vault_cash": b["vault_cash"],
+            "manager_name": b["manager"],
+            "status": b["status"]
+        })
+
     return {
         "business_date": p_date_str,
+        "business_date_status": {
+            "is_working_day": is_working_day,
+            "status_reason": status_reason,
+            "next_working_day": next_working_day
+        },
+        "overview": {
+            "total_clients_count": total_clients_count,
+            "total_clients_display": total_clients_display,
+            "active_branches_count": len(branch_rows),
+            "total_portfolio": total_active_portfolio,
+            "today_collections": today_collections
+        },
         "liquidity": {
             "vault_cash_in_custody": vault_cash_total,
             "today_collections": today_collections,
@@ -267,6 +325,8 @@ def get_admin_operations(
             "today_net_savings": today_net_savings,
             "collection_compliance_pct": 98.4
         },
+        "financial_activity_week": financial_activity_week,
+        "branch_performance_summary": branch_performance_summary,
         "branch_matrix": branch_statuses,
         "action_center": {
             "pending_reversals_count": len(pending_reversals),
@@ -275,6 +335,20 @@ def get_admin_operations(
             "pending_high_loans": pending_high_loans
         }
     }
+
+
+@router.get("/branch/{branch_id}")
+def get_admin_branch_detail(
+    branch_id: str,
+    business_date: Optional[str] = Query(None, description="ISO format operational date (YYYY-MM-DD)"),
+    current_user: CurrentUser = Depends(require_role(["Admin", "Super Admin", "ADMIN"])),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+) -> Dict[str, Any]:
+    """
+    Detailed operational and portfolio drilldown for a single branch.
+    Derived strictly from Account 1000 for vault cash and dedicated payoff/recovery records.
+    """
+    return InstitutionPerformanceService.get_branch_detail_metrics(uow, branch_id, business_date)
 
 
 @router.get("/performance")

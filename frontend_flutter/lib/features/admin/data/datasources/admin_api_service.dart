@@ -22,6 +22,11 @@ final adminRiskHealthProvider = FutureProvider<AdminRiskHealthModel>((ref) async
   return api.getRiskHealth();
 });
 
+final adminBranchDetailProvider = FutureProvider.family<AdminBranchDetailModel, String>((ref, branchId) async {
+  final api = ref.watch(adminApiServiceProvider);
+  return api.getBranchDetail(branchId);
+});
+
 class AdminApiService {
   final ApiClient _apiClient;
 
@@ -58,6 +63,20 @@ class AdminApiService {
   Future<AdminRiskHealthModel> getRiskHealth() async {
     final response = await _apiClient.get('/api/v1/admin/dashboard/risk-health');
     return AdminRiskHealthModel.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<AdminBranchDetailModel> getBranchDetail(String branchId, {String? businessDate}) async {
+    final queryParams = <String, dynamic>{};
+    if (businessDate != null && businessDate.isNotEmpty) {
+      queryParams['business_date'] = businessDate;
+    }
+
+    final response = await _apiClient.get(
+      '/api/v1/admin/dashboard/branch/$branchId',
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+
+    return AdminBranchDetailModel.fromJson(response.data as Map<String, dynamic>);
   }
 
   Future<bool> approveReversal(String requestId, {String? notes}) async {

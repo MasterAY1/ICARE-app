@@ -124,12 +124,49 @@ def test_admin_dashboard_operations_admin_success():
 
         data = res.json()
         assert "business_date" in data
+        assert "business_date_status" in data
+        assert "is_working_day" in data["business_date_status"]
+        assert "overview" in data
+        assert "total_clients_display" in data["overview"]
+        assert "active_branches_count" in data["overview"]
+        assert "financial_activity_week" in data
+        assert len(data["financial_activity_week"]) == 7
+        assert "branch_performance_summary" in data
         assert "liquidity" in data
         assert "vault_cash_in_custody" in data["liquidity"]
         assert "branch_matrix" in data
         assert "action_center" in data
         assert "pending_reversals" in data["action_center"]
         assert "pending_high_loans" in data["action_center"]
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_uow, None)
+
+
+def test_admin_dashboard_branch_detail_success():
+    """Verifies Admin can drill down into a specific branch's metrics."""
+    mock_admin = CurrentUser(
+        id="admin-test-id",
+        username="Admin",
+        role="Admin",
+        branch="Head Office",
+        permissions={"system_admin"}
+    )
+    app.dependency_overrides[get_current_user] = lambda: mock_admin
+
+    mock_uow = MagicMock()
+    mock_uow.client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
+    mock_uow.client.table.return_value.select.return_value.execute.return_value.data = []
+    app.dependency_overrides[get_uow] = lambda: mock_uow
+
+    try:
+        res = client.get("/api/v1/admin/dashboard/branch/test-branch-uuid")
+        assert res.status_code == 200, f"Expected 200, got: {res.status_code} ({res.text})"
+        data = res.json()
+        assert "branch_id" in data
+        assert "vault_cash_in_custody" in data
+        assert "active_credit_book" in data
+        assert "operational_status" in data
     finally:
         app.dependency_overrides.pop(get_current_user, None)
         app.dependency_overrides.pop(get_uow, None)

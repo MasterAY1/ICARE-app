@@ -8,11 +8,13 @@ Strict adherence to ICARE Governance Invariants:
 4. Zero-Emoji corporate banking governance.
 5. Abstracted technical rule identifiers.
 """
-from datetime import date
+from datetime import date, timedelta
 from typing import Dict, Any, List, Optional
+from collections import defaultdict
 from database.repositories.unit_of_work import UnitOfWork
 from services.dashboard_service import DashboardService
 from services.collection_performance_service import CollectionPerformanceService
+from services.business_date_service import BusinessDateService
 
 
 class InstitutionPerformanceService:
@@ -577,4 +579,225 @@ class InstitutionPerformanceService:
             "total_officers": len(officer_stats),
             "top_three": officer_stats[:3] if len(officer_stats) >= 3 else officer_stats,
             "rankings": officer_stats
+        }
+
+    @classmethod
+    def get_working_days_financial_activity(
+        cls,
+        uow: UnitOfWork,
+        target_date: date
+    ) -> List[Dict[str, Any]]:
+        """
+        Computes daily collections and disbursements for the active working week,
+        adhering strictly to BR-DATE-001 and BR-DATE-004. Weekends (Saturdays & Sundays)
+        and Nigerian public holidays are flagged as non-working days.
+        """
+        monday = target_date - timedelta(days=target_date.weekday())
+        sunday = monday + timedelta(days=6)
+
+        rep_map = defaultdict(float)
+        try:
+            q_rep = uow.client.table("repayments") \
+                .select("amount_paid, date, transaction_type, note") \
+                .gte("date", monday.isoformat()) \
+                .lte("date", sunday.isoformat()) \
+                .execute()
+            for r in (q_rep.data or []):
+                if str(r.get("transaction_type", "")).upper() == "ONBOARDING_LEGACY" or str(r.get("note", "")).strip() == "Legacy Repayments Onboarded":
+                    continue
+                d_str = str(r.get("date") or "")
+                rep_map[d_str] += float(r.get("amount_paid") or 0.0)
+        except Exception:
+            pass
+
+        disb_map = defaultdict(float)
+        try:
+            q_disb = uow.client.table("loans") \
+                .select("loan_amount, disbursement_date, start_date, status") \
+                .gte("disbursement_date", monday.isoformat()) \
+                .lte("disbursement_date", sunday.isoformat()) \
+                .execute()
+            for l in (q_disb.data or []):
+                st = str(l.get("status") or "").upper()
+                if st in ["ACTIVE", "APPROVED", "COMPLETED"]:
+                    d_str = str(l.get("disbursement_date") or l.get("start_date") or "")
+                    disb_map[d_str] += float(l.get("loan_amount") or 0.0)
+        except Exception:
+            pass
+
+        days = []
+        day_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        for i in range(7):
+            cur_d = monday + timedelta(days=i)
+            cur_iso = cur_d.isoformat()
+            is_work, reason = BusinessDateService.is_working_day(cur_d)
+            days.append({
+                "day": day_labels[i],
+                "date": cur_iso,
+                "is_working_day": is_work,
+                "status_reason": reason,
+                "collections": rep_map.get(cur_iso, 0.0),
+                "disbursements": disb_map.get(cur_iso, 0.0)
+            })
+        return days
+
+    @classmethod
+    def get_branch_detail_metrics(
+        cls,
+        uow: UnitOfWork,
+        branch_id: str,
+        business_date: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Gathers comprehensive operational and portfolio performance metrics for a single
+        branch when drilled down by Global Admin.
+        Derived strictly from Account 1000 for vault cash and dedicated payoff/recovery records.
+        """
+        p_date = date.fromisoformat(business_date) if business_date else date.today()
+        p_date_str = p_date.isoformat()
+
+        # 1. Resolve Branch Name & Manager
+        branch_name = "Branch"
+        manager_name = "Branch Manager"
+        try:
+            res_b = uow.client.table("branches").select("branch_id, name").eq("branch_id", branch_id).execute()
+            if res_b.data:
+                branch_name = res_b.data[0].get("name") or "Branch"
+        except Exception:
+            pass
+
+        try:
+            res_mgr = uow.client.table("app_users").select("full_name, username").in_("role", ["BM", "Branch Manager"]).eq("branch_id", branch_id).execute()
+            if res_mgr.data:
+                manager_name = res_mgr.data[0].get("full_name") or res_mgr.data[0].get("username") or "Branch Manager"
+        except Exception:
+            pass
+
+        # 2. Vault Cash in Custody (Account 1000 Double-Entry Truth)
+        vault_cash = 0.0
+        try:
+            res_leg = uow.client.table("financial_ledger_entries") \
+                .select("amount, side") \
+                .eq("branch_id", branch_id) \
+                .eq("account_code", "1000") \
+                .lte("created_at", f"{p_date_str}T23:59:59") \
+                .execute()
+            for r in (res_leg.data or []):
+                amt = float(r.get("amount") or 0.0)
+                vault_cash += amt if r.get("side") == "Debit" else -amt
+            vault_cash = max(0.0, vault_cash)
+        except Exception:
+            pass
+
+        # 3. Active Loans, Credit Book & Overdue
+        active_credit_book = 0.0
+        active_borrowers_set = set()
+        overdue_amount = 0.0
+        defaulters_set = set()
+        total_disbursed_ytd = 0.0
+        disb_count_ytd = 0
+        try:
+            res_loans = uow.client.table("loans") \
+                .select("loan_id, client_id, loan_amount, active_credit, total_outstanding, status, end_date") \
+                .eq("branch_id", branch_id) \
+                .execute()
+            for l in (res_loans.data or []):
+                st = str(l.get("status") or "").upper()
+                l_amt = float(l.get("loan_amount") or 0.0)
+                ac_amt = float(l.get("active_credit") or l_amt)
+                out_amt = float(l.get("total_outstanding") or 0.0)
+
+                if st in ["ACTIVE", "APPROVED", "COMPLETED"]:
+                    total_disbursed_ytd += l_amt
+                    disb_count_ytd += 1
+
+                if st in ["ACTIVE"]:
+                    active_credit_book += ac_amt
+                    if l.get("client_id"):
+                        active_borrowers_set.add(str(l.get("client_id")))
+
+                    ed_str = str(l.get("end_date") or "")
+                    if ed_str and ed_str < p_date_str and out_amt > 0.0:
+                        overdue_amount += out_amt
+                        if l.get("client_id"):
+                            defaulters_set.add(str(l.get("client_id")))
+        except Exception:
+            pass
+
+        par_pct = round((overdue_amount / active_credit_book * 100.0), 2) if active_credit_book > 0 else 0.0
+
+        # 4. Collections Today (Excluding legacy onboarding per BR-DASH-006)
+        today_collections = 0.0
+        try:
+            res_rep = uow.client.table("repayments") \
+                .select("amount_paid, transaction_type, note") \
+                .eq("branch_id", branch_id) \
+                .eq("date", p_date_str) \
+                .execute()
+            for r in (res_rep.data or []):
+                if str(r.get("transaction_type", "")).upper() == "ONBOARDING_LEGACY" or str(r.get("note", "")).strip() == "Legacy Repayments Onboarded":
+                    continue
+                today_collections += float(r.get("amount_paid") or 0.0)
+        except Exception:
+            pass
+
+        # 5. Overdue Recoveries & Settlements (Dedicated Tables)
+        overdue_recovered = 0.0
+        full_recoveries_count = 0
+        try:
+            res_rec = uow.client.table("loan_overdue_recovery_records") \
+                .select("recovered_amount, recovery_type") \
+                .eq("branch_id", branch_id) \
+                .execute()
+            for rec in (res_rec.data or []):
+                overdue_recovered += float(rec.get("recovered_amount") or 0.0)
+                if str(rec.get("recovery_type") or "").upper() == "FULL_RECOVERY":
+                    full_recoveries_count += 1
+        except Exception:
+            pass
+
+        # 6. Branch Operating Status
+        op_state = "OPEN"
+        try:
+            res_eod = uow.client.table("area_eod_confirmations").select("status").eq("branch_id", branch_id).eq("closure_date", p_date_str).execute()
+            if res_eod.data:
+                eod_st = str(res_eod.data[0].get("status") or "").upper()
+                if eod_st in ["CONFIRMED", "CLOSED"]:
+                    op_state = "CLOSED"
+                elif eod_st in ["PENDING", "READY_FOR_REVIEW"]:
+                    op_state = "EOD_PENDING"
+        except Exception:
+            pass
+
+        # 7. Credit Officers Roster for this Branch
+        officers_list = []
+        try:
+            res_co = uow.client.table("app_users").select("id, username, full_name").in_("role", ["CO", "Credit Officer"]).eq("branch_id", branch_id).execute()
+            for co in (res_co.data or []):
+                officers_list.append({
+                    "officer_id": str(co.get("id")),
+                    "name": co.get("full_name") or co.get("username") or "Officer",
+                    "username": co.get("username") or ""
+                })
+        except Exception:
+            pass
+
+        return {
+            "branch_id": branch_id,
+            "branch_name": branch_name,
+            "manager_name": manager_name,
+            "operational_status": op_state,
+            "vault_cash_in_custody": vault_cash,
+            "active_credit_book": active_credit_book,
+            "active_borrowers_count": len(active_borrowers_set),
+            "today_collections": today_collections,
+            "overdue_amount": overdue_amount,
+            "par_pct": par_pct,
+            "defaulters_count": len(defaulters_set),
+            "overdue_recovered": overdue_recovered,
+            "full_recoveries_count": full_recoveries_count,
+            "total_disbursed_ytd": total_disbursed_ytd,
+            "total_disbursed_count": disb_count_ytd,
+            "officers_count": len(officers_list),
+            "officers": officers_list
         }

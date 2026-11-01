@@ -632,9 +632,9 @@ class CoAppScaffold extends ConsumerWidget {
     if (isAdmin) {
       destinations = [
         (key: 'Dashboard', shortLabel: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
-        (key: 'Portfolio', shortLabel: 'Portfolio', icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart),
-        (key: 'User Management', shortLabel: 'Staff', icon: Icons.people_alt_outlined, activeIcon: Icons.people_alt),
-        (key: 'Reports & Export', shortLabel: 'Reports', icon: Icons.file_download_outlined, activeIcon: Icons.file_download),
+        (key: 'Portfolio', shortLabel: 'Branches', icon: Icons.domain_outlined, activeIcon: Icons.domain),
+        (key: 'Reports & Export', shortLabel: 'Reports', icon: Icons.analytics_outlined, activeIcon: Icons.analytics),
+        (key: 'User Management', shortLabel: 'Users', icon: Icons.people_alt_outlined, activeIcon: Icons.people_alt),
       ];
     } else if (isBm) {
       destinations = [

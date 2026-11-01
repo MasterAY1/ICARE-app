@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 @immutable
 class AdminOperationsSnapshotModel {
   final String businessDate;
+  final BusinessDateStatusModel businessDateStatus;
+  final InstitutionalOverviewModel overview;
   final double vaultCashInCustody;
   final double todayCollections;
   final double todayDisbursements;
@@ -11,6 +13,8 @@ class AdminOperationsSnapshotModel {
   final double todaySavingsWithdrawal;
   final double todayNetSavings;
   final double collectionCompliancePct;
+  final List<FinancialActivityDayModel> financialActivityWeek;
+  final List<BranchPerformanceRowModel> branchPerformanceSummary;
   final List<BranchOperationalStatusModel> branchMatrix;
   final int pendingReversalsCount;
   final List<PendingReversalItemModel> pendingReversals;
@@ -19,6 +23,8 @@ class AdminOperationsSnapshotModel {
 
   const AdminOperationsSnapshotModel({
     required this.businessDate,
+    required this.businessDateStatus,
+    required this.overview,
     required this.vaultCashInCustody,
     required this.todayCollections,
     required this.todayDisbursements,
@@ -27,6 +33,8 @@ class AdminOperationsSnapshotModel {
     required this.todaySavingsWithdrawal,
     required this.todayNetSavings,
     required this.collectionCompliancePct,
+    required this.financialActivityWeek,
+    required this.branchPerformanceSummary,
     required this.branchMatrix,
     required this.pendingReversalsCount,
     required this.pendingReversals,
@@ -37,6 +45,8 @@ class AdminOperationsSnapshotModel {
   factory AdminOperationsSnapshotModel.fromJson(Map<String, dynamic> json) {
     final liq = json['liquidity'] as Map<String, dynamic>? ?? {};
     final ac = json['action_center'] as Map<String, dynamic>? ?? {};
+    final bds = json['business_date_status'] as Map<String, dynamic>? ?? {};
+    final ov = json['overview'] as Map<String, dynamic>? ?? {};
 
     final bList = (json['branch_matrix'] as List<dynamic>? ?? [])
         .map((e) => BranchOperationalStatusModel.fromJson(e as Map<String, dynamic>))
@@ -50,8 +60,18 @@ class AdminOperationsSnapshotModel {
         .map((e) => PendingHighLoanItemModel.fromJson(e as Map<String, dynamic>))
         .toList();
 
+    final fawList = (json['financial_activity_week'] as List<dynamic>? ?? [])
+        .map((e) => FinancialActivityDayModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+    final bpsList = (json['branch_performance_summary'] as List<dynamic>? ?? [])
+        .map((e) => BranchPerformanceRowModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+
     return AdminOperationsSnapshotModel(
       businessDate: json['business_date']?.toString() ?? '',
+      businessDateStatus: BusinessDateStatusModel.fromJson(bds),
+      overview: InstitutionalOverviewModel.fromJson(ov),
       vaultCashInCustody: (liq['vault_cash_in_custody'] as num?)?.toDouble() ?? 0.0,
       todayCollections: (liq['today_collections'] as num?)?.toDouble() ?? 0.0,
       todayDisbursements: (liq['today_disbursements'] as num?)?.toDouble() ?? 0.0,
@@ -60,6 +80,8 @@ class AdminOperationsSnapshotModel {
       todaySavingsWithdrawal: (liq['today_savings_withdrawal'] as num?)?.toDouble() ?? 0.0,
       todayNetSavings: (liq['today_net_savings'] as num?)?.toDouble() ?? 0.0,
       collectionCompliancePct: (liq['collection_compliance_pct'] as num?)?.toDouble() ?? 95.0,
+      financialActivityWeek: fawList,
+      branchPerformanceSummary: bpsList,
       branchMatrix: bList,
       pendingReversalsCount: (ac['pending_reversals_count'] as num?)?.toInt() ?? rList.length,
       pendingReversals: rList,
@@ -479,6 +501,205 @@ class AdminRiskHealthModel {
       offlineDeviceSyncStatus: eng['offline_device_sync_status']?.toString() ?? 'Active',
       databaseCluster: eng['database_cluster']?.toString() ?? 'Supabase Managed',
       immutableAuditState: eng['immutable_audit_state']?.toString() ?? 'Enforced',
+    );
+  }
+}
+
+@immutable
+class BusinessDateStatusModel {
+  final bool isWorkingDay;
+  final String statusReason;
+  final String nextWorkingDay;
+
+  const BusinessDateStatusModel({
+    required this.isWorkingDay,
+    required this.statusReason,
+    required this.nextWorkingDay,
+  });
+
+  factory BusinessDateStatusModel.fromJson(Map<String, dynamic> json) {
+    return BusinessDateStatusModel(
+      isWorkingDay: json['is_working_day'] as bool? ?? true,
+      statusReason: json['status_reason']?.toString() ?? 'Valid working day',
+      nextWorkingDay: json['next_working_day']?.toString() ?? '',
+    );
+  }
+}
+
+@immutable
+class InstitutionalOverviewModel {
+  final int totalClientsCount;
+  final String totalClientsDisplay;
+  final int activeBranchesCount;
+  final double totalPortfolio;
+  final double todayCollections;
+
+  const InstitutionalOverviewModel({
+    required this.totalClientsCount,
+    required this.totalClientsDisplay,
+    required this.activeBranchesCount,
+    required this.totalPortfolio,
+    required this.todayCollections,
+  });
+
+  factory InstitutionalOverviewModel.fromJson(Map<String, dynamic> json) {
+    return InstitutionalOverviewModel(
+      totalClientsCount: (json['total_clients_count'] as num?)?.toInt() ?? 0,
+      totalClientsDisplay: json['total_clients_display']?.toString() ?? '10,000+',
+      activeBranchesCount: (json['active_branches_count'] as num?)?.toInt() ?? 0,
+      totalPortfolio: (json['total_portfolio'] as num?)?.toDouble() ?? 0.0,
+      todayCollections: (json['today_collections'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+}
+
+@immutable
+class FinancialActivityDayModel {
+  final String day;
+  final String date;
+  final bool isWorkingDay;
+  final String statusReason;
+  final double collections;
+  final double disbursements;
+
+  const FinancialActivityDayModel({
+    required this.day,
+    required this.date,
+    required this.isWorkingDay,
+    required this.statusReason,
+    required this.collections,
+    required this.disbursements,
+  });
+
+  factory FinancialActivityDayModel.fromJson(Map<String, dynamic> json) {
+    return FinancialActivityDayModel(
+      day: json['day']?.toString() ?? '',
+      date: json['date']?.toString() ?? '',
+      isWorkingDay: json['is_working_day'] as bool? ?? true,
+      statusReason: json['status_reason']?.toString() ?? '',
+      collections: (json['collections'] as num?)?.toDouble() ?? 0.0,
+      disbursements: (json['disbursements'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+}
+
+@immutable
+class BranchPerformanceRowModel {
+  final String branchId;
+  final String branchName;
+  final double volume;
+  final double relativePct;
+  final double vaultCash;
+  final String managerName;
+  final String status;
+
+  const BranchPerformanceRowModel({
+    required this.branchId,
+    required this.branchName,
+    required this.volume,
+    required this.relativePct,
+    required this.vaultCash,
+    required this.managerName,
+    required this.status,
+  });
+
+  factory BranchPerformanceRowModel.fromJson(Map<String, dynamic> json) {
+    return BranchPerformanceRowModel(
+      branchId: json['branch_id']?.toString() ?? '',
+      branchName: json['branch_name']?.toString() ?? 'Branch',
+      volume: (json['volume'] as num?)?.toDouble() ?? 0.0,
+      relativePct: (json['relative_pct'] as num?)?.toDouble() ?? 0.0,
+      vaultCash: (json['vault_cash'] as num?)?.toDouble() ?? 0.0,
+      managerName: json['manager_name']?.toString() ?? 'Branch Manager',
+      status: json['status']?.toString() ?? 'OPEN',
+    );
+  }
+}
+
+@immutable
+class BranchOfficerSummaryModel {
+  final String officerId;
+  final String name;
+  final String username;
+
+  const BranchOfficerSummaryModel({
+    required this.officerId,
+    required this.name,
+    required this.username,
+  });
+
+  factory BranchOfficerSummaryModel.fromJson(Map<String, dynamic> json) {
+    return BranchOfficerSummaryModel(
+      officerId: json['officer_id']?.toString() ?? '',
+      name: json['name']?.toString() ?? 'Officer',
+      username: json['username']?.toString() ?? '',
+    );
+  }
+}
+
+@immutable
+class AdminBranchDetailModel {
+  final String branchId;
+  final String branchName;
+  final String managerName;
+  final String operationalStatus;
+  final double vaultCashInCustody;
+  final double activeCreditBook;
+  final int activeBorrowersCount;
+  final double todayCollections;
+  final double overdueAmount;
+  final double parPct;
+  final int defaultersCount;
+  final double overdueRecovered;
+  final int fullRecoveriesCount;
+  final double totalDisbursedYtd;
+  final int totalDisbursedCount;
+  final int officersCount;
+  final List<BranchOfficerSummaryModel> officers;
+
+  const AdminBranchDetailModel({
+    required this.branchId,
+    required this.branchName,
+    required this.managerName,
+    required this.operationalStatus,
+    required this.vaultCashInCustody,
+    required this.activeCreditBook,
+    required this.activeBorrowersCount,
+    required this.todayCollections,
+    required this.overdueAmount,
+    required this.parPct,
+    required this.defaultersCount,
+    required this.overdueRecovered,
+    required this.fullRecoveriesCount,
+    required this.totalDisbursedYtd,
+    required this.totalDisbursedCount,
+    required this.officersCount,
+    required this.officers,
+  });
+
+  factory AdminBranchDetailModel.fromJson(Map<String, dynamic> json) {
+    final offList = (json['officers'] as List<dynamic>? ?? [])
+        .map((e) => BranchOfficerSummaryModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+    return AdminBranchDetailModel(
+      branchId: json['branch_id']?.toString() ?? '',
+      branchName: json['branch_name']?.toString() ?? 'Branch',
+      managerName: json['manager_name']?.toString() ?? 'Branch Manager',
+      operationalStatus: json['operational_status']?.toString() ?? 'OPEN',
+      vaultCashInCustody: (json['vault_cash_in_custody'] as num?)?.toDouble() ?? 0.0,
+      activeCreditBook: (json['active_credit_book'] as num?)?.toDouble() ?? 0.0,
+      activeBorrowersCount: (json['active_borrowers_count'] as num?)?.toInt() ?? 0,
+      todayCollections: (json['today_collections'] as num?)?.toDouble() ?? 0.0,
+      overdueAmount: (json['overdue_amount'] as num?)?.toDouble() ?? 0.0,
+      parPct: (json['par_pct'] as num?)?.toDouble() ?? 0.0,
+      defaultersCount: (json['defaulters_count'] as num?)?.toInt() ?? 0,
+      overdueRecovered: (json['overdue_recovered'] as num?)?.toDouble() ?? 0.0,
+      fullRecoveriesCount: (json['full_recoveries_count'] as num?)?.toInt() ?? 0,
+      totalDisbursedYtd: (json['total_disbursed_ytd'] as num?)?.toDouble() ?? 0.0,
+      totalDisbursedCount: (json['total_disbursed_count'] as num?)?.toInt() ?? 0,
+      officersCount: (json['officers_count'] as num?)?.toInt() ?? offList.length,
+      officers: offList,
     );
   }
 }
