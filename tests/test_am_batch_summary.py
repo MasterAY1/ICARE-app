@@ -109,3 +109,84 @@ class TestAMBatchSummary(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+from fastapi import HTTPException
+from models.user import CurrentUser
+from api.routes.am.dashboard import (
+    approve_high_value_loan,
+    reject_high_value_loan,
+    sign_off_client_transfer,
+    reject_client_transfer
+)
+from api.schemas.am_dashboard import (
+    ApproveLoanRequest,
+    RejectLoanRequest,
+    SignOffTransferRequest,
+    RejectTransferRequest
+)
+
+
+class TestAmRouteGuards(unittest.TestCase):
+
+    def setUp(self):
+        self.am_user = CurrentUser(
+            id="usr-am-1",
+            username="am_david",
+            role="Area Manager",
+            branch="Mainland",
+            branch_id="b-mainland",
+            assigned_branches=["Ikeja", "Yaba"],
+            assigned_branch_ids=["b-ikeja", "b-yaba"]
+        )
+
+    def test_approve_high_value_loan_unauthorized_branch_rejected(self):
+        uow = MagicMock()
+        mock_table = MagicMock()
+        mock_table.select.return_value.eq.return_value.execute.return_value.data = [
+            {"loan_id": "l-100", "branch_id": "b-kano", "loan_amount": 500000.0}
+        ]
+        uow.client.table.return_value = mock_table
+
+        with self.assertRaises(HTTPException) as ctx:
+            approve_high_value_loan(
+                payload=ApproveLoanRequest(loan_id="l-100", disbursement_date="2026-11-02"),
+                current_user=self.am_user,
+                uow=uow
+            )
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("supervisory area", ctx.exception.detail)
+
+    def test_reject_high_value_loan_unauthorized_branch_rejected(self):
+        uow = MagicMock()
+        mock_table = MagicMock()
+        mock_table.select.return_value.eq.return_value.execute.return_value.data = [
+            {"loan_id": "l-100", "branch_id": "b-kano"}
+        ]
+        uow.client.table.return_value = mock_table
+
+        with self.assertRaises(HTTPException) as ctx:
+            reject_high_value_loan(
+                payload=RejectLoanRequest(loan_id="l-100", reason="Testing unauthorized"),
+                current_user=self.am_user,
+                uow=uow
+            )
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("supervisory area", ctx.exception.detail)
+
+    def test_sign_off_transfer_unauthorized_branch_rejected(self):
+        uow = MagicMock()
+        mock_table = MagicMock()
+        mock_table.select.return_value.eq.return_value.execute.return_value.data = [
+            {"transfer_id": "t-100", "client_id": "c-1", "from_branch_id": "b-kano", "to_branch_id": "b-kaduna"}
+        ]
+        uow.client.table.return_value = mock_table
+
+        with self.assertRaises(HTTPException) as ctx:
+            sign_off_client_transfer(
+                payload=SignOffTransferRequest(transfer_id="t-100", notes="Sign off"),
+                current_user=self.am_user,
+                uow=uow
+            )
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("supervisory area", ctx.exception.detail)

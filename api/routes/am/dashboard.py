@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from database.repositories.unit_of_work import SupabaseUnitOfWork
-from api.dependencies import get_uow, get_current_user, require_role
+from api.dependencies import get_uow, get_current_user, require_role, check_branch_access
 from models.user import CurrentUser
 from services.area_manager_service import AreaManagerService
 from services.loan_service import LoanService
@@ -284,6 +284,12 @@ def approve_high_value_loan(
     Area Manager approves an escalated or high-value loan (> ₦300,000).
     """
     _check_am_permissions(current_user)
+    res_l = uow.client.table("loans").select("branch_id, loan_amount").eq("loan_id", payload.loan_id).execute()
+    if not res_l.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan not found.")
+    loan_row = res_l.data[0]
+    check_branch_access(current_user, loan_row.get("branch_id"), "approve high-value loans")
+
     try:
         d_date = date.fromisoformat(payload.disbursement_date)
         res = LoanService.approve_and_disburse_loan(
@@ -310,6 +316,11 @@ def reject_high_value_loan(
     Area Manager rejects an escalated loan.
     """
     _check_am_permissions(current_user)
+    res_l = uow.client.table("loans").select("branch_id").eq("loan_id", payload.loan_id).execute()
+    if not res_l.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan not found.")
+    check_branch_access(current_user, res_l.data[0].get("branch_id"), "reject high-value loans")
+
     try:
         LoanService.reject_loan(
             uow=uow,
@@ -337,15 +348,15 @@ def sign_off_client_transfer(
     can accept and assign a local Credit Officer and Solidarity Group.
     """
     _check_am_permissions(current_user)
+    res_t = uow.client.table("client_transfers").select("transfer_id, client_id, from_branch_id, to_branch_id").eq("transfer_id", payload.transfer_id).execute()
+    if not res_t.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transfer request not found.")
+    t_row = res_t.data[0]
+    check_branch_access(current_user, t_row.get("from_branch_id") or t_row.get("to_branch_id"), "sign off client transfer")
+
     try:
         now_iso = datetime.now().isoformat()
         user_uuid = current_user.id if current_user.id else None
-
-        # Fetch transfer to verify existence
-        res_t = uow.client.table("client_transfers").select("transfer_id, client_id, to_branch_id").eq("transfer_id", payload.transfer_id).execute()
-        if not res_t.data:
-            # Fallback check on legacy id column
-            res_t = uow.client.table("client_transfers").select("transfer_id, client_id, to_branch_id").eq("transfer_id", payload.transfer_id).execute()
 
         uow.client.table("client_transfers").update({
             "status": "PENDING_RECEIVING_BM",
@@ -367,6 +378,8 @@ def sign_off_client_transfer(
             success=True,
             message="Inter-branch transfer approved by Area Manager and forwarded to destination branch."
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -384,6 +397,13 @@ def reject_client_transfer(
     try:
         now_iso = datetime.now().isoformat()
         user_uuid = current_user.id if current_user.id else None
+
+        res_t = uow.client.table("client_transfers").select("transfer_id, client_id, from_branch_id, to_branch_id").eq("transfer_id", payload.transfer_id).execute()
+        if not res_t.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transfer request not found.")
+        t_row = res_t.data[0]
+        check_branch_access(current_user, t_row.get("from_branch_id") or t_row.get("to_branch_id"), "reject client transfer")
+
         uow.client.table("client_transfers").update({
             "status": "REJECTED",
             "rejected_by": user_uuid,
