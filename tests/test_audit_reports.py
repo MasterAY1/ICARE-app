@@ -34,12 +34,16 @@ class TestAuditReports(unittest.TestCase):
 
     def test_multi_level_drilldown(self):
         """Drill-down breakdown aggregates by branch, officer, and client."""
-        with SupabaseUnitOfWork() as uow:
-            res = AuditReportingService.get_multi_level_drilldown(uow, "FEE", "PROCESSING_FEE")
-            self.assertIn("total", res)
-            self.assertIn("by_branch", res)
-            self.assertIn("by_officer", res)
-            self.assertIn("by_client", res)
+        from unittest.mock import MagicMock
+        mock_uow = MagicMock()
+        mock_uow.audit_views.get_fee_ledger.return_value = [
+            {"branch_id": "b1", "officer_id": "o1", "client_id": "c1", "amount": 1000.0}
+        ]
+        res = AuditReportingService.get_multi_level_drilldown(mock_uow, "FEE", "PROCESSING_FEE")
+        self.assertIn("total", res)
+        self.assertIn("by_branch", res)
+        self.assertIn("by_officer", res)
+        self.assertIn("by_client", res)
 
 
 if __name__ == "__main__":

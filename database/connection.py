@@ -88,7 +88,6 @@ def resolve_supabase_credentials() -> Tuple[str, str, str]:
     url = (
         os.getenv("SUPABASE_URL", "").strip()
         or _get_st_secret("SUPABASE_URL")
-        or SUPABASE_URL
     )
     if not url:
         if is_production():
@@ -105,7 +104,6 @@ def resolve_supabase_credentials() -> Tuple[str, str, str]:
     srv_key = (
         os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
         or _get_st_secret("SUPABASE_SERVICE_ROLE_KEY")
-        or SUPABASE_SERVICE_ROLE_KEY
     )
 
     if in_prod:
@@ -138,7 +136,6 @@ def resolve_supabase_credentials() -> Tuple[str, str, str]:
         dev_key = (
             os.getenv("SUPABASE_KEY", "").strip()
             or _get_st_secret("SUPABASE_KEY")
-            or SUPABASE_KEY
         )
         if dev_key:
             return url, dev_key, "SUPABASE_KEY"

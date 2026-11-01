@@ -13,6 +13,7 @@ from datetime import datetime, date
 from typing import List, Dict, Any, Optional, Union
 import pandas as pd
 
+from database.repositories import unit_of_work
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from services.savings_service import SavingsService
 from mappers.base_mappers import RepaymentMapper
@@ -96,7 +97,7 @@ def save_repayment(
             def __enter__(self):
                 if override_uow:
                     return override_uow
-                self.uow = SupabaseUnitOfWork()
+                self.uow = unit_of_work.SupabaseUnitOfWork()
                 return self.uow.__enter__()
 
             def __exit__(self, exc_type, exc_val, exc_tb):
@@ -627,7 +628,7 @@ def save_repayments(
     any_new_records = False
 
     try:
-        with SupabaseUnitOfWork() as uow:
+        with unit_of_work.SupabaseUnitOfWork() as uow:
             # 1. Pre-flight Batch Lookups: Client IDs & Active Loans in bulk
             client_cache = {}
             clean_codes = []

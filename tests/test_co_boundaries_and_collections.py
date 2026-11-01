@@ -228,11 +228,13 @@ def test_save_repayments_savings_loan_separation():
         }
     ]
 
-    with patch("database.repositories.unit_of_work.SupabaseUnitOfWork") as MockUOW, \
+    with patch("services.collection_batch_service.SupabaseUnitOfWork") as MockUOW1, \
+         patch("database.repositories.unit_of_work.SupabaseUnitOfWork") as MockUOW2, \
          patch("app.save_repayment") as mock_save_single:
 
         uow_inst = MagicMock()
-        MockUOW.return_value.__enter__.return_value = uow_inst
+        MockUOW1.return_value.__enter__.return_value = uow_inst
+        MockUOW2.return_value.__enter__.return_value = uow_inst
 
         # Mock empty existing idempotency checks
         mock_table = MagicMock()

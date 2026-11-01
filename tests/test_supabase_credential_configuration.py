@@ -40,6 +40,11 @@ def clean_env(monkeypatch):
     ]:
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("ICARE_AUTH_SECRET", "test-auth-secret-key-32-bytes-minimum-length")
+    import database.connection
+    import config.settings
+    for attr in ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_KEY"]:
+        monkeypatch.setattr(database.connection, attr, "", raising=False)
+        monkeypatch.setattr(config.settings, attr, "", raising=False)
     return monkeypatch
 
 

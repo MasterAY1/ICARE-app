@@ -56,10 +56,10 @@ def test_session_cache_ttl_expiration():
         full_name="Temp Officer",
         permissions=set()
     )
-    cache.set("officer_temp", user, ttl_seconds=0.05)
+    cache.set("officer_temp", user, ttl_seconds=0.03)
     assert cache.get("officer_temp") is not None
 
-    time.sleep(0.06)
+    time.sleep(0.1)
     # Expired
     assert cache.get("officer_temp") is None
     assert len(cache) == 0

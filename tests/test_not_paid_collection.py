@@ -152,7 +152,8 @@ class TestNotPaidCollectionFlow(unittest.TestCase):
             }
         ]
 
-        with patch("database.repositories.unit_of_work.SupabaseUnitOfWork", return_value=mock_uow):
+        with patch("services.collection_batch_service.SupabaseUnitOfWork", return_value=mock_uow), \
+             patch("database.repositories.unit_of_work.SupabaseUnitOfWork", return_value=mock_uow):
             receipt = save_repayments(batch)
 
         self.assertEqual(receipt["new_processed"], 1)
