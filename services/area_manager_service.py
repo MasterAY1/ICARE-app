@@ -771,24 +771,25 @@ class AreaManagerService:
 
             # Check master cashbook status
             mc_status = "Open"
-            mc_diff = 0.0
-            mc_vault = 0.0
+            mc_closing = 0.0
             try:
-                res_mc = uow.client.table("master_cashbook").select("status, difference, closing_balance").eq("branch_id", bid).eq("date", date_str).execute()
+                res_mc = uow.client.table("master_cashbook").select("status, closing_balance").eq("branch_id", bid).eq("date", date_str).execute()
                 if res_mc.data:
                     mc_status = res_mc.data[0].get("status") or "Open"
-                    mc_diff = float(res_mc.data[0].get("difference") or 0.0)
-                    mc_vault = float(res_mc.data[0].get("closing_balance") or 0.0)
+                    mc_closing = float(res_mc.data[0].get("closing_balance") or 0.0)
             except Exception:
                 pass
+
+            eod_variance = float(eod_record.get("cash_variance") or 0.0) if eod_record else 0.0
+            eod_vault = float(eod_record.get("acct_1000_balance") or 0.0) if eod_record else mc_closing
 
             pending_eods.append({
                 "branch_id": bid,
                 "branch_name": bname,
                 "closure_date": date_str,
                 "master_cashbook_status": mc_status,
-                "cash_variance": mc_diff,
-                "vault_cash": mc_vault,
+                "cash_variance": eod_variance,
+                "vault_cash": eod_vault,
                 "is_confirmed": is_confirmed,
                 "status": eod_record.get("status") if eod_record else ("PENDING" if mc_status in ["Closed", "Verified"] else "AWAITING_BM_SUBMISSION"),
                 "confirmed_by": eod_record.get("confirmed_by") if eod_record else None,
@@ -959,7 +960,7 @@ class AreaManagerService:
                 .select("amount, side") \
                 .eq("branch_id", branch_id) \
                 .eq("account_code", "1000") \
-                .lte("entry_date", date_str) \
+                .lte("created_at", f"{date_str}T23:59:59") \
                 .execute()
             leg_rows = res_leg.data or []
             deb = sum(float(r["amount"]) for r in leg_rows if r.get("side") == "Debit")
@@ -970,9 +971,10 @@ class AreaManagerService:
 
         cash_variance = 0.0
         try:
-            res_mc = uow.client.table("master_cashbook").select("difference").eq("branch_id", branch_id).eq("date", date_str).execute()
+            res_mc = uow.client.table("master_cashbook").select("closing_balance").eq("branch_id", branch_id).eq("date", date_str).execute()
             if res_mc.data:
-                cash_variance = float(res_mc.data[0].get("difference") or 0.0)
+                mc_closing = float(res_mc.data[0].get("closing_balance") or 0.0)
+                cash_variance = round(mc_closing - vault_cash, 2)
         except Exception:
             pass
 
@@ -1140,10 +1142,14 @@ class AreaManagerService:
         mc_closed = False
         mc_diff = 0.0
         try:
-            res_mc = uow.client.table("master_cashbook").select("status, difference").eq("branch_id", branch_id).eq("date", date_str).execute()
-            if res_mc.data:
-                mc_closed = (res_mc.data[0].get("status") in ["Closed", "Verified"])
-                mc_diff = float(res_mc.data[0].get("difference") or 0.0)
+            res_eod = uow.client.table("area_eod_confirmations").select("status, cash_variance").eq("branch_id", branch_id).eq("closure_date", date_str).execute()
+            if res_eod.data:
+                mc_closed = res_eod.data[0].get("status") in ["BRANCH_CONFIRMED", "AREA_LOCKED", "PENDING"]
+                mc_diff = float(res_eod.data[0].get("cash_variance") or 0.0)
+            else:
+                res_mc = uow.client.table("master_cashbook").select("status, closing_balance").eq("branch_id", branch_id).eq("date", date_str).execute()
+                if res_mc.data:
+                    mc_closed = (res_mc.data[0].get("status") in ["Closed", "Verified"])
         except Exception:
             pass
 

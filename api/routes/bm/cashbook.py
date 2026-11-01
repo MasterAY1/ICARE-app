@@ -232,11 +232,9 @@ def get_daily_master_cashbook(
         else:
             auto_disb_12w += active_cr
 
-    # 6. Opening Balance Resolution (app.py L11321-11333)
+    # 6. Opening Balance Resolution
     auto_opening = float(cb_entry.opening_balance) if cb_entry and cb_entry.opening_balance is not None else 0.0
-    if auto_opening == 0.0 and iso_date == "2026-08-19":
-        auto_opening = 450.0
-    elif auto_opening == 0.0:
+    if auto_opening == 0.0:
         prev_date = (target_date - timedelta(days=1)).isoformat()
         try:
             prev_entry = uow.cashbook.find_by_date_and_branch(prev_date, target_branch)
@@ -704,10 +702,17 @@ def execute_eod_day_close(
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
-    Finalizes daily cashbook and advances branch business date to next working day (app.py L11871-11899).
+    Finalizes daily cashbook and advances branch business date to next working day.
     """
-    branch_name = current_user.branch
-    branch_id = uow.cashbook._resolve_branch_id(branch_name)
+    target_branch = payload.branch or (current_user.branch if current_user.role in ["BM", "Branch Manager"] else None)
+    if payload.branch_id:
+        branch_id = payload.branch_id
+    elif target_branch:
+        branch_id = uow.cashbook._resolve_branch_id(target_branch)
+    else:
+        branch_id = uow.cashbook._resolve_branch_id(current_user.branch)
+
+    check_branch_access(current_user, branch_id, "execute EOD day close")
 
     try:
         target_date = date.fromisoformat(payload.date)

@@ -262,8 +262,7 @@ class BusinessDateService:
             # 1. Freeze Master Cashbook
             res_mb = uow.client.table("master_cashbook").select("closing_balance").eq("branch_id", branch_id).eq("date", p_date_str).execute()
             closing_bal = float(res_mb.data[0]["closing_balance"]) if res_mb.data else 0.0
-            cash_diff = float(res_mb.data[0].get("difference") or 0.0) if res_mb.data else 0.0
-            
+
             update_payload = {
                 "status": "Closed",
                 "verified_at": datetime.now().isoformat()
@@ -295,7 +294,7 @@ class BusinessDateService:
                     .select("amount, side") \
                     .eq("branch_id", branch_id) \
                     .eq("account_code", "1000") \
-                    .lte("entry_date", p_date_str) \
+                    .lte("created_at", f"{p_date_str}T23:59:59") \
                     .execute()
                 leg_rows = res_leg.data or []
                 deb = sum(float(r["amount"]) for r in leg_rows if r.get("side") == "Debit")
@@ -303,6 +302,8 @@ class BusinessDateService:
                 vault_cash = max(0.0, deb - crd)
             except Exception:
                 pass
+
+            cash_diff = round(closing_bal - vault_cash, 2)
 
             try:
                 auto_note = notes or (

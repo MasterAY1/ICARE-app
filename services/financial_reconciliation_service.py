@@ -143,7 +143,7 @@ class FinancialReconciliationService:
             "posting_date": p_date_str,
             "is_balanced": is_balanced,
             "status_text": "PERFECT MATCH — Financial Integrity Verified" if is_balanced else "Financial Integrity Mismatch Detected",
-            "status_emoji": "🟢" if is_balanced else "🔴",
+            "status_badge": "BALANCED" if is_balanced else "VARIANCE_DETECTED",
             "ledger_total": ledger_total,
             "audit_views_total": audit_views_total,
             "co_cashbooks_total": co_cashbooks_total,

@@ -157,6 +157,8 @@ class CoAggregationResponse(BaseModel):
 
 class EodCloseRequest(BaseModel):
     date: str
+    branch: Optional[str] = None
+    branch_id: Optional[str] = None
     reason_tag: Optional[str] = None
     notes: Optional[str] = None
 
