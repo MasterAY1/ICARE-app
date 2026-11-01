@@ -167,11 +167,13 @@ class InstitutionPerformanceModel {
   final int year;
   final List<BranchPerformanceItemModel> branchRankings;
   final List<OfficerPerformanceItemModel> officerRankings;
+  final PerformanceSummaryModel summary;
 
   const InstitutionPerformanceModel({
     required this.year,
     required this.branchRankings,
     required this.officerRankings,
+    required this.summary,
   });
 
   factory InstitutionPerformanceModel.fromJson(Map<String, dynamic> json) {
@@ -186,10 +188,55 @@ class InstitutionPerformanceModel {
         .map((e) => OfficerPerformanceItemModel.fromJson(e as Map<String, dynamic>))
         .toList();
 
+    final sumMap = bp['summary'] as Map<String, dynamic>? ?? json['summary'] as Map<String, dynamic>? ?? {};
+
     return InstitutionPerformanceModel(
       year: (json['year'] as num?)?.toInt() ?? 2026,
       branchRankings: bList,
       officerRankings: oList,
+      summary: PerformanceSummaryModel.fromJson(sumMap),
+    );
+  }
+}
+
+@immutable
+class PerformanceSummaryModel {
+  final double totalDisbursedYtd;
+  final int totalDisbursedCount;
+  final double totalOverdueRecoveredYtd;
+  final int totalActiveBorrowers;
+  final double totalActiveCredit;
+  final double totalNetSavings;
+  final int totalFullPayoffsCount;
+  final double totalFullPayoffsAmount;
+  final double totalOverdue;
+  final double averagePar;
+
+  const PerformanceSummaryModel({
+    this.totalDisbursedYtd = 0.0,
+    this.totalDisbursedCount = 0,
+    this.totalOverdueRecoveredYtd = 0.0,
+    this.totalActiveBorrowers = 0,
+    this.totalActiveCredit = 0.0,
+    this.totalNetSavings = 0.0,
+    this.totalFullPayoffsCount = 0,
+    this.totalFullPayoffsAmount = 0.0,
+    this.totalOverdue = 0.0,
+    this.averagePar = 0.0,
+  });
+
+  factory PerformanceSummaryModel.fromJson(Map<String, dynamic> json) {
+    return PerformanceSummaryModel(
+      totalDisbursedYtd: (json['total_disbursed_ytd'] as num?)?.toDouble() ?? 0.0,
+      totalDisbursedCount: (json['total_disbursed_count'] as num?)?.toInt() ?? 0,
+      totalOverdueRecoveredYtd: (json['total_overdue_recovered_ytd'] as num?)?.toDouble() ?? 0.0,
+      totalActiveBorrowers: (json['total_active_borrowers'] as num?)?.toInt() ?? 0,
+      totalActiveCredit: (json['total_active_credit'] as num?)?.toDouble() ?? 0.0,
+      totalNetSavings: (json['total_net_savings'] as num?)?.toDouble() ?? 0.0,
+      totalFullPayoffsCount: (json['total_full_payoffs_count'] as num?)?.toInt() ?? 0,
+      totalFullPayoffsAmount: (json['total_full_payoffs_amount'] as num?)?.toDouble() ?? 0.0,
+      totalOverdue: (json['total_overdue'] as num?)?.toDouble() ?? 0.0,
+      averagePar: (json['average_par'] as num?)?.toDouble() ?? 0.0,
     );
   }
 }
@@ -215,6 +262,10 @@ class BranchPerformanceItemModel {
   final double collectedAmount;
   final double compliancePct;
   final double vaultCash;
+  final double netSavingsBalance;
+  final int fullPayoffsCount;
+  final double fullPayoffsAmount;
+  final String topOfficerName;
   final double compositeScore;
   final ScorecardBreakdownModel scorecard;
 
@@ -238,6 +289,10 @@ class BranchPerformanceItemModel {
     required this.collectedAmount,
     required this.compliancePct,
     required this.vaultCash,
+    this.netSavingsBalance = 0.0,
+    this.fullPayoffsCount = 0,
+    this.fullPayoffsAmount = 0.0,
+    this.topOfficerName = 'Lead Officer',
     required this.compositeScore,
     required this.scorecard,
   });
@@ -263,6 +318,10 @@ class BranchPerformanceItemModel {
       collectedAmount: (json['collected_amount'] as num?)?.toDouble() ?? 0.0,
       compliancePct: (json['compliance_pct'] as num?)?.toDouble() ?? 95.0,
       vaultCash: (json['vault_cash'] as num?)?.toDouble() ?? 0.0,
+      netSavingsBalance: (json['net_savings_balance'] as num?)?.toDouble() ?? 0.0,
+      fullPayoffsCount: (json['full_payoffs_count'] as num?)?.toInt() ?? 0,
+      fullPayoffsAmount: (json['full_payoffs_amount'] as num?)?.toDouble() ?? 0.0,
+      topOfficerName: json['top_officer_name']?.toString() ?? 'Lead Officer',
       compositeScore: (json['composite_score'] as num?)?.toDouble() ?? 0.0,
       scorecard: ScorecardBreakdownModel.fromJson(json['scorecard'] as Map<String, dynamic>? ?? {}),
     );

@@ -134,6 +134,12 @@ def get_admin_operations(
         except Exception:
             pass
 
+    # Exclude Head Office: Head Office is the central administrative headquarters, not an operational branch
+    branch_rows = [
+        b for b in branch_rows
+        if str(b.get("name", "")).strip().lower() not in ["head office", "headquarters", "headoffice"]
+    ]
+
     # Map managers
     mgr_map = {}
     try:

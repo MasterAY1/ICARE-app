@@ -22,6 +22,7 @@ import '../../audit/presentation/audit_ledger_screen.dart';
 import '../../reports/presentation/reports_export_screen.dart';
 import '../../onboarding/presentation/branch_onboarding_admin_screen.dart';
 import '../../admin/presentation/admin_dashboard_screen.dart';
+import '../../admin/presentation/admin_portfolio_screen.dart';
 import '../../auth/presentation/login_screen.dart';
 
 /// Active page state provider for Streamlit-style radio navigation
@@ -256,10 +257,7 @@ class CoAppScaffold extends ConsumerWidget {
       navItems = [
         'Dashboard',
         'Portfolio',
-        'Master Cashbook',
         'User Management',
-        'Branch Onboarding',
-        'Audit Ledger',
         'Reports & Export',
       ];
     } else if (isAm) {
@@ -634,11 +632,9 @@ class CoAppScaffold extends ConsumerWidget {
     if (isAdmin) {
       destinations = [
         (key: 'Dashboard', shortLabel: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
-        (key: 'Portfolio', shortLabel: 'Portfolio', icon: Icons.folder_shared_outlined, activeIcon: Icons.folder_shared),
-        (key: 'Master Cashbook', shortLabel: 'Cashbook', icon: Icons.account_balance_outlined, activeIcon: Icons.account_balance),
+        (key: 'Portfolio', shortLabel: 'Portfolio', icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart),
         (key: 'User Management', shortLabel: 'Staff', icon: Icons.people_alt_outlined, activeIcon: Icons.people_alt),
-        (key: 'Branch Onboarding', shortLabel: 'Onboard', icon: Icons.domain_add_outlined, activeIcon: Icons.domain_add),
-        (key: 'Reports & Export', shortLabel: 'Reports', icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart),
+        (key: 'Reports & Export', shortLabel: 'Reports', icon: Icons.file_download_outlined, activeIcon: Icons.file_download),
       ];
     } else if (isBm) {
       destinations = [
@@ -743,6 +739,14 @@ class CoAppScaffold extends ConsumerWidget {
     );
   }
 
+  static String _formatBranchLocation(String branchName, {bool isAdmin = false}) {
+    final clean = branchName.trim();
+    if (isAdmin || clean.toLowerCase() == 'head office' || clean.toLowerCase() == 'headquarters' || clean.isEmpty) {
+      return 'Head Office';
+    }
+    return '$clean Branch';
+  }
+
   /// Modern Drawer Navigation
   Widget _buildDrawerContent(
     BuildContext context,
@@ -836,7 +840,7 @@ class CoAppScaffold extends ConsumerWidget {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      '$branchName Branch',
+                      _formatBranchLocation(branchName, isAdmin: roleBadge == 'Admin'),
                       style: const TextStyle(
                         color: Color(0xE2FFFFFF),
                         fontSize: 12,
@@ -1046,7 +1050,7 @@ class CoAppScaffold extends ConsumerWidget {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '$branchName Branch',
+                          _formatBranchLocation(branchName, isAdmin: roleBadge == 'Admin'),
                           style: const TextStyle(
                             color: Color(0xFF64748B),
                             fontSize: 11.5,
@@ -1241,11 +1245,13 @@ class CoAppScaffold extends ConsumerWidget {
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                isAm
-                    ? 'Regional Supervisory Command · $formattedDate'
-                    : (isBm
-                        ? '$branchName Branch Command · $formattedDate'
-                        : '$branchName Branch · $formattedDate'),
+                roleBadge == 'Admin'
+                    ? 'Head Office · $formattedDate'
+                    : (isAm
+                        ? 'Regional Supervisory Command · $formattedDate'
+                        : (isBm
+                            ? '$branchName Branch Command · $formattedDate'
+                            : '${_formatBranchLocation(branchName)} · $formattedDate')),
                 style: TextStyle(
                   color: isAm ? const Color(0xFF0F766E) : (isBm ? const Color(0xFF1E40AF) : const Color(0xFF334155)),
                   fontSize: 11.5,
@@ -1291,9 +1297,17 @@ class CoAppScaffold extends ConsumerWidget {
               children: [
                 TextSpan(text: '$roleBadge — '),
                 TextSpan(
-                  text: isAm ? 'Regional Command Center' : (isBm ? '$branchName Branch Command' : '$branchName Branch'),
+                  text: roleBadge == 'Admin'
+                      ? 'Head Office'
+                      : (isAm
+                          ? 'Regional Command Center'
+                          : (isBm
+                              ? '$branchName Branch Command'
+                              : _formatBranchLocation(branchName))),
                   style: TextStyle(
-                    color: isAm ? const Color(0xFF99F6E4) : (isBm ? const Color(0xFF93C5FD) : const Color(0xFF8CC63F)),
+                    color: roleBadge == 'Admin'
+                        ? const Color(0xFFDDD6FE)
+                        : (isAm ? const Color(0xFF99F6E4) : (isBm ? const Color(0xFF93C5FD) : const Color(0xFF8CC63F))),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1319,6 +1333,7 @@ class CoAppScaffold extends ConsumerWidget {
       case 'Withdrawal Operations':
         return const WithdrawalOperationsScreen();
       case 'Portfolio':
+        if (isAdmin) return const AdminPortfolioScreen();
         if (isAm) return const AmPortfolioScreen();
         return const PortfolioOverviewScreen();
       case 'CO Cashbook':

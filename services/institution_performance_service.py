@@ -75,6 +75,12 @@ class InstitutionPerformanceService:
             except Exception:
                 pass
 
+        # Exclude Head Office: Head Office is the central administrative headquarters, not an operational branch
+        branches_data = [
+            b for b in branches_data
+            if str(b.get("name", "")).strip().lower() not in ["head office", "headquarters", "headoffice"]
+        ]
+
         if not branches_data:
             return {
                 "year": year,
@@ -247,6 +253,46 @@ class InstitutionPerformanceService:
             except Exception:
                 pass
 
+            # G. Net Savings Balance (Deposits - Withdrawals)
+            net_savings = 0.0
+            try:
+                for tbl in ["individual_savings", "group_savings", "internal_savings"]:
+                    res_s = uow.client.table(tbl).select("deposit_amount, withdrawal_amount").eq("branch_id", bid).execute()
+                    for s in (res_s.data or []):
+                        net_savings += float(s.get("deposit_amount") or 0.0) - float(s.get("withdrawal_amount") or 0.0)
+            except Exception:
+                pass
+
+            # H. Full Payoff Settled Early
+            full_payoff_count = 0
+            full_payoff_amount = 0.0
+            try:
+                res_po = uow.client.table("loan_payoff_excess_records").select("full_payoff_amount").eq("branch_id", bid).execute()
+                for p in (res_po.data or []):
+                    amt = float(p.get("full_payoff_amount") or 0.0)
+                    if amt > 0:
+                        full_payoff_count += 1
+                        full_payoff_amount += amt
+            except Exception:
+                pass
+
+            # I. Top Performing Officer in Branch
+            top_officer = "Lead Officer"
+            try:
+                res_co_l = uow.client.table("loans").select("officer_id").eq("branch_id", bid).in_("status", ["ACTIVE", "Active"]).execute()
+                co_counts = {}
+                for l in (res_co_l.data or []):
+                    oid = str(l.get("officer_id") or "")
+                    if oid:
+                        co_counts[oid] = co_counts.get(oid, 0) + 1
+                if co_counts:
+                    top_oid = max(co_counts, key=co_counts.get)
+                    res_u = uow.client.table("app_users").select("full_name, username").eq("id", top_oid).execute()
+                    if res_u.data:
+                        top_officer = res_u.data[0].get("full_name") or res_u.data[0].get("username") or "Lead Officer"
+            except Exception:
+                pass
+
             branch_stats.append({
                 "branch_id": bid,
                 "branch_name": bname,
@@ -267,6 +313,10 @@ class InstitutionPerformanceService:
                 "compliance_pct": comp_pct,
                 "vault_cash": vault_cash,
                 "cash_variance": cash_variance,
+                "net_savings_balance": net_savings,
+                "full_payoffs_count": full_payoff_count,
+                "full_payoffs_amount": full_payoff_amount,
+                "top_officer_name": top_officer,
             })
 
         # 3. Calculate Normalized 6-Pillar Composite Scores
@@ -322,8 +372,14 @@ class InstitutionPerformanceService:
         top_three = branch_stats[:3] if len(branch_stats) >= 3 else branch_stats
 
         total_disb = sum(b["disb_principal"] for b in branch_stats)
+        total_disb_count = sum(b["disb_count"] for b in branch_stats)
         total_recovered = sum(b["overdue_recovered"] for b in branch_stats)
         total_active_borrowers = sum(b["active_members"] for b in branch_stats)
+        total_active_credit = sum(b["active_credit_book"] for b in branch_stats)
+        total_net_savings = sum(b["net_savings_balance"] for b in branch_stats)
+        total_full_payoffs_count = sum(b["full_payoffs_count"] for b in branch_stats)
+        total_full_payoffs_amount = sum(b["full_payoffs_amount"] for b in branch_stats)
+        total_overdue = sum(b["overdue_amount"] for b in branch_stats)
         avg_par = round(sum(b["par_pct"] for b in branch_stats) / len(branch_stats), 2) if branch_stats else 0.0
 
         return {
@@ -333,8 +389,14 @@ class InstitutionPerformanceService:
             "rankings": branch_stats,
             "summary": {
                 "total_disbursed_ytd": total_disb,
+                "total_disbursed_count": total_disb_count,
                 "total_overdue_recovered_ytd": total_recovered,
                 "total_active_borrowers": total_active_borrowers,
+                "total_active_credit": total_active_credit,
+                "total_net_savings": total_net_savings,
+                "total_full_payoffs_count": total_full_payoffs_count,
+                "total_full_payoffs_amount": total_full_payoffs_amount,
+                "total_overdue": total_overdue,
                 "average_par": avg_par
             }
         }
