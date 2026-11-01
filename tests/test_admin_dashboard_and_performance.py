@@ -36,8 +36,8 @@ def test_performance_service_computes_composite_scores():
 
     # Mock branches
     mock_uow.client.table.return_value.select.return_value.execute.return_value.data = [
-        {"id": "b-1", "name": "Ogijo", "code": "OGI"},
-        {"id": "b-2", "name": "Ikorodu", "code": "IKR"},
+        {"branch_id": "b-1", "id": "b-1", "name": "Ogijo", "code": "OGI"},
+        {"branch_id": "b-2", "id": "b-2", "name": "Ikorodu", "code": "IKR"},
     ]
 
     perf = InstitutionPerformanceService.compute_institution_performance(uow=mock_uow, year=2026)

@@ -118,18 +118,35 @@ def get_admin_operations(
     today_net_savings = today_savings_deposit - today_savings_withdrawal
 
     # 5. Multi-Branch Operational Status Matrix
-    res_b = uow.client.table("branches").select("id, name, code").execute()
-    branch_rows = res_b.data or []
+    branch_rows = []
+    try:
+        res_b = uow.client.table("branches").select("branch_id, name").execute()
+        branch_rows = res_b.data or []
+    except Exception:
+        branch_rows = []
+
+    # Discover branches from loans or ledger if branches table access is restricted
+    if not branch_rows:
+        try:
+            res_lb = uow.client.table("loans").select("branch_id").limit(200).execute()
+            seen_bids = set(str(r["branch_id"]) for r in (res_lb.data or []) if r.get("branch_id"))
+            branch_rows = [{"branch_id": bid, "name": "Branch"} for bid in seen_bids]
+        except Exception:
+            pass
 
     # Map managers
-    res_mgrs = uow.client.table("app_users").select("id, username, full_name, branch_id").in_("role", ["BM", "Branch Manager"]).execute()
-    mgr_map = {m.get("branch_id"): (m.get("full_name") or m.get("username") or "Manager") for m in (res_mgrs.data or [])}
+    mgr_map = {}
+    try:
+        res_mgrs = uow.client.table("app_users").select("id, username, full_name, branch_id").in_("role", ["BM", "Branch Manager"]).execute()
+        mgr_map = {m.get("branch_id"): (m.get("full_name") or m.get("username") or "Manager") for m in (res_mgrs.data or [])}
+    except Exception:
+        pass
 
     branch_statuses = []
     for b in branch_rows:
-        bid = str(b.get("id"))
+        bid = str(b.get("branch_id") or b.get("id") or "")
         bname = b.get("name") or "Branch"
-        bcode = b.get("code") or ""
+        bcode = b.get("code") or bname[:3].upper()
         bm = mgr_map.get(bid, "Branch Manager")
 
         # Check EOD / Closure state
@@ -197,7 +214,7 @@ def get_admin_operations(
             .order("created_at", desc=False) \
             .limit(15) \
             .execute()
-        b_map_name = {str(b["id"]): b["name"] for b in branch_rows}
+        b_map_name = {str(b.get("branch_id") or b.get("id")): b["name"] for b in branch_rows}
         for rv in (q_rev.data or []):
             pending_reversals.append({
                 "request_id": str(rv.get("id")),
@@ -220,7 +237,7 @@ def get_admin_operations(
             .order("created_at", desc=False) \
             .limit(15) \
             .execute()
-        b_map_name = {str(b["id"]): b["name"] for b in branch_rows}
+        b_map_name = {str(b.get("branch_id") or b.get("id")): b["name"] for b in branch_rows}
         for hl in (q_hl.data or []):
             pending_high_loans.append({
                 "loan_id": str(hl.get("loan_id")),

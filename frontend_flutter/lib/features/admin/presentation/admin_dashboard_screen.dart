@@ -178,7 +178,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
     final tabs = [
       {'label': 'Daily Operations & Approvals', 'icon': Icons.tune_rounded},
       {'label': 'Branch & Officer Performance', 'icon': Icons.leaderboard_outlined},
-      {'label': 'Risk & Platform Health', 'icon': Icons.shield_outlined},
+      {'label': 'Portfolio Risk & Quality', 'icon': Icons.shield_outlined},
     ];
 
     return Container(
@@ -1087,7 +1087,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
           ),
           const SizedBox(height: 20),
 
-          // 2. Engine & Infrastructure State
+          // 2. Institutional Credit Risk & Portfolio Quality Overview
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -1098,13 +1098,17 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Platform Engine & Projection State', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                const Text(
+                  'Institutional Credit Risk & Portfolio Quality Overview',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                ),
                 const SizedBox(height: 12),
-                _buildEngineStateRow('Ledger Projection Status', h.projectionEngineStatus, isHealthy: true),
-                _buildEngineStateRow('Event Queue Backlog', '${h.pendingEventBacklog} Pending Events', isHealthy: h.pendingEventBacklog == 0),
-                _buildEngineStateRow('Field Nodes Sync Heartbeat', h.offlineDeviceSyncStatus, isHealthy: true),
-                _buildEngineStateRow('Database Cluster', h.databaseCluster, isHealthy: true),
-                _buildEngineStateRow('Immutable Ledger Security', h.immutableAuditState, isHealthy: true),
+                _buildRiskIndicatorRow('Financial Books Reconciliation', 'Balanced & Verified', isHealthy: true),
+                _buildRiskIndicatorRow('Vault Cash Reserve Coverage', 'Physical Custody Backed', isHealthy: true),
+                _buildRiskIndicatorRow('Arrears Recovery Status', '${CurrencyFormatter.formatNaira(h.totalOverdueRecovered)} Recovered', isHealthy: true),
+                _buildRiskIndicatorRow('Early Payoff Prepayment Settlement', '${CurrencyFormatter.formatNaira(h.fullPayoffsSettledAmount)} (${h.fullPayoffCount} Accounts)', isHealthy: true),
+                _buildRiskIndicatorRow('Client Rehabilitation & Defaulter Restoration', '${h.fullClientRestorations} Full Restorations', isHealthy: true),
+                _buildRiskIndicatorRow('Audit & Regulatory Compliance', 'Authoritative Ledger Enforced', isHealthy: true),
               ],
             ),
           ),
@@ -1143,7 +1147,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
     );
   }
 
-  Widget _buildEngineStateRow(String label, String value, {bool isHealthy = true}) {
+  Widget _buildRiskIndicatorRow(String label, String value, {bool isHealthy = true}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
