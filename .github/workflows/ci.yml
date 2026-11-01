@@ -47,6 +47,8 @@ jobs:
                  tests/test_supabase_credential_configuration.py \
                  tests/test_not_paid_collection.py \
                  tests/test_session_cache.py \
+                 tests/test_loan_schedule_concurrency.py \
+                 tests/test_telemetry.py \
                  -v
 
   frontend-check:

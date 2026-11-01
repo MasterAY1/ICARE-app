@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
+import 'core/services/telemetry_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -9,6 +10,10 @@ void main() {
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
     debugPrint('Flutter Error: ${details.exceptionAsString()}');
+    TelemetryService.instance.reportError(
+      error: details.exception,
+      stackTrace: details.stack,
+    );
   };
 
   ErrorWidget.builder = (FlutterErrorDetails details) {
@@ -36,6 +41,10 @@ void main() {
 
   PlatformDispatcher.instance.onError = (error, stack) {
     debugPrint('Async Error: $error');
+    TelemetryService.instance.reportError(
+      error: error,
+      stackTrace: stack,
+    );
     return true; // Prevents process crash
   };
 

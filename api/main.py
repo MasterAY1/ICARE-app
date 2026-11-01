@@ -22,8 +22,36 @@ from api.routes import audit
 from api.routes import users
 from api.routes import reports
 from api.routes import onboarding
+from api.routes import telemetry
 from auth.session import get_auth_secret
 from database.connection import verify_supabase_credentials
+import os
+import logging
+
+logger = logging.getLogger("icare.api")
+
+# Initialize Sentry APM if SENTRY_DSN is configured
+SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            integrations=[
+                StarletteIntegration(transaction_style="endpoint"),
+                FastApiIntegration(transaction_style="endpoint"),
+            ],
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.2")),
+            profiles_sample_rate=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.1")),
+            environment=os.getenv("ENVIRONMENT", "production"),
+            send_default_pii=False,
+        )
+        logger.info("Sentry APM & error telemetry successfully initialized.")
+    except Exception as e:
+        logger.warning(f"Sentry APM initialization notice: {e}")
 
 app = FastAPI(
     title="ICARE Core Banking Backend API",
@@ -92,6 +120,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Structured global error handler providing human-friendly messages."""
+    try:
+        import sentry_sdk
+        if sentry_sdk.is_initialized():
+            sentry_sdk.capture_exception(exc)
+    except Exception:
+        pass
     err_dict = translate_error_to_icare_response(exc)
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST if not isinstance(exc, (SystemError, MemoryError)) else status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -116,13 +150,25 @@ app.include_router(audit.router)
 app.include_router(users.router)
 app.include_router(reports.router)
 app.include_router(onboarding.router)
+app.include_router(telemetry.router)
 
 
 @app.get("/health")
 @app.get("/api/health")
 def health_check():
     """Service health check."""
-    return {"status": "healthy", "service": "ICARE Core Banking API", "version": "1.0.0"}
+    sentry_active = False
+    try:
+        import sentry_sdk
+        sentry_active = bool(sentry_sdk.is_initialized())
+    except Exception:
+        pass
+    return {
+        "status": "healthy",
+        "service": "ICARE Core Banking API",
+        "version": "1.0.0",
+        "apm_enabled": sentry_active
+    }
 
 
 import os
