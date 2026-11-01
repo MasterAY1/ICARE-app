@@ -16,6 +16,8 @@ from api.schemas.portfolio import (
     DossierReversalRequest,
     TransferClientRequest,
     TransferClientResponse,
+    AcceptTransferRequest,
+    IncomingTransferItem,
     FilterOptions,
     PortfolioMetrics,
     GroupPortfolioItem,
@@ -541,6 +543,8 @@ def get_client_dossier(
             "created_at": str(c_info.get("registration_date") or c_info.get("created_at") or "N/A")[:10],
             "officer_name": str(c_info.get("officer_name") or "Unassigned"),
             "branch_name": str(c_info.get("branch_name") or "Unassigned"),
+            "branch_id": str(c_info.get("branch_id")) if c_info.get("branch_id") else None,
+            "officer_id": str(c_info.get("officer_id")) if c_info.get("officer_id") else None,
             "passport_url": c_info.get("passport_url") or ""
         },
         guarantor_info={
@@ -629,15 +633,23 @@ def submit_dossier_reversal_request(
 
 @router.get("/transfer-options")
 def get_transfer_options(
+    branch_id: Optional[str] = Query(None, description="Optional branch filter to scope local officers and groups"),
+    current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
-    Returns available operational branches, active credit officers, and solidarity groups
-    for user-friendly client portfolio transfer selectors (abstracting internal database UUIDs).
+    Returns available operational branches, active credit officers, and solidarity groups.
+    CRITICAL SECURITY PRIVACY: When called by a Branch Manager or Credit Officer, officers and groups
+    are strictly scoped to the user's assigned branch to prevent inter-branch operational data leakage.
     """
     transfer_branches = []
     transfer_officers = []
     transfer_groups = []
+
+    # Determine branch scoping to prevent cross-branch privacy leaks
+    effective_branch_id = branch_id or current_user.branch_id
+    user_role = (current_user.role or "").strip().lower()
+    is_branch_scoped = user_role in ["bm", "branch manager", "co", "credit officer"] and effective_branch_id
 
     try:
         res_tb = uow.client.table("branches").select("branch_id, name, code").eq("is_active", True).order("name").execute()
@@ -656,6 +668,8 @@ def get_transfer_options(
             .select("user_id, roles!inner(name), app_users!inner(id, username, full_name, is_active, branch_id)") \
             .eq("roles.name", "Credit Officer") \
             .eq("app_users.is_active", True)
+        if is_branch_scoped:
+            q_toff = q_toff.eq("app_users.branch_id", effective_branch_id)
         res_toff = q_toff.execute()
         for r in (res_toff.data or []):
             u = r.get("app_users") or {}
@@ -672,7 +686,10 @@ def get_transfer_options(
         pass
 
     try:
-        g_all_res = uow.client.table("groups").select("group_id, name, branch_id, officer_id").execute()
+        q_grp = uow.client.table("groups").select("group_id, name, branch_id, officer_id")
+        if is_branch_scoped:
+            q_grp = q_grp.eq("branch_id", effective_branch_id)
+        g_all_res = q_grp.execute()
         for g in (g_all_res.data or []):
             gid = g.get("group_id")
             if gid:
@@ -699,15 +716,23 @@ def transfer_client_portfolio(
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
-    Executes a multi-level client transfer (Intra-branch, Inter-branch, Inter-area).
-    Atomically reassigns client and active loan records while preserving 100% of
-    lifecycle status, savings balances, and ledger history.
+    Executes or initiates a multi-level client transfer:
+    - Intra-branch: Officer A -> Officer B within same branch (Executed directly by BM).
+    - Inter-branch: Branch A -> Branch B (Initiated by Source BM -> AM Sign-off -> Dest BM Acceptance & Assignment).
+    RBAC ENFORCEMENT: Credit Officers are strictly forbidden from initiating transfers.
     """
+    user_role = (current_user.role or "").strip().lower()
+    if user_role in ["co", "credit officer"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Credit Officers are not permitted to transfer clients. Only Branch Managers can initiate client transfers."
+        )
+
     res = ClientService.transfer_client(
         uow=uow,
         client_id=req.client_id,
-        to_officer_id=req.to_officer_id,
         to_branch_id=req.to_branch_id,
+        to_officer_id=req.to_officer_id,
         to_group_id=req.to_group_id,
         reason=req.reason,
         transferred_by=current_user.id or current_user.username
@@ -724,4 +749,47 @@ def transfer_client_portfolio(
         status=res["status"],
         message=res["message"]
     )
+
+
+@router.get("/incoming-transfers", response_model=List[IncomingTransferItem])
+def get_incoming_transfers(
+    branch_id: Optional[str] = Query(None, description="Branch ID (defaults to user's assigned branch)"),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Retrieves pending inter-branch client transfers awaiting acceptance and local
+    assignment by the destination Branch Manager.
+    """
+    target_branch_id = branch_id or current_user.branch_id
+    if not target_branch_id:
+        return []
+    return ClientService.get_incoming_transfers(uow, str(target_branch_id))
+
+
+@router.post("/accept-transfer")
+def accept_incoming_transfer(
+    req: AcceptTransferRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Receiving Branch Manager accepts an incoming inter-branch client transfer
+    and assigns the client to a local Credit Officer and Solidarity Group.
+    """
+    user_role = (current_user.role or "").strip().lower()
+    if user_role in ["co", "credit officer"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Credit Officers cannot accept or assign incoming transfers."
+        )
+
+    res = ClientService.accept_incoming_transfer(
+        uow=uow,
+        transfer_id=req.transfer_id,
+        to_officer_id=req.to_officer_id,
+        to_group_id=req.to_group_id,
+        accepted_by=current_user.id or current_user.username
+    )
+    return res
 

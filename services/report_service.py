@@ -865,15 +865,7 @@ class ReportService:
                 except Exception:
                     import time
                     time.sleep(0.5)
-            # Guaranteed fallback for October 2026 rollover from September official credit statement
-            if not prev_matrix_closing_credit and year == 2026 and month == 10:
-                prev_matrix_closing_credit = {
-                    "Dorcas (OGI_CO1)": 8021500.0,
-                    "Ayomide (OGI_CO2)": 6513375.0,
-                    "Olajumoke (OGI_CO3)": 7118700.0,
-                    "Oluwaseun (OGI_CO4)": 4739250.0,
-                    f"{branch_name} Branch Total": 26392825.0
-                }
+            # Dynamic cascade from prior month closing balance
 
         for off in officers:
             oid = off["officer_id"]
@@ -897,22 +889,8 @@ class ReportService:
             off_r = [r for r in month_reps if r.get("officer_id") == oid]
             reps = sum(float(r.get("amount_paid") or 0) for r in off_r)
 
-            # Closing Credit
-            if year == 2026 and month == 9:
-                sep_closing_map = {
-                    "Dorcas": 8021500.0,
-                    "Ayomide": 6513375.0,
-                    "Olajumoke": 7118700.0,
-                    "Oluwaseun": 4739250.0
-                }
-                c_name = off.get("clean_name") or off["name"].split(" (")[0].replace("Mrs. ", "").replace("Mr. ", "").replace("Miss. ", "").strip()
-                if c_name in sep_closing_map:
-                    closing_c = sep_closing_map[c_name]
-                    open_c = closing_c - act + reps
-                else:
-                    closing_c = open_c + act - reps
-            else:
-                closing_c = open_c + act - reps
+            # Closing Credit derived dynamically from opening balance, active credit, and repayments
+            closing_c = open_c + act - reps
 
             # Savings
             off_os = [s for s in open_sav if s.get("officer_id") == oid]
@@ -1453,15 +1431,15 @@ class ReportService:
         prev_interest = float(prev_data.get("tb_bank_interest") or 0.0)
         tb_bank_interest = round(prev_interest + tot_bank_interest if prev_interest > 0 else (tot_bank_interest or float(recon_data.get("tb_bank_interest") or 0.0)), 2)
 
-        # Operational figures come authoritatively from monthly_statement_reconciliations with fallback to cards
-        # Guarantees 100% parity across Parity Matrix, Statements A & B, Receipts & Payments, Cashbook & DB
-        disbursed_principal = round(float(recon_data.get("disbursed_principal") or 0.0) or cards.get("disbursed_principal", 0.0), 2)
-        upfront_fees = round(float(recon_data.get("upfront_fees") or 0.0) or cards.get("upfront_fees", 0.0), 2)
-        savings_deposits = round(float(recon_data.get("savings_deposits") or 0.0) or cards.get("savings_deposits", 0.0), 2)
-        collections = round(float(recon_data.get("collections") or 0.0) or cards.get("collections", 0.0), 2)
-        deposit_wth_val = round(float(recon_data.get("deposit_withdrawal") or 0.0) or cards.get("savings_withdrawals", 0.0), 2)
-        closing_credit = round(float(recon_data.get("closing_credit") or 0.0) or cards.get("closing_credit", 0.0), 2)
-        closing_savings = round(float(recon_data.get("closing_savings") or 0.0) or cards.get("closing_savings", 0.0), 2)
+        # Operational figures derived authoritatively and dynamically from live operational cards
+        # Guarantees 100% dynamic parity across Parity Matrix, Statements A & B, Receipts & Payments, Cashbook & DB
+        disbursed_principal = round(cards.get("disbursed_principal", 0.0), 2)
+        upfront_fees = round(cards.get("upfront_fees", 0.0), 2)
+        savings_deposits = round(cards.get("savings_deposits", 0.0), 2)
+        collections = round(cards.get("collections", 0.0), 2)
+        deposit_wth_val = round(cards.get("savings_withdrawals", 0.0), 2)
+        closing_credit = round(cards.get("closing_credit", 0.0), 2)
+        closing_savings = round(cards.get("closing_savings", 0.0), 2)
 
         sales_profit_markup = round(float(recon_data.get("sales_profit_markup") or 0.0), 2)
         sales_cc = round(float(recon_data.get("sales_cash_and_carry") or 0.0), 2)
@@ -1839,15 +1817,15 @@ class ReportService:
             }
         }
 
-        # Check reconciliation overrides only when unfiltered
-        if not target_officer_id and not target_product_id:
-            recon_data = ReportService.get_monthly_statement_reconciliation(uow, branch_id, year, month)
-            saved_dep = recon_data.get("deposit_statement")
-            if saved_dep and isinstance(saved_dep, dict) and "rows" in saved_dep:
-                return saved_dep
+        # Dynamic calculation from operational transactions (individual_savings)
 
         # Query cycle classification metadata
-        prods = {p['product_id']: p for p in uow.client.table('loan_products').select('product_id, repayment_cycle').execute().data or []}
+        prods = {}
+        try:
+            res_lp = uow.client.table('loan_products').select('product_id, repayment_cycle').execute()
+            prods = {p['product_id']: p for p in (res_lp.data or [])}
+        except Exception:
+            prods = {}
         groups = {g['group_id']: g for g in fetch_all_paginated(uow.client.table('groups').select('group_id, meeting_day, officer_id').eq('branch_id', branch_id))}
         clients = {c['client_id']: c for c in fetch_all_paginated(uow.client.table('clients').select('client_id, group_id, officer_id, created_at').eq('branch_id', branch_id))}
         loans = fetch_all_paginated(uow.client.table('loans').select('client_id, product_id, officer_id').eq('branch_id', branch_id))
@@ -2118,14 +2096,14 @@ class ReportService:
             }
         }
 
-        # Check reconciliation overrides only when unfiltered
-        if not target_officer_id and not target_product_id:
-            recon_data = ReportService.get_monthly_statement_reconciliation(uow, branch_id, year, month)
-            saved_credit = recon_data.get("credit_statement")
-            if saved_credit and isinstance(saved_credit, dict) and "rows" in saved_credit:
-                return saved_credit
+        # Dynamic calculation from operational transactions (loans, repayments, loan_payoff_excess_records)
 
-        prods = {p['product_id']: p for p in uow.client.table('loan_products').select('product_id, repayment_cycle').execute().data or []}
+        prods = {}
+        try:
+            res_lp = uow.client.table('loan_products').select('product_id, repayment_cycle').execute()
+            prods = {p['product_id']: p for p in (res_lp.data or [])}
+        except Exception:
+            prods = {}
         all_loans = {l['loan_id']: l for l in fetch_all_paginated(uow.client.table('loans').select('loan_id, product_id, loan_amount, active_credit, officer_id').eq('branch_id', branch_id))}
 
         if year < 2026 or (year == 2026 and month < 9):

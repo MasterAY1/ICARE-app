@@ -341,7 +341,7 @@ def test_client_transfers_multi_level():
     mock_client.group_id = "GROUP_1"
     mock_uow.clients.find_by_id.return_value = mock_client
 
-    # 1. Intra-Branch Transfer (same branch, officer 1 -> officer 2)
+    # 1. Intra-Branch Transfer (Option 1: same branch, officer 1 -> officer 2, direct BM execution)
     mock_uow.client.table().select().eq().execute.side_effect = [
         MagicMock(data=[{"branch_id": branch_1_id, "name": "Ogijo", "zone_id": "ZONE_A"}]), # dest branch
         MagicMock(data=[{"id": officer_2_id, "username": "CO2", "full_name": "Credit Officer 2", "branch_id": branch_1_id}]), # dest user
@@ -360,43 +360,75 @@ def test_client_transfers_multi_level():
     assert res_intra["transfer_type"] == ClientTransferType.INTRA_BRANCH.value
     assert res_intra["new_officer"] == "Credit Officer 2"
 
-    # 2. Inter-Branch Transfer (branch 1 -> branch 2, different branch, same zone)
+    # 2. Inter-Branch Transfer (Stage 1 Initiation: branch 1 -> branch 2, same zone)
+    # Mock branch lookup, no pending check (empty data), and orig branch zone lookup
+    mock_uow.client.table().select().eq().in_().execute.return_value = MagicMock(data=[])
     mock_uow.client.table().select().eq().execute.side_effect = [
         MagicMock(data=[{"branch_id": branch_2_id, "name": "Ikorodu", "zone_id": "ZONE_A"}]), # dest branch
-        MagicMock(data=[{"id": officer_2_id, "username": "IKO_CO1", "full_name": "Ikorodu Officer 1", "branch_id": branch_2_id}]), # dest user
         MagicMock(data=[{"zone_id": "ZONE_A"}]), # orig branch zone
     ]
 
     res_inter_b = ClientService.transfer_client(
         uow=mock_uow,
         client_id=client_id,
-        to_officer_id=officer_2_id,
         to_branch_id=branch_2_id,
         reason="Client relocated residence to Ikorodu",
-        transferred_by="AM_USER"
+        transferred_by="BM_USER"
     )
 
-    assert res_inter_b["status"] == "COMPLETED"
+    assert res_inter_b["status"] == "PENDING_AM_APPROVAL"
     assert res_inter_b["transfer_type"] == ClientTransferType.INTER_BRANCH.value
+    transfer_id = res_inter_b["transfer_id"]
 
-    # 3. Inter-Area Transfer (branch 1 Zone A -> branch 2 Zone B)
+    # 3. Stage 3: Destination BM Accepts and Assigns Local Officer & Group
+    mock_uow.client.table().select().eq().execute.side_effect = [
+        MagicMock(data=[{
+            "transfer_id": transfer_id,
+            "client_id": client_id,
+            "to_branch_id": branch_2_id,
+            "status": "PENDING_RECEIVING_BM"
+        }]), # transfer record
+        MagicMock(data=[{"id": officer_2_id, "username": "IKO_CO1", "full_name": "Ikorodu Officer 1", "branch_id": branch_2_id}]), # dest officer
+        MagicMock(data=[{"name": "Ikorodu"}]), # dest branch name
+    ]
+
+    res_accept = ClientService.accept_incoming_transfer(
+        uow=mock_uow,
+        transfer_id=transfer_id,
+        to_officer_id=officer_2_id,
+        accepted_by="DEST_BM"
+    )
+
+    assert res_accept["status"] == "COMPLETED"
+    assert res_accept["new_officer"] == "Ikorodu Officer 1"
+    assert res_accept["new_branch"] == "Ikorodu"
+
+    # 4. Inter-Area Transfer Initiation (branch 1 Zone A -> branch 2 Zone B)
+    mock_uow.client.table().select().eq().in_().execute.return_value = MagicMock(data=[])
     mock_uow.client.table().select().eq().execute.side_effect = [
         MagicMock(data=[{"branch_id": branch_2_id, "name": "Abeokuta", "zone_id": "ZONE_B"}]), # dest branch
-        MagicMock(data=[{"id": officer_2_id, "username": "ABK_CO1", "full_name": "Abeokuta Officer 1", "branch_id": branch_2_id}]), # dest user
         MagicMock(data=[{"zone_id": "ZONE_A"}]), # orig branch zone
     ]
 
     res_inter_a = ClientService.transfer_client(
         uow=mock_uow,
         client_id=client_id,
-        to_officer_id=officer_2_id,
         to_branch_id=branch_2_id,
         reason="Client relocated to another area",
         transferred_by="ADMIN_USER"
     )
 
-    assert res_inter_a["status"] == "COMPLETED"
+    assert res_inter_a["status"] == "PENDING_AM_APPROVAL"
     assert res_inter_a["transfer_type"] == ClientTransferType.INTER_AREA.value
+
+    # 5. Rejection by Area Manager
+    res_rej = ClientService.reject_transfer(
+        uow=mock_uow,
+        transfer_id=transfer_id,
+        rejected_by="AM_USER",
+        reason="Incomplete transfer documentation"
+    )
+    assert res_rej["status"] == "REJECTED"
 
 
 # =========================================================================

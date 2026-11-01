@@ -85,25 +85,49 @@ class CoApiService {
   }
 
   /// GET /api/v1/co/portfolio/transfer-options
-  Future<Map<String, dynamic>> getTransferOptions() async {
-    final response = await _client.get('/api/v1/co/portfolio/transfer-options');
+  Future<Map<String, dynamic>> getTransferOptions({String? branchId}) async {
+    final queryParams = <String, dynamic>{};
+    if (branchId != null) queryParams['branch_id'] = branchId;
+    final response = await _client.get('/api/v1/co/portfolio/transfer-options', queryParameters: queryParams);
     return response.data as Map<String, dynamic>;
   }
 
   /// POST /api/v1/co/portfolio/transfer-client
   Future<Map<String, dynamic>> transferClient({
     required String clientId,
-    required String toOfficerId,
     required String toBranchId,
+    String? toOfficerId,
     String? toGroupId,
     required String reason,
   }) async {
     final response = await _client.post('/api/v1/co/portfolio/transfer-client', data: {
       'client_id': clientId,
-      'to_officer_id': toOfficerId,
       'to_branch_id': toBranchId,
+      if (toOfficerId != null) 'to_officer_id': toOfficerId,
       if (toGroupId != null) 'to_group_id': toGroupId,
       'reason': reason,
+    });
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// GET /api/v1/co/portfolio/incoming-transfers
+  Future<List<dynamic>> getIncomingTransfers({String? branchId}) async {
+    final queryParams = <String, dynamic>{};
+    if (branchId != null) queryParams['branch_id'] = branchId;
+    final response = await _client.get('/api/v1/co/portfolio/incoming-transfers', queryParameters: queryParams);
+    return response.data as List<dynamic>;
+  }
+
+  /// POST /api/v1/co/portfolio/accept-transfer
+  Future<Map<String, dynamic>> acceptIncomingTransfer({
+    required String transferId,
+    required String toOfficerId,
+    String? toGroupId,
+  }) async {
+    final response = await _client.post('/api/v1/co/portfolio/accept-transfer', data: {
+      'transfer_id': transferId,
+      'to_officer_id': toOfficerId,
+      if (toGroupId != null) 'to_group_id': toGroupId,
     });
     return response.data as Map<String, dynamic>;
   }

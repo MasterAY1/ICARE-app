@@ -18,6 +18,11 @@ import '../data/datasources/co_api_service.dart';
 
 final portfolioMainTabProvider = StateProvider<String>((ref) => 'Portfolio Summary & Analytics');
 
+final incomingTransfersProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
+  final api = ref.watch(coApiServiceProvider);
+  return api.getIncomingTransfers();
+});
+
 final portfolioViewModeProvider = StateProvider<String>((ref) => 'Detailed Client List');
 
 final portfolioQuickFilterProvider = StateProvider<String>((ref) => 'All Active Loans');
@@ -114,7 +119,9 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   bool _excessAuditExpanded = false;
 
-  bool _groupMatrixExpanded = false;
+  bool _groupMatrixExpanded = true;
+
+  bool _matrixCardView = false;
 
   // Mobile segmented hub and pagination state
 
@@ -231,6 +238,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     final user = authState is AuthStateAuthenticated ? authState.user : null;
 
     final role = user?.role ?? 'CO';
+    final isOfficer = role == 'CO' || role == 'Credit Officer' || role == 'Officer' || role == 'CREDIT_OFFICER';
 
     final titleMap = {
 
@@ -283,19 +291,14 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
         const SizedBox(height: 20),
 
         // 3. Tab Bar
-
-        _buildMainTabBar(activeMainTab),
-
+        _buildMainTabBar(activeMainTab, isOfficer: isOfficer),
         const SizedBox(height: 20),
-
         // 4. Tab Contents
-
         if (activeMainTab == 'Portfolio Summary & Analytics')
-
           _buildPortfolioSummaryTab(portfolioAsync)
-
+        else if (activeMainTab.startsWith('Incoming Transfers'))
+          _buildIncomingTransfersTab()
         else
-
           _buildClientDossierTab(portfolioAsync),
 
       ],
@@ -304,136 +307,80 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   }
 
-  Widget _buildMainTabBar(String activeTab) {
+  Widget _buildMainTabBar(String activeTab, {bool isOfficer = false}) {
+    final incomingAsync = !isOfficer ? ref.watch(incomingTransfersProvider) : null;
+    final incomingCount = incomingAsync?.valueOrNull?.length ?? 0;
+    final incomingLabel = incomingCount > 0 ? 'Incoming Transfers ($incomingCount)' : 'Incoming Transfers';
 
-    final tabs = ['Portfolio Summary & Analytics', 'Client Dossier & Inquiry'];
+    final tabs = [
+      'Portfolio Summary & Analytics',
+      'Client Dossier & Inquiry',
+      if (!isOfficer) incomingLabel,
+    ];
 
     return Container(
-
       decoration: BoxDecoration(
-
         color: Colors.white,
-
         borderRadius: BorderRadius.circular(8),
-
         border: Border.all(color: const Color(0xFFE2E8F0)),
-
       ),
-
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-
       child: SingleChildScrollView(
-
         scrollDirection: Axis.horizontal,
-
         child: Row(
-
           children: tabs.map((t) {
-
-            final isSel = activeTab == t;
-
+            final isSel = activeTab == t || (t.startsWith('Incoming Transfers') && activeTab.startsWith('Incoming Transfers'));
             return InkWell(
-
               onTap: () => ref.read(portfolioMainTabProvider.notifier).state = t,
-
               borderRadius: BorderRadius.circular(6),
-
               child: Container(
-
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-
                 decoration: BoxDecoration(
-
                   color: isSel ? const Color(0xFFEFF6FF) : Colors.transparent,
-
                   borderRadius: BorderRadius.circular(6),
-
                 ),
-
                 child: Row(
-
                   children: [
-
                     Container(
-
                       width: 14,
-
                       height: 14,
-
                       decoration: BoxDecoration(
-
                         shape: BoxShape.circle,
-
                         border: Border.all(
-
                           color: isSel ? const Color(0xFF2563EB) : const Color(0xFF94A3B8),
-
                           width: 2,
-
                         ),
-
                       ),
-
                       child: isSel
-
                           ? Center(
-
                               child: Container(
-
                                 width: 6,
-
                                 height: 6,
-
                                 decoration: const BoxDecoration(
-
                                   shape: BoxShape.circle,
-
                                   color: Color(0xFF2563EB),
-
                                 ),
-
                               ),
-
                             )
-
                           : null,
-
                     ),
-
                     const SizedBox(width: 8),
-
                     Text(
-
                       t,
-
                       style: TextStyle(
-
                         fontSize: 13,
-
                         fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
-
                         color: isSel ? const Color(0xFF1D4ED8) : const Color(0xFF475569),
-
                       ),
-
                     ),
-
                   ],
-
                 ),
-
               ),
-
             );
-
           }).toList(),
-
         ),
-
       ),
-
     );
-
   }
 
   Widget _buildFilterBar(AsyncValue<Map<String, dynamic>> portfolioAsync, dynamic user) {
@@ -1841,6 +1788,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
             scrollDirection: Axis.horizontal,
 
+            physics: const BouncingScrollPhysics(),
+
             child: Row(
 
               children: [
@@ -1853,7 +1802,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                 const SizedBox(width: 4),
 
-                _buildPortfolioTabPill(index: 2, label: 'Products & Groups', icon: Icons.category_outlined),
+                _buildPortfolioTabPill(index: 2, label: 'Products', icon: Icons.category_outlined, count: groupMatrix.length),
 
                 const SizedBox(width: 4),
 
@@ -1913,7 +1862,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
           duration: const Duration(milliseconds: 150),
 
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
 
           decoration: BoxDecoration(
 
@@ -1951,21 +1900,25 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                 icon,
 
-                size: 15,
+                size: 14,
 
                 color: isSelected ? const Color(0xFF064E3B) : const Color(0xFF64748B),
 
               ),
 
-              const SizedBox(width: 6),
+              const SizedBox(width: 5),
 
               Text(
 
                 label,
 
+                maxLines: 1,
+
+                softWrap: false,
+
                 style: TextStyle(
 
-                  fontSize: 12,
+                  fontSize: 11.5,
 
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
 
@@ -1977,11 +1930,11 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
               if (count != null && count > 0) ...[
 
-                const SizedBox(width: 6),
+                const SizedBox(width: 5),
 
                 Container(
 
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
 
                   decoration: BoxDecoration(
 
@@ -1997,7 +1950,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                     style: TextStyle(
 
-                      fontSize: 10,
+                      fontSize: 9.5,
 
                       fontWeight: FontWeight.w700,
 
@@ -3217,11 +3170,557 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   // Itemized Excess Payments & Full Payoffs Audit Ledger
 
-  Widget _buildExcessPayoffAuditLedger(List<dynamic> rows, Map<String, dynamic> s) {
+  Widget _buildExcessPayoffAuditLedger(List<dynamic> rows, Map<String, dynamic> s, {bool isEmbeddedInTab = false}) {
 
     final excessCount = (s['excess_payments']?['count'] as num?)?.toInt() ?? 0;
 
     final fullCount = (s['full_payments']?['count'] as num?)?.toInt() ?? 0;
+
+    final sortedRows = List<dynamic>.from(rows)
+
+      ..sort((a, b) => (a['Client Code'] ?? '').toString().compareTo((b['Client Code'] ?? '').toString()));
+
+    Widget buildLedgerBody() {
+
+      if (sortedRows.isEmpty) {
+
+        return Container(
+
+          width: double.infinity,
+
+          padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
+
+          decoration: BoxDecoration(
+
+            color: const Color(0xFFF8FAFC),
+
+            borderRadius: BorderRadius.circular(10),
+
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+
+          ),
+
+          child: Column(
+
+            mainAxisSize: MainAxisSize.min,
+
+            children: [
+
+              Container(
+
+                padding: const EdgeInsets.all(12),
+
+                decoration: const BoxDecoration(
+
+                  color: Color(0xFFE2E8F0),
+
+                  shape: BoxShape.circle,
+
+                ),
+
+                child: const Icon(Icons.verified_outlined, size: 28, color: Color(0xFF64748B)),
+
+              ),
+
+              const SizedBox(height: 12),
+
+              const Text(
+
+                'No Excess Payments or Full Payoffs',
+
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1E293B)),
+
+              ),
+
+              const SizedBox(height: 4),
+
+              const Text(
+
+                'No surplus collections or complete loan payoffs were recorded in the active period.',
+
+                textAlign: TextAlign.center,
+
+                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+
+              ),
+
+            ],
+
+          ),
+
+        );
+
+      }
+
+      return LayoutBuilder(
+
+        builder: (context, constraints) {
+
+          final isMobile = constraints.maxWidth < 750;
+
+          if (isMobile) {
+
+            return Column(
+
+              crossAxisAlignment: CrossAxisAlignment.start,
+
+              children: [
+
+                ...sortedRows.map((r) {
+
+                  final code = r['Client Code']?.toString() ?? '';
+
+                  final name = r['Client Name']?.toString() ?? '';
+
+                  final amtPaid = (r['Amount Paid'] as num?)?.toDouble() ?? 0.0;
+
+                  final expInst = (r['Expected Installment'] as num?)?.toDouble() ?? 0.0;
+
+                  final excessAmt = (r['Excess Amount'] as num?)?.toDouble() ?? 0.0;
+
+                  final settledAmt = (r['Active Credit Settled'] as num?)?.toDouble() ?? 0.0;
+
+                  final remBal = (r['Remaining Balance'] as num?)?.toDouble() ?? 0.0;
+
+                  final pDate = r['Payment Date']?.toString() ?? '';
+
+                  return Container(
+
+                    margin: const EdgeInsets.only(bottom: 10),
+
+                    padding: const EdgeInsets.all(14),
+
+                    decoration: BoxDecoration(
+
+                      color: const Color(0xFFF8FAFC),
+
+                      borderRadius: BorderRadius.circular(10),
+
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+
+                    ),
+
+                    child: Column(
+
+                      crossAxisAlignment: CrossAxisAlignment.start,
+
+                      children: [
+
+                        Row(
+
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
+                          children: [
+
+                            Expanded(
+
+                              child: Column(
+
+                                crossAxisAlignment: CrossAxisAlignment.start,
+
+                                children: [
+
+                                  Text(name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: Color(0xFF0F172A))),
+
+                                  const SizedBox(height: 2),
+
+                                  Text(code, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+
+                                ],
+
+                              ),
+
+                            ),
+
+                            if (excessAmt > 0)
+
+                              Container(
+
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+
+                                decoration: BoxDecoration(
+
+                                  color: const Color(0xFFECFDF5),
+
+                                  borderRadius: BorderRadius.circular(10),
+
+                                  border: Border.all(color: const Color(0xFFA7F3D0)),
+
+                                ),
+
+                                child: Text(
+
+                                  'Excess +${CurrencyFormatter.formatNaira(excessAmt)}',
+
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF065F46)),
+
+                                ),
+
+                              )
+
+                            else if (settledAmt > 0)
+
+                              Container(
+
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+
+                                decoration: BoxDecoration(
+
+                                  color: const Color(0xFFEFF6FF),
+
+                                  borderRadius: BorderRadius.circular(10),
+
+                                  border: Border.all(color: const Color(0xFFBFDBFE)),
+
+                                ),
+
+                                child: const Text(
+
+                                  'Full Payoff Settled',
+
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
+
+                                ),
+
+                              ),
+
+                          ],
+
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+                        const SizedBox(height: 8),
+
+                        Row(
+
+                          children: [
+
+                            Expanded(
+
+                              child: Text('Paid: ${CurrencyFormatter.formatNaira(amtPaid)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+
+                            ),
+
+                            Expanded(
+
+                              child: Text('Expected: ${CurrencyFormatter.formatNaira(expInst)}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569))),
+
+                            ),
+
+                          ],
+
+                        ),
+
+                        const SizedBox(height: 4),
+
+                        Row(
+
+                          children: [
+
+                            Expanded(
+
+                              child: Text(
+
+                                remBal <= 0 ? 'Balance: Fully Settled' : 'Balance: ${CurrencyFormatter.formatNaira(remBal)}',
+
+                                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: remBal <= 0 ? const Color(0xFF059669) : const Color(0xFFDC2626)),
+
+                              ),
+
+                            ),
+
+                            Text(pDate, style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+
+                          ],
+
+                        ),
+
+                      ],
+
+                    ),
+
+                  );
+
+                }),
+
+                const SizedBox(height: 10),
+
+                ElevatedButton.icon(
+
+                  icon: const Icon(Icons.download, size: 16),
+
+                  label: Text('Export Audit Records (${sortedRows.length} CSV)'),
+
+                  onPressed: () {
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+
+                      SnackBar(content: Text('Exported ${sortedRows.length} payoff & excess records.')),
+
+                    );
+
+                  },
+
+                ),
+
+              ],
+
+            );
+
+          }
+
+          return Column(
+
+            crossAxisAlignment: CrossAxisAlignment.start,
+
+            children: [
+
+              Scrollbar(
+
+                thumbVisibility: true,
+
+                child: SingleChildScrollView(
+
+                  scrollDirection: Axis.horizontal,
+
+                  physics: const BouncingScrollPhysics(),
+
+                  child: DataTable(
+
+                    columnSpacing: 16,
+
+                    horizontalMargin: 12,
+
+                    headingRowHeight: 40,
+
+                    dataRowMinHeight: 38,
+
+                    dataRowMaxHeight: 44,
+
+                    headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+
+                    columns: const [
+
+                      DataColumn(label: Text('Client Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+
+                      DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+
+                      DataColumn(label: Text('Amount Paid', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+
+                      DataColumn(label: Text('Expected Installment', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+
+                      DataColumn(label: Text('Excess Amount', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+
+                      DataColumn(label: Text('Active Credit Settled', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+
+                      DataColumn(label: Text('Remaining Balance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
+
+                      DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+
+                    ],
+
+                    rows: sortedRows.map((r) {
+
+                      return DataRow(cells: [
+
+                        DataCell(Text(r['Client Code']?.toString() ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
+
+                        DataCell(Text(r['Client Name']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+
+                        DataCell(Text(CurrencyFormatter.formatNaira((r['Amount Paid'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]))),
+
+                        DataCell(Text(CurrencyFormatter.formatNaira((r['Expected Installment'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
+
+                        DataCell(Text(CurrencyFormatter.formatNaira((r['Excess Amount'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, color: Color(0xFF059669), fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]))),
+
+                        DataCell(Text(CurrencyFormatter.formatNaira((r['Active Credit Settled'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
+
+                        DataCell(Text(CurrencyFormatter.formatNaira((r['Remaining Balance'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontFeatures: [FontFeature.tabularFigures()]))),
+
+                        DataCell(Text(r['Payment Date']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+
+                      ]);
+
+                    }).toList(),
+
+                  ),
+
+                ),
+
+              ),
+
+              const SizedBox(height: 12),
+
+              ElevatedButton.icon(
+
+                icon: const Icon(Icons.download, size: 16),
+
+                label: const Text('Export Excess Payments & Payoffs Audit (CSV)'),
+
+                onPressed: () {
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+
+                    SnackBar(content: Text('Exported ${sortedRows.length} payoff & excess records.')),
+
+                  );
+
+                },
+
+              ),
+
+            ],
+
+          );
+
+        },
+
+      );
+
+    }
+
+    final headerBadges = [
+
+      Container(
+
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+
+        decoration: BoxDecoration(
+
+          color: const Color(0xFFECFDF5),
+
+          borderRadius: BorderRadius.circular(12),
+
+          border: Border.all(color: const Color(0xFFA7F3D0)),
+
+        ),
+
+        child: Text(
+
+          '$fullCount Full Payoffs',
+
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF065F46)),
+
+        ),
+
+      ),
+
+      Container(
+
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+
+        decoration: BoxDecoration(
+
+          color: const Color(0xFFEFF6FF),
+
+          borderRadius: BorderRadius.circular(12),
+
+          border: Border.all(color: const Color(0xFFBFDBFE)),
+
+        ),
+
+        child: Text(
+
+          '$excessCount Excess Payers',
+
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+
+        ),
+
+      ),
+
+    ];
+
+    if (isEmbeddedInTab) {
+
+      return Container(
+
+        decoration: BoxDecoration(
+
+          color: Colors.white,
+
+          borderRadius: BorderRadius.circular(12),
+
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+
+        ),
+
+        child: Column(
+
+          crossAxisAlignment: CrossAxisAlignment.start,
+
+          children: [
+
+            Padding(
+
+              padding: const EdgeInsets.all(16),
+
+              child: Row(
+
+                children: [
+
+                  Container(
+
+                    padding: const EdgeInsets.all(6),
+
+                    decoration: BoxDecoration(
+
+                      color: const Color(0xFFEFF6FF),
+
+                      borderRadius: BorderRadius.circular(6),
+
+                    ),
+
+                    child: const Icon(Icons.receipt_long_outlined, size: 18, color: Color(0xFF2563EB)),
+
+                  ),
+
+                  const SizedBox(width: 8),
+
+                  const Expanded(
+
+                    child: Text(
+
+                      'Excess & Full Payment Audit Ledger',
+
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0F172A)),
+
+                      overflow: TextOverflow.ellipsis,
+
+                    ),
+
+                  ),
+
+                  const SizedBox(width: 6),
+
+                  ...headerBadges.map((b) => Padding(padding: const EdgeInsets.only(left: 4), child: b)),
+
+                ],
+
+              ),
+
+            ),
+
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+            Padding(
+
+              padding: const EdgeInsets.all(16),
+
+              child: buildLedgerBody(),
+
+            ),
+
+          ],
+
+        ),
+
+      );
+
+    }
 
     return Container(
 
@@ -3259,53 +3758,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
             ),
 
-            Container(
-
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-
-              decoration: BoxDecoration(
-
-                color: const Color(0xFFECFDF5),
-
-                borderRadius: BorderRadius.circular(12),
-
-                border: Border.all(color: const Color(0xFFA7F3D0)),
-
-              ),
-
-              child: Text(
-
-                '$fullCount Full Payoffs',
-
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF065F46)),
-
-              ),
-
-            ),
-
-            Container(
-
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-
-              decoration: BoxDecoration(
-
-                color: const Color(0xFFEFF6FF),
-
-                borderRadius: BorderRadius.circular(12),
-
-                border: Border.all(color: const Color(0xFFBFDBFE)),
-
-              ),
-
-              child: Text(
-
-                '$excessCount Excess Payers',
-
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
-
-              ),
-
-            ),
+            ...headerBadges,
 
           ],
 
@@ -3317,111 +3770,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
             padding: const EdgeInsets.all(16),
 
-            child: rows.isEmpty
-
-                ? const Center(
-
-                    child: Padding(
-
-                      padding: EdgeInsets.all(16),
-
-                      child: Text('No excess payments or full loan payoffs in selected period.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
-
-                    ),
-
-                  )
-
-                : Column(
-
-                    crossAxisAlignment: CrossAxisAlignment.start,
-
-                    children: [
-
-                      Scrollbar(
-
-                        thumbVisibility: true,
-
-                        child: SingleChildScrollView(
-
-                          scrollDirection: Axis.horizontal,
-
-                          child: DataTable(
-
-                            headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-
-                            columns: const [
-
-                              DataColumn(label: Text('Client Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-
-                              DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-
-                              DataColumn(label: Text('Amount Paid', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-
-                              DataColumn(label: Text('Expected Installment', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-
-                              DataColumn(label: Text('Excess Amount', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-
-                              DataColumn(label: Text('Active Credit Settled', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-
-                              DataColumn(label: Text('Remaining Balance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-
-                              DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-
-                            ],
-
-                            rows: (List<dynamic>.from(rows)..sort((a, b) => (a['Client Code'] ?? '').toString().compareTo((b['Client Code'] ?? '').toString()))).map((r) {
-
-                              return DataRow(cells: [
-
-                                DataCell(Text(r['Client Code']?.toString() ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
-
-                                DataCell(Text(r['Client Name']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-
-                                DataCell(Text(CurrencyFormatter.formatNaira((r['Amount Paid'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]))),
-
-                                DataCell(Text(CurrencyFormatter.formatNaira((r['Expected Installment'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
-
-                                DataCell(Text(CurrencyFormatter.formatNaira((r['Excess Amount'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, color: Color(0xFF059669), fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]))),
-
-                                DataCell(Text(CurrencyFormatter.formatNaira((r['Active Credit Settled'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
-
-                                DataCell(Text(CurrencyFormatter.formatNaira((r['Remaining Balance'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontFeatures: [FontFeature.tabularFigures()]))),
-
-                                DataCell(Text(r['Payment Date']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-
-                              ]);
-
-                            }).toList(),
-
-                          ),
-
-                        ),
-
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      ElevatedButton.icon(
-
-                        icon: const Icon(Icons.download, size: 16),
-
-                        label: const Text('Export Excess Payments & Payoffs Audit (CSV)'),
-
-                        onPressed: () {
-
-                          ScaffoldMessenger.of(context).showSnackBar(
-
-                            SnackBar(content: Text('Exported ${rows.length} payoff & excess records.')),
-
-                          );
-
-                        },
-
-                      ),
-
-                    ],
-
-                  ),
+            child: buildLedgerBody(),
 
           ),
 
@@ -3839,27 +4188,285 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
         onExpansionChanged: (v) => setState(() => _groupMatrixExpanded = v),
 
-        title: const Text('Group-by-Product Distribution Matrix', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0F172A))),
+        title: Row(
+
+          children: [
+
+            const Expanded(
+
+              child: Text(
+
+                'Group-by-Product Distribution Matrix',
+
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0F172A)),
+
+                overflow: TextOverflow.ellipsis,
+
+              ),
+
+            ),
+
+            InkWell(
+
+              onTap: () => setState(() => _matrixCardView = !_matrixCardView),
+
+              borderRadius: BorderRadius.circular(6),
+
+              child: Container(
+
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+
+                decoration: BoxDecoration(
+
+                  color: _matrixCardView ? const Color(0xFFEFF6FF) : const Color(0xFFF1F5F9),
+
+                  borderRadius: BorderRadius.circular(6),
+
+                  border: Border.all(color: _matrixCardView ? const Color(0xFF93C5FD) : const Color(0xFFCBD5E1)),
+
+                ),
+
+                child: Row(
+
+                  mainAxisSize: MainAxisSize.min,
+
+                  children: [
+
+                    Icon(_matrixCardView ? Icons.table_chart_outlined : Icons.view_agenda_outlined, size: 12, color: const Color(0xFF1D4ED8)),
+
+                    const SizedBox(width: 4),
+
+                    Text(_matrixCardView ? 'Matrix' : 'Cards', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8))),
+
+                  ],
+
+                ),
+
+              ),
+
+            ),
+
+          ],
+
+        ),
 
         children: [
 
           Padding(
 
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(12),
 
-            child: Scrollbar(
+            child: _matrixCardView
 
-              thumbVisibility: true,
+                ? Column(
 
-              child: SingleChildScrollView(
+                    children: rows.map((r) {
 
-                scrollDirection: Axis.horizontal,
+                      final gName = r['Group Name']?.toString() ?? 'Group';
 
-                child: DataTable(
+                      final mDay = r['Meeting Day']?.toString() ?? 'N/A';
 
-                  headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                      final actLoans = (r['Total Active Loans'] as num?)?.toInt() ?? 0;
 
-                  columns: const [
+                      final actCred = (r['Total Active Credit'] as num?)?.toDouble() ?? 0.0;
+
+                      final outBal = (r['Total Outstanding Balance'] as num?)?.toDouble() ?? 0.0;
+
+                      final p12w = (r['12W Cash'] as num?)?.toInt() ?? 0;
+
+                      final p12wa = (r['12W Asset'] as num?)?.toInt() ?? 0;
+
+                      final p24w = (r['24W Cash'] as num?)?.toInt() ?? 0;
+
+                      final p24wa = (r['24W Asset'] as num?)?.toInt() ?? 0;
+
+                      final pDaily = (r['Daily'] as num?)?.toInt() ?? 0;
+
+                      final pMonthly = (r['Monthly'] as num?)?.toInt() ?? 0;
+
+                      return Container(
+
+                        margin: const EdgeInsets.only(bottom: 10),
+
+                        padding: const EdgeInsets.all(12),
+
+                        decoration: BoxDecoration(
+
+                          color: const Color(0xFFF8FAFC),
+
+                          borderRadius: BorderRadius.circular(8),
+
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+
+                        ),
+
+                        child: Column(
+
+                          crossAxisAlignment: CrossAxisAlignment.start,
+
+                          children: [
+
+                            Row(
+
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
+                              children: [
+
+                                Text(gName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0F172A))),
+
+                                Container(
+
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+
+                                  decoration: BoxDecoration(
+
+                                    color: const Color(0xFFEFF6FF),
+
+                                    borderRadius: BorderRadius.circular(6),
+
+                                    border: Border.all(color: const Color(0xFFBFDBFE)),
+
+                                  ),
+
+                                  child: Text(mDay, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8))),
+
+                                ),
+
+                              ],
+
+                            ),
+
+                            const SizedBox(height: 6),
+
+                            Row(
+
+                              children: [
+
+                                Expanded(
+
+                                  child: Text('Active: $actLoans loans · ${CurrencyFormatter.formatNaira(actCred)}', style: const TextStyle(fontSize: 11, color: Color(0xFF475569))),
+
+                                ),
+
+                                Text('Bal: ${CurrencyFormatter.formatNaira(outBal)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFDC2626))),
+
+                              ],
+
+                            ),
+
+                            const SizedBox(height: 6),
+
+                            Wrap(
+
+                              spacing: 5,
+
+                              runSpacing: 4,
+
+                              children: [
+
+                                if (p12w > 0) _buildMatrixBadge('12W Cash: $p12w', const Color(0xFF1D4ED8)),
+
+                                if (p12wa > 0) _buildMatrixBadge('12W Asset: $p12wa', const Color(0xFF0D9488)),
+
+                                if (p24w > 0) _buildMatrixBadge('24W Cash: $p24w', const Color(0xFF7C3AED)),
+
+                                if (p24wa > 0) _buildMatrixBadge('24W Asset: $p24wa', const Color(0xFFC026D3)),
+
+                                if (pDaily > 0) _buildMatrixBadge('Daily: $pDaily', const Color(0xFFEA580C)),
+
+                                if (pMonthly > 0) _buildMatrixBadge('Monthly: $pMonthly', const Color(0xFF059669)),
+
+                                if (p12w == 0 && p12wa == 0 && p24w == 0 && p24wa == 0 && pDaily == 0 && pMonthly == 0)
+
+                                  _buildMatrixBadge('No Active Products', const Color(0xFF94A3B8)),
+
+                              ],
+
+                            ),
+
+                          ],
+
+                        ),
+
+                      );
+
+                    }).toList(),
+
+                  )
+
+                : Column(
+
+                    crossAxisAlignment: CrossAxisAlignment.start,
+
+                    children: [
+
+                      Container(
+
+                        margin: const EdgeInsets.only(bottom: 8),
+
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+
+                        decoration: BoxDecoration(
+
+                          color: const Color(0xFFF1F5F9),
+
+                          borderRadius: BorderRadius.circular(6),
+
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+
+                        ),
+
+                        child: const Row(
+
+                          children: [
+
+                            Icon(Icons.swap_horiz_rounded, size: 16, color: Color(0xFF2563EB)),
+
+                            SizedBox(width: 8),
+
+                            Expanded(
+
+                              child: Text(
+
+                                'Swipe horizontally to view all product columns & loan balances',
+
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Color(0xFF475569)),
+
+                              ),
+
+                            ),
+
+                          ],
+
+                        ),
+
+                      ),
+
+                      Scrollbar(
+
+                        thumbVisibility: true,
+
+                        child: SingleChildScrollView(
+
+                          scrollDirection: Axis.horizontal,
+
+                          physics: const BouncingScrollPhysics(),
+
+                          child: DataTable(
+
+                            columnSpacing: 14,
+
+                            horizontalMargin: 8,
+
+                            headingRowHeight: 38,
+
+                            dataRowMinHeight: 36,
+
+                            dataRowMaxHeight: 42,
+
+                            headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+
+                            columns: const [
 
                     DataColumn(label: Text('Group Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
 
@@ -3965,6 +4572,34 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   }
 
+  Widget _buildMatrixBadge(String label, Color color) {
+
+    return Container(
+
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+
+      decoration: BoxDecoration(
+
+        color: color.withOpacity(0.08),
+
+        borderRadius: BorderRadius.circular(4),
+
+        border: Border.all(color: color.withOpacity(0.3)),
+
+      ),
+
+      child: Text(
+
+        label,
+
+        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: color),
+
+      ),
+
+    );
+
+  }
+
   // Client & Group Portfolio Details
 
   Widget _buildClientAndGroupDetails(
@@ -4057,12 +4692,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
               );
 
-              if (viewMode != 'Detailed Client List') {
-
-                return modeButtons;
-
-              }
-
               final quickFilterDropdown = DropdownButtonFormField<String>(
 
                 value: quickFilter,
@@ -4079,23 +4708,23 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                 style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A)),
 
-                items: const [
+                items: [
 
-                  DropdownMenuItem(value: 'All Active Loans', child: Text('All Active Loans')),
+                  const DropdownMenuItem(value: 'All Active Loans', child: Text('All Active Loans')),
 
-                  DropdownMenuItem(value: '12-Week Loans', child: Text('12-Week Loans')),
+                  const DropdownMenuItem(value: '12-Week Loans', child: Text('12-Week Loans')),
 
-                  DropdownMenuItem(value: '24-Week Loans', child: Text('24-Week Loans')),
+                  const DropdownMenuItem(value: '24-Week Loans', child: Text('24-Week Loans')),
 
-                  DropdownMenuItem(value: 'Asset Loans', child: Text('Asset Loans')),
+                  const DropdownMenuItem(value: 'Asset Loans', child: Text('Asset Loans')),
 
-                  DropdownMenuItem(value: 'Daily Loans', child: Text('Daily Loans')),
+                  const DropdownMenuItem(value: 'Daily Loans', child: Text('Daily Loans')),
 
-                  DropdownMenuItem(value: 'Monthly Loans', child: Text('Monthly Loans')),
+                  const DropdownMenuItem(value: 'Monthly Loans', child: Text('Monthly Loans')),
 
-                  DropdownMenuItem(value: 'Excess Payers', child: Text('Excess Payers')),
+                  if (viewMode == 'Detailed Client List')
 
-                  DropdownMenuItem(value: 'All Registered Clients', child: Text('All Registered Clients')),
+                    const DropdownMenuItem(value: 'All Registered Clients', child: Text('All Registered Clients')),
 
                 ],
 
@@ -4111,15 +4740,15 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                 controller: _clientSearchCtrl,
 
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
 
-                  hintText: 'Search client...',
+                  hintText: viewMode == 'Detailed Client List' ? 'Search client...' : 'Search group...',
 
-                  prefixIcon: Icon(Icons.search, size: 16),
+                  prefixIcon: const Icon(Icons.search, size: 16),
 
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
 
-                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
 
                 ),
 
@@ -4183,7 +4812,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
           else
 
-            _buildGroupAggregateTable(groupTable),
+            _buildGroupAggregateTable(groupTable, clientTable, quickFilter, _clientSearchCtrl.text),
 
         ],
 
@@ -4203,8 +4832,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
       final activeLoan = (c['Active Loan'] as num?)?.toDouble() ?? 0.0;
 
-      final excessPaid = (c['Period Excess Paid'] as num?)?.toDouble() ?? 0.0;
-
       if (quickFilter == '12-Week Loans' && cat != '12-Week Loans') return false;
 
       if (quickFilter == '24-Week Loans' && cat != '24-Week Loans') return false;
@@ -4214,8 +4841,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
       if (quickFilter == 'Daily Loans' && cat != 'Daily Loans') return false;
 
       if (quickFilter == 'Monthly Loans' && cat != 'Monthly Loans') return false;
-
-      if (quickFilter == 'Excess Payers' && excessPaid <= 0) return false;
 
       if (quickFilter == 'All Active Loans' && activeLoan <= 0) return false;
 
@@ -4877,11 +5502,71 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   }
 
-  Widget _buildGroupAggregateTable(List<dynamic> groups) {
+  Widget _buildGroupAggregateTable(List<dynamic> groups, List<dynamic> clients, String quickFilter, String searchQuery) {
 
-    if (groups.isEmpty) {
+    Set<String>? matchingGroupNames;
 
-      return const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('No group aggregate data available.', style: TextStyle(color: Color(0xFF64748B)))));
+    if (quickFilter != 'All Active Loans' && quickFilter != 'All Registered Clients') {
+
+      matchingGroupNames = clients.where((c) {
+
+        final cat = c['Loan Category']?.toString() ?? '';
+
+        final prod = c['Loan Product']?.toString() ?? '';
+
+        final activeLoan = (c['Active Loan'] as num?)?.toDouble() ?? 0.0;
+
+        if (activeLoan <= 0) return false;
+
+        if (quickFilter == '12-Week Loans' && cat != '12-Week Loans') return false;
+
+        if (quickFilter == '24-Week Loans' && cat != '24-Week Loans') return false;
+
+        if (quickFilter == 'Asset Loans' && !prod.toLowerCase().contains('asset')) return false;
+
+        if (quickFilter == 'Daily Loans' && cat != 'Daily Loans') return false;
+
+        if (quickFilter == 'Monthly Loans' && cat != 'Monthly Loans') return false;
+
+        return true;
+
+      }).map((c) => (c['Group'] ?? '').toString().toLowerCase()).toSet();
+
+    }
+
+    var filtered = groups.where((g) {
+
+      final grpName = (g['Group Name']?.toString() ?? '').toLowerCase();
+
+      final actLoan = (g['Total Active Loan'] as num?)?.toDouble() ?? 0.0;
+
+      if (quickFilter == 'All Active Loans' && actLoan <= 0) return false;
+
+      if (matchingGroupNames != null && !matchingGroupNames.contains(grpName)) return false;
+
+      if (searchQuery.isNotEmpty) {
+
+        if (!grpName.contains(searchQuery.toLowerCase())) return false;
+
+      }
+
+      return true;
+
+    }).toList();
+
+    if (filtered.isEmpty) {
+
+      return const Center(
+
+        child: Padding(
+
+          padding: EdgeInsets.all(24),
+
+          child: Text('No matching group records found for this product filter.', style: TextStyle(color: Color(0xFF64748B))),
+
+        ),
+
+      );
 
     }
 
@@ -4901,7 +5586,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
               // Responsive Mobile Group Touch Cards
 
-              ...groups.map((g) {
+              ...filtered.map((g) {
 
                 final grpName = g['Group Name']?.toString() ?? 'Group';
 
@@ -5207,7 +5892,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                     ],
 
-                    rows: groups.map((g) {
+                    rows: filtered.map((g) {
 
                       return DataRow(cells: [
 
@@ -5243,13 +5928,13 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
               icon: const Icon(Icons.download, size: 16),
 
-              label: Text('Export Group Aggregate (${groups.length} Groups CSV)'),
+              label: Text('Export Group Aggregate (${filtered.length} Groups CSV)'),
 
               onPressed: () {
 
                 ScaffoldMessenger.of(context).showSnackBar(
 
-                  SnackBar(content: Text('Exported ${groups.length} group records.')),
+                  SnackBar(content: Text('Exported ${filtered.length} group records.')),
 
                 );
 
@@ -5947,7 +6632,18 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                           label: const Text('Transfer Portfolio', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
 
-                          onPressed: () => _showTransferClientDialog(context, c['client_id']?.toString() ?? '', name),
+                          onPressed: () {
+                            final cid = c['id']?.toString() ?? c['client_id']?.toString() ?? '';
+                            final curBranchId = c['branch_id']?.toString();
+                            final curOfficerId = c['officer_id']?.toString();
+                            _showTransferClientDialog(
+                              context,
+                              cid,
+                              name,
+                              currentBranchId: curBranchId,
+                              currentOfficerId: curOfficerId,
+                            );
+                          },
 
                         ),
 
@@ -8007,498 +8703,694 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   }
 
-  Future<void> _showTransferClientDialog(BuildContext context, String clientId, String clientName) async {
-
+  Future<void> _showTransferClientDialog(
+    BuildContext context,
+    String clientId,
+    String clientName, {
+    String? currentBranchId,
+    String? currentOfficerId,
+  }) async {
     final reasonCtrl = TextEditingController();
-
     bool isSubmitting = false;
-
     List<Map<String, dynamic>> branches = [];
-
     List<Map<String, dynamic>> allOfficers = [];
-
     List<Map<String, dynamic>> allGroups = [];
-
     bool isLoadingOptions = true;
-
     String? optionsError;
-
-    String? selectedBranchId;
-
+    String? selectedBranchId = currentBranchId;
     String? selectedOfficerId;
-
     String? selectedGroupId;
 
     await showDialog(
-
       context: context,
-
       barrierDismissible: false,
-
       builder: (ctx) => StatefulBuilder(
-
         builder: (ctx, setDialogState) {
-
           if (isLoadingOptions) {
-
             WidgetsBinding.instance.addPostFrameCallback((_) async {
-
               try {
-
                 final api = ref.read(coApiServiceProvider);
-
-                final opts = await api.getTransferOptions();
-
+                final opts = await api.getTransferOptions(branchId: currentBranchId);
                 if (ctx.mounted) {
-
                   setDialogState(() {
-
                     branches = List<Map<String, dynamic>>.from(opts['branches'] ?? []);
-
                     allOfficers = List<Map<String, dynamic>>.from(opts['officers'] ?? []);
-
                     allGroups = List<Map<String, dynamic>>.from(opts['groups'] ?? []);
-
                     isLoadingOptions = false;
-
-                    if (branches.isNotEmpty) {
-
+                    if (selectedBranchId == null && branches.isNotEmpty) {
                       selectedBranchId = branches.first['branch_id']?.toString();
-
                     }
-
                   });
-
                 }
-
               } catch (e) {
-
                 if (ctx.mounted) {
-
                   setDialogState(() {
-
                     isLoadingOptions = false;
-
                     optionsError = e.toString();
-
                   });
-
                 }
-
               }
-
             });
-
           }
 
+          final isInterBranch = selectedBranchId != null &&
+              currentBranchId != null &&
+              selectedBranchId!.toLowerCase() != currentBranchId.toLowerCase();
+
+          // Intra-branch officers (same branch, excluding the client's current officer)
           final branchOfficers = allOfficers.where((o) =>
-
-            selectedBranchId == null ||
-
-            o['branch_id'] == null ||
-
-            o['branch_id'] == '' ||
-
-            o['branch_id'].toString().toLowerCase() == selectedBranchId!.toLowerCase()
-
+            o['officer_id'] != null &&
+            o['officer_id'].toString().toLowerCase() != (currentOfficerId ?? '').toLowerCase() &&
+            (selectedBranchId == null ||
+             o['branch_id'] == null ||
+             o['branch_id'] == '' ||
+             o['branch_id'].toString().toLowerCase() == selectedBranchId!.toLowerCase())
           ).toList();
 
           final branchGroups = allGroups.where((g) =>
-
             selectedBranchId == null ||
-
             g['branch_id'] == null ||
-
             g['branch_id'] == '' ||
-
             g['branch_id'].toString().toLowerCase() == selectedBranchId!.toLowerCase()
-
           ).toList();
 
           return AlertDialog(
-
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-
             title: Row(
-
               children: [
-
                 Container(
-
                   padding: const EdgeInsets.all(8),
-
                   decoration: BoxDecoration(
-
                     color: Colors.blue.shade50,
-
                     borderRadius: BorderRadius.circular(8),
-
                   ),
-
                   child: const Icon(Icons.swap_horiz_rounded, color: Color(0xFF2563EB), size: 22),
-
                 ),
-
                 const SizedBox(width: 12),
-
                 Expanded(
-
                   child: Column(
-
                     crossAxisAlignment: CrossAxisAlignment.start,
-
                     children: [
-
-                      const Text('Transfer Client Portfolio', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-
+                      Text(
+                        isInterBranch ? 'Initiate Inter-Branch Transfer' : 'Reassign Client Portfolio',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
                       Text(clientName, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-
                     ],
-
                   ),
-
                 ),
-
               ],
-
             ),
-
             content: SizedBox(
-
-              width: 480,
-
+              width: 500,
               child: isLoadingOptions
-
                   ? const Padding(
-
                       padding: EdgeInsets.symmetric(vertical: 40),
-
                       child: Center(child: CircularProgressIndicator()),
-
                     )
-
                   : optionsError != null
-
                       ? Padding(
-
                           padding: const EdgeInsets.symmetric(vertical: 20),
-
                           child: Text('Failed to load transfer options: $optionsError', style: const TextStyle(color: Colors.red, fontSize: 13)),
-
                         )
-
                       : SingleChildScrollView(
-
                           child: Column(
-
                             mainAxisSize: MainAxisSize.min,
-
                             crossAxisAlignment: CrossAxisAlignment.start,
-
                             children: [
-
-                              const Text(
-
-                                'Transfers client assignment, active loans, and records across officers, branches, or areas while preserving 100% of savings balance and history.',
-
-                                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-
+                              Text(
+                                isInterBranch
+                                    ? 'Initiates an inter-branch transfer request requiring Area Manager sign-off. The destination Branch Manager will assign the client to a local Credit Officer and Solidarity Group upon acceptance.'
+                                    : 'Reassigns client and active loan records to another Credit Officer within this branch. Takes effect immediately upon confirmation.',
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.4),
                               ),
-
                               const SizedBox(height: 16),
 
                               // Destination Branch Dropdown
-
                               const Text('Destination Branch *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
-
                               const SizedBox(height: 6),
-
                               DropdownButtonFormField<String>(
-
                                 isExpanded: true,
-
                                 value: branches.any((b) => b['branch_id'] == selectedBranchId) ? selectedBranchId : null,
-
                                 decoration: const InputDecoration(
-
                                   border: OutlineInputBorder(),
-
                                   contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-
                                   hintText: 'Select destination branch',
-
                                 ),
-
                                 items: branches.map((b) => DropdownMenuItem<String>(
-
                                   value: b['branch_id']?.toString(),
-
-                                  child: Text(b['name']?.toString() ?? 'Branch', overflow: TextOverflow.ellipsis),
-
-                                )).toList(),
-
-                                onChanged: (val) {
-
-                                  setDialogState(() {
-
-                                    selectedBranchId = val;
-
-                                    selectedOfficerId = null;
-
-                                    selectedGroupId = null;
-
-                                  });
-
-                                },
-
-                              ),
-
-                              const SizedBox(height: 14),
-
-                              // Destination Credit Officer Dropdown
-
-                              const Text('Destination Credit Officer *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
-
-                              const SizedBox(height: 6),
-
-                              DropdownButtonFormField<String>(
-
-                                isExpanded: true,
-
-                                value: branchOfficers.any((o) => o['officer_id'] == selectedOfficerId) ? selectedOfficerId : null,
-
-                                decoration: const InputDecoration(
-
-                                  border: OutlineInputBorder(),
-
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-
-                                  hintText: 'Select destination credit officer',
-
-                                ),
-
-                                items: branchOfficers.map((o) => DropdownMenuItem<String>(
-
-                                  value: o['officer_id']?.toString(),
-
-                                  child: Text(o['name']?.toString() ?? 'Credit Officer', overflow: TextOverflow.ellipsis),
-
-                                )).toList(),
-
-                                onChanged: (val) {
-
-                                  setDialogState(() {
-
-                                    selectedOfficerId = val;
-
-                                  });
-
-                                },
-
-                              ),
-
-                              const SizedBox(height: 14),
-
-                              // Destination Solidarity Group Dropdown (Optional)
-
-                              const Text('Destination Solidarity Group (Optional)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
-
-                              const SizedBox(height: 6),
-
-                              DropdownButtonFormField<String>(
-
-                                isExpanded: true,
-
-                                value: selectedGroupId,
-
-                                decoration: const InputDecoration(
-
-                                  border: OutlineInputBorder(),
-
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-
-                                  hintText: 'Select solidarity group',
-
-                                ),
-
-                                items: [
-
-                                  const DropdownMenuItem<String>(
-
-                                    value: null,
-
-                                    child: Text('None / Direct Client (Ungrouped)', style: TextStyle(color: Color(0xFF64748B))),
-
+                                  child: Text(
+                                    b['branch_id']?.toString().toLowerCase() == (currentBranchId ?? '').toLowerCase()
+                                        ? '${b['name']} (Current Branch - Intra-Branch)'
+                                        : (b['name']?.toString() ?? 'Branch'),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-
-                                  ...branchGroups.map((g) => DropdownMenuItem<String>(
-
-                                    value: g['group_id']?.toString(),
-
-                                    child: Text(g['name']?.toString() ?? 'Group', overflow: TextOverflow.ellipsis),
-
-                                  )),
-
-                                ],
-
+                                )).toList(),
                                 onChanged: (val) {
-
                                   setDialogState(() {
-
-                                    selectedGroupId = val;
-
+                                    selectedBranchId = val;
+                                    selectedOfficerId = null;
+                                    selectedGroupId = null;
                                   });
-
                                 },
-
                               ),
-
                               const SizedBox(height: 14),
+
+                              // IF INTER-BRANCH: Show Info Guidance Card (No Destination Officer or Group dropdowns)
+                              if (isInterBranch) ...[
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEFF6FF),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                                  ),
+                                  child: const Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(Icons.info_outline_rounded, color: Color(0xFF1D4ED8), size: 18),
+                                      SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          'Inter-Branch Relocation Protocol: The receiving Branch Manager will assign the client to an existing local Credit Officer and Solidarity Group in their branch once this transfer is approved by the Area Manager.',
+                                          style: TextStyle(fontSize: 12, color: Color(0xFF1E40AF), height: 1.4),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                              ] else ...[
+                                // INTRA-BRANCH: Destination Credit Officer Dropdown
+                                const Text('Destination Credit Officer *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                                const SizedBox(height: 6),
+                                DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  value: branchOfficers.any((o) => o['officer_id'] == selectedOfficerId) ? selectedOfficerId : null,
+                                  decoration: const InputDecoration(
+                                    border: OutlineInputBorder(),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    hintText: 'Select destination credit officer',
+                                  ),
+                                  items: branchOfficers.map((o) => DropdownMenuItem<String>(
+                                    value: o['officer_id']?.toString(),
+                                    child: Text(o['name']?.toString() ?? 'Credit Officer', overflow: TextOverflow.ellipsis),
+                                  )).toList(),
+                                  onChanged: (val) {
+                                    setDialogState(() => selectedOfficerId = val);
+                                  },
+                                ),
+                                const SizedBox(height: 14),
+
+                                // Destination Solidarity Group Dropdown (Optional)
+                                const Text('Destination Solidarity Group (Optional)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                                const SizedBox(height: 6),
+                                DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  value: selectedGroupId,
+                                  decoration: const InputDecoration(
+                                    border: OutlineInputBorder(),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    hintText: 'Select solidarity group',
+                                  ),
+                                  items: [
+                                    const DropdownMenuItem<String>(
+                                      value: null,
+                                      child: Text('None / Direct Client (Ungrouped)', style: TextStyle(color: Color(0xFF64748B))),
+                                    ),
+                                    ...branchGroups.map((g) => DropdownMenuItem<String>(
+                                      value: g['group_id']?.toString(),
+                                      child: Text(g['name']?.toString() ?? 'Group', overflow: TextOverflow.ellipsis),
+                                    )),
+                                  ],
+                                  onChanged: (val) => setDialogState(() => selectedGroupId = val),
+                                ),
+                                const SizedBox(height: 14),
+                              ],
 
                               // Transfer Reason
-
                               const Text('Transfer Reason *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
-
                               const SizedBox(height: 6),
-
                               TextField(
-
                                 controller: reasonCtrl,
-
                                 maxLines: 2,
-
                                 decoration: const InputDecoration(
-
                                   hintText: 'Enter business justification for client portfolio transfer',
-
                                   border: OutlineInputBorder(),
-
                                   contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-
                                 ),
-
                               ),
-
                             ],
-
                           ),
-
                         ),
-
             ),
-
             actions: [
-
               TextButton(
-
                 onPressed: () => Navigator.of(ctx).pop(),
-
                 child: const Text('Cancel'),
-
               ),
-
               ElevatedButton(
-
                 style: ElevatedButton.styleFrom(
-
                   backgroundColor: const Color(0xFF2563EB),
-
                   foregroundColor: Colors.white,
-
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-
                 ),
-
-                onPressed: (isSubmitting || isLoadingOptions || selectedBranchId == null || selectedOfficerId == null)
-
+                onPressed: (isSubmitting || isLoadingOptions || selectedBranchId == null || (!isInterBranch && selectedOfficerId == null))
                     ? null
-
                     : () async {
-
                         final rText = reasonCtrl.text.trim();
-
                         if (rText.isEmpty) {
-
                           ScaffoldMessenger.of(context).showSnackBar(
-
                             const SnackBar(content: Text('Please provide a reason for the transfer.')),
-
                           );
-
                           return;
-
                         }
-
                         setDialogState(() => isSubmitting = true);
-
                         try {
-
                           final api = ref.read(coApiServiceProvider);
-
                           final res = await api.transferClient(
-
                             clientId: clientId,
-
-                            toOfficerId: selectedOfficerId!,
-
                             toBranchId: selectedBranchId!,
-
-                            toGroupId: selectedGroupId,
-
+                            toOfficerId: isInterBranch ? null : selectedOfficerId,
+                            toGroupId: isInterBranch ? null : selectedGroupId,
                             reason: rText,
-
                           );
-
                           if (!ctx.mounted) return;
-
                           Navigator.of(ctx).pop();
-
                           if (!mounted) return;
-
                           ScaffoldMessenger.of(context).showSnackBar(
-
-                            SnackBar(content: Text(res['message'] ?? 'Client transferred successfully!'), backgroundColor: Colors.green.shade700),
-
+                            SnackBar(
+                              content: Text(res['message'] ?? 'Transfer processed successfully!'),
+                              backgroundColor: Colors.green.shade700,
+                            ),
                           );
-
                           ref.invalidate(portfolioDataProvider);
-
                           final code = ref.read(selectedClientCodeProvider);
-
                           if (code != null) ref.invalidate(clientDossierDataProvider(code));
-
                         } catch (err) {
-
                           if (ctx.mounted) {
-
                             setDialogState(() => isSubmitting = false);
-
                             AppErrorFormatter.showErrorDialog(ctx, err);
-
                           }
-
                         }
-
                       },
-
                 child: isSubmitting
-
                     ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-
-                    : const Text('Confirm Transfer'),
-
+                    : Text(isInterBranch ? 'Submit for AM Sign-Off' : 'Reassign Client Portfolio'),
               ),
-
             ],
-
           );
-
         },
-
       ),
-
     );
+  }
 
+  // ==========================================
+  // INCOMING CLIENT TRANSFERS (STAGE 3 BM ACCEPTANCE)
+  // ==========================================
+
+  Widget _buildIncomingTransfersTab() {
+    final incomingAsync = ref.watch(incomingTransfersProvider);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.move_to_inbox_rounded, color: Color(0xFF2563EB), size: 24),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Incoming Client Transfers', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                    SizedBox(height: 2),
+                    Text('Review, accept, and assign incoming clients transferred from other branches to a local Credit Officer and Solidarity Group.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  ],
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => ref.invalidate(incomingTransfersProvider),
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                label: const Text('Refresh'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          const Divider(color: Color(0xFFE2E8F0)),
+          const SizedBox(height: 16),
+
+          incomingAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 40),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+            error: (err, stack) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Column(
+                  children: [
+                    Text('Failed to load incoming transfers: $err', style: const TextStyle(color: Colors.red, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    ElevatedButton(
+                      onPressed: () => ref.invalidate(incomingTransfersProvider),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            data: (transfers) {
+              if (transfers.isEmpty) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: const Column(
+                    children: [
+                      Icon(Icons.inbox_outlined, size: 48, color: Color(0xFF94A3B8)),
+                      SizedBox(height: 12),
+                      Text('No Pending Incoming Transfers', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                      SizedBox(height: 4),
+                      Text('All client transfers assigned to this branch have been accepted and finalized.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                    ],
+                  ),
+                );
+              }
+
+              return ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: transfers.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (ctx, idx) {
+                  final t = transfers[idx] as Map<String, dynamic>;
+                  final clientName = t['client_name']?.toString() ?? 'Client';
+                  final clientCode = t['client_code']?.toString() ?? 'N/A';
+                  final sourceBranch = t['source_branch_name']?.toString() ?? 'Branch';
+                  final sourceOfficer = t['source_officer_name']?.toString() ?? 'Officer';
+                  final reason = t['reason']?.toString() ?? 'No reason provided';
+                  final outstanding = (t['outstanding_balance'] as num?)?.toDouble() ?? 0.0;
+                  final savings = (t['savings_balance'] as num?)?.toDouble() ?? 0.0;
+                  final requestedAt = t['requested_at']?.toString() ?? '';
+
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.person_pin_rounded, color: Color(0xFF2563EB), size: 28),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(clientName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(clientCode, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.shade50,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: Colors.green.shade200),
+                                    ),
+                                    child: Text('AM Approved', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.green.shade700)),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text('Originating Branch: $sourceBranch · Previous Officer: $sourceOfficer', style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
+                              const SizedBox(height: 4),
+                              Text('Reason: $reason', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Color(0xFF64748B))),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Text('Outstanding Loan: ₦${outstanding.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+                                  const SizedBox(width: 16),
+                                  Text('Savings Balance: ₦${savings.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF15803D))),
+                                  if (requestedAt.isNotEmpty) ...[
+                                    const SizedBox(width: 16),
+                                    Text('Requested: ${requestedAt.length >= 10 ? requestedAt.substring(0, 10) : requestedAt}', style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2563EB),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: const Icon(Icons.assignment_ind_rounded, size: 16),
+                          label: const Text('Accept & Assign', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                          onPressed: () => _showAcceptIncomingTransferDialog(context, t),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAcceptIncomingTransferDialog(BuildContext context, Map<String, dynamic> item) async {
+    final transferId = item['transfer_id']?.toString() ?? '';
+    final clientName = item['client_name']?.toString() ?? 'Client';
+    final clientCode = item['client_code']?.toString() ?? '';
+    final sourceBranch = item['source_branch_name']?.toString() ?? '';
+
+    bool isSubmitting = false;
+    List<Map<String, dynamic>> officers = [];
+    List<Map<String, dynamic>> groups = [];
+    bool isLoadingOptions = true;
+    String? optionsError;
+    String? selectedOfficerId;
+    String? selectedGroupId;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          if (isLoadingOptions) {
+            WidgetsBinding.instance.addPostFrameCallback((_) async {
+              try {
+                final authState = ref.read(authControllerProvider);
+                final currentUser = authState is AuthStateAuthenticated ? authState.user : null;
+                final api = ref.read(coApiServiceProvider);
+                final opts = await api.getTransferOptions(branchId: currentUser?.branchId);
+                if (ctx.mounted) {
+                  setDialogState(() {
+                    officers = List<Map<String, dynamic>>.from(opts['officers'] ?? []);
+                    groups = List<Map<String, dynamic>>.from(opts['groups'] ?? []);
+                    isLoadingOptions = false;
+                    if (officers.isNotEmpty) {
+                      selectedOfficerId = officers.first['officer_id']?.toString();
+                    }
+                  });
+                }
+              } catch (e) {
+                if (ctx.mounted) {
+                  setDialogState(() {
+                    isLoadingOptions = false;
+                    optionsError = e.toString();
+                  });
+                }
+              }
+            });
+          }
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.assignment_ind_rounded, color: Color(0xFF2563EB), size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Accept & Assign Incoming Client', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      Text('$clientName ($clientCode) · From $sourceBranch', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 480,
+              child: isLoadingOptions
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  : optionsError != null
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          child: Text('Failed to load local options: $optionsError', style: const TextStyle(color: Colors.red, fontSize: 13)),
+                        )
+                      : Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Assign this incoming client to an active Credit Officer and Solidarity Group in your branch to finalize the transfer and update their account ownership.',
+                              style: TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.4),
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Assign Local Credit Officer
+                            const Text('Assign Local Credit Officer *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                            const SizedBox(height: 6),
+                            DropdownButtonFormField<String>(
+                              isExpanded: true,
+                              value: officers.any((o) => o['officer_id'] == selectedOfficerId) ? selectedOfficerId : null,
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                hintText: 'Select Credit Officer',
+                              ),
+                              items: officers.map((o) => DropdownMenuItem<String>(
+                                value: o['officer_id']?.toString(),
+                                child: Text(o['name']?.toString() ?? 'Credit Officer', overflow: TextOverflow.ellipsis),
+                              )).toList(),
+                              onChanged: (val) => setDialogState(() => selectedOfficerId = val),
+                            ),
+                            const SizedBox(height: 14),
+
+                            // Assign Local Solidarity Group
+                            const Text('Assign Local Solidarity Group (Optional)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                            const SizedBox(height: 6),
+                            DropdownButtonFormField<String>(
+                              isExpanded: true,
+                              value: selectedGroupId,
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                hintText: 'Select solidarity group',
+                              ),
+                              items: [
+                                const DropdownMenuItem<String>(
+                                  value: null,
+                                  child: Text('None / Direct Client (Ungrouped)', style: TextStyle(color: Color(0xFF64748B))),
+                                ),
+                                ...groups.map((g) => DropdownMenuItem<String>(
+                                  value: g['group_id']?.toString(),
+                                  child: Text(g['name']?.toString() ?? 'Group', overflow: TextOverflow.ellipsis),
+                                )),
+                              ],
+                              onChanged: (val) => setDialogState(() => selectedGroupId = val),
+                            ),
+                          ],
+                        ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: (isSubmitting || isLoadingOptions || selectedOfficerId == null)
+                    ? null
+                    : () async {
+                        setDialogState(() => isSubmitting = true);
+                        try {
+                          final api = ref.read(coApiServiceProvider);
+                          final res = await api.acceptIncomingTransfer(
+                            transferId: transferId,
+                            toOfficerId: selectedOfficerId!,
+                            toGroupId: selectedGroupId,
+                          );
+                          if (!ctx.mounted) return;
+                          Navigator.of(ctx).pop();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(res['message'] ?? 'Client accepted and assigned successfully!'),
+                              backgroundColor: Colors.green.shade700,
+                            ),
+                          );
+                          ref.invalidate(incomingTransfersProvider);
+                          ref.invalidate(portfolioDataProvider);
+                          final code = ref.read(selectedClientCodeProvider);
+                          if (code != null) ref.invalidate(clientDossierDataProvider(code));
+                        } catch (err) {
+                          if (ctx.mounted) {
+                            setDialogState(() => isSubmitting = false);
+                            AppErrorFormatter.showErrorDialog(ctx, err);
+                          }
+                        }
+                      },
+                child: isSubmitting
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Confirm Acceptance & Reassign'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   // 7. Audit Trail Subtab

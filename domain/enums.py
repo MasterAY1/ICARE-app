@@ -20,6 +20,12 @@ class ClientTransferType(str, Enum):
     INTER_BRANCH = "INTER_BRANCH"
     INTER_AREA = "INTER_AREA"
 
+class ClientTransferStatus(str, Enum):
+    PENDING_AM_APPROVAL = "PENDING_AM_APPROVAL"
+    PENDING_RECEIVING_BM = "PENDING_RECEIVING_BM"
+    COMPLETED = "COMPLETED"
+    REJECTED = "REJECTED"
+
 class ClientProfileUpdateStatus(str, Enum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"

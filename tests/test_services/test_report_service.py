@@ -398,6 +398,133 @@ class TestReportService(unittest.TestCase):
         self.assertIsInstance(multi_bytes, bytes)
         self.assertGreater(len(multi_bytes), 0)
 
+    def test_dynamic_deposit_statement_calculation(self):
+        """Verifies Statement A calculates current month figures dynamically from operational records."""
+        mock_clients = [{"client_id": "c1", "group_id": "g1", "officer_id": "u1", "created_at": "2026-10-05T10:00:00"}]
+        mock_groups = [{"group_id": "g1", "meeting_day": "Weekly", "officer_id": "u1"}]
+        mock_savings = [
+            {"client_id": "c1", "deposit_amount": 5000.0, "withdrawal_amount": 0.0, "remarks": "Regular Savings", "officer_id": "u1"},
+            {"client_id": "c1", "deposit_amount": 0.0, "withdrawal_amount": 1000.0, "remarks": "Partial Withdrawal", "officer_id": "u1"},
+            {"client_id": "c1", "deposit_amount": 0.0, "withdrawal_amount": 500.0, "remarks": "Lapse Refund Cancellation", "officer_id": "u1"},
+        ]
+
+        def mock_table(table_name):
+            query = MagicMock()
+            if table_name == "clients":
+                query.execute.return_value = MagicMock(data=mock_clients)
+            elif table_name == "groups":
+                query.execute.return_value = MagicMock(data=mock_groups)
+            elif table_name == "individual_savings":
+                query.execute.return_value = MagicMock(data=mock_savings)
+            elif table_name == "monthly_statement_reconciliations":
+                query.execute.return_value = MagicMock(data=[])
+            else:
+                query.execute.return_value = MagicMock(data=[])
+            query.select.return_value = query
+            query.range.return_value = query
+            query.eq.return_value = query
+            query.gte.return_value = query
+            query.lte.return_value = query
+            query.lt.return_value = query
+            return query
+
+        self.mock_uow.client.table.side_effect = mock_table
+
+        res = ReportService.get_monthly_deposit_statement(self.mock_uow, "b1", 2026, 10)
+        self.assertIn("rows", res)
+        tot_row = next(r for r in res["rows"] if r["programme"] == "Total")
+        self.assertEqual(tot_row["deposit_curr"], 5000.0)
+        self.assertEqual(tot_row["withdrawal_curr_amount"], 1000.0)
+        self.assertEqual(tot_row["return_curr_amount"], 500.0)
+
+    def test_dynamic_credit_statement_calculation(self):
+        """Verifies Statement B calculates current month disbursements, installments, and payoffs dynamically."""
+        mock_loans = [
+            {"loan_id": "l1", "client_id": "c1", "product_id": "p1", "loan_amount": 100000.0, "active_credit": 80000.0, "officer_id": "u1"}
+        ]
+        mock_reps = [
+            {"id": "r1", "loan_id": "l1", "amount_paid": 25000.0, "officer_id": "u1"}
+        ]
+        mock_payoffs = [
+            {"loan_id": "l1", "record_type": "EXCESS_PAYMENT", "excess_amount": 5000.0, "officer_id": "u1"},
+            {"loan_id": "l1", "record_type": "FULL_PAYOFF", "active_credit_settled": 80000.0, "officer_id": "u1"}
+        ]
+
+        def mock_table(table_name):
+            query = MagicMock()
+            if table_name == "loans":
+                query.execute.return_value = MagicMock(data=mock_loans)
+            elif table_name == "repayments":
+                query.execute.return_value = MagicMock(data=mock_reps)
+            elif table_name == "loan_payoff_excess_records":
+                query.execute.return_value = MagicMock(data=mock_payoffs)
+            elif table_name == "monthly_statement_reconciliations":
+                query.execute.return_value = MagicMock(data=[])
+            else:
+                query.execute.return_value = MagicMock(data=[])
+            query.select.return_value = query
+            query.range.return_value = query
+            query.eq.return_value = query
+            query.gte.return_value = query
+            query.lte.return_value = query
+            query.lt.return_value = query
+            return query
+
+        self.mock_uow.client.table.side_effect = mock_table
+
+        res = ReportService.get_monthly_credit_statement(self.mock_uow, "b1", 2026, 10)
+        self.assertIn("rows", res)
+        disb_row = next(r for r in res["rows"] if r["item"] == "• Current Disbursed Amount (₦)")
+        self.assertEqual(disb_row["total"], 80000.0)
+        inst_row = next(r for r in res["rows"] if r["item"] == "• Current Month Installment (₦) (Col 13)")
+        self.assertEqual(inst_row["total"], 25000.0)
+        excess_row = next(r for r in res["rows"] if r["item"] == "• Current Month Excess (₦) (Col 10)")
+        self.assertEqual(excess_row["total"], 5000.0)
+        settled_row = next(r for r in res["rows"] if r["item"] == "• Current Full Repayment Amount (₦) (Col 28)")
+        self.assertEqual(settled_row["total"], 80000.0)
+
+    def test_dynamic_co_monthly_parity_closing_credit_formula(self):
+        """Verifies CO parity matrix computes Closing Credit = Open + Act - Reps dynamically without hardcoded maps."""
+        mock_branch = [{"branch_id": "b1", "name": "Ogijo"}]
+        mock_users = [{"id": "u1", "username": "co_ayomide", "full_name": "Ayomide (OGI_CO1)"}]
+        mock_loans = [{"loan_id": "l1", "loan_amount": 50000.0, "active_credit": 40000.0, "officer_id": "u1"}]
+        mock_reps = [{"id": "r1", "amount_paid": 15000.0, "officer_id": "u1"}]
+
+        def mock_table(table_name):
+            query = MagicMock()
+            if table_name == "branches":
+                query.execute.return_value = MagicMock(data=mock_branch)
+            elif table_name == "app_users":
+                query.execute.return_value = MagicMock(data=mock_users)
+            elif table_name == "loans":
+                query.execute.return_value = MagicMock(data=mock_loans)
+            elif table_name == "repayments":
+                query.execute.return_value = MagicMock(data=mock_reps)
+            elif table_name == "individual_savings":
+                query.execute.return_value = MagicMock(data=[])
+            elif table_name == "financial_ledger_entries":
+                query.execute.return_value = MagicMock(data=[])
+            elif table_name == "monthly_statement_reconciliations":
+                query.execute.return_value = MagicMock(data=[])
+            else:
+                query.execute.return_value = MagicMock(data=[])
+            query.select.return_value = query
+            query.range.return_value = query
+            query.eq.return_value = query
+            query.gte.return_value = query
+            query.lte.return_value = query
+            query.lt.return_value = query
+            return query
+
+        self.mock_uow.client.table.side_effect = mock_table
+
+        matrix = ReportService.get_monthly_parity_matrix(self.mock_uow, "b1", 2026, 9)
+        self.assertIn("rows", matrix)
+        closing_row = next(r for r in matrix["rows"] if r["metric"] == "Closing Credit Balance")
+        # open_c (25000.0) + act (40000.0) - reps (15000.0) = 50000.0
+        val = closing_row["values"].get("Ogijo Branch Total")
+        self.assertEqual(val, 50000.0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -92,8 +92,8 @@ class DossierReversalRequest(BaseModel):
 
 class TransferClientRequest(BaseModel):
     client_id: str
-    to_officer_id: str
     to_branch_id: str
+    to_officer_id: Optional[str] = None
     to_group_id: Optional[str] = None
     reason: str
 
@@ -108,4 +108,27 @@ class TransferClientResponse(BaseModel):
     new_officer: str
     status: str
     message: str
+
+
+class AcceptTransferRequest(BaseModel):
+    transfer_id: str
+    to_officer_id: str
+    to_group_id: Optional[str] = None
+
+
+class IncomingTransferItem(BaseModel):
+    transfer_id: str
+    client_id: str
+    client_name: str
+    client_code: str
+    source_branch_id: str
+    source_branch_name: str
+    source_officer_name: str
+    transfer_type: str
+    outstanding_balance: float
+    savings_balance: float
+    reason: str
+    requested_at: str
+    approved_at: Optional[str] = ""
+    status: str
 

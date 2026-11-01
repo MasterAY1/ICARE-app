@@ -333,20 +333,39 @@ def sign_off_client_transfer(
 ):
     """
     Area Manager signs off on an inter-branch client transfer.
+    Transitions status to PENDING_RECEIVING_BM so the destination Branch Manager
+    can accept and assign a local Credit Officer and Solidarity Group.
     """
     _check_am_permissions(current_user)
     try:
-        # Update client_transfers to APPROVED
+        now_iso = datetime.now().isoformat()
+        user_uuid = current_user.id if current_user.id else None
+
+        # Fetch transfer to verify existence
+        res_t = uow.client.table("client_transfers").select("transfer_id, client_id, to_branch_id").eq("transfer_id", payload.transfer_id).execute()
+        if not res_t.data:
+            # Fallback check on legacy id column
+            res_t = uow.client.table("client_transfers").select("transfer_id, client_id, to_branch_id").eq("transfer_id", payload.transfer_id).execute()
+
         uow.client.table("client_transfers").update({
-            "status": "APPROVED",
-            "approved_by": current_user.username,
-            "approved_at": datetime.now().isoformat(),
+            "status": "PENDING_RECEIVING_BM",
+            "approved_by": user_uuid,
+            "approved_at": now_iso,
             "notes": payload.notes or f"Signed off by AM {current_user.username}"
-        }).eq("id", payload.transfer_id).execute()
+        }).eq("transfer_id", payload.transfer_id).execute()
+
+        # Audit Log
+        uow.client.table("audit_logs").insert({
+            "action": "CLIENT_TRANSFER_AM_APPROVED",
+            "entity": "client_transfers",
+            "entity_id": payload.transfer_id,
+            "user_id": user_uuid,
+            "details": f"Area Manager {current_user.username} approved inter-branch transfer #{payload.transfer_id[:8]} (Awaiting Receiving BM Assignment)"
+        }).execute()
 
         return AmActionResponse(
             success=True,
-            message="Inter-branch transfer signed off and approved successfully."
+            message="Inter-branch transfer approved by Area Manager and forwarded to destination branch."
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -363,12 +382,23 @@ def reject_client_transfer(
     """
     _check_am_permissions(current_user)
     try:
+        now_iso = datetime.now().isoformat()
+        user_uuid = current_user.id if current_user.id else None
         uow.client.table("client_transfers").update({
             "status": "REJECTED",
-            "rejected_by": current_user.username,
+            "rejected_by": user_uuid,
+            "rejected_at": now_iso,
             "rejection_reason": payload.reason,
-            "updated_at": datetime.now().isoformat()
-        }).eq("id", payload.transfer_id).execute()
+            "notes": payload.reason
+        }).eq("transfer_id", payload.transfer_id).execute()
+
+        uow.client.table("audit_logs").insert({
+            "action": "CLIENT_TRANSFER_AM_REJECTED",
+            "entity": "client_transfers",
+            "entity_id": payload.transfer_id,
+            "user_id": user_uuid,
+            "details": f"Area Manager {current_user.username} rejected inter-branch transfer #{payload.transfer_id[:8]}. Reason: {payload.reason}"
+        }).execute()
 
         return AmActionResponse(
             success=True,

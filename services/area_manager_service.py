@@ -690,27 +690,38 @@ class AreaManagerService:
         if assigned_bids:
             try:
                 res_tr = uow.client.table("client_transfers") \
-                    .select("id, client_id, source_branch_id, destination_branch_id, source_officer_id, destination_officer_id, reason, outstanding_balance, savings_balance, status, requested_at, clients(name, client_code), sb:branches!client_transfers_source_branch_id_fkey(name), db:branches!client_transfers_destination_branch_id_fkey(name)") \
-                    .in_("status", ["PENDING", "Pending"]) \
-                    .or_(f"source_branch_id.in.({','.join(assigned_bids)}),destination_branch_id.in.({','.join(assigned_bids)})") \
+                    .select("transfer_id, client_id, from_branch_id, to_branch_id, from_officer_id, to_officer_id, reason, status, created_at, clients(name, client_code, savings_balance), sb:branches!client_transfers_from_branch_id_fkey(name), db:branches!client_transfers_to_branch_id_fkey(name)") \
+                    .in_("status", ["PENDING_AM_APPROVAL", "PENDING", "Pending"]) \
+                    .or_(f"from_branch_id.in.({','.join(assigned_bids)}),to_branch_id.in.({','.join(assigned_bids)})") \
                     .execute()
                 for row in (res_tr.data or []):
                     c_info = row.get("clients") or {}
                     sb_info = row.get("sb") or {}
                     db_info = row.get("db") or {}
+                    c_id = str(row.get("client_id"))
+
+                    # Compute outstanding balance across active loans
+                    outstanding_bal = 0.0
+                    try:
+                        loans_res = uow.client.table("loans").select("total_due").eq("client_id", c_id).in_("status", ["ACTIVE", "Active", "Approved", "Defaulter"]).execute()
+                        for l in (loans_res.data or []):
+                            outstanding_bal += float(l.get("total_due") or 0.0)
+                    except Exception:
+                        pass
+
                     pending_transfers.append({
-                        "transfer_id": str(row.get("id")),
-                        "client_id": str(row.get("client_id")),
+                        "transfer_id": str(row.get("transfer_id")),
+                        "client_id": c_id,
                         "client_name": c_info.get("name") or "Unknown Client",
                         "client_code": c_info.get("client_code") or "",
-                        "source_branch_id": str(row.get("source_branch_id")),
-                        "source_branch_name": sb_info.get("name") or "Unknown",
-                        "dest_branch_id": str(row.get("destination_branch_id")),
-                        "dest_branch_name": db_info.get("name") or "Unknown",
-                        "outstanding_balance": float(row.get("outstanding_balance") or 0.0),
-                        "savings_balance": float(row.get("savings_balance") or 0.0),
+                        "source_branch_id": str(row.get("from_branch_id")),
+                        "source_branch_name": sb_info.get("name") or "Unknown Branch",
+                        "dest_branch_id": str(row.get("to_branch_id")),
+                        "dest_branch_name": db_info.get("name") or "Unknown Branch",
+                        "outstanding_balance": outstanding_bal,
+                        "savings_balance": float(c_info.get("savings_balance") or 0.0),
                         "reason": row.get("reason") or "Inter-branch relocation",
-                        "requested_at": str(row.get("requested_at"))
+                        "requested_at": str(row.get("created_at"))
                     })
             except Exception:
                 pass
