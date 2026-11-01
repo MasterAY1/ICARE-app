@@ -7,7 +7,7 @@ from typing import Optional, List
 from datetime import date
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from database.repositories.unit_of_work import SupabaseUnitOfWork
-from api.dependencies import get_uow, get_current_user, require_role
+from api.dependencies import get_uow, get_current_user, require_role, check_branch_access
 from api.schemas.cashbook import (
     CoCashbookResponse,
     CashbookInflows,
@@ -32,6 +32,7 @@ router = APIRouter(prefix="/api/v1/co/cashbook", tags=["CO Cashbook"])
 def get_co_cashbook(
     date_str: Optional[str] = Query(None, alias="date", description="Target ISO date (YYYY-MM-DD)"),
     officer: Optional[str] = Query(None, description="Target Credit Officer username"),
+    branch: Optional[str] = Query(None, description="Branch override for supervisory roles"),
     current_user: CurrentUser = Depends(require_role(["CO", "Credit Officer", "Officer", "BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
@@ -39,7 +40,18 @@ def get_co_cashbook(
     Returns live 2-sided Balanced T-Account CO Cashbook projection backed by Account 1000,
     including Arrears Tally, EOD reversal options, and officer selection for managers.
     """
-    branch_id = uow.cashbook._resolve_branch_id(current_user.branch)
+    mgr_roles = {"BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin", "Director", "Executive"}
+    can_manage = current_user.role in mgr_roles
+
+    if branch and not can_manage and branch != current_user.branch and branch != current_user.branch_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Credit Officers cannot view another branch's cashbook."
+        )
+
+    target_branch = branch if (branch and can_manage) else current_user.branch
+    branch_id = uow.cashbook._resolve_branch_id(target_branch)
+    check_branch_access(current_user, branch_id, "view CO cashbook")
     
     # Resolve target business date
     if date_str:
@@ -51,14 +63,13 @@ def get_co_cashbook(
                 detail="Invalid date format. Use YYYY-MM-DD."
             )
     else:
-        target_date = BusinessDateService.get_business_date(uow, current_user.branch)
+        target_date = BusinessDateService.get_business_date(uow, target_branch)
 
     iso_date = target_date.isoformat()
-    is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id, target_date)
+    is_open, open_reason = BusinessDateService.is_operational_open(uow, branch_id, target_date)
 
     # Determine RBAC scope for officer selection (app.py L10770-10785)
-    mgr_roles = {"BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin", "Director", "Executive"}
-    can_select_officer = current_user.role in mgr_roles
+    can_select_officer = can_manage
 
     officer_options: List[OfficerOption] = []
     target_co = current_user.username
@@ -568,6 +579,7 @@ def record_client_fee(
             detail="Client not found."
         )
     c_row = res_c.data[0]
+    check_branch_access(current_user, c_row.get("branch_id"), "record client fee")
     client_name = c_row.get("name") or "Unknown Client"
     client_code = c_row.get("client_code") or "N/A"
 
@@ -691,6 +703,7 @@ def record_client_fee(
 def get_client_fees(
     date_str: Optional[str] = Query(None, alias="date"),
     officer: Optional[str] = Query(None),
+    branch: Optional[str] = Query(None, description="Branch override for supervisory roles"),
     current_user: CurrentUser = Depends(require_role(["CO", "Credit Officer", "Officer", "BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
@@ -705,10 +718,21 @@ def get_client_fees(
             target_date = date.today()
     p_date_str = target_date.isoformat()
 
-    b_uuid = uow.cashbook._resolve_branch_id(current_user.branch)
     mgr_roles = {"BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin", "Director", "Executive"}
+    can_manage = current_user.role in mgr_roles
+
+    if branch and not can_manage and branch != current_user.branch and branch != current_user.branch_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Credit Officers cannot view another branch's client fees."
+        )
+
+    target_branch = branch if (branch and can_manage) else current_user.branch
+    b_uuid = uow.cashbook._resolve_branch_id(target_branch)
+    check_branch_access(current_user, b_uuid, "view client fees")
+
     target_co = current_user.username
-    if current_user.role in mgr_roles and officer:
+    if can_manage and officer:
         target_co = officer
 
     officer_uuid = uow.loans._resolve_officer_id(target_co)

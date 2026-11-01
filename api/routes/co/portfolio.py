@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from database.repositories.unit_of_work import SupabaseUnitOfWork
-from api.dependencies import get_uow, get_current_user, get_current_scope, CurrentUser
+from api.dependencies import get_uow, get_current_user, get_current_scope, CurrentUser, check_branch_access
 from api.schemas.portfolio import (
     PortfolioOverviewResponse,
     ClientDossierResponse,
@@ -123,31 +123,39 @@ def get_portfolio_overview(
 
     try:
         # Branches
-        res_b = uow.client.table("branches").select("name").execute()
-        b_names = sorted(list(set(b["name"] for b in (res_b.data or []) if b.get("name"))))
-        available_branches += b_names
+        if scope.scope_level in ("OFFICER", "BRANCH"):
+            available_branches = [scope.branch_name] if scope.branch_name else ([current_user.branch] if current_user.branch else [])
+        elif scope.scope_level == "REGION":
+            available_branches = ["All"] + sorted([b for b in scope.assigned_branch_names if b])
+        else:
+            res_b = uow.client.table("branches").select("name").execute()
+            b_names = sorted(list(set(b["name"] for b in (res_b.data or []) if b.get("name"))))
+            available_branches += b_names
     except Exception:
         pass
 
     try:
         # Officers
-        q_off = uow.client.table("user_roles") \
-            .select("user_id, roles!inner(name), app_users!inner(id, username, full_name, is_active, branch_id)") \
-            .eq("roles.name", "Credit Officer") \
-            .eq("app_users.is_active", True)
-        if scope.scope_level == "BRANCH" and scope.branch_id:
-            q_off = q_off.eq("app_users.branch_id", scope.branch_id)
-        elif scope.scope_level == "OFFICER" and scope.branch_id:
-            q_off = q_off.eq("app_users.branch_id", scope.branch_id)
-        res_off = q_off.execute()
-        for r in (res_off.data or []):
-            o = r.get("app_users") or {}
-            u_name = o.get("username")
-            f_name = o.get("full_name")
-            u_id = o.get("id")
-            if u_name:
-                lbl = f"{u_name} — {f_name}" if f_name else u_name
-                available_officers.append({"label": lbl, "username": u_name, "id": str(u_id or "")})
+        if scope.scope_level == "OFFICER":
+            co_name = scope.username or current_user.username
+            co_display = f"{co_name} — {current_user.full_name}" if current_user.full_name else co_name
+            available_officers = [{"label": co_display, "username": co_name, "id": str(scope.user_id or current_user.id or "")}]
+        else:
+            q_off = uow.client.table("user_roles") \
+                .select("user_id, roles!inner(name), app_users!inner(id, username, full_name, is_active, branch_id)") \
+                .eq("roles.name", "Credit Officer") \
+                .eq("app_users.is_active", True)
+            if scope.scope_level == "BRANCH" and scope.branch_id:
+                q_off = q_off.eq("app_users.branch_id", scope.branch_id)
+            res_off = q_off.execute()
+            for r in (res_off.data or []):
+                o = r.get("app_users") or {}
+                u_name = o.get("username")
+                f_name = o.get("full_name")
+                u_id = o.get("id")
+                if u_name:
+                    lbl = f"{u_name} — {f_name}" if f_name else u_name
+                    available_officers.append({"label": lbl, "username": u_name, "id": str(u_id or "")})
     except Exception:
         pass
 
@@ -315,6 +323,29 @@ def get_client_dossier(
     c_info = dd.get("customer_info", {})
     if not c_info:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Client '{client_code}' not found.")
+
+    # Authorize client dossier access according to scope boundaries
+    client_branch_id = c_info.get("branch_id")
+    client_officer_id = c_info.get("officer_id")
+
+    if scope.scope_level == "OFFICER":
+        if scope.user_id and client_officer_id and str(scope.user_id) != str(client_officer_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: You can only view dossiers for clients assigned to your portfolio."
+            )
+    elif scope.scope_level == "BRANCH":
+        if scope.branch_id and client_branch_id and str(scope.branch_id) != str(client_branch_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: You cannot view dossiers for clients belonging to another branch."
+            )
+    elif scope.scope_level == "REGION":
+        if client_branch_id and str(client_branch_id) not in scope.assigned_branch_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: You cannot view dossiers for clients outside your supervisory area."
+            )
 
     cur_cid = c_info.get("client_id") or c_info.get("id") or client_code
     l_hist = dd.get("loan_history", pd.DataFrame())
@@ -592,6 +623,10 @@ def update_client_lifecycle_status(
     if not req.reason.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reason for status change is required.")
 
+    res_c = uow.client.table("clients").select("branch_id").eq("client_id", req.client_id).execute()
+    if res_c.data:
+        check_branch_access(current_user, res_c.data[0].get("branch_id"), "change client status")
+
     success = ClientStatusService.transition_status(
         uow=uow,
         client_id=req.client_id,
@@ -764,6 +799,7 @@ def get_incoming_transfers(
     target_branch_id = branch_id or current_user.branch_id
     if not target_branch_id:
         return []
+    check_branch_access(current_user, target_branch_id, "view incoming transfers")
     return ClientService.get_incoming_transfers(uow, str(target_branch_id))
 
 
