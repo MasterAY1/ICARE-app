@@ -437,6 +437,9 @@ class ScheduleService:
             "remaining_balance": round(rem_bal, 2)
         }
 
+    # Authoritative alias for calculation of total due and arrears breakdown per BR-DASH-007
+    calculate_total_due = get_loan_due_breakdown
+
     @staticmethod
     def get_total_paid(uow: SupabaseUnitOfWork, loan_id: str) -> tuple[float, bool]:
         """

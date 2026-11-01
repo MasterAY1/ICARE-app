@@ -21,6 +21,7 @@ import '../../am/presentation/am_portfolio_screen.dart';
 import '../../audit/presentation/audit_ledger_screen.dart';
 import '../../reports/presentation/reports_export_screen.dart';
 import '../../onboarding/presentation/branch_onboarding_admin_screen.dart';
+import '../../admin/presentation/admin_dashboard_screen.dart';
 import '../../auth/presentation/login_screen.dart';
 
 /// Active page state provider for Streamlit-style radio navigation
@@ -252,7 +253,15 @@ class CoAppScaffold extends ConsumerWidget {
     if (isBm) {
       navItems = ['Dashboard', 'Portfolio', 'Master Cashbook', 'User Management', 'Audit Ledger', 'Reports & Export'];
     } else if (isAdmin) {
-      navItems = ['Dashboard', 'Portfolio', 'Branch Onboarding', 'Loan Origination', 'Collections', 'Withdrawal Operations', 'CO Cashbook', 'Master Cashbook', 'User Management', 'Audit Ledger', 'Reports & Export'];
+      navItems = [
+        'Dashboard',
+        'Portfolio',
+        'Master Cashbook',
+        'User Management',
+        'Branch Onboarding',
+        'Audit Ledger',
+        'Reports & Export',
+      ];
     } else if (isAm) {
       navItems = ['Dashboard', 'Portfolio', 'Master Cashbook', 'Branch Onboarding', 'User Management', 'Audit Ledger', 'Reports & Export'];
     } else {
@@ -512,6 +521,7 @@ class CoAppScaffold extends ConsumerWidget {
               activePage,
               isBm,
               isAm,
+              isAdmin,
             ),
       body: Column(
         children: [
@@ -570,7 +580,7 @@ class CoAppScaffold extends ConsumerWidget {
                                 const SizedBox(height: 24),
 
                                 // Active View Dispatcher
-                                _buildActiveView(activePage, isBm, isAm),
+                                _buildActiveView(activePage, isBm, isAm, isAdmin),
                               ],
                             ),
                           ),
@@ -599,7 +609,7 @@ class CoAppScaffold extends ConsumerWidget {
                           ],
 
                           // Active View Dispatcher
-                          _buildActiveView(activePage, isBm, isAm),
+                          _buildActiveView(activePage, isBm, isAm, isAdmin),
                         ],
                       ),
                     ),
@@ -618,9 +628,19 @@ class CoAppScaffold extends ConsumerWidget {
     String activePage,
     bool isBm,
     bool isAm,
+    bool isAdmin,
   ) {
     final List<({String key, String shortLabel, IconData icon, IconData activeIcon})> destinations;
-    if (isBm) {
+    if (isAdmin) {
+      destinations = [
+        (key: 'Dashboard', shortLabel: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
+        (key: 'Portfolio', shortLabel: 'Portfolio', icon: Icons.folder_shared_outlined, activeIcon: Icons.folder_shared),
+        (key: 'Master Cashbook', shortLabel: 'Cashbook', icon: Icons.account_balance_outlined, activeIcon: Icons.account_balance),
+        (key: 'User Management', shortLabel: 'Staff', icon: Icons.people_alt_outlined, activeIcon: Icons.people_alt),
+        (key: 'Branch Onboarding', shortLabel: 'Onboard', icon: Icons.domain_add_outlined, activeIcon: Icons.domain_add),
+        (key: 'Reports & Export', shortLabel: 'Reports', icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart),
+      ];
+    } else if (isBm) {
       destinations = [
         (key: 'Dashboard', shortLabel: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
         (key: 'Portfolio', shortLabel: 'Portfolio', icon: Icons.folder_shared_outlined, activeIcon: Icons.folder_shared),
@@ -649,12 +669,16 @@ class CoAppScaffold extends ConsumerWidget {
     final availableDests = destinations.where((d) => navItems.contains(d.key)).toList();
     if (availableDests.isEmpty) return const SizedBox.shrink();
 
-    final activeThemeColor = isBm
-        ? const Color(0xFF2563EB)
-        : (isAm ? const Color(0xFF0F766E) : const Color(0xFF065F46));
-    final activeBgColor = isBm
-        ? const Color(0xFFEFF6FF)
-        : (isAm ? const Color(0xFFF0FDFA) : const Color(0xFFECFDF5));
+    final activeThemeColor = isAdmin
+        ? const Color(0xFF7C3AED)
+        : (isBm
+            ? const Color(0xFF2563EB)
+            : (isAm ? const Color(0xFF0F766E) : const Color(0xFF065F46)));
+    final activeBgColor = isAdmin
+        ? const Color(0xFFF5F3FF)
+        : (isBm
+            ? const Color(0xFFEFF6FF)
+            : (isAm ? const Color(0xFFF0FDFA) : const Color(0xFFECFDF5)));
 
     return Container(
       decoration: const BoxDecoration(
@@ -1282,9 +1306,10 @@ class CoAppScaffold extends ConsumerWidget {
     );
   }
 
-  Widget _buildActiveView(String page, bool isBm, bool isAm) {
+  Widget _buildActiveView(String page, bool isBm, bool isAm, bool isAdmin) {
     switch (page) {
       case 'Dashboard':
+        if (isAdmin) return const AdminDashboardScreen();
         if (isAm) return const AmDashboardScreen();
         return isBm ? const BmDashboardScreen() : const CoDashboardScreen();
       case 'Loan Origination':

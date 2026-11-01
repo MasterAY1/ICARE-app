@@ -2275,6 +2275,22 @@ class ReportService:
                 elif rtype == 'EXCESS_PAYMENT':
                     curr[rc]['excess'] += float(rec.get('excess_amount') or 0.0)
 
+            # 4. Overdue Recoveries in Month (Phase 9 - Invariants 8 & 9)
+            q_recovery = uow.client.table('loan_overdue_recovery_records').select('*').eq('branch_id', branch_id).gte('recovery_date', s_str).lte('recovery_date', e_str)
+            if target_officer_id:
+                q_recovery = q_recovery.eq('officer_id', target_officer_id)
+            m_recoveries = fetch_all_paginated(q_recovery)
+            for rec in m_recoveries:
+                lid = rec.get('loan_id')
+                l = all_loans.get(lid)
+                pid = l.get('product_id') if l else None
+                if target_product_id and pid != target_product_id:
+                    continue
+                rc = target_product_cycle or (prods.get(pid) or {}).get('repayment_cycle') or 'Weekly'
+                if rc not in curr:
+                    rc = 'Weekly'
+                curr[rc]['overdue_rec'] += float(rec.get('recovered_amount') or 0.0)
+
         # Build rows matching physical report layout 1:1
         cycles = ["Monthly", "Weekly", "Daily"]
         
@@ -2312,6 +2328,7 @@ class ReportService:
         rows.append(make_row("3. Installment Collection", "• Current Month Installment (₦) (Col 13)", {c: curr[c]["inst"] for c in cycles}))
         tot_inst = {c: round(prev[c]["inst"] + curr[c]["inst"] - curr[c]["settled_amt"], 2) for c in cycles}
         rows.append(make_row("3. Installment Collection", "• Total Net Installments (₦) (Col 14 = 12+13-28)", tot_inst))
+        rows.append(make_row("3. Installment Collection", "• Current Month Overdue Recovered (₦)", {c: curr[c]["overdue_rec"] for c in cycles}))
 
         # 4. Balance (Portfolio Position)
         bal_loans_no = tot_disb_no

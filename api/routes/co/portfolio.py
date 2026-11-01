@@ -112,6 +112,7 @@ def get_portfolio_overview(
     client_table_records = _df_to_records(p_data.get("client_table"))
     group_table_records = _df_to_records(p_data.get("group_table"))
     payoff_excess_records = _df_to_records(p_data.get("payoff_excess_table"))
+    overdue_recovery_records = _df_to_records(p_data.get("overdue_recovery_table"))
     client_codes = p_data.get("client_codes", [])
     client_lookup = p_data.get("client_lookup", {})
 
@@ -278,6 +279,7 @@ def get_portfolio_overview(
         client_table=client_table_records,
         group_table=group_table_records,
         payoff_excess_table=payoff_excess_records,
+        overdue_recovery_table=overdue_recovery_records,
         client_codes=client_codes,
         client_lookup=client_lookup,
         filter_options=FilterOptions(

@@ -55,6 +55,7 @@ class PortfolioOverviewResponse(BaseModel):
     client_table: List[Dict[str, Any]] = []
     group_table: List[Dict[str, Any]] = []
     payoff_excess_table: List[Dict[str, Any]] = []
+    overdue_recovery_table: List[Dict[str, Any]] = []
     client_codes: List[str] = []
     client_lookup: Dict[str, str] = {}
     filter_options: FilterOptions = FilterOptions()

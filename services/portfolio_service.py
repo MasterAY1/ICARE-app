@@ -317,13 +317,27 @@ class PortfolioService:
             except Exception:
                 return []
 
-        with ThreadPoolExecutor(max_workers=6) as stage2_exec:
+        def _fetch_recoveries():
+            try:
+                rec_q = uow.client.table("loan_overdue_recovery_records").select("*, loans(loan_products(name)), clients(name, client_code), app_users(username, full_name)").gte("recovery_date", start_date_str).lte("recovery_date", end_date_str)
+                if scope.scope_level == "OFFICER" and scope.user_id:
+                    rec_q = rec_q.eq("officer_id", scope.user_id)
+                elif scope.scope_level == "BRANCH" and scope.branch_id:
+                    rec_q = rec_q.eq("branch_id", scope.branch_id)
+                elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
+                    rec_q = rec_q.in_("branch_id", scope.assigned_branch_ids)
+                return fetch_all_paginated(rec_q)
+            except Exception:
+                return []
+
+        with ThreadPoolExecutor(max_workers=7) as stage2_exec:
             fut_ind = stage2_exec.submit(_fetch_ind_savings)
             fut_grp = stage2_exec.submit(_fetch_grp_savings)
             fut_misc = stage2_exec.submit(_fetch_misc_savings)
             fut_rep_p = stage2_exec.submit(_fetch_repayments_period)
             fut_lt_rep = stage2_exec.submit(_fetch_lifetime_repayments)
             fut_payoffs = stage2_exec.submit(_fetch_payoffs)
+            fut_recoveries = stage2_exec.submit(_fetch_recoveries)
 
             ind_savings_rows = fut_ind.result()
             grp_savings_data = fut_grp.result()
@@ -331,6 +345,7 @@ class PortfolioService:
             repayments_today = fut_rep_p.result()
             lifetime_repayments_map = fut_lt_rep.result()
             prefetched_payoffs = fut_payoffs.result()
+            prefetched_recoveries = fut_recoveries.result()
 
         savings_map = {}
         total_ind_dep = 0.0
@@ -767,6 +782,42 @@ class PortfolioService:
             columns=["Date", "Client Code", "Client Name", "Group", "Loan Product", "Type", "Amount Paid", "Expected Installment", "Excess Amount", "Active Credit Settled", "Remaining Balance", "Notes"]
         )
 
+        # Build Itemized Overdue Recovery Audit DataFrame
+        overdue_recovery_rows = []
+        recovery_records = list(prefetched_recoveries)
+        for r in sorted(recovery_records, key=lambda x: str(x.get("recovery_timestamp") or x.get("recovery_date") or ""), reverse=True):
+            r_type = str(r.get("recovery_type") or "").upper()
+            type_lbl = "Full Recovery" if r_type == "FULL_RECOVERY" else "Partial Recovery"
+
+            c_info = r.get("clients") or {}
+            c_name = c_info.get("name") or "Unknown"
+            c_code = c_info.get("client_code") or "Unknown"
+
+            l_info = r.get("loans") or {}
+            lp_info = l_info.get("loan_products") or {}
+            prod_name = lp_info.get("name") or "General Loan"
+
+            u_info = r.get("app_users") or {}
+            officer_name = u_info.get("full_name") or u_info.get("username") or "Credit Officer"
+
+            overdue_recovery_rows.append({
+                "Date": str(r.get("recovery_date") or "")[:10],
+                "Timestamp": str(r.get("recovery_timestamp") or "")[:19].replace("T", " "),
+                "Client Code": c_code,
+                "Client Name": c_name,
+                "Loan Product": prod_name,
+                "Type": type_lbl,
+                "Overdue Before": float(r.get("overdue_before") or 0.0),
+                "Recovered Amount": float(r.get("recovered_amount") or 0.0),
+                "Overdue After": float(r.get("overdue_after") or 0.0),
+                "Total Repayment": float(r.get("total_repayment_amount") or 0.0),
+                "Officer": officer_name,
+                "Notes": r.get("notes") or "—"
+            })
+        overdue_recovery_df = pd.DataFrame(overdue_recovery_rows) if overdue_recovery_rows else pd.DataFrame(
+            columns=["Date", "Timestamp", "Client Code", "Client Name", "Loan Product", "Type", "Overdue Before", "Recovered Amount", "Overdue After", "Total Repayment", "Officer", "Notes"]
+        )
+
         product_summary = {}
         client_rows = []
 
@@ -1182,6 +1233,9 @@ class PortfolioService:
                 "full_payments": {"count": full_payments_count, "amount": full_payments_amt},
                 "excess_payments": {"count": excess_payments_count, "amount": excess_payments_amt},
                 "overdue": {"count": overdue_count, "amount": overdue_amt},
+                "total_overdue_recovered": round(sum(float(r.get("recovered_amount") or 0.0) for r in recovery_records), 2),
+                "overdue_recovery_count": len(recovery_records),
+                "full_recoveries_count": sum(1 for r in recovery_records if str(r.get("recovery_type") or "").upper() == "FULL_RECOVERY"),
                 "par": f"{par_pct}%",
                 "product_summary": product_summary,
                 "category_summary": category_summary,
@@ -1194,7 +1248,9 @@ class PortfolioService:
             "client_codes": raw_client_codes,
             "client_lookup": {r["Client Code"]: f"{r['Client Code']} — {r.get('Client Name', '')} ({r.get('Group', 'Individual')})" for r in client_rows if r.get("Client Code")},
             "payoff_excess_records": payoff_records,
-            "payoff_excess_table": payoff_excess_df
+            "payoff_excess_table": payoff_excess_df,
+            "overdue_recovery_records": recovery_records,
+            "overdue_recovery_table": overdue_recovery_df
         }
 
     @staticmethod

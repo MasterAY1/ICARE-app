@@ -26,6 +26,7 @@ class UnitOfWork(Protocol):
     audit_views: Any
     collection_performance: Any
     payoff_excess: Any
+    overdue_recoveries: Any
 
 
     def __enter__(self) -> 'UnitOfWork': ...

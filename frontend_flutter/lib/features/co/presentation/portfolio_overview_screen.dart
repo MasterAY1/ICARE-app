@@ -119,6 +119,10 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   bool _excessAuditExpanded = false;
 
+  bool _recoveryAuditExpanded = false;
+
+  String _auditLedgerSubView = 'Excess & Payoffs'; // 'Excess & Payoffs' or 'Overdue Recoveries'
+
   bool _groupMatrixExpanded = true;
 
   bool _matrixCardView = false;
@@ -1442,6 +1446,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
         final payoffExcessTable = data['payoff_excess_table'] as List<dynamic>? ?? [];
 
+        final overdueRecoveryTable = data['overdue_recovery_table'] as List<dynamic>? ?? [];
+
         return LayoutBuilder(
 
           builder: (context, constraints) {
@@ -1463,6 +1469,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                 groupTable: groupTable,
 
                 payoffExcessTable: payoffExcessTable,
+
+                overdueRecoveryTable: overdueRecoveryTable,
 
               );
 
@@ -1563,6 +1571,12 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                 _buildExcessPayoffAuditLedger(payoffExcessTable, summary),
 
+                const SizedBox(height: 16),
+
+                // Itemized Overdue Recovery Audit Ledger Expander
+
+                _buildOverdueRecoveryAuditLedger(overdueRecoveryTable, summary),
+
                 const SizedBox(height: 24),
 
                 // Section: Loan Products & Category Intelligence
@@ -1634,6 +1648,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     required List<dynamic> groupTable,
 
     required List<dynamic> payoffExcessTable,
+
+    required List<dynamic> overdueRecoveryTable,
 
   }) {
 
@@ -1752,7 +1768,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
       default:
 
-        tabContent = _buildExcessPayoffAuditLedger(payoffExcessTable, summary);
+        tabContent = _buildCombinedAuditLedger(payoffExcessTable, overdueRecoveryTable, summary, isEmbeddedInTab: true);
 
         break;
 
@@ -1806,7 +1822,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                 const SizedBox(width: 4),
 
-                _buildPortfolioTabPill(index: 3, label: 'Audit Ledger', icon: Icons.receipt_long_outlined, count: payoffExcessTable.length),
+                _buildPortfolioTabPill(index: 3, label: 'Audit Ledger', icon: Icons.receipt_long_outlined, count: payoffExcessTable.length + overdueRecoveryTable.length),
 
               ],
 
@@ -3780,6 +3796,462 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
     );
 
+  }
+
+  // Overdue Recovery Audit Ledger (Phase 9 - Invariants 8 & 9)
+  Widget _buildOverdueRecoveryAuditLedger(List<dynamic> rows, Map<String, dynamic> s, {bool isEmbeddedInTab = false}) {
+    final totRecovered = (s['total_overdue_recovered'] as num?)?.toDouble() ?? 
+        rows.fold<double>(0.0, (acc, r) => acc + ((r['Recovered Amount'] as num?)?.toDouble() ?? 0.0));
+    final fullCount = (s['full_recoveries_count'] as num?)?.toInt() ?? 
+        rows.where((r) => (r['Type'] ?? '').toString().toLowerCase().contains('full')).length;
+
+    final sortedRows = List<dynamic>.from(rows)
+      ..sort((a, b) => (b['Date'] ?? '').toString().compareTo((a['Date'] ?? '').toString()));
+
+    Widget buildLedgerBody() {
+      if (sortedRows.isEmpty) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE2E8F0),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.restore_outlined, size: 28, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'No Overdue Recoveries Recorded',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1E293B)),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'No delinquent loan arrears were recovered during the selected period.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              ),
+            ],
+          ),
+        );
+      }
+
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final isMobile = constraints.maxWidth < 750;
+          if (isMobile) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ...sortedRows.map((r) {
+                  final code = r['Client Code']?.toString() ?? '';
+                  final name = r['Client Name']?.toString() ?? '';
+                  final prod = r['Loan Product']?.toString() ?? 'Loan';
+                  final rType = r['Type']?.toString() ?? 'Recovery';
+                  final isFull = rType.toLowerCase().contains('full');
+                  final ovBefore = (r['Overdue Before'] as num?)?.toDouble() ?? 0.0;
+                  final recAmt = (r['Recovered Amount'] as num?)?.toDouble() ?? 0.0;
+                  final ovAfter = (r['Overdue After'] as num?)?.toDouble() ?? 0.0;
+                  final totPaid = (r['Total Repayment'] as num?)?.toDouble() ?? 0.0;
+                  final officer = r['Officer']?.toString() ?? '';
+                  final dtStr = (r['Timestamp'] ?? r['Date'])?.toString() ?? '';
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: Color(0xFF0F172A))),
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    children: [
+                                      Text(code, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+                                      const SizedBox(width: 6),
+                                      Text('• $prod', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: isFull ? const Color(0xFFECFDF5) : const Color(0xFFFEF3C7),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: isFull ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A)),
+                              ),
+                              child: Text(
+                                isFull ? 'Full Recovery' : 'Partial Recovery',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: isFull ? const Color(0xFF065F46) : const Color(0xFFB45309),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Recovered Arrears', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '+${CurrencyFormatter.formatNaira(recAmt)}',
+                                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF059669), fontFeatures: [FontFeature.tabularFigures()]),
+                                  ),
+                                ],
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  const Text('Arrears Track', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${CurrencyFormatter.formatNaira(ovBefore)} → ${CurrencyFormatter.formatNaira(ovAfter)}',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: ovAfter <= 0 ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                                      fontFeatures: const [FontFeature.tabularFigures()],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Total Paid: ${CurrencyFormatter.formatNaira(totPaid)} • $officer',
+                              style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+                            ),
+                            Text(dtStr, style: const TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8))),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Scrollbar(
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    headingRowColor: MaterialStateProperty.all(const Color(0xFFF1F5F9)),
+                    headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 11.5),
+                    dataTextStyle: const TextStyle(fontSize: 11.5, color: Color(0xFF334155)),
+                    columnSpacing: 14,
+                    horizontalMargin: 12,
+                    columns: const [
+                      DataColumn(label: Text('Date & Time')),
+                      DataColumn(label: Text('Client Code')),
+                      DataColumn(label: Text('Client Name')),
+                      DataColumn(label: Text('Loan Product')),
+                      DataColumn(label: Text('Status')),
+                      DataColumn(numeric: true, label: Text('Overdue Before (₦)')),
+                      DataColumn(numeric: true, label: Text('Recovered (₦)')),
+                      DataColumn(numeric: true, label: Text('Overdue After (₦)')),
+                      DataColumn(numeric: true, label: Text('Total Paid (₦)')),
+                      DataColumn(label: Text('Officer')),
+                    ],
+                    rows: sortedRows.map((r) {
+                      final rType = r['Type']?.toString() ?? 'Recovery';
+                      final isFull = rType.toLowerCase().contains('full');
+                      final dtStr = (r['Timestamp'] ?? r['Date'])?.toString() ?? '';
+
+                      return DataRow(
+                        cells: [
+                          DataCell(Text(dtStr)),
+                          DataCell(Text(r['Client Code']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF2563EB)))),
+                          DataCell(Text(r['Client Name']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600))),
+                          DataCell(Text(r['Loan Product']?.toString() ?? '-')),
+                          DataCell(
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isFull ? const Color(0xFFECFDF5) : const Color(0xFFFEF3C7),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                isFull ? 'Full Recovery' : 'Partial Recovery',
+                                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: isFull ? const Color(0xFF065F46) : const Color(0xFFB45309)),
+                              ),
+                            ),
+                          ),
+                          DataCell(Text(CurrencyFormatter.formatNaira((r['Overdue Before'] as num?)?.toDouble() ?? 0.0))),
+                          DataCell(Text(
+                            '+${CurrencyFormatter.formatNaira((r['Recovered Amount'] as num?)?.toDouble() ?? 0.0)}',
+                            style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF059669)),
+                          )),
+                          DataCell(Text(
+                            CurrencyFormatter.formatNaira((r['Overdue After'] as num?)?.toDouble() ?? 0.0),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: ((r['Overdue After'] as num?)?.toDouble() ?? 0.0) <= 0 ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                            ),
+                          )),
+                          DataCell(Text(CurrencyFormatter.formatNaira((r['Total Repayment'] as num?)?.toDouble() ?? 0.0))),
+                          DataCell(Text(r['Officer']?.toString() ?? '-')),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    }
+
+    final headerBadges = [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: const Color(0xFFECFDF5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFA7F3D0)),
+        ),
+        child: Text(
+          '$fullCount Cleared Arrears',
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF065F46)),
+        ),
+      ),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF0FDF4),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFBBF7D0)),
+        ),
+        child: Text(
+          CurrencyFormatter.formatNaira(totRecovered),
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
+        ),
+      ),
+    ];
+
+    if (isEmbeddedInTab) {
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFECFDF5),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(Icons.restore_outlined, size: 18, color: Color(0xFF059669)),
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Overdue Recovery Audit Ledger',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0F172A)),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  ...headerBadges.map((b) => Padding(padding: const EdgeInsets.only(left: 4), child: b)),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: buildLedgerBody(),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: ExpansionTile(
+        initiallyExpanded: _recoveryAuditExpanded,
+        onExpansionChanged: (v) => setState(() => _recoveryAuditExpanded = v),
+        title: Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            const Text(
+              'Overdue Recovery Audit Ledger',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0F172A)),
+            ),
+            ...headerBadges,
+          ],
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: buildLedgerBody(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Master Audit Ledger Container with Segmented Selector
+  Widget _buildCombinedAuditLedger(
+    List<dynamic> payoffRows,
+    List<dynamic> recoveryRows,
+    Map<String, dynamic> summary, {
+    bool isEmbeddedInTab = false,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Sub-Tab Switcher
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => _auditLedgerSubView = 'Excess & Payoffs'),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _auditLedgerSubView == 'Excess & Payoffs' ? Colors.white : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: _auditLedgerSubView == 'Excess & Payoffs'
+                          ? const [BoxShadow(color: Color(0x0A0F172A), blurRadius: 4, offset: Offset(0, 1))]
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.receipt_long_outlined,
+                          size: 15,
+                          color: _auditLedgerSubView == 'Excess & Payoffs' ? const Color(0xFF064E3B) : const Color(0xFF64748B),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Excess & Payoffs (${payoffRows.length})',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: _auditLedgerSubView == 'Excess & Payoffs' ? FontWeight.w700 : FontWeight.w600,
+                            color: _auditLedgerSubView == 'Excess & Payoffs' ? const Color(0xFF064E3B) : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => _auditLedgerSubView = 'Overdue Recoveries'),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _auditLedgerSubView == 'Overdue Recoveries' ? Colors.white : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: _auditLedgerSubView == 'Overdue Recoveries'
+                          ? const [BoxShadow(color: Color(0x0A0F172A), blurRadius: 4, offset: Offset(0, 1))]
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.restore_outlined,
+                          size: 15,
+                          color: _auditLedgerSubView == 'Overdue Recoveries' ? const Color(0xFF059669) : const Color(0xFF64748B),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Overdue Recoveries (${recoveryRows.length})',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: _auditLedgerSubView == 'Overdue Recoveries' ? FontWeight.w700 : FontWeight.w600,
+                            color: _auditLedgerSubView == 'Overdue Recoveries' ? const Color(0xFF059669) : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (_auditLedgerSubView == 'Excess & Payoffs')
+          _buildExcessPayoffAuditLedger(payoffRows, summary, isEmbeddedInTab: isEmbeddedInTab)
+        else
+          _buildOverdueRecoveryAuditLedger(recoveryRows, summary, isEmbeddedInTab: isEmbeddedInTab),
+      ],
+    );
   }
 
   // Category Intelligence Cards

@@ -2177,7 +2177,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         DataColumn(numeric: true, label: Text('Consolidated\nTotal')),
                       ],
                       rows: cs.rows
-                          .where((r) => !r.section.toLowerCase().contains('overdue') && !r.item.toLowerCase().contains('overdue'))
+                          .where((r) => !r.section.toLowerCase().contains('overdue') && (!r.item.toLowerCase().contains('overdue') || r.item.toLowerCase().contains('recovered')))
                           .map((r) {
                         final isCount = r.item.contains('Count');
                         final isHighlight = r.item.contains('Total') || r.item.contains('Balance') || r.item.contains('Active');

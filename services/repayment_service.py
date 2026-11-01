@@ -246,6 +246,13 @@ class RepaymentService:
         except Exception as ex_pe:
             print(f"[REPAYMENT TRACE] Payoff/excess recording failed: {ex_pe}")
 
+        # Check and record Overdue Recovery in dedicated table (BR-DASH-004, BR-DASH-005, Invariants 8 & 9)
+        try:
+            if repayment.loan_id and repayment.loan_repayment_amount > 0:
+                RepaymentService._record_overdue_recovery_if_applicable(uow, repayment, preloaded_loan=preloaded_loan, preloaded_repayments=preloaded_repayments)
+        except Exception as ex_or:
+            print(f"[REPAYMENT TRACE] Overdue recovery recording failed: {ex_or}")
+
         # Rebuild projection (only if not deferred during batch execution)
         if not getattr(FinancialPostingEngine, 'defer_projections', False):
             try:
@@ -369,6 +376,15 @@ class RepaymentService:
                 uow.client.table("loan_payoff_excess_records").delete().eq("repayment_id", original_repayment_id).execute()
         except Exception as ex_del:
             print(f"[REPAYMENT REVERSAL] Cleanup payoff/excess record failed: {ex_del}")
+
+        # Delete any associated overdue_recovery record
+        try:
+            if hasattr(uow, 'overdue_recoveries'):
+                uow.overdue_recoveries.delete_by_repayment_id(original_repayment_id)
+            else:
+                uow.client.table("loan_overdue_recovery_records").delete().eq("repayment_id", original_repayment_id).execute()
+        except Exception as ex_or_del:
+            print(f"[REPAYMENT REVERSAL] Cleanup overdue recovery record failed: {ex_or_del}")
 
         # 3.5 Revert schedule installment(s) if loan repayment
         target_loan_id = orig.get("loan_id")
@@ -594,4 +610,171 @@ class RepaymentService:
                 "remaining_balance_after": round(rem_after, 2),
                 "notes": rec.notes
             }).execute()
+
+    @classmethod
+    def _record_overdue_recovery_if_applicable(
+        cls,
+        uow: SupabaseUnitOfWork,
+        repayment: Repayment,
+        preloaded_loan: Optional[dict] = None,
+        preloaded_repayments: Optional[list] = None
+    ):
+        """
+        Detects if a repayment recovered overdue arrears (overdue_before > 0 and amount_paid > 0),
+        persisting the authoritative record in public.loan_overdue_recovery_records (BR-DASH-004, BR-DASH-005, Invariants 8 & 9)
+        and emitting an OverdueRecovered domain event into the event store.
+        """
+        from domain.entities.overdue_recovery_record import LoanOverdueRecoveryRecord
+        from services.schedule_service import ScheduleService
+        from services.posting_engine import FinancialPostingEngine
+
+        paid_amt = float(repayment.loan_repayment_amount or repayment.amount_paid or 0.0)
+        if paid_amt <= 0 or not repayment.loan_id:
+            return
+
+        if preloaded_loan:
+            loan = preloaded_loan
+        else:
+            l_res = uow.client.table("loans").select(
+                "loan_id, client_id, active_credit, total_due, loan_amount, loan_repay, branch_id, officer_id, status, start_date, duration, extra_fields, loan_products(name, repayment_cycle, installments)"
+            ).eq("loan_id", repayment.loan_id).execute()
+            if not l_res.data:
+                return
+            loan = l_res.data[0]
+
+        # Query all repayments for this loan to determine lifetime total paid prior to this repayment
+        if preloaded_repayments is not None:
+            all_reps = preloaded_repayments
+        else:
+            rep_res = uow.client.table("repayments").select("id, amount_paid").eq("loan_id", repayment.loan_id).execute()
+            all_reps = rep_res.data or []
+
+        rep_id = getattr(repayment, 'id', None)
+        has_current = any(str(r.get("id")) == str(rep_id) for r in all_reps if r.get("id")) and rep_id is not None
+
+        if has_current:
+            tot_paid_all = sum(float(r.get("amount_paid") or 0.0) for r in all_reps)
+            prior_paid = max(0.0, tot_paid_all - paid_amt)
+        else:
+            prior_paid = sum(float(r.get("amount_paid") or 0.0) for r in all_reps)
+
+        rep_date = repayment.payment_date if repayment.payment_date else date.today()
+        if hasattr(rep_date, 'date') and callable(rep_date.date):
+            rep_date = rep_date.date()
+        elif isinstance(rep_date, str):
+            rep_date = date.fromisoformat(rep_date[:10])
+
+        # Evaluate due breakdown immediately prior to this repayment
+        due_info_before = ScheduleService.calculate_total_due(
+            uow,
+            loan_id=repayment.loan_id,
+            evaluation_date=rep_date,
+            loan_data=loan,
+            total_paid_sch=prior_paid
+        )
+        overdue_before = float(due_info_before.get("overdue_arrears") or 0.0)
+
+        if overdue_before <= 0.0:
+            return
+
+        recovered_amt = min(overdue_before, paid_amt)
+        overdue_after = round(max(0.0, overdue_before - recovered_amt), 2)
+        rec_type = "FULL_RECOVERY" if overdue_after <= 0.0 else "PARTIAL_RECOVERY"
+
+        # Resolve client UUID
+        c_id = loan.get("client_id") or repayment.client_id
+        try:
+            import uuid
+            uuid.UUID(str(c_id))
+        except Exception:
+            c_res = uow.client.table("clients").select("client_id").eq("client_code", str(c_id)).execute()
+            if c_res.data:
+                c_id = c_res.data[0]["client_id"]
+
+        b_id = loan.get("branch_id")
+        if not b_id and repayment.branch:
+            try:
+                b_id = FinancialPostingEngine._resolve_branch_id(uow, repayment.branch)
+            except Exception:
+                pass
+
+        o_id = loan.get("officer_id")
+        if not o_id and repayment.credit_officer:
+            try:
+                o_id = FinancialPostingEngine._resolve_officer_id(uow, repayment.credit_officer)
+            except Exception:
+                pass
+
+        note_val = repayment.note or f"Automatic overdue recovery ({rec_type}: ₦{recovered_amt:,.2f} recovered)"
+
+        rec = LoanOverdueRecoveryRecord(
+            repayment_id=repayment.id,
+            loan_id=repayment.loan_id,
+            client_id=str(c_id),
+            officer_id=o_id,
+            branch_id=b_id,
+            recovery_date=rep_date,
+            recovery_timestamp=datetime.now(),
+            recovered_amount=round(recovered_amt, 2),
+            overdue_before=round(overdue_before, 2),
+            overdue_after=round(overdue_after, 2),
+            total_repayment_amount=round(paid_amt, 2),
+            recovery_type=rec_type,
+            notes=note_val
+        )
+
+        if hasattr(uow, 'overdue_recoveries'):
+            uow.overdue_recoveries.record_event(rec)
+        else:
+            uow.client.table("loan_overdue_recovery_records").insert({
+                "id": rec.id,
+                "repayment_id": rec.repayment_id,
+                "loan_id": rec.loan_id,
+                "client_id": rec.client_id,
+                "officer_id": rec.officer_id,
+                "branch_id": rec.branch_id,
+                "recovery_date": rep_date.isoformat(),
+                "recovery_timestamp": rec.recovery_timestamp.isoformat(),
+                "recovered_amount": round(recovered_amt, 2),
+                "overdue_before": round(overdue_before, 2),
+                "overdue_after": round(overdue_after, 2),
+                "total_repayment_amount": round(paid_amt, 2),
+                "recovery_type": rec_type,
+                "notes": rec.notes
+            }).execute()
+
+        # Emit OverdueRecovered domain event
+        try:
+            from domain.events import DomainEvent
+            ev = DomainEvent(
+                event_id=str(uuid.uuid4()),
+                aggregate_id=repayment.loan_id,
+                aggregate_type="Loan",
+                event_type="OverdueRecovered",
+                payload={
+                    "repayment_id": repayment.id,
+                    "loan_id": repayment.loan_id,
+                    "client_id": str(c_id),
+                    "recovered_amount": round(recovered_amt, 2),
+                    "overdue_before": round(overdue_before, 2),
+                    "overdue_after": round(overdue_after, 2),
+                    "total_repayment_amount": round(paid_amt, 2),
+                    "recovery_type": rec_type,
+                    "date": rep_date.isoformat(),
+                    "officer": repayment.credit_officer,
+                    "branch": repayment.branch,
+                    "narration": f"Overdue arrears recovery of ₦{recovered_amt:,.2f} recorded for loan {repayment.loan_id}"
+                }
+            )
+            uow.client.table("event_store").insert({
+                "event_id": ev.event_id,
+                "aggregate_id": ev.aggregate_id,
+                "aggregate_type": ev.aggregate_type,
+                "event_type": ev.event_type,
+                "version": 1,
+                "payload": ev.payload,
+                "status": "Completed"
+            }).execute()
+        except Exception as ex_ev:
+            print(f"[REPAYMENT TRACE] Emitting OverdueRecovered event failed: {ex_ev}")
 
