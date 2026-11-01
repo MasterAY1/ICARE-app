@@ -49,6 +49,7 @@ jobs:
                  tests/test_session_cache.py \
                  tests/test_loan_schedule_concurrency.py \
                  tests/test_telemetry.py \
+                 tests/test_mfa.py \
                  -v
 
   frontend-check:

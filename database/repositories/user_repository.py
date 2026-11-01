@@ -206,6 +206,12 @@ class SupabaseUserRepository(BaseRepository[User], UserRepository):
         res = self._execute(query)
         return len(res.data) > 0
 
+    def update_extra_fields(self, user_id: str, extra_fields: dict) -> bool:
+        """Persists updated JSONB extra_fields (such as MFA status or allowed products) for a user."""
+        query = self.client.table(self.table_name).update({"extra_fields": extra_fields}).eq("id", user_id)
+        res = self._execute(query)
+        return len(res.data) > 0
+
     def delete(self, id: str) -> bool:
         user = self.find_by_id(id)
         if not user:
