@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from api.dependencies import get_uow, get_current_user, CurrentUser
+from auth.session_cache import invalidate_user_session_cache
 from domain.entities.branch_closure import BranchClosure
 from services.user_service import UserService
 from services.schedule_service import ScheduleService
@@ -165,6 +166,7 @@ def toggle_user_status(
             detail=res.get("message", "Failed to update user status.")
         )
 
+    invalidate_user_session_cache(user_id)
     return GenericActionResponse(success=True, message=res["message"])
 
 
@@ -186,6 +188,7 @@ def delete_user(
             detail=res.get("message", "Failed to delete user.")
         )
 
+    invalidate_user_session_cache(user_id)
     return GenericActionResponse(success=True, message=res["message"])
 
 
@@ -211,6 +214,7 @@ def reset_password(
             detail=res.get("message", "Failed to reset password.")
         )
 
+    invalidate_user_session_cache(payload.username.strip())
     return GenericActionResponse(success=True, message=res["message"])
 
 

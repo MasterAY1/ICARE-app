@@ -5,6 +5,11 @@ from typing import Generator, Optional, List
 from fastapi import Header, HTTPException, Depends, status
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from auth.session import validate_session_token
+from auth.session_cache import (
+    get_cached_user,
+    set_cached_user,
+    invalidate_user_session_cache,
+)
 from services.rbac_scope_service import RBACScopeService, RBACScope
 from models.user import CurrentUser
 from auth.authorization import PERMISSIONS
@@ -48,8 +53,16 @@ def get_current_user(
     user_id = token_data.get("user_id")
     username = token_data.get("username")
 
+    # Fast-path: Check in-memory session cache (eliminates PostgREST roundtrip)
+    cached_user = get_cached_user(user_id) or get_cached_user(username)
+    if cached_user is not None:
+        return cached_user
+
+    # Cache miss: fetch authoritative user record from database
     user_record = uow.users.find_by_id(user_id) if user_id else uow.users.find_by_username(username)
     if not user_record or not user_record.is_active:
+        invalidate_user_session_cache(user_id)
+        invalidate_user_session_cache(username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User account is deactivated or no longer exists."
@@ -85,6 +98,12 @@ def get_current_user(
         except Exception:
             current_user.assigned_branch_ids = [user_record.branch_id] if user_record.branch_id else []
             current_user.assigned_branches = [user_record.branch_name] if user_record.branch_name else []
+
+    # Cache resolved user profile
+    if user_id:
+        set_cached_user(user_id, current_user)
+    if username:
+        set_cached_user(username, current_user)
 
     return current_user
 

@@ -722,7 +722,7 @@ def submit_single_client(
             "Payment Status": "PAID"
         })
 
-    from app import save_repayments
+    from services.collection_batch_service import save_repayments
     receipt = save_repayments(records_to_insert, batch_id=sc_batch_id)
     if receipt:
         receipt["batch_id"] = sc_batch_id
@@ -894,7 +894,7 @@ def submit_batch_collections(
     if not to_insert:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No collection entries provided to save.")
 
-    from app import save_repayments
+    from services.collection_batch_service import save_repayments
     receipt = save_repayments(to_insert, batch_id=batch_id)
     if receipt:
         receipt["batch_id"] = batch_id

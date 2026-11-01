@@ -1,5 +1,8 @@
 from functools import wraps
-import streamlit as st
+try:
+    import streamlit as st
+except ImportError:
+    st = None
 from auth.session import get_current_user
 from config.roles import *
 
@@ -90,8 +93,10 @@ def require_role(*roles):
         def wrapper(*args, **kwargs):
             user = get_current_user()
             if not user or user.role not in roles:
-                st.error("You do not have permission to access this resource.")
-                st.stop()
+                if st:
+                    st.error("You do not have permission to access this resource.")
+                    st.stop()
+                raise PermissionError("You do not have permission to access this resource.")
             return func(*args, **kwargs)
         return wrapper
     return decorator
@@ -104,13 +109,17 @@ def require_permission(permission: str):
         def wrapper(*args, **kwargs):
             user = get_current_user()
             if not user:
-                st.error("Authentication required.")
-                st.stop()
+                if st:
+                    st.error("Authentication required.")
+                    st.stop()
+                raise PermissionError("Authentication required.")
 
             user_perms = PERMISSIONS.get(user.role, set())
             if "all" not in user_perms and permission not in user_perms:
-                st.error("You do not have permission to perform this action.")
-                st.stop()
+                if st:
+                    st.error("You do not have permission to perform this action.")
+                    st.stop()
+                raise PermissionError("You do not have permission to perform this action.")
 
             return func(*args, **kwargs)
         return wrapper

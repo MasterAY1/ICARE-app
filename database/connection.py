@@ -180,7 +180,7 @@ def get_supabase_client() -> Client:
     return create_client(url, key, options=opts)
 
 
-if st and hasattr(st, "cache_resource"):
+if st and hasattr(st, "runtime") and st.runtime.exists() and hasattr(st, "cache_resource"):
     get_supabase_client = st.cache_resource(get_supabase_client)
 
 supabase = get_supabase_client()
