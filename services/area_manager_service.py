@@ -62,98 +62,123 @@ class AreaManagerService:
         branch_ids = [b["branch_id"] for b in assigned if b.get("branch_id")]
         branch_names = [b["name"] for b in assigned if b.get("name")]
 
+        if not branch_ids:
+            return {
+                "area_name": "Area 1",
+                "business_date": target_date.isoformat(),
+                "branches_count": 0,
+                "open_branches_count": 0,
+                "active_clients": 0,
+                "active_credit": 0.0,
+                "outstanding_portfolio": 0.0,
+                "total_savings": 0.0,
+                "today_expected": 0.0,
+                "today_collected": 0.0,
+                "compliance_pct": 100.0,
+                "vault_cash_acct_1000": 0.0,
+                "par": "0.0%",
+                "defaulters_count": 0,
+                "assigned_branches": []
+            }
+
         ng_holidays = get_nigerian_holidays(years=[target_date.year])
         is_weekend = (target_date.weekday() >= 5)
+        date_str = target_date.isoformat()
 
+        # 1. Consolidated Operational Closure Check (Batch query across assigned branches)
+        closed_branch_ids = set()
+        if is_weekend or (target_date in ng_holidays):
+            closed_branch_ids.update(branch_ids)
+        else:
+            try:
+                bids_filter = ",".join(branch_ids)
+                q_cl = uow.client.table("branch_closures").select("branch_id") \
+                    .lte("start_date", date_str) \
+                    .gte("end_date", date_str) \
+                    .or_(f"branch_id.is.null,branch_id.in.({bids_filter})") \
+                    .execute()
+                for cl in (q_cl.data or []):
+                    b_closure_id = cl.get("branch_id")
+                    if b_closure_id is None:
+                        closed_branch_ids.update(branch_ids)
+                    else:
+                        closed_branch_ids.add(b_closure_id)
+            except Exception:
+                pass
+
+        open_branch_ids = [bid for bid in branch_ids if bid not in closed_branch_ids]
+        open_branches_count = len(open_branch_ids)
+
+        # 2. Consolidated Loans & Portfolio (Active Credit, Active Clients, Defaulters via idx_loans_branch_status)
         total_active_clients = 0
         total_active_credit = 0.0
-        total_outstanding_portfolio = 0.0
-        total_savings = 0.0
+        total_defaulters = 0
+        try:
+            ac_res = uow.client.table("loans").select("loan_id, client_id, branch_id, active_credit, status") \
+                .in_("branch_id", branch_ids) \
+                .in_("status", ["ACTIVE", "Active", "Approved", "DEFAULTER", "Defaulter"]) \
+                .execute()
+
+            branch_active_clients = {bid: set() for bid in branch_ids}
+            for l in (ac_res.data or []):
+                st = str(l.get("status") or "").strip()
+                bid = l.get("branch_id")
+                if st in ("ACTIVE", "Active", "Approved"):
+                    cid = l.get("client_id")
+                    if bid in branch_active_clients and cid:
+                        branch_active_clients[bid].add(cid)
+                    total_active_credit += float(l.get("active_credit") or 0.0)
+                elif st in ("DEFAULTER", "Defaulter"):
+                    total_defaulters += 1
+            total_active_clients = sum(len(cids) for cids in branch_active_clients.values())
+        except Exception:
+            pass
+
+        # 3. Consolidated Account 1000 Physical Vault Cash (Index: idx_fle_branch_acct_created)
+        total_vault_cash = 0.0
+        try:
+            res_leg = uow.client.table("financial_ledger_entries") \
+                .select("branch_id, amount, side") \
+                .in_("branch_id", branch_ids) \
+                .eq("account_code", "1000") \
+                .lte("created_at", f"{date_str}T23:59:59") \
+                .execute()
+
+            branch_vault_totals = {bid: 0.0 for bid in branch_ids}
+            for r in (res_leg.data or []):
+                bid = r.get("branch_id")
+                if bid in branch_vault_totals:
+                    amt = float(r.get("amount") or 0.0)
+                    if r.get("side") == "Debit":
+                        branch_vault_totals[bid] += amt
+                    elif r.get("side") == "Credit":
+                        branch_vault_totals[bid] -= amt
+            total_vault_cash = sum(max(0.0, net) for net in branch_vault_totals.values())
+        except Exception:
+            pass
+
+        # 4. Branch Collections Today & Active Savings
         total_expected_today = 0.0
         total_collected_today = 0.0
-        total_vault_cash = 0.0
-        open_branches_count = 0
-        total_defaulters = 0
-
-        date_str = target_date.isoformat()
+        total_savings = 0.0
 
         for b in assigned:
             bid = b["branch_id"]
             bname = b["name"]
 
-            # 1. Check branch operational closure
-            is_b_closed = is_weekend or (target_date in ng_holidays)
-            try:
-                q_cl = uow.client.table("branch_closures").select("*") \
-                    .lte("start_date", date_str) \
-                    .gte("end_date", date_str) \
-                    .or_(f"branch_id.is.null,branch_id.eq.{bid}") \
-                    .execute()
-                if q_cl.data:
-                    is_b_closed = True
-            except Exception:
-                pass
-
-            if not is_b_closed:
-                open_branches_count += 1
-
-            # 2. Branch Collections Today
-            b_exp = 0.0
-            b_coll = 0.0
-            if not is_b_closed:
+            # Branch Collections Today (only if branch is open)
+            if bid in open_branch_ids:
                 try:
                     summary = CollectionPerformanceService.get_branch_meeting_summary(uow, bid, target_date)
-                    b_coll = float(summary.get("total_collected", 0.0))
-                    b_exp = float(summary.get("total_expected", 0.0))
+                    total_collected_today += float(summary.get("total_collected", 0.0))
+                    total_expected_today += float(summary.get("total_expected", 0.0))
                 except Exception:
                     pass
-            total_expected_today += b_exp
-            total_collected_today += b_coll
 
-            # 3. Active Savings
+            # Active Savings
             try:
                 b_sav = SavingsService.get_branch_totals(uow, bname).get("total_active_savings", 0.0)
                 total_savings += float(b_sav)
-            except Exception:
-                pass
-
-            # 4. Active Loans & Portfolio
-            try:
-                ac_res = uow.client.table("loans").select("active_credit, client_id, status") \
-                    .eq("branch_id", bid) \
-                    .in_("status", ["ACTIVE", "Active", "Approved"]) \
-                    .execute()
-                l_rows = ac_res.data or []
-                cids = set(l.get("client_id") for l in l_rows if l.get("client_id"))
-                total_active_clients += len(cids)
-                total_active_credit += sum(float(l.get("active_credit") or 0.0) for l in l_rows)
-            except Exception:
-                pass
-
-            # 5. Defaulters count in branch
-            try:
-                def_res = uow.client.table("loans").select("loan_id") \
-                    .eq("branch_id", bid) \
-                    .in_("status", ["DEFAULTER", "Defaulter"]) \
-                    .execute()
-                total_defaulters += len(def_res.data or [])
-            except Exception:
-                pass
-
-            # 6. Account 1000 Physical Vault Cash
-            try:
-                # Query net Account 1000 ledger balance for branch
-                res_leg = uow.client.table("financial_ledger_entries") \
-                    .select("amount, side") \
-                    .eq("branch_id", bid) \
-                    .eq("account_code", "1000") \
-                    .lte("created_at", f"{date_str}T23:59:59") \
-                    .execute()
-                leg_rows = res_leg.data or []
-                debits = sum(float(r["amount"]) for r in leg_rows if r.get("side") == "Debit")
-                credits = sum(float(r["amount"]) for r in leg_rows if r.get("side") == "Credit")
-                net_vault = max(0.0, debits - credits)
-                total_vault_cash += net_vault
             except Exception:
                 pass
 

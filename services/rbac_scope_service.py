@@ -181,19 +181,27 @@ class RBACScopeService:
     ) -> Any:
         """
         Applies RBACScope constraints directly to a PostgREST query before execution.
+        Enforces fail-closed isolation: unassigned or empty scopes return zero records.
         """
         if not scope:
-            return query
+            return query.eq(branch_col, "00000000-0000-0000-0000-000000000000")
 
         if scope.scope_level == "OFFICER":
             if scope.user_id:
                 query = query.eq(officer_col, scope.user_id)
+            else:
+                query = query.eq(officer_col, "00000000-0000-0000-0000-000000000000")
         elif scope.scope_level == "BRANCH":
             if scope.branch_id:
                 query = query.eq(branch_col, scope.branch_id)
+            else:
+                query = query.eq(branch_col, "00000000-0000-0000-0000-000000000000")
         elif scope.scope_level == "REGION":
             if scope.assigned_branch_ids:
                 query = query.in_(branch_col, scope.assigned_branch_ids)
+            else:
+                # Fail-closed: Area Manager with zero assigned branches sees zero records
+                query = query.eq(branch_col, "00000000-0000-0000-0000-000000000000")
 
         return query
 
@@ -209,9 +217,13 @@ class RBACScopeService:
     ) -> pd.DataFrame:
         """
         Filter a pandas DataFrame in memory based on RBACScope and active toolbar selections.
+        Enforces fail-closed isolation: unassigned scopes return an empty DataFrame.
         """
         if df.empty:
             return df
+
+        if not scope:
+            return df.iloc[0:0]
 
         cols = [c.lower() for c in df.columns]
         b_col_matched = next((c for c in df.columns if c.lower() in [branch_col.lower(), "branch", "branch_name"]), None)
@@ -219,17 +231,23 @@ class RBACScopeService:
 
         filtered = df.copy()
 
-        # 1. Scope Level Constraints
+        # 1. Scope Level Constraints (Fail-closed)
         if scope.scope_level == "OFFICER":
             if o_col_matched and scope.username:
                 filtered = filtered[filtered[o_col_matched].astype(str).str.lower() == scope.username.lower()]
+            else:
+                return df.iloc[0:0]
         elif scope.scope_level == "BRANCH":
             if b_col_matched and scope.branch_name:
                 filtered = filtered[filtered[b_col_matched].astype(str).str.lower() == scope.branch_name.lower()]
+            else:
+                return df.iloc[0:0]
         elif scope.scope_level == "REGION":
             if b_col_matched and scope.assigned_branch_names:
                 assigned_lower = [b.lower() for b in scope.assigned_branch_names]
                 filtered = filtered[filtered[b_col_matched].astype(str).str.lower().isin(assigned_lower)]
+            else:
+                return df.iloc[0:0]
 
         # 2. Dynamic Toolbar Selection Filters (BM, AM, Admin)
         if selected_branch and selected_branch != "All" and b_col_matched:

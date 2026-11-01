@@ -4562,13 +4562,17 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
             ),
 
-          ),
+          ],
 
-        ],
+        ),
 
       ),
 
-    );
+    ],
+
+  ),
+
+);
 
   }
 
