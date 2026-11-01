@@ -143,6 +143,39 @@ def test_admin_dashboard_operations_admin_success():
         app.dependency_overrides.pop(get_uow, None)
 
 
+def test_admin_dashboard_operations_with_populated_branches():
+    """Verifies that when branches exist, branch_performance_summary and branch_matrix serialize without KeyError."""
+    mock_admin = CurrentUser(
+        id="admin-test-id",
+        username="Admin",
+        role="Admin",
+        branch="Head Office",
+        permissions={"system_admin"}
+    )
+    app.dependency_overrides[get_current_user] = lambda: mock_admin
+
+    mock_uow = MagicMock()
+    mock_uow.client.table.return_value.select.return_value.execute.return_value.data = [
+        {"branch_id": "b-1", "name": "Ogijo", "code": "OGI"},
+        {"branch_id": "b-2", "name": "Ikorodu", "code": "IKR"}
+    ]
+    app.dependency_overrides[get_uow] = lambda: mock_uow
+
+    try:
+        res = client.get("/api/v1/admin/dashboard/operations")
+        assert res.status_code == 200, f"Expected 200, got: {res.status_code} ({res.text})"
+        data = res.json()
+        assert len(data["branch_performance_summary"]) == 2
+        assert data["branch_performance_summary"][0]["branch_name"] in ["Ogijo", "Ikorodu"]
+        assert "relative_pct" in data["branch_performance_summary"][0]
+        assert "volume" in data["branch_performance_summary"][0]
+        assert "status" in data["branch_performance_summary"][0]
+        assert "manager_name" in data["branch_performance_summary"][0]
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_uow, None)
+
+
 def test_admin_dashboard_branch_detail_success():
     """Verifies Admin can drill down into a specific branch's metrics."""
     mock_admin = CurrentUser(

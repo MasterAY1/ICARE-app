@@ -144,10 +144,27 @@ def get_admin_operations(
     # Map managers
     mgr_map = {}
     try:
-        res_mgrs = uow.client.table("app_users").select("id, username, full_name, branch_id").in_("role", ["BM", "Branch Manager"]).execute()
-        mgr_map = {m.get("branch_id"): (m.get("full_name") or m.get("username") or "Manager") for m in (res_mgrs.data or [])}
+        q_bm = uow.client.table("user_roles") \
+            .select("user_id, roles!inner(name), app_users!inner(id, username, full_name, branch_id)") \
+            .in_("roles.name", ["BM", "Branch Manager", "Manager"])
+        res_bm = q_bm.execute()
+        for r in (res_bm.data or []):
+            u = r.get("app_users") or {}
+            bid = str(u.get("branch_id") or "")
+            if bid and bid not in mgr_map:
+                mgr_map[bid] = u.get("full_name") or u.get("username") or "Branch Manager"
     except Exception:
         pass
+
+    if not mgr_map:
+        try:
+            res_mgrs = uow.client.table("app_users").select("id, username, full_name, branch_id").execute()
+            for m in (res_mgrs.data or []):
+                bid = str(m.get("branch_id") or "")
+                if bid and bid not in mgr_map:
+                    mgr_map[bid] = m.get("full_name") or m.get("username") or "Branch Manager"
+        except Exception:
+            pass
 
     branch_statuses = []
     for b in branch_rows:
@@ -221,7 +238,7 @@ def get_admin_operations(
             .order("created_at", desc=False) \
             .limit(15) \
             .execute()
-        b_map_name = {str(b.get("branch_id") or b.get("id")): b["name"] for b in branch_rows}
+        b_map_name = {str(b.get("branch_id") or b.get("id")): (b.get("name") or "Branch") for b in branch_rows}
         for rv in (q_rev.data or []):
             pending_reversals.append({
                 "request_id": str(rv.get("id")),
@@ -244,7 +261,7 @@ def get_admin_operations(
             .order("created_at", desc=False) \
             .limit(15) \
             .execute()
-        b_map_name = {str(b.get("branch_id") or b.get("id")): b["name"] for b in branch_rows}
+        b_map_name = {str(b.get("branch_id") or b.get("id")): (b.get("name") or "Branch") for b in branch_rows}
         for hl in (q_hl.data or []):
             pending_high_loans.append({
                 "loan_id": str(hl.get("loan_id")),
@@ -286,19 +303,19 @@ def get_admin_operations(
     financial_activity_week = InstitutionPerformanceService.get_working_days_financial_activity(uow, target_date)
 
     # Branch Performance Progress Summary
-    max_b_vol = max([b.get("collections_today", 0.0) for b in branch_statuses] or [1.0])
+    max_b_vol = max([float(b.get("today_collected") or 0.0) for b in branch_statuses] or [1.0])
     branch_performance_summary = []
     for b in branch_statuses:
-        vol = b.get("collections_today", 0.0)
+        vol = float(b.get("today_collected") or 0.0)
         rel_pct = round((vol / max_b_vol), 2) if max_b_vol > 0 else 0.0
         branch_performance_summary.append({
-            "branch_id": b["branch_id"],
-            "branch_name": b["name"],
+            "branch_id": str(b.get("branch_id") or ""),
+            "branch_name": str(b.get("branch_name") or "Branch"),
             "volume": vol,
             "relative_pct": rel_pct,
-            "vault_cash": b["vault_cash"],
-            "manager_name": b["manager"],
-            "status": b["status"]
+            "vault_cash": float(b.get("vault_cash") or 0.0),
+            "manager_name": str(b.get("manager_name") or "Branch Manager"),
+            "status": str(b.get("operational_status") or "OPEN")
         })
 
     return {
