@@ -15,6 +15,7 @@ class IndividualSavings:
     remarks: Optional[str] = None
     date: Optional[datetime] = None
     id: Optional[str] = None
+    idempotency_key: Optional[str] = None
 
 @dataclass
 class GroupSavings:
@@ -29,6 +30,7 @@ class GroupSavings:
     date: Optional[datetime] = None
     id: Optional[str] = None
     group_id: Optional[str] = None
+    idempotency_key: Optional[str] = None
 
 @dataclass
 class MiscSavings:
@@ -43,6 +45,7 @@ class MiscSavings:
     remarks: Optional[str] = None
     date: Optional[datetime] = None
     id: Optional[str] = None
+    idempotency_key: Optional[str] = None
 
 @dataclass
 class LapsSavings:

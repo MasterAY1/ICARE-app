@@ -211,6 +211,7 @@ def save_repayment(
                         logger.warning(f"[GROUP RESOLVE WARNING] Failed resolving group_id for '{group_name}': {ex_resolve}")
 
                 sav_id_val = data.get('savings_tx_id') or data.get('tx_id')
+                sav_idem_key = data.get('savings_idempotency_key') or data.get('idempotency_key') or sav_id_val
                 SavingsService.post_group_savings(
                     uow,
                     group_name,
@@ -221,7 +222,8 @@ def save_repayment(
                     remarks=db_data.get('note'),
                     posting_date=p_date,
                     group_id=g_id_val,
-                    group_savings_id=sav_id_val
+                    group_savings_id=sav_id_val,
+                    idempotency_key=sav_idem_key
                 )
                 return
 
@@ -242,6 +244,7 @@ def save_repayment(
             # 3. Route Individual Savings
             if not skip_savings and (savings_dep > 0 or savings_wd > 0):
                 sav_id_val = data.get('savings_tx_id') or data.get('tx_id')
+                sav_idem_key = data.get('savings_idempotency_key') or data.get('idempotency_key') or sav_id_val
                 SavingsService.post_individual_savings(
                     uow,
                     client_id,
@@ -252,7 +255,8 @@ def save_repayment(
                     savings_wd,
                     remarks=db_data.get('note'),
                     posting_date=p_date,
-                    savings_id=sav_id_val
+                    savings_id=sav_id_val,
+                    idempotency_key=sav_idem_key
                 )
 
             # 4. Route Loan Repayment (including explicit NOT_PAID / 0 collection records)
@@ -309,6 +313,9 @@ def save_repayment(
                 rep = RepaymentMapper.to_domain(db_data)
                 if data.get('tx_id'):
                     rep.id = data.get('tx_id')
+                rep_idem = data.get('idempotency_key') or data.get('tx_id')
+                if rep_idem:
+                    rep.idempotency_key = rep_idem
                 rep.payment_date = p_date
                 rep.credit_officer = officer
                 rep.branch = branch
@@ -607,6 +614,10 @@ def save_repayments(
             d['tx_id'] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{batch_id}_{cid}_{idx}_rep"))
         if not d.get('savings_tx_id'):
             d['savings_tx_id'] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{batch_id}_{cid}_{idx}_sav"))
+        if not d.get('idempotency_key'):
+            d['idempotency_key'] = d['tx_id']
+        if not d.get('savings_idempotency_key'):
+            d['savings_idempotency_key'] = d['savings_tx_id']
 
     report = {
         "batch_id": batch_id,

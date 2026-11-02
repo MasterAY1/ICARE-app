@@ -50,6 +50,7 @@ jobs:
                  tests/test_loan_schedule_concurrency.py \
                  tests/test_telemetry.py \
                  tests/test_mfa.py \
+                 tests/test_financial_transaction_integrity.py \
                  -v
 
   frontend-check:

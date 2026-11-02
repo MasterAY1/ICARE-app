@@ -22,5 +22,6 @@ class Repayment:
     expected_amount: Optional[float] = 0.0
     overdue_amount: Optional[float] = 0.0
     note: Optional[str] = ""
+    idempotency_key: Optional[str] = None
     created_at: Optional[datetime] = None
     extra_fields: dict = field(default_factory=dict)

@@ -94,10 +94,18 @@ def _check_branch_access(current_user: CurrentUser, target_branch_id: Optional[s
 
 def _execute_withdrawal_approval(uow_exec: SupabaseUnitOfWork, wr_item: dict, op_date: date, branch: str, user: str):
     w_id = wr_item["id"]
-    # Idempotency check: ensure request hasn't already been approved
-    chk = uow_exec.client.table("withdrawal_requests").select("status").eq("id", w_id).execute()
-    if chk.data and chk.data[0].get("status") == "APPROVED":
-        return
+    # Atomic status lock: claim the withdrawal request using atomic conditional update
+    claim_res = uow_exec.client.table("withdrawal_requests").update({
+        "status": "PROCESSING",
+        "approved_by": user,
+        "approved_at": datetime.now().isoformat()
+    }).eq("id", w_id).eq("status", "PENDING").execute()
+
+    if not claim_res.data:
+        chk = uow_exec.client.table("withdrawal_requests").select("status").eq("id", w_id).execute()
+        if chk.data and chk.data[0].get("status") in ["APPROVED", "PROCESSING"]:
+            return
+        raise ValueError(f"Withdrawal request #{w_id[:8]} cannot be approved (current status: {chk.data[0].get('status') if chk.data else 'Unknown'}).")
 
     # Authoritative branch resolution: ensure ledger postings target the withdrawal's actual branch vault
     wr_branch_id = wr_item.get("branch_id")
@@ -421,10 +429,15 @@ def approve_loan(
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
-    res_l = uow.client.table("loans").select("branch_id, loan_amount").eq("loan_id", payload.loan_id).execute()
+    res_l = uow.client.table("loans").select("branch_id, loan_amount, status").eq("loan_id", payload.loan_id).execute()
     if not res_l.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan not found.")
     loan_row = res_l.data[0]
+    if str(loan_row.get("status", "")).lower() == "active":
+        return ActionResponse(
+            success=True,
+            message=f"Loan #{payload.loan_id[:8]} has already been approved and disbursed."
+        )
     _check_branch_access(current_user, loan_row.get("branch_id"), "approve loans")
 
     # Enforce BM loan approval threshold ceiling of ₦300,000

@@ -11,7 +11,10 @@ from services.loan_product_engine import LoanProductEngine
 
 class LoanService:
     @staticmethod
-    def disburse_loan(uow: SupabaseUnitOfWork, loan: Loan, disbursement_date: Optional[date] = None) -> Loan:
+    def disburse_loan(uow: SupabaseUnitOfWork, loan: Loan, disbursement_date: Optional[date] = None, idempotency_key: Optional[str] = None) -> Loan:
+        # Concurrency & Idempotency Guard: Disallow re-disbursing an active loan
+        if str(getattr(loan, "status", "")).lower() == "active":
+            raise ValueError(f"Loan #{loan.id[:8] if loan.id else ''} has already been activated and disbursed.")
         """
         Executes atomic loan disbursement:
         1. Generates correlation reference ID (e.g. TXN-YYYYMMDD-XXXXXX).
@@ -322,7 +325,7 @@ class LoanService:
         return loan
 
     @staticmethod
-    def approve_and_disburse_loan(uow: SupabaseUnitOfWork, loan_id: str, approved_by: str, disbursement_date: Optional[date] = None) -> Loan:
+    def approve_and_disburse_loan(uow: SupabaseUnitOfWork, loan_id: str, approved_by: str, disbursement_date: Optional[date] = None, idempotency_key: Optional[str] = None) -> Loan:
         """
         BM approves and disburses a pending loan application:
         1. Loads the pending Loan domain entity.
@@ -337,7 +340,7 @@ class LoanService:
             else:
                 raise ValueError(f"Loan application with ID {loan_id} not found.")
 
-        return LoanService.disburse_loan(uow, loan, disbursement_date=disbursement_date)
+        return LoanService.disburse_loan(uow, loan, disbursement_date=disbursement_date, idempotency_key=idempotency_key)
 
     @staticmethod
     def reject_loan(uow: SupabaseUnitOfWork, loan_id: str, rejected_by: str, reason: str = "") -> None:

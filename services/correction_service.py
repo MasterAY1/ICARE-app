@@ -81,6 +81,17 @@ class CorrectionService:
         if req["status"] != "Pending":
             raise ValueError(f"Request {request_id} is already {req['status']}.")
 
+        # Atomic status lock: transition status from Pending to Processing
+        claim_res = uow.client.table("correction_requests").update({
+            "status": "Processing",
+            "updated_at": datetime.now().isoformat()
+        }).eq("id", request_id).eq("status", "Pending").execute()
+
+        if not claim_res.data:
+            chk = uow.client.table("correction_requests").select("status").eq("id", request_id).execute()
+            cur_st = chk.data[0]["status"] if chk.data else "Not Found"
+            raise ValueError(f"Correction request {request_id} cannot be approved (Status: {cur_st}).")
+
         approver_uuid = CorrectionService._resolve_user_id(uow, approved_by)
 
         # Four-Eyes Principle Guard (BR-ERR-001): Initiator cannot self-approve

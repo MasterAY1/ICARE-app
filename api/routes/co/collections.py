@@ -643,6 +643,13 @@ def submit_single_client(
     target_branch_id = res_c.data[0].get("branch_id")
     check_branch_access(current_user, target_branch_id, "submit collections for this client")
 
+    if payload.idempotency_key:
+        from services.idempotency_service import IdempotencyService
+        lock_res = IdempotencyService.acquire_lock(uow, payload.idempotency_key, "single_collection", payload)
+        if lock_res.get("action") == "REPLAY":
+            cached = lock_res.get("response_body") or {}
+            return SingleClientSubmitResponse(**cached)
+
     date_str = target_date.isoformat()
     sc_batch_id = payload.batch_id or payload.idempotency_key or f"COL-SC-{date_str}-{uuid.uuid4().hex[:6].upper()}"
 
@@ -734,13 +741,17 @@ def submit_single_client(
         receipt["date"] = date_str
         receipt["timestamp"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
 
-    return SingleClientSubmitResponse(
+    resp = SingleClientSubmitResponse(
         success=True,
         receipt=receipt,
         message=f"Successfully posted single client collection for {payload.client_name}!",
         idempotency_key=payload.idempotency_key,
         batch_id=sc_batch_id
     )
+    if payload.idempotency_key:
+        from services.idempotency_service import IdempotencyService
+        IdempotencyService.commit_result(uow, payload.idempotency_key, 200, resp)
+    return resp
 
 
 @router.post("/batch-submit", response_model=BatchCollectionResponse)
@@ -764,6 +775,13 @@ def submit_batch_collections(
     # recorded in the field; allow syncing to post atomically to Account 1000.
     if not is_open and not payload.idempotency_key:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Cannot submit new collections today ({open_reason}).")
+
+    if payload.idempotency_key:
+        from services.idempotency_service import IdempotencyService
+        lock_res = IdempotencyService.acquire_lock(uow, payload.idempotency_key, "batch_collection", payload)
+        if lock_res.get("action") == "REPLAY":
+            cached = lock_res.get("response_body") or {}
+            return BatchCollectionResponse(**cached)
 
     date_str = target_date.isoformat()
     batch_id = payload.batch_id or payload.idempotency_key or f"COL-{date_str}-{uuid.uuid4().hex[:6].upper()}"
@@ -926,7 +944,7 @@ def submit_batch_collections(
     except Exception:
         pass
 
-    return BatchCollectionResponse(
+    resp = BatchCollectionResponse(
         success=True,
         total_cash_in=tot_cash_in,
         total_repayments=tot_rep,
@@ -935,6 +953,35 @@ def submit_batch_collections(
         message=f"Successfully posted {len(to_insert)} collection entries for {payload.group_name}! (Total Cash In: ₦{tot_cash_in:,.2f})",
         receipt=receipt
     )
+    if payload.idempotency_key:
+        from services.idempotency_service import IdempotencyService
+        IdempotencyService.commit_result(uow, payload.idempotency_key, 200, resp)
+    return resp
+
+
+@router.get("/transaction/{idempotency_key}")
+def get_transaction_status(
+    idempotency_key: str,
+    current_user: CurrentUser = Depends(require_role(["CO", "Credit Officer", "Officer", "BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Retrieves the authoritative commit status and cached receipt for a client transaction key.
+    Enables safe mobile network failure recovery without creating duplicate financial transactions.
+    """
+    from services.idempotency_service import IdempotencyService
+    record = IdempotencyService.get_transaction_status(uow, idempotency_key)
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction key not found.")
+    return {
+        "idempotency_key": record.get("key"),
+        "scope": record.get("scope"),
+        "status": record.get("status"),
+        "response_code": record.get("response_code"),
+        "response_body": record.get("response_body"),
+        "created_at": record.get("created_at"),
+        "locked_at": record.get("locked_at")
+    }
 
 
 @router.get("/history", response_model=CollectionsHistoryResponse)

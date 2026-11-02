@@ -180,7 +180,8 @@ class SupabaseSavingsRepository(BaseRepository):
             "balance": 0.0,
             "date": dto.get("posting_date") or dto.get("created_at"),
             "branch": b_name,
-            "officer": o_name
+            "officer": o_name,
+            "idempotency_key": dto.get("idempotency_key")
         }
         if self.entity_class.__name__ in ["IndividualSavings", "MiscSavings", "LapsSavings"]:
             kwargs["client_id"] = dto.get("client_id", "")
@@ -228,6 +229,8 @@ class SupabaseSavingsRepository(BaseRepository):
         }
         if entity.id:
             d["id"] = entity.id
+        if getattr(entity, "idempotency_key", None):
+            d["idempotency_key"] = str(entity.idempotency_key).strip()
 
         if self.entity_class.__name__ == "LapsSavings":
             d["migration_batch_id"] = getattr(entity, "migration_batch_id", None)

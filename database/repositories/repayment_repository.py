@@ -227,6 +227,9 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
             "note": entity.note or "",
             "transaction_type": entity.transaction_type or "Loan"
         }
+        idem_key = getattr(entity, "idempotency_key", None) or (entity.extra_fields.get("idempotency_key") if hasattr(entity, "extra_fields") and isinstance(entity.extra_fields, dict) else None)
+        if idem_key:
+            db_dict["idempotency_key"] = str(idem_key).strip()
         if entity.id:
             db_dict["id"] = entity.id
         return db_dict
