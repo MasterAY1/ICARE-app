@@ -3,6 +3,7 @@ try:
 except ImportError:
     st = None
 from datetime import datetime, timedelta
+from typing import Optional
 import uuid
 import hmac
 import hashlib
@@ -75,6 +76,69 @@ def validate_session_token(token_str: str):
         if rev_store.is_user_revoked(user_id, float(ts)):
             return None
             
+        return {"user_id": user_id, "username": username, "timestamp": ts}
+    except Exception:
+        return None
+
+
+def generate_password_change_token(
+    user_id: str,
+    username: str,
+    expires_in_seconds: int = 900
+) -> str:
+    """
+    Generates an HMAC-SHA256 signed temporary first-time password rotation token.
+    Valid for expires_in_seconds (default 15 minutes).
+    Scoped strictly with 'pwd_chg:' prefix so it cannot be used as a session token.
+    Complies with Strict Zero-Emoji Governance.
+    """
+    secret = get_auth_secret()
+    timestamp = int(datetime.now().timestamp())
+    payload_str = f"pwd_chg:{user_id}:{username}:{timestamp}:{expires_in_seconds}"
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        payload_str.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()
+    raw_token = f"{payload_str}:{signature}"
+    return base64.urlsafe_b64encode(raw_token.encode("utf-8")).decode("utf-8")
+
+
+def validate_password_change_token(token_str: str) -> Optional[dict]:
+    """
+    Validates a password change token signature and expiry.
+    Returns dict with user_id, username if valid, else None.
+    """
+    if not token_str:
+        return None
+
+    secret = get_auth_secret()
+    try:
+        raw_token = base64.urlsafe_b64decode(token_str.encode("utf-8")).decode("utf-8")
+        parts = raw_token.split(":")
+        if len(parts) != 6:
+            return None
+
+        tag, user_id, username, ts_str, exp_str, sig = parts
+        if tag != "pwd_chg":
+            return None
+
+        payload_str = f"{tag}:{user_id}:{username}:{ts_str}:{exp_str}"
+        expected_sig = hmac.new(
+            secret.encode("utf-8"),
+            payload_str.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(sig, expected_sig):
+            return None
+
+        ts = int(ts_str)
+        exp = int(exp_str)
+        now = datetime.now().timestamp()
+        if now - ts > exp or now - ts < -300:
+            return None
+
         return {"user_id": user_id, "username": username, "timestamp": ts}
     except Exception:
         return None

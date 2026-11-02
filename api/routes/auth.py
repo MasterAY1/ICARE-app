@@ -20,12 +20,18 @@ from api.schemas.auth import (
     MFAResetUserRequest,
     MFAStatusResponse,
     GenericMFAActionResponse,
+    ChangeInitialPasswordRequest,
 )
-from auth.password import verify_password
-from auth.session import generate_session_token
+from auth.password import verify_password, hash_password
+from auth.session import (
+    generate_session_token,
+    generate_password_change_token,
+    validate_password_change_token,
+)
 from auth.session_cache import invalidate_user_session_cache
 from auth.token_store import get_revocation_store
 from services.rate_limiter import get_auth_rate_limiter, extract_client_ip
+from services.rbac_scope_service import RBACScopeService
 from auth.mfa import (
     generate_totp_secret,
     verify_totp_code,
@@ -127,6 +133,26 @@ def login(payload: LoginRequest, request: Request, uow: SupabaseUnitOfWork = Dep
     limiter.reset(username)
 
     extra = user.extra_fields if isinstance(user.extra_fields, dict) else {}
+
+    # Check for first-time password rotation requirement for Management roles
+    # (Admin, Super Admin, Area Manager, Branch Manager)
+    normalized_role = RBACScopeService.normalize_role(user.role)
+    is_management = normalized_role in ["Admin", "Area Manager", "Branch Manager"]
+    if is_management and extra.get("must_change_password") is True:
+        temp_token = generate_password_change_token(user.id, user.username)
+        user_info = _build_user_info(user, uow)
+        AuditLogService.log_login(username, "PASSWORD_CHANGE_REQUIRED", "Default password detected. First-time rotation required.")
+        return LoginResponse(
+            access_token=None,
+            token_type="Bearer",
+            user=user_info,
+            mfa_required=False,
+            mfa_token=None,
+            password_change_required=True,
+            temp_token=temp_token,
+            message="First-time login detected. You must set a password of your choice before proceeding."
+        )
+
     if extra.get("mfa_enabled") is True:
         # User has MFA enabled: issue MFA challenge token
         mfa_token = generate_mfa_challenge_token(user.id, user.username)
@@ -137,6 +163,8 @@ def login(payload: LoginRequest, request: Request, uow: SupabaseUnitOfWork = Dep
             user=None,
             mfa_required=True,
             mfa_token=mfa_token,
+            password_change_required=False,
+            temp_token=None,
         )
 
     # Standard non-MFA login
@@ -292,6 +320,99 @@ def logout(
         new={"status": "revoked"}
     )
     return {"success": True, "message": "Successfully logged out and session revoked."}
+
+
+@router.post("/change-initial-password", response_model=LoginResponse)
+def change_initial_password(
+    payload: ChangeInitialPasswordRequest,
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Allows Admin, AM, or BM to change their initial default password on first login.
+    Officers cannot call this endpoint; their credentials are controlled by BM/AM.
+    Complies with Strict Zero-Emoji Governance.
+    """
+    token_data = validate_password_change_token(payload.temp_token)
+    if not token_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Password change token is invalid or expired. Please log in again."
+        )
+
+    user_id = token_data.get("user_id")
+    user = uow.users.find_by_id(user_id)
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is inactive or not found."
+        )
+
+    # Enforce role restriction: only Admin, AM, and BM can self-service rotate initial password
+    normalized_role = RBACScopeService.normalize_role(user.role)
+    if normalized_role not in ["Admin", "Area Manager", "Branch Manager"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Credit Officer passwords must be configured and managed by your supervising Branch Manager or Area Manager."
+        )
+
+    # Verify current default password
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current temporary/default password is incorrect."
+        )
+
+    # Complexity checks
+    new_pw = payload.new_password.strip()
+    if len(new_pw) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="New password must be at least 8 characters long."
+        )
+
+    if verify_password(new_pw, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password cannot be identical to the current temporary password."
+        )
+
+    # Hash and update password
+    new_hash = hash_password(new_pw)
+    uow.users.update_password(user.username, new_hash)
+
+    # Clear must_change_password flag
+    extra = dict(user.extra_fields or {})
+    extra["must_change_password"] = False
+    extra["password_changed_at"] = datetime.now().isoformat()
+    try:
+        uow.users.update_extra_fields(user.id, extra)
+    except Exception:
+        pass
+
+    invalidate_user_session_cache(user.id)
+    invalidate_user_session_cache(user.username)
+
+    AuditLogService.log_user_action(
+        action="INITIAL_PASSWORD_ROTATED",
+        target_user_id=user.id,
+        display_name=user.username,
+        new={"must_change_password": False}
+    )
+
+    # Issue authoritative session token
+    token = generate_session_token(user.id, user.username)
+    user_info = _build_user_info(user, uow)
+
+    return LoginResponse(
+        access_token=token,
+        token_type="Bearer",
+        user=user_info,
+        mfa_required=False,
+        mfa_token=None,
+        password_change_required=False,
+        temp_token=None,
+        message="Password updated successfully. Session activated."
+    )
 
 
 @router.get("/mfa/status", response_model=MFAStatusResponse)

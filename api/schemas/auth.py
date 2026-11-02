@@ -30,6 +30,15 @@ class LoginResponse(BaseModel):
     user: Optional[UserInfo] = None
     mfa_required: bool = False
     mfa_token: Optional[str] = None
+    password_change_required: bool = False
+    temp_token: Optional[str] = None
+    message: Optional[str] = None
+
+
+class ChangeInitialPasswordRequest(BaseModel):
+    temp_token: str = Field(..., min_length=1, description="Temporary password change token issued during first-time login")
+    current_password: str = Field(..., min_length=1, description="Current temporary or default password")
+    new_password: str = Field(..., min_length=8, description="New strong password of user choice (min 8 characters)")
 
 
 class MFASetupResponse(BaseModel):
