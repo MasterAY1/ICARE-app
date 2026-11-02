@@ -51,6 +51,7 @@ jobs:
                  tests/test_telemetry.py \
                  tests/test_mfa.py \
                  tests/test_financial_transaction_integrity.py \
+                 tests/test_security_and_access_control.py \
                  -v
 
   frontend-check:

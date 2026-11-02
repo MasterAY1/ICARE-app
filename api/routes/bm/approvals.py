@@ -75,7 +75,14 @@ def approve_client_update_request(
 ):
     """
     Branch Manager approves client profile update and applies changes atomically.
+    Strictly enforces branch-level access control.
     """
+    chk = uow.client.table("client_profile_update_requests").select("branch_id").eq("request_id", request_id).execute()
+    if not chk.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client update request not found.")
+    req_branch_id = chk.data[0].get("branch_id")
+    check_branch_access(current_user, req_branch_id, "approve client update requests")
+
     res = ClientService.approve_profile_update_request(
         uow=uow,
         request_id=request_id,
@@ -98,7 +105,14 @@ def reject_client_update_request(
 ):
     """
     Branch Manager rejects client profile update with required justification reason.
+    Strictly enforces branch-level access control.
     """
+    chk = uow.client.table("client_profile_update_requests").select("branch_id").eq("request_id", request_id).execute()
+    if not chk.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client update request not found.")
+    req_branch_id = chk.data[0].get("branch_id")
+    check_branch_access(current_user, req_branch_id, "reject client update requests")
+
     res = ClientService.reject_profile_update_request(
         uow=uow,
         request_id=request_id,
@@ -133,6 +147,9 @@ def preview_laps_savings_sweep(
         target_branch = current_user.branch_id
     elif not target_branch and current_user.branch_id:
         target_branch = current_user.branch_id
+
+    if target_branch:
+        check_branch_access(current_user, target_branch, "preview LAPS savings sweep")
 
     candidates = SavingsService.preview_automatic_laps_sweep(
         uow=uow,
@@ -172,6 +189,9 @@ def execute_laps_savings_sweep(
     elif not target_branch and current_user.branch_id:
         target_branch = current_user.branch_id
 
+    if target_branch:
+        check_branch_access(current_user, target_branch, "execute LAPS savings sweep")
+
     result = SavingsService.process_automatic_laps_sweep(
         uow=uow,
         branch_id=target_branch,
@@ -207,6 +227,9 @@ def evaluate_loan_defaulters(
         target_branch = current_user.branch_id
     elif not target_branch and current_user.branch_id:
         target_branch = current_user.branch_id
+
+    if target_branch:
+        check_branch_access(current_user, target_branch, "evaluate loan defaulters")
 
     result = ScheduleService.evaluate_branch_defaults(
         uow=uow,

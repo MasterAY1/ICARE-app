@@ -622,3 +622,50 @@ def get_login_history(
         return LoginHistoryResponse(history=items, total_count=len(items))
     except Exception:
         return LoginHistoryResponse(history=[], total_count=0)
+
+
+
+@router.post("/{user_id}/revoke-sessions", response_model=GenericActionResponse)
+def revoke_user_sessions(
+    user_id: str,
+    uow: SupabaseUnitOfWork = Depends(get_uow),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Administratively terminates all active session tokens for the target user immediately.
+    Authorized for Admins, and Branch Managers (for staff in their assigned branch).
+    Complies with Strict Zero-Emoji Governance.
+    """
+    _check_not_co(current_user)
+    target_user = uow.users.find_by_id(user_id)
+    if not target_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Target user not found."
+        )
+
+    # Branch access enforcement for Branch Managers
+    if _is_bm(current_user):
+        if target_user.branch_id != current_user.branch_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Branch Managers can only revoke sessions for staff in their assigned branch."
+            )
+
+    from auth.token_store import get_revocation_store
+    get_revocation_store().revoke_user_sessions(user_id)
+    invalidate_user_session_cache(user_id)
+    invalidate_user_session_cache(target_user.username)
+
+    from services.audit_log_service import AuditLogService
+    AuditLogService.log_user_action(
+        action="USER_SESSIONS_REVOKED",
+        target_user_id=user_id,
+        display_name=target_user.username,
+        new={"revoked_by": current_user.username}
+    )
+
+    return GenericActionResponse(
+        success=True,
+        message=f"All active sessions for user '{target_user.username}' have been revoked."
+    )

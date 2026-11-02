@@ -66,6 +66,14 @@ def validate_session_token(token_str: str):
         token_age = datetime.now().timestamp() - ts
         if token_age > (SESSION_TIMEOUT_MINUTES * 60) or token_age < -300:
             return None
+
+        # Check cryptographic revocation store
+        from auth.token_store import get_revocation_store
+        rev_store = get_revocation_store()
+        if rev_store.is_token_revoked(token_str):
+            return None
+        if rev_store.is_user_revoked(user_id, float(ts)):
+            return None
             
         return {"user_id": user_id, "username": username, "timestamp": ts}
     except Exception:

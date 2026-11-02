@@ -277,7 +277,7 @@ def confirm_area_closure(
 @router.post("/approve-loan", response_model=AmActionResponse)
 def approve_high_value_loan(
     payload: ApproveLoanRequest,
-    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin", "Director"])),
+    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
@@ -309,7 +309,7 @@ def approve_high_value_loan(
 @router.post("/reject-loan", response_model=AmActionResponse)
 def reject_high_value_loan(
     payload: RejectLoanRequest,
-    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin", "Director"])),
+    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
@@ -339,7 +339,7 @@ def reject_high_value_loan(
 @router.post("/sign-off-transfer", response_model=AmActionResponse)
 def sign_off_client_transfer(
     payload: SignOffTransferRequest,
-    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin", "Director"])),
+    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
@@ -387,7 +387,7 @@ def sign_off_client_transfer(
 @router.post("/reject-transfer", response_model=AmActionResponse)
 def reject_client_transfer(
     payload: RejectTransferRequest,
-    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin", "Director"])),
+    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
@@ -484,7 +484,7 @@ def get_branch_inspection(
 @router.post("/approve-branch-reversal", response_model=AmActionResponse)
 def approve_branch_reversal(
     payload: ApproveBranchReversalRequest,
-    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin", "Director"])),
+    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
@@ -511,7 +511,7 @@ def approve_branch_reversal(
 @router.post("/reject-branch-reversal", response_model=AmActionResponse)
 def reject_branch_reversal(
     payload: RejectBranchReversalRequest,
-    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin", "Director"])),
+    current_user: CurrentUser = Depends(require_role(["AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """

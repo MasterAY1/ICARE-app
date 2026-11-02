@@ -69,12 +69,35 @@ def verify_security_configuration():
     get_auth_secret()
     verify_supabase_credentials()
 
-# Enable CORS for Flutter Web, iOS, Android, and desktop clients
+# Security Headers Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Enforces banking security headers (nosniff, DENY frame options, XSS protection, HSTS)."""
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if os.getenv("ENVIRONMENT", "").lower() != "test":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Strict CORS configuration
+raw_allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "https://icare-banking.vercel.app,https://icare-core.onrender.com,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,http://localhost:5000,http://127.0.0.1:5000"
+)
+allowed_origins = [o.strip() for o in raw_allowed_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https?://.*",
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -96,7 +119,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     err_dict = translate_error_to_icare_response(exc)
     return JSONResponse(
         status_code=exc.status_code,
-        content=err_dict
+        content=err_dict,
+        headers=exc.headers
     )
 
 

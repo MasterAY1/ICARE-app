@@ -5,7 +5,7 @@ Complies with Strict Zero-Emoji Governance.
 """
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
 
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from api.dependencies import get_uow, get_current_user, CurrentUser
@@ -24,6 +24,8 @@ from api.schemas.auth import (
 from auth.password import verify_password
 from auth.session import generate_session_token
 from auth.session_cache import invalidate_user_session_cache
+from auth.token_store import get_revocation_store
+from services.rate_limiter import get_auth_rate_limiter, extract_client_ip
 from auth.mfa import (
     generate_totp_secret,
     verify_totp_code,
@@ -71,17 +73,33 @@ def _build_user_info(user, uow: SupabaseUnitOfWork) -> UserInfo:
 
 
 @router.post("/login", response_model=LoginResponse)
-def login(payload: LoginRequest, uow: SupabaseUnitOfWork = Depends(get_uow)):
+def login(payload: LoginRequest, request: Request, uow: SupabaseUnitOfWork = Depends(get_uow)):
     """
     Authenticates user against app_users.
     If MFA is enabled for the user, issues a short-lived MFA challenge token.
     Otherwise, returns authoritative session token and user profile.
+    Protected by IP and username-level sliding window rate limiting.
     """
     username = payload.username.strip()
     password = payload.password
+    client_ip = extract_client_ip(request)
+    limiter = get_auth_rate_limiter()
+
+    # 1. Enforce rate limiting lockout check
+    is_ip_locked, ip_retry = limiter.is_locked_out(client_ip)
+    is_user_locked, user_retry = limiter.is_locked_out(username)
+    if is_ip_locked or is_user_locked:
+        retry_after = max(ip_retry, user_retry)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed login attempts. Access temporarily locked. Try again in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)}
+        )
 
     user = uow.users.find_by_username(username)
     if not user:
+        limiter.record_failure(client_ip)
+        limiter.record_failure(username)
         AuditLogService.log_login(username, "FAILURE", "User not found")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -96,11 +114,17 @@ def login(payload: LoginRequest, uow: SupabaseUnitOfWork = Depends(get_uow)):
         )
 
     if not verify_password(password, user.password_hash):
+        limiter.record_failure(client_ip)
+        limiter.record_failure(username)
         AuditLogService.log_login(username, "FAILURE", "Invalid password")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials. Please try again."
         )
+
+    # Authentication succeeded: reset rate limit counters
+    limiter.reset(client_ip)
+    limiter.reset(username)
 
     extra = user.extra_fields if isinstance(user.extra_fields, dict) else {}
     if extra.get("mfa_enabled") is True:
@@ -137,20 +161,42 @@ def login(payload: LoginRequest, uow: SupabaseUnitOfWork = Depends(get_uow)):
 @router.post("/mfa/challenge", response_model=LoginResponse)
 def mfa_challenge(
     payload: MFAChallengeRequest,
+    request: Request,
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
     Validates a 6-digit TOTP code or backup code against a temporary MFA challenge token.
     On successful verification, completes login and returns authoritative session token.
+    Protected by rate limiting.
     """
+    client_ip = extract_client_ip(request)
+    limiter = get_auth_rate_limiter()
+
+    is_ip_locked, ip_retry = limiter.is_locked_out(client_ip)
+    if is_ip_locked:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed verification attempts. Access temporarily locked. Try again in {ip_retry} seconds.",
+            headers={"Retry-After": str(ip_retry)}
+        )
+
     token_data = validate_mfa_challenge_token(payload.mfa_token)
     if not token_data:
+        limiter.record_failure(client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="MFA challenge token is invalid or expired. Please log in again."
         )
 
     user_id = token_data.get("user_id")
+    is_user_locked, user_retry = limiter.is_locked_out(user_id)
+    if is_user_locked:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed verification attempts. Access temporarily locked. Try again in {user_retry} seconds.",
+            headers={"Retry-After": str(user_retry)}
+        )
+
     user = uow.users.find_by_id(user_id)
     if not user or not user.is_active:
         raise HTTPException(
@@ -192,11 +238,17 @@ def mfa_challenge(
             )
 
     if not authenticated:
+        limiter.record_failure(client_ip)
+        limiter.record_failure(user_id)
         AuditLogService.log_login(user.username, "FAILURE", "Invalid MFA verification code")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid MFA verification code. Check your authenticator app or backup code."
         )
+
+    # Success: reset limiter
+    limiter.reset(client_ip)
+    limiter.reset(user_id)
 
     try:
         uow.users.update_last_login(user.id)
@@ -214,6 +266,32 @@ def mfa_challenge(
         mfa_required=False,
         mfa_token=None,
     )
+
+
+@router.post("/logout")
+def logout(
+    authorization: Optional[str] = Header(None),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Explicitly revokes the caller's active session token and purges the user session cache.
+    Complies with Strict Zero-Emoji Governance.
+    """
+    if authorization:
+        token = authorization.replace("Bearer ", "").strip()
+        if token:
+            get_revocation_store().revoke_token(token)
+
+    invalidate_user_session_cache(current_user.id)
+    invalidate_user_session_cache(current_user.username)
+
+    AuditLogService.log_user_action(
+        action="USER_LOGOUT",
+        target_user_id=current_user.id,
+        display_name=current_user.username,
+        new={"status": "revoked"}
+    )
+    return {"success": True, "message": "Successfully logged out and session revoked."}
 
 
 @router.get("/mfa/status", response_model=MFAStatusResponse)
