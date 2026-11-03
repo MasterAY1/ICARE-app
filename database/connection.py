@@ -155,24 +155,66 @@ def verify_supabase_credentials() -> None:
 
 
 class RetryingHTTPTransport(httpx.HTTPTransport):
+    """
+    Idempotency-safe HTTP transport with connection pooling and circuit breaker protection.
+    Prevents duplicate database mutations on server timeouts.
+    """
+    def __init__(self, retries: int = 3, **kwargs):
+        super().__init__(**kwargs)
+        self.max_retries = retries
+
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        max_retries = 3
-        for attempt in range(max_retries):
+        from services.circuit_breaker import get_circuit_breaker
+        cb = get_circuit_breaker("database")
+
+        is_idempotent = request.method.upper() in ("GET", "HEAD", "OPTIONS")
+
+        for attempt in range(self.max_retries):
+            # Check circuit breaker before attempting request
+            from services.circuit_breaker import CircuitState, CircuitBreakerOpenException
+            if cb.state == CircuitState.OPEN:
+                status_dict = cb.get_status()
+                raise CircuitBreakerOpenException("database", status_dict.get("remaining_cooldown_seconds", 15.0))
+
             try:
-                return super().handle_request(request)
-            except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError):
-                if attempt == max_retries - 1:
+                response = super().handle_request(request)
+                if response.status_code < 500:
+                    cb.record_success()
+                elif response.status_code in (502, 503, 504):
+                    cb.record_failure()
+                return response
+            except httpx.ConnectError:
+                cb.record_failure()
+                if attempt == self.max_retries - 1:
                     raise
-                time.sleep(0.5 * (attempt + 1))
+                time.sleep(0.5 * (2 ** attempt))
+            except (httpx.TimeoutException, httpx.RemoteProtocolError):
+                cb.record_failure()
+                # MUTATION SAFETY INVARIANT: Never blindly retry mutating requests (POST, PUT, DELETE, PATCH)
+                # on timeout because the database may have already executed the transaction.
+                if not is_idempotent or attempt == self.max_retries - 1:
+                    raise
+                time.sleep(0.5 * (2 ** attempt))
 
 
 def get_supabase_client() -> Client:
     """
-    Instantiates an authenticated Supabase client using authoritatively resolved credentials.
+    Instantiates an authenticated Supabase client using authoritatively resolved credentials,
+    strict connection pooling, and circuit breaker-protected HTTP transport.
     """
     url, key, _ = resolve_supabase_credentials()
-    transport = RetryingHTTPTransport(retries=3)
-    http_client = httpx.Client(http2=False, timeout=60.0, transport=transport)
+    pool_limits = httpx.Limits(
+        max_keepalive_connections=20,
+        max_connections=50,
+        keepalive_expiry=30.0
+    )
+    transport = RetryingHTTPTransport(retries=3, limits=pool_limits)
+    http_client = httpx.Client(
+        http2=False,
+        timeout=60.0,
+        transport=transport,
+        limits=pool_limits
+    )
     opts = SyncClientOptions(httpx_client=http_client)
     return create_client(url, key, options=opts)
 

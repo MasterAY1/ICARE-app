@@ -631,6 +631,17 @@ def submit_single_client(
         except ValueError:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use YYYY-MM-DD.")
 
+    # Rate limit check for rapid double-clicking
+    from services.rate_limiter import get_financial_rate_limiter
+    fin_limiter = get_financial_rate_limiter()
+    is_limited, retry_after = fin_limiter.check_rate_limit(f"{current_user.id}:single_collection")
+    if is_limited:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rapid submission detected. Please wait a moment before submitting another transaction.",
+            headers={"Retry-After": str(retry_after)}
+        )
+
     # Verify operational open status (honoring offline idempotency key exemption per BR-DATE-002)
     is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id, target_date)
     if not is_open and not payload.idempotency_key:
@@ -769,6 +780,17 @@ def submit_batch_collections(
             target_date = date.fromisoformat(payload.date)
         except ValueError:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    # Rate limit check for rapid double-clicking
+    from services.rate_limiter import get_financial_rate_limiter
+    fin_limiter = get_financial_rate_limiter()
+    is_limited, retry_after = fin_limiter.check_rate_limit(f"{current_user.id}:batch_collection")
+    if is_limited:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rapid submission detected. Please wait a moment before submitting another transaction.",
+            headers={"Retry-After": str(retry_after)}
+        )
 
     is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id, target_date)
     # If this is an offline queued batch (idempotency_key provided), collection was already

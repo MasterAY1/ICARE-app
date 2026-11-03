@@ -21,6 +21,8 @@ import '../../../core/offline/connectivity_service.dart';
 import '../../../core/offline/offline_database_service.dart';
 
 import '../../../core/offline/offline_sync_manager.dart';
+import '../../../core/network/api_client.dart';
+import '../../../core/network/transaction_state.dart';
 
 import '../data/datasources/co_api_service.dart';
 
@@ -683,65 +685,60 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
     };
 
     final isOnline = ref.read(isOnlineProvider);
-
     final syncMgr = ref.read(offlineSyncManagerProvider);
 
+    // Pre-generate stable idempotency key before transmission to ensure safe retry identity
+    final batchKey = payload['idempotency_key']?.toString() ?? syncMgr.generateIdempotencyKey(groupName);
+    payload['idempotency_key'] = batchKey;
+    payload['batch_id'] = batchKey;
+
     if (!isOnline) {
-
       final offlineRes = await syncMgr.queueOfflineBatch(
-
         groupName: groupName,
-
         collectionDate: dateStr,
-
         payload: payload,
-
       );
-
       ref.invalidate(collectionSheetFutureProvider);
-
       ref.invalidate(singleClientOptionsProvider);
-
       return offlineRes;
-
     }
 
     try {
-
       final api = ref.read(coApiServiceProvider);
-
       final res = await api.submitBatchCollections(payload);
-
       ref.invalidate(collectionSheetFutureProvider);
-
       ref.invalidate(singleClientOptionsProvider);
-
       return res;
-
     } catch (e) {
-
-      if (e is DioException) {
-
-        final offlineRes = await syncMgr.queueOfflineBatch(
-
-          groupName: groupName,
-
-          collectionDate: dateStr,
-
-          payload: payload,
-
-        );
-
-        ref.invalidate(collectionSheetFutureProvider);
-
-        ref.invalidate(singleClientOptionsProvider);
-
-        return offlineRes;
-
+      // Permanent errors (400, 401, 403, 422) must NEVER be queued or retried automatically
+      if (ApiClient.isPermanentError(e)) {
+        rethrow;
       }
 
-      rethrow;
+      if (e is DioException) {
+        // Network drop or timeout: Outcome is unknown. Attempt status recovery using exact same key.
+        final client = ref.read(apiClientProvider);
+        try {
+          final statusCheck = await client.checkTransactionStatus(batchKey);
+          if (statusCheck != null && statusCheck['status'] == 'Confirmed') {
+            final body = statusCheck['response_body'] as Map<String, dynamic>? ?? {};
+            ref.invalidate(collectionSheetFutureProvider);
+            ref.invalidate(singleClientOptionsProvider);
+            return body;
+          }
+        } catch (_) {}
 
+        // Enqueue into offline outbox preserving the EXACT original idempotency key
+        final offlineRes = await syncMgr.queueOfflineBatch(
+          groupName: groupName,
+          collectionDate: dateStr,
+          payload: payload,
+        );
+        ref.invalidate(collectionSheetFutureProvider);
+        ref.invalidate(singleClientOptionsProvider);
+        return offlineRes;
+      }
+      rethrow;
     }
 
   }
@@ -932,9 +929,14 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
               'expected_amount': expRep,
             };
 
+            final singleClientName = clientObj['client_name']?.toString() ?? 'Client';
+            final singleKey = payload['idempotency_key']?.toString() ?? syncMgr.generateIdempotencyKey('SC_$singleClientName');
+            payload['idempotency_key'] = singleKey;
+            payload['batch_id'] = singleKey;
+
             if (!isOnline) {
               final offlineRes = await syncMgr.queueOfflineSingleCollection(
-                clientName: clientObj['client_name']?.toString() ?? 'Client',
+                clientName: singleClientName,
                 collectionDate: dateStr,
                 payload: payload,
               );
@@ -947,9 +949,24 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
               ref.invalidate(singleClientOptionsProvider);
               return res;
             } catch (e) {
+              // Permanent errors must NEVER be retried or queued
+              if (ApiClient.isPermanentError(e)) {
+                rethrow;
+              }
+
               if (e is DioException) {
+                final client = ref.read(apiClientProvider);
+                try {
+                  final statusCheck = await client.checkTransactionStatus(singleKey);
+                  if (statusCheck != null && statusCheck['status'] == 'Confirmed') {
+                    final body = statusCheck['response_body'] as Map<String, dynamic>? ?? {};
+                    ref.invalidate(singleClientOptionsProvider);
+                    return body;
+                  }
+                } catch (_) {}
+
                 final offlineRes = await syncMgr.queueOfflineSingleCollection(
-                  clientName: clientObj['client_name']?.toString() ?? 'Client',
+                  clientName: singleClientName,
                   collectionDate: dateStr,
                   payload: payload,
                 );

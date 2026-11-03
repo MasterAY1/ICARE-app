@@ -23,6 +23,7 @@ from api.routes import users
 from api.routes import reports
 from api.routes import onboarding
 from api.routes import telemetry
+from api.routes import transactions
 from auth.session import get_auth_secret
 from database.connection import verify_supabase_credentials
 import os
@@ -175,12 +176,14 @@ app.include_router(users.router)
 app.include_router(reports.router)
 app.include_router(onboarding.router)
 app.include_router(telemetry.router)
+app.include_router(transactions.router)
 
 
 @app.get("/health")
 @app.get("/api/health")
+@app.get("/api/health/liveness")
 def health_check():
-    """Service health check."""
+    """Fast process liveness check."""
     sentry_active = False
     try:
         import sentry_sdk
@@ -193,6 +196,67 @@ def health_check():
         "version": "1.0.0",
         "apm_enabled": sentry_active
     }
+
+
+@app.get("/api/health/ready")
+def readiness_check():
+    """
+    Deep readiness check verifying database connectivity, roundtrip latency,
+    and external service circuit breaker status.
+    Fails closed with HTTP 503 if the database is unreachable or circuit is open.
+    """
+    import time
+    from services.circuit_breaker import get_circuit_breaker, CircuitState
+    from database.connection import get_supabase_client
+
+    db_cb = get_circuit_breaker("database")
+    cb_status = db_cb.get_status()
+
+    if cb_status.get("state") == CircuitState.OPEN.value:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "unhealthy",
+                "service": "ICARE Core Banking API",
+                "ready": False,
+                "database": {"status": "circuit_open", "details": cb_status},
+                "circuit_breaker": cb_status
+            }
+        )
+
+    t0 = time.monotonic()
+    try:
+        # Lightweight database connectivity verification
+        client = get_supabase_client()
+        res = client.table("clients").select("id").limit(1).execute()
+        latency_ms = round((time.monotonic() - t0) * 1000, 2)
+        return {
+            "status": "ready",
+            "service": "ICARE Core Banking API",
+            "version": "1.0.0",
+            "ready": True,
+            "database": {
+                "status": "connected",
+                "latency_ms": latency_ms
+            },
+            "circuit_breaker": cb_status
+        }
+    except Exception as ex:
+        latency_ms = round((time.monotonic() - t0) * 1000, 2)
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "unhealthy",
+                "service": "ICARE Core Banking API",
+                "ready": False,
+                "database": {
+                    "status": "disconnected",
+                    "error": str(ex),
+                    "latency_ms": latency_ms
+                },
+                "circuit_breaker": cb_status
+            }
+        )
 
 
 import os

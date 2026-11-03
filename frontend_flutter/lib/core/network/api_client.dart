@@ -191,19 +191,48 @@ class ApiClient {
     _authToken = token;
   }
 
-  Future<Response> get(String path, {Map<String, dynamic>? queryParameters, Options? options}) async {
-    return _dio.get(path, queryParameters: queryParameters, options: options);
+  /// Queries backend to recover authoritative status of an in-flight or interrupted transaction.
+  /// Prevents duplicate financial transactions after network dropouts.
+  Future<Map<String, dynamic>?> checkTransactionStatus(String idempotencyKey) async {
+    if (idempotencyKey.isEmpty) return null;
+    try {
+      final res = await _dio.get('/api/v1/transactions/status/$idempotencyKey');
+      if (res.statusCode == 200 && res.data is Map<String, dynamic>) {
+        return res.data as Map<String, dynamic>;
+      }
+      return null;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) {
+        // Backend has no record of this transaction key
+        return {'status': 'NotFound', 'response_code': 404};
+      }
+      rethrow;
+    }
   }
 
-  Future<Response> post(String path, {dynamic data, Map<String, dynamic>? queryParameters, Options? options}) async {
-    return _dio.post(path, data: data, queryParameters: queryParameters, options: options);
+  /// Evaluates whether an error represents a permanent validation or business rule failure
+  /// that must never be retried or queued for offline retry.
+  static bool isPermanentError(dynamic error) {
+    if (error is DioException && error.response != null) {
+      final code = error.response!.statusCode;
+      return code == 400 || code == 401 || code == 403 || code == 422;
+    }
+    return false;
   }
 
-  Future<Response> put(String path, {dynamic data, Map<String, dynamic>? queryParameters, Options? options}) async {
-    return _dio.put(path, data: data, queryParameters: queryParameters, options: options);
+  Future<Response> get(String path, {Map<String, dynamic>? queryParameters, Options? options, CancelToken? cancelToken}) async {
+    return _dio.get(path, queryParameters: queryParameters, options: options, cancelToken: cancelToken);
   }
 
-  Future<Response> delete(String path, {dynamic data, Map<String, dynamic>? queryParameters, Options? options}) async {
-    return _dio.delete(path, data: data, queryParameters: queryParameters, options: options);
+  Future<Response> post(String path, {dynamic data, Map<String, dynamic>? queryParameters, Options? options, CancelToken? cancelToken}) async {
+    return _dio.post(path, data: data, queryParameters: queryParameters, options: options, cancelToken: cancelToken);
+  }
+
+  Future<Response> put(String path, {dynamic data, Map<String, dynamic>? queryParameters, Options? options, CancelToken? cancelToken}) async {
+    return _dio.put(path, data: data, queryParameters: queryParameters, options: options, cancelToken: cancelToken);
+  }
+
+  Future<Response> delete(String path, {dynamic data, Map<String, dynamic>? queryParameters, Options? options, CancelToken? cancelToken}) async {
+    return _dio.delete(path, data: data, queryParameters: queryParameters, options: options, cancelToken: cancelToken);
   }
 }

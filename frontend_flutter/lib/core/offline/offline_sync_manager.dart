@@ -83,7 +83,11 @@ class OfflineSyncManager {
     required String collectionDate,
     required Map<String, dynamic> payload,
   }) async {
-    final key = generateIdempotencyKey(groupName);
+    // Preserve existing idempotency key if pre-assigned to prevent duplicate posting
+    final existingKey = payload['idempotency_key']?.toString();
+    final key = (existingKey != null && existingKey.isNotEmpty)
+        ? existingKey
+        : generateIdempotencyKey(groupName);
     
     // Inject idempotency key and batch ID into payload
     final augmentedPayload = Map<String, dynamic>.from(payload);
@@ -136,7 +140,11 @@ class OfflineSyncManager {
     required String collectionDate,
     required Map<String, dynamic> payload,
   }) async {
-    final key = generateIdempotencyKey('SC_$clientName');
+    // Preserve existing idempotency key if pre-assigned to prevent duplicate posting
+    final existingKey = payload['idempotency_key']?.toString();
+    final key = (existingKey != null && existingKey.isNotEmpty)
+        ? existingKey
+        : generateIdempotencyKey('SC_$clientName');
 
     // Inject idempotency key and batch ID into payload
     final augmentedPayload = Map<String, dynamic>.from(payload);

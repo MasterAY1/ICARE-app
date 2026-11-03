@@ -114,6 +114,55 @@ def get_auth_rate_limiter() -> AuthenticationRateLimiter:
     return _GLOBAL_AUTH_RATE_LIMITER
 
 
+class FinancialRateLimiter:
+    """
+    Sliding-window concurrency & rapid double-click protector for mission-critical
+    financial mutation endpoints (repayments, disbursements, savings, adjustments).
+    Complies with Strict Zero-Emoji Governance.
+    """
+    def __init__(self, max_requests: int = 10, window_seconds: float = 5.0):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._lock = threading.Lock()
+        self._requests: Dict[str, List[float]] = {}
+
+    def check_rate_limit(self, key: Optional[str]) -> Tuple[bool, int]:
+        """
+        Checks if the caller has exceeded the allowable financial submission burst rate.
+        Returns: (is_limited, retry_after_seconds)
+        """
+        if not key:
+            return False, 0
+        norm_key = str(key).strip().lower()
+        now = time.monotonic()
+
+        with self._lock:
+            timestamps = self._requests.get(norm_key, [])
+            cutoff = now - self.window_seconds
+            valid_timestamps = [ts for ts in timestamps if ts > cutoff]
+
+            if len(valid_timestamps) >= self.max_requests:
+                oldest = valid_timestamps[0]
+                retry_after = max(1, int(self.window_seconds - (now - oldest)) + 1)
+                return True, retry_after
+
+            valid_timestamps.append(now)
+            self._requests[norm_key] = valid_timestamps
+            return False, 0
+
+    def clear_all(self) -> None:
+        """Resets all records (for testing)."""
+        with self._lock:
+            self._requests.clear()
+
+
+_GLOBAL_FINANCIAL_RATE_LIMITER = FinancialRateLimiter()
+
+
+def get_financial_rate_limiter() -> FinancialRateLimiter:
+    return _GLOBAL_FINANCIAL_RATE_LIMITER
+
+
 def extract_client_ip(request: Request) -> str:
     """Extracts client IP address safely, checking proxy headers."""
     forwarded = request.headers.get("x-forwarded-for")

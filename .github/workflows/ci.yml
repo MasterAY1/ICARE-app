@@ -53,6 +53,7 @@ jobs:
                  tests/test_financial_transaction_integrity.py \
                  tests/test_security_and_access_control.py \
                  tests/test_initial_password_rotation.py \
+                 tests/test_network_resilience_and_reliability.py \
                  -v
 
   frontend-check:
