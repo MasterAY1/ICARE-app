@@ -222,6 +222,7 @@ class AreaManagerService:
         Builds side-by-side branch comparison matrix for Area 1 branches (Ogijo, Ikorodu, Kola).
         Includes capital deployment (Principal Disbursed) and Active Loan Book Dynamics
         (Active Credit vs Closed Members Full Payments).
+        Optimized with multi-branch batch queries to prevent N+1 query degradation.
         """
         if not target_date:
             target_date = date.today()
@@ -232,40 +233,181 @@ class AreaManagerService:
         e_str = e_date.isoformat()
 
         assigned = cls.get_assigned_branches(uow, am_user_id)
+        if not assigned:
+            return []
+
+        assigned_bids = [b["branch_id"] for b in assigned if b.get("branch_id")]
         ng_holidays = get_nigerian_holidays(years=[target_date.year])
         is_weekend = (target_date.weekday() >= 5)
         date_str = target_date.isoformat()
 
+        # -------------------------------------------------------------
+        # BATCH PRE-FETCH PHASE: Execute multi-branch batch queries
+        # -------------------------------------------------------------
+        
+        # 1. Branch Managers by branch
+        bms_by_branch = {}
+        try:
+            users = uow.users.find_by_branch_ids(assigned_bids)
+            for u in users:
+                if u.role in ["BM", "Branch Manager"] and u.branch_id:
+                    bms_by_branch[str(u.branch_id)] = u.full_name or u.username
+        except Exception:
+            pass
+
+        # 2. Branch closures
+        closed_branches_map = {}
+        if is_weekend or (target_date in ng_holidays):
+            reason = ng_holidays.get(target_date) if (target_date in ng_holidays) else "Weekend"
+            for bid in assigned_bids:
+                closed_branches_map[bid] = reason
+        else:
+            try:
+                bids_filter = ",".join(assigned_bids)
+                q_cl = uow.client.table("branch_closures").select("*") \
+                    .lte("start_date", date_str) \
+                    .gte("end_date", date_str) \
+                    .or_(f"branch_id.is.null,branch_id.in.({bids_filter})") \
+                    .execute()
+                for cl in (q_cl.data or []):
+                    c_bid = cl.get("branch_id")
+                    reason = cl.get("reason") or "Branch Closure"
+                    if c_bid is None:
+                        for b_id in assigned_bids:
+                            closed_branches_map[b_id] = reason
+                    else:
+                        closed_branches_map[str(c_bid)] = reason
+            except Exception:
+                pass
+
+        # 3. Vault Cash (Account 1000) batch query
+        vault_cash_by_branch = {}
+        try:
+            res_leg = uow.client.table("financial_ledger_entries") \
+                .select("branch_id, amount, side") \
+                .in_("branch_id", assigned_bids) \
+                .eq("account_code", "1000") \
+                .lte("created_at", f"{date_str}T23:59:59") \
+                .execute()
+            for r in (res_leg.data or []):
+                bid_k = str(r.get("branch_id"))
+                amt = float(r.get("amount") or 0.0)
+                if r.get("side") == "Debit":
+                    vault_cash_by_branch[bid_k] = vault_cash_by_branch.get(bid_k, 0.0) + amt
+                elif r.get("side") == "Credit":
+                    vault_cash_by_branch[bid_k] = vault_cash_by_branch.get(bid_k, 0.0) - amt
+        except Exception:
+            pass
+
+        # 4. Defaulters count batch query
+        defaulters_by_branch = {}
+        try:
+            d_res = uow.client.table("loans").select("branch_id, loan_id") \
+                .in_("branch_id", assigned_bids) \
+                .in_("status", ["DEFAULTER", "Defaulter"]) \
+                .execute()
+            for d in (d_res.data or []):
+                bid_k = str(d.get("branch_id"))
+                defaulters_by_branch[bid_k] = defaulters_by_branch.get(bid_k, 0) + 1
+        except Exception:
+            pass
+
+        # 5. Area EOD confirmations batch query
+        eod_by_branch = {}
+        try:
+            eod_q = uow.client.table("area_eod_confirmations").select("branch_id, status, cash_variance") \
+                .in_("branch_id", assigned_bids) \
+                .eq("closure_date", date_str) \
+                .execute()
+            for e in (eod_q.data or []):
+                eod_by_branch[str(e.get("branch_id"))] = e
+        except Exception:
+            pass
+
+        # 6. Master cashbook status batch query
+        mc_by_branch = {}
+        try:
+            mc_q = uow.client.table("master_cashbook").select("branch_id, status, difference") \
+                .in_("branch_id", assigned_bids) \
+                .eq("date", date_str) \
+                .execute()
+            for m in (mc_q.data or []):
+                mc_by_branch[str(m.get("branch_id"))] = m
+        except Exception:
+            pass
+
+        # 7. Correction requests count batch query
+        rev_by_branch = {}
+        try:
+            res_rv = uow.client.table("correction_requests") \
+                .select("branch_id, id") \
+                .in_("branch_id", assigned_bids) \
+                .gte("approval_date", f"{date_str}T00:00:00") \
+                .lte("approval_date", f"{date_str}T23:59:59") \
+                .eq("status", "Approved") \
+                .execute()
+            for rv in (res_rv.data or []):
+                bid_k = str(rv.get("branch_id"))
+                rev_by_branch[bid_k] = rev_by_branch.get(bid_k, 0) + 1
+        except Exception:
+            pass
+
+        # 8. Capital deployment (disbursements) batch query
+        disb_by_branch = {}
+        try:
+            q_disb = uow.client.table("loans") \
+                .select("branch_id, loan_id, loan_amount, active_credit, extra_fields, disbursement_date, start_date, status") \
+                .in_("branch_id", assigned_bids) \
+                .gte("disbursement_date", s_str) \
+                .lte("disbursement_date", e_str) \
+                .execute()
+            disb_rows = q_disb.data or []
+            if not disb_rows:
+                q_disb_fb = uow.client.table("loans") \
+                    .select("branch_id, loan_id, loan_amount, active_credit, extra_fields, disbursement_date, start_date, status") \
+                    .in_("branch_id", assigned_bids) \
+                    .gte("start_date", s_str) \
+                    .lte("start_date", e_str) \
+                    .execute()
+                disb_rows = q_disb_fb.data or []
+            for l in disb_rows:
+                bid_k = str(l.get("branch_id"))
+                disb_by_branch.setdefault(bid_k, []).append(l)
+        except Exception:
+            pass
+
+        # 9. Payoff excess records batch query
+        payoff_by_branch = {}
+        try:
+            q_pay = uow.client.table("loan_payoff_excess_records") \
+                .select("branch_id, loan_id, active_credit_settled, record_type") \
+                .in_("branch_id", assigned_bids) \
+                .gte("date", s_str) \
+                .lte("date", e_str) \
+                .in_("record_type", ["FULL_PAYOFF", "FULL_PAYOFF_AND_EXCESS", "FULL_PAYOFF_WITH_EXCESS"]) \
+                .execute()
+            for p in (q_pay.data or []):
+                bid_k = str(p.get("branch_id"))
+                payoff_by_branch.setdefault(bid_k, []).append(p)
+        except Exception:
+            pass
+
+        # -------------------------------------------------------------
+        # MATRIX ASSEMBLY PHASE: O(1) in-memory resolution per branch
+        # -------------------------------------------------------------
         matrix = []
 
         for b in assigned:
             bid = b["branch_id"]
             bname = b["name"]
+            bid_s = str(bid)
 
             # 1. BM Name
-            bm_name = "Unassigned"
-            try:
-                users = uow.users.find_by_branch_id(bid)
-                bms = [u for u in users if u.role in ["BM", "Branch Manager"]]
-                if bms:
-                    bm_name = bms[0].full_name or bms[0].username
-            except Exception:
-                pass
+            bm_name = bms_by_branch.get(bid_s, "Unassigned")
 
             # 2. Closure check
-            is_b_closed = is_weekend or (target_date in ng_holidays)
-            closure_reason = ng_holidays.get(target_date) if (target_date in ng_holidays) else ("Weekend" if is_weekend else "")
-            try:
-                q_cl = uow.client.table("branch_closures").select("*") \
-                    .lte("start_date", date_str) \
-                    .gte("end_date", date_str) \
-                    .or_(f"branch_id.is.null,branch_id.eq.{bid}") \
-                    .execute()
-                if q_cl.data:
-                    is_b_closed = True
-                    closure_reason = q_cl.data[0].get("reason") or "Branch Closure"
-            except Exception:
-                pass
+            is_b_closed = bid in closed_branches_map or bid_s in closed_branches_map
+            closure_reason = closed_branches_map.get(bid, closed_branches_map.get(bid_s, ""))
 
             # 3. Collections & Compliance
             exp = 0.0
@@ -281,20 +423,7 @@ class AreaManagerService:
                     pass
 
             # 4. Vault Cash (Account 1000)
-            vault_cash = 0.0
-            try:
-                res_leg = uow.client.table("financial_ledger_entries") \
-                    .select("amount, side") \
-                    .eq("branch_id", bid) \
-                    .eq("account_code", "1000") \
-                    .lte("created_at", f"{date_str}T23:59:59") \
-                    .execute()
-                leg_rows = res_leg.data or []
-                deb = sum(float(r["amount"]) for r in leg_rows if r.get("side") == "Debit")
-                crd = sum(float(r["amount"]) for r in leg_rows if r.get("side") == "Credit")
-                vault_cash = max(0.0, deb - crd)
-            except Exception:
-                pass
+            vault_cash = max(0.0, vault_cash_by_branch.get(bid_s, 0.0))
 
             # 5. PAR & Defaulters
             b_par = "0.0%"
@@ -303,32 +432,21 @@ class AreaManagerService:
             except Exception:
                 pass
 
-            b_defaulters = 0
-            try:
-                d_res = uow.client.table("loans").select("loan_id").eq("branch_id", bid).in_("status", ["DEFAULTER", "Defaulter"]).execute()
-                b_defaulters = len(d_res.data or [])
-            except Exception:
-                pass
+            b_defaulters = defaulters_by_branch.get(bid_s, 0)
 
             # 6. EOD & Cashbook Status
             eod_status = "PENDING"
             cash_diff = 0.0
-            try:
-                # Check area_eod_confirmations first
-                eod_q = uow.client.table("area_eod_confirmations").select("status, cash_variance").eq("branch_id", bid).eq("closure_date", date_str).execute()
-                if eod_q.data:
-                    eod_status = eod_q.data[0].get("status")
-                    cash_diff = float(eod_q.data[0].get("cash_variance") or 0.0)
-                else:
-                    # Check master_cashbook status
-                    mc_q = uow.client.table("master_cashbook").select("status, difference").eq("branch_id", bid).eq("date", date_str).execute()
-                    if mc_q.data:
-                        mc_stat = mc_q.data[0].get("status")
-                        cash_diff = float(mc_q.data[0].get("difference") or 0.0)
-                        if mc_stat in ["Closed", "Verified"]:
-                            eod_status = "READY_FOR_REVIEW"
-            except Exception:
-                pass
+            if bid_s in eod_by_branch:
+                e_rec = eod_by_branch[bid_s]
+                eod_status = e_rec.get("status", "PENDING")
+                cash_diff = float(e_rec.get("cash_variance") or 0.0)
+            elif bid_s in mc_by_branch:
+                m_rec = mc_by_branch[bid_s]
+                mc_stat = m_rec.get("status")
+                cash_diff = float(m_rec.get("difference") or 0.0)
+                if mc_stat in ["Closed", "Verified"]:
+                    eod_status = "READY_FOR_REVIEW"
 
             # Operational Status label
             if is_b_closed:
@@ -341,123 +459,57 @@ class AreaManagerService:
                 op_status = "Normal"
 
             # 7. Error Reversals & Corrections Count
-            b_rev_cnt = 0
-            try:
-                res_rv = uow.client.table("correction_requests") \
-                    .select("id") \
-                    .eq("branch_id", bid) \
-                    .gte("approval_date", f"{date_str}T00:00:00") \
-                    .lte("approval_date", f"{date_str}T23:59:59") \
-                    .eq("status", "Approved") \
-                    .execute()
-                b_rev_cnt = len(res_rv.data or [])
-            except Exception:
-                pass
+            b_rev_cnt = rev_by_branch.get(bid_s, 0)
 
-            # 8. Capital Deployment & Active Loan Book Dynamics (BR-DASH-005, BR-DASH-006, BR-CLI-005)
+            # 8. Capital Deployment & Active Loan Book Dynamics
             loans_disbursed_count = 0
             principal_disbursed_amount = 0.0
             active_credit_disbursed_amount = 0.0
-            full_payments_count = 0
+            for l in disb_by_branch.get(bid_s, []):
+                st = str(l.get("status") or "").upper()
+                if st not in ["ACTIVE", "APPROVED", "COMPLETED", "CLOSED"]:
+                    continue
+                ef = l.get("extra_fields")
+                if isinstance(ef, dict) and ef.get("is_legacy") is True:
+                    continue
+                loans_disbursed_count += 1
+                principal_disbursed_amount += float(l.get("loan_amount") or 0.0)
+                active_credit_disbursed_amount += float(l.get("active_credit") or l.get("loan_amount") or 0.0)
+
+            # Full payments from payoff records
             full_payments_active_credit = 0.0
+            settled_lids = set()
+            for p in payoff_by_branch.get(bid_s, []):
+                lid_s = str(p.get("loan_id") or "")
+                if lid_s and lid_s not in settled_lids:
+                    settled_lids.add(lid_s)
+                    full_payments_active_credit += float(p.get("active_credit_settled") or 0.0)
 
-            try:
-                q_disb = uow.client.table("loans") \
-                    .select("loan_id, loan_amount, active_credit, extra_fields, disbursement_date, start_date, status") \
-                    .eq("branch_id", bid) \
-                    .gte("disbursement_date", s_str) \
-                    .lte("disbursement_date", e_str) \
-                    .execute()
-                disb_data = q_disb.data or []
-                if not disb_data:
-                    q_disb_fb = uow.client.table("loans") \
-                        .select("loan_id, loan_amount, active_credit, extra_fields, disbursement_date, start_date, status") \
-                        .eq("branch_id", bid) \
-                        .gte("start_date", s_str) \
-                        .lte("start_date", e_str) \
-                        .execute()
-                    disb_data = q_disb_fb.data or []
-
-                for l in disb_data:
-                    st = str(l.get("status") or "").upper()
-                    if st not in ["ACTIVE", "APPROVED", "COMPLETED", "CLOSED"]:
-                        continue
-                    ef = l.get("extra_fields")
-                    if isinstance(ef, dict) and ef.get("is_legacy") is True:
-                        continue
-                    loans_disbursed_count += 1
-                    principal_disbursed_amount += float(l.get("loan_amount") or 0.0)
-                    active_credit_disbursed_amount += float(l.get("active_credit") or l.get("loan_amount") or 0.0)
-            except Exception:
-                pass
-
-            try:
-                # Query Full Payments (closed members) from loan_payoff_excess_records (BR-DASH-005)
-                q_pay = uow.client.table("loan_payoff_excess_records") \
-                    .select("loan_id, active_credit_settled, record_type") \
-                    .eq("branch_id", bid) \
-                    .gte("date", s_str) \
-                    .lte("date", e_str) \
-                    .in_("record_type", ["FULL_PAYOFF", "FULL_PAYOFF_AND_EXCESS", "FULL_PAYOFF_WITH_EXCESS"]) \
-                    .execute()
-                pay_data = q_pay.data or []
-                settled_lids = set()
-                for p in pay_data:
-                    lid_s = str(p.get("loan_id") or "")
-                    if lid_s and lid_s not in settled_lids:
-                        settled_lids.add(lid_s)
-                        full_payments_active_credit += float(p.get("active_credit_settled") or 0.0)
-
-                # Dynamic check for loans completed in period
-                q_comp = uow.client.table("loans") \
-                    .select("loan_id, active_credit, loan_amount") \
-                    .eq("branch_id", bid) \
-                    .in_("status", ["COMPLETED", "Completed", "Closed", "CLOSED"]) \
-                    .execute()
-                for cl in (q_comp.data or []):
-                    clid_s = str(cl.get("loan_id") or "")
-                    if clid_s and clid_s not in settled_lids:
-                        q_rep = uow.client.table("repayments").select("id") \
-                            .eq("loan_id", clid_s) \
-                            .gte("date", s_str) \
-                            .lte("date", e_str) \
-                            .limit(1) \
-                            .execute()
-                        if q_rep.data:
-                            settled_lids.add(clid_s)
-                            full_payments_active_credit += float(cl.get("active_credit") or cl.get("loan_amount") or 0.0)
-
-                full_payments_count = len(settled_lids)
-            except Exception:
-                pass
-
-            net_loan_count = loans_disbursed_count - full_payments_count
-            net_active_credit_volume = active_credit_disbursed_amount - full_payments_active_credit
+            full_payments_count = len(settled_lids)
+            net_loan_book_growth = round(active_credit_disbursed_amount - full_payments_active_credit, 2)
 
             matrix.append({
                 "branch_id": bid,
                 "branch_name": bname,
                 "bm_name": bm_name,
+                "operational_status": op_status,
                 "is_closed": is_b_closed,
                 "closure_reason": closure_reason,
-                "expected_collection": exp,
-                "collected": coll,
-                "outstanding_today": max(0.0, exp - coll),
+                "expected_collections": exp,
+                "actual_collections": coll,
                 "compliance_pct": comp,
                 "vault_cash_acct_1000": vault_cash,
                 "par": b_par,
                 "defaulters_count": b_defaulters,
-                "cash_variance": cash_diff,
-                "eod_status": eod_status,
-                "operational_status": op_status,
                 "reversals_count": b_rev_cnt,
+                "eod_status": eod_status,
+                "cash_difference": cash_diff,
                 "loans_disbursed_count": loans_disbursed_count,
                 "principal_disbursed_amount": principal_disbursed_amount,
                 "active_credit_disbursed_amount": active_credit_disbursed_amount,
                 "full_payments_count": full_payments_count,
                 "full_payments_active_credit": full_payments_active_credit,
-                "net_loan_count": net_loan_count,
-                "net_active_credit_volume": net_active_credit_volume
+                "net_loan_book_growth": net_loan_book_growth
             })
 
         return matrix

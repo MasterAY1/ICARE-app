@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,13 @@ import '../data/models/bm_dashboard_models.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 
 final bmDashboardDataProvider = FutureProvider.autoDispose<BmDashboardDataModel>((ref) async {
+  // Retain data in memory for 60 seconds after unmount to prevent tab-switching refetches
+  final link = ref.keepAlive();
+  final timer = Timer(const Duration(seconds: 60), () {
+    link.close();
+  });
+  ref.onDispose(() => timer.cancel());
+
   final api = ref.watch(bmApiServiceProvider);
   final isOnline = ref.watch(isOnlineProvider);
   final dbService = ref.watch(offlineDatabaseServiceProvider);

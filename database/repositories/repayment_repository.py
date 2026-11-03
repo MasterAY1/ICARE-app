@@ -6,6 +6,7 @@ from mappers.base_mappers import RepaymentMapper
 from interfaces.repayment_repository import RepaymentRepository
 from database.repositories.base_repository import BaseRepository
 from core.exceptions import RepositoryError
+from services.reference_cache_service import ReferenceCacheService
 
 class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository):
     _branch_cache = {}
@@ -26,6 +27,20 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
         except (ValueError, TypeError, AttributeError):
             pass
         b_key = str(branch_name).strip().lower()
+        def _fetch_branch_db(bname: str):
+            res = self.client.table("branches").select("branch_id").eq("name", bname).execute()
+            if res.data:
+                return res.data[0]
+            res_ci = self.client.table("branches").select("branch_id").ilike("name", bname).execute()
+            if res_ci.data:
+                return res_ci.data[0]
+            return None
+        try:
+            cached_b = ReferenceCacheService.get_branch_by_name(branch_name, _fetch_branch_db)
+            if cached_b and "branch_id" in cached_b:
+                return cached_b["branch_id"]
+        except Exception:
+            pass
         if hasattr(self, "_branch_cache") and b_key in self._branch_cache:
             return self._branch_cache[b_key]
         try:
@@ -166,7 +181,7 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
             sliced = all_records[start:end+1]
             return [RepaymentMapper.to_domain(d) for d in sliced]
 
-    def _prepare_db_data(self, entity: Repayment) -> dict:
+    def _prepare_db_data(self, entity: Repayment, pre_resolved: Optional[dict] = None) -> dict:
         import uuid
         def clean_uuid(val):
             if not val or val in ["None", "null", "undefined"]:
@@ -179,8 +194,15 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
             except ValueError:
                 return None
 
-        branch_id = entity.extra_fields.get("branch_id") or self._resolve_branch_id(entity.branch)
-        officer_id = entity.extra_fields.get("officer_id") or self._resolve_officer_id(entity.credit_officer)
+        pr = pre_resolved or {}
+        pr_b = pr.get("branches", {})
+        pr_o = pr.get("officers", {})
+        pr_c = pr.get("clients", {})
+        pr_l = pr.get("loans", {})
+        pr_lbc = pr.get("loans_by_client", {})
+
+        branch_id = entity.extra_fields.get("branch_id") or pr_b.get(entity.branch) or self._resolve_branch_id(entity.branch)
+        officer_id = entity.extra_fields.get("officer_id") or pr_o.get(entity.credit_officer) or self._resolve_officer_id(entity.credit_officer)
 
         amt = float(entity.amount_paid or 0.0)
         if amt <= 0 and entity.loan_repayment_amount > 0:
@@ -188,20 +210,21 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
         if amt < 0:
             amt = 0.0
 
-        resolved_loan = self._resolve_loan_id(entity.loan_id)
-        if not resolved_loan:
-            resolved_loan = self._resolve_loan_id(entity.client_id)
-
         c_id = entity.client_id
-        if c_id and not clean_uuid(c_id):
+        c_id_clean = clean_uuid(c_id) or pr_c.get(str(c_id))
+        if not c_id_clean and c_id and not clean_uuid(c_id):
             try:
                 res_c = self.client.table("clients").select("client_id").eq("client_code", c_id).execute()
                 if res_c.data:
-                    c_id = res_c.data[0]["client_id"]
+                    c_id_clean = res_c.data[0]["client_id"]
             except Exception:
                 pass
 
-        c_id_clean = clean_uuid(c_id)
+        resolved_loan = clean_uuid(entity.loan_id) or pr_l.get(str(entity.loan_id)) or pr_lbc.get(c_id_clean)
+        if not resolved_loan:
+            resolved_loan = self._resolve_loan_id(entity.loan_id)
+            if not resolved_loan and c_id_clean:
+                resolved_loan = self._resolve_loan_id(c_id_clean)
         resolved_loan_clean = clean_uuid(resolved_loan)
 
         created_at_val = None
@@ -248,7 +271,80 @@ class SupabaseRepaymentRepository(BaseRepository[Repayment], RepaymentRepository
     def create_many(self, repayments: List[Repayment]) -> None:
         if not repayments:
             return
-        data = [self._prepare_db_data(R) for R in repayments]
+
+        import uuid
+        def _is_uuid(val):
+            if not val or val in ["None", "null", "undefined"]:
+                return False
+            try:
+                uuid.UUID(str(val).strip())
+                return True
+            except ValueError:
+                return False
+
+        # Batch resolve branch IDs, officer IDs, client codes, and loan IDs ahead of iteration
+        pre_resolved = {
+            "branches": {},
+            "officers": {},
+            "clients": {},
+            "loans": {},
+            "loans_by_client": {}
+        }
+
+        # 1. Distinct branches
+        branches_to_resolve = set()
+        for r in repayments:
+            b_name = r.branch or (r.extra_fields.get("branch") if hasattr(r, "extra_fields") and isinstance(r.extra_fields, dict) else None)
+            if b_name and not _is_uuid(b_name):
+                branches_to_resolve.add(str(b_name).strip())
+        for b_name in branches_to_resolve:
+            try:
+                pre_resolved["branches"][b_name] = self._resolve_branch_id(b_name)
+            except Exception:
+                pass
+
+        # 2. Distinct officers
+        officers_to_resolve = set()
+        for r in repayments:
+            off_name = r.credit_officer or (r.extra_fields.get("officer") if hasattr(r, "extra_fields") and isinstance(r.extra_fields, dict) else None)
+            if off_name and not _is_uuid(off_name):
+                officers_to_resolve.add(str(off_name).strip())
+        for off_name in officers_to_resolve:
+            try:
+                pre_resolved["officers"][off_name] = self._resolve_officer_id(off_name)
+            except Exception:
+                pass
+
+        # 3. Batch resolve non-UUID client codes
+        client_codes_to_resolve = set()
+        for r in repayments:
+            cid = str(r.client_id or "").strip()
+            if cid and not _is_uuid(cid) and not cid.startswith("GROUP-") and not cid.startswith("GLOBAL-"):
+                client_codes_to_resolve.add(cid)
+        if client_codes_to_resolve:
+            try:
+                res_c = self.client.table("clients").select("client_id, client_code").in_("client_code", list(client_codes_to_resolve)).execute()
+                for c in (res_c.data or []):
+                    pre_resolved["clients"][c["client_code"]] = c["client_id"]
+            except Exception:
+                pass
+
+        # 4. Batch resolve client UUIDs to active loans
+        clients_needing_loan = set()
+        for r in repayments:
+            lid = str(r.loan_id or "") if _is_uuid(r.loan_id) else None
+            cid = str(r.client_id or "") if _is_uuid(r.client_id) else pre_resolved["clients"].get(str(r.client_id))
+            if (not lid or lid == cid) and cid:
+                clients_needing_loan.add(cid)
+        if clients_needing_loan:
+            try:
+                res_l = self.client.table("loans").select("loan_id, client_id").in_("client_id", list(clients_needing_loan)).in_("status", ["Active", "Approved", "ACTIVE"]).execute()
+                for l in (res_l.data or []):
+                    pre_resolved["loans_by_client"][l["client_id"]] = l["loan_id"]
+            except Exception:
+                pass
+
+        data = [self._prepare_db_data(R, pre_resolved=pre_resolved) for R in repayments]
         for d in data:
             if "id" in d and not d["id"]:
                 del d["id"]

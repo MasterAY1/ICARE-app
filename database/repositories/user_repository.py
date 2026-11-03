@@ -46,6 +46,14 @@ class SupabaseUserRepository(BaseRepository[User], UserRepository):
         res = self._execute(query)
         return [UserMapper.to_domain(d) for d in res.data]
 
+    def find_by_branch_ids(self, branch_ids: List[str]) -> List[User]:
+        """Return all users belonging to any of the specified branches in a single query."""
+        if not branch_ids:
+            return []
+        query = self.client.table(self.table_name).select(self.columns).in_("branch_id", branch_ids)
+        res = self._execute(query)
+        return [UserMapper.to_domain(d) for d in res.data]
+
     # ------------------------------------------------------------------
     # Area-Manager branch assignments
     # ------------------------------------------------------------------

@@ -204,9 +204,9 @@ def get_supabase_client() -> Client:
     """
     url, key, _ = resolve_supabase_credentials()
     pool_limits = httpx.Limits(
-        max_keepalive_connections=20,
-        max_connections=50,
-        keepalive_expiry=30.0
+        max_keepalive_connections=50,
+        max_connections=100,
+        keepalive_expiry=60.0
     )
     transport = RetryingHTTPTransport(retries=3, limits=pool_limits)
     http_client = httpx.Client(

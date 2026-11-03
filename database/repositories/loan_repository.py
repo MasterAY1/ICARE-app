@@ -6,6 +6,7 @@ from mappers.base_mappers import LoanMapper
 from interfaces.loan_repository import LoanRepository
 from database.repositories.base_repository import BaseRepository
 from core.exceptions import RepositoryError
+from services.reference_cache_service import ReferenceCacheService
 
 class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
     def __init__(self, client):
@@ -26,6 +27,18 @@ class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
         except (ValueError, TypeError, AttributeError):
             pass
         b_key = str(branch_name).strip().lower()
+        def _fetch_branch_db(bname: str):
+            res = self.client.table("branches").select("branch_id").eq("name", bname).execute()
+            if res.data: return res.data[0]
+            res_ci = self.client.table("branches").select("branch_id").ilike("name", bname).execute()
+            if res_ci.data: return res_ci.data[0]
+            return None
+        try:
+            cached_b = ReferenceCacheService.get_branch_by_name(branch_name, _fetch_branch_db)
+            if cached_b and "branch_id" in cached_b:
+                return cached_b["branch_id"]
+        except Exception:
+            pass
         if hasattr(self, "_branch_cache") and b_key in self._branch_cache:
             return self._branch_cache[b_key]
         try:
@@ -72,10 +85,22 @@ class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
     def _resolve_product_id(self, prod_name: str) -> str:
         if not prod_name:
             raise ValueError("Product name cannot be empty when resolving product_id")
+        p_clean = str(prod_name).strip().lower()
         try:
-            res = self.client.table("loan_products").select("product_id").eq("name", prod_name).execute()
+            cached_prod = ReferenceCacheService.get(f"metadata:loan_products:by_name:{p_clean}")
+            if cached_prod and "product_id" in cached_prod:
+                return cached_prod["product_id"]
+        except Exception:
+            pass
+        try:
+            res = self.client.table("loan_products").select("product_id, name").eq("name", prod_name).execute()
             if res.data:
-                return res.data[0]["product_id"]
+                pid = res.data[0]["product_id"]
+                try:
+                    ReferenceCacheService.set(f"metadata:loan_products:by_name:{p_clean}", res.data[0])
+                except Exception:
+                    pass
+                return pid
         except Exception as e:
             raise ValueError(f"Failed to resolve product_id for {prod_name}: {str(e)}")
         raise ValueError(f"Product '{prod_name}' not found")

@@ -2,6 +2,7 @@ from typing import List, Optional
 from datetime import date, datetime
 from domain.entities.savings import IndividualSavings, GroupSavings, MiscSavings, LapsSavings
 from database.repositories.base_repository import BaseRepository
+from services.reference_cache_service import ReferenceCacheService
 
 class SupabaseSavingsRepository(BaseRepository):
     """Base repository for all savings buckets"""
@@ -30,6 +31,18 @@ class SupabaseSavingsRepository(BaseRepository):
         except (ValueError, TypeError, AttributeError):
             pass
         b_key = str(branch_name).strip().lower()
+        def _fetch_branch_db(bname: str):
+            res = self.client.table("branches").select("branch_id").eq("name", bname).execute()
+            if res.data: return res.data[0]
+            res_ci = self.client.table("branches").select("branch_id").ilike("name", bname).execute()
+            if res_ci.data: return res_ci.data[0]
+            return None
+        try:
+            cached_b = ReferenceCacheService.get_branch_by_name(branch_name, _fetch_branch_db)
+            if cached_b and "branch_id" in cached_b:
+                return cached_b["branch_id"]
+        except Exception:
+            pass
         if b_key in self._branch_cache:
             return self._branch_cache[b_key]
         try:
@@ -291,6 +304,8 @@ class SupabaseSavingsRepository(BaseRepository):
         return [self._to_domain(item) for item in res.data]
 
     def get_total_balance(self, branch: Optional[str] = None, officer: Optional[str] = None, client_id: Optional[str] = None, group_name: Optional[str] = None, group_id: Optional[str] = None) -> float:
+        branch_id = None
+        officer_id = None
         query = self.client.table(self.table_name).select("deposit_amount, withdrawal_amount")
         if branch:
             branch_id = self._resolve_branch_id(branch)
@@ -309,9 +324,26 @@ class SupabaseSavingsRepository(BaseRepository):
                 resolved_gid = self._resolve_group_id(group_name)
                 if resolved_gid:
                     query = query.eq("group_id", resolved_gid)
+        # Attempt server-side aggregate RPC first to avoid massive row data transfer
+        try:
+            params = {
+                "p_table": self.table_name,
+                "p_branch_id": branch_id,
+                "p_officer_id": officer_id,
+                "p_client_id": client_id if self.entity_class.__name__ in ["IndividualSavings", "MiscSavings", "LapsSavings"] else None,
+                "p_group_id": (group_id or (self._resolve_group_id(group_name) if group_name else None)) if self.entity_class.__name__ == "GroupSavings" else None
+            }
+            clean_params = {k: v for k, v in params.items() if v is not None}
+            clean_params["p_table"] = self.table_name
+            rpc_res = self.client.rpc("get_savings_balance_aggregate", clean_params).execute()
+            if rpc_res.data is not None:
+                return float(rpc_res.data)
+        except Exception:
+            pass
+
         res = query.execute()
         total = 0.0
-        for row in res.data:
+        for row in (res.data or []):
             total += float(row.get("deposit_amount", 0)) - float(row.get("withdrawal_amount", 0))
         return total
 
