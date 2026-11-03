@@ -24,6 +24,7 @@ from api.routes import reports
 from api.routes import onboarding
 from api.routes import telemetry
 from api.routes import transactions
+from api.routes import observability
 from auth.session import get_auth_secret
 from database.connection import verify_supabase_credentials
 import os
@@ -85,6 +86,76 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
+import uuid
+import time
+from core.logging import request_id_ctx, configure_logging, get_logger
+from services.metrics_service import get_metrics_service
+
+configure_logging()
+structured_logger = get_logger("icare.api")
+
+
+class ObservabilityAndTracingMiddleware(BaseHTTPMiddleware):
+    """
+    Tags each HTTP request with a unique X-Request-ID correlation token,
+    records response time and status codes into MetricsService,
+    and outputs structured JSON logs with sensitive credential redaction.
+    """
+    async def dispatch(self, request: Request, call_next):
+        req_id = request.headers.get("x-request-id") or f"req-{uuid.uuid4().hex[:12]}"
+        token = request_id_ctx.set(req_id)
+        start_time = time.monotonic()
+
+        try:
+            response = await call_next(request)
+            duration_ms = round((time.monotonic() - start_time) * 1000, 2)
+            response.headers["X-Request-ID"] = req_id
+
+            # Record into metrics engine
+            get_metrics_service().record_request(
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+                duration_ms=duration_ms
+            )
+
+            # Structured logging
+            structured_logger.info(
+                f"{request.method} {request.url.path} -> {response.status_code} ({duration_ms}ms)",
+                extra={
+                    "request_id": req_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                    "duration_ms": duration_ms
+                }
+            )
+            return response
+        except Exception as exc:
+            duration_ms = round((time.monotonic() - start_time) * 1000, 2)
+            get_metrics_service().record_request(
+                method=request.method,
+                path=request.url.path,
+                status_code=500,
+                duration_ms=duration_ms
+            )
+            structured_logger.error(
+                f"{request.method} {request.url.path} -> Unhandled Exception: {exc}",
+                exc_info=True,
+                extra={
+                    "request_id": req_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": 500,
+                    "duration_ms": duration_ms
+                }
+            )
+            raise
+        finally:
+            request_id_ctx.reset(token)
+
+
+app.add_middleware(ObservabilityAndTracingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
 # Strict CORS configuration
@@ -177,6 +248,7 @@ app.include_router(reports.router)
 app.include_router(onboarding.router)
 app.include_router(telemetry.router)
 app.include_router(transactions.router)
+app.include_router(observability.router)
 
 
 @app.get("/health")

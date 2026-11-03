@@ -54,6 +54,7 @@ jobs:
                  tests/test_security_and_access_control.py \
                  tests/test_initial_password_rotation.py \
                  tests/test_network_resilience_and_reliability.py \
+                 tests/test_observability_and_disaster_recovery.py \
                  -v
 
   frontend-check:
