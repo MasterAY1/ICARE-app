@@ -73,7 +73,7 @@ def test_batch_collections_empty(setup_dependencies):
 def test_batch_collections_success(setup_dependencies):
     mock_uow, mock_user = setup_dependencies
     with patch("services.business_date_service.BusinessDateService.is_operational_open", return_value=(True, "Working Day")), \
-         patch("app.save_repayment") as mock_save_rep:
+         patch("services.collection_batch_service.save_repayment") as mock_save_rep:
         mock_uow.cashbook._resolve_branch_id.return_value = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
         mock_uow.loans._resolve_officer_id.return_value = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
 

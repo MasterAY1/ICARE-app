@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import '../network/api_client.dart';
 
 class TelemetryService {
   static final TelemetryService instance = TelemetryService._();
@@ -10,18 +11,7 @@ class TelemetryService {
     receiveTimeout: const Duration(seconds: 5),
   ));
 
-  String _resolveBaseUrl() {
-    String defaultUrl = 'https://icare-app.onrender.com';
-    if (kIsWeb) {
-      final origin = Uri.base.origin;
-      final host = Uri.base.host.toLowerCase();
-      final isLocalDev = host == 'localhost' || host == '127.0.0.1';
-      if (origin.isNotEmpty && !origin.startsWith('file://') && (!isLocalDev || Uri.base.port == 8000)) {
-        defaultUrl = origin;
-      }
-    }
-    return defaultUrl;
-  }
+  String _resolveBaseUrl() => resolveDefaultApiUrl();
 
   /// Fire-and-forget report of unhandled exceptions to backend APM
   void reportError({

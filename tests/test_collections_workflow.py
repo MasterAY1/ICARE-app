@@ -6,7 +6,7 @@ from datetime import date
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from database.repositories.unit_of_work import SupabaseUnitOfWork
-from app import save_repayment, load_client_savings_map
+from services.collection_batch_service import save_repayment
 
 @unittest.skipUnless(os.environ.get("RUN_LIVE_INTEGRATION_TESTS") == "1", "Requires RUN_LIVE_INTEGRATION_TESTS=1 to prevent live database mutation")
 class TestCollectionsWorkflow(unittest.TestCase):
@@ -16,6 +16,7 @@ class TestCollectionsWorkflow(unittest.TestCase):
         officer_am_id = "e6a77cdb-6012-4506-8240-7e46e81d954d"
 
         # Record initial balance and initial savings entry IDs before test operations
+        from app import load_client_savings_map
         savings_map_initial = load_client_savings_map()
         balance_before = savings_map_initial.get(client_code, 0.0)
 

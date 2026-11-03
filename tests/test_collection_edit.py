@@ -6,7 +6,7 @@ from datetime import date
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from database.repositories.unit_of_work import SupabaseUnitOfWork
-from app import save_repayment
+from services.collection_batch_service import save_repayment
 from mappers.base_mappers import RepaymentMapper
 from domain.entities.repayment import Repayment
 

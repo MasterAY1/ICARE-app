@@ -27,7 +27,7 @@ class TestNotPaidCollectionFlow(unittest.TestCase):
     @patch("services.collection_performance_service.CollectionPerformanceService.record_meeting_collection")
     @patch("services.repayment_service.RepaymentService.post_repayment")
     def test_save_repayment_records_not_paid_loan(self, mock_post_rep, mock_record_cp, mock_sched_rep):
-        from app import save_repayment
+        from services.collection_batch_service import save_repayment
 
         # Mock loan fetch
         mock_loan_res = MagicMock()
@@ -127,9 +127,9 @@ class TestNotPaidCollectionFlow(unittest.TestCase):
         self.assertIn("audit_logs", tables_in_ops)
         self.assertNotIn("event_store", tables_in_ops)
 
-    @patch("app.save_repayment")
+    @patch("services.collection_batch_service.save_repayment")
     def test_save_repayments_batch_retains_not_paid_records(self, mock_save_rep):
-        from app import save_repayments
+        from services.collection_batch_service import save_repayments
 
         mock_uow = MagicMock()
         mock_uow.client = MagicMock()

@@ -3,11 +3,6 @@ import json
 import base64
 from typing import Optional, Tuple
 
-try:
-    import streamlit as st
-except ImportError:
-    st = None
-
 from supabase import create_client, Client
 from config.settings import (
     SUPABASE_URL,
@@ -54,57 +49,46 @@ def get_jwt_role(token: str) -> Optional[str]:
     return None
 
 
-def _get_st_secret(key_name: str) -> Optional[str]:
-    """Safely retrieves a Streamlit secret without throwing if the secrets file is missing."""
-    if st and hasattr(st, "secrets"):
-        try:
-            val = st.secrets.get(key_name)
-            if val is not None and str(val).strip():
-                return str(val).strip()
-        except Exception:
-            return None
-    return None
-
-
 def resolve_supabase_credentials() -> Tuple[str, str, str]:
     """
     Authoritatively resolves the Supabase URL and backend database credential.
     
     Security Invariants:
-    1. In PRODUCTION:
+    1. In ALL environments:
+       - SUPABASE_URL must be explicitly configured via environment variable (or .env file).
+       - Missing or empty SUPABASE_URL produces a clear fail-closed exception.
+       - Historical .streamlit/secrets.toml is completely decoupled and never consulted.
+    2. In PRODUCTION:
        - SUPABASE_SERVICE_ROLE_KEY is mandatory.
        - Accidental or silent fallback to the public anon key (SUPABASE_KEY) is strictly prohibited.
        - If SUPABASE_SERVICE_ROLE_KEY is missing, empty, or carries an 'anon' JWT role,
-         this function fails closed with a clear, non-sensitive RuntimeError.
-    2. In DEVELOPMENT / TESTING:
-       - Prefers SUPABASE_SERVICE_ROLE_KEY if configured.
-       - If SUPABASE_SERVICE_ROLE_KEY is absent, permits fallback to SUPABASE_KEY to preserve
-         backward compatibility with local developer test fixtures and Streamlit secrets.
+         fails closed with a clear, non-sensitive RuntimeError.
+    3. In DEVELOPMENT / TESTING:
+       - Explicitly checks for SUPABASE_SERVICE_ROLE_KEY (non-anon) or SUPABASE_KEY in environment.
+       - If neither is configured, raises a clear ValueError.
+       - No silent fallback to production credentials.
          
     Returns:
         (url, resolved_key, key_source_identifier)
     """
-    # 1. Resolve URL
-    url = (
-        os.getenv("SUPABASE_URL", "").strip()
-        or _get_st_secret("SUPABASE_URL")
-    )
+    in_prod = is_production()
+
+    # 1. Resolve URL from environment only
+    url = os.getenv("SUPABASE_URL", "").strip()
     if not url:
-        if is_production():
+        if in_prod:
             raise RuntimeError(
                 "CRITICAL SECURITY CONFIGURATION ERROR: SUPABASE_URL is missing or empty. "
                 "Backend cannot establish database connection in production."
             )
         else:
-            raise ValueError("Database configuration is missing: SUPABASE_URL is not set.")
-
-    in_prod = is_production()
+            raise ValueError(
+                "Database configuration is missing: SUPABASE_URL is not set. "
+                "Set SUPABASE_URL in your environment or .env file."
+            )
 
     # 2. Check for explicit SUPABASE_SERVICE_ROLE_KEY
-    srv_key = (
-        os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-        or _get_st_secret("SUPABASE_SERVICE_ROLE_KEY")
-    )
+    srv_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 
     if in_prod:
         # PRODUCTION ENFORCEMENT
@@ -132,17 +116,14 @@ def resolve_supabase_credentials() -> Tuple[str, str, str]:
             if srv_role != "anon":
                 return url, srv_key, "SUPABASE_SERVICE_ROLE_KEY"
 
-        # Safe backward compatibility fallback in non-production environments only
-        dev_key = (
-            os.getenv("SUPABASE_KEY", "").strip()
-            or _get_st_secret("SUPABASE_KEY")
-        )
+        # Explicit non-production fallback to SUPABASE_KEY
+        dev_key = os.getenv("SUPABASE_KEY", "").strip()
         if dev_key:
             return url, dev_key, "SUPABASE_KEY"
 
         raise ValueError(
             "Database configuration is missing. Set SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY "
-            "in your environment or secrets."
+            "in your environment or .env file."
         )
 
 
@@ -197,11 +178,18 @@ class RetryingHTTPTransport(httpx.HTTPTransport):
                 time.sleep(0.5 * (2 ** attempt))
 
 
+_client_instance: Optional[Client] = None
+
+
 def get_supabase_client() -> Client:
     """
-    Instantiates an authenticated Supabase client using authoritatively resolved credentials,
-    strict connection pooling, and circuit breaker-protected HTTP transport.
+    Instantiates or returns the authenticated Supabase client singleton using
+    authoritatively resolved credentials, strict connection pooling, and circuit breaker-protected HTTP transport.
     """
+    global _client_instance
+    if _client_instance is not None:
+        return _client_instance
+
     url, key, _ = resolve_supabase_credentials()
     pool_limits = httpx.Limits(
         max_keepalive_connections=50,
@@ -216,10 +204,25 @@ def get_supabase_client() -> Client:
         limits=pool_limits
     )
     opts = SyncClientOptions(httpx_client=http_client)
-    return create_client(url, key, options=opts)
+    _client_instance = create_client(url, key, options=opts)
+    return _client_instance
 
 
-if st and hasattr(st, "runtime") and st.runtime.exists() and hasattr(st, "cache_resource"):
-    get_supabase_client = st.cache_resource(get_supabase_client)
+def reset_supabase_client() -> None:
+    """Resets the cached client singleton (used during test teardowns and credential reload)."""
+    global _client_instance
+    _client_instance = None
 
-supabase = get_supabase_client()
+
+class _LazySupabaseClient:
+    """Lazy proxy so module-level 'supabase' resolves to get_supabase_client() on access."""
+    def __getattr__(self, name):
+        client = get_supabase_client()
+        return getattr(client, name)
+
+    def __bool__(self):
+        return True
+
+
+get_db_client = get_supabase_client
+supabase = _LazySupabaseClient()

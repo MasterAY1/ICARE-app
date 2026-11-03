@@ -161,7 +161,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 # Strict CORS configuration
 raw_allowed_origins = os.getenv(
     "ALLOWED_ORIGINS",
-    "https://icare-banking.vercel.app,https://icare-core.onrender.com,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,http://localhost:5000,http://127.0.0.1:5000"
+    "https://icare-banking.vercel.app,https://icare-core.onrender.com,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,http://localhost:5000,http://127.0.0.1:5000,http://localhost:8000,http://127.0.0.1:8000,http://10.0.2.2:8000"
 )
 allowed_origins = [o.strip() for o in raw_allowed_origins.split(",") if o.strip()]
 

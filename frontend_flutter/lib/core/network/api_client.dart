@@ -14,11 +14,94 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   );
 });
 
+/// Authoritatively resolves the default backend API base URL with environment isolation.
+///
+/// Security & Isolation Invariants:
+/// 1. Compile-time explicit `API_BASE_URL` (e.g. `--dart-define=API_BASE_URL=...`)
+///    always takes top priority across all platforms.
+/// 2. Local debug builds (`!kReleaseMode`) NEVER default to live production:
+///    - Web debug (`kIsWeb` on localhost / 127.0.0.1 or `!kReleaseMode`): defaults to `http://localhost:8000`.
+///    - Android emulator debug (`TargetPlatform.android`): defaults to `http://10.0.2.2:8000`.
+///    - iOS / Desktop debug: defaults to `http://localhost:8000`.
+/// 3. Release builds (`kReleaseMode`):
+///    - Web: defaults to hosting origin (`Uri.base.origin`), or fallback if empty.
+///    - Mobile APK / App: defaults to production cloud backend (`https://icare-app.onrender.com`).
+String resolveDefaultApiUrl({
+  String? baseUrl,
+  bool? isWebOverride,
+  bool? isReleaseOverride,
+  TargetPlatform? platformOverride,
+  String? webOriginOverride,
+  String? webHostOverride,
+}) {
+  if (baseUrl != null && baseUrl.isNotEmpty) {
+    return baseUrl;
+  }
+
+  const envBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
+  if (envBaseUrl.isNotEmpty) {
+    return envBaseUrl;
+  }
+
+  final isWeb = isWebOverride ?? kIsWeb;
+  final isRelease = isReleaseOverride ?? kReleaseMode;
+  final platform = platformOverride ?? defaultTargetPlatform;
+
+  if (isWeb) {
+    String origin = webOriginOverride ?? '';
+    if (origin.isEmpty) {
+      try {
+        if (Uri.base.hasScheme && (Uri.base.scheme == 'http' || Uri.base.scheme == 'https')) {
+          origin = Uri.base.origin;
+        }
+      } catch (_) {
+        origin = '';
+      }
+    }
+    String host = webHostOverride ?? '';
+    if (host.isEmpty) {
+      try {
+        host = Uri.base.host.toLowerCase();
+      } catch (_) {
+        host = '';
+      }
+    } else {
+      host = host.toLowerCase();
+    }
+    final isLocalHost = host == 'localhost' || host == '127.0.0.1';
+
+    if (!isRelease || isLocalHost) {
+      // Local development web session: target local FastAPI backend
+      return 'http://localhost:8000';
+    }
+
+    if (origin.isNotEmpty && !origin.startsWith('file://')) {
+      return origin;
+    }
+    return 'https://icare-app.onrender.com';
+  }
+
+  // Non-web platforms (Android, iOS, Desktop)
+  if (!isRelease) {
+    // Debug / local testing mode
+    if (platform == TargetPlatform.android) {
+      // Android emulator loopback alias to host machine
+      return 'http://10.0.2.2:8000';
+    }
+    return 'http://localhost:8000';
+  }
+
+  // Authoritative production release cloud backend
+  return 'https://icare-app.onrender.com';
+}
+
 class ApiClient {
   late final Dio _dio;
   String? _authToken;
   final ConnectivityService? _connectivityService;
   final OfflineDatabaseService? _offlineDb;
+
+  String get baseUrl => _dio.options.baseUrl;
 
   ApiClient({
     String? baseUrl,
@@ -27,19 +110,7 @@ class ApiClient {
     HttpClientAdapter? adapter,
   })  : _connectivityService = connectivityService,
         _offlineDb = offlineDb {
-    String defaultUrl = 'https://icare-app.onrender.com';
-    if (kIsWeb) {
-      final origin = Uri.base.origin;
-      final host = Uri.base.host.toLowerCase();
-      final isLocalDev = host == 'localhost' || host == '127.0.0.1';
-      // When running in a local Flutter dev server (not port 8000), target cloud backend
-      // Otherwise, when hosted on Vercel/Production or local reverse proxy, use origin
-      if (origin.isNotEmpty && !origin.startsWith('file://') && (!isLocalDev || Uri.base.port == 8000)) {
-        defaultUrl = origin;
-      }
-    }
-    const envBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
-    final effectiveUrl = baseUrl ?? (envBaseUrl.isNotEmpty ? envBaseUrl : defaultUrl);
+    final effectiveUrl = resolveDefaultApiUrl(baseUrl: baseUrl);
     _dio = Dio(BaseOptions(
       baseUrl: effectiveUrl,
       connectTimeout: const Duration(seconds: 20),

@@ -14,6 +14,10 @@ String getAppPublicOrigin() {
     }
   }
 
+  if (kDebugMode) {
+    return 'http://localhost:3000';
+  }
+
   // Authoritative production web application host for native mobile platforms
   return 'https://icare-app.onrender.com';
 }

@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../network/api_client.dart';
 
 final connectivityServiceProvider = Provider<ConnectivityService>((ref) {
   final service = ConnectivityService();
@@ -117,15 +117,7 @@ class ConnectivityService {
   }
 
   static String get _healthUrl {
-    String defaultUrl = 'https://icare-app.onrender.com';
-    if (kIsWeb) {
-      final origin = Uri.base.origin;
-      if (origin.isNotEmpty && !origin.startsWith('file://')) {
-        defaultUrl = origin;
-      }
-    }
-    const envBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
-    final cleanUrl = envBaseUrl.isNotEmpty ? envBaseUrl : defaultUrl;
+    final cleanUrl = resolveDefaultApiUrl();
     return cleanUrl.endsWith('/') ? '${cleanUrl}api/health' : '$cleanUrl/api/health';
   }
 

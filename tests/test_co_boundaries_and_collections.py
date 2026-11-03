@@ -212,7 +212,7 @@ def test_save_repayments_savings_loan_separation():
     Core Banking Invariant: Savings deposits and loan repayments must be handled independently.
     Never merge savings into repayments.amount_paid.
     """
-    from app import save_repayments
+    from services.collection_batch_service import save_repayments
 
     records = [
         {
@@ -230,7 +230,7 @@ def test_save_repayments_savings_loan_separation():
 
     with patch("services.collection_batch_service.SupabaseUnitOfWork") as MockUOW1, \
          patch("database.repositories.unit_of_work.SupabaseUnitOfWork") as MockUOW2, \
-         patch("app.save_repayment") as mock_save_single:
+         patch("services.collection_batch_service.save_repayment") as mock_save_single:
 
         uow_inst = MagicMock()
         MockUOW1.return_value.__enter__.return_value = uow_inst

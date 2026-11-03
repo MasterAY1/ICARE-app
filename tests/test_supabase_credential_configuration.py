@@ -18,7 +18,10 @@ from database.connection import (
     is_production,
     get_jwt_role,
     resolve_supabase_credentials,
-    verify_supabase_credentials
+    verify_supabase_credentials,
+    reset_supabase_client,
+    get_supabase_client,
+    supabase
 )
 from api.main import verify_security_configuration
 
@@ -42,6 +45,7 @@ def clean_env(monkeypatch):
     monkeypatch.setenv("ICARE_AUTH_SECRET", "test-auth-secret-key-32-bytes-minimum-length")
     import database.connection
     import config.settings
+    database.connection.reset_supabase_client()
     for attr in ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_KEY"]:
         monkeypatch.setattr(database.connection, attr, "", raising=False)
         monkeypatch.setattr(config.settings, attr, "", raising=False)
@@ -218,10 +222,6 @@ def test_missing_both_keys_in_development_fails_cleanly(clean_env):
     clean_env.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
     clean_env.delenv("SUPABASE_KEY", raising=False)
 
-    # In case Streamlit secrets exist, temporarily patch _get_st_secret
-    import database.connection
-    clean_env.setattr(database.connection, "_get_st_secret", lambda k: None)
-
     with pytest.raises(ValueError) as exc_info:
         resolve_supabase_credentials()
 
@@ -234,9 +234,6 @@ def test_missing_supabase_url_fails_closed(clean_env):
     clean_env.setenv("SUPABASE_SERVICE_ROLE_KEY", make_dummy_jwt("service_role"))
     clean_env.delenv("SUPABASE_URL", raising=False)
 
-    import database.connection
-    clean_env.setattr(database.connection, "_get_st_secret", lambda k: None)
-
     with pytest.raises(RuntimeError) as exc_info:
         resolve_supabase_credentials()
     assert "SUPABASE_URL is missing or empty" in str(exc_info.value)
@@ -245,6 +242,43 @@ def test_missing_supabase_url_fails_closed(clean_env):
     with pytest.raises(ValueError) as exc_info_dev:
         resolve_supabase_credentials()
     assert "SUPABASE_URL is not set" in str(exc_info_dev.value)
+
+
+def test_development_fails_closed_when_env_vars_missing(clean_env):
+    """Verifies that local development without any .env or environment variables fails closed immediately."""
+    clean_env.setenv("ENVIRONMENT", "development")
+    clean_env.delenv("SUPABASE_URL", raising=False)
+    clean_env.delenv("SUPABASE_KEY", raising=False)
+    clean_env.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+
+    with pytest.raises(ValueError) as exc_info:
+        resolve_supabase_credentials()
+    assert "SUPABASE_URL is not set" in str(exc_info.value)
+
+
+def test_streamlit_secrets_cannot_supply_credentials(clean_env, monkeypatch):
+    """
+    CRITICAL SECURITY TEST:
+    Verifies that historical .streamlit/secrets.toml or streamlit.secrets cannot
+    supply credentials to backend services when environment variables are cleared.
+    """
+    clean_env.setenv("ENVIRONMENT", "development")
+    clean_env.delenv("SUPABASE_URL", raising=False)
+    clean_env.delenv("SUPABASE_KEY", raising=False)
+
+    # Even if a mock Streamlit with production secrets was somehow present in sys.modules
+    class MockStreamlitSecrets:
+        secrets = {
+            "SUPABASE_URL": "https://leaked-production-project.supabase.co",
+            "SUPABASE_SERVICE_ROLE_KEY": make_dummy_jwt("service_role"),
+            "SUPABASE_KEY": "leaked-anon-key"
+        }
+    monkeypatch.setitem(pytest.importorskip("sys").modules, "streamlit", MockStreamlitSecrets())
+
+    # Must still fail closed because connection.py strictly ignores Streamlit secrets
+    with pytest.raises(ValueError) as exc_info:
+        resolve_supabase_credentials()
+    assert "SUPABASE_URL is not set" in str(exc_info.value)
 
 
 # ============================================================================
@@ -293,3 +327,26 @@ def test_no_credential_leak_in_error_messages(clean_env):
     err_text = str(exc_info.value)
     assert sensitive_token not in err_text
     assert "service_role" in err_text or "anon" in err_text  # Mentions role name, not raw token
+
+
+def test_lazy_supabase_client_delegation_and_isolation(clean_env, monkeypatch):
+    """
+    Verifies that the module-level 'supabase' lazy client fails closed when credentials
+    are missing, and delegates properly when credentials are configured.
+    """
+    clean_env.delenv("SUPABASE_URL", raising=False)
+    reset_supabase_client()
+
+    # Accessing attributes on unconfigured lazy client raises descriptive error
+    with pytest.raises(ValueError) as exc_info:
+        _ = supabase.table("loans")
+    assert "SUPABASE_URL is not set" in str(exc_info.value)
+
+    # When mock client is returned by get_supabase_client, lazy proxy delegates seamlessly
+    class MockClient:
+        def table(self, name):
+            return f"table_{name}"
+
+    monkeypatch.setattr("database.connection.get_supabase_client", lambda: MockClient())
+    assert supabase.table("users") == "table_users"
+

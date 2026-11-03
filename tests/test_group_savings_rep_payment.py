@@ -7,8 +7,9 @@ from datetime import date
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from database.repositories.unit_of_work import SupabaseUnitOfWork
-from app import save_repayment
+from services.collection_batch_service import save_repayment
 
+@unittest.skipUnless(os.environ.get("RUN_LIVE_INTEGRATION_TESTS") == "1", "Requires RUN_LIVE_INTEGRATION_TESTS=1 to prevent live database mutation")
 class TestGroupSavingsRepayment(unittest.TestCase):
     def test_group_savings_repayment_and_posting(self):
         group_code = "GROUP-Owoyemi"
