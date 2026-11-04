@@ -300,3 +300,41 @@ class TestDisasterRecoverySimulation:
             rec_res.data["variance"] == 0.0
         )
         assert can_cutover is True
+
+
+class TestReadinessHealthCheckEndpoint:
+    """Validates /api/health/ready deep readiness check endpoint."""
+
+    @patch("database.connection.get_supabase_client")
+    def test_readiness_check_success(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value.data = [
+            {"client_id": "c-123"}
+        ]
+        mock_get_client.return_value = mock_client
+
+        client = TestClient(app)
+        res = client.get("/api/health/ready")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ready"] is True
+        assert data["status"] == "ready"
+        assert data["database"]["status"] == "connected"
+        assert "latency_ms" in data["database"]
+        mock_client.table.assert_called_with("clients")
+        mock_client.table("clients").select.assert_called_with("client_id")
+
+    @patch("database.connection.get_supabase_client")
+    def test_readiness_check_db_failure_fails_closed(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_client.table.side_effect = RuntimeError("Database unreachable")
+        mock_get_client.return_value = mock_client
+
+        client = TestClient(app)
+        res = client.get("/api/health/ready")
+        assert res.status_code == 503
+        data = res.json()
+        assert data["ready"] is False
+        assert data["status"] == "unhealthy"
+        assert data["database"]["status"] == "disconnected"
+

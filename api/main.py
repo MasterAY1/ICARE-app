@@ -300,7 +300,7 @@ def readiness_check():
     try:
         # Lightweight database connectivity verification
         client = get_supabase_client()
-        res = client.table("clients").select("id").limit(1).execute()
+        res = client.table("clients").select("client_id").limit(1).execute()
         latency_ms = round((time.monotonic() - t0) * 1000, 2)
         return {
             "status": "ready",

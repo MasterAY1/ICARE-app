@@ -5,6 +5,27 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Target component to deploy'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - 'backend'
+          - 'frontend'
+      skip_tests:
+        description: 'Emergency override: skip automated testing (AUDIT LOGGED)'
+        required: false
+        default: false
+        type: boolean
+      release_reason:
+        description: 'Reason for release / change description'
+        required: false
+        default: 'Scheduled / regular release'
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -59,7 +80,7 @@ jobs:
                  -v
 
   frontend-check:
-    name: Frontend Flutter Static Analysis & Web Compilation
+    name: Frontend Flutter Static Analysis & Unit Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -80,6 +101,184 @@ jobs:
         working-directory: frontend_flutter
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      - name: Verify Flutter Web Release Compilation
+      - name: Run Flutter Unit Tests (Network Isolation & Sync)
+        working-directory: frontend_flutter
+        run: flutter test test/core/network/api_client_test.dart
+
+  frontend-build:
+    name: Flutter Web Release Compilation & Artifact Packaging
+    runs-on: ubuntu-latest
+    needs: [frontend-check]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Install Flutter Dependencies
+        working-directory: frontend_flutter
+        run: flutter pub get
+
+      - name: Compile Flutter Web Release Bundle
         working-directory: frontend_flutter
         run: flutter build web --release
+
+      - name: Upload Web Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-web-build
+          path: frontend_flutter/build/web
+          retention-days: 14
+          if-no-files-found: error
+
+  deploy-backend:
+    name: Deploy Backend to Render (Gated Release)
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-check]
+    if: |
+      always() &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.deploy_target == 'all' || inputs.deploy_target == 'backend')))
+    environment:
+      name: production
+      url: https://icare-app.onrender.com
+
+    steps:
+      - name: Verify CI Quality Gate
+        run: |
+          if [ "${{ inputs.skip_tests }}" != "true" ]; then
+            if [ "${{ needs.backend-test.result }}" != "success" ] || [ "${{ needs.frontend-check.result }}" != "success" ]; then
+              echo "CRITICAL: Automated tests failed or were cancelled. Production deployment is BLOCKED."
+              exit 1
+            fi
+            echo "CI Quality Gate: PASSED (Backend & Frontend checks 100% green)."
+          else
+            echo "WARNING: Emergency override enabled (skip_tests=true). Reason: ${{ inputs.release_reason }}"
+          fi
+
+      - name: Log Release Audit Metadata
+        run: |
+          echo "=================================================="
+          echo "ICARE Core Banking - Production Backend Deployment"
+          echo "Triggered by: ${{ github.actor }}"
+          echo "Commit SHA: ${{ github.sha }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Reason: ${{ inputs.release_reason || 'Automated CI/CD Release' }}"
+          echo "Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "=================================================="
+
+      - name: Dispatch Deployment to Render
+        env:
+          RENDER_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_HOOK" ]; then
+            echo "NOTICE: RENDER_DEPLOY_HOOK_URL secret is not yet configured in GitHub repository secrets."
+            echo "Skipping automated Render webhook trigger. Configure secret in GitHub repository settings."
+          else
+            echo "Invoking Render Deploy Hook for commit ${{ github.sha }}..."
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${RENDER_HOOK}&ref=${{ github.sha }}")
+            echo "Render Deploy Hook response code: $HTTP_STATUS"
+            if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+              echo "Render deploy hook dispatched successfully."
+            else
+              echo "Render deploy hook returned non-2xx status: $HTTP_STATUS"
+              exit 1
+            fi
+          fi
+
+      - name: Verify Backend Readiness (Health Probe)
+        run: |
+          echo "Verifying backend readiness at https://icare-app.onrender.com/api/health/ready..."
+          MAX_ATTEMPTS=12
+          ATTEMPT=1
+          SLEEP_SECONDS=10
+
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Readiness probe attempt $ATTEMPT of $MAX_ATTEMPTS..."
+            RESPONSE=$(curl -s -w "\n%{http_code}" "https://icare-app.onrender.com/api/health/ready" || true)
+            HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+            BODY=$(echo "$RESPONSE" | head -n -1)
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Backend is READY and healthy: $BODY"
+              exit 0
+            else
+              echo "Backend not ready yet (HTTP $HTTP_CODE). Body: $BODY"
+              echo "Waiting $SLEEP_SECONDS seconds for instance startup..."
+              sleep $SLEEP_SECONDS
+              ATTEMPT=$((ATTEMPT + 1))
+            fi
+          done
+
+          echo "Readiness probe cycle completed."
+          if [ -n "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            echo "CRITICAL: Backend failed to achieve ready status within probe window."
+            exit 1
+          fi
+
+  deploy-frontend:
+    name: Deploy Frontend to Vercel (Gated Release)
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-check, frontend-build]
+    if: |
+      always() &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.deploy_target == 'all' || inputs.deploy_target == 'frontend')))
+    environment:
+      name: production
+      url: https://icare-banking.vercel.app
+
+    steps:
+      - name: Verify CI Quality Gate
+        run: |
+          if [ "${{ inputs.skip_tests }}" != "true" ]; then
+            if [ "${{ needs.backend-test.result }}" != "success" ] || [ "${{ needs.frontend-check.result }}" != "success" ] || [ "${{ needs.frontend-build.result }}" != "success" ]; then
+              echo "CRITICAL: Automated checks or build failed. Frontend production deployment is BLOCKED."
+              exit 1
+            fi
+            echo "CI Quality Gate: PASSED (All checks & compilation 100% green)."
+          else
+            echo "WARNING: Emergency override enabled (skip_tests=true). Reason: ${{ inputs.release_reason }}"
+          fi
+
+      - name: Download Compiled Web Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: flutter-web-build
+          path: frontend_flutter/build/web
+
+      - name: Log Release Audit Metadata
+        run: |
+          echo "=================================================="
+          echo "ICARE Core Banking - Production Frontend Deployment"
+          echo "Triggered by: ${{ github.actor }}"
+          echo "Commit SHA: ${{ github.sha }}"
+          echo "Artifact: flutter-web-build"
+          echo "Reason: ${{ inputs.release_reason || 'Automated CI/CD Release' }}"
+          echo "Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "=================================================="
+
+      - name: Dispatch Deployment to Vercel
+        env:
+          VERCEL_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$VERCEL_HOOK" ]; then
+            echo "NOTICE: VERCEL_DEPLOY_HOOK_URL secret is not yet configured in GitHub repository secrets."
+            echo "Skipping automated Vercel webhook trigger. Configure secret in GitHub repository settings."
+          else
+            echo "Invoking Vercel Deploy Hook for commit ${{ github.sha }}..."
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$VERCEL_HOOK")
+            echo "Vercel Deploy Hook response code: $HTTP_STATUS"
+            if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+              echo "Vercel deploy hook dispatched successfully."
+            else
+              echo "Vercel deploy hook returned non-2xx status: $HTTP_STATUS"
+              exit 1
+            fi
+          fi
