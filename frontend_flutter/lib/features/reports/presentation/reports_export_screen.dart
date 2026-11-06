@@ -185,12 +185,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             if (meta.scopeLevel == 'BRANCH' && meta.defaultBranch != null) {
               _selectedBranchName = meta.defaultBranch;
             } else {
-              // Default to Ogijo or first branch with active records
-              final ogijo = meta.branches.firstWhere(
-                (b) => b.name.toLowerCase().contains('ogijo'),
-                orElse: () => meta.branches.isNotEmpty ? meta.branches.first : const BranchOption(branchId: '', name: 'Ogijo'),
-              );
-              _selectedBranchName = ogijo.name;
+              _selectedBranchName = meta.defaultBranch ?? (meta.branches.isNotEmpty ? meta.branches.first.name : null);
             }
             _refreshCurrentTabData();
           }
@@ -1662,12 +1657,24 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               fontSize: isPrimary ? 13 : 12,
               fontWeight: isPrimary ? FontWeight.w800 : FontWeight.w600,
               color: isPrimary ? const Color(0xFF0F766E) : const Color(0xFF0F172A),
-              fontFamily: 'JetBrains Mono',
+              fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
         ],
       ),
     );
+  }
+
+  String _cleanCoMetricLabel(String metric) {
+    return metric
+        .replaceAll('(PC1)', '')
+        .replaceAll('(PB3)', '')
+        .replaceAll('(PB4)', '')
+        .replaceAll('(PB2/PB6)', '')
+        .replaceAll('(Acct 1050)', '')
+        .replaceAll('(Acct 4000)', '')
+        .replaceAll('•', '')
+        .trim();
   }
 
   Widget _buildCoMonthlySummaryTable(MonthlyParityData data) {
@@ -1702,7 +1709,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             if (isMobile && !_showRawTableOnMobile) ...[
               // Mobile Cards per Officer
               ...officers.map((o) {
-                double getMetric(String m) => (data.rows.firstWhere((r) => r.metric == m, orElse: () => MonthlyParityMetricRow(metric: m, values: {})).values[o.name] as num? ?? 0.0).toDouble();
+                double getMetric(String m, [String? fallback]) {
+                  final row = data.rows.firstWhere(
+                    (r) => r.metric == m || (fallback != null && r.metric == fallback) || r.metric.toLowerCase().contains(m.toLowerCase()),
+                    orElse: () => MonthlyParityMetricRow(metric: m, values: {}),
+                  );
+                  return (row.values[o.name] as num? ?? 0.0).toDouble();
+                }
                 int getCount(String m) => (data.rows.firstWhere((r) => r.metric == m, orElse: () => MonthlyParityMetricRow(metric: m, values: {})).values[o.name] as num? ?? 0).toInt();
 
                 final disb = getMetric('Sales (Credit) / Principal Disbursed');
@@ -1711,13 +1724,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 final sDep = getMetric('Savings Deposit (Month)');
                 final sWth = getMetric('Savings Withdrawal (Month)');
                 final sClose = getMetric('Savings Closing Balance');
-                final bd = getMetric('Bank Deposits Remitted (Acct 1050)');
+                final bd = getMetric('Transit Bank Deposits Remitted', 'Bank Deposits Remitted (Acct 1050)');
 
-                final trans = getMetric('Field Transport (PC1)');
-                final stat = getMetric('Stationery (PB3)');
-                final ent = getMetric('Entertainment (PB4)');
-                final util = getMetric('Utilities & Phone (PB2/PB6)');
-                final totOpEx = getMetric('Office Expenses (Acct 4000)');
+                final trans = getMetric('Field Transport & Travel', 'Field Transport (PC1)');
+                final stat = getMetric('Printing & Stationery', 'Stationery (PB3)');
+                final ent = getMetric('Entertainment & Refreshment', 'Entertainment (PB4)');
+                final util = getMetric('Utilities & Communication', 'Utilities & Phone (PB2/PB6)');
+                final totOpEx = getMetric('Total Operating Expenses (OpEx)', 'Office Expenses (Acct 4000)');
 
                 final actLoans = getCount('Active Loans Count');
                 final actSavers = getCount('Active Savers Count');
@@ -1762,10 +1775,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       const Divider(height: 16),
                       const Text('Analysed Operational Expenses (OpEx):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
                       const SizedBox(height: 4),
-                      _buildMobileDetailRow('  • Field Transport (PC1)', _formatNgn(trans)),
-                      _buildMobileDetailRow('  • Stationery & Print (PB3)', _formatNgn(stat)),
-                      _buildMobileDetailRow('  • Entertainment (PB4)', _formatNgn(ent)),
-                      _buildMobileDetailRow('  • Utilities & Phone (PB2/PB6)', _formatNgn(util)),
+                      _buildMobileDetailRow('Field Transport & Travel', _formatNgn(trans)),
+                      _buildMobileDetailRow('Printing & Stationery', _formatNgn(stat)),
+                      _buildMobileDetailRow('Entertainment & Refreshment', _formatNgn(ent)),
+                      _buildMobileDetailRow('Utilities & Communication', _formatNgn(util)),
                       _buildMobileDetailRow('Total Analysed OpEx Disbursed', _formatNgn(totOpEx), isPrimary: true),
                     ],
                   ),
@@ -1789,7 +1802,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     final isHighlight = r.metric.contains('Total') || r.metric.contains('Expenses') || r.metric.contains('Bank');
                     return DataRow(
                       cells: [
-                        DataCell(Text(r.metric, style: TextStyle(fontWeight: isHighlight ? FontWeight.w700 : FontWeight.w600, color: isHighlight ? const Color(0xFF0F766E) : null))),
+                        DataCell(Text(_cleanCoMetricLabel(r.metric), style: TextStyle(fontWeight: isHighlight ? FontWeight.w700 : FontWeight.w600, color: isHighlight ? const Color(0xFF0F766E) : null))),
                         ...officers.map((o) {
                           final val = r.values[o.name];
                           String disp;
@@ -1848,28 +1861,35 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         }
 
         final totRow = ds.rows.firstWhere((r) => r.programme == 'Total', orElse: () => ds.rows.last);
+        final isAllPrograms = _selectedProgramFilter == 'All' || _selectedProgramFilter == 'All Programmes';
+        final activeKpiRow = isAllPrograms
+            ? totRow
+            : ds.rows.firstWhere(
+                (r) => r.programme.toLowerCase() == _selectedProgramFilter.toLowerCase(),
+                orElse: () => totRow,
+              );
 
         return LayoutBuilder(
           builder: (context, constraints) {
             final isMobile = constraints.maxWidth < 600;
             final cardW = isMobile ? (constraints.maxWidth - 8) / 2 : (constraints.maxWidth - 24) / 4;
 
-            final filteredRows = _selectedProgramFilter == 'All' || _selectedProgramFilter == 'All Programmes'
+            final filteredRows = isAllPrograms
                 ? ds.rows
                 : ds.rows.where((r) => r.programme.toLowerCase() == _selectedProgramFilter.toLowerCase() || r.programme == 'Total').toList();
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Top KPI Summary cards
+                // Top KPI Summary cards (dynamically reflects selected programme filter)
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _buildMetricCard('Active Savers', '${totRow.balanceNo} Savers', width: cardW),
-                    _buildMetricCard('Deposit Balance', _formatNgn(totRow.balanceAmount), width: cardW),
-                    _buildMetricCard('Month Deposits', _formatNgn(totRow.depositCurr), width: cardW),
-                    _buildMetricCard('Month Payouts', _formatNgn(totRow.withdrawalCurrAmount + totRow.returnCurrAmount), width: cardW),
+                    _buildMetricCard(isAllPrograms ? 'Active Savers' : '$_selectedProgramFilter Savers', '${activeKpiRow.balanceNo} Savers', width: cardW),
+                    _buildMetricCard(isAllPrograms ? 'Deposit Balance' : '$_selectedProgramFilter Balance', _formatNgn(activeKpiRow.balanceAmount), width: cardW),
+                    _buildMetricCard(isAllPrograms ? 'Month Deposits' : '$_selectedProgramFilter Deposits', _formatNgn(activeKpiRow.depositCurr), width: cardW),
+                    _buildMetricCard(isAllPrograms ? 'Month Payouts' : '$_selectedProgramFilter Payouts', _formatNgn(activeKpiRow.withdrawalCurrAmount + activeKpiRow.returnCurrAmount), width: cardW),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -2017,13 +2037,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 
+  String _cleanCreditItemLabel(String rawItem) {
+    var s = rawItem.replaceAll('•', '').trim();
+    s = s.replaceAll(RegExp(r'\s*\((₦\s*)?Col[^)]+\)', caseSensitive: false), '');
+    s = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return s;
+  }
+
   Widget _buildCreditSectionCard(List<CreditStatementRow> rows, String sectionTitle, IconData icon, {bool isHighlight = false}) {
     final sectionRows = rows.where((r) {
       final s = r.section.toLowerCase();
       final target = sectionTitle.toLowerCase();
       if (target.contains('disbursed')) return s.contains('disbursed');
       if (target.contains('excess')) return s.contains('excess');
-      if (target.contains('repayment')) return s.contains('repayment') && !s.contains('full');
+      if (target.contains('installment') || target.contains('repayment')) {
+        return (s.contains('installment') || s.contains('collection')) && !s.contains('full') && !s.contains('excess');
+      }
       if (target.contains('balance')) return s.contains('balance');
       if (target.contains('full')) return s.contains('full');
       return false;
@@ -2068,11 +2097,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           children: [
             const Divider(height: 10),
             ...sectionRows.map((r) {
-              final isCount = r.item.contains('Count');
+              final cleanItem = _cleanCreditItemLabel(r.item);
+              final isCount = cleanItem.contains('Count');
               final val = getRowVal(r);
               final disp = isCount ? '${val.toInt()}' : _formatNgn(val);
-              final isTot = r.item.contains('Total') || r.item.contains('Balance') || r.item.contains('Current');
-              return _buildMobileDetailRow(r.item.replaceAll('•', '').trim(), disp, isPrimary: isTot);
+              final isTot = cleanItem.contains('Total') || cleanItem.contains('Balance') || cleanItem.contains('Current');
+              return _buildMobileDetailRow(cleanItem, disp, isPrimary: isTot);
             }),
           ],
         ),
@@ -2099,10 +2129,31 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           ));
         }
 
-        final balCountRow = cs.rows.firstWhere((r) => r.item.contains('Active Loans Count'), orElse: () => cs.rows.first);
-        final balAmtRow = cs.rows.firstWhere((r) => r.item.contains('Active Credit Balance'), orElse: () => cs.rows.first);
-        final instCurrRow = cs.rows.firstWhere((r) => r.item.contains('Current Month Installments'), orElse: () => cs.rows.first);
-        final payoffRow = cs.rows.firstWhere((r) => r.item.contains('Current Settled Loans Count'), orElse: () => cs.rows.first);
+        const emptyRow = CreditStatementRow(section: '', item: '', monthly: 0, weekly: 0, daily: 0, total: 0);
+
+        final balCountRow = cs.rows.firstWhere(
+          (r) => r.item.contains('Active Loans'),
+          orElse: () => emptyRow,
+        );
+        final balAmtRow = cs.rows.firstWhere(
+          (r) => r.item.contains('Outstanding Credit') || r.item.contains('Credit Balance'),
+          orElse: () => emptyRow,
+        );
+        final instCurrRow = cs.rows.firstWhere(
+          (r) => r.item.contains('Current Month Installment') || (r.item.contains('Current') && r.item.contains('Installment')),
+          orElse: () => emptyRow,
+        );
+        final payoffRow = cs.rows.firstWhere(
+          (r) => r.item.contains('Current Full Repayment Count') || (r.item.contains('Current') && r.item.contains('Full') && r.item.contains('Count')),
+          orElse: () => emptyRow,
+        );
+
+        double getCardVal(CreditStatementRow r) {
+          if (_selectedProgramFilter == 'Monthly') return r.monthly;
+          if (_selectedProgramFilter == 'Weekly') return r.weekly;
+          if (_selectedProgramFilter == 'Daily') return r.daily;
+          return r.total;
+        }
 
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -2117,10 +2168,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _buildMetricCard('Active Loans', '${balCountRow.total.toInt()} Loans', width: cardW),
-                    _buildMetricCard('Active Credit', _formatNgn(balAmtRow.total), width: cardW),
-                    _buildMetricCard('Month Collections', _formatNgn(instCurrRow.total), width: cardW),
-                    _buildMetricCard('Month Full Payoffs', '${payoffRow.total.toInt()} Settled', width: cardW),
+                    _buildMetricCard('Active Loans', '${getCardVal(balCountRow).toInt()} Loans', width: cardW),
+                    _buildMetricCard('Active Credit', _formatNgn(getCardVal(balAmtRow)), width: cardW),
+                    _buildMetricCard('Month Collections', _formatNgn(getCardVal(instCurrRow)), width: cardW),
+                    _buildMetricCard('Month Full Payoffs', '${getCardVal(payoffRow).toInt()} Settled', width: cardW),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -2168,22 +2219,74 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 11),
                       dataTextStyle: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
                       columnSpacing: 16,
-                      columns: const [
-                        DataColumn(label: Text('Category')),
-                        DataColumn(label: Text('Reporting Metric')),
-                        DataColumn(numeric: true, label: Text('Monthly')),
-                        DataColumn(numeric: true, label: Text('Weekly')),
-                        DataColumn(numeric: true, label: Text('Daily')),
-                        DataColumn(numeric: true, label: Text('Consolidated\nTotal')),
+                      columns: [
+                        const DataColumn(label: Text('Category')),
+                        const DataColumn(label: Text('Reporting Metric')),
+                        DataColumn(
+                          numeric: true,
+                          label: Text(
+                            'Monthly',
+                            style: TextStyle(
+                              color: _selectedProgramFilter == 'Monthly' ? const Color(0xFF0F766E) : null,
+                              fontWeight: _selectedProgramFilter == 'Monthly' ? FontWeight.w800 : null,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          numeric: true,
+                          label: Text(
+                            'Weekly',
+                            style: TextStyle(
+                              color: _selectedProgramFilter == 'Weekly' ? const Color(0xFF0F766E) : null,
+                              fontWeight: _selectedProgramFilter == 'Weekly' ? FontWeight.w800 : null,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          numeric: true,
+                          label: Text(
+                            'Daily',
+                            style: TextStyle(
+                              color: _selectedProgramFilter == 'Daily' ? const Color(0xFF0F766E) : null,
+                              fontWeight: _selectedProgramFilter == 'Daily' ? FontWeight.w800 : null,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          numeric: true,
+                          label: Text(
+                            'Consolidated\nTotal',
+                            style: TextStyle(
+                              color: _selectedProgramFilter == 'Consolidated Total' ? const Color(0xFF0F766E) : null,
+                              fontWeight: _selectedProgramFilter == 'Consolidated Total' ? FontWeight.w800 : null,
+                            ),
+                          ),
+                        ),
                       ],
                       rows: cs.rows
                           .where((r) => !r.section.toLowerCase().contains('overdue') && (!r.item.toLowerCase().contains('overdue') || r.item.toLowerCase().contains('recovered')))
                           .map((r) {
-                        final isCount = r.item.contains('Count');
-                        final isHighlight = r.item.contains('Total') || r.item.contains('Balance') || r.item.contains('Active');
+                        final cleanItem = _cleanCreditItemLabel(r.item);
+                        final isCount = cleanItem.contains('Count');
+                        final isHighlight = cleanItem.contains('Total') || cleanItem.contains('Balance') || cleanItem.contains('Active');
                         final rowColor = isHighlight ? const Color(0xFFF8FAFC) : null;
                         final textStyle = isHighlight ? const TextStyle(fontWeight: FontWeight.w700, fontSize: 11) : const TextStyle(fontSize: 11);
                         final totStyle = isHighlight ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E), fontSize: 11) : const TextStyle(fontWeight: FontWeight.w600, fontSize: 11);
+
+                        final isMonthlySel = _selectedProgramFilter == 'Monthly';
+                        final isWeeklySel = _selectedProgramFilter == 'Weekly';
+                        final isDailySel = _selectedProgramFilter == 'Daily';
+                        final isTotalSel = _selectedProgramFilter == 'Consolidated Total';
+
+                        TextStyle colStyle(bool isSelected, TextStyle base) {
+                          if (isSelected) {
+                            return base.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF0F766E),
+                            );
+                          }
+                          return base;
+                        }
 
                         String formatVal(double v) => isCount ? '${v.toInt()}' : (v > 0 ? _formatNgn(v) : '-');
 
@@ -2195,11 +2298,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           color: rowColor != null ? MaterialStateProperty.all(rowColor) : null,
                           cells: [
                             DataCell(Text(sectionName, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F766E), fontSize: 11))),
-                            DataCell(Text(r.item, style: textStyle)),
-                            DataCell(Text(formatVal(r.monthly), style: textStyle)),
-                            DataCell(Text(formatVal(r.weekly), style: textStyle)),
-                            DataCell(Text(formatVal(r.daily), style: textStyle)),
-                            DataCell(Text(formatVal(r.total), style: totStyle)),
+                            DataCell(Text(cleanItem, style: textStyle)),
+                            DataCell(Text(formatVal(r.monthly), style: colStyle(isMonthlySel, textStyle))),
+                            DataCell(Text(formatVal(r.weekly), style: colStyle(isWeeklySel, textStyle))),
+                            DataCell(Text(formatVal(r.daily), style: colStyle(isDailySel, textStyle))),
+                            DataCell(Text(formatVal(r.total), style: colStyle(isTotalSel, totStyle))),
                           ],
                         );
                       }).toList(),
@@ -2274,7 +2377,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           ),
                           Text(
                             _formatNgn(data.totalSundryReceipts),
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF166534), fontFamily: 'JetBrains Mono'),
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF166534), fontFeatures: [FontFeature.tabularFigures()]),
                           ),
                         ],
                       ),
@@ -2290,7 +2393,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             ),
                             const SizedBox(width: 10),
                             Expanded(child: Text(r.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
-                            Text(_formatNgn(r.amount), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFamily: 'JetBrains Mono')),
+                            Text(_formatNgn(r.amount), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFeatures: [FontFeature.tabularFigures()])),
                           ],
                         ),
                       )),
@@ -2331,7 +2434,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             ),
                             Text(
                               _formatNgn(g.subtotal),
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF1D4ED8), fontFamily: 'JetBrains Mono'),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF1D4ED8), fontFeatures: [FontFeature.tabularFigures()]),
                             ),
                           ],
                         ),
@@ -2343,7 +2446,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                               Text(item.code, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
                               const SizedBox(width: 10),
                               Expanded(child: Text(item.name, style: const TextStyle(fontSize: 12, color: Color(0xFF334155)))),
-                              Text(_formatNgn(item.amount), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'JetBrains Mono')),
+                              Text(_formatNgn(item.amount), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()])),
                             ],
                           ),
                         )),
@@ -2360,12 +2463,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   String _cleanTbItemName(String item) {
-    return item
+    final cleaned = item
         .replaceAll('(Account 1000)', '')
         .replaceAll('(Acct 1000)', '')
         .replaceAll('Account 1000', '')
         .replaceAll('(1000)', '')
         .trim();
+    if (cleaned.toLowerCase() == 'cash in hand') {
+      return 'Vault Cash';
+    }
+    return cleaned;
   }
 
   IconData _getSectionIcon(String section) {
@@ -4961,7 +5068,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
-                fontFamily: 'JetBrains Mono',
+                fontFeatures: const [FontFeature.tabularFigures()],
                 color: isAccent ? Colors.white : const Color(0xFF0F172A),
               ),
             ),
@@ -5101,6 +5208,9 @@ class _BankReconciliationForm extends ConsumerStatefulWidget {
 }
 
 class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm> {
+  static final _currencyFormat = NumberFormat('#,##0.00', 'en_US');
+  String _formatNgn(double value) => '₦${_currencyFormat.format(value)}';
+
   bool _isSaving = false;
   final Map<int, bool> _sectionExpanded = {
     1: false,
@@ -5464,16 +5574,47 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
     }
   }
 
-  Widget _buildField(String label, TextEditingController controller, {bool isNumber = true, bool readOnly = false}) {
+  Widget _buildField(
+    String label,
+    TextEditingController controller, {
+    bool isNumber = true,
+    bool readOnly = false,
+    String? badgeText,
+  }) {
     final effectiveReadOnly = widget.isReadOnly || readOnly;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+              ),
+            ),
+            if (badgeText != null)
+              Container(
+                margin: const EdgeInsets.only(left: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: effectiveReadOnly ? const Color(0xFFF1F5F9) : const Color(0xFFECFDF5),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: effectiveReadOnly ? const Color(0xFFE2E8F0) : const Color(0xFFA7F3D0)),
+                ),
+                child: Text(
+                  badgeText,
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: effectiveReadOnly ? const Color(0xFF64748B) : const Color(0xFF0F766E),
+                  ),
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: 4),
         TextField(
@@ -5484,12 +5625,13 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
             fontSize: 12,
             color: effectiveReadOnly ? const Color(0xFF64748B) : const Color(0xFF0F172A),
             fontWeight: effectiveReadOnly ? FontWeight.w600 : FontWeight.normal,
+            fontFeatures: isNumber ? const [FontFeature.tabularFigures()] : null,
           ),
           decoration: InputDecoration(
             isDense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             filled: true,
-            fillColor: effectiveReadOnly ? const Color(0xFFF1F5F9) : const Color(0xFFF8FAFC),
+            fillColor: effectiveReadOnly ? const Color(0xFFF1F5F9) : Colors.white,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
               borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
@@ -5602,25 +5744,25 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(child: _buildField('Bank Name', nameC, isNumber: false)),
+              Expanded(child: _buildField('Bank Name', nameC, isNumber: false, badgeText: 'Commercial')),
               const SizedBox(width: 8),
-              Expanded(child: _buildField('Account Number', accC, isNumber: false)),
+              Expanded(child: _buildField('Account Number', accC, isNumber: false, badgeText: 'Account')),
             ],
           ),
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: _buildField('Opening Balance B/F (₦) [Auto B/F]', openC, readOnly: true)),
+              Expanded(child: _buildField('Opening Balance B/F (₦)', openC, readOnly: true, badgeText: 'Prior Month Rollover')),
               const SizedBox(width: 8),
-              Expanded(child: _buildField('Closing Balance C/F (₦)', closeC)),
+              Expanded(child: _buildField('Closing Balance C/F (₦)', closeC, badgeText: 'Bank Statement')),
             ],
           ),
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: _buildField('Bank Charges (₦)', chgC)),
+              Expanded(child: _buildField('Bank Charges (₦)', chgC, badgeText: 'Monthly')),
               const SizedBox(width: 8),
-              Expanded(child: _buildField('Bank Interest Earned (₦)', intC)),
+              Expanded(child: _buildField('Bank Interest Earned (₦)', intC, badgeText: 'Monthly')),
             ],
           ),
         ],
@@ -5703,16 +5845,16 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
                         spacing: 8,
                         runSpacing: 10,
                         children: [
-                          SizedBox(width: fieldW, child: _buildField('Personnel Gross Salary (₦)', _tbSalaryController)),
-                          SizedBox(width: fieldW, child: _buildField('Electricity/Gas/Water (₦)', _tbElectricityController)),
-                          SizedBox(width: fieldW, child: _buildField('Stationery/Office Mgmt (₦)', _tbStationeryController)),
-                          SizedBox(width: fieldW, child: _buildField('Entertainment (₦)', _tbEntertainmentController)),
-                          SizedBox(width: fieldW, child: _buildField('Telephone/Postage (₦)', _tbTelephoneController)),
-                          SizedBox(width: fieldW, child: _buildField('Transport Allowance (₦)', _tbTransportController)),
-                          SizedBox(width: fieldW, child: _buildField('Training Expenses (₦)', _tbTrainingController)),
-                          SizedBox(width: fieldW, child: _buildField('Office Rent (₦)', _tbRentController)),
-                          SizedBox(width: fieldW, child: _buildField('Repair Cost Office (₦)', _tbRepairOfficeController)),
-                          SizedBox(width: fieldW, child: _buildField('Other Operating Expenses (₦)', _tbOtherExpensesController)),
+                          SizedBox(width: fieldW, child: _buildField('Personnel Gross Salary (₦)', _tbSalaryController, badgeText: 'Voucher')),
+                          SizedBox(width: fieldW, child: _buildField('Electricity/Gas/Water (₦)', _tbElectricityController, badgeText: 'Voucher')),
+                          SizedBox(width: fieldW, child: _buildField('Stationery & Office Mgmt (₦)', _tbStationeryController, badgeText: 'Voucher')),
+                          SizedBox(width: fieldW, child: _buildField('Entertainment & Refreshment (₦)', _tbEntertainmentController, badgeText: 'Voucher')),
+                          SizedBox(width: fieldW, child: _buildField('Telephone & Postage (₦)', _tbTelephoneController, badgeText: 'Voucher')),
+                          SizedBox(width: fieldW, child: _buildField('Transport Allowance (₦)', _tbTransportController, badgeText: 'Voucher')),
+                          SizedBox(width: fieldW, child: _buildField('Training Expenses (₦)', _tbTrainingController, badgeText: 'Voucher')),
+                          SizedBox(width: fieldW, child: _buildField('Office Rent (₦)', _tbRentController, badgeText: 'Voucher')),
+                          SizedBox(width: fieldW, child: _buildField('Repair Cost Office (₦)', _tbRepairOfficeController, badgeText: 'Voucher')),
+                          SizedBox(width: fieldW, child: _buildField('Other Operating Expenses (₦)', _tbOtherExpensesController, badgeText: 'Voucher')),
                         ],
                       );
                     },
@@ -5731,7 +5873,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Annex-1 Monthly Expenses: ₦${annex1ExpenseSum.toStringAsFixed(2)} (Feeds Receipts & Payments Row 7 & YTD TB)',
+                            'Annex-1 Monthly Expenses: ${_formatNgn(annex1ExpenseSum)} (Linked to Operational Outflows & Trial Balance)',
                             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF166534)),
                           ),
                         ),
@@ -5761,10 +5903,10 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
                         spacing: 8,
                         runSpacing: 10,
                         children: [
-                          SizedBox(width: fieldW, child: _buildField('Passbook Fees (₦) [Auto Cashbook]', _tbPassbookController, readOnly: true)),
-                          SizedBox(width: fieldW, child: _buildField('Application Fees (₦) [Auto Cashbook]', _tbApplicationFeeController, readOnly: true)),
-                          SizedBox(width: fieldW, child: _buildField('Scraps Sales / Bonus (₦) [Auto Cashbook]', _tbScrapsSalesController, readOnly: true)),
-                          SizedBox(width: fieldW, child: _buildField('Damages and Fine (₦) [Auto Cashbook]', _tbDamagesFineController, readOnly: true)),
+                          SizedBox(width: fieldW, child: _buildField('Passbook Fees (₦)', _tbPassbookController, readOnly: true, badgeText: 'Cashbook')),
+                          SizedBox(width: fieldW, child: _buildField('Application Fees (₦)', _tbApplicationFeeController, readOnly: true, badgeText: 'Cashbook')),
+                          SizedBox(width: fieldW, child: _buildField('Scrap Sales & Bonuses (₦)', _tbScrapsSalesController, readOnly: true, badgeText: 'Cashbook')),
+                          SizedBox(width: fieldW, child: _buildField('Damages & Penalties (₦)', _tbDamagesFineController, readOnly: true, badgeText: 'Cashbook')),
                         ],
                       );
                     },
@@ -5783,7 +5925,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Annex-1 Inflows: ₦${annex1InflowSum.toStringAsFixed(2)} (Feeds Receipts & Payments Row 10)',
+                            'Annex-1 Sundry Receipts: ${_formatNgn(annex1InflowSum)} (Linked to Auxiliary Cash Inflows)',
                             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
                           ),
                         ),
@@ -5798,40 +5940,98 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
             // Section 4: Cashbook Remittances & Operational Collections
             _buildSectionCard(
               sectionIndex: 4,
-              title: '4. Cashbook Remittances & Operational Collections',
+              title: '4. Operational Collections & Cashbook Remittances',
+              subtitle: 'Delinquent portfolio closing balance and automated central remittances',
               icon: Icons.sync_alt,
-              child: LayoutBuilder(
-                builder: (context, s4Constraints) {
-                  final isMobile = s4Constraints.maxWidth < 600;
-                  final isTablet = s4Constraints.maxWidth >= 600 && s4Constraints.maxWidth < 950;
-                  final fieldW = isMobile
-                      ? (s4Constraints.maxWidth - 8) / 2
-                      : isTablet
-                          ? (s4Constraints.maxWidth - 16) / 3
-                          : (s4Constraints.maxWidth - 24) / 4;
-                  return Wrap(
-                    spacing: 8,
-                    runSpacing: 10,
-                    children: [
-                      SizedBox(width: fieldW, child: _buildField('Sales Profit / Markup (₦) [Auto Cashbook]', _profitController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('Sales: Cash and Carry (₦) [Auto Cashbook]', _ccController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('Upfront Fees Collected (₦) [Auto Loans]', _upfrontFeesController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('Installment Collections (₦) [Auto Repayments]', _collectionsController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('Principal Disbursed (₦) [Auto Loans]', _disbursedPrincipalController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('Deposit Savings (₦) [Auto Savings]', _savingsDepositsController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('Lapse Deposit Return (₦) [Auto Cashbook]', _lapseRetController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('HO Asset Inflow (₦) [Auto Cashbook]', _fRecHoAssetController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('HO Main Inflow (₦) [Auto Cashbook]', _fRecHoMainController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('Branch Office Inflow (₦) [Auto Cashbook]', _fRecBrController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('Other Area Inflow (₦) [Auto Cashbook]', _fRecAreaController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('HO Asset Outflow (₦) [Auto Cashbook]', _fPayHoAssetController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('HO Main Outflow (₦) [Auto Cashbook]', _fPayHoMainController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('Branch Office Outflow (₦) [Auto Cashbook]', _fPayBrController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('Closing Overdue C/F (₦)', _overdueCfController)),
-                      SizedBox(width: fieldW, child: _buildField('Opening Overdue B/F (₦) [Auto B/F]', _overdueBfController, readOnly: true)),
-                    ],
-                  );
-                },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Dedicated Card for Overdue Portfolio (Actionable Input)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.assignment_late_outlined, size: 16, color: Color(0xFFB45309)),
+                            SizedBox(width: 8),
+                            Text('Overdue Delinquency Portfolio Review', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF92400E))),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(child: _buildField('Opening Overdue Portfolio (B/F) (₦)', _overdueBfController, readOnly: true, badgeText: 'Rollover')),
+                            const SizedBox(width: 12),
+                            Expanded(child: _buildField('Month-End Overdue Portfolio (C/F) (₦)', _overdueCfController, badgeText: 'Required Input')),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Information banner for automated feeds
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.bolt, size: 16, color: Color(0xFF0F766E)),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Automated Ledger Feeds: The metrics below are synchronized dynamically from daily loan disbursements, repayments, savings, and master cashbook transfers.',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  LayoutBuilder(
+                    builder: (context, s4Constraints) {
+                      final isMobile = s4Constraints.maxWidth < 600;
+                      final isTablet = s4Constraints.maxWidth >= 600 && s4Constraints.maxWidth < 950;
+                      final fieldW = isMobile
+                          ? (s4Constraints.maxWidth - 8) / 2
+                          : isTablet
+                              ? (s4Constraints.maxWidth - 16) / 3
+                              : (s4Constraints.maxWidth - 24) / 4;
+                      return Wrap(
+                        spacing: 8,
+                        runSpacing: 10,
+                        children: [
+                          SizedBox(width: fieldW, child: _buildField('Contract Finance Margin (₦)', _profitController, readOnly: true, badgeText: 'Automated')),
+                          SizedBox(width: fieldW, child: _buildField('Direct Cash & Carry Sales (₦)', _ccController, readOnly: true, badgeText: 'Automated')),
+                          SizedBox(width: fieldW, child: _buildField('Loan Origination Fees (₦)', _upfrontFeesController, readOnly: true, badgeText: 'Automated')),
+                          SizedBox(width: fieldW, child: _buildField('Loan Repayments Received (₦)', _collectionsController, readOnly: true, badgeText: 'Automated')),
+                          SizedBox(width: fieldW, child: _buildField('Loan Principal Disbursed (₦)', _disbursedPrincipalController, readOnly: true, badgeText: 'Automated')),
+                          SizedBox(width: fieldW, child: _buildField('Member Savings Deposits (₦)', _savingsDepositsController, readOnly: true, badgeText: 'Automated')),
+                          SizedBox(width: fieldW, child: _buildField('Lapse Deposit Returns (₦)', _lapseRetController, readOnly: true, badgeText: 'Automated')),
+                          SizedBox(width: fieldW, child: _buildField('HO Asset Remittance Inflow (₦)', _fRecHoAssetController, readOnly: true, badgeText: 'Automated')),
+                          SizedBox(width: fieldW, child: _buildField('HO Main Remittance Inflow (₦)', _fRecHoMainController, readOnly: true, badgeText: 'Automated')),
+                          SizedBox(width: fieldW, child: _buildField('Branch Transfer Inflow (₦)', _fRecBrController, readOnly: true, badgeText: 'Automated')),
+                          SizedBox(width: fieldW, child: _buildField('Regional Area Inflow (₦)', _fRecAreaController, readOnly: true, badgeText: 'Automated')),
+                          SizedBox(width: fieldW, child: _buildField('HO Asset Remittance Outflow (₦)', _fPayHoAssetController, readOnly: true, badgeText: 'Automated')),
+                          SizedBox(width: fieldW, child: _buildField('HO Main Remittance Outflow (₦)', _fPayHoMainController, readOnly: true, badgeText: 'Automated')),
+                          SizedBox(width: fieldW, child: _buildField('Branch Transfer Outflow (₦)', _fPayBrController, readOnly: true, badgeText: 'Automated')),
+                        ],
+                      );
+                    },
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),
@@ -5840,6 +6040,7 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
             _buildSectionCard(
               sectionIndex: 5,
               title: '5. Capital Funds & Equity Adjustments (YTD)',
+              subtitle: 'Central head office allocations and statutory capital reserves',
               icon: Icons.pie_chart,
               child: LayoutBuilder(
                 builder: (context, s5Constraints) {
@@ -5854,15 +6055,15 @@ class _BankReconciliationFormState extends ConsumerState<_BankReconciliationForm
                     spacing: 8,
                     runSpacing: 10,
                     children: [
-                      SizedBox(width: fieldW, child: _buildField('HO Fund Main Debit (₦)', _tbFundHoMainController)),
-                      SizedBox(width: fieldW, child: _buildField('Branch Office Fund (₦)', _tbFundBranchController)),
-                      SizedBox(width: fieldW, child: _buildField('Other Area Fund (₦)', _tbFundOtherAreaController)),
-                      SizedBox(width: fieldW, child: _buildField('Internal Capital Fund (₦)', _tbFundInternalController)),
-                      SizedBox(width: fieldW, child: _buildField('Retained Earnings (₦) [Auto B/F]', _retainedEarningsController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('HO Asset Allocation (₦) [Auto B/F]', _hoAssetAllocController, readOnly: true)),
-                      SizedBox(width: fieldW, child: _buildField('Lapse Deposit Reserve (₦)', _lapseDepositReserveController)),
-                      SizedBox(width: fieldW, child: _buildField('Sales Profit Cumulative YTD (₦)', _tbSalesProfitController)),
-                      SizedBox(width: fieldW, child: _buildField('Contingency Reserve (₦)', _tbContingencyController)),
+                      SizedBox(width: fieldW, child: _buildField('Head Office Main Fund (₦)', _tbFundHoMainController, badgeText: 'Central Fund')),
+                      SizedBox(width: fieldW, child: _buildField('Branch Office Fund (₦)', _tbFundBranchController, badgeText: 'Central Fund')),
+                      SizedBox(width: fieldW, child: _buildField('Regional Area Fund (₦)', _tbFundOtherAreaController, badgeText: 'Central Fund')),
+                      SizedBox(width: fieldW, child: _buildField('Internal Capital Fund (₦)', _tbFundInternalController, badgeText: 'Branch Equity')),
+                      SizedBox(width: fieldW, child: _buildField('Retained Earnings (₦)', _retainedEarningsController, readOnly: true, badgeText: 'Rollover')),
+                      SizedBox(width: fieldW, child: _buildField('Head Office Asset Allocation (₦)', _hoAssetAllocController, readOnly: true, badgeText: 'Central Asset')),
+                      SizedBox(width: fieldW, child: _buildField('Lapse Deposit Reserve (₦)', _lapseDepositReserveController, badgeText: 'Statutory Reserve')),
+                      SizedBox(width: fieldW, child: _buildField('Sales Profit Cumulative YTD (₦)', _tbSalesProfitController, badgeText: 'YTD Ledger')),
+                      SizedBox(width: fieldW, child: _buildField('Contingency Reserve (₦)', _tbContingencyController, badgeText: 'Statutory Reserve')),
                     ],
                   );
                 },

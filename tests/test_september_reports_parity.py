@@ -106,37 +106,37 @@ class TestSeptemberReportsParity:
         )
         rows_map = {r["metric"]: r["values"] for r in matrix["rows"]}
 
-        # 1. Total Operating Expenses (Acct 4000)
-        tot_exp = rows_map["Office Expenses (Acct 4000)"]
+        # 1. Total Operating Expenses (OpEx)
+        tot_exp = rows_map.get("Total Operating Expenses (OpEx)") or rows_map.get("Office Expenses (Acct 4000)")
         assert tot_exp["Dorcas (OGI_CO1)"] == 10700.0
         assert tot_exp["Olajumoke (OGI_CO3)"] == 142100.0
         assert tot_exp["Oluwaseun (OGI_CO4)"] == 54800.0
         assert tot_exp["Ayomide (OGI_CO2)"] == 0.0
         assert tot_exp["Ogijo Branch Total"] == 207600.0
 
-        # 2. Field Transport (PC1)
-        trans = rows_map["Field Transport (PC1)"]
+        # 2. Field Transport & Travel
+        trans = rows_map.get("Field Transport & Travel") or rows_map.get("Field Transport (PC1)")
         assert trans["Dorcas (OGI_CO1)"] == 8000.0
         assert trans["Olajumoke (OGI_CO3)"] == 105000.0
         assert trans["Oluwaseun (OGI_CO4)"] == 42000.0
         assert trans["Ayomide (OGI_CO2)"] == 0.0
         assert trans["Ogijo Branch Total"] == 155000.0
 
-        # 3. Stationery (PB3)
-        stat = rows_map["Stationery (PB3)"]
+        # 3. Printing & Stationery
+        stat = rows_map.get("Printing & Stationery") or rows_map.get("Stationery (PB3)")
         assert stat["Dorcas (OGI_CO1)"] == 2700.0
         assert stat["Olajumoke (OGI_CO3)"] == 26000.0
         assert stat["Oluwaseun (OGI_CO4)"] == 9700.0
         assert stat["Ogijo Branch Total"] == 38400.0
 
-        # 4. Utilities & Phone (PB2/PB6)
-        util = rows_map["Utilities & Phone (PB2/PB6)"]
+        # 4. Utilities & Communication
+        util = rows_map.get("Utilities & Communication") or rows_map.get("Utilities & Phone (PB2/PB6)")
         assert util["Olajumoke (OGI_CO3)"] == 6100.0
         assert util["Oluwaseun (OGI_CO4)"] == 1100.0
         assert util["Ogijo Branch Total"] == 7200.0
 
-        # 5. Entertainment (PB4)
-        ent = rows_map["Entertainment (PB4)"]
+        # 5. Entertainment & Refreshment
+        ent = rows_map.get("Entertainment & Refreshment") or rows_map.get("Entertainment (PB4)")
         assert ent["Olajumoke (OGI_CO3)"] == 5000.0
         assert ent["Oluwaseun (OGI_CO4)"] == 2000.0
         assert ent["Ogijo Branch Total"] == 7000.0
@@ -211,68 +211,74 @@ class TestSeptemberReportsParity:
         )
         crd_map = {r["item"]: r for r in crd["rows"]}
 
-        assert crd_map["• Current Loans Count"]["monthly"] == 1
-        assert crd_map["• Current Loans Count"]["weekly"] == 62
-        assert crd_map["• Current Loans Count"]["daily"] == 54
-        assert crd_map["• Current Loans Count"]["total"] == 117
+        def get_crd(*keys):
+            for k in keys:
+                if k in crd_map:
+                    return crd_map[k]
+            raise KeyError(f"None of {keys} found in crd_map")
 
-        assert crd_map["• Current Disbursed Amount (₦)"]["monthly"] == 180000.0
-        assert crd_map["• Current Disbursed Amount (₦)"]["weekly"] == 10009000.0
-        assert crd_map["• Current Disbursed Amount (₦)"]["daily"] == 8777000.0
-        assert crd_map["• Current Disbursed Amount (₦)"]["total"] == 18966000.0
+        assert get_crd("Current Loans Count", "• Current Loans Count")["monthly"] == 1
+        assert get_crd("Current Loans Count", "• Current Loans Count")["weekly"] == 62
+        assert get_crd("Current Loans Count", "• Current Loans Count")["daily"] == 54
+        assert get_crd("Current Loans Count", "• Current Loans Count")["total"] == 117
 
-        assert crd_map["• Total Net Loans Count (Col 7 = 3+5-27)"]["monthly"] == 3
-        assert crd_map["• Total Net Loans Count (Col 7 = 3+5-27)"]["weekly"] == 155
-        assert crd_map["• Total Net Loans Count (Col 7 = 3+5-27)"]["daily"] == 135
-        assert crd_map["• Total Net Loans Count (Col 7 = 3+5-27)"]["total"] == 293
+        assert get_crd("Current Disbursed Principal (₦)", "Current Disbursed Amount (₦)", "• Current Disbursed Amount (₦)")["monthly"] == 180000.0
+        assert get_crd("Current Disbursed Principal (₦)", "Current Disbursed Amount (₦)", "• Current Disbursed Amount (₦)")["weekly"] == 10009000.0
+        assert get_crd("Current Disbursed Principal (₦)", "Current Disbursed Amount (₦)", "• Current Disbursed Amount (₦)")["daily"] == 8777000.0
+        assert get_crd("Current Disbursed Principal (₦)", "Current Disbursed Amount (₦)", "• Current Disbursed Amount (₦)")["total"] == 18966000.0
 
-        assert crd_map["• Total Net Disbursed (₦) (Col 8 = 4+6-28)"]["monthly"] == 402000.0
-        assert crd_map["• Total Net Disbursed (₦) (Col 8 = 4+6-28)"]["weekly"] == 25560000.0
-        assert crd_map["• Total Net Disbursed (₦) (Col 8 = 4+6-28)"]["daily"] == 22461000.0
-        assert crd_map["• Total Net Disbursed (₦) (Col 8 = 4+6-28)"]["total"] == 48423000.0
+        assert get_crd("Total Net Loans Count", "• Total Net Loans Count", "• Total Net Loans Count (Col 7 = 3+5-27)")["monthly"] == 3
+        assert get_crd("Total Net Loans Count", "• Total Net Loans Count", "• Total Net Loans Count (Col 7 = 3+5-27)")["weekly"] == 155
+        assert get_crd("Total Net Loans Count", "• Total Net Loans Count", "• Total Net Loans Count (Col 7 = 3+5-27)")["daily"] == 135
+        assert get_crd("Total Net Loans Count", "• Total Net Loans Count", "• Total Net Loans Count (Col 7 = 3+5-27)")["total"] == 293
 
-        assert crd_map["• Current Month Excess (₦) (Col 10)"]["monthly"] == 0.0
-        assert crd_map["• Current Month Excess (₦) (Col 10)"]["weekly"] == 345625.0
-        assert crd_map["• Current Month Excess (₦) (Col 10)"]["daily"] == 357600.0
-        assert crd_map["• Current Month Excess (₦) (Col 10)"]["total"] == 703225.0
+        assert get_crd("Total Net Disbursed Principal (₦)", "Total Net Disbursed (₦)", "• Total Net Disbursed (₦)", "• Total Net Disbursed (₦) (Col 8 = 4+6-28)")["monthly"] == 402000.0
+        assert get_crd("Total Net Disbursed Principal (₦)", "Total Net Disbursed (₦)", "• Total Net Disbursed (₦)", "• Total Net Disbursed (₦) (Col 8 = 4+6-28)")["weekly"] == 25560000.0
+        assert get_crd("Total Net Disbursed Principal (₦)", "Total Net Disbursed (₦)", "• Total Net Disbursed (₦)", "• Total Net Disbursed (₦) (Col 8 = 4+6-28)")["daily"] == 22461000.0
+        assert get_crd("Total Net Disbursed Principal (₦)", "Total Net Disbursed (₦)", "• Total Net Disbursed (₦)", "• Total Net Disbursed (₦) (Col 8 = 4+6-28)")["total"] == 48423000.0
 
-        assert crd_map["• Total Excess Collection (₦) (Col 11 = 9+10)"]["monthly"] == 0.0
-        assert crd_map["• Total Excess Collection (₦) (Col 11 = 9+10)"]["weekly"] == 25465525.0
-        assert crd_map["• Total Excess Collection (₦) (Col 11 = 9+10)"]["daily"] == 46522000.0
-        assert crd_map["• Total Excess Collection (₦) (Col 11 = 9+10)"]["total"] == 71987525.0
+        assert get_crd("Current Month Excess Collection (₦)", "Current Month Excess (₦)", "• Current Month Excess (₦)", "• Current Month Excess (₦) (Col 10)")["monthly"] == 0.0
+        assert get_crd("Current Month Excess Collection (₦)", "Current Month Excess (₦)", "• Current Month Excess (₦)", "• Current Month Excess (₦) (Col 10)")["weekly"] == 345625.0
+        assert get_crd("Current Month Excess Collection (₦)", "Current Month Excess (₦)", "• Current Month Excess (₦)", "• Current Month Excess (₦) (Col 10)")["daily"] == 357600.0
+        assert get_crd("Current Month Excess Collection (₦)", "Current Month Excess (₦)", "• Current Month Excess (₦)", "• Current Month Excess (₦) (Col 10)")["total"] == 703225.0
 
-        assert crd_map["• Current Month Installment (₦) (Col 13)"]["monthly"] == 264000.0
-        assert crd_map["• Current Month Installment (₦) (Col 13)"]["weekly"] == 8556625.0
-        assert crd_map["• Current Month Installment (₦) (Col 13)"]["daily"] == 8645050.0
-        assert crd_map["• Current Month Installment (₦) (Col 13)"]["total"] == 17465675.0
+        assert get_crd("Total Excess Collection (₦)", "• Total Excess Collection (₦)", "• Total Excess Collection (₦) (Col 11 = 9+10)")["monthly"] == 0.0
+        assert get_crd("Total Excess Collection (₦)", "• Total Excess Collection (₦)", "• Total Excess Collection (₦) (Col 11 = 9+10)")["weekly"] == 25465525.0
+        assert get_crd("Total Excess Collection (₦)", "• Total Excess Collection (₦)", "• Total Excess Collection (₦) (Col 11 = 9+10)")["daily"] == 46522000.0
+        assert get_crd("Total Excess Collection (₦)", "• Total Excess Collection (₦)", "• Total Excess Collection (₦) (Col 11 = 9+10)")["total"] == 71987525.0
 
-        assert crd_map["• Total Net Installments (₦) (Col 14 = 12+13-28)"]["monthly"] == 256000.0
-        assert crd_map["• Total Net Installments (₦) (Col 14 = 12+13-28)"]["weekly"] == 11025125.0
-        assert crd_map["• Total Net Installments (₦) (Col 14 = 12+13-28)"]["daily"] == 10749050.0
-        assert crd_map["• Total Net Installments (₦) (Col 14 = 12+13-28)"]["total"] == 22030175.0
+        assert get_crd("Current Month Installment (₦)", "• Current Month Installment (₦)", "• Current Month Installment (₦) (Col 13)")["monthly"] == 264000.0
+        assert get_crd("Current Month Installment (₦)", "• Current Month Installment (₦)", "• Current Month Installment (₦) (Col 13)")["weekly"] == 8556625.0
+        assert get_crd("Current Month Installment (₦)", "• Current Month Installment (₦)", "• Current Month Installment (₦) (Col 13)")["daily"] == 8645050.0
+        assert get_crd("Current Month Installment (₦)", "• Current Month Installment (₦)", "• Current Month Installment (₦) (Col 13)")["total"] == 17465675.0
 
-        assert crd_map["• Active Loans Balance Count (Col 23 = Col 7)"]["monthly"] == 3
-        assert crd_map["• Active Loans Balance Count (Col 23 = Col 7)"]["weekly"] == 155
-        assert crd_map["• Active Loans Balance Count (Col 23 = Col 7)"]["daily"] == 135
-        assert crd_map["• Active Loans Balance Count (Col 23 = Col 7)"]["total"] == 293
+        assert get_crd("Total Net Installments (₦)", "• Total Net Installments (₦)", "• Total Net Installments (₦) (Col 14 = 12+13-28)")["monthly"] == 256000.0
+        assert get_crd("Total Net Installments (₦)", "• Total Net Installments (₦)", "• Total Net Installments (₦) (Col 14 = 12+13-28)")["weekly"] == 11025125.0
+        assert get_crd("Total Net Installments (₦)", "• Total Net Installments (₦)", "• Total Net Installments (₦) (Col 14 = 12+13-28)")["daily"] == 10749050.0
+        assert get_crd("Total Net Installments (₦)", "• Total Net Installments (₦)", "• Total Net Installments (₦) (Col 14 = 12+13-28)")["total"] == 22030175.0
 
-        assert crd_map["• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["monthly"] == 146000.0
-        assert crd_map["• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["weekly"] == 14534875.0
-        assert crd_map["• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["daily"] == 11711950.0
-        assert crd_map["• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["total"] == 26392825.0
+        assert get_crd("Active Loans Balance Count", "• Active Loans Balance Count", "• Active Loans Balance Count (Col 23 = Col 7)")["monthly"] == 3
+        assert get_crd("Active Loans Balance Count", "• Active Loans Balance Count", "• Active Loans Balance Count (Col 23 = Col 7)")["weekly"] == 155
+        assert get_crd("Active Loans Balance Count", "• Active Loans Balance Count", "• Active Loans Balance Count (Col 23 = Col 7)")["daily"] == 135
+        assert get_crd("Active Loans Balance Count", "• Active Loans Balance Count", "• Active Loans Balance Count (Col 23 = Col 7)")["total"] == 293
 
-        assert crd_map["• Current Full Repayment Count (Col 27)"]["monthly"] == 3
-        assert crd_map["• Current Full Repayment Count (Col 27)"]["weekly"] == 56
-        assert crd_map["• Current Full Repayment Count (Col 27)"]["daily"] == 48
-        assert crd_map["• Current Full Repayment Count (Col 27)"]["total"] == 107
+        assert get_crd("Outstanding Credit Balance (₦)", "• Outstanding Credit Balance (₦)", "• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)")["monthly"] == 146000.0
+        assert get_crd("Outstanding Credit Balance (₦)", "• Outstanding Credit Balance (₦)", "• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)")["weekly"] == 14534875.0
+        assert get_crd("Outstanding Credit Balance (₦)", "• Outstanding Credit Balance (₦)", "• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)")["daily"] == 11711950.0
+        assert get_crd("Outstanding Credit Balance (₦)", "• Outstanding Credit Balance (₦)", "• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)")["total"] == 26392825.0
 
-        assert crd_map["• Current Full Repayment Amount (₦) (Col 28)"]["monthly"] == 408000.0
-        assert crd_map["• Current Full Repayment Amount (₦) (Col 28)"]["weekly"] == 9036000.0
-        assert crd_map["• Current Full Repayment Amount (₦) (Col 28)"]["daily"] == 8184000.0
-        assert crd_map["• Current Full Repayment Amount (₦) (Col 28)"]["total"] == 17628000.0
+        assert get_crd("Current Full Repayment Count", "• Current Full Repayment Count", "• Current Full Repayment Count (Col 27)")["monthly"] == 3
+        assert get_crd("Current Full Repayment Count", "• Current Full Repayment Count", "• Current Full Repayment Count (Col 27)")["weekly"] == 56
+        assert get_crd("Current Full Repayment Count", "• Current Full Repayment Count", "• Current Full Repayment Count (Col 27)")["daily"] == 48
+        assert get_crd("Current Full Repayment Count", "• Current Full Repayment Count", "• Current Full Repayment Count (Col 27)")["total"] == 107
 
-        assert crd_map["• Previous Full Repayment Amount (₦) (Col 26)"]["monthly"] == 2898000.0
-        assert crd_map["• Previous Full Repayment Amount (₦) (Col 26)"]["weekly"] == 202326000.0
+        assert get_crd("Current Full Repayment Amount (₦)", "• Current Full Repayment Amount (₦)", "• Current Full Repayment Amount (₦) (Col 28)")["monthly"] == 408000.0
+        assert get_crd("Current Full Repayment Amount (₦)", "• Current Full Repayment Amount (₦)", "• Current Full Repayment Amount (₦) (Col 28)")["weekly"] == 9036000.0
+        assert get_crd("Current Full Repayment Amount (₦)", "• Current Full Repayment Amount (₦)", "• Current Full Repayment Amount (₦) (Col 28)")["daily"] == 8184000.0
+        assert get_crd("Current Full Repayment Amount (₦)", "• Current Full Repayment Amount (₦)", "• Current Full Repayment Amount (₦) (Col 28)")["total"] == 17628000.0
+
+        assert get_crd("Previous Full Repayment Amount (₦)", "• Previous Full Repayment Amount (₦)", "• Previous Full Repayment Amount (₦) (Col 26)")["monthly"] == 2898000.0
+        assert get_crd("Previous Full Repayment Amount (₦)", "• Previous Full Repayment Amount (₦)", "• Previous Full Repayment Amount (₦) (Col 26)")["weekly"] == 202326000.0
         assert crd_map["• Previous Full Repayment Amount (₦) (Col 26)"]["daily"] == 197541000.0
         assert crd_map["• Previous Full Repayment Amount (₦) (Col 26)"]["total"] == 402765000.0
 

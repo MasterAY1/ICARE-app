@@ -355,7 +355,7 @@ class PortfolioService:
         period_ind_dep_cids = set()
         period_ind_wd_cids = set()
 
-        has_bf_opening = any(s.get("reference") == "OPENING-SAVINGS-BF" for s in ind_savings_rows)
+        clients_with_bf = {str(s.get("client_id")) for s in ind_savings_rows if s.get("reference") == "OPENING-SAVINGS-BF"}
 
         # A. Process Individual Savings
         for s in ind_savings_rows:
@@ -366,10 +366,8 @@ class PortfolioService:
             ref = str(s.get("reference") or "")
             rem = str(s.get("remarks") or "").lower()
 
-            # Exclude legacy pre-baseline test onboarding records that duplicate 2026-08-31 opening balance
-            if ref.startswith("ONBOARDING") or "onboarding" in rem or p_date == "1970-01-01":
-                continue
-            if has_bf_opening and p_date < "2026-08-31":
+            # If client has explicit OPENING-SAVINGS-BF, exclude superseded test/onboarding records
+            if cid_str in clients_with_bf and (ref.startswith("ONBOARDING") or "onboarding" in rem or p_date == "1970-01-01" or (ref != "OPENING-SAVINGS-BF" and p_date < "2026-08-31")):
                 continue
             
             total_ind_dep += dep

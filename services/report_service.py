@@ -780,19 +780,16 @@ class ReportService:
         q_sav_m = uow.client.table("individual_savings").select("id, client_id, deposit_amount, withdrawal_amount, officer_id").eq("branch_id", branch_id).gte("posting_date", s_d_str).lte("posting_date", e_d_str)
         month_sav = fetch_all_paginated(q_sav_m)
 
-        # Opening savings
-        if year == 2026 and month == 9:
-            q_sav_op = uow.client.table("individual_savings").select("deposit_amount, officer_id").eq("branch_id", branch_id).eq("posting_date", "2026-08-31").eq("remarks", "Savings B/F Opening Balance")
-            open_sav = fetch_all_paginated(q_sav_op)
-        elif year < 2026 or (year == 2026 and month < 9):
-            q_sav_op = uow.client.table("individual_savings").select("deposit_amount, withdrawal_amount, officer_id").eq("branch_id", branch_id).lt("posting_date", s_d_str)
-            open_sav = fetch_all_paginated(q_sav_op)
-        else:
-            q_base = uow.client.table("individual_savings").select("deposit_amount, officer_id").eq("branch_id", branch_id).eq("posting_date", "2026-08-31").eq("remarks", "Savings B/F Opening Balance")
-            base_sav = fetch_all_paginated(q_base)
-            q_mid = uow.client.table("individual_savings").select("deposit_amount, withdrawal_amount, officer_id").eq("branch_id", branch_id).gte("posting_date", "2026-09-01").lt("posting_date", s_d_str)
-            mid_sav = fetch_all_paginated(q_mid)
-            open_sav = base_sav + mid_sav
+        # Opening savings prior to month
+        all_pre_sav = fetch_all_paginated(uow.client.table("individual_savings").select("deposit_amount, withdrawal_amount, officer_id, reference, posting_date").eq("branch_id", branch_id).lt("posting_date", s_d_str))
+        has_bf_ref = any(s.get("reference") == "OPENING-SAVINGS-BF" for s in all_pre_sav)
+        open_sav = []
+        for s in all_pre_sav:
+            p_d = str(s.get("posting_date") or "")[:10]
+            ref = str(s.get("reference") or "")
+            if has_bf_ref and (ref.startswith("ONBOARDING") or p_d == "1970-01-01" or (ref != "OPENING-SAVINGS-BF" and p_d < "2026-08-31")):
+                continue
+            open_sav.append(s)
 
         # 7. Bank Deposits (Account 1050)
         q_bd = uow.client.table("financial_ledger_entries").select("amount, financial_transactions!inner(officer_id, posting_date)").eq("account_code", "1050").eq("branch_id", branch_id).gte("financial_transactions.posting_date", s_d_str).lte("financial_transactions.posting_date", e_d_str)
@@ -835,12 +832,12 @@ class ReportService:
             "Savings Deposit (Month)",
             "Savings Withdrawal (Month)",
             "Savings Closing Balance",
-            "Bank Deposits Remitted (Acct 1050)",
-            "Field Transport (PC1)",
-            "Stationery (PB3)",
-            "Entertainment (PB4)",
-            "Utilities & Phone (PB2/PB6)",
-            "Office Expenses (Acct 4000)",
+            "Transit Bank Deposits Remitted",
+            "Field Transport & Travel",
+            "Printing & Stationery",
+            "Entertainment & Refreshment",
+            "Utilities & Communication",
+            "Total Operating Expenses (OpEx)",
             "Active Loans Count",
             "Active Savers Count"
         ]
@@ -933,18 +930,18 @@ class ReportService:
             table_data["Savings Deposit (Month)"][oname] = round(s_dep, 2)
             table_data["Savings Withdrawal (Month)"][oname] = round(s_wth, 2)
             table_data["Savings Closing Balance"][oname] = round(closing_s, 2)
-            table_data["Bank Deposits Remitted (Acct 1050)"][oname] = round(bd, 2)
-            table_data["Field Transport (PC1)"][oname] = round(exp_trans, 2)
-            table_data["Stationery (PB3)"][oname] = round(exp_stat, 2)
-            table_data["Entertainment (PB4)"][oname] = round(exp_ent, 2)
-            table_data["Utilities & Phone (PB2/PB6)"][oname] = round(exp_util, 2)
-            table_data["Office Expenses (Acct 4000)"][oname] = round(exp_total, 2)
+            table_data["Transit Bank Deposits Remitted"][oname] = round(bd, 2)
+            table_data["Field Transport & Travel"][oname] = round(exp_trans, 2)
+            table_data["Printing & Stationery"][oname] = round(exp_stat, 2)
+            table_data["Entertainment & Refreshment"][oname] = round(exp_ent, 2)
+            table_data["Utilities & Communication"][oname] = round(exp_util, 2)
+            table_data["Total Operating Expenses (OpEx)"][oname] = round(exp_total, 2)
             table_data["Active Loans Count"][oname] = act_loans
             table_data["Active Savers Count"][oname] = act_savers
 
         # Total column
         for m in metric_names:
-            if m == "Office Expenses (Acct 4000)":
+            if m == "Total Operating Expenses (OpEx)":
                 sum_off = sum(table_data[m].get(off["name"], 0.0) for off in officers)
                 table_data[m][total_col_name] = round(tot_exp if tot_exp > 0 else sum_off, 2)
             elif "Count" in m:
@@ -969,12 +966,12 @@ class ReportService:
             "savings_deposits": table_data["Savings Deposit (Month)"][total_col_name],
             "savings_withdrawals": table_data["Savings Withdrawal (Month)"][total_col_name],
             "closing_savings": table_data["Savings Closing Balance"][total_col_name],
-            "bank_deposits": table_data["Bank Deposits Remitted (Acct 1050)"][total_col_name],
-            "transport_expenses": table_data["Field Transport (PC1)"][total_col_name],
-            "stationery_expenses": table_data["Stationery (PB3)"][total_col_name],
-            "entertainment_expenses": table_data["Entertainment (PB4)"][total_col_name],
-            "utilities_expenses": table_data["Utilities & Phone (PB2/PB6)"][total_col_name],
-            "office_expenses": table_data["Office Expenses (Acct 4000)"][total_col_name],
+            "bank_deposits": table_data["Transit Bank Deposits Remitted"][total_col_name],
+            "transport_expenses": table_data["Field Transport & Travel"][total_col_name],
+            "stationery_expenses": table_data["Printing & Stationery"][total_col_name],
+            "entertainment_expenses": table_data["Entertainment & Refreshment"][total_col_name],
+            "utilities_expenses": table_data["Utilities & Communication"][total_col_name],
+            "office_expenses": table_data["Total Operating Expenses (OpEx)"][total_col_name],
             "active_loans": int(table_data["Active Loans Count"][total_col_name]),
             "active_savers": int(table_data["Active Savers Count"][total_col_name]),
             "gl_debits": gl_debits,
@@ -1496,7 +1493,7 @@ class ReportService:
 
         # 5. Construct Monthly Receipts & Payments Rows
         receipts = [
-            {"item": f"Bank Balances B/F ({bank_names_str})", "sub_detail": row1_sub, "amount": row1_amount},
+            {"item": "Bank Balances B/F", "sub_detail": row1_sub, "amount": row1_amount},
             {"item": "Sales Profit / Finance Markup", "sub_detail": "Contract Margin", "amount": sales_profit_markup},
             {"item": "Fund Cash (Head Office & Areas)", "sub_detail": f"Asset: ₦{fund_ho_asset_rec:,.0f}, Main: ₦{fund_ho_main_rec:,.0f}, Area: ₦{fund_area_rec:,.0f}, Branch: ₦{fund_br_rec:,.0f}", "amount": tot_fund_rec},
             {"item": "Sales: Cash and Carry", "sub_detail": "Direct Asset Sales", "amount": sales_cc},
@@ -1518,7 +1515,7 @@ class ReportService:
             {"item": "Lapse Deposit Returns", "sub_detail": "LAPS Maturities Settled", "amount": lapse_return},
             {"item": "Bank Charges", "sub_detail": bank_chg_sub or "Commercial Bank Charges", "amount": tot_bank_charges},
             {"item": "Paid to Other Sources & Operational Expenses", "sub_detail": "Itemized Operational Outflows", "amount": paid_other_sources},
-            {"item": f"Closing Liquid Position ({bank_names_str})", "sub_detail": bank_cf_sub or "Statement Balances c/f", "amount": 0.0},
+            {"item": "Closing Liquid Position", "sub_detail": bank_cf_sub or "Statement Balances c/f", "amount": 0.0},
         ]
         payments_excl_closing = round(sum(p["amount"] for p in payments[:7]), 2)
 
@@ -1583,11 +1580,11 @@ class ReportService:
             {"section": "D. FUND (CASH)", "item": "Other Area", "debit": 0.0, "credit": tb_fund_other_area},
             {"section": "D. FUND (CASH)", "item": "Internal", "debit": 0.0, "credit": tb_fund_internal},
 
-            # F: ASSET (Normal Balance: Debit)
-            {"section": "F. ASSET", "item": "Credit Balance (Debtors)", "debit": closing_credit, "credit": 0.0},
-            {"section": "F. ASSET", "item": "Overdue", "debit": overdue_cf, "credit": 0.0},
-            {"section": "F. ASSET", "item": f"Bank Accounts ({bank_names_str})", "debit": bank_accounts_tb, "credit": 0.0},
-            {"section": "F. ASSET", "item": "Cash in hand (Account 1000)", "debit": cash_in_hand_bf, "credit": 0.0},
+            # E: ASSETS (Normal Balance: Debit)
+            {"section": "E. ASSETS", "item": "Credit Balance (Debtors)", "debit": closing_credit, "credit": 0.0},
+            {"section": "E. ASSETS", "item": "Overdue", "debit": overdue_cf, "credit": 0.0},
+            {"section": "E. ASSETS", "item": f"Bank Accounts ({bank_names_str})", "debit": bank_accounts_tb, "credit": 0.0},
+            {"section": "E. ASSETS", "item": "Vault Cash", "debit": cash_in_hand_bf, "credit": 0.0},
         ]
 
         for r in tb_rows:
@@ -1795,30 +1792,6 @@ class ReportService:
                     target_product_cycle = p.get("repayment_cycle")
                     break
 
-        # August 2026 baseline for Ogijo (used when no officer/product filter is active)
-        BASE_AUG_DEP = {
-            "Monthly": {
-                "member_prev": 2, "deposit_prev": 27000.0,
-                "wth_prev_no": 7, "wth_prev_amount": 227900.0,
-                "ret_prev_no": 1, "ret_prev_amount": 5000.0,
-                "opening_bal": 27000.0
-            },
-            "Weekly": {
-                "member_prev": 171, "deposit_prev": 4377730.0,
-                "wth_prev_no": 1540, "wth_prev_amount": 40849865.0,
-                "ret_prev_no": 549, "ret_prev_amount": 9617175.0,
-                "opening_bal": 4377730.0
-            },
-            "Daily": {
-                "member_prev": 130, "deposit_prev": 6286130.0,
-                "wth_prev_no": 1683, "wth_prev_amount": 44025180.0,
-                "ret_prev_no": 475, "ret_prev_amount": 11654445.0,
-                "opening_bal": 6286130.0
-            }
-        }
-
-        # Dynamic calculation from operational transactions (individual_savings)
-
         # Query cycle classification metadata
         prods = {}
         try:
@@ -1828,7 +1801,8 @@ class ReportService:
             prods = {}
         groups = {g['group_id']: g for g in fetch_all_paginated(uow.client.table('groups').select('group_id, meeting_day, officer_id').eq('branch_id', branch_id))}
         clients = {c['client_id']: c for c in fetch_all_paginated(uow.client.table('clients').select('client_id, group_id, officer_id, created_at').eq('branch_id', branch_id))}
-        loans = fetch_all_paginated(uow.client.table('loans').select('client_id, product_id, officer_id').eq('branch_id', branch_id))
+        loans = fetch_all_paginated(uow.client.table('loans').select('client_id, product_id, officer_id, created_at').eq('branch_id', branch_id))
+        loans.sort(key=lambda x: str(x.get('created_at') or ''))
 
         client_cycle = {}
         client_prod = {}
@@ -1853,15 +1827,106 @@ class ReportService:
                 return 'Monthly'
             return 'Weekly'
 
-        if year < 2026 or (year == 2026 and month < 9):
-            if not target_officer_id and not target_product_id:
-                prev = BASE_AUG_DEP
-            else:
-                # Dynamically calculate pre-Sept savings baseline for this officer/product
-                q_sav_op = uow.client.table('individual_savings').select('deposit_amount, withdrawal_amount, client_id, remarks, officer_id').eq('branch_id', branch_id).lte('posting_date', '2026-08-31')
+        # Determine prior month M-1
+        prev_month = 12 if month == 1 else month - 1
+        prev_year = year - 1 if month == 1 else year
+
+        # 1. Resolve prior month B/F from database-stored baseline in monthly_statement_reconciliations
+        prev = None
+        if not target_officer_id and not target_product_id:
+            try:
+                res_recon = uow.client.table("monthly_statement_reconciliations") \
+                    .select("data") \
+                    .eq("branch_id", branch_id) \
+                    .eq("year", prev_year) \
+                    .eq("month", prev_month) \
+                    .execute()
+                if res_recon.data and isinstance(res_recon.data[0].get("data"), dict):
+                    stored_ds = res_recon.data[0]["data"].get("deposit_statement")
+                    if stored_ds and isinstance(stored_ds.get("rows"), list):
+                        prev = {}
+                        for r in stored_ds["rows"]:
+                            prog = r.get("programme")
+                            if prog and prog != "Total":
+                                prev[prog] = {
+                                    "member_prev": int(r.get("member_total", 0)),
+                                    "deposit_prev": float(r.get("deposit_total", 0.0)),
+                                    "wth_prev_no": int(r.get("withdrawal_total_no", 0)),
+                                    "wth_prev_amount": float(r.get("withdrawal_total_amount", 0.0)),
+                                    "ret_prev_no": int(r.get("return_total_no", 0)),
+                                    "ret_prev_amount": float(r.get("return_total_amount", 0.0)),
+                                    "opening_bal": float(r.get("balance_amount", 0.0))
+                                }
+            except Exception:
+                prev = None
+
+        # 1b. If no prior month M-1 baseline, check if this exact month has a stored statutory return (e.g. cutover baseline)
+        if prev is None and not target_officer_id and not target_product_id:
+            try:
+                res_curr = uow.client.table("monthly_statement_reconciliations") \
+                    .select("data") \
+                    .eq("branch_id", branch_id) \
+                    .eq("year", year) \
+                    .eq("month", month) \
+                    .execute()
+                if res_curr.data and isinstance(res_curr.data[0].get("data"), dict):
+                    stored_ds = res_curr.data[0]["data"].get("deposit_statement")
+                    if stored_ds and isinstance(stored_ds.get("rows"), list):
+                        prev = {}
+                        for r in stored_ds["rows"]:
+                            prog = r.get("programme")
+                            if prog and prog != "Total":
+                                prev[prog] = {
+                                    "member_prev": int(r.get("member_total", 0)),
+                                    "deposit_prev": float(r.get("deposit_total", 0.0)),
+                                    "wth_prev_no": int(r.get("withdrawal_total_no", 0)),
+                                    "wth_prev_amount": float(r.get("withdrawal_total_amount", 0.0)),
+                                    "ret_prev_no": int(r.get("return_total_no", 0)),
+                                    "ret_prev_amount": float(r.get("return_total_amount", 0.0)),
+                                    "opening_bal": float(r.get("balance_amount", 0.0))
+                                }
+            except Exception:
+                pass
+
+        # 2. If no approved baseline is in monthly_statement_reconciliations:
+        # Check if Month M-1 live statement exists, or dynamically calculate baseline prior to s_str
+        if prev is None:
+            can_rollover = False
+            if (year > 2026 or (year == 2026 and month > 9)) and not target_officer_id and not target_product_id:
+                try:
+                    prev_stmt = ReportService.get_monthly_deposit_statement(
+                        uow, branch_id, prev_year, prev_month, officer_name=officer_name, product_name=product_name
+                    )
+                    if prev_stmt.get("rows"):
+                        prev = {}
+                        for r in prev_stmt["rows"]:
+                            prog = r.get("programme")
+                            if prog and prog != "Total":
+                                prev[prog] = {
+                                    "member_prev": r.get("member_total", 0),
+                                    "deposit_prev": r.get("deposit_total", 0.0),
+                                    "wth_prev_no": r.get("withdrawal_total_no", 0),
+                                    "wth_prev_amount": r.get("withdrawal_total_amount", 0.0),
+                                    "ret_prev_no": r.get("return_total_no", 0),
+                                    "ret_prev_amount": r.get("return_total_amount", 0.0),
+                                    "opening_bal": r.get("balance_amount", 0.0)
+                                }
+                        can_rollover = True
+                except Exception:
+                    can_rollover = False
+
+            if not can_rollover:
+                # Dynamically calculate baseline from operational transactions prior to current month start (s_str)
+                q_sav_op = uow.client.table('individual_savings').select('deposit_amount, withdrawal_amount, client_id, remarks, officer_id, reference, posting_date').eq('branch_id', branch_id).lt('posting_date', s_str)
                 if target_officer_id:
                     q_sav_op = q_sav_op.eq('officer_id', target_officer_id)
                 savs_op = fetch_all_paginated(q_sav_op)
+
+                # Query group savings for baseline as well per BR-SAV-001
+                q_grp_op = uow.client.table('group_savings').select('deposit_amount, withdrawal_amount, group_id, officer_id').eq('branch_id', branch_id).lt('posting_date', s_str)
+                if target_officer_id:
+                    q_grp_op = q_grp_op.eq('officer_id', target_officer_id)
+                grps_op = fetch_all_paginated(q_grp_op)
 
                 prev = {
                     "Monthly": {"member_prev": 0, "deposit_prev": 0.0, "wth_prev_no": 0, "wth_prev_amount": 0.0, "ret_prev_no": 0, "ret_prev_amount": 0.0, "opening_bal": 0.0},
@@ -1869,11 +1934,18 @@ class ReportService:
                     "Daily": {"member_prev": 0, "deposit_prev": 0.0, "wth_prev_no": 0, "wth_prev_amount": 0.0, "ret_prev_no": 0, "ret_prev_amount": 0.0, "opening_bal": 0.0},
                 }
                 seen_clients = {c: set() for c in ["Monthly", "Weekly", "Daily"]}
+                clients_with_bf_ref = {str(s.get("client_id")) for s in savs_op if s.get("reference") == "OPENING-SAVINGS-BF"}
+
                 for s in savs_op:
                     cid = s.get('client_id')
                     pid = client_prod.get(cid)
                     if target_product_id and pid != target_product_id:
                         continue
+                    p_d = str(s.get("posting_date") or "")[:10]
+                    ref = str(s.get("reference") or "")
+                    if str(cid) in clients_with_bf_ref and (ref.startswith("ONBOARDING") or p_d == "1970-01-01" or (ref != "OPENING-SAVINGS-BF" and p_d < "2026-08-31")):
+                        continue
+
                     cyc = target_product_cycle or get_cycle(cid)
                     if cyc not in prev:
                         cyc = 'Weekly'
@@ -1890,74 +1962,75 @@ class ReportService:
                         else:
                             prev[cyc]['wth_prev_no'] += 1
                             prev[cyc]['wth_prev_amount'] += wth
+
+                # Include group savings in pre-month baseline
+                for g in grps_op:
+                    gid = g.get('group_id')
+                    mday = (groups.get(gid) or {}).get('meeting_day')
+                    cyc = 'Daily' if mday == 'Daily' else ('Monthly' if mday == 'Monthly' else 'Weekly')
+                    dep = float(g.get('deposit_amount') or 0.0)
+                    wth = float(g.get('withdrawal_amount') or 0.0)
+                    prev[cyc]['deposit_prev'] += dep
+                    prev[cyc]['wth_prev_amount'] += wth
+
                 for c in ["Monthly", "Weekly", "Daily"]:
                     prev[c]['member_prev'] = len(seen_clients[c])
                     prev[c]['opening_bal'] = round(prev[c]['deposit_prev'] - prev[c]['wth_prev_amount'] - prev[c]['ret_prev_amount'], 2)
 
-            curr = {
-                "Monthly": {"member": 0, "dep": 0.0, "wth_no": 0, "wth_amt": 0.0, "ret_no": 0, "ret_amt": 0.0},
-                "Weekly": {"member": 0, "dep": 0.0, "wth_no": 0, "wth_amt": 0.0, "ret_no": 0, "ret_amt": 0.0},
-                "Daily": {"member": 0, "dep": 0.0, "wth_no": 0, "wth_amt": 0.0, "ret_no": 0, "ret_amt": 0.0},
-            }
-        else:
-            # Sep 2026 onwards: dynamically rollover from prior month M-1
-            prev_month = 12 if month == 1 else month - 1
-            prev_year = year - 1 if month == 1 else year
-            prev_stmt = ReportService.get_monthly_deposit_statement(
-                uow, branch_id, prev_year, prev_month, officer_name=officer_name, product_name=product_name
-            )
-            prev = {}
-            for r in prev_stmt.get("rows", []):
-                prog = r.get("programme")
-                if prog and prog != "Total":
-                    prev[prog] = {
-                        "member_prev": r.get("member_total", 0),
-                        "deposit_prev": r.get("deposit_total", 0.0),
-                        "wth_prev_no": r.get("withdrawal_total_no", 0),
-                        "wth_prev_amount": r.get("withdrawal_total_amount", 0.0),
-                        "ret_prev_no": r.get("return_total_no", 0),
-                        "ret_prev_amount": r.get("return_total_amount", 0.0),
-                        "opening_bal": r.get("balance_amount", 0.0)
-                    }
+        curr = {
+            "Monthly": {"member": 0, "dep": 0.0, "wth_no": 0, "wth_amt": 0.0, "ret_no": 0, "ret_amt": 0.0},
+            "Weekly": {"member": 0, "dep": 0.0, "wth_no": 0, "wth_amt": 0.0, "ret_no": 0, "ret_amt": 0.0},
+            "Daily": {"member": 0, "dep": 0.0, "wth_no": 0, "wth_amt": 0.0, "ret_no": 0, "ret_amt": 0.0},
+        }
 
-            curr = {
-                "Monthly": {"member": 0, "dep": 0.0, "wth_no": 0, "wth_amt": 0.0, "ret_no": 0, "ret_amt": 0.0},
-                "Weekly": {"member": 0, "dep": 0.0, "wth_no": 0, "wth_amt": 0.0, "ret_no": 0, "ret_amt": 0.0},
-                "Daily": {"member": 0, "dep": 0.0, "wth_no": 0, "wth_amt": 0.0, "ret_no": 0, "ret_amt": 0.0},
-            }
+        for c in clients.values():
+            if target_officer_id and c.get('officer_id') != target_officer_id:
+                continue
+            cat = c.get('created_at') or ''
+            if s_str <= cat[:10] <= e_str:
+                cyc = target_product_cycle or get_cycle(c['client_id'])
+                if cyc in curr:
+                    curr[cyc]['member'] += 1
 
-            for c in clients.values():
-                if target_officer_id and c.get('officer_id') != target_officer_id:
-                    continue
-                cat = c.get('created_at') or ''
-                if s_str <= cat[:10] <= e_str:
-                    cyc = target_product_cycle or get_cycle(c['client_id'])
-                    if cyc in curr:
-                        curr[cyc]['member'] += 1
+        q_sav = uow.client.table('individual_savings').select('deposit_amount, withdrawal_amount, client_id, remarks, officer_id').eq('branch_id', branch_id).gte('posting_date', s_str).lte('posting_date', e_str)
+        if target_officer_id:
+            q_sav = q_sav.eq('officer_id', target_officer_id)
+        savs = fetch_all_paginated(q_sav)
+        for s in savs:
+            cid = s.get('client_id')
+            pid = client_prod.get(cid)
+            if target_product_id and pid != target_product_id:
+                continue
+            cyc = target_product_cycle or get_cycle(cid)
+            if cyc not in curr:
+                cyc = 'Weekly'
+            dep = float(s.get('deposit_amount') or 0)
+            wth = float(s.get('withdrawal_amount') or 0)
+            curr[cyc]['dep'] = round(curr[cyc]['dep'] + dep, 2)
+            if wth > 0:
+                rem = (s.get('remarks') or '').lower()
+                if 'cancel' in rem or 'closure' in rem or 'refund' in rem or 'lapse' in rem or 'zero balance' in rem:
+                    curr[cyc]['ret_no'] += 1
+                    curr[cyc]['ret_amt'] = round(curr[cyc]['ret_amt'] + wth, 2)
+                else:
+                    curr[cyc]['wth_no'] += 1
+                    curr[cyc]['wth_amt'] = round(curr[cyc]['wth_amt'] + wth, 2)
 
-            q_sav = uow.client.table('individual_savings').select('deposit_amount, withdrawal_amount, client_id, remarks, officer_id').eq('branch_id', branch_id).gte('posting_date', s_str).lte('posting_date', e_str)
-            if target_officer_id:
-                q_sav = q_sav.eq('officer_id', target_officer_id)
-            savs = fetch_all_paginated(q_sav)
-            for s in savs:
-                cid = s.get('client_id')
-                pid = client_prod.get(cid)
-                if target_product_id and pid != target_product_id:
-                    continue
-                cyc = target_product_cycle or get_cycle(cid)
-                if cyc not in curr:
-                    cyc = 'Weekly'
-                dep = float(s.get('deposit_amount') or 0)
-                wth = float(s.get('withdrawal_amount') or 0)
-                curr[cyc]['dep'] = round(curr[cyc]['dep'] + dep, 2)
-                if wth > 0:
-                    rem = (s.get('remarks') or '').lower()
-                    if 'cancel' in rem or 'closure' in rem or 'refund' in rem or 'lapse' in rem or 'zero balance' in rem:
-                        curr[cyc]['ret_no'] += 1
-                        curr[cyc]['ret_amt'] = round(curr[cyc]['ret_amt'] + wth, 2)
-                    else:
-                        curr[cyc]['wth_no'] += 1
-                        curr[cyc]['wth_amt'] = round(curr[cyc]['wth_amt'] + wth, 2)
+        # Query and aggregate group savings for current month per BR-SAV-001
+        q_grp = uow.client.table('group_savings').select('deposit_amount, withdrawal_amount, group_id, officer_id').eq('branch_id', branch_id).gte('posting_date', s_str).lte('posting_date', e_str)
+        if target_officer_id:
+            q_grp = q_grp.eq('officer_id', target_officer_id)
+        grps = fetch_all_paginated(q_grp)
+        for g in grps:
+            gid = g.get('group_id')
+            mday = (groups.get(gid) or {}).get('meeting_day')
+            cyc = 'Daily' if mday == 'Daily' else ('Monthly' if mday == 'Monthly' else 'Weekly')
+            dep = float(g.get('deposit_amount') or 0)
+            wth = float(g.get('withdrawal_amount') or 0)
+            curr[cyc]['dep'] = round(curr[cyc]['dep'] + dep, 2)
+            if wth > 0:
+                curr[cyc]['wth_no'] += 1
+                curr[cyc]['wth_amt'] = round(curr[cyc]['wth_amt'] + wth, 2)
 
         rows = []
         tot = {
@@ -2071,31 +2144,6 @@ class ReportService:
                     target_product_cycle = p.get("repayment_cycle")
                     break
 
-        # August 2026 baseline for Ogijo (used when no officer/product filter is active)
-        BASE_AUG_CREDIT = {
-            "Monthly": {
-                "disb_no": 5, "disb_amt": 792000.0,
-                "excess": 0.0,
-                "inst": 400000.0,
-                "overdue": 0.0,
-                "settled_no": 19, "settled_amt": 2898000.0
-            },
-            "Weekly": {
-                "disb_no": 149, "disb_amt": 24525000.0,
-                "excess": 25119900.0,
-                "inst": 11504500.0,
-                "overdue": 0.0,
-                "settled_no": 1592, "settled_amt": 202326000.0
-            },
-            "Daily": {
-                "disb_no": 129, "disb_amt": 21768000.0,
-                "excess": 46164400.0,
-                "inst": 10288000.0,
-                "overdue": 0.0,
-                "settled_no": 1579, "settled_amt": 197541000.0
-            }
-        }
-
         # Dynamic calculation from operational transactions (loans, repayments, loan_payoff_excess_records)
 
         prods = {}
@@ -2106,24 +2154,205 @@ class ReportService:
             prods = {}
         all_loans = {l['loan_id']: l for l in fetch_all_paginated(uow.client.table('loans').select('loan_id, product_id, loan_amount, active_credit, officer_id').eq('branch_id', branch_id))}
 
-        if year < 2026 or (year == 2026 and month < 9):
-            if not target_officer_id and not target_product_id:
-                prev = BASE_AUG_CREDIT
-            else:
-                # Dynamically calculate pre-Sept baseline for this officer/product
-                q_pre_l = uow.client.table('loans').select('loan_id, product_id, loan_amount, active_credit, officer_id').eq('branch_id', branch_id).lt('disbursement_date', '2026-09-01')
+        # Determine prior month M-1
+        prev_month = 12 if month == 1 else month - 1
+        prev_year = year - 1 if month == 1 else year
+
+        # 1. Resolve prior month B/F from database-stored baseline in monthly_statement_reconciliations
+        prev = None
+        if not target_officer_id and not target_product_id:
+            try:
+                res_recon = uow.client.table("monthly_statement_reconciliations") \
+                    .select("data") \
+                    .eq("branch_id", branch_id) \
+                    .eq("year", prev_year) \
+                    .eq("month", prev_month) \
+                    .execute()
+                if res_recon.data and isinstance(res_recon.data[0].get("data"), dict):
+                    stored_cs = res_recon.data[0]["data"].get("credit_statement")
+                    if stored_cs and isinstance(stored_cs.get("rows"), list):
+                        c_rows = {r.get("item"): r for r in stored_cs["rows"]}
+                        def get_c_row(*keys):
+                            for k in keys:
+                                if k in c_rows:
+                                    return c_rows[k]
+                            return {}
+
+                        row_disb_no = get_c_row(
+                            "Total Net Loans Count", "• Total Net Loans Count",
+                            "• Total Net Loans Count (Col 7 = 3+5-27)",
+                            "Previous Loans Count (B/F)", "• Previous Loans Count (B/F)"
+                        )
+                        row_disb_amt = get_c_row(
+                            "Total Net Disbursed Principal (₦)", "Total Net Disbursed (₦)",
+                            "• Total Net Disbursed (₦)", "• Total Net Disbursed (₦) (Col 8 = 4+6-28)",
+                            "Previous Disbursed Principal (₦)", "Previous Disbursed Amount (₦)",
+                            "• Previous Disbursed Amount (₦)"
+                        )
+                        row_excess = get_c_row(
+                            "Total Excess Collection (₦)", "• Total Excess Collection (₦)",
+                            "• Total Excess Collection (₦) (Col 11 = 9+10)"
+                        )
+                        row_inst = get_c_row(
+                            "Total Net Installments (₦)", "• Total Net Installments (₦)",
+                            "• Total Net Installments (₦) (Col 14 = 12+13-28)",
+                            "• Total Installments (₦) (Col 14 = 12+13-28)"
+                        )
+                        row_settled_no = get_c_row(
+                            "Total Cumulative Settled Count", "• Total Cumulative Settled Count"
+                        )
+                        row_settled_amt = get_c_row(
+                            "Total Cumulative Settled Amount (₦)", "• Total Cumulative Settled Amount (₦)"
+                        )
+
+                        prev = {}
+                        for cyc in ["Monthly", "Weekly", "Daily"]:
+                            k = cyc.lower()
+                            prev[cyc] = {
+                                "disb_no": int(row_disb_no.get(k, 0)),
+                                "disb_amt": float(row_disb_amt.get(k, 0.0)),
+                                "excess": float(row_excess.get(k, 0.0)),
+                                "inst": float(row_inst.get(k, 0.0)),
+                                "overdue": 0.0,
+                                "settled_no": int(row_settled_no.get(k, 0)),
+                                "settled_amt": float(row_settled_amt.get(k, 0.0)),
+                            }
+            except Exception:
+                prev = None
+
+        # 1b. If no prior month M-1 baseline, check if this exact month has a stored statutory return (e.g. cutover baseline)
+        if prev is None and not target_officer_id and not target_product_id:
+            try:
+                res_curr = uow.client.table("monthly_statement_reconciliations") \
+                    .select("data") \
+                    .eq("branch_id", branch_id) \
+                    .eq("year", year) \
+                    .eq("month", month) \
+                    .execute()
+                if res_curr.data and isinstance(res_curr.data[0].get("data"), dict):
+                    stored_cs = res_curr.data[0]["data"].get("credit_statement")
+                    if stored_cs and isinstance(stored_cs.get("rows"), list):
+                        c_rows = {r.get("item"): r for r in stored_cs["rows"]}
+                        def get_c_row(*keys):
+                            for k in keys:
+                                if k in c_rows:
+                                    return c_rows[k]
+                            return {}
+
+                        row_disb_no = get_c_row(
+                            "Total Net Loans Count", "• Total Net Loans Count",
+                            "• Total Net Loans Count (Col 7 = 3+5-27)",
+                            "Previous Loans Count (B/F)", "• Previous Loans Count (B/F)"
+                        )
+                        row_disb_amt = get_c_row(
+                            "Total Net Disbursed Principal (₦)", "Total Net Disbursed (₦)",
+                            "• Total Net Disbursed (₦)", "• Total Net Disbursed (₦) (Col 8 = 4+6-28)",
+                            "Previous Disbursed Principal (₦)", "Previous Disbursed Amount (₦)",
+                            "• Previous Disbursed Amount (₦)"
+                        )
+                        row_excess = get_c_row(
+                            "Total Excess Collection (₦)", "• Total Excess Collection (₦)",
+                            "• Total Excess Collection (₦) (Col 11 = 9+10)"
+                        )
+                        row_inst = get_c_row(
+                            "Total Net Installments (₦)", "• Total Net Installments (₦)",
+                            "• Total Net Installments (₦) (Col 14 = 12+13-28)",
+                            "• Total Installments (₦) (Col 14 = 12+13-28)"
+                        )
+                        row_settled_no = get_c_row(
+                            "Total Cumulative Settled Count", "• Total Cumulative Settled Count"
+                        )
+                        row_settled_amt = get_c_row(
+                            "Total Cumulative Settled Amount (₦)", "• Total Cumulative Settled Amount (₦)"
+                        )
+
+                        prev = {}
+                        for cyc in ["Monthly", "Weekly", "Daily"]:
+                            k = cyc.lower()
+                            prev[cyc] = {
+                                "disb_no": int(row_disb_no.get(k, 0)),
+                                "disb_amt": float(row_disb_amt.get(k, 0.0)),
+                                "excess": float(row_excess.get(k, 0.0)),
+                                "inst": float(row_inst.get(k, 0.0)),
+                                "overdue": 0.0,
+                                "settled_no": int(row_settled_no.get(k, 0)),
+                                "settled_amt": float(row_settled_amt.get(k, 0.0)),
+                            }
+            except Exception:
+                pass
+
+        # 2. If no approved baseline is in monthly_statement_reconciliations:
+        # Check if Month M-1 live statement exists, or dynamically calculate baseline prior to s_str
+        if prev is None:
+            can_rollover = False
+            if (year > 2026 or (year == 2026 and month > 9)) and not target_officer_id and not target_product_id:
+                try:
+                    prev_stmt = ReportService.get_monthly_credit_statement(
+                        uow, branch_id, prev_year, prev_month, officer_name=officer_name, product_name=product_name
+                    )
+                    if prev_stmt.get("rows"):
+                        prev_rows = {r["item"]: r for r in prev_stmt["rows"]}
+
+                        def get_prev_row(*keys):
+                            for k in keys:
+                                if k in prev_rows:
+                                    return prev_rows[k]
+                            return {}
+
+                        row_tot_disb_no = get_prev_row(
+                            "Total Net Loans Count", "• Total Net Loans Count",
+                            "• Total Net Loans Count (Col 7 = 3+5-27)"
+                        )
+                        row_tot_disb_amt = get_prev_row(
+                            "Total Net Disbursed Principal (₦)", "Total Net Disbursed (₦)",
+                            "• Total Net Disbursed (₦)", "• Total Net Disbursed (₦) (Col 8 = 4+6-28)"
+                        )
+                        row_tot_excess = get_prev_row(
+                            "Total Excess Collection (₦)", "• Total Excess Collection (₦)",
+                            "• Total Excess Collection (₦) (Col 11 = 9+10)"
+                        )
+                        row_tot_inst = get_prev_row(
+                            "Total Net Installments (₦)", "• Total Net Installments (₦)",
+                            "• Total Net Installments (₦) (Col 14 = 12+13-28)",
+                            "• Total Installments (₦) (Col 14 = 12+13-28)"
+                        )
+                        row_tot_settled_no = get_prev_row(
+                            "Total Cumulative Settled Count", "• Total Cumulative Settled Count"
+                        )
+                        row_tot_settled_amt = get_prev_row(
+                            "Total Cumulative Settled Amount (₦)", "• Total Cumulative Settled Amount (₦)"
+                        )
+
+                        prev = {
+                            cyc: {
+                                "disb_no": int(row_tot_disb_no.get(cyc.lower(), 0)),
+                                "disb_amt": float(row_tot_disb_amt.get(cyc.lower(), 0.0)),
+                                "excess": float(row_tot_excess.get(cyc.lower(), 0.0)),
+                                "inst": float(row_tot_inst.get(cyc.lower(), 0.0)),
+                                "overdue": 0.0,
+                                "settled_no": int(row_tot_settled_no.get(cyc.lower(), 0)),
+                                "settled_amt": float(row_tot_settled_amt.get(cyc.lower(), 0.0)),
+                            } for cyc in ["Monthly", "Weekly", "Daily"]
+                        }
+                        can_rollover = True
+                except Exception:
+                    can_rollover = False
+
+            if not can_rollover:
+                # Dynamically calculate baseline from operational transactions prior to current month start (s_str)
+                q_pre_l = uow.client.table('loans').select('loan_id, product_id, loan_amount, active_credit, officer_id').eq('branch_id', branch_id).lt('disbursement_date', s_str)
                 if target_officer_id:
                     q_pre_l = q_pre_l.eq('officer_id', target_officer_id)
                 if target_product_id:
                     q_pre_l = q_pre_l.eq('product_id', target_product_id)
                 pre_loans = fetch_all_paginated(q_pre_l)
 
-                q_pre_r = uow.client.table('repayments').select('id, amount_paid, loan_id, officer_id').eq('branch_id', branch_id).lt('date', '2026-09-01T00:00:00')
+                q_pre_r = uow.client.table('repayments').select('id, amount_paid, loan_id, officer_id').eq('branch_id', branch_id).lt('date', f"{s_str}T00:00:00")
                 if target_officer_id:
                     q_pre_r = q_pre_r.eq('officer_id', target_officer_id)
                 pre_reps = fetch_all_paginated(q_pre_r)
 
-                q_pre_p = uow.client.table('loan_payoff_excess_records').select('*').eq('branch_id', branch_id).lt('date', '2026-09-01')
+                q_pre_p = uow.client.table('loan_payoff_excess_records').select('*').eq('branch_id', branch_id).lt('date', s_str)
                 if target_officer_id:
                     q_pre_p = q_pre_p.eq('officer_id', target_officer_id)
                 pre_payoffs = fetch_all_paginated(q_pre_p)
@@ -2165,131 +2394,80 @@ class ReportService:
                         elif rtype == 'EXCESS_PAYMENT':
                             prev[rc]['excess'] += float(rec.get('excess_amount') or 0.0)
 
-            curr = {
-                "Monthly": {"disb_no": 0, "disb_amt": 0.0, "excess": 0.0, "inst": 0.0, "overdue_cur": 0.0, "overdue_rec": 0.0, "settled_no": 0, "settled_amt": 0.0},
-                "Weekly": {"disb_no": 0, "disb_amt": 0.0, "excess": 0.0, "inst": 0.0, "overdue_cur": 0.0, "overdue_rec": 0.0, "settled_no": 0, "settled_amt": 0.0},
-                "Daily": {"disb_no": 0, "disb_amt": 0.0, "excess": 0.0, "inst": 0.0, "overdue_cur": 0.0, "overdue_rec": 0.0, "settled_no": 0, "settled_amt": 0.0},
-            }
-        else:
-            # Sep 2026 onwards: dynamically rollover from prior month M-1
-            prev_month = 12 if month == 1 else month - 1
-            prev_year = year - 1 if month == 1 else year
-            prev_stmt = ReportService.get_monthly_credit_statement(
-                uow, branch_id, prev_year, prev_month, officer_name=officer_name, product_name=product_name
-            )
-            prev_rows = {r["item"]: r for r in prev_stmt.get("rows", [])}
+        # Universal Current Month calculations
+        curr = {
+            "Monthly": {"disb_no": 0, "disb_amt": 0.0, "excess": 0.0, "inst": 0.0, "overdue_cur": 0.0, "overdue_rec": 0.0, "settled_no": 0, "settled_amt": 0.0},
+            "Weekly": {"disb_no": 0, "disb_amt": 0.0, "excess": 0.0, "inst": 0.0, "overdue_cur": 0.0, "overdue_rec": 0.0, "settled_no": 0, "settled_amt": 0.0},
+            "Daily": {"disb_no": 0, "disb_amt": 0.0, "excess": 0.0, "inst": 0.0, "overdue_cur": 0.0, "overdue_rec": 0.0, "settled_no": 0, "settled_amt": 0.0},
+        }
 
-            # Map prior totals into prev (using the row keys from the formatted output)
-            row_tot_disb_no = prev_rows.get("• Total Net Loans Count (Col 7 = 3+5-27)", {})
-            row_tot_disb_amt = prev_rows.get("• Total Net Disbursed (₦) (Col 8 = 4+6-28)", {})
-            row_tot_excess = prev_rows.get("• Total Excess Collection (₦) (Col 11 = 9+10)", {})
-            row_tot_inst = prev_rows.get("• Total Net Installments (₦) (Col 14 = 12+13-28)") or prev_rows.get("• Total Installments (₦) (Col 14 = 12+13-28)", {})
-            row_tot_settled_no = prev_rows.get("• Total Cumulative Settled Count", {})
-            row_tot_settled_amt = prev_rows.get("• Total Cumulative Settled Amount (₦)", {})
+        # 1. New Loans Disbursed in Month
+        q_disb = uow.client.table('loans').select('loan_id, product_id, loan_amount, active_credit, officer_id').eq('branch_id', branch_id).gte('disbursement_date', s_str).lte('disbursement_date', e_str)
+        if target_officer_id:
+            q_disb = q_disb.eq('officer_id', target_officer_id)
+        if target_product_id:
+            q_disb = q_disb.eq('product_id', target_product_id)
+        m_loans = fetch_all_paginated(q_disb)
+        for l in m_loans:
+            pid = l.get('product_id')
+            rc = target_product_cycle or (prods.get(pid) or {}).get('repayment_cycle') or 'Weekly'
+            if rc not in curr:
+                rc = 'Weekly'
+            curr[rc]['disb_no'] += 1
+            curr[rc]['disb_amt'] += float(l.get('active_credit') or l.get('loan_amount') or 0.0)
 
-            prev = {
-                "Monthly": {
-                    "disb_no": int(row_tot_disb_no.get("monthly", 0)),
-                    "disb_amt": float(row_tot_disb_amt.get("monthly", 0.0)),
-                    "excess": float(row_tot_excess.get("monthly", 0.0)),
-                    "inst": float(row_tot_inst.get("monthly", 0.0)),
-                    "overdue": 0.0,
-                    "settled_no": int(row_tot_settled_no.get("monthly", 0)),
-                    "settled_amt": float(row_tot_settled_amt.get("monthly", 0.0)),
-                },
-                "Weekly": {
-                    "disb_no": int(row_tot_disb_no.get("weekly", 0)),
-                    "disb_amt": float(row_tot_disb_amt.get("weekly", 0.0)),
-                    "excess": float(row_tot_excess.get("weekly", 0.0)),
-                    "inst": float(row_tot_inst.get("weekly", 0.0)),
-                    "overdue": 0.0,
-                    "settled_no": int(row_tot_settled_no.get("weekly", 0)),
-                    "settled_amt": float(row_tot_settled_amt.get("weekly", 0.0)),
-                },
-                "Daily": {
-                    "disb_no": int(row_tot_disb_no.get("daily", 0)),
-                    "disb_amt": float(row_tot_disb_amt.get("daily", 0.0)),
-                    "excess": float(row_tot_excess.get("daily", 0.0)),
-                    "inst": float(row_tot_inst.get("daily", 0.0)),
-                    "overdue": 0.0,
-                    "settled_no": int(row_tot_settled_no.get("daily", 0)),
-                    "settled_amt": float(row_tot_settled_amt.get("daily", 0.0)),
-                }
-            }
+        # 2. Repayments / Installment Collections in Month
+        q_rep = uow.client.table('repayments').select('id, amount_paid, loan_id, officer_id').eq('branch_id', branch_id).gte('date', f"{s_str}T00:00:00").lte('date', f"{e_str}T23:59:59")
+        if target_officer_id:
+            q_rep = q_rep.eq('officer_id', target_officer_id)
+        m_reps = fetch_all_paginated(q_rep)
+        for r in m_reps:
+            lid = r.get('loan_id')
+            l = all_loans.get(lid)
+            pid = l.get('product_id') if l else None
+            if target_product_id and pid != target_product_id:
+                continue
+            rc = target_product_cycle or (prods.get(pid) or {}).get('repayment_cycle') or 'Weekly'
+            if rc not in curr:
+                rc = 'Weekly'
+            curr[rc]['inst'] += float(r.get('amount_paid') or 0.0)
 
-            curr = {
-                "Monthly": {"disb_no": 0, "disb_amt": 0.0, "excess": 0.0, "inst": 0.0, "overdue_cur": 0.0, "overdue_rec": 0.0, "settled_no": 0, "settled_amt": 0.0},
-                "Weekly": {"disb_no": 0, "disb_amt": 0.0, "excess": 0.0, "inst": 0.0, "overdue_cur": 0.0, "overdue_rec": 0.0, "settled_no": 0, "settled_amt": 0.0},
-                "Daily": {"disb_no": 0, "disb_amt": 0.0, "excess": 0.0, "inst": 0.0, "overdue_cur": 0.0, "overdue_rec": 0.0, "settled_no": 0, "settled_amt": 0.0},
-            }
+        # 3. Payoffs & Excess in Month
+        q_payoff = uow.client.table('loan_payoff_excess_records').select('*').eq('branch_id', branch_id).gte('date', s_str).lte('date', e_str)
+        if target_officer_id:
+            q_payoff = q_payoff.eq('officer_id', target_officer_id)
+        m_records = fetch_all_paginated(q_payoff)
+        for rec in m_records:
+            lid = rec.get('loan_id')
+            l = all_loans.get(lid)
+            pid = l.get('product_id') if l else None
+            if target_product_id and pid != target_product_id:
+                continue
+            rc = target_product_cycle or (prods.get(pid) or {}).get('repayment_cycle') or 'Weekly'
+            if rc not in curr:
+                rc = 'Weekly'
+            rtype = rec.get('record_type')
+            if rtype == 'FULL_PAYOFF':
+                curr[rc]['settled_no'] += 1
+                curr[rc]['settled_amt'] += float(rec.get('active_credit_settled') or rec.get('amount_paid') or 0.0)
+            elif rtype == 'EXCESS_PAYMENT':
+                curr[rc]['excess'] += float(rec.get('excess_amount') or 0.0)
 
-            # 1. New Loans Disbursed in Month
-            q_disb = uow.client.table('loans').select('loan_id, product_id, loan_amount, active_credit, officer_id').eq('branch_id', branch_id).gte('disbursement_date', s_str).lte('disbursement_date', e_str)
-            if target_officer_id:
-                q_disb = q_disb.eq('officer_id', target_officer_id)
-            if target_product_id:
-                q_disb = q_disb.eq('product_id', target_product_id)
-            m_loans = fetch_all_paginated(q_disb)
-            for l in m_loans:
-                pid = l.get('product_id')
-                rc = target_product_cycle or (prods.get(pid) or {}).get('repayment_cycle') or 'Weekly'
-                if rc not in curr:
-                    rc = 'Weekly'
-                curr[rc]['disb_no'] += 1
-                curr[rc]['disb_amt'] += float(l.get('active_credit') or l.get('loan_amount') or 0.0)
-
-            # 2. Repayments / Installment Collections in Month
-            q_rep = uow.client.table('repayments').select('id, amount_paid, loan_id, officer_id').eq('branch_id', branch_id).gte('date', f"{s_str}T00:00:00").lte('date', f"{e_str}T23:59:59")
-            if target_officer_id:
-                q_rep = q_rep.eq('officer_id', target_officer_id)
-            m_reps = fetch_all_paginated(q_rep)
-            for r in m_reps:
-                lid = r.get('loan_id')
-                l = all_loans.get(lid)
-                pid = l.get('product_id') if l else None
-                if target_product_id and pid != target_product_id:
-                    continue
-                rc = target_product_cycle or (prods.get(pid) or {}).get('repayment_cycle') or 'Weekly'
-                if rc not in curr:
-                    rc = 'Weekly'
-                curr[rc]['inst'] += float(r.get('amount_paid') or 0.0)
-
-            # 3. Payoffs & Excess in Month
-            q_payoff = uow.client.table('loan_payoff_excess_records').select('*').eq('branch_id', branch_id).gte('date', s_str).lte('date', e_str)
-            if target_officer_id:
-                q_payoff = q_payoff.eq('officer_id', target_officer_id)
-            m_records = fetch_all_paginated(q_payoff)
-            for rec in m_records:
-                lid = rec.get('loan_id')
-                l = all_loans.get(lid)
-                pid = l.get('product_id') if l else None
-                if target_product_id and pid != target_product_id:
-                    continue
-                rc = target_product_cycle or (prods.get(pid) or {}).get('repayment_cycle') or 'Weekly'
-                if rc not in curr:
-                    rc = 'Weekly'
-                rtype = rec.get('record_type')
-                if rtype == 'FULL_PAYOFF':
-                    curr[rc]['settled_no'] += 1
-                    curr[rc]['settled_amt'] += float(rec.get('active_credit_settled') or rec.get('amount_paid') or 0.0)
-                elif rtype == 'EXCESS_PAYMENT':
-                    curr[rc]['excess'] += float(rec.get('excess_amount') or 0.0)
-
-            # 4. Overdue Recoveries in Month (Phase 9 - Invariants 8 & 9)
-            q_recovery = uow.client.table('loan_overdue_recovery_records').select('*').eq('branch_id', branch_id).gte('recovery_date', s_str).lte('recovery_date', e_str)
-            if target_officer_id:
-                q_recovery = q_recovery.eq('officer_id', target_officer_id)
-            m_recoveries = fetch_all_paginated(q_recovery)
-            for rec in m_recoveries:
-                lid = rec.get('loan_id')
-                l = all_loans.get(lid)
-                pid = l.get('product_id') if l else None
-                if target_product_id and pid != target_product_id:
-                    continue
-                rc = target_product_cycle or (prods.get(pid) or {}).get('repayment_cycle') or 'Weekly'
-                if rc not in curr:
-                    rc = 'Weekly'
-                curr[rc]['overdue_rec'] += float(rec.get('recovered_amount') or 0.0)
+        # 4. Overdue Recoveries in Month (Phase 9 - Invariants 8 & 9)
+        q_recovery = uow.client.table('loan_overdue_recovery_records').select('*').eq('branch_id', branch_id).gte('recovery_date', s_str).lte('recovery_date', e_str)
+        if target_officer_id:
+            q_recovery = q_recovery.eq('officer_id', target_officer_id)
+        m_recoveries = fetch_all_paginated(q_recovery)
+        for rec in m_recoveries:
+            lid = rec.get('loan_id')
+            l = all_loans.get(lid)
+            pid = l.get('product_id') if l else None
+            if target_product_id and pid != target_product_id:
+                continue
+            rc = target_product_cycle or (prods.get(pid) or {}).get('repayment_cycle') or 'Weekly'
+            if rc not in curr:
+                rc = 'Weekly'
+            curr[rc]['overdue_rec'] += float(rec.get('recovered_amount') or 0.0)
 
         # Build rows matching physical report layout 1:1
         cycles = ["Monthly", "Weekly", "Daily"]
@@ -2307,44 +2485,44 @@ class ReportService:
         rows = []
 
         # 1. Credit Disbursed
-        rows.append(make_row("1. Credit Disbursed", "• Previous Loans Count (B/F)", {c: prev[c]["disb_no"] for c in cycles}))
-        rows.append(make_row("1. Credit Disbursed", "• Previous Disbursed Amount (₦)", {c: prev[c]["disb_amt"] for c in cycles}))
-        rows.append(make_row("1. Credit Disbursed", "• Current Loans Count", {c: curr[c]["disb_no"] for c in cycles}))
-        rows.append(make_row("1. Credit Disbursed", "• Current Disbursed Amount (₦)", {c: curr[c]["disb_amt"] for c in cycles}))
+        rows.append(make_row("1. Credit Disbursed", "Previous Loans Count (B/F)", {c: prev[c]["disb_no"] for c in cycles}))
+        rows.append(make_row("1. Credit Disbursed", "Previous Disbursed Principal (₦)", {c: prev[c]["disb_amt"] for c in cycles}))
+        rows.append(make_row("1. Credit Disbursed", "Current Loans Count", {c: curr[c]["disb_no"] for c in cycles}))
+        rows.append(make_row("1. Credit Disbursed", "Current Disbursed Principal (₦)", {c: curr[c]["disb_amt"] for c in cycles}))
 
         tot_disb_no = {c: prev[c]["disb_no"] + curr[c]["disb_no"] - curr[c]["settled_no"] for c in cycles}
         tot_disb_amt = {c: round(prev[c]["disb_amt"] + curr[c]["disb_amt"] - curr[c]["settled_amt"], 2) for c in cycles}
-        rows.append(make_row("1. Credit Disbursed", "• Total Net Loans Count (Col 7 = 3+5-27)", tot_disb_no))
-        rows.append(make_row("1. Credit Disbursed", "• Total Net Disbursed (₦) (Col 8 = 4+6-28)", tot_disb_amt))
+        rows.append(make_row("1. Credit Disbursed", "Total Net Loans Count", tot_disb_no))
+        rows.append(make_row("1. Credit Disbursed", "Total Net Disbursed Principal (₦)", tot_disb_amt))
 
         # 2. Excess Collection
-        rows.append(make_row("2. Excess Collection", "• Previous Excess (₦) (Col 9)", {c: prev[c]["excess"] for c in cycles}))
-        rows.append(make_row("2. Excess Collection", "• Current Month Excess (₦) (Col 10)", {c: curr[c]["excess"] for c in cycles}))
+        rows.append(make_row("2. Excess Collection", "Previous Excess Collection (₦)", {c: prev[c]["excess"] for c in cycles}))
+        rows.append(make_row("2. Excess Collection", "Current Month Excess Collection (₦)", {c: curr[c]["excess"] for c in cycles}))
         tot_excess = {c: round(prev[c]["excess"] + curr[c]["excess"], 2) for c in cycles}
-        rows.append(make_row("2. Excess Collection", "• Total Excess Collection (₦) (Col 11 = 9+10)", tot_excess))
+        rows.append(make_row("2. Excess Collection", "Total Excess Collection (₦)", tot_excess))
 
         # 3. Installment Collection
-        rows.append(make_row("3. Installment Collection", "• Previous Installments (₦) (Col 12)", {c: prev[c]["inst"] for c in cycles}))
-        rows.append(make_row("3. Installment Collection", "• Current Month Installment (₦) (Col 13)", {c: curr[c]["inst"] for c in cycles}))
+        rows.append(make_row("3. Installment Collection", "Previous Installments (₦)", {c: prev[c]["inst"] for c in cycles}))
+        rows.append(make_row("3. Installment Collection", "Current Month Installment (₦)", {c: curr[c]["inst"] for c in cycles}))
         tot_inst = {c: round(prev[c]["inst"] + curr[c]["inst"] - curr[c]["settled_amt"], 2) for c in cycles}
-        rows.append(make_row("3. Installment Collection", "• Total Net Installments (₦) (Col 14 = 12+13-28)", tot_inst))
-        rows.append(make_row("3. Installment Collection", "• Current Month Overdue Recovered (₦)", {c: curr[c]["overdue_rec"] for c in cycles}))
+        rows.append(make_row("3. Installment Collection", "Total Net Installments (₦)", tot_inst))
+        rows.append(make_row("3. Installment Collection", "Current Month Overdue Recovered (₦)", {c: curr[c]["overdue_rec"] for c in cycles}))
 
         # 4. Balance (Portfolio Position)
         bal_loans_no = tot_disb_no
         bal_credit_amt = {c: round(tot_disb_amt[c] - tot_inst[c], 2) for c in cycles}
-        rows.append(make_row("4. Balance (Portfolio)", "• Active Loans Balance Count (Col 23 = Col 7)", bal_loans_no))
-        rows.append(make_row("4. Balance (Portfolio)", "• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)", bal_credit_amt))
+        rows.append(make_row("4. Balance (Portfolio)", "Active Loans Balance Count", bal_loans_no))
+        rows.append(make_row("4. Balance (Portfolio)", "Outstanding Credit Balance (₦)", bal_credit_amt))
 
         # 5. Full Repayment (Settled Loans)
-        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Previous Full Repayment Count (Col 25)", {c: prev[c]["settled_no"] for c in cycles}))
-        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Previous Full Repayment Amount (₦) (Col 26)", {c: prev[c]["settled_amt"] for c in cycles}))
-        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Current Full Repayment Count (Col 27)", {c: curr[c]["settled_no"] for c in cycles}))
-        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Current Full Repayment Amount (₦) (Col 28)", {c: curr[c]["settled_amt"] for c in cycles}))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "Previous Full Repayment Count", {c: prev[c]["settled_no"] for c in cycles}))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "Previous Full Repayment Amount (₦)", {c: prev[c]["settled_amt"] for c in cycles}))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "Current Full Repayment Count", {c: curr[c]["settled_no"] for c in cycles}))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "Current Full Repayment Amount (₦)", {c: curr[c]["settled_amt"] for c in cycles}))
         tot_settled_no = {c: prev[c]["settled_no"] + curr[c]["settled_no"] for c in cycles}
         tot_settled_amt = {c: round(prev[c]["settled_amt"] + curr[c]["settled_amt"], 2) for c in cycles}
-        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Total Cumulative Settled Count", tot_settled_no))
-        rows.append(make_row("5. Full Repayment (Settled Loans)", "• Total Cumulative Settled Amount (₦)", tot_settled_amt))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "Total Cumulative Settled Count", tot_settled_no))
+        rows.append(make_row("5. Full Repayment (Settled Loans)", "Total Cumulative Settled Amount (₦)", tot_settled_amt))
 
         return {"rows": rows}
 
@@ -2422,7 +2600,7 @@ class ReportService:
         # 3. Receipts & Payments Cashbook Summary
         rp = stmts_data.get("receipts_and_payments", {})
         page.draw_rect(fitz.Rect(30, 250, 565, 410), color=c_border, fill=(1, 1, 1))
-        page.insert_text((45, 270), "2. RECEIPTS & PAYMENTS CASHBOOK SUMMARY (ACCOUNT 1000)", fontsize=11, color=c_emerald_dark, fontname="helv")
+        page.insert_text((45, 270), "2. RECEIPTS & PAYMENTS CASHBOOK SUMMARY (PRIMARY VAULT LEDGER)", fontsize=11, color=c_emerald_dark, fontname="helv")
 
         page.draw_rect(fitz.Rect(45, 280, 290, 300), color=c_border, fill=c_bg_light)
         page.insert_text((55, 294), "CASH RECEIPTS (INFLOWS)", fontsize=9, color=c_emerald_dark, fontname="helv")

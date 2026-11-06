@@ -82,58 +82,64 @@ class TestMonthlyDepositAndCreditStatements:
         )
         rows_map = {r["item"]: r for r in credit_data["rows"]}
 
-        row_tot_loans = rows_map["• Total Net Loans Count (Col 7 = 3+5-27)"]
+        def get_row(*keys):
+            for k in keys:
+                if k in rows_map:
+                    return rows_map[k]
+            raise KeyError(f"None of {keys} found in rows_map")
+
+        row_tot_loans = get_row("Total Net Loans Count", "• Total Net Loans Count", "• Total Net Loans Count (Col 7 = 3+5-27)")
         assert row_tot_loans["monthly"] == 3
         assert row_tot_loans["weekly"] == 155
         assert row_tot_loans["daily"] == 135
         assert row_tot_loans["total"] == 293
 
-        row_tot_disb = rows_map["• Total Net Disbursed (₦) (Col 8 = 4+6-28)"]
+        row_tot_disb = get_row("Total Net Disbursed Principal (₦)", "Total Net Disbursed (₦)", "• Total Net Disbursed (₦)", "• Total Net Disbursed (₦) (Col 8 = 4+6-28)")
         assert row_tot_disb["monthly"] == 402000.0
         assert row_tot_disb["weekly"] == 25560000.0
         assert row_tot_disb["daily"] == 22461000.0
         assert row_tot_disb["total"] == 48423000.0
 
-        row_tot_excess = rows_map["• Total Excess Collection (₦) (Col 11 = 9+10)"]
+        row_tot_excess = get_row("Total Excess Collection (₦)", "• Total Excess Collection (₦)", "• Total Excess Collection (₦) (Col 11 = 9+10)")
         assert row_tot_excess["total"] == 71987525.0
 
-        row_cur_inst = rows_map["• Current Month Installment (₦) (Col 13)"]
+        row_cur_inst = get_row("Current Month Installment (₦)", "• Current Month Installment (₦)", "• Current Month Installment (₦) (Col 13)")
         assert row_cur_inst["monthly"] == 264000.0
         assert row_cur_inst["weekly"] == 8556625.0
         assert row_cur_inst["daily"] == 8645050.0
         assert row_cur_inst["total"] == 17465675.0
 
-        row_tot_inst = rows_map["• Total Net Installments (₦) (Col 14 = 12+13-28)"]
+        row_tot_inst = get_row("Total Net Installments (₦)", "• Total Net Installments (₦)", "• Total Net Installments (₦) (Col 14 = 12+13-28)")
         assert row_tot_inst["monthly"] == 256000.0
         assert row_tot_inst["weekly"] == 11025125.0
         assert row_tot_inst["daily"] == 10749050.0
         assert row_tot_inst["total"] == 22030175.0
 
-        row_bal_loans = rows_map["• Active Loans Balance Count (Col 23 = Col 7)"]
+        row_bal_loans = get_row("Active Loans Balance Count", "• Active Loans Balance Count", "• Active Loans Balance Count (Col 23 = Col 7)")
         assert row_bal_loans["monthly"] == 3
         assert row_bal_loans["weekly"] == 155
         assert row_bal_loans["daily"] == 135
         assert row_bal_loans["total"] == 293
 
-        row_bal_credit = rows_map["• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]
+        row_bal_credit = get_row("Outstanding Credit Balance (₦)", "• Outstanding Credit Balance (₦)", "• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)")
         assert row_bal_credit["monthly"] == 146000.0
         assert row_bal_credit["weekly"] == 14534875.0
         assert row_bal_credit["daily"] == 11711950.0
         assert row_bal_credit["total"] == 26392825.0
 
-        row_full_rep_cnt = rows_map["• Current Full Repayment Count (Col 27)"]
+        row_full_rep_cnt = get_row("Current Full Repayment Count", "• Current Full Repayment Count", "• Current Full Repayment Count (Col 27)")
         assert row_full_rep_cnt["monthly"] == 3
         assert row_full_rep_cnt["weekly"] == 56
         assert row_full_rep_cnt["daily"] == 48
         assert row_full_rep_cnt["total"] == 107
 
-        row_full_rep_amt = rows_map["• Current Full Repayment Amount (₦) (Col 28)"]
+        row_full_rep_amt = get_row("Current Full Repayment Amount (₦)", "• Current Full Repayment Amount (₦)", "• Current Full Repayment Amount (₦) (Col 28)")
         assert row_full_rep_amt["monthly"] == 408000.0
         assert row_full_rep_amt["weekly"] == 9036000.0
         assert row_full_rep_amt["daily"] == 8184000.0
         assert row_full_rep_amt["total"] == 17628000.0
 
-        row_full_rep_prev_amt = rows_map["• Previous Full Repayment Amount (₦) (Col 26)"]
+        row_full_rep_prev_amt = get_row("Previous Full Repayment Amount (₦)", "• Previous Full Repayment Amount (₦)", "• Previous Full Repayment Amount (₦) (Col 26)")
         assert row_full_rep_prev_amt["monthly"] == 2898000.0
         assert row_full_rep_prev_amt["weekly"] == 202326000.0
         assert row_full_rep_prev_amt["daily"] == 197541000.0
@@ -217,7 +223,8 @@ class TestMonthlyDepositAndCreditStatements:
 
         # Assert Collection Parity: ₦17,465,675.00
         assert cards["collections"] == 17465675.0
-        assert crd_map["• Current Month Installment (₦) (Col 13)"]["total"] == 17465675.0
+        cur_inst_row = crd_map.get("Current Month Installment (₦)") or crd_map.get("• Current Month Installment (₦)") or crd_map.get("• Current Month Installment (₦) (Col 13)")
+        assert cur_inst_row["total"] == 17465675.0
         assert rp_rec_map["Installments (Finance Repayments)"] == 17465675.0
         assert p_sum["total_actual_collection"] == 17465675.0
 
@@ -237,7 +244,8 @@ class TestMonthlyDepositAndCreditStatements:
 
         # Assert Closing Credit Parity: ₦26,392,825.00
         assert cards["closing_credit"] == 26392825.0
-        assert crd_map["• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["total"] == 26392825.0
+        bal_crd_row = crd_map.get("Outstanding Credit Balance (₦)") or crd_map.get("• Outstanding Credit Balance (₦)") or crd_map.get("• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)")
+        assert bal_crd_row["total"] == 26392825.0
 
         # Assert Portfolio Full Payments and Excess Payments
         assert p_sum["full_payments"]["count"] == 22
@@ -265,8 +273,10 @@ class TestMonthlyDepositAndCreditStatements:
             self.uow, self.ogijo_branch_id, 2026, 9, officer_name="Dorcas"
         )
         dorcas_crd_map = {r["item"]: r for r in dorcas_crd["rows"]}
-        assert dorcas_crd_map["• Current Month Installment (₦) (Col 13)"]["total"] == 5067250.0
-        assert dorcas_crd_map["• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["total"] == 8021500.0
+        d_inst = dorcas_crd_map.get("Current Month Installment (₦)") or dorcas_crd_map.get("• Current Month Installment (₦)") or dorcas_crd_map.get("• Current Month Installment (₦) (Col 13)")
+        assert d_inst["total"] == 5067250.0
+        d_bal = dorcas_crd_map.get("Outstanding Credit Balance (₦)") or dorcas_crd_map.get("• Outstanding Credit Balance (₦)") or dorcas_crd_map.get("• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)")
+        assert d_bal["total"] == 8021500.0
 
         # Filter by product 'Weekly 12W'
         prod_dep = ReportService.get_monthly_deposit_statement(
@@ -302,13 +312,19 @@ class TestMonthlyDepositAndCreditStatements:
         )
         oct_crd_map = {r["item"]: r for r in oct_crd["rows"]}
         # B/F values match September closing
-        assert oct_crd_map["• Previous Loans Count (B/F)"]["total"] == 293
-        assert oct_crd_map["• Previous Disbursed Amount (₦)"]["total"] == 48423000.0
-        assert oct_crd_map["• Previous Installments (₦) (Col 12)"]["total"] == 22030175.0
-        # Active Credit Balance = Col 8 (net disbursed) - Col 14 (net installments)
-        net_disb = oct_crd_map["• Total Net Disbursed (₦) (Col 8 = 4+6-28)"]["total"]
-        net_inst = oct_crd_map["• Total Net Installments (₦) (Col 14 = 12+13-28)"]["total"]
-        assert oct_crd_map["• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)"]["total"] == round(net_disb - net_inst, 2)
+        p_loans = oct_crd_map.get("Previous Loans Count (B/F)") or oct_crd_map.get("• Previous Loans Count (B/F)")
+        assert p_loans["total"] == 293
+        p_disb = oct_crd_map.get("Previous Disbursed Principal (₦)") or oct_crd_map.get("Previous Disbursed Amount (₦)") or oct_crd_map.get("• Previous Disbursed Amount (₦)")
+        assert p_disb["total"] == 48423000.0
+        p_inst = oct_crd_map.get("Previous Installments (₦)") or oct_crd_map.get("• Previous Installments (₦)") or oct_crd_map.get("• Previous Installments (₦) (Col 12)")
+        assert p_inst["total"] == 22030175.0
+        # Active Credit Balance = net disbursed - net installments
+        net_disb_row = oct_crd_map.get("Total Net Disbursed Principal (₦)") or oct_crd_map.get("Total Net Disbursed (₦)") or oct_crd_map.get("• Total Net Disbursed (₦)") or oct_crd_map.get("• Total Net Disbursed (₦) (Col 8 = 4+6-28)")
+        net_disb = net_disb_row["total"]
+        net_inst_row = oct_crd_map.get("Total Net Installments (₦)") or oct_crd_map.get("• Total Net Installments (₦)") or oct_crd_map.get("• Total Net Installments (₦) (Col 14 = 12+13-28)")
+        net_inst = net_inst_row["total"]
+        bal_crd_row = oct_crd_map.get("Outstanding Credit Balance (₦)") or oct_crd_map.get("• Outstanding Credit Balance (₦)") or oct_crd_map.get("• Outstanding Credit Balance (₦) (Col 24 = Col 8 - Col 14)")
+        assert bal_crd_row["total"] == round(net_disb - net_inst, 2)
 
     def test_october_trial_balance_and_receipts_payments_rollover(self):
         """
