@@ -18,29 +18,58 @@ class AppErrorDetails {
     this.rawDetails,
   });
 
+  static String _cleanHumanMessage(String? raw) {
+    if (raw == null || raw.trim().isEmpty) {
+      return 'The system could not complete this request right now. Please tap Retry to try again.';
+    }
+    final lower = raw.toLowerCase();
+    if (lower.contains('dioexception') ||
+        lower.contains('requestoptions') ||
+        lower.contains('status code of') ||
+        lower.contains('developer.mozilla.org') ||
+        lower.contains('validatestatus') ||
+        lower.contains('bad syntax') ||
+        lower.contains('client error')) {
+      return 'The system could not load the latest branch numbers right now. Please tap Retry to try again.';
+    }
+    return raw.trim();
+  }
+
+  static String _cleanHumanTitle(String? raw, int? statusCode) {
+    if (raw != null && raw.trim().isNotEmpty && !raw.toLowerCase().contains('dioexception')) {
+      return raw.trim();
+    }
+    if (statusCode == 400) return 'Unable to Load Latest Branch Numbers';
+    if (statusCode == 401 || statusCode == 403) return 'Access Not Allowed';
+    if (statusCode == 404) return 'Record Not Found';
+    if (statusCode != null && statusCode >= 500) return 'Server Connection Delay';
+    return 'Notice';
+  }
+
   /// Factory to extract structured ICARE error details from any error object.
   factory AppErrorDetails.from(dynamic error) {
     if (error is DioException) {
+      final statusCode = error.response?.statusCode;
       final responseData = error.response?.data;
       if (responseData is Map<String, dynamic>) {
+        final rawMsg = responseData['message']?.toString() ?? responseData['detail']?.toString();
         return AppErrorDetails(
           errorCode: responseData['error_code']?.toString() ?? 'API_ERROR',
-          title: responseData['title']?.toString() ?? 'Operation Notice',
-          message: responseData['message']?.toString() ??
-              (responseData['detail']?.toString() ?? 'An error occurred while processing this request.'),
-          action: responseData['action']?.toString() ?? 'Please verify your details and try again.',
+          title: _cleanHumanTitle(responseData['title']?.toString(), statusCode),
+          message: _cleanHumanMessage(rawMsg),
+          action: responseData['action']?.toString() ?? 'Please tap Retry to try again.',
           rawDetails: responseData['details'],
         );
       } else if (responseData is String) {
         try {
           final decoded = jsonDecode(responseData);
           if (decoded is Map<String, dynamic>) {
+            final rawMsg = decoded['message']?.toString() ?? decoded['detail']?.toString();
             return AppErrorDetails(
               errorCode: decoded['error_code']?.toString() ?? 'API_ERROR',
-              title: decoded['title']?.toString() ?? 'Operation Notice',
-              message: decoded['message']?.toString() ??
-                  (decoded['detail']?.toString() ?? responseData),
-              action: decoded['action']?.toString() ?? 'Please check your input and try again.',
+              title: _cleanHumanTitle(decoded['title']?.toString(), statusCode),
+              message: _cleanHumanMessage(rawMsg),
+              action: decoded['action']?.toString() ?? 'Please tap Retry to try again.',
               rawDetails: decoded['details'],
             );
           }
@@ -54,26 +83,34 @@ class AppErrorDetails {
         return const AppErrorDetails(
           errorCode: 'NETWORK_CONNECTION_TIMEOUT',
           title: 'Connection Delay',
-          message: 'Unable to reach the ICARE core banking server.',
-          action: 'Please check your internet connection and retry in a moment.',
+          message: 'Unable to reach the ICARE banking server right now.',
+          action: 'Please check your internet connection and tap Retry.',
         );
       }
 
-      final statusCode = error.response?.statusCode;
       if (statusCode == 401 || statusCode == 403) {
         return const AppErrorDetails(
           errorCode: 'ACCESS_RESTRICTED',
           title: 'Access Restricted',
-          message: 'You do not have administrative permission to complete this action.',
-          action: 'Please log in with appropriate role credentials or contact your supervisor.',
+          message: 'You do not have administrative permission to view this section.',
+          action: 'Please log in with an administrator account.',
+        );
+      }
+
+      if (statusCode == 400) {
+        return const AppErrorDetails(
+          errorCode: 'BAD_REQUEST',
+          title: 'Unable to Load Latest Branch Numbers',
+          message: 'The system could not load the latest branch numbers right now. Please tap Retry to try again.',
+          action: 'If this continues, please wait a moment and tap Retry.',
         );
       }
 
       return AppErrorDetails(
         errorCode: 'HTTP_${statusCode ?? 500}',
-        title: 'Request Failed',
-        message: error.message ?? 'The server responded with an error.',
-        action: 'Please verify the transaction details and retry.',
+        title: _cleanHumanTitle(null, statusCode),
+        message: _cleanHumanMessage(error.message),
+        action: 'Please tap Retry to try again.',
       );
     }
 
@@ -81,16 +118,16 @@ class AppErrorDetails {
       return AppErrorDetails(
         errorCode: 'OPERATION_ERROR',
         title: 'Notice',
-        message: error,
-        action: 'Please verify your input and try again.',
+        message: _cleanHumanMessage(error),
+        action: 'Please tap Retry to try again.',
       );
     }
 
     return AppErrorDetails(
       errorCode: 'UNEXPECTED_ERROR',
       title: 'Action Could Not Complete',
-      message: error?.toString() ?? 'An unexpected system error occurred.',
-      action: 'Please try again. If the issue persists, contact technical support.',
+      message: _cleanHumanMessage(error?.toString()),
+      action: 'Please tap Retry. If the issue persists, refresh the page.',
     );
   }
 }
@@ -156,7 +193,7 @@ class AppErrorFormatter {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50.withOpacity(0.5),
+                  color: Colors.blue.shade50.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.blue.shade100),
                 ),

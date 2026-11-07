@@ -53,7 +53,12 @@ def get_admin_operations(
     - Multi-Branch Operational Status Matrix (Open, EOD Pending, Closed)
     - Pending Exception Queues
     """
-    target_date = date.fromisoformat(business_date) if business_date else date.today()
+    target_date = date.today()
+    if business_date and business_date.strip() and business_date.strip().lower() not in ["null", "undefined", "none"]:
+        try:
+            target_date = date.fromisoformat(business_date.strip())
+        except (ValueError, TypeError):
+            target_date = date.today()
     p_date_str = target_date.isoformat()
 
     # 1. Consolidated Vault Cash (Account 1000) across all branches
@@ -135,11 +140,11 @@ def get_admin_operations(
         except Exception:
             pass
 
-    # Exclude Head Office: Head Office is the central administrative headquarters, not an operational branch
-    branch_rows = [
-        b for b in branch_rows
-        if str(b.get("name", "")).strip().lower() not in ["head office", "headquarters", "headoffice"]
-    ]
+    # Head Office is a registered branch in the database (Central Treasury & Administration)
+    # We flag it explicitly so the UI presents it as the Treasury Hub rather than an empty retail branch
+    for b in branch_rows:
+        b_name_clean = str(b.get("name", "")).strip().lower()
+        b["is_head_office"] = b_name_clean in ["head office", "headquarters", "headoffice"]
 
     # Map managers
     mgr_map = {}
@@ -219,6 +224,7 @@ def get_admin_operations(
         except Exception:
             pass
 
+        is_ho = str(bname).strip().lower() in ["head office", "headquarters", "headoffice"]
         branch_statuses.append({
             "branch_id": bid,
             "branch_name": bname,
@@ -226,7 +232,8 @@ def get_admin_operations(
             "manager_name": bm,
             "operational_status": op_state,
             "vault_cash": b_vault,
-            "today_collected": b_coll
+            "today_collected": b_coll,
+            "is_head_office": is_ho
         })
 
     # 6. Action Center Queues (Pending Reversals & High-Value Loans)
@@ -274,10 +281,17 @@ def get_admin_operations(
         pass
 
     # Working Day Verification (BR-DATE-001, BR-DATE-004)
-    is_working_day, status_reason = BusinessDateService.is_working_day(target_date)
-    next_working_day = BusinessDateService.get_next_working_day(
-        target_date if is_working_day else target_date + timedelta(days=1)
-    ).isoformat()
+    try:
+        is_working_day, status_reason = BusinessDateService.is_working_day(target_date)
+    except Exception:
+        is_working_day, status_reason = True, "Standard operational day"
+
+    try:
+        next_working_day = BusinessDateService.get_next_working_day(
+            target_date if is_working_day else target_date + timedelta(days=1)
+        ).isoformat()
+    except Exception:
+        next_working_day = (target_date + timedelta(days=1)).isoformat()
 
     # Overview Totals (BR-DASH-001, BR-CLI-001)
     total_clients_count = 0
@@ -300,23 +314,30 @@ def get_admin_operations(
         pass
 
     # Working Week Financial Activity (Mon-Fri active, Sat-Sun frozen per BR-DATE-004)
-    financial_activity_week = InstitutionPerformanceService.get_working_days_financial_activity(uow, target_date)
+    try:
+        financial_activity_week = InstitutionPerformanceService.get_working_days_financial_activity(uow, target_date)
+    except Exception:
+        financial_activity_week = []
 
     # Branch Performance Progress Summary
-    max_b_vol = max([float(b.get("today_collected") or 0.0) for b in branch_statuses] or [1.0])
     branch_performance_summary = []
-    for b in branch_statuses:
-        vol = float(b.get("today_collected") or 0.0)
-        rel_pct = round((vol / max_b_vol), 2) if max_b_vol > 0 else 0.0
-        branch_performance_summary.append({
-            "branch_id": str(b.get("branch_id") or ""),
-            "branch_name": str(b.get("branch_name") or "Branch"),
-            "volume": vol,
-            "relative_pct": rel_pct,
-            "vault_cash": float(b.get("vault_cash") or 0.0),
-            "manager_name": str(b.get("manager_name") or "Branch Manager"),
-            "status": str(b.get("operational_status") or "OPEN")
-        })
+    try:
+        max_b_vol = max([float(b.get("today_collected") or 0.0) for b in branch_statuses] or [1.0])
+        for b in branch_statuses:
+            vol = float(b.get("today_collected") or 0.0)
+            rel_pct = round((vol / max_b_vol), 2) if max_b_vol > 0 else 0.0
+            branch_performance_summary.append({
+                "branch_id": str(b.get("branch_id") or ""),
+                "branch_name": str(b.get("branch_name") or "Branch"),
+                "volume": vol,
+                "relative_pct": rel_pct,
+                "vault_cash": float(b.get("vault_cash") or 0.0),
+                "manager_name": str(b.get("manager_name") or "Branch Manager"),
+                "status": str(b.get("operational_status") or "OPEN"),
+                "is_head_office": bool(b.get("is_head_office"))
+            })
+    except Exception:
+        pass
 
     return {
         "business_date": p_date_str,

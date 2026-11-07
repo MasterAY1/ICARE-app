@@ -100,6 +100,7 @@ class BranchOperationalStatusModel {
   final String operationalStatus;
   final double vaultCash;
   final double todayCollected;
+  final bool isHeadOffice;
 
   const BranchOperationalStatusModel({
     required this.branchId,
@@ -109,17 +110,22 @@ class BranchOperationalStatusModel {
     required this.operationalStatus,
     required this.vaultCash,
     required this.todayCollected,
+    this.isHeadOffice = false,
   });
 
   factory BranchOperationalStatusModel.fromJson(Map<String, dynamic> json) {
+    final name = json['branch_name']?.toString() ?? 'Branch';
+    final isHo = json['is_head_office'] as bool? ??
+        (name.trim().toLowerCase().contains('head office') || name.trim().toLowerCase().contains('headquarters'));
     return BranchOperationalStatusModel(
       branchId: json['branch_id']?.toString() ?? '',
-      branchName: json['branch_name']?.toString() ?? 'Branch',
+      branchName: name,
       branchCode: json['branch_code']?.toString() ?? '',
       managerName: json['manager_name']?.toString() ?? 'Manager',
       operationalStatus: json['operational_status']?.toString() ?? 'OPEN',
       vaultCash: (json['vault_cash'] as num?)?.toDouble() ?? 0.0,
       todayCollected: (json['today_collected'] as num?)?.toDouble() ?? 0.0,
+      isHeadOffice: isHo,
     );
   }
 }
@@ -592,6 +598,7 @@ class BranchPerformanceRowModel {
   final double vaultCash;
   final String managerName;
   final String status;
+  final bool isHeadOffice;
 
   const BranchPerformanceRowModel({
     required this.branchId,
@@ -601,17 +608,22 @@ class BranchPerformanceRowModel {
     required this.vaultCash,
     required this.managerName,
     required this.status,
+    this.isHeadOffice = false,
   });
 
   factory BranchPerformanceRowModel.fromJson(Map<String, dynamic> json) {
+    final name = json['branch_name']?.toString() ?? 'Branch';
+    final isHo = json['is_head_office'] as bool? ??
+        (name.trim().toLowerCase().contains('head office') || name.trim().toLowerCase().contains('headquarters'));
     return BranchPerformanceRowModel(
       branchId: json['branch_id']?.toString() ?? '',
-      branchName: json['branch_name']?.toString() ?? 'Branch',
+      branchName: name,
       volume: (json['volume'] as num?)?.toDouble() ?? 0.0,
       relativePct: (json['relative_pct'] as num?)?.toDouble() ?? 0.0,
       vaultCash: (json['vault_cash'] as num?)?.toDouble() ?? 0.0,
       managerName: json['manager_name']?.toString() ?? 'Branch Manager',
       status: json['status']?.toString() ?? 'OPEN',
+      isHeadOffice: isHo,
     );
   }
 }
