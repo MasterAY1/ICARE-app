@@ -191,13 +191,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     }
   }
 
-  void _fillDevCredentials(String username) {
-    HapticFeedback.selectionClick();
-    _usernameController.text = username;
-    _passwordController.text = 'admin123';
-    setState(() => _localValidationError = null);
-    _passwordFocus.requestFocus();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -501,16 +494,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              // Quick Dev Profiles Section
-                              _buildDevCredentialChips(),
-                              const SizedBox(height: 18),
 
                               // Username Input
                               _buildInputField(
                                 label: 'Username / Operator ID',
                                 controller: _usernameController,
                                 focusNode: _usernameFocus,
-                                hintText: 'e.g. OGI_CO1, BM_Ogijo, AM_Ogun',
+                                hintText: 'Enter your assigned username',
                                 prefixIcon: Icons.person_outline_rounded,
                                 onSubmitted: (_) => _passwordFocus.requestFocus(),
                               ),
@@ -521,7 +511,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                 label: 'Access Password',
                                 controller: _passwordController,
                                 focusNode: _passwordFocus,
-                                hintText: 'Enter your access credentials',
+                                hintText: 'Enter your password',
                                 prefixIcon: Icons.lock_outline_rounded,
                                 isPassword: true,
                                 obscureText: _obscurePassword,
@@ -720,74 +710,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           ),
         ),
       ],
-    );
-  }
-
-  /// Quick Dev Credential Chips for Rapid Testing
-  Widget _buildDevCredentialChips() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'QUICK DEV PROFILES',
-              style: TextStyle(
-                color: Color(0xFF94A3B8),
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.2,
-              ),
-            ),
-            Text(
-              'Click to autofill',
-              style: TextStyle(
-                color: Color(0xFF64748B),
-                fontSize: 10,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            _buildDevChip(label: 'Admin', username: 'admin'),
-            _buildDevChip(label: 'BM (Ogijo)', username: 'BM_Ogijo'),
-            _buildDevChip(label: 'CO (OGI_CO1)', username: 'OGI_CO1'),
-            _buildDevChip(label: 'AM (Ogun)', username: 'AM_Ogun'),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDevChip({required String label, required String username}) {
-    return InkWell(
-      onTap: () => _fillDevCredentials(username),
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.12),
-            width: 0.8,
-          ),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFF34D399),
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
     );
   }
 

@@ -682,7 +682,12 @@ class InstitutionPerformanceService:
         branch when drilled down by Global Admin.
         Derived strictly from Account 1000 for vault cash and dedicated payoff/recovery records.
         """
-        p_date = date.fromisoformat(business_date) if business_date else date.today()
+        p_date = date.today()
+        if business_date and str(business_date).strip() and str(business_date).strip().lower() not in ["null", "undefined", "none"]:
+            try:
+                p_date = date.fromisoformat(str(business_date).strip())
+            except (ValueError, TypeError):
+                p_date = date.today()
         p_date_str = p_date.isoformat()
 
         # 1. Resolve Branch Name & Manager

@@ -21,10 +21,14 @@ class AuthController extends StateNotifier<AuthState> {
       if (session != null) {
         final token = session['token']!;
         final userJson = session['user']!;
-        final userMap = jsonDecode(userJson) as Map<String, dynamic>;
-        final user = AuthUser.fromJson(userMap);
-        _apiClient.setAuthToken(token);
-        state = AuthStateAuthenticated(user: user, token: token);
+        if (token.isNotEmpty && token != 'null' && userJson.isNotEmpty && userJson != 'null') {
+          final userMap = jsonDecode(userJson) as Map<String, dynamic>;
+          final user = AuthUser.fromJson(userMap);
+          _apiClient.setAuthToken(token);
+          state = AuthStateAuthenticated(user: user, token: token);
+        } else {
+          await sessionStorage.clearSession();
+        }
       }
     } catch (_) {}
   }
@@ -38,17 +42,33 @@ class AuthController extends StateNotifier<AuthState> {
       );
 
       final data = response.data;
-      if (data is Map<String, dynamic> && data.containsKey('access_token')) {
-        final token = data['access_token'].toString();
-        final userMap = data['user'] is Map<String, dynamic> ? data['user'] as Map<String, dynamic> : {'username': username};
-        final user = AuthUser.fromJson(userMap);
+      if (data is Map<String, dynamic>) {
+        final rawToken = data['access_token'];
+        final isMfaRequired = data['mfa_required'] == true;
+        final isPasswordChangeRequired = data['password_change_required'] == true;
 
-        _apiClient.setAuthToken(token);
-        await sessionStorage.saveSession(token, jsonEncode(user.toJson()));
-        state = AuthStateAuthenticated(user: user, token: token);
-      } else {
-        state = const AuthStateError('Invalid credentials. Please verify your username and password.');
+        if (isMfaRequired) {
+          state = const AuthStateError('Two-factor security code required. Please enter your authenticator app code or contact an administrator.');
+          return;
+        }
+
+        if (isPasswordChangeRequired) {
+          state = const AuthStateError('First-time sign in detected. Please update your temporary password before proceeding, or contact your administrator.');
+          return;
+        }
+
+        if (rawToken != null && rawToken.toString().trim().isNotEmpty && rawToken.toString() != 'null') {
+          final token = rawToken.toString();
+          final userMap = data['user'] is Map<String, dynamic> ? data['user'] as Map<String, dynamic> : {'username': username};
+          final user = AuthUser.fromJson(userMap);
+
+          _apiClient.setAuthToken(token);
+          await sessionStorage.saveSession(token, jsonEncode(user.toJson()));
+          state = AuthStateAuthenticated(user: user, token: token);
+          return;
+        }
       }
+      state = const AuthStateError('Invalid username or password. Please verify your credentials.');
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) {
         state = const AuthStateError('Invalid username or password. Please verify your credentials.');

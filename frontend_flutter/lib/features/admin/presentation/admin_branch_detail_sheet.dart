@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/errors/app_error_formatter.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../data/datasources/admin_api_service.dart';
@@ -130,37 +131,40 @@ class AdminBranchDetailSheet extends ConsumerWidget {
                   ],
                 ),
               ),
-              error: (err, _) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline, size: 36, color: Color(0xFFDC2626)),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Unable to load branch detail',
-                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        err.toString(),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => ref.invalidate(adminBranchDetailProvider(branchId)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF022C22),
-                          foregroundColor: Colors.white,
+              error: (err, _) {
+                final errorDetails = AppErrorDetails.from(err);
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.error_outline, size: 36, color: Color(0xFFDC2626)),
+                        const SizedBox(height: 12),
+                        Text(
+                          errorDetails.title.isNotEmpty ? errorDetails.title : 'Unable to load branch details',
+                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0F172A)),
                         ),
-                        child: const Text('Retry'),
-                      ),
-                    ],
+                        const SizedBox(height: 6),
+                        Text(
+                          errorDetails.message,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () => ref.invalidate(adminBranchDetailProvider(branchId)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF022C22),
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
               data: (data) => _buildDetailContent(context, data),
             ),
           ),
