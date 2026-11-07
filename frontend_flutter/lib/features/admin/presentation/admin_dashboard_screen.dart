@@ -8,6 +8,7 @@ import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../data/datasources/admin_api_service.dart';
 import '../data/models/admin_dashboard_models.dart';
 import 'admin_branch_detail_sheet.dart';
+import 'admin_branch_reconciliation_sheet.dart';
 
 // State Providers for Admin Dashboard
 final adminActiveTabProvider = StateProvider.autoDispose<int>((ref) => 0); // 0=Overview & Pulse, 1=Performance Rankings, 2=Risk & Quality
@@ -389,7 +390,11 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
             _buildBranchPerformanceCard(data.branchPerformanceSummary, isMobile),
             const SizedBox(height: 18),
 
-            // D. System Operations & Approvals Clearinghouse
+            // D. Branch Statutory Reconciliations & Opening Baselines (B/F) Portal
+            _buildStatutoryReconciliationPortalCard(data.branchPerformanceSummary, isMobile),
+            const SizedBox(height: 18),
+
+            // E. System Operations & Approvals Clearinghouse
             _buildApprovalsActionCenter(data, isMobile),
           ],
         );
@@ -911,7 +916,181 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
   }
 
   // -------------------------------------------------------------------------
-  // D. Pending Approvals Action Center
+  // D. Branch Statutory Reconciliations & Opening Baselines (B/F) Portal
+  // -------------------------------------------------------------------------
+  Widget _buildStatutoryReconciliationPortalCard(List<BranchPerformanceRowModel> branches, bool isMobile) {
+    return Container(
+      padding: EdgeInsets.all(isMobile ? 14 : 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDFA),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFCCFBF1)),
+                      ),
+                      child: const Icon(Icons.account_balance_outlined, size: 18, color: Color(0xFF0F766E)),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Branch Statutory Reconciliations & Opening Baselines (B/F)',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Input and manage physical paper returns, bank balances, and brought-forward ledgers',
+                            style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!isMobile) ...[
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  onPressed: () => AdminBranchReconciliationSheet.show(context),
+                  icon: const Icon(Icons.tune_outlined, size: 15, color: Colors.white),
+                  label: const Text(
+                    'Open B/F Portal',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0F766E),
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (isMobile) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => AdminBranchReconciliationSheet.show(context),
+                icon: const Icon(Icons.tune_outlined, size: 15, color: Colors.white),
+                label: const Text(
+                  'Open Statutory Reconciliation Portal',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.white),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0F766E),
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+
+          // Operating Branches Quick-Access Grid / List
+          if (branches.isEmpty) ...[
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(
+                child: Text('No active branches found.', style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
+              ),
+            ),
+          ] else ...[
+            ...branches.where((b) => !b.isHeadOffice).map((b) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE2E8F0),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Icon(Icons.domain_outlined, size: 14, color: Color(0xFF334155)),
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              b.branchName,
+                              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+                            ),
+                            Text(
+                              'Manager: ${b.managerName}',
+                              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        AdminBranchReconciliationSheet.show(
+                          context,
+                          branchId: b.branchId,
+                          branchName: b.branchName,
+                        );
+                      },
+                      icon: const Icon(Icons.edit_note_outlined, size: 15, color: Color(0xFF0F766E)),
+                      label: const Text(
+                        'Input / Manage B/F',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        side: const BorderSide(color: Color(0xFF99F6E4)),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        minimumSize: const Size(0, 30),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // E. Pending Approvals Action Center
   // -------------------------------------------------------------------------
   Widget _buildApprovalsActionCenter(AdminOperationsSnapshotModel data, bool isMobile) {
     final reversals = data.pendingReversals;

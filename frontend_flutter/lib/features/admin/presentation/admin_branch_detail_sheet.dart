@@ -5,6 +5,7 @@ import '../../../core/utils/currency_formatter.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../data/datasources/admin_api_service.dart';
 import '../data/models/admin_dashboard_models.dart';
+import 'admin_branch_reconciliation_sheet.dart';
 
 class AdminBranchDetailSheet extends ConsumerWidget {
   final String branchId;
@@ -255,6 +256,32 @@ class AdminBranchDetailSheet extends ConsumerWidget {
                   ],
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Action Button: Statutory Reconciliation & Opening B/F
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                AdminBranchReconciliationSheet.show(
+                  context,
+                  branchId: branchId,
+                  branchName: data.branchName,
+                );
+              },
+              icon: const Icon(Icons.account_balance_outlined, size: 16, color: Color(0xFF0F766E)),
+              label: const Text(
+                'Branch Statutory Reconciliation & Opening B/F',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
+              ),
+              style: OutlinedButton.styleFrom(
+                backgroundColor: const Color(0xFFF0FDFA),
+                side: const BorderSide(color: Color(0xFF99F6E4)),
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
             ),
           ),
           const SizedBox(height: 16),
