@@ -2,8 +2,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// Platform implementation for Android, iOS, Windows, macOS, and Linux
-void downloadBlobFile(List<int> bytes, String fileName, String mimeType) async {
+/// Platform implementation for Android, iOS, Windows, macOS, and Linux.
+/// Returns the saved file path on success, or null if saving failed.
+Future<String?> downloadBlobFile(List<int> bytes, String fileName, String mimeType) async {
   try {
     Directory? targetDir;
 
@@ -26,12 +27,17 @@ void downloadBlobFile(List<int> bytes, String fileName, String mimeType) async {
     final file = File(filePath);
     await file.writeAsBytes(bytes, flush: true);
     debugPrint('File saved successfully: $filePath');
+    return filePath;
   } catch (e) {
     debugPrint('Error saving file on non-web platform: $e');
     try {
       final docDir = await getApplicationDocumentsDirectory();
-      final file = File('${docDir.path}/$fileName');
+      final fallbackPath = '${docDir.path}/$fileName';
+      final file = File(fallbackPath);
       await file.writeAsBytes(bytes, flush: true);
-    } catch (_) {}
+      return fallbackPath;
+    } catch (_) {
+      return null;
+    }
   }
 }

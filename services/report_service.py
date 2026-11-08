@@ -222,12 +222,13 @@ class ReportService:
         client_savings_agg = {}
         total_ind_deposits = 0.0
         total_ind_withdrawals = 0.0
+        has_bf_ref = any(str(r.get("reference") or "") == "OPENING-SAVINGS-BF" for r in ind_records)
 
         for r in ind_records:
             ref = str(r.get("reference") or "")
             rem = str(r.get("remarks") or "").lower()
             p_date_s = str(r.get("posting_date") or "")[:10]
-            if ref.startswith("ONBOARDING") or "onboarding" in rem or p_date_s == "1970-01-01":
+            if has_bf_ref and (ref.startswith("ONBOARDING") or "onboarding" in rem or p_date_s == "1970-01-01"):
                 continue
 
             cid = r.get("client_id")
@@ -305,14 +306,14 @@ class ReportService:
                     q_laps = q_laps.gte("date", start_date.isoformat()).lte("date", end_date.isoformat())
                 elif as_of_date:
                     q_laps = q_laps.lte("date", as_of_date.isoformat())
-                res_laps = q_laps.execute()
-                for row in (res_laps.data or []):
+                laps_rows = fetch_all_paginated(q_laps)
+                for row in laps_rows:
                     laps_reserve_total += (float(row.get("laps_reserve") or 0.0) - float(row.get("laps_returns") or 0.0))
             except Exception:
                 pass
 
         net_ind_savings = total_ind_deposits - total_ind_withdrawals
-        total_consolidated = net_ind_savings + net_grp_savings + laps_reserve_total
+        total_consolidated = net_ind_savings + net_grp_savings
 
         return {
             "total_individual_deposits": round(total_ind_deposits, 2),
@@ -334,6 +335,7 @@ class ReportService:
         branch_id: Optional[Union[str, List[str]]] = None,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
+        as_of_date: Optional[date] = None,
         product_name: Optional[str] = None,
         officer_name: Optional[str] = None,
         officer_id: Optional[str] = None
@@ -350,7 +352,7 @@ class ReportService:
 
         # 2. Query repayments
         q_rep = uow.client.table("repayments") \
-            .select("id, date, loan_id, client_id, amount_paid, officer_id, branch_id, payment_status, expected_amount, overdue_amount, transaction_type, loans(loan_products(name), active_credit, total_due, loan_amount), app_users!repayments_officer_id_fkey(full_name), branches(name)")
+            .select("id, date, loan_id, client_id, amount_paid, officer_id, branch_id, payment_status, expected_amount, overdue_amount, transaction_type, note, loans(loan_products(name), active_credit, total_due, loan_amount), app_users!repayments_officer_id_fkey(full_name), branches(name)")
 
         if branch_id and branch_id != "ALL":
             if isinstance(branch_id, list):
@@ -362,8 +364,26 @@ class ReportService:
             s_d_str = f"{start_date.isoformat()}T00:00:00"
             e_d_str = f"{end_date.isoformat()}T23:59:59"
             q_rep = q_rep.gte("date", s_d_str).lte("date", e_d_str)
+        elif as_of_date:
+            q_rep = q_rep.lte("date", f"{as_of_date.isoformat()}T23:59:59")
 
         rep_records = fetch_all_paginated(q_rep.order("date", desc=True))
+
+        # Resolve officer_ids matching officer_name so payoff/excess records also respect officer_name filter
+        matched_officer_ids = set()
+        if officer_name and officer_name not in ["All", "All Officers"]:
+            for r in rep_records:
+                o_name = r.get("app_users", {}).get("full_name") if isinstance(r.get("app_users"), dict) else ""
+                if o_name == officer_name and r.get("officer_id"):
+                    matched_officer_ids.add(r.get("officer_id"))
+            if not matched_officer_ids:
+                try:
+                    res_u = uow.client.table("app_users").select("id, full_name").execute()
+                    for u in (res_u.data or []):
+                        if u.get("full_name") == officer_name and u.get("id"):
+                            matched_officer_ids.add(u["id"])
+                except Exception:
+                    pass
 
         # 3. Query loan_payoff_excess_records for full payoffs and excess cash in period
         q_pe = uow.client.table("loan_payoff_excess_records").select("*, loans(loan_products(name))")
@@ -374,6 +394,8 @@ class ReportService:
                 q_pe = q_pe.eq("branch_id", branch_id)
         if start_date and end_date:
             q_pe = q_pe.gte("date", start_date.isoformat()).lte("date", end_date.isoformat())
+        elif as_of_date:
+            q_pe = q_pe.lte("date", as_of_date.isoformat())
         pe_records = fetch_all_paginated(q_pe)
 
         full_payoff_amount = 0.0
@@ -391,6 +413,9 @@ class ReportService:
             # Filter by officer if officer filter is active
             if officer_id and officer_id not in ["All", "All Officers"]:
                 if r.get("officer_id") != officer_id:
+                    continue
+            if officer_name and officer_name not in ["All", "All Officers"] and matched_officer_ids:
+                if r.get("officer_id") not in matched_officer_ids:
                     continue
 
             rec_type = r.get("record_type")
@@ -410,6 +435,8 @@ class ReportService:
 
         repayment_rows = []
         for r in rep_records:
+            if str(r.get("note") or "").strip() == "Legacy Repayments Onboarded":
+                continue
             # Determine product name
             p_name = "General Credit"
             loan_info = r.get("loans")
@@ -547,8 +574,7 @@ class ReportService:
             .select("loan_id, client_id, branch_id, status, active_credit, total_due, product_id, loan_products(name)") \
             .in_("branch_id", assigned_branch_ids) \
             .in_("status", ["Active", "Disbursed"])
-        res_loans = q_loans.execute()
-        all_loans = res_loans.data or []
+        all_loans = fetch_all_paginated(q_loans)
 
         # 3. Fetch all savings across assigned branches
         q_sav = uow.client.table("individual_savings") \
@@ -560,21 +586,24 @@ class ReportService:
         elif as_of_date:
             q_sav = q_sav.lte("posting_date", as_of_date.isoformat())
 
-        res_sav = q_sav.execute()
-        all_savings = res_sav.data or []
+        all_savings = fetch_all_paginated(q_sav)
 
         # 4. Fetch all repayments across assigned branches
         q_rep = uow.client.table("repayments") \
-            .select("branch_id, amount_paid, expected_amount, overdue_amount, date, loans(loan_products(name))") \
+            .select("branch_id, amount_paid, expected_amount, overdue_amount, date, note, loans(loan_products(name))") \
             .in_("branch_id", assigned_branch_ids)
 
         if start_date and end_date:
             s_d_str = f"{start_date.isoformat()}T00:00:00"
             e_d_str = f"{end_date.isoformat()}T23:59:59"
             q_rep = q_rep.gte("date", s_d_str).lte("date", e_d_str)
+        elif as_of_date:
+            q_rep = q_rep.lte("date", f"{as_of_date.isoformat()}T23:59:59")
 
-        res_rep = q_rep.execute()
-        all_reps = res_rep.data or []
+        all_reps = [
+            r for r in fetch_all_paginated(q_rep)
+            if str(r.get("note") or "").strip() != "Legacy Repayments Onboarded"
+        ]
 
         # Filter by product if active
         if product_name and product_name not in ["All", "All Products"]:
@@ -765,16 +794,21 @@ class ReportService:
         month_loans = fetch_all_paginated(q_loans)
 
         # 4. Opening Loans B/F (prior to month)
-        q_open_l = uow.client.table("loans").select("active_credit, officer_id, product_id").eq("branch_id", branch_id).lt("disbursement_date", s_d_str)
+        q_open_l = uow.client.table("loans").select("loan_id, active_credit, officer_id, product_id").eq("branch_id", branch_id).lt("disbursement_date", s_d_str)
         if target_product_id:
             q_open_l = q_open_l.eq("product_id", target_product_id)
         open_loans = fetch_all_paginated(q_open_l)
-        q_open_r = uow.client.table("repayments").select("amount_paid, officer_id").eq("branch_id", branch_id).lt("date", f"{s_d_str}T00:00:00")
+        q_open_r = uow.client.table("repayments").select("amount_paid, officer_id, loan_id").eq("branch_id", branch_id).lt("date", f"{s_d_str}T00:00:00")
         open_reps = fetch_all_paginated(q_open_r)
 
         # 5. Month Repayments
-        q_reps = uow.client.table("repayments").select("id, amount_paid, officer_id").eq("branch_id", branch_id).gte("date", f"{s_d_str}T00:00:00").lte("date", f"{e_d_str}T23:59:59")
+        q_reps = uow.client.table("repayments").select("id, amount_paid, officer_id, loan_id").eq("branch_id", branch_id).gte("date", f"{s_d_str}T00:00:00").lte("date", f"{e_d_str}T23:59:59")
         month_reps = fetch_all_paginated(q_reps)
+
+        if target_product_id:
+            valid_product_loan_ids = {l.get("loan_id") for l in (month_loans + open_loans) if l.get("loan_id")}
+            open_reps = [r for r in open_reps if r.get("loan_id") in valid_product_loan_ids]
+            month_reps = [r for r in month_reps if r.get("loan_id") in valid_product_loan_ids]
 
         # 6. Savings
         q_sav_m = uow.client.table("individual_savings").select("id, client_id, deposit_amount, withdrawal_amount, officer_id").eq("branch_id", branch_id).gte("posting_date", s_d_str).lte("posting_date", e_d_str)
@@ -1860,8 +1894,8 @@ class ReportService:
             except Exception:
                 prev = None
 
-        # 1b. If no prior month M-1 baseline, check if this exact month has a stored statutory return (e.g. cutover baseline)
-        if prev is None and not target_officer_id and not target_product_id:
+        # 1b. If no prior month M-1 baseline, check if this exact month has a stored statutory return (pre-September 2026 cutover baseline only)
+        if prev is None and (year < 2026 or (year == 2026 and month <= 8)) and not target_officer_id and not target_product_id:
             try:
                 res_curr = uow.client.table("monthly_statement_reconciliations") \
                     .select("data") \
@@ -2220,8 +2254,8 @@ class ReportService:
             except Exception:
                 prev = None
 
-        # 1b. If no prior month M-1 baseline, check if this exact month has a stored statutory return (e.g. cutover baseline)
-        if prev is None and not target_officer_id and not target_product_id:
+        # 1b. If no prior month M-1 baseline, check if this exact month has a stored statutory return (pre-September 2026 cutover baseline only)
+        if prev is None and (year < 2026 or (year == 2026 and month <= 8)) and not target_officer_id and not target_product_id:
             try:
                 res_curr = uow.client.table("monthly_statement_reconciliations") \
                     .select("data") \
@@ -2388,10 +2422,10 @@ class ReportService:
                     rc = target_product_cycle or (prods.get(pid) or {}).get('repayment_cycle') or 'Weekly'
                     if rc in prev:
                         rtype = rec.get('record_type')
-                        if rtype == 'FULL_PAYOFF':
+                        if rtype in ('FULL_PAYOFF', 'FULL_PAYOFF_WITH_EXCESS'):
                             prev[rc]['settled_no'] += 1
                             prev[rc]['settled_amt'] += float(rec.get('active_credit_settled') or rec.get('amount_paid') or 0.0)
-                        elif rtype == 'EXCESS_PAYMENT':
+                        if rtype in ('EXCESS_PAYMENT', 'FULL_PAYOFF_WITH_EXCESS'):
                             prev[rc]['excess'] += float(rec.get('excess_amount') or 0.0)
 
         # Universal Current Month calculations
@@ -2447,10 +2481,10 @@ class ReportService:
             if rc not in curr:
                 rc = 'Weekly'
             rtype = rec.get('record_type')
-            if rtype == 'FULL_PAYOFF':
+            if rtype in ('FULL_PAYOFF', 'FULL_PAYOFF_WITH_EXCESS'):
                 curr[rc]['settled_no'] += 1
                 curr[rc]['settled_amt'] += float(rec.get('active_credit_settled') or rec.get('amount_paid') or 0.0)
-            elif rtype == 'EXCESS_PAYMENT':
+            if rtype in ('EXCESS_PAYMENT', 'FULL_PAYOFF_WITH_EXCESS'):
                 curr[rc]['excess'] += float(rec.get('excess_amount') or 0.0)
 
         # 4. Overdue Recoveries in Month (Phase 9 - Invariants 8 & 9)

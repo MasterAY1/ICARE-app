@@ -1,4 +1,4 @@
-﻿// ignore_for_file: deprecated_member_use
+// ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/errors/app_error_formatter.dart';
 import '../data/datasources/reports_api_service.dart';
 import '../data/models/report_models.dart';
 import '../../shared/utils/file_download_helper.dart';
@@ -46,7 +47,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   int _selectedExecMonth = DateTime.now().month;
   int _selectedExecYear = DateTime.now().year;
   int _selectedExecSubTab = 0; // 0: A. Deposit Statement, 1: B. Credit Statement, 2: Receipts & Payments, 3: Annex-1 Sundry, 4: Trial Balance, 5: CO Summary, 6: Bank Reconciliation
-  String _selectedProgramFilter = 'All'; // 'All', 'Monthly', 'Weekly', 'Daily'
+  String _selectedDepositProgramFilter = 'All'; // 'All', 'Monthly', 'Weekly', 'Daily'
+  String _selectedCreditProgramFilter = 'Consolidated Total'; // 'Consolidated Total', 'Monthly', 'Weekly', 'Daily'
   bool _showRawTableOnMobile = false;
   bool _showAllParityCards = false;
   String _selectedTbSectionFilter = 'All';
@@ -124,6 +126,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   void _initFutures() {
+    final authState = ref.read(authControllerProvider);
+    final user = authState is AuthStateAuthenticated ? authState.user : null;
+    if (user == null) return;
+    final role = user.role.trim();
+    final isCoUser = role == 'Credit Officer' || role == 'CO' || role == 'Officer';
+    if (isCoUser) return;
+
+    final isAmUser = role == 'Area Manager' || role == 'AM';
+    final isAdminUser = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN' || role == 'Director' || role == 'DIRECTOR' || role == 'Executive Director';
+
     final api = ref.read(reportsApiServiceProvider);
     final asOfStr = _dateMode == 'As of Date' ? _dateFormat.format(_asOfDate) : null;
     final startStr = _dateMode == 'Date Range' ? _dateFormat.format(_startDate) : null;
@@ -159,22 +171,18 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       year: _selectedExecYear,
       month: _selectedExecMonth,
     );
-    final authState = ref.read(authControllerProvider);
-    final user = authState is AuthStateAuthenticated ? authState.user : null;
-    final isAmUser = user?.role == 'Area Manager' || user?.role == 'AM';
-    final isAdminUser = user?.role == 'Admin' || user?.role == 'Super Admin' || user?.role == 'ADMIN' || user?.role == 'Director';
     if (isAmUser || isAdminUser) {
       _pendingSubmissionsFuture = api.getPendingAmMonthlySubmissions(
         year: _selectedExecYear,
         month: _selectedExecMonth,
       );
+      _areaFuture = api.getAreaComparison(
+        productName: _selectedProductName,
+        asOfDate: asOfStr,
+        startDate: startStr,
+        endDate: endStr,
+      );
     }
-    _areaFuture = api.getAreaComparison(
-      productName: _selectedProductName,
-      asOfDate: asOfStr,
-      startDate: startStr,
-      endDate: endStr,
-    );
 
     // Fetch metadata asynchronously for branch/product/officer options
     _metaFuture = api.getReportsMeta().then((meta) {
@@ -196,18 +204,34 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   void _refreshCurrentTabData() {
+    final authState = ref.read(authControllerProvider);
+    final user = authState is AuthStateAuthenticated ? authState.user : null;
+    if (user == null) return;
+    final role = user.role.trim();
+    final isCoUser = role == 'Credit Officer' || role == 'CO' || role == 'Officer';
+    if (isCoUser) return;
+
+    final isAmUser = role == 'Area Manager' || role == 'AM';
+    final isAdminUser = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN' || role == 'Director' || role == 'DIRECTOR' || role == 'Executive Director';
+
     final api = ref.read(reportsApiServiceProvider);
     final asOfStr = _dateMode == 'As of Date' ? _dateFormat.format(_asOfDate) : null;
     final startStr = _dateMode == 'Date Range' ? _dateFormat.format(_startDate) : null;
     final endStr = _dateMode == 'Date Range' ? _dateFormat.format(_endDate) : null;
 
     setState(() {
-      _areaFuture = api.getAreaComparison(
-        productName: _selectedProductName,
-        asOfDate: asOfStr,
-        startDate: startStr,
-        endDate: endStr,
-      );
+      if (isAmUser || isAdminUser) {
+        _areaFuture = api.getAreaComparison(
+          productName: _selectedProductName,
+          asOfDate: asOfStr,
+          startDate: startStr,
+          endDate: endStr,
+        );
+        _pendingSubmissionsFuture = api.getPendingAmMonthlySubmissions(
+          year: _selectedExecYear,
+          month: _selectedExecMonth,
+        );
+      }
       _parityFuture = api.getMonthlyParity(
         branchName: _selectedBranchName,
         year: _selectedExecYear,
@@ -237,20 +261,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         year: _selectedExecYear,
         month: _selectedExecMonth,
       );
-      final authState = ref.read(authControllerProvider);
-      final user = authState is AuthStateAuthenticated ? authState.user : null;
-      final isAmUser = user?.role == 'Area Manager' || user?.role == 'AM';
-      final isAdminUser = user?.role == 'Admin' || user?.role == 'Super Admin' || user?.role == 'ADMIN' || user?.role == 'Director';
-      if (isAmUser || isAdminUser) {
-        _pendingSubmissionsFuture = api.getPendingAmMonthlySubmissions(
-          year: _selectedExecYear,
-          month: _selectedExecMonth,
-        );
-      }
     });
   }
 
-  String _formatNgn(double value) => 'â‚¦${_currencyFormat.format(value)}';
+  String _formatNgn(double value) => '₦${_currencyFormat.format(value)}';
 
   @override
   Widget build(BuildContext context) {
@@ -300,7 +314,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
     final role = user.role.trim();
     final isCo = role == 'Credit Officer' || role == 'CO' || role == 'Officer';
-    final isAdmin = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN' || role == 'Director';
+    final isDirector = role == 'Director' || role == 'DIRECTOR' || role == 'Executive Director';
+    final isAdmin = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN' || isDirector;
     final isBm = role == 'Branch Manager' || role == 'BM';
     final isAm = role == 'Area Manager' || role == 'AM';
 
@@ -362,7 +377,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 1. Role-Specific Header & Identity Banner
-        _buildIdentityBanner(isAdmin, isBm, isAm, user.branch),
+        _buildIdentityBanner(isAdmin, isBm, isAm, user.branch, isDirector: isDirector),
         const SizedBox(height: 16),
 
         // 2. Pill Tabs Navigation
@@ -378,7 +393,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // ---------------------------------------------------------------------------
   // 1. Identity Banner
   // ---------------------------------------------------------------------------
-  Widget _buildIdentityBanner(bool isAdmin, bool isBm, bool isAm, String userBranch) {
+  Widget _buildIdentityBanner(bool isAdmin, bool isBm, bool isAm, String userBranch, {bool isDirector = false}) {
     String title;
     String subtitle;
     String badgeTitle;
@@ -388,7 +403,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     Color badgeText;
 
     if (isBm) {
-      title = 'Branch Operational Reports â€” $userBranch Branch';
+      title = 'Branch Operational Reports — $userBranch Branch';
       subtitle = 'Single-branch double-entry trial balance, officer supervision, savings portfolio, and collections.';
       badgeTitle = 'SCOPE LEVEL';
       badgeSubtitle = 'Single Branch ($userBranch)';
@@ -404,98 +419,105 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       badgeBorder = const Color(0xFF0F766E);
       badgeText = const Color(0xFF0F766E);
     } else {
-      title = 'Enterprise Financial & Operational Reports';
+      title = isDirector
+          ? 'Director Executive Oversight Reports'
+          : 'Enterprise Financial & Operational Reports';
       subtitle = 'Consolidated institutional double-entry trial balance, savings portfolios, collections, and multi-branch data exports.';
       badgeTitle = 'SCOPE LEVEL';
-      badgeSubtitle = 'Institutional Scope';
+      badgeSubtitle = isDirector ? 'Institutional Scope (Read-Only)' : 'Institutional Scope';
       badgeBg = const Color(0xFFFAF5FF);
       badgeBorder = const Color(0xFFA855F7);
       badgeText = const Color(0xFF581C87);
     }
 
-    final isMobile = MediaQuery.of(context).size.width < 750;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 680;
 
-    final badgeWidget = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: badgeBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: badgeBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: isMobile ? CrossAxisAlignment.start : CrossAxisAlignment.end,
-        children: [
-          Text(
-            badgeTitle,
-            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: badgeBorder),
+        final badgeWidget = Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: badgeBg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: badgeBorder),
           ),
-          const SizedBox(height: 2),
-          Text(
-            badgeSubtitle,
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: badgeText),
+          child: Column(
+            crossAxisAlignment: isMobile ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+            children: [
+              Text(
+                badgeTitle,
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: badgeBorder),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                badgeSubtitle,
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: badgeText),
+              ),
+            ],
           ),
-        ],
-      ),
-    );
+        );
 
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(isMobile ? 14 : 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: isMobile
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F172A),
-                    fontFamily: 'Plus Jakarta Sans',
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                ),
-
-              ],
-            )
-          : Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF0F172A),
-                          fontFamily: 'Plus Jakarta Sans',
-                        ),
+        return Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(isMobile ? 14 : 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: isMobile
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0F172A),
+                        fontFamily: 'Plus Jakarta Sans',
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                    const SizedBox(height: 10),
+                    badgeWidget,
+                  ],
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF0F172A),
+                              fontFamily: 'Plus Jakarta Sans',
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitle,
+                            style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 16),
+                    badgeWidget,
+                  ],
                 ),
-                const SizedBox(width: 16),
-                badgeWidget,
-              ],
-            ),
+        );
+      },
     );
   }
 
@@ -550,7 +572,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
               ),
               subtitle: Text(
-                'Active: ${_selectedBranchName ?? 'All Branches'} â€¢ $_selectedProductName â€¢ $_selectedOfficerName â€¢ $_dateMode',
+                'Active: ${_selectedBranchName ?? 'All Branches'} • $_selectedProductName • $_selectedOfficerName • $_dateMode',
                 style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
               ),
               children: [
@@ -996,9 +1018,6 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // Tab 0: Monthly Executive Parity Suite
   // ---------------------------------------------------------------------------
   Widget _buildMonthlyExecutiveParityTab(bool isAdmin, bool isBm, bool isAm) {
-    if (isAm && _selectedExecSubTab == 6) {
-      _selectedExecSubTab = 0;
-    }
     final api = ref.read(reportsApiServiceProvider);
     final monthNames = [
       'January', 'February', 'March', 'April', 'May', 'June',
@@ -1007,6 +1026,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
     final currentCalendarMonth = DateTime.now().month;
     final currentCalendarYear = DateTime.now().year;
+    final lookbackPeriods = [
+      for (final offset in [3, 2, 1, 0])
+        DateTime(currentCalendarYear, currentCalendarMonth - offset, 1),
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1093,38 +1116,49 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    for (final m in [currentCalendarMonth - 3 <= 0 ? currentCalendarMonth + 9 : currentCalendarMonth - 3, currentCalendarMonth - 2 <= 0 ? currentCalendarMonth + 10 : currentCalendarMonth - 2, currentCalendarMonth - 1 <= 0 ? currentCalendarMonth + 11 : currentCalendarMonth - 1, currentCalendarMonth]) ...[
-                      Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: ChoiceChip(
-                          label: Text(
-                            m == currentCalendarMonth && _selectedExecYear == currentCalendarYear
-                                ? '${monthNames[m - 1].substring(0, 3)} (Now)'
-                                : monthNames[m - 1].substring(0, 3),
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: _selectedExecMonth == m ? FontWeight.w700 : FontWeight.w500,
-                              color: _selectedExecMonth == m ? Colors.white : const Color(0xFF475569),
+                    for (final dt in lookbackPeriods) ...[
+                      Builder(
+                        builder: (context) {
+                          final m = dt.month;
+                          final y = dt.year;
+                          final isSelected = _selectedExecMonth == m && _selectedExecYear == y;
+                          final isCurrent = m == currentCalendarMonth && y == currentCalendarYear;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: ChoiceChip(
+                              label: Text(
+                                isCurrent
+                                    ? '${monthNames[m - 1].substring(0, 3)} (Now)'
+                                    : (y != currentCalendarYear
+                                        ? "${monthNames[m - 1].substring(0, 3)} '${(y % 100).toString().padLeft(2, '0')}"
+                                        : monthNames[m - 1].substring(0, 3)),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                  color: isSelected ? Colors.white : const Color(0xFF475569),
+                                ),
+                              ),
+                              selected: isSelected,
+                              selectedColor: const Color(0xFF0F766E),
+                              backgroundColor: const Color(0xFFF1F5F9),
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              side: BorderSide(
+                                color: isSelected ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0),
+                              ),
+                              onSelected: (selected) {
+                                if (selected && !isSelected) {
+                                  setState(() {
+                                    _selectedExecMonth = m;
+                                    _selectedExecYear = y;
+                                    _refreshCurrentTabData();
+                                  });
+                                }
+                              },
                             ),
-                          ),
-                          selected: _selectedExecMonth == m,
-                          selectedColor: const Color(0xFF0F766E),
-                          backgroundColor: const Color(0xFFF1F5F9),
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          side: BorderSide(
-                            color: _selectedExecMonth == m ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0),
-                          ),
-                          onSelected: (selected) {
-                            if (selected && _selectedExecMonth != m) {
-                              setState(() {
-                                _selectedExecMonth = m;
-                                _refreshCurrentTabData();
-                              });
-                            }
-                          },
-                        ),
+                          );
+                        },
                       ),
                     ],
                   ],
@@ -1149,20 +1183,20 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       officerName: _selectedOfficerName,
                       productName: _selectedProductName,
                     );
-                    downloadBlobFile(
+                    final saved = await downloadBlobFile(
                       bytes,
                       'Official_Executive_Financial_Statement_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.pdf',
                       'application/pdf',
                     );
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Executive PDF Statement downloaded successfully.')),
+                        SnackBar(content: Text('Executive PDF Statement downloaded${saved != null ? ' ($saved)' : ''}.')),
                       );
                     }
                   } catch (e) {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('PDF Download failed: $e')),
+                        SnackBar(content: Text('PDF Download failed: ${AppErrorDetails.from(e).message}')),
                       );
                     }
                   }
@@ -1186,20 +1220,20 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       officerName: _selectedOfficerName,
                       productName: _selectedProductName,
                     );
-                    downloadBlobFile(
+                    final saved = await downloadBlobFile(
                       bytes,
                       'Executive_Monthly_Report_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.xlsx',
                       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     );
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Executive Workbook downloaded successfully.')),
+                        SnackBar(content: Text('Executive Workbook downloaded${saved != null ? ' ($saved)' : ''}.')),
                       );
                     }
                   } catch (e) {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Download failed: $e')),
+                        SnackBar(content: Text('Download failed: ${AppErrorDetails.from(e).message}')),
                       );
                     }
                   }
@@ -1223,20 +1257,20 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       officerName: _selectedOfficerName,
                       productName: _selectedProductName,
                     );
-                    downloadBlobFile(
+                    final saved = await downloadBlobFile(
                       bytes,
                       'CO_Monthly_Summary_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.csv',
                       'text/csv',
                     );
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('CO Summary CSV downloaded successfully.')),
+                        SnackBar(content: Text('CO Summary CSV downloaded${saved != null ? ' ($saved)' : ''}.')),
                       );
                     }
                   } catch (e) {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Download failed: $e')),
+                        SnackBar(content: Text('Download failed: ${AppErrorDetails.from(e).message}')),
                       );
                     }
                   }
@@ -1373,38 +1407,39 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       ],
                     ),
                   ] else ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             periodStepper,
-                            const SizedBox(width: 10),
                             quickChips,
                           ],
                         ),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
                           children: [
                             pdfBtn,
-                            const SizedBox(width: 6),
                             excelBtn,
-                            const SizedBox(width: 6),
                             csvBtn,
                           ],
                         ),
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
-                        if (branchControl != null) ...[
-                          branchControl,
-                          const SizedBox(width: 8),
-                        ],
+                        if (branchControl != null) branchControl,
                         officerControl,
-                        const SizedBox(width: 8),
                         productControl,
                       ],
                     ),
@@ -1420,15 +1455,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         _buildWorkflowStatusCard(isAdmin, isBm, isAm),
         const SizedBox(height: 12),
 
-        // Data FutureBuilder
+        // Hero KPI Summary Strip (backed by _parityFuture)
         FutureBuilder<MonthlyParityData>(
           future: _parityFuture,
           builder: (context, snapshot) {
             if (_parityFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
               if (snapshot.hasError) {
-                return _buildErrorCard(snapshot.error.toString());
+                return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
               }
-              return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
+              return const IcareTableSkeleton(rowCount: 2, hasFilterBar: false);
             }
             final data = snapshot.data!;
             final cards = data.summaryCards;
@@ -1449,7 +1484,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            'Executive Monthly Summary â€” ${data.branchName} (${data.monthLabel})',
+                            'Executive Monthly Summary — ${data.branchName} (${data.monthLabel})',
                             style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1497,66 +1532,73 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         ],
                       ],
                     ),
-                    const SizedBox(height: 16),
-
-                    // Sub-Tab Switcher (Single-line horizontal scroll)
-                    Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      padding: const EdgeInsets.all(4),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        physics: const BouncingScrollPhysics(),
-                        child: Row(
-                          children: [
-                            _buildSubTabButton('A. Deposit Statement', 0, icon: Icons.savings_outlined),
-                            const SizedBox(width: 4),
-                            _buildSubTabButton('B. Credit Statement', 1, icon: Icons.credit_card_outlined),
-                            const SizedBox(width: 4),
-                            _buildSubTabButton('Receipts & Payments Account', 2, icon: Icons.receipt_long_outlined),
-                            const SizedBox(width: 4),
-                            _buildSubTabButton('Annex-1 Sundry', 3, icon: Icons.pie_chart_outline),
-                            const SizedBox(width: 4),
-                            _buildSubTabButton('Official Trial Balance', 4, icon: Icons.balance_outlined),
-                            const SizedBox(width: 4),
-                            _buildSubTabButton('Credit Officers Summary', 5, icon: Icons.people_alt_outlined),
-                            if (!isAm) ...[
-                              const SizedBox(width: 4),
-                              _buildSubTabButton('Bank & Treasury Reconciliation', 6, icon: Icons.account_balance_outlined),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-
-                    // Sub-tab content view
-                    if (_selectedExecSubTab == 0)
-                      _buildDepositStatementView()
-                    else if (_selectedExecSubTab == 1)
-                      _buildCreditStatementView()
-                    else if (_selectedExecSubTab == 2)
-                      _buildReceiptsAndPaymentsView()
-                    else if (_selectedExecSubTab == 3)
-                      _buildAnnex1View()
-                    else if (_selectedExecSubTab == 4)
-                      _buildOfficialTrialBalanceView()
-                    else if (_selectedExecSubTab == 5)
-                      _buildCoMonthlySummaryTable(data)
-                    else if (!isAm)
-                      _buildBankReconciliationView()
-                    else
-                      _buildDepositStatementView(),
                   ],
                 );
               },
             );
           },
         ),
+        const SizedBox(height: 16),
+
+        // Sub-Tab Switcher (Single-line horizontal scroll — decoupled from _parityFuture)
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          padding: const EdgeInsets.all(4),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: [
+                _buildSubTabButton('A. Deposit Statement', 0, icon: Icons.savings_outlined),
+                const SizedBox(width: 4),
+                _buildSubTabButton('B. Credit Statement', 1, icon: Icons.credit_card_outlined),
+                const SizedBox(width: 4),
+                _buildSubTabButton('Receipts & Payments Account', 2, icon: Icons.receipt_long_outlined),
+                const SizedBox(width: 4),
+                _buildSubTabButton('Annex-1 Sundry', 3, icon: Icons.pie_chart_outline),
+                const SizedBox(width: 4),
+                _buildSubTabButton('Official Trial Balance', 4, icon: Icons.balance_outlined),
+                const SizedBox(width: 4),
+                _buildSubTabButton('Credit Officers Summary', 5, icon: Icons.people_alt_outlined),
+                const SizedBox(width: 4),
+                _buildSubTabButton('Bank & Treasury Reconciliation', 6, icon: Icons.account_balance_outlined),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // Sub-tab content view (each sub-tab manages its own FutureBuilder)
+        if (_selectedExecSubTab == 0)
+          _buildDepositStatementView()
+        else if (_selectedExecSubTab == 1)
+          _buildCreditStatementView()
+        else if (_selectedExecSubTab == 2)
+          _buildReceiptsAndPaymentsView()
+        else if (_selectedExecSubTab == 3)
+          _buildAnnex1View()
+        else if (_selectedExecSubTab == 4)
+          _buildOfficialTrialBalanceView()
+        else if (_selectedExecSubTab == 5)
+          FutureBuilder<MonthlyParityData>(
+            future: _parityFuture,
+            builder: (context, snapshot) {
+              if (_parityFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+                if (snapshot.hasError) {
+                  return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
+                }
+                return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
+              }
+              return _buildCoMonthlySummaryTable(snapshot.data!);
+            },
+          )
+        else
+          _buildBankReconciliationView(),
       ],
     );
   }
@@ -1604,13 +1646,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 
-  Widget _buildProgramFilterChips(List<String> options, ValueChanged<String> onSelected) {
+  Widget _buildProgramFilterChips(List<String> options, String selectedValue, ValueChanged<String> onSelected) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       physics: const BouncingScrollPhysics(),
       child: Row(
         children: options.map((opt) {
-          final isSelected = _selectedProgramFilter == opt;
+          final isSelected = selectedValue == opt || (selectedValue == 'All' && opt == 'All Programmes');
           return Padding(
             padding: const EdgeInsets.only(right: 8.0),
             child: ChoiceChip(
@@ -1673,7 +1715,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         .replaceAll('(PB2/PB6)', '')
         .replaceAll('(Acct 1050)', '')
         .replaceAll('(Acct 4000)', '')
-        .replaceAll('â€¢', '')
+        .replaceAll('•', '')
         .trim();
   }
 
@@ -1847,7 +1889,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       builder: (context, snapshot) {
         if (_statementsFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
           if (snapshot.hasError) {
-            return _buildErrorCard(snapshot.error.toString());
+            return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
           }
           return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
         }
@@ -1861,11 +1903,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         }
 
         final totRow = ds.rows.firstWhere((r) => r.programme == 'Total', orElse: () => ds.rows.last);
-        final isAllPrograms = _selectedProgramFilter == 'All' || _selectedProgramFilter == 'All Programmes';
+        final isAllPrograms = _selectedDepositProgramFilter == 'All' || _selectedDepositProgramFilter == 'All Programmes';
         final activeKpiRow = isAllPrograms
             ? totRow
             : ds.rows.firstWhere(
-                (r) => r.programme.toLowerCase() == _selectedProgramFilter.toLowerCase(),
+                (r) => r.programme.toLowerCase() == _selectedDepositProgramFilter.toLowerCase(),
                 orElse: () => totRow,
               );
 
@@ -1876,7 +1918,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
             final filteredRows = isAllPrograms
                 ? ds.rows
-                : ds.rows.where((r) => r.programme.toLowerCase() == _selectedProgramFilter.toLowerCase() || r.programme == 'Total').toList();
+                : ds.rows.where((r) => r.programme.toLowerCase() == _selectedDepositProgramFilter.toLowerCase() || r.programme == 'Total').toList();
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1886,10 +1928,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _buildMetricCard(isAllPrograms ? 'Active Savers' : '$_selectedProgramFilter Savers', '${activeKpiRow.balanceNo} Savers', width: cardW),
-                    _buildMetricCard(isAllPrograms ? 'Deposit Balance' : '$_selectedProgramFilter Balance', _formatNgn(activeKpiRow.balanceAmount), width: cardW),
-                    _buildMetricCard(isAllPrograms ? 'Month Deposits' : '$_selectedProgramFilter Deposits', _formatNgn(activeKpiRow.depositCurr), width: cardW),
-                    _buildMetricCard(isAllPrograms ? 'Month Payouts' : '$_selectedProgramFilter Payouts', _formatNgn(activeKpiRow.withdrawalCurrAmount + activeKpiRow.returnCurrAmount), width: cardW),
+                    _buildMetricCard(isAllPrograms ? 'Active Savers' : '$_selectedDepositProgramFilter Savers', '${activeKpiRow.balanceNo} Savers', width: cardW),
+                    _buildMetricCard(isAllPrograms ? 'Deposit Balance' : '$_selectedDepositProgramFilter Balance', _formatNgn(activeKpiRow.balanceAmount), width: cardW),
+                    _buildMetricCard(isAllPrograms ? 'Month Deposits' : '$_selectedDepositProgramFilter Deposits', _formatNgn(activeKpiRow.depositCurr), width: cardW),
+                    _buildMetricCard(isAllPrograms ? 'Month Payouts' : '$_selectedDepositProgramFilter Payouts', _formatNgn(activeKpiRow.withdrawalCurrAmount + activeKpiRow.returnCurrAmount), width: cardW),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -1900,9 +1942,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     Expanded(
                       child: _buildProgramFilterChips(
                         ['All Programmes', 'Monthly', 'Weekly', 'Daily'],
+                        _selectedDepositProgramFilter,
                         (val) {
                           setState(() {
-                            _selectedProgramFilter = val == 'All Programmes' ? 'All' : val;
+                            _selectedDepositProgramFilter = val == 'All Programmes' ? 'All' : val;
                           });
                         },
                       ),
@@ -1931,48 +1974,51 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: isTot ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
                       ),
-                      child: Theme(
-                        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                        child: ExpansionTile(
-                          initiallyExpanded: isTot || filteredRows.length == 1,
-                          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                          title: Text(
-                            isTot ? 'Consolidated Total' : '${r.programme} Programme',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: isTot ? const Color(0xFF166534) : const Color(0xFF0F766E),
-                            ),
-                          ),
-                          trailing: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: isTot ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '${r.balanceNo} Savers',
+                      child: Material(
+                        color: Colors.transparent,
+                        child: Theme(
+                          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                          child: ExpansionTile(
+                            initiallyExpanded: isTot || filteredRows.length == 1,
+                            tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                            title: Text(
+                              isTot ? 'Consolidated Total' : '${r.programme} Programme',
                               style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.bold,
-                                color: isTot ? const Color(0xFF15803D) : const Color(0xFF475569),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: isTot ? const Color(0xFF166534) : const Color(0xFF0F766E),
                               ),
                             ),
+                            trailing: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isTot ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '${r.balanceNo} Savers',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: isTot ? const Color(0xFF15803D) : const Color(0xFF475569),
+                                ),
+                              ),
+                            ),
+                            children: [
+                              const Divider(height: 10),
+                              _buildMobileDetailRow('Net Savings Balance', _formatNgn(r.balanceAmount), isPrimary: true),
+                              const SizedBox(height: 4),
+                              _buildMobileDetailRow('Month Deposits Received', _formatNgn(r.depositCurr)),
+                              _buildMobileDetailRow('Cumulative Deposits (B/F + Month)', _formatNgn(r.depositTotal)),
+                              const Divider(height: 10),
+                              _buildMobileDetailRow('Normal Withdrawals (Partial)', '${r.withdrawalCurrNo} savers (${_formatNgn(r.withdrawalCurrAmount)})'),
+                              _buildMobileDetailRow('Deposit Returns (Zero-Balance)', '${r.returnCurrNo} savers (${_formatNgn(r.returnCurrAmount)})'),
+                              _buildMobileDetailRow('Cumulative Payouts', _formatNgn(r.withdrawalTotalAmount + r.returnTotalAmount)),
+                              const Divider(height: 10),
+                              _buildMobileDetailRow('Members Registered (B/F + Added)', '${r.memberPrev} + ${r.memberCurr} = ${r.memberTotal} members'),
+                            ],
                           ),
-                          children: [
-                            const Divider(height: 10),
-                            _buildMobileDetailRow('Net Savings Balance', _formatNgn(r.balanceAmount), isPrimary: true),
-                            const SizedBox(height: 4),
-                            _buildMobileDetailRow('Month Deposits Received', _formatNgn(r.depositCurr)),
-                            _buildMobileDetailRow('Cumulative Deposits (B/F + Month)', _formatNgn(r.depositTotal)),
-                            const Divider(height: 10),
-                            _buildMobileDetailRow('Normal Withdrawals (Partial)', '${r.withdrawalCurrNo} savers (${_formatNgn(r.withdrawalCurrAmount)})'),
-                            _buildMobileDetailRow('Deposit Returns (Zero-Balance)', '${r.returnCurrNo} savers (${_formatNgn(r.returnCurrAmount)})'),
-                            _buildMobileDetailRow('Cumulative Payouts', _formatNgn(r.withdrawalTotalAmount + r.returnTotalAmount)),
-                            const Divider(height: 10),
-                            _buildMobileDetailRow('Members Registered (B/F + Added)', '${r.memberPrev} + ${r.memberCurr} = ${r.memberTotal} members'),
-                          ],
                         ),
                       ),
                     );
@@ -1990,17 +2036,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         DataColumn(numeric: true, label: Text('Members\nB/F')),
                         DataColumn(numeric: true, label: Text('New\nMembers')),
                         DataColumn(numeric: true, label: Text('Total\nMembers')),
-                        DataColumn(numeric: true, label: Text('Deposit\nB/F (â‚¦)')),
-                        DataColumn(numeric: true, label: Text('Current\nDeposit (â‚¦)')),
-                        DataColumn(numeric: true, label: Text('Total\nDeposit (â‚¦)')),
-                        DataColumn(numeric: true, label: Text('Withdrawals\nB/F (No, â‚¦)')),
-                        DataColumn(numeric: true, label: Text('Current\nWithdrawals (No, â‚¦)')),
-                        DataColumn(numeric: true, label: Text('Total\nWithdrawals (No, â‚¦)')),
-                        DataColumn(numeric: true, label: Text('Cancellations\nB/F (No, â‚¦)')),
-                        DataColumn(numeric: true, label: Text('Current\nCancellations (No, â‚¦)')),
-                        DataColumn(numeric: true, label: Text('Total\nCancellations (No, â‚¦)')),
+                        DataColumn(numeric: true, label: Text('Deposit\nB/F (₦)')),
+                        DataColumn(numeric: true, label: Text('Current\nDeposit (₦)')),
+                        DataColumn(numeric: true, label: Text('Total\nDeposit (₦)')),
+                        DataColumn(numeric: true, label: Text('Withdrawals\nB/F (No, ₦)')),
+                        DataColumn(numeric: true, label: Text('Current\nWithdrawals (No, ₦)')),
+                        DataColumn(numeric: true, label: Text('Total\nWithdrawals (No, ₦)')),
+                        DataColumn(numeric: true, label: Text('Cancellations\nB/F (No, ₦)')),
+                        DataColumn(numeric: true, label: Text('Current\nCancellations (No, ₦)')),
+                        DataColumn(numeric: true, label: Text('Total\nCancellations (No, ₦)')),
                         DataColumn(numeric: true, label: Text('Active\nSavers')),
-                        DataColumn(numeric: true, label: Text('Net Deposit\nBalance (â‚¦)')),
+                        DataColumn(numeric: true, label: Text('Net Deposit\nBalance (₦)')),
                       ],
                       rows: filteredRows.map((r) {
                         final isTot = r.programme == 'Total';
@@ -2038,8 +2084,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   String _cleanCreditItemLabel(String rawItem) {
-    var s = rawItem.replaceAll('â€¢', '').trim();
-    s = s.replaceAll(RegExp(r'\s*\((â‚¦\s*)?Col[^)]+\)', caseSensitive: false), '');
+    var s = rawItem.replaceAll('•', '').trim();
+    s = s.replaceAll(RegExp(r'\s*\((₦\s*)?Col[^)]+\)', caseSensitive: false), '');
     s = s.replaceAll(RegExp(r'\s+'), ' ').trim();
     return s;
   }
@@ -2061,9 +2107,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     if (sectionRows.isEmpty) return const SizedBox.shrink();
 
     double getRowVal(CreditStatementRow r) {
-      if (_selectedProgramFilter == 'Monthly') return r.monthly.toDouble();
-      if (_selectedProgramFilter == 'Weekly') return r.weekly.toDouble();
-      if (_selectedProgramFilter == 'Daily') return r.daily.toDouble();
+      if (_selectedCreditProgramFilter == 'Monthly') return r.monthly.toDouble();
+      if (_selectedCreditProgramFilter == 'Weekly') return r.weekly.toDouble();
+      if (_selectedCreditProgramFilter == 'Daily') return r.daily.toDouble();
       return r.total.toDouble();
     }
 
@@ -2074,37 +2120,40 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: isHighlight ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
       ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: isHighlight || sectionTitle.contains('Disbursed') || sectionTitle.contains('Closing'),
-          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          leading: Icon(icon, size: 16, color: isHighlight ? const Color(0xFF166534) : const Color(0xFF0F766E)),
-          title: Text(
-            sectionTitle,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: isHighlight ? const Color(0xFF166534) : const Color(0xFF0F172A),
+      child: Material(
+        color: Colors.transparent,
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            initiallyExpanded: isHighlight || sectionTitle.contains('Disbursed') || sectionTitle.contains('Closing'),
+            tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            leading: Icon(icon, size: 16, color: isHighlight ? const Color(0xFF166534) : const Color(0xFF0F766E)),
+            title: Text(
+              sectionTitle,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: isHighlight ? const Color(0xFF166534) : const Color(0xFF0F172A),
+              ),
             ),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(10)),
+              child: Text(_selectedCreditProgramFilter, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+            ),
+            children: [
+              const Divider(height: 10),
+              ...sectionRows.map((r) {
+                final cleanItem = _cleanCreditItemLabel(r.item);
+                final isCount = cleanItem.contains('Count');
+                final val = getRowVal(r);
+                final disp = isCount ? '${val.toInt()}' : _formatNgn(val);
+                final isTot = cleanItem.contains('Total') || cleanItem.contains('Balance') || cleanItem.contains('Current');
+                return _buildMobileDetailRow(cleanItem, disp, isPrimary: isTot);
+              }),
+            ],
           ),
-          trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(10)),
-            child: Text(_selectedProgramFilter, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
-          ),
-          children: [
-            const Divider(height: 10),
-            ...sectionRows.map((r) {
-              final cleanItem = _cleanCreditItemLabel(r.item);
-              final isCount = cleanItem.contains('Count');
-              final val = getRowVal(r);
-              final disp = isCount ? '${val.toInt()}' : _formatNgn(val);
-              final isTot = cleanItem.contains('Total') || cleanItem.contains('Balance') || cleanItem.contains('Current');
-              return _buildMobileDetailRow(cleanItem, disp, isPrimary: isTot);
-            }),
-          ],
         ),
       ),
     );
@@ -2116,7 +2165,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       builder: (context, snapshot) {
         if (_statementsFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
           if (snapshot.hasError) {
-            return _buildErrorCard(snapshot.error.toString());
+            return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
           }
           return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
         }
@@ -2149,9 +2198,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         );
 
         double getCardVal(CreditStatementRow r) {
-          if (_selectedProgramFilter == 'Monthly') return r.monthly;
-          if (_selectedProgramFilter == 'Weekly') return r.weekly;
-          if (_selectedProgramFilter == 'Daily') return r.daily;
+          if (_selectedCreditProgramFilter == 'Monthly') return r.monthly;
+          if (_selectedCreditProgramFilter == 'Weekly') return r.weekly;
+          if (_selectedCreditProgramFilter == 'Daily') return r.daily;
           return r.total;
         }
 
@@ -2182,9 +2231,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     Expanded(
                       child: _buildProgramFilterChips(
                         ['Consolidated Total', 'Monthly', 'Weekly', 'Daily'],
+                        _selectedCreditProgramFilter,
                         (val) {
                           setState(() {
-                            _selectedProgramFilter = val;
+                            _selectedCreditProgramFilter = val;
                           });
                         },
                       ),
@@ -2227,8 +2277,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           label: Text(
                             'Monthly',
                             style: TextStyle(
-                              color: _selectedProgramFilter == 'Monthly' ? const Color(0xFF0F766E) : null,
-                              fontWeight: _selectedProgramFilter == 'Monthly' ? FontWeight.w800 : null,
+                              color: _selectedCreditProgramFilter == 'Monthly' ? const Color(0xFF0F766E) : null,
+                              fontWeight: _selectedCreditProgramFilter == 'Monthly' ? FontWeight.w800 : null,
                             ),
                           ),
                         ),
@@ -2237,8 +2287,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           label: Text(
                             'Weekly',
                             style: TextStyle(
-                              color: _selectedProgramFilter == 'Weekly' ? const Color(0xFF0F766E) : null,
-                              fontWeight: _selectedProgramFilter == 'Weekly' ? FontWeight.w800 : null,
+                              color: _selectedCreditProgramFilter == 'Weekly' ? const Color(0xFF0F766E) : null,
+                              fontWeight: _selectedCreditProgramFilter == 'Weekly' ? FontWeight.w800 : null,
                             ),
                           ),
                         ),
@@ -2247,8 +2297,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           label: Text(
                             'Daily',
                             style: TextStyle(
-                              color: _selectedProgramFilter == 'Daily' ? const Color(0xFF0F766E) : null,
-                              fontWeight: _selectedProgramFilter == 'Daily' ? FontWeight.w800 : null,
+                              color: _selectedCreditProgramFilter == 'Daily' ? const Color(0xFF0F766E) : null,
+                              fontWeight: _selectedCreditProgramFilter == 'Daily' ? FontWeight.w800 : null,
                             ),
                           ),
                         ),
@@ -2257,8 +2307,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           label: Text(
                             'Consolidated\nTotal',
                             style: TextStyle(
-                              color: _selectedProgramFilter == 'Consolidated Total' ? const Color(0xFF0F766E) : null,
-                              fontWeight: _selectedProgramFilter == 'Consolidated Total' ? FontWeight.w800 : null,
+                              color: _selectedCreditProgramFilter == 'Consolidated Total' ? const Color(0xFF0F766E) : null,
+                              fontWeight: _selectedCreditProgramFilter == 'Consolidated Total' ? FontWeight.w800 : null,
                             ),
                           ),
                         ),
@@ -2273,10 +2323,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         final textStyle = isHighlight ? const TextStyle(fontWeight: FontWeight.w700, fontSize: 11) : const TextStyle(fontSize: 11);
                         final totStyle = isHighlight ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E), fontSize: 11) : const TextStyle(fontWeight: FontWeight.w600, fontSize: 11);
 
-                        final isMonthlySel = _selectedProgramFilter == 'Monthly';
-                        final isWeeklySel = _selectedProgramFilter == 'Weekly';
-                        final isDailySel = _selectedProgramFilter == 'Daily';
-                        final isTotalSel = _selectedProgramFilter == 'Consolidated Total';
+                        final isMonthlySel = _selectedCreditProgramFilter == 'Monthly';
+                        final isWeeklySel = _selectedCreditProgramFilter == 'Weekly';
+                        final isDailySel = _selectedCreditProgramFilter == 'Daily';
+                        final isTotalSel = _selectedCreditProgramFilter == 'Consolidated Total';
 
                         TextStyle colStyle(bool isSelected, TextStyle base) {
                           if (isSelected) {
@@ -2323,7 +2373,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       builder: (context, snapshot) {
         if (_annex1Future == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
           if (snapshot.hasError) {
-            return _buildErrorCard(snapshot.error.toString());
+            return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
           }
           return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
         }
@@ -2365,16 +2415,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Row(
-                            children: [
-                              Icon(Icons.arrow_downward, color: Color(0xFF166534), size: 18),
-                              SizedBox(width: 8),
-                              Text(
-                                'Section A: Sundry Inflows / Auxiliary Receipts',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
-                              ),
-                            ],
+                          const Expanded(
+                            child: Row(
+                              children: [
+                                Icon(Icons.arrow_downward, color: Color(0xFF166534), size: 18),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Section A: Sundry Inflows / Auxiliary Receipts',
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
+                          const SizedBox(width: 8),
                           Text(
                             _formatNgn(data.totalSundryReceipts),
                             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF166534), fontFeatures: [FontFeature.tabularFigures()]),
@@ -2386,12 +2442,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 4.0),
                         child: Row(
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(4)),
-                              child: Text(r.code, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF475569))),
-                            ),
-                            const SizedBox(width: 10),
+                            const Icon(Icons.subdirectory_arrow_right, size: 14, color: Color(0xFF64748B)),
+                            const SizedBox(width: 8),
                             Expanded(child: Text(r.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
                             Text(_formatNgn(r.amount), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFeatures: [FontFeature.tabularFigures()])),
                           ],
@@ -2418,20 +2470,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(4)),
-                                  child: Text(g.categoryCode, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF1D4ED8))),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  g.categoryName,
-                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
-                                ),
-                              ],
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.folder_open_outlined, size: 16, color: Color(0xFF1D4ED8)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      g.categoryName,
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
+                            const SizedBox(width: 8),
                             Text(
                               _formatNgn(g.subtotal),
                               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF1D4ED8), fontFeatures: [FontFeature.tabularFigures()]),
@@ -2443,8 +2497,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 3.0),
                           child: Row(
                             children: [
-                              Text(item.code, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
-                              const SizedBox(width: 10),
+                              const Icon(Icons.remove, size: 12, color: Color(0xFF94A3B8)),
+                              const SizedBox(width: 8),
                               Expanded(child: Text(item.name, style: const TextStyle(fontSize: 12, color: Color(0xFF334155)))),
                               Text(_formatNgn(item.amount), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()])),
                             ],
@@ -2464,10 +2518,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
   String _cleanTbItemName(String item) {
     final cleaned = item
-        .replaceAll('(Account 1000)', '')
-        .replaceAll('(Acct 1000)', '')
-        .replaceAll('Account 1000', '')
-        .replaceAll('(1000)', '')
+        .replaceAll(RegExp(r'\s*\((?:Account|Acct)\s*\d+\)', caseSensitive: false), '')
+        .replaceAll(RegExp(r'\s*Account\s*\d+', caseSensitive: false), '')
+        .replaceAll(RegExp(r'\s*\(\d{4}\)'), '')
+        .replaceAll(RegExp(r'\s*\((?:PC|PB|RA)\d+(?:/(?:PC|PB|RA)\d+)?\)', caseSensitive: false), '')
         .trim();
     if (cleaned.toLowerCase() == 'cash in hand') {
       return 'Vault Cash';
@@ -2491,7 +2545,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       builder: (context, snapshot) {
         if (_statementsFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
           if (snapshot.hasError) {
-            return _buildErrorCard(snapshot.error.toString());
+            return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
           }
           return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
         }
@@ -2541,7 +2595,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     _buildMetricCard(
                       'Equality Status',
                       tb.isBalanced ? 'Balanced' : 'Unbalanced',
-                      subtitle: tb.isBalanced ? 'Zero Variance (â‚¦0.00)' : 'Diff: ${_formatNgn(tb.variance)}',
+                      subtitle: tb.isBalanced ? 'Zero Variance (₦0.00)' : 'Diff: ${_formatNgn(tb.variance)}',
                       isAccent: tb.isBalanced,
                       width: cardW,
                     ),
@@ -2739,8 +2793,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       columns: const [
                         DataColumn(label: Text('Section')),
                         DataColumn(label: Text('Account / Line Item')),
-                        DataColumn(numeric: true, label: Text('Debit (â‚¦)')),
-                        DataColumn(numeric: true, label: Text('Credit (â‚¦)')),
+                        DataColumn(numeric: true, label: Text('Debit (₦)')),
+                        DataColumn(numeric: true, label: Text('Credit (₦)')),
                       ],
                       rows: [
                         ...activeSections.entries.expand((entry) {
@@ -2854,7 +2908,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       builder: (context, snapshot) {
         if (_statementsFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
           if (snapshot.hasError) {
-            return _buildErrorCard(snapshot.error.toString());
+            return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
           }
           return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
         }
@@ -3218,13 +3272,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     final user = authState is AuthStateAuthenticated ? authState.user : null;
     final role = user?.role.trim() ?? '';
     final isAm = role == 'Area Manager' || role == 'AM';
+    final isBm = role == 'Branch Manager' || role == 'BM';
+    final isDirector = role == 'Director' || role == 'DIRECTOR' || role == 'Executive Director';
 
     return FutureBuilder<MonthlyReconciliationData>(
       future: _reconciliationFuture,
       builder: (context, snapshot) {
         if (_reconciliationFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
           if (snapshot.hasError) {
-            return _buildErrorCard(snapshot.error.toString());
+            return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
           }
           return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
         }
@@ -3234,14 +3290,23 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             ? _selectedBranchName
             : (_cachedMeta?.branches.isNotEmpty == true ? _cachedMeta!.branches.first.name : _selectedBranchName);
 
-        return BankReconciliationFormWidget(
-          initialData: data,
-          branchName: effectiveBranchName,
-          year: _selectedExecYear,
-          month: _selectedExecMonth,
-          isReadOnly: isAm,
-          onSaved: () {
-            _refreshCurrentTabData();
+        return FutureBuilder<MonthlyWorkflowStatusModel>(
+          future: _workflowStatusFuture,
+          builder: (context, wfSnapshot) {
+            final wfStatus = wfSnapshot.data?.status ?? 'DRAFT';
+            final isWorkflowLockedForBm = ['BM_SUBMITTED', 'AM_VERIFIED', 'AREA_SEALED', 'ADMIN_LOCKED'].contains(wfStatus);
+            final isReadOnly = isAm || isDirector || wfStatus == 'ADMIN_LOCKED' || (isBm && isWorkflowLockedForBm);
+
+            return BankReconciliationFormWidget(
+              initialData: data,
+              branchName: effectiveBranchName,
+              year: _selectedExecYear,
+              month: _selectedExecMonth,
+              isReadOnly: isReadOnly,
+              onSaved: () {
+                _refreshCurrentTabData();
+              },
+            );
           },
         );
       },
@@ -3249,247 +3314,428 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // ---------------------------------------------------------------------------
   // Tab: Regional Area Branches Comparison
   // ---------------------------------------------------------------------------
   Widget _buildAreaComparisonTab({bool isAdmin = false, bool isAm = false}) {
-    return FutureBuilder<AreaComparisonData>(
-      future: _areaFuture,
-      builder: (context, snapshot) {
-        if (_areaFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
-          if (snapshot.hasError) {
-            return _buildErrorCard(snapshot.error.toString());
-          }
-          return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
-        }
-        final data = snapshot.data!;
-        if (data.rows.isEmpty) {
-          return _buildEmptyCard('No branch comparison data available for assigned area.');
-        }
+    final products = _cachedMeta != null ? ['All Products', ..._cachedMeta!.products] : ['All Products'];
 
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final filterBar = Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          const Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Icon(Icons.filter_list, size: 15, color: Color(0xFF0F766E)),
+              SizedBox(width: 6),
+              Text('Matrix Filters:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+            ],
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: products.contains(_selectedProductName) ? _selectedProductName : products.first,
+                isDense: true,
+                items: products.map((p) => DropdownMenuItem(
+                  value: p,
+                  child: Text(p, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B))),
+                )).toList(),
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() => _selectedProductName = val);
+                    _refreshCurrentTabData();
+                  }
+                },
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _dateMode,
+                isDense: true,
+                items: ['As of Date', 'Date Range', 'All Time'].map((m) => DropdownMenuItem(
+                  value: m,
+                  child: Text(m, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B))),
+                )).toList(),
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() => _dateMode = val);
+                    _refreshCurrentTabData();
+                  }
+                },
+              ),
+            ),
+          ),
+          if (_dateMode == 'As of Date')
+            InkWell(
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _asOfDate,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2030),
+                );
+                if (picked != null) {
+                  setState(() => _asOfDate = picked);
+                  _refreshCurrentTabData();
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.calendar_today, size: 13, color: Color(0xFF64748B)),
+                    const SizedBox(width: 6),
+                    Text('As of: ${_dateFormat.format(_asOfDate)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ),
+          if (_dateMode == 'Date Range') ...[
+            InkWell(
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _startDate,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2030),
+                );
+                if (picked != null) {
+                  setState(() => _startDate = picked);
+                  _refreshCurrentTabData();
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.calendar_today, size: 13, color: Color(0xFF64748B)),
+                    const SizedBox(width: 6),
+                    Text('From: ${_dateFormat.format(_startDate)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ),
+            InkWell(
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _endDate,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2030),
+                );
+                if (picked != null) {
+                  setState(() => _endDate = picked);
+                  _refreshCurrentTabData();
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.calendar_today, size: 13, color: Color(0xFF64748B)),
+                    const SizedBox(width: 6),
+                    Text('To: ${_dateFormat.format(_endDate)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        filterBar,
+        FutureBuilder<AreaComparisonData>(
+          future: _areaFuture,
+          builder: (context, snapshot) {
+            if (_areaFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+              if (snapshot.hasError) {
+                return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
+              }
+              return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
+            }
+            final data = snapshot.data!;
+            if (data.rows.isEmpty) {
+              return _buildEmptyCard('No branch comparison data available for assigned area.');
+            }
+
+            return Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Regional Supervisory Area Performance Matrix', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                        SizedBox(height: 4),
-                        Text('Side-by-side comparative analysis of all branches under your regional supervision.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFF86EFAC)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.domain, size: 14, color: Color(0xFF047857)),
-                        const SizedBox(width: 6),
-                        Text(
-                          '${data.totalBranches} Branches Supervised',
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF166534)),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Regional Supervisory Area Performance Matrix', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                          SizedBox(height: 4),
+                          Text('Side-by-side comparative analysis of all branches under your regional supervision.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0FDF4),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFF86EFAC)),
                         ),
-                      ],
-                    ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.domain, size: 14, color: Color(0xFF047857)),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${data.totalBranches} Branches Supervised',
+                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF166534)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Responsive 8-Metric KPI Grid
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isMobile = constraints.maxWidth < 600;
+                      final cardW = isMobile
+                          ? (constraints.maxWidth - 10) / 2
+                          : (constraints.maxWidth - 36) / 4;
+                      return Wrap(
+                        spacing: isMobile ? 10 : 12,
+                        runSpacing: isMobile ? 10 : 12,
+                        children: [
+                          _buildMetricCard('Supervised Branches', '${data.totalBranches}', width: cardW),
+                          _buildMetricCard('People on Loan', '${_intFormat.format(data.totalPeopleOnLoan)} Clients', width: cardW),
+                          _buildMetricCard('Active Savers', '${_intFormat.format(data.totalActiveSavers)} Savers', width: cardW),
+                          _buildMetricCard('Active Loans Count', '${_intFormat.format(data.totalActiveLoans)} Loans', width: cardW),
+                          _buildMetricCard('Regional Collections', _formatNgn(data.totalAreaCollections), width: cardW),
+                          _buildMetricCard('Expected Collections', _formatNgn(data.totalAreaExpected), width: cardW),
+                          _buildMetricCard('Area Efficiency', '${data.overallEfficiency.toStringAsFixed(1)}%', width: cardW),
+                          _buildMetricCard('Area Savings Portfolio', _formatNgn(data.totalAreaSavings), width: cardW),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  const Divider(color: Color(0xFFE2E8F0)),
+                  const SizedBox(height: 12),
+
+                  // Branch Certification & Month-End Sign-Off Ribbon (AM / Admin)
+                  if (isAm || isAdmin) ...[
+                    _buildCertificationRibbon(isAm),
+                    const SizedBox(height: 20),
+                    const Divider(color: Color(0xFFE2E8F0)),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // Comparative Matrix: Mobile Cards vs Desktop Table
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isMobile = constraints.maxWidth < 650;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Branch-by-Branch Comparative Matrix',
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (isMobile)
+                                TextButton.icon(
+                                  icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, size: 14, color: const Color(0xFF0F766E)),
+                                  label: Text(
+                                    _showRawTableOnMobile ? 'Show Cards' : 'Show 11-Col Table',
+                                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
+                                  ),
+                                  onPressed: () => setState(() => _showRawTableOnMobile = !_showRawTableOnMobile),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          if (isMobile && !_showRawTableOnMobile)
+                            Column(
+                              children: data.rows.map((r) => _buildMobileBranchHealthCard(r, isAm)).toList(),
+                            )
+                          else
+                            _buildContainedTable(
+                              hint: 'Swipe horizontally to view all branch metrics',
+                              child: DataTable(
+                                headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
+                                columns: const [
+                                  DataColumn(label: Text('Branch', style: TextStyle(fontWeight: FontWeight.bold))),
+                                  DataColumn(label: Text('People on Loan', style: TextStyle(fontWeight: FontWeight.bold))),
+                                  DataColumn(label: Text('Active Loans', style: TextStyle(fontWeight: FontWeight.bold))),
+                                  DataColumn(label: Text('Active Savers', style: TextStyle(fontWeight: FontWeight.bold))),
+                                  DataColumn(label: Text('Total Savings', style: TextStyle(fontWeight: FontWeight.bold))),
+                                  DataColumn(label: Text('Collections', style: TextStyle(fontWeight: FontWeight.bold))),
+                                  DataColumn(label: Text('Expected', style: TextStyle(fontWeight: FontWeight.bold))),
+                                  DataColumn(label: Text('Efficiency', style: TextStyle(fontWeight: FontWeight.bold))),
+                                  DataColumn(label: Text('Outstanding', style: TextStyle(fontWeight: FontWeight.bold))),
+                                  DataColumn(label: Text('PAR %', style: TextStyle(fontWeight: FontWeight.bold))),
+                                  DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
+                                  DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
+                                ],
+                                rows: data.rows.map((r) {
+                                  final isHealthy = r.status == 'HEALTHY';
+                                  return DataRow(cells: [
+                                    DataCell(Text(r.branch, style: const TextStyle(fontWeight: FontWeight.w600))),
+                                    DataCell(Text(_intFormat.format(r.peopleOnLoan))),
+                                    DataCell(Text(_intFormat.format(r.activeLoans))),
+                                    DataCell(Text(_intFormat.format(r.activeSavers))),
+                                    DataCell(Text(_formatNgn(r.totalSavings))),
+                                    DataCell(Text(_formatNgn(r.collectionsReceived))),
+                                    DataCell(Text(_formatNgn(r.expectedCollections))),
+                                    DataCell(Text('${r.collectionEfficiency.toStringAsFixed(1)}%')),
+                                    DataCell(Text(_formatNgn(r.outstandingPortfolio))),
+                                    DataCell(Text('${r.parPercentage.toStringAsFixed(1)}%')),
+                                    DataCell(Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: isHealthy ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: isHealthy ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5)),
+                                      ),
+                                      child: Text(
+                                        r.status,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: isHealthy ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                                        ),
+                                      ),
+                                    )),
+                                    DataCell(
+                                      OutlinedButton(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: const Color(0xFF0F766E),
+                                          side: const BorderSide(color: Color(0xFF0F766E)),
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                          minimumSize: Size.zero,
+                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                        onPressed: () {
+                                          setState(() {
+                                            _selectedBranchName = r.branch;
+                                            _selectedTabIndex = isAm ? 1 : 0;
+                                          });
+                                          _refreshCurrentTabData();
+                                        },
+                                        child: const Text('Review', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                      ),
+                                    ),
+                                  ]);
+                                }).toList(),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  const Divider(color: Color(0xFFE2E8F0)),
+                  const SizedBox(height: 12),
+
+                  // Regional Actions Bar: Excel & CSV
+                  Builder(
+                    builder: (context) {
+                      final isMobile = MediaQuery.of(context).size.width < 750;
+                      return Wrap(
+                        spacing: 12,
+                        runSpacing: 8,
+                        children: [
+                          SizedBox(
+                            width: isMobile ? double.infinity : null,
+                            child: ElevatedButton.icon(
+                              onPressed: () => _triggerCsvDownload('area_comparison', 'area_branch_comparison.csv', forceConsolidated: true),
+                              icon: const Icon(Icons.file_download, size: 16),
+                              label: const Text('Download Area Comparison (CSV)'),
+                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A), foregroundColor: Colors.white),
+                            ),
+                          ),
+                          SizedBox(
+                            width: isMobile ? double.infinity : null,
+                            child: ElevatedButton.icon(
+                              onPressed: () => _triggerExcelDownload(forceConsolidated: true),
+                              icon: const Icon(Icons.table_chart, size: 16),
+                              label: const Text('Download Regional Operational Report (Excel)'),
+                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B), foregroundColor: Colors.white),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-
-              // Responsive 8-Metric KPI Grid
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isMobile = constraints.maxWidth < 600;
-                  final cardW = isMobile
-                      ? (constraints.maxWidth - 10) / 2
-                      : (constraints.maxWidth - 36) / 4;
-                  return Wrap(
-                    spacing: isMobile ? 10 : 12,
-                    runSpacing: isMobile ? 10 : 12,
-                    children: [
-                      _buildMetricCard('Supervised Branches', '${data.totalBranches}', width: cardW),
-                      _buildMetricCard('People on Loan', '${_intFormat.format(data.totalPeopleOnLoan)} Clients', width: cardW),
-                      _buildMetricCard('Active Savers', '${_intFormat.format(data.totalActiveSavers)} Savers', width: cardW),
-                      _buildMetricCard('Active Loans Count', '${_intFormat.format(data.totalActiveLoans)} Loans', width: cardW),
-                      _buildMetricCard('Regional Collections', _formatNgn(data.totalAreaCollections), width: cardW),
-                      _buildMetricCard('Expected Collections', _formatNgn(data.totalAreaExpected), width: cardW),
-                      _buildMetricCard('Area Efficiency', '${data.overallEfficiency.toStringAsFixed(1)}%', width: cardW),
-                      _buildMetricCard('Area Savings Portfolio', _formatNgn(data.totalAreaSavings), width: cardW),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 20),
-              const Divider(color: Color(0xFFE2E8F0)),
-              const SizedBox(height: 12),
-
-              // Branch Certification & Month-End Sign-Off Ribbon (AM / Admin)
-              if (isAm || isAdmin) ...[
-                _buildCertificationRibbon(isAm),
-                const SizedBox(height: 20),
-                const Divider(color: Color(0xFFE2E8F0)),
-                const SizedBox(height: 12),
-              ],
-
-              // Comparative Matrix: Mobile Cards vs Desktop Table
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isMobile = constraints.maxWidth < 650;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Branch-by-Branch Comparative Matrix', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                          if (isMobile)
-                            TextButton.icon(
-                              icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, size: 14, color: const Color(0xFF0F766E)),
-                              label: Text(
-                                _showRawTableOnMobile ? 'Show Cards' : 'Show 11-Col Table',
-                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
-                              ),
-                              onPressed: () => setState(() => _showRawTableOnMobile = !_showRawTableOnMobile),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      if (isMobile && !_showRawTableOnMobile)
-                        Column(
-                          children: data.rows.map((r) => _buildMobileBranchHealthCard(r, isAm)).toList(),
-                        )
-                      else
-                        _buildContainedTable(
-                          hint: 'Swipe horizontally to view all branch metrics',
-                          child: DataTable(
-                            headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-                            columns: const [
-                              DataColumn(label: Text('Branch', style: TextStyle(fontWeight: FontWeight.bold))),
-                              DataColumn(label: Text('People on Loan', style: TextStyle(fontWeight: FontWeight.bold))),
-                              DataColumn(label: Text('Active Loans', style: TextStyle(fontWeight: FontWeight.bold))),
-                              DataColumn(label: Text('Active Savers', style: TextStyle(fontWeight: FontWeight.bold))),
-                              DataColumn(label: Text('Total Savings', style: TextStyle(fontWeight: FontWeight.bold))),
-                              DataColumn(label: Text('Collections', style: TextStyle(fontWeight: FontWeight.bold))),
-                              DataColumn(label: Text('Expected', style: TextStyle(fontWeight: FontWeight.bold))),
-                              DataColumn(label: Text('Efficiency', style: TextStyle(fontWeight: FontWeight.bold))),
-                              DataColumn(label: Text('Outstanding', style: TextStyle(fontWeight: FontWeight.bold))),
-                              DataColumn(label: Text('PAR %', style: TextStyle(fontWeight: FontWeight.bold))),
-                              DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
-                              DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
-                            ],
-                            rows: data.rows.map((r) {
-                              final isHealthy = r.status == 'HEALTHY';
-                              return DataRow(cells: [
-                                DataCell(Text(r.branch, style: const TextStyle(fontWeight: FontWeight.w600))),
-                                DataCell(Text(_intFormat.format(r.peopleOnLoan))),
-                                DataCell(Text(_intFormat.format(r.activeLoans))),
-                                DataCell(Text(_intFormat.format(r.activeSavers))),
-                                DataCell(Text(_formatNgn(r.totalSavings))),
-                                DataCell(Text(_formatNgn(r.collectionsReceived))),
-                                DataCell(Text(_formatNgn(r.expectedCollections))),
-                                DataCell(Text('${r.collectionEfficiency.toStringAsFixed(1)}%')),
-                                DataCell(Text(_formatNgn(r.outstandingPortfolio))),
-                                DataCell(Text('${r.parPercentage.toStringAsFixed(1)}%')),
-                                DataCell(Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: isHealthy ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: isHealthy ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5)),
-                                  ),
-                                  child: Text(
-                                    r.status,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: isHealthy ? const Color(0xFF166534) : const Color(0xFF991B1B),
-                                    ),
-                                  ),
-                                )),
-                                DataCell(
-                                  OutlinedButton(
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: const Color(0xFF0F766E),
-                                      side: const BorderSide(color: Color(0xFF0F766E)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                      minimumSize: Size.zero,
-                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                    onPressed: () {
-                                      setState(() {
-                                        _selectedBranchName = r.branch;
-                                        _selectedTabIndex = isAm ? 1 : 0;
-                                      });
-                                      _refreshCurrentTabData();
-                                    },
-                                    child: const Text('Review', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                  ),
-                                ),
-                              ]);
-                            }).toList(),
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 20),
-              const Divider(color: Color(0xFFE2E8F0)),
-              const SizedBox(height: 12),
-
-              // Regional Actions Bar: Excel & CSV
-              Builder(
-                builder: (context) {
-                  final isMobile = MediaQuery.of(context).size.width < 750;
-                  return Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    children: [
-                      SizedBox(
-                        width: isMobile ? double.infinity : null,
-                        child: ElevatedButton.icon(
-                          onPressed: () => _triggerCsvDownload('area_comparison', 'area_branch_comparison.csv'),
-                          icon: const Icon(Icons.file_download, size: 16),
-                          label: const Text('Download Area Comparison (CSV)'),
-                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A), foregroundColor: Colors.white),
-                        ),
-                      ),
-                      SizedBox(
-                        width: isMobile ? double.infinity : null,
-                        child: ElevatedButton.icon(
-                          onPressed: _triggerExcelDownload,
-                          icon: const Icon(Icons.table_chart, size: 16),
-                          label: const Text('Download Regional Operational Report (Excel)'),
-                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B), foregroundColor: Colors.white),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ],
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -3661,10 +3907,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               children: [
                 SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
                 SizedBox(width: 12),
-                Text('Checking branch monthly submission & certification status...', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                Expanded(
+                  child: Text('Checking branch monthly submission & certification status...', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                ),
               ],
             ),
           );
+        }
+
+        if (snapshot.hasError) {
+          return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
         }
 
         final list = snapshot.data ?? [];
@@ -3680,7 +3932,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               children: [
                 Icon(Icons.verified, size: 18, color: Color(0xFF047857)),
                 SizedBox(width: 10),
-                Text('All supervised branches have completed submissions for this period.', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF166534))),
+                Expanded(
+                  child: Text('All supervised branches have completed submissions for this period.', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF166534))),
+                ),
               ],
             ),
           );
@@ -3692,7 +3946,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Branch Certification & Month-End Sign-Off', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                const Expanded(
+                  child: Text(
+                    'Branch Certification & Month-End Sign-Off',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
                 Text('${list.length} Branches Tracked', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F766E))),
               ],
             ),
@@ -3730,13 +3991,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Row(
-                                children: [
-                                  Icon(statusIcon, size: 16, color: iconColor),
-                                  const SizedBox(width: 6),
-                                  Text(b.branchName, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: Color(0xFF0F172A))),
-                                ],
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Icon(statusIcon, size: 16, color: iconColor),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        b.branchName,
+                                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: Color(0xFF0F172A)),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
+                              const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(4)),
@@ -3747,12 +4017,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           const SizedBox(height: 6),
                           Text(
                             isSubmitted
-                                ? 'Certified by ${b.bmName ?? "Branch Manager"}${b.submittedAt != null ? " on ${_formatDateTime(b.submittedAt)}" : ""} â€¢ Collections: ${_formatNgn(b.collections)}'
+                                ? 'Certified by ${b.bmName ?? "Branch Manager"}${b.submittedAt != null ? " on ${_formatDateTime(b.submittedAt)}" : ""} • Collections: ${_formatNgn(b.collections)}'
                                 : (isEndorsed
-                                    ? 'Endorsed & locked for supervisory district â€¢ Collections: ${_formatNgn(b.collections)}'
+                                    ? 'Endorsed & locked for supervisory district • Collections: ${_formatNgn(b.collections)}'
                                     : (isReturned
                                         ? 'Queried: ${b.amQueryNotes ?? "Corrections requested"}'
-                                        : 'BM reconciling vault â€¢ Books open for ${_monthNames[_selectedExecMonth - 1]} $_selectedExecYear')),
+                                        : 'BM reconciling vault • Books open for ${_monthNames[_selectedExecMonth - 1]} $_selectedExecYear')),
                             style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -3799,6 +4069,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // ---------------------------------------------------------------------------
   Widget _buildDataExportsTab(bool isAdmin, bool isBm, bool isAm) {
     final isMobile = MediaQuery.of(context).size.width < 750;
+    final effectiveSingleBranch = (_selectedBranchName != null && !_selectedBranchName!.startsWith('All'))
+        ? _selectedBranchName
+        : (_cachedMeta?.branches.isNotEmpty == true ? _cachedMeta!.branches.first.name : _selectedBranchName);
 
     return Container(
       width: double.infinity,
@@ -3873,7 +4146,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     runSpacing: 10,
                     children: [
                       ElevatedButton.icon(
-                        onPressed: _triggerExcelDownload,
+                        onPressed: () => _triggerExcelDownload(forceConsolidated: true),
                         icon: const Icon(Icons.table_chart, size: 16),
                         label: const Text('Download Master Regional Report (Excel)'),
                         style: ElevatedButton.styleFrom(
@@ -3883,7 +4156,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         ),
                       ),
                       ElevatedButton.icon(
-                        onPressed: () => _triggerCsvDownload('area_comparison', 'area_branch_comparison.csv'),
+                        onPressed: () => _triggerCsvDownload('area_comparison', 'area_branch_comparison.csv', forceConsolidated: true),
                         icon: const Icon(Icons.file_download, size: 16),
                         label: const Text('Area Comparison (CSV)'),
                         style: ElevatedButton.styleFrom(
@@ -3893,7 +4166,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         ),
                       ),
                       ElevatedButton.icon(
-                        onPressed: () => _triggerCsvDownload('loans', 'regional_raw_loans.csv'),
+                        onPressed: () => _triggerCsvDownload('loans', 'regional_raw_loans.csv', forceConsolidated: true),
                         icon: const Icon(Icons.file_download, size: 16),
                         label: const Text('Regional Raw Loans (CSV)'),
                         style: ElevatedButton.styleFrom(
@@ -3903,7 +4176,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         ),
                       ),
                       ElevatedButton.icon(
-                        onPressed: () => _triggerCsvDownload('repayments', 'regional_raw_repayments.csv'),
+                        onPressed: () => _triggerCsvDownload('repayments', 'regional_raw_repayments.csv', forceConsolidated: true),
                         icon: const Icon(Icons.file_download, size: 16),
                         label: const Text('Regional Raw Repayments (CSV)'),
                         style: ElevatedButton.styleFrom(
@@ -3955,7 +4228,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Extract official regulatory statements and raw registers for an individual branch (Currently: ${_selectedBranchName ?? "Selected Branch"}).',
+                            'Extract official regulatory statements and raw registers for an individual branch (Currently: ${effectiveSingleBranch ?? "Selected Branch"}).',
                             style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                           ),
                         ],
@@ -3978,26 +4251,26 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       onPressed: () async {
                         try {
                           final bytes = await ref.read(reportsApiServiceProvider).downloadMonthlyParityPdf(
-                            branchName: _selectedBranchName,
+                            branchName: effectiveSingleBranch,
                             year: _selectedExecYear,
                             month: _selectedExecMonth,
                             officerName: _selectedOfficerName,
                             productName: _selectedProductName,
                           );
-                          downloadBlobFile(
+                          final saved = await downloadBlobFile(
                             bytes,
-                            'Official_Executive_Statement_${_selectedBranchName ?? "Branch"}_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.pdf',
+                            'Official_Executive_Statement_${effectiveSingleBranch ?? "Branch"}_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.pdf',
                             'application/pdf',
                           );
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Executive PDF Statement downloaded successfully.')),
+                              SnackBar(content: Text('Executive PDF Statement downloaded${saved != null ? ' ($saved)' : ''}.')),
                             );
                           }
                         } catch (e) {
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('PDF Download failed: $e')),
+                              SnackBar(content: Text('PDF Download failed: ${AppErrorDetails.from(e).message}')),
                             );
                           }
                         }
@@ -4013,26 +4286,26 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       onPressed: () async {
                         try {
                           final bytes = await ref.read(reportsApiServiceProvider).downloadMonthlyParityExcel(
-                            branchName: _selectedBranchName,
+                            branchName: effectiveSingleBranch,
                             year: _selectedExecYear,
                             month: _selectedExecMonth,
                             officerName: _selectedOfficerName,
                             productName: _selectedProductName,
                           );
-                          downloadBlobFile(
+                          final saved = await downloadBlobFile(
                             bytes,
-                            'Branch_Monthly_Workbook_${_selectedBranchName ?? "Branch"}_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.xlsx',
+                            'Branch_Monthly_Workbook_${effectiveSingleBranch ?? "Branch"}_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.xlsx',
                             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                           );
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Branch Workbook downloaded successfully.')),
+                              SnackBar(content: Text('Branch Workbook downloaded${saved != null ? ' ($saved)' : ''}.')),
                             );
                           }
                         } catch (e) {
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Download failed: $e')),
+                              SnackBar(content: Text('Download failed: ${AppErrorDetails.from(e).message}')),
                             );
                           }
                         }
@@ -4048,39 +4321,39 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       onPressed: () async {
                         try {
                           final bytes = await ref.read(reportsApiServiceProvider).downloadMonthlyParityCsv(
-                            branchName: _selectedBranchName,
+                            branchName: effectiveSingleBranch,
                             year: _selectedExecYear,
                             month: _selectedExecMonth,
                             officerName: _selectedOfficerName,
                             productName: _selectedProductName,
                           );
-                          downloadBlobFile(
+                          final saved = await downloadBlobFile(
                             bytes,
-                            'CO_Summary_${_selectedBranchName ?? "Branch"}_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.csv',
+                            'CO_Summary_${effectiveSingleBranch ?? "Branch"}_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.csv',
                             'text/csv',
                           );
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('CO Summary CSV downloaded successfully.')),
+                              SnackBar(content: Text('CO Summary CSV downloaded${saved != null ? ' ($saved)' : ''}.')),
                             );
                           }
                         } catch (e) {
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Download failed: $e')),
+                              SnackBar(content: Text('Download failed: ${AppErrorDetails.from(e).message}')),
                             );
                           }
                         }
                       },
                     ),
                     ElevatedButton.icon(
-                      onPressed: () => _triggerCsvDownload('loans', '${_selectedBranchName ?? "branch"}_loans.csv'),
+                      onPressed: () => _triggerCsvDownload('loans', '${effectiveSingleBranch ?? "branch"}_loans.csv', branchOverride: effectiveSingleBranch),
                       icon: const Icon(Icons.file_download, size: 14),
                       label: const Text('Branch Loans (CSV)', style: TextStyle(fontSize: 12)),
                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF334155), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
                     ),
                     ElevatedButton.icon(
-                      onPressed: () => _triggerCsvDownload('repayments', '${_selectedBranchName ?? "branch"}_repayments.csv'),
+                      onPressed: () => _triggerCsvDownload('repayments', '${effectiveSingleBranch ?? "branch"}_repayments.csv', branchOverride: effectiveSingleBranch),
                       icon: const Icon(Icons.file_download, size: 14),
                       label: const Text('Branch Repayments (CSV)', style: TextStyle(fontSize: 12)),
                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF334155), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
@@ -4098,15 +4371,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // ---------------------------------------------------------------------------
   // Download Triggers
   // ---------------------------------------------------------------------------
-  Future<void> _triggerExcelDownload() async {
+  Future<void> _triggerExcelDownload({String? branchOverride, bool forceConsolidated = false}) async {
     final api = ref.read(reportsApiServiceProvider);
     final asOfStr = _dateMode == 'As of Date' ? _dateFormat.format(_asOfDate) : null;
     final startStr = _dateMode == 'Date Range' ? _dateFormat.format(_startDate) : null;
     final endStr = _dateMode == 'Date Range' ? _dateFormat.format(_endDate) : null;
+    final targetBranch = forceConsolidated ? null : (branchOverride ?? _selectedBranchName);
 
     try {
       final bytes = await api.downloadExcel(
-        branchName: _selectedBranchName,
+        branchName: targetBranch,
         productName: _selectedProductName,
         officerName: _selectedOfficerName,
         asOfDate: asOfStr,
@@ -4114,24 +4388,32 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         endDate: endStr,
       );
       final fileName = 'icare_master_report_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.xlsx';
-      downloadBlobFile(bytes, fileName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      final saved = await downloadBlobFile(bytes, fileName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Excel report downloaded${saved != null ? ' ($saved)' : ''}.')),
+        );
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to download Excel report: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to download Excel report: ${AppErrorDetails.from(e).message}')),
+        );
       }
     }
   }
 
-  Future<void> _triggerCsvDownload(String reportType, String defaultFileName) async {
+  Future<void> _triggerCsvDownload(String reportType, String defaultFileName, {String? branchOverride, bool forceConsolidated = false}) async {
     final api = ref.read(reportsApiServiceProvider);
     final asOfStr = _dateMode == 'As of Date' ? _dateFormat.format(_asOfDate) : null;
     final startStr = _dateMode == 'Date Range' ? _dateFormat.format(_startDate) : null;
     final endStr = _dateMode == 'Date Range' ? _dateFormat.format(_endDate) : null;
+    final targetBranch = forceConsolidated ? null : (branchOverride ?? _selectedBranchName);
 
     try {
       final bytes = await api.downloadCsv(
         reportType: reportType,
-        branchName: _selectedBranchName,
+        branchName: targetBranch,
         productName: _selectedProductName,
         officerName: _selectedOfficerName,
         asOfDate: asOfStr,
@@ -4139,10 +4421,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         endDate: endStr,
       );
       final fileName = defaultFileName.replaceAll('.csv', '_${DateFormat('yyyyMMdd').format(DateTime.now())}.csv');
-      downloadBlobFile(bytes, fileName, 'text/csv');
+      final saved = await downloadBlobFile(bytes, fileName, 'text/csv');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('CSV exported${saved != null ? ' ($saved)' : ''}.')),
+        );
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to download CSV: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to download CSV: ${AppErrorDetails.from(e).message}')),
+        );
       }
     }
   }
@@ -4235,13 +4524,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               children: [
                 SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
                 SizedBox(width: 12),
-                Text('Checking monthly verification & sign-off status...', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                Expanded(
+                  child: Text('Checking monthly verification & sign-off status...', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                ),
               ],
             ),
           );
         }
 
         if (snapshot.hasError) {
+          final errInfo = AppErrorDetails.from(snapshot.error!);
           return Container(
             margin: const EdgeInsets.only(bottom: 16),
             padding: const EdgeInsets.all(14),
@@ -4255,7 +4547,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 const Icon(Icons.info_outline, size: 18, color: Color(0xFFDC2626)),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text('Workflow status unavailable: ${snapshot.error}', style: const TextStyle(fontSize: 12, color: Color(0xFF991B1B))),
+                  child: Text('Workflow status unavailable: ${errInfo.message}', style: const TextStyle(fontSize: 12, color: Color(0xFF991B1B))),
                 ),
               ],
             ),
@@ -4272,6 +4564,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
   Widget _renderWorkflowBanner(MonthlyWorkflowStatusModel st, bool isAdmin, bool isBm, bool isAm) {
     final status = st.status;
+    final authState = ref.read(authControllerProvider);
+    final user = authState is AuthStateAuthenticated ? authState.user : null;
+    final role = user?.role.trim() ?? '';
+    final isDirector = role == 'Director' || role == 'DIRECTOR' || role == 'Executive Director';
+    final canMutateAdmin = isAdmin && !isDirector;
 
     Color bg;
     Color border;
@@ -4296,7 +4593,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         title = 'Submitted for Area Manager Endorsement';
         description = 'Certified by ${st.bmName ?? "Branch Manager"} on ${_formatDateTime(st.bmSubmittedAt)}. Books are locked pending Area Manager review.';
 
-        if (isAm || isAdmin) {
+        if (isAm || canMutateAdmin) {
           actions.add(
             OutlinedButton.icon(
               onPressed: _isWorkflowSubmitting ? null : () => _showAmReturnDialog(st),
@@ -4342,7 +4639,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         title = 'Returned with Supervisory Queries';
         description = 'Area Manager ${st.amName != null ? "(${st.amName}) " : ""}has requested adjustments before sign-off.';
 
-        if (isBm || isAdmin) {
+        if (isBm || canMutateAdmin) {
           actions.add(
             ElevatedButton.icon(
               onPressed: _isWorkflowSubmitting ? null : () => _showBmSubmitDialog(st),
@@ -4366,9 +4663,23 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         icon = Icons.verified;
         iconColor = const Color(0xFF15803D);
         title = 'Supervisory Sign-Off Granted';
-        description = 'Endorsed by Area Manager ${st.amName ?? ""} on ${_formatDateTime(st.amEndorsedAt)}. Awaiting regional package seal.';
+        description = 'Endorsed by Area Manager ${st.amName ?? ""} on ${_formatDateTime(st.amEndorsedAt)}. Ready for regional package seal or archival lock.';
 
-        if (isAdmin) {
+        if (isAm || canMutateAdmin) {
+          actions.add(
+            OutlinedButton.icon(
+              onPressed: _isWorkflowSubmitting ? null : () => _sealAreaMonthlyPackage(),
+              icon: const Icon(Icons.folder_special_outlined, size: 14, color: Color(0xFF1D4ED8)),
+              label: const Text('Seal Regional Package', style: TextStyle(color: Color(0xFF1D4ED8), fontSize: 12, fontWeight: FontWeight.bold)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFF93C5FD)),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              ),
+            ),
+          );
+        }
+        if (canMutateAdmin) {
+          if (actions.isNotEmpty) actions.add(const SizedBox(width: 8));
           actions.add(
             ElevatedButton.icon(
               onPressed: _isWorkflowSubmitting ? null : () => _showAdminLockDialog(st),
@@ -4380,12 +4691,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               ),
             ),
           );
-        } else {
+        }
+        if (actions.isEmpty) {
           actions.add(
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(6)),
-              child: const Text('Endorsed â€¢ Awaiting Regional Seal', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
+              child: const Text('Endorsed • Awaiting Regional Seal', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
             ),
           );
         }
@@ -4402,7 +4714,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         title = 'Regional Month-End Package Sealed';
         description = 'Sealed by Area Manager. Awaiting Executive Admin permanent archival lock.';
 
-        if (isAdmin) {
+        if (canMutateAdmin) {
           actions.add(
             ElevatedButton.icon(
               onPressed: _isWorkflowSubmitting ? null : () => _showAdminLockDialog(st),
@@ -4419,7 +4731,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(color: const Color(0xFFDBEAFE), borderRadius: BorderRadius.circular(6)),
-              child: const Text('Sealed â€¢ Awaiting Admin Archival', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8))),
+              child: const Text('Sealed • Awaiting Admin Archival', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8))),
             ),
           );
         }
@@ -4456,13 +4768,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         border = const Color(0xFFE2E8F0);
         pillBg = const Color(0xFFF1F5F9);
         pillText = const Color(0xFF475569);
-        pillLabel = 'DRAFT â€” BOOKS OPEN';
+        pillLabel = 'DRAFT — BOOKS OPEN';
         icon = Icons.edit_note;
         iconColor = const Color(0xFF475569);
         title = 'Month-End Statements in Preparation';
         description = 'Operational books are open for reconciliation. Ready to certify and submit to Area Manager?';
 
-        if (isBm || isAdmin) {
+        if (isBm || canMutateAdmin) {
           actions.add(
             ElevatedButton.icon(
               onPressed: _isWorkflowSubmitting ? null : () => _showBmSubmitDialog(st),
@@ -4595,6 +4907,38 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 
+  Future<void> _sealAreaMonthlyPackage() async {
+    setState(() => _isWorkflowSubmitting = true);
+    try {
+      final api = ref.read(reportsApiServiceProvider);
+      final res = await api.sealAreaMonthlyWorkflow(
+        areaName: _selectedBranchName ?? 'Regional Area',
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['message'] ?? 'Regional monthly package sealed for all supervised branches.'),
+            backgroundColor: const Color(0xFF1D4ED8),
+          ),
+        );
+        _refreshCurrentTabData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Regional seal failed: ${AppErrorDetails.from(e).message}'),
+            backgroundColor: const Color(0xFFDC2626),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isWorkflowSubmitting = false);
+    }
+  }
+
   Future<void> _showBmSubmitDialog(MonthlyWorkflowStatusModel st) async {
     final notesController = TextEditingController();
     final confirm = await showDialog<bool>(
@@ -4625,7 +4969,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Branch: ${_selectedBranchName ?? "Current"} â€¢ Period: $_selectedExecYear-${_selectedExecMonth.toString().padLeft(2, '0')}',
+                  'Branch: ${_selectedBranchName ?? "Current"} • Period: $_selectedExecYear-${_selectedExecMonth.toString().padLeft(2, '0')}',
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
                 ),
                 const SizedBox(height: 12),
@@ -4647,7 +4991,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       const Divider(height: 12),
                       _buildSnapshotRow(
                         'General Ledger Status',
-                        st.isGlBalanced ? 'Balanced (â‚¦0.00)' : 'Variance: ${_formatNgn(st.glVariance)}',
+                        st.isGlBalanced ? 'Balanced (₦0.00)' : 'Variance: ${_formatNgn(st.glVariance)}',
                         isDanger: !st.isGlBalanced,
                         isAccent: st.isGlBalanced,
                       ),
@@ -4726,7 +5070,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Submission failed: $e'), backgroundColor: const Color(0xFFDC2626)),
+          SnackBar(content: Text('Submission failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)),
         );
       }
     } finally {
@@ -4764,7 +5108,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Branch: ${_selectedBranchName ?? "Current"} â€¢ Certified by: ${st.bmName ?? "Branch Manager"}',
+                  'Branch: ${_selectedBranchName ?? "Current"} • Certified by: ${st.bmName ?? "Branch Manager"}',
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
                 ),
                 const SizedBox(height: 12),
@@ -4784,7 +5128,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       _buildSnapshotRow('Physical Vault Cash', _formatNgn(st.vaultCashAcct1000)),
                       _buildSnapshotRow(
                         'General Ledger Status',
-                        st.isGlBalanced ? 'Balanced (â‚¦0.00)' : 'Variance: ${_formatNgn(st.glVariance)}',
+                        st.isGlBalanced ? 'Balanced (₦0.00)' : 'Variance: ${_formatNgn(st.glVariance)}',
                         isDanger: !st.isGlBalanced,
                         isAccent: st.isGlBalanced,
                       ),
@@ -4841,7 +5185,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Endorsement failed: $e'), backgroundColor: const Color(0xFFDC2626)),
+          SnackBar(content: Text('Endorsement failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)),
         );
       }
     } finally {
@@ -4933,7 +5277,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Action failed: $e'), backgroundColor: const Color(0xFFDC2626)),
+          SnackBar(content: Text('Action failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)),
         );
       }
     } finally {
@@ -5022,7 +5366,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lock failed: $e'), backgroundColor: const Color(0xFFDC2626)),
+          SnackBar(content: Text('Lock failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)),
         );
       }
     } finally {
@@ -5117,9 +5461,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 children: [
                   const Icon(Icons.swap_horiz, size: 14, color: Color(0xFF64748B)),
                   const SizedBox(width: 6),
-                  Text(
-                    hint ?? 'Swipe horizontally to view all columns',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                  Expanded(
+                    child: Text(
+                      hint ?? 'Swipe horizontally to view all columns',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
@@ -5149,7 +5496,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 
-  Widget _buildErrorCard(String error) {
+  Widget _buildErrorCard(Object error, {VoidCallback? onRetry}) {
+    final details = AppErrorDetails.from(error);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -5158,11 +5506,44 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFFCA5A5)),
       ),
-      child: Row(
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 20),
-          const SizedBox(width: 8),
-          Expanded(child: Text(error, style: const TextStyle(fontSize: 13, color: Color(0xFF991B1B)))),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 20),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      details.title,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF991B1B)),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      details.message,
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF991B1B)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          OutlinedButton.icon(
+            onPressed: onRetry ?? _refreshCurrentTabData,
+            icon: const Icon(Icons.refresh, size: 14, color: Color(0xFFDC2626)),
+            label: const Text('Retry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFDC2626))),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFFFCA5A5)),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
         ],
       ),
     );

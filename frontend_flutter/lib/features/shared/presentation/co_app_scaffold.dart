@@ -21,6 +21,7 @@ import '../../am/presentation/am_portfolio_screen.dart';
 import '../../audit/presentation/audit_ledger_screen.dart';
 import '../../reports/presentation/reports_export_screen.dart';
 import '../../onboarding/presentation/branch_onboarding_admin_screen.dart';
+import '../../admin/data/datasources/admin_api_service.dart';
 import '../../admin/presentation/admin_dashboard_screen.dart';
 import '../../admin/presentation/admin_portfolio_screen.dart';
 import '../../auth/presentation/login_screen.dart';
@@ -38,7 +39,7 @@ final selectedCollectionGroupProvider = StateProvider<String?>((ref) => null);
 class CoAppScaffold extends ConsumerWidget {
   const CoAppScaffold({super.key});
 
-  Future<void> _triggerPageRefresh(WidgetRef ref, String activePage, bool isBm, bool isAm) async {
+  Future<void> _triggerPageRefresh(WidgetRef ref, String activePage, bool isBm, bool isAm, {bool isAdmin = false}) async {
     try {
       await ref.read(connectivityServiceProvider).checkActualConnection();
     } catch (_) {}
@@ -47,7 +48,11 @@ class CoAppScaffold extends ConsumerWidget {
 
     switch (activePage) {
       case 'Dashboard':
-        if (isAm) {
+        if (isAdmin) {
+          ref.invalidate(adminOperationsProvider);
+          ref.invalidate(institutionPerformanceProvider);
+          ref.invalidate(adminRiskHealthProvider);
+        } else if (isAm) {
           ref.invalidate(amDashboardDataProvider);
           ref.invalidate(amMonthlyWorkflowSubmissionsProvider);
         } else if (isBm) {
@@ -180,12 +185,13 @@ class CoAppScaffold extends ConsumerWidget {
     final branchName = user.branch;
     final role = user.role.trim();
     final isBm = role == 'Branch Manager' || role == 'BM';
-    final isAdmin = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN';
+    final isDirector = role == 'Director' || role == 'DIRECTOR' || role == 'Executive Director';
+    final isAdmin = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN' || isDirector;
     final isAm = role == 'Area Manager' || role == 'AM';
 
     ref.listen<bool>(isOnlineProvider, (previous, next) async {
       if (previous == false && next == true) {
-        _triggerPageRefresh(ref, activePage, isBm, isAm);
+        _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
         final pendingCount = ref.read(pendingOutboxCountProvider);
         if (pendingCount > 0) {
           final syncMgr = ref.read(offlineSyncManagerProvider);
@@ -236,11 +242,13 @@ class CoAppScaffold extends ConsumerWidget {
 
     final roleBadge = isBm
         ? 'Branch Manager'
-        : (isAdmin
-            ? 'Admin'
-            : (isAm
-                ? 'Area Manager'
-                : (role.isNotEmpty ? role : 'Credit Officer')));
+        : (isDirector
+            ? 'Director'
+            : (isAdmin
+                ? 'Admin'
+                : (isAm
+                    ? 'Area Manager'
+                    : (role.isNotEmpty ? role : 'Credit Officer'))));
 
     final badgeColor = isBm
         ? const Color(0xFF2563EB)
@@ -253,6 +261,13 @@ class CoAppScaffold extends ConsumerWidget {
     List<String> navItems;
     if (isBm) {
       navItems = ['Dashboard', 'Portfolio', 'Master Cashbook', 'User Management', 'Audit Ledger', 'Reports & Export'];
+    } else if (isDirector) {
+      navItems = [
+        'Dashboard',
+        'Portfolio',
+        'Audit Ledger',
+        'Reports & Export',
+      ];
     } else if (isAdmin) {
       navItems = [
         'Dashboard',
@@ -367,7 +382,7 @@ class CoAppScaffold extends ConsumerWidget {
                           );
                         }
                         if (connected) {
-                          _triggerPageRefresh(ref, activePage, isBm, isAm);
+                          _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
                         }
                       },
                       child: Container(
@@ -416,7 +431,7 @@ class CoAppScaffold extends ConsumerWidget {
                   constraints: const BoxConstraints(),
                   onPressed: () async {
                     HapticFeedback.lightImpact();
-                    await _triggerPageRefresh(ref, activePage, isBm, isAm);
+                    await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).hideCurrentSnackBar();
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -565,7 +580,7 @@ class CoAppScaffold extends ConsumerWidget {
                           displacement: 30,
                           onRefresh: () async {
                             HapticFeedback.lightImpact();
-                            await _triggerPageRefresh(ref, activePage, isBm, isAm);
+                            await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
                           },
                           child: SingleChildScrollView(
                             physics: const AlwaysScrollableScrollPhysics(),
@@ -592,7 +607,7 @@ class CoAppScaffold extends ConsumerWidget {
                     displacement: 30,
                     onRefresh: () async {
                       HapticFeedback.lightImpact();
-                      await _triggerPageRefresh(ref, activePage, isBm, isAm);
+                      await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
                     },
                     child: SingleChildScrollView(
                       physics: const AlwaysScrollableScrollPhysics(),
@@ -633,6 +648,7 @@ class CoAppScaffold extends ConsumerWidget {
       destinations = [
         (key: 'Dashboard', shortLabel: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
         (key: 'Portfolio', shortLabel: 'Branches', icon: Icons.domain_outlined, activeIcon: Icons.domain),
+        (key: 'Audit Ledger', shortLabel: 'Audit', icon: Icons.security_outlined, activeIcon: Icons.security),
         (key: 'Reports & Export', shortLabel: 'Reports', icon: Icons.analytics_outlined, activeIcon: Icons.analytics),
         (key: 'User Management', shortLabel: 'Users', icon: Icons.people_alt_outlined, activeIcon: Icons.people_alt),
       ];
@@ -642,14 +658,13 @@ class CoAppScaffold extends ConsumerWidget {
         (key: 'Portfolio', shortLabel: 'Portfolio', icon: Icons.folder_shared_outlined, activeIcon: Icons.folder_shared),
         (key: 'Master Cashbook', shortLabel: 'Cashbook', icon: Icons.account_balance_outlined, activeIcon: Icons.account_balance),
         (key: 'User Management', shortLabel: 'Users', icon: Icons.people_alt_outlined, activeIcon: Icons.people_alt),
-        (key: 'Audit Ledger', shortLabel: 'Audit', icon: Icons.security_outlined, activeIcon: Icons.security),
+        (key: 'Reports & Export', shortLabel: 'Reports', icon: Icons.analytics_outlined, activeIcon: Icons.analytics),
       ];
     } else if (isAm) {
       destinations = [
         (key: 'Dashboard', shortLabel: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
         (key: 'Portfolio', shortLabel: 'Portfolio', icon: Icons.pie_chart_outline, activeIcon: Icons.pie_chart),
         (key: 'Master Cashbook', shortLabel: 'Cashbook', icon: Icons.account_balance_outlined, activeIcon: Icons.account_balance),
-        (key: 'Branch Onboarding', shortLabel: 'Onboarding', icon: Icons.domain_add_outlined, activeIcon: Icons.domain_add),
         (key: 'User Management', shortLabel: 'Staff', icon: Icons.people_alt_outlined, activeIcon: Icons.people_alt),
         (key: 'Reports & Export', shortLabel: 'Reports', icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart),
       ];
@@ -921,7 +936,7 @@ class CoAppScaffold extends ConsumerWidget {
               ),
               const SizedBox(height: 10),
               const Text(
-                'CORE BANKING v3.0.0 (st v1.38.0)',
+                'CORE BANKING v3.0.0',
                 style: TextStyle(
                   color: Color(0xFF94A3B8),
                   fontSize: 9.5,
@@ -996,7 +1011,7 @@ class CoAppScaffold extends ConsumerWidget {
             const SizedBox(height: 6),
             const Center(
               child: Text(
-                'CORE BANKING v3.0.0 (st v1.38.0)',
+                'CORE BANKING v3.0.0',
                 style: TextStyle(
                   color: Color(0xFF94A3B8),
                   fontSize: 9.5,

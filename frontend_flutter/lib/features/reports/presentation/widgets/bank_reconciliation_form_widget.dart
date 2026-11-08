@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../../../core/errors/app_error_formatter.dart';
 import '../../data/datasources/reports_api_service.dart';
 import '../../data/models/report_models.dart';
 
@@ -37,12 +38,18 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
 
   bool _isSaving = false;
   final Map<int, bool> _sectionExpanded = {
-    1: false,
+    1: true,
     2: false,
     3: false,
     4: false,
     5: false,
   };
+
+  void _onLiveSumFieldChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
 
   // Bank 1
   late TextEditingController _b1NameController;
@@ -174,6 +181,21 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
     _tbTransportController = TextEditingController(text: d.tbTransport > 0 ? d.tbTransport.toStringAsFixed(2) : '');
     _tbTrainingController = TextEditingController(text: d.tbTraining > 0 ? d.tbTraining.toStringAsFixed(2) : '');
     _tbOtherExpensesController = TextEditingController(text: d.tbOtherExpenses > 0 ? d.tbOtherExpenses.toStringAsFixed(2) : '');
+
+    for (final c in [
+      _tbSalaryController,
+      _tbRentController,
+      _tbElectricityController,
+      _tbStationeryController,
+      _tbEntertainmentController,
+      _tbTelephoneController,
+      _tbRepairOfficeController,
+      _tbTransportController,
+      _tbTrainingController,
+      _tbOtherExpensesController,
+    ]) {
+      c.addListener(_onLiveSumFieldChanged);
+    }
 
     _tbSalesProfitController = TextEditingController(text: d.tbSalesProfit > 0 ? d.tbSalesProfit.toStringAsFixed(2) : '');
     _tbDamagesFineController = TextEditingController(text: d.tbDamagesFine > 0 ? d.tbDamagesFine.toStringAsFixed(2) : '');
@@ -366,7 +388,8 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
       }
     } catch (e) {
       if (mounted) {
-        String errorMsg = 'Failed to save reconciliation: $e';
+        final err = AppErrorDetails.from(e);
+        String errorMsg = '${err.title}: ${err.message}';
         if (e is DioException && e.response?.data != null) {
           final d = e.response!.data;
           if (d is Map && d['detail'] != null) {
@@ -541,43 +564,62 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
     TextEditingController intC,
     TextEditingController closeC,
   ) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E293B))),
-          const SizedBox(height: 10),
-          Row(
+    return LayoutBuilder(
+      builder: (context, cardConstraints) {
+        final stackVertically = cardConstraints.maxWidth < 420;
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: _buildField('Bank Name', nameC, isNumber: false, badgeText: 'Commercial')),
-              const SizedBox(width: 8),
-              Expanded(child: _buildField('Account Number', accC, isNumber: false, badgeText: 'Account')),
+              Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E293B))),
+              const SizedBox(height: 10),
+              if (stackVertically) ...[
+                _buildField('Bank Name', nameC, isNumber: false, badgeText: 'Commercial'),
+                const SizedBox(height: 8),
+                _buildField('Account Number', accC, isNumber: false, badgeText: 'Account'),
+                const SizedBox(height: 8),
+                _buildField('Opening Balance B/F (₦)', openC, readOnly: true, badgeText: 'Prior Month Rollover'),
+                const SizedBox(height: 8),
+                _buildField('Closing Balance C/F (₦)', closeC, badgeText: 'Bank Statement'),
+                const SizedBox(height: 8),
+                _buildField('Bank Charges (₦)', chgC, badgeText: 'Monthly'),
+                const SizedBox(height: 8),
+                _buildField('Bank Interest Earned (₦)', intC, badgeText: 'Monthly'),
+              ] else ...[
+                Row(
+                  children: [
+                    Expanded(child: _buildField('Bank Name', nameC, isNumber: false, badgeText: 'Commercial')),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildField('Account Number', accC, isNumber: false, badgeText: 'Account')),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(child: _buildField('Opening Balance B/F (₦)', openC, readOnly: true, badgeText: 'Prior Month Rollover')),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildField('Closing Balance C/F (₦)', closeC, badgeText: 'Bank Statement')),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(child: _buildField('Bank Charges (₦)', chgC, badgeText: 'Monthly')),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildField('Bank Interest Earned (₦)', intC, badgeText: 'Monthly')),
+                  ],
+                ),
+              ],
             ],
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(child: _buildField('Opening Balance B/F (₦)', openC, readOnly: true, badgeText: 'Prior Month Rollover')),
-              const SizedBox(width: 8),
-              Expanded(child: _buildField('Closing Balance C/F (₦)', closeC, badgeText: 'Bank Statement')),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(child: _buildField('Bank Charges (₦)', chgC, badgeText: 'Monthly')),
-              const SizedBox(width: 8),
-              Expanded(child: _buildField('Bank Interest Earned (₦)', intC, badgeText: 'Monthly')),
-            ],
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -776,12 +818,25 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
                           ],
                         ),
                         const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(child: _buildField('Opening Overdue Portfolio (B/F) (₦)', _overdueBfController, readOnly: true, badgeText: 'Rollover')),
-                            const SizedBox(width: 12),
-                            Expanded(child: _buildField('Month-End Overdue Portfolio (C/F) (₦)', _overdueCfController, badgeText: 'Required Input')),
-                          ],
+                        LayoutBuilder(
+                          builder: (context, odConstraints) {
+                            if (odConstraints.maxWidth < 500) {
+                              return Column(
+                                children: [
+                                  _buildField('Opening Overdue Portfolio (B/F) (₦)', _overdueBfController, readOnly: true, badgeText: 'Rollover'),
+                                  const SizedBox(height: 8),
+                                  _buildField('Month-End Overdue Portfolio (C/F) (₦)', _overdueCfController, badgeText: 'Required Input'),
+                                ],
+                              );
+                            }
+                            return Row(
+                              children: [
+                                Expanded(child: _buildField('Opening Overdue Portfolio (B/F) (₦)', _overdueBfController, readOnly: true, badgeText: 'Rollover')),
+                                const SizedBox(width: 12),
+                                Expanded(child: _buildField('Month-End Overdue Portfolio (C/F) (₦)', _overdueCfController, badgeText: 'Required Input')),
+                              ],
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -898,7 +953,7 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
                     SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Read-Only Mode: Area Managers have inspection and export privileges. Statements and ledger reconciliations can only be modified by the Branch Manager or Head Office.',
+                        'Read-Only Mode: Statements and treasury reconciliations are locked for inspection. Modifications can only be performed by the Branch Manager (while in Draft or Returned status) or Head Office.',
                         style: TextStyle(fontSize: 12, color: Color(0xFF475569), fontWeight: FontWeight.w600),
                       ),
                     ),

@@ -16,6 +16,58 @@ from services.area_manager_service import AreaManagerService
 class MonthlyReportWorkflowService:
 
     @staticmethod
+    def _card_val(cards: Any, key: str, default: Any = 0.0) -> Any:
+        if cards is None:
+            return default
+        if isinstance(cards, dict):
+            val = cards.get(key, default)
+            return default if val is None else val
+        val = getattr(cards, key, default)
+        return default if val is None else val
+
+    @staticmethod
+    def _resolve_vault_cash_acct_1000(
+        uow: UnitOfWork,
+        branch_id: str,
+        year: int,
+        month: int,
+        cards: Any = None,
+    ) -> float:
+        explicit = MonthlyReportWorkflowService._card_val(cards, "vault_cash_acct_1000", None)
+        if explicit is not None:
+            return float(explicit)
+        try:
+            import calendar
+            from utils.db_pagination import fetch_all_paginated
+            _, last_day = calendar.monthrange(year, month)
+            end_str = f"{year:04d}-{month:02d}-{last_day:02d}"
+            q = (
+                uow.client.table("financial_ledger_entries")
+                .select("side, amount, financial_transactions!inner(posting_date)")
+                .eq("account_code", "1000")
+                .eq("branch_id", branch_id)
+                .lte("financial_transactions.posting_date", end_str)
+            )
+            entries = fetch_all_paginated(q)
+            debits = sum(float(e.get("amount") or 0.0) for e in entries if e.get("side") == "Debit")
+            credits = sum(float(e.get("amount") or 0.0) for e in entries if e.get("side") == "Credit")
+            return round(max(0.0, debits - credits), 2)
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def _get_supervised_branches_for_user(uow: UnitOfWork, user_id: str) -> List[Dict[str, Any]]:
+        user = uow.users.find_by_id(user_id)
+        role = (user.role or "").strip() if user else ""
+        if role in ["Admin", "Super Admin", "ADMIN", "Director"]:
+            res = uow.client.table("branches").select("branch_id, name").execute()
+            return [
+                b for b in (res.data or [])
+                if b.get("branch_id") and (b.get("name") or "").strip().lower() not in ["head office", "headquarters"]
+            ]
+        return AreaManagerService.get_assigned_branches(uow, user_id)
+
+    @staticmethod
     def get_submission_status(
         uow: UnitOfWork,
         branch_id: str,
@@ -67,6 +119,8 @@ class MonthlyReportWorkflowService:
         # Otherwise compute live preview metrics
         live_matrix = ReportService.get_monthly_parity_matrix(uow, branch_id=branch_id, year=year, month=month)
         cards = live_matrix.get("summary_cards")
+        cv = MonthlyReportWorkflowService._card_val
+        vault_cash = MonthlyReportWorkflowService._resolve_vault_cash_acct_1000(uow, branch_id, year, month, cards)
 
         return {
             "id": None,
@@ -75,16 +129,16 @@ class MonthlyReportWorkflowService:
             "year": year,
             "month": month,
             "status": "DRAFT",
-            "disbursed_principal": float(getattr(cards, "disbursed_principal", 0.0)),
-            "upfront_fees": float(getattr(cards, "upfront_fees", 0.0)),
-            "net_active_credit": float(getattr(cards, "net_active_credit", 0.0)),
-            "collections": float(getattr(cards, "collections", 0.0)),
-            "closing_credit": float(getattr(cards, "closing_credit", 0.0)),
-            "closing_savings": float(getattr(cards, "closing_savings", 0.0)),
-            "vault_cash_acct_1000": float(getattr(cards, "closing_savings", 0.0)),
-            "bank_deposits_acct_1050": float(getattr(cards, "bank_deposits", 0.0)),
-            "is_gl_balanced": bool(getattr(cards, "is_gl_balanced", False)),
-            "gl_variance": 0.0,
+            "disbursed_principal": float(cv(cards, "disbursed_principal", 0.0)),
+            "upfront_fees": float(cv(cards, "upfront_fees", 0.0)),
+            "net_active_credit": float(cv(cards, "net_active_credit", 0.0)),
+            "collections": float(cv(cards, "collections", 0.0)),
+            "closing_credit": float(cv(cards, "closing_credit", 0.0)),
+            "closing_savings": float(cv(cards, "closing_savings", 0.0)),
+            "vault_cash_acct_1000": vault_cash,
+            "bank_deposits_acct_1050": float(cv(cards, "bank_deposits", 0.0)),
+            "is_gl_balanced": bool(cv(cards, "is_gl_balanced", False)),
+            "gl_variance": float(cv(cards, "gl_diff", 0.0)),
             "bm_name": None,
             "bm_notes": None,
             "bm_submitted_at": None,
@@ -130,6 +184,8 @@ class MonthlyReportWorkflowService:
         # 3. Compute live financial snapshot
         matrix = ReportService.get_monthly_parity_matrix(uow, branch_id=branch_id, year=year, month=month)
         cards = matrix.get("summary_cards")
+        cv = MonthlyReportWorkflowService._card_val
+        vault_cash = MonthlyReportWorkflowService._resolve_vault_cash_acct_1000(uow, branch_id, year, month, cards)
 
         # Get branch details
         res_b = uow.client.table("branches").select("name").eq("branch_id", branch_id).execute()
@@ -142,16 +198,16 @@ class MonthlyReportWorkflowService:
             "year": year,
             "month": month,
             "status": "BM_SUBMITTED",
-            "disbursed_principal": float(getattr(cards, "disbursed_principal", 0.0)),
-            "upfront_fees": float(getattr(cards, "upfront_fees", 0.0)),
-            "net_active_credit": float(getattr(cards, "net_active_credit", 0.0)),
-            "collections": float(getattr(cards, "collections", 0.0)),
-            "closing_credit": float(getattr(cards, "closing_credit", 0.0)),
-            "closing_savings": float(getattr(cards, "closing_savings", 0.0)),
-            "vault_cash_acct_1000": float(getattr(cards, "closing_savings", 0.0)),
-            "bank_deposits_acct_1050": float(getattr(cards, "bank_deposits", 0.0)),
-            "is_gl_balanced": bool(getattr(cards, "is_gl_balanced", False)),
-            "gl_variance": 0.0,
+            "disbursed_principal": float(cv(cards, "disbursed_principal", 0.0)),
+            "upfront_fees": float(cv(cards, "upfront_fees", 0.0)),
+            "net_active_credit": float(cv(cards, "net_active_credit", 0.0)),
+            "collections": float(cv(cards, "collections", 0.0)),
+            "closing_credit": float(cv(cards, "closing_credit", 0.0)),
+            "closing_savings": float(cv(cards, "closing_savings", 0.0)),
+            "vault_cash_acct_1000": vault_cash,
+            "bank_deposits_acct_1050": float(cv(cards, "bank_deposits", 0.0)),
+            "is_gl_balanced": bool(cv(cards, "is_gl_balanced", False)),
+            "gl_variance": float(cv(cards, "gl_diff", 0.0)),
             "bm_user_id": bm_user_id,
             "bm_name": bm_name,
             "bm_notes": notes or f"Verified and submitted by BM {bm_name} on {date.today().isoformat()}.",
@@ -189,7 +245,7 @@ class MonthlyReportWorkflowService:
         Tier 2: Area Manager reviews and endorses the branch's monthly report.
         """
         # Validate supervisory access
-        assigned = AreaManagerService.get_assigned_branches(uow, am_user_id)
+        assigned = MonthlyReportWorkflowService._get_supervised_branches_for_user(uow, am_user_id)
         valid_bids = [b["branch_id"] for b in assigned if b.get("branch_id")]
         if branch_id not in valid_bids:
             raise ValueError("Forbidden: Branch is outside your assigned supervisory area.")
@@ -247,7 +303,7 @@ class MonthlyReportWorkflowService:
         """
         Area Manager returns report to Branch Manager with audit query notes.
         """
-        assigned = AreaManagerService.get_assigned_branches(uow, am_user_id)
+        assigned = MonthlyReportWorkflowService._get_supervised_branches_for_user(uow, am_user_id)
         valid_bids = [b["branch_id"] for b in assigned if b.get("branch_id")]
         if branch_id not in valid_bids:
             raise ValueError("Forbidden: Branch is outside your assigned supervisory area.")
@@ -290,7 +346,7 @@ class MonthlyReportWorkflowService:
         """
         Area Manager seals the entire regional month-end package once all assigned branches are AM_VERIFIED.
         """
-        assigned = AreaManagerService.get_assigned_branches(uow, am_user_id)
+        assigned = MonthlyReportWorkflowService._get_supervised_branches_for_user(uow, am_user_id)
         assigned_bids = [b["branch_id"] for b in assigned if b.get("branch_id")]
         if not assigned_bids:
             raise ValueError("No branches assigned to your supervisory area.")
@@ -327,6 +383,24 @@ class MonthlyReportWorkflowService:
             "sealed_branches_count": len(assigned_bids),
             "message": f"{area_name} monthly report package sealed and forwarded to Executive Admin."
         }
+
+    @staticmethod
+    def seal_area_by_am(
+        uow: UnitOfWork,
+        am_user_id: str,
+        area_name: str,
+        year: int,
+        month: int,
+        notes: Optional[str] = None
+    ) -> Dict[str, Any]:
+        return MonthlyReportWorkflowService.seal_area_monthly_package(
+            uow,
+            am_user_id=am_user_id,
+            area_name=area_name,
+            year=year,
+            month=month,
+            notes=notes,
+        )
 
     @staticmethod
     def lock_by_admin(
@@ -382,7 +456,7 @@ class MonthlyReportWorkflowService:
         """
         Fetches all supervised branches and their monthly report submission status for the Approvals Hub.
         """
-        assigned = AreaManagerService.get_assigned_branches(uow, am_user_id)
+        assigned = MonthlyReportWorkflowService._get_supervised_branches_for_user(uow, am_user_id)
         assigned_map = {b["branch_id"]: b["name"] for b in assigned if b.get("branch_id")}
         bids = list(assigned_map.keys())
 

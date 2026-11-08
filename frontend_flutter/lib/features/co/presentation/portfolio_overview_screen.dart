@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +15,8 @@ import '../../../core/auth/auth_state.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 
 import '../../../core/errors/app_error_formatter.dart';
+
+import '../../shared/utils/file_download_helper.dart';
 
 import '../data/datasources/co_api_service.dart';
 
@@ -126,6 +130,55 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
   bool _groupMatrixExpanded = true;
 
   bool _matrixCardView = false;
+
+  Future<void> _exportRecordsToCsv({
+    required List<dynamic> rows,
+    required List<String> columns,
+    required String filePrefix,
+    required String recordLabel,
+  }) async {
+    String escapeCsv(String val) {
+      if (val.contains(',') || val.contains('"') || val.contains('\n')) {
+        return '"${val.replaceAll('"', '""')}"';
+      }
+      return val;
+    }
+
+    final buffer = StringBuffer();
+    buffer.writeln(columns.map(escapeCsv).join(','));
+    for (final raw in rows) {
+      final row = raw is Map ? raw : <String, dynamic>{};
+      final line = columns.map((col) => escapeCsv((row[col] ?? '').toString())).join(',');
+      buffer.writeln(line);
+    }
+
+    final stamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+    final fileName = '${filePrefix}_$stamp.csv';
+    try {
+      final savedPath = await downloadBlobFile(
+        utf8.encode(buffer.toString()),
+        fileName,
+        'text/csv',
+      );
+      if (!mounted) return;
+      final locationNote = savedPath != null && savedPath.isNotEmpty ? ' ($savedPath)' : '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Exported ${rows.length} $recordLabel$locationNote.'),
+          backgroundColor: const Color(0xFF059669),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final err = AppErrorDetails.from(e);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${err.title}: ${err.message}'),
+          backgroundColor: const Color(0xFFDC2626),
+        ),
+      );
+    }
+  }
 
   // Mobile segmented hub and pagination state
 
@@ -3470,15 +3523,21 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                   label: Text('Export Audit Records (${sortedRows.length} CSV)'),
 
-                  onPressed: () {
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-
-                      SnackBar(content: Text('Exported ${sortedRows.length} payoff & excess records.')),
-
-                    );
-
-                  },
+                  onPressed: () => _exportRecordsToCsv(
+                    rows: sortedRows,
+                    columns: const [
+                      'Client Code',
+                      'Client Name',
+                      'Amount Paid',
+                      'Expected Installment',
+                      'Excess Amount',
+                      'Active Credit Settled',
+                      'Remaining Balance',
+                      'Payment Date',
+                    ],
+                    filePrefix: 'ICARE_Excess_Payoffs_Audit',
+                    recordLabel: 'payoff & excess records',
+                  ),
 
                 ),
 
@@ -3576,15 +3635,21 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                 label: const Text('Export Excess Payments & Payoffs Audit (CSV)'),
 
-                onPressed: () {
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-
-                    SnackBar(content: Text('Exported ${sortedRows.length} payoff & excess records.')),
-
-                  );
-
-                },
+                onPressed: () => _exportRecordsToCsv(
+                  rows: sortedRows,
+                  columns: const [
+                    'Client Code',
+                    'Client Name',
+                    'Amount Paid',
+                    'Expected Installment',
+                    'Excess Amount',
+                    'Active Credit Settled',
+                    'Remaining Balance',
+                    'Payment Date',
+                  ],
+                  filePrefix: 'ICARE_Excess_Payoffs_Audit',
+                  recordLabel: 'payoff & excess records',
+                ),
 
               ),
 
@@ -5956,15 +6021,25 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
               label: Text('Export Filtered Portfolio (${filtered.length} Clients CSV)'),
 
-              onPressed: () {
-
-                ScaffoldMessenger.of(context).showSnackBar(
-
-                  SnackBar(content: Text('Exported ${filtered.length} client records.')),
-
-                );
-
-              },
+              onPressed: () => _exportRecordsToCsv(
+                rows: filtered,
+                columns: const [
+                  'Client Code',
+                  'Client Name',
+                  'Group',
+                  'Loan Product',
+                  'Savings Balance',
+                  'Principal Loan',
+                  'Active Loan',
+                  'Outstanding Balance',
+                  'Total Paid',
+                  'Period Excess Paid',
+                  'Status',
+                  'Lifecycle Status',
+                ],
+                filePrefix: 'ICARE_Client_Portfolio',
+                recordLabel: 'client records',
+              ),
 
             ),
 
@@ -6406,15 +6481,20 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
               label: Text('Export Group Aggregate (${filtered.length} Groups CSV)'),
 
-              onPressed: () {
-
-                ScaffoldMessenger.of(context).showSnackBar(
-
-                  SnackBar(content: Text('Exported ${filtered.length} group records.')),
-
-                );
-
-              },
+              onPressed: () => _exportRecordsToCsv(
+                rows: filtered,
+                columns: const [
+                  'Group Name',
+                  'Total Clients',
+                  'Total Savings Balance',
+                  'Total Active Loan',
+                  'Total Outstanding Balance',
+                  'Total Fixed Repayment',
+                  'Total Paid',
+                ],
+                filePrefix: 'ICARE_Group_Portfolio',
+                recordLabel: 'group records',
+              ),
 
             ),
 

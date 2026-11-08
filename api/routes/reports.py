@@ -82,6 +82,40 @@ def _check_reports_permission(current_user: CurrentUser):
         )
 
 
+def _check_reports_write_permission(current_user: CurrentUser):
+    _check_reports_permission(current_user)
+    role = (current_user.role or "").strip().lower()
+    if role in ["director", "executive director"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: Director accounts have read-only institutional audit access."
+        )
+
+
+def _resolve_validated_branch_id(
+    scope_level: str,
+    resolved_branch_id: Optional[Union[str, List[str]]],
+    requested_branch_id: Optional[str],
+    uow: SupabaseUnitOfWork,
+) -> Optional[str]:
+    """Validates an explicit branch_id against the caller's RBAC scope before falling back to _resolve_single_branch_id."""
+    if requested_branch_id:
+        if scope_level == "BRANCH" and resolved_branch_id and requested_branch_id != resolved_branch_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: Branch is outside your assigned branch scope."
+            )
+        if scope_level == "AREA":
+            allowed = resolved_branch_id if isinstance(resolved_branch_id, list) else ([resolved_branch_id] if resolved_branch_id else [])
+            if allowed and requested_branch_id not in allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Forbidden: Branch is outside your assigned supervisory area."
+                )
+        return requested_branch_id
+    return _resolve_single_branch_id(resolved_branch_id, uow)
+
+
 def _load_loans_df(uow: SupabaseUnitOfWork) -> pd.DataFrame:
     try:
         loans = uow.loans.find_all()
@@ -443,6 +477,7 @@ def get_repayment_summary(
     branch_name: Optional[str] = Query(None),
     product_name: Optional[str] = Query(None),
     officer_name: Optional[str] = Query(None),
+    as_of_date: Optional[date] = Query(None),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
@@ -457,6 +492,7 @@ def get_repayment_summary(
         branch_id=resolved_branch_id,
         start_date=start_date,
         end_date=end_date,
+        as_of_date=as_of_date,
         product_name=product_name if product_name != "All Products" else None,
         officer_name=officer_name if officer_name != "All Officers" else None
     )
@@ -714,11 +750,11 @@ def export_excel(
 ):
     """Generates and streams multi-tab consolidated Excel workbook."""
     _check_reports_permission(current_user)
-    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
+    scope_level, resolved_branch_id, branch_names, branch_name_to_id = _resolve_scope_and_branches(current_user, uow, branch_name)
 
     tb_dict = ReportService.get_trial_balance(uow, branch_id=resolved_branch_id, as_of_date=as_of_date, start_date=start_date, end_date=end_date)
     sav_dict = ReportService.get_savings_summary(uow, branch_id=resolved_branch_id, start_date=start_date, end_date=end_date, as_of_date=as_of_date, officer_name=officer_name if officer_name != "All Officers" else None, product_name=product_name if product_name != "All Products" else None)
-    rep_dict = ReportService.get_repayment_summary(uow, branch_id=resolved_branch_id, start_date=start_date, end_date=end_date, product_name=product_name if product_name != "All Products" else None, officer_name=officer_name if officer_name != "All Officers" else None)
+    rep_dict = ReportService.get_repayment_summary(uow, branch_id=resolved_branch_id, start_date=start_date, end_date=end_date, as_of_date=as_of_date, product_name=product_name if product_name != "All Products" else None, officer_name=officer_name if officer_name != "All Officers" else None)
 
     all_loans = _load_loans_df(uow)
     all_reps = _load_repayments_df(uow)
@@ -729,15 +765,23 @@ def export_excel(
             filtered_loans = filtered_loans[filtered_loans["Branch"] == bm_branch]
     elif scope_level == "AREA":
         if branch_name and branch_name not in ["All Assigned Branches (Consolidated Area View)", "All Branches", "All"]:
-            filtered_loans = filtered_loans[filtered_loans["Branch"] == branch_name]
+            filtered_loans = filtered_loans[filtered_loans["Branch"] == branch_name] if "Branch" in filtered_loans.columns else filtered_loans
         else:
-            filtered_loans = filtered_loans[filtered_loans["Branch"].isin(branch_names)]
+            filtered_loans = filtered_loans[filtered_loans["Branch"].isin(branch_names)] if "Branch" in filtered_loans.columns else filtered_loans
+    else:
+        if branch_name and branch_name not in ["All Branches (Consolidated)", "All Branches", "All"]:
+            filtered_loans = filtered_loans[filtered_loans["Branch"] == branch_name] if "Branch" in filtered_loans.columns else filtered_loans
 
     port_sum = generate_portfolio_summary(filtered_loans, all_reps)
 
     area_df = None
-    if scope_level == "AREA" or current_user.role in ["AM", "Area Manager", "Admin"]:
-        assigned_ids = resolved_branch_id if isinstance(resolved_branch_id, list) else ([resolved_branch_id] if resolved_branch_id else [])
+    if scope_level == "AREA" or current_user.role in ["AM", "Area Manager", "Admin", "Super Admin", "Director"]:
+        if isinstance(resolved_branch_id, list):
+            assigned_ids = resolved_branch_id
+        elif isinstance(resolved_branch_id, str) and resolved_branch_id:
+            assigned_ids = [resolved_branch_id]
+        else:
+            assigned_ids = list(branch_name_to_id.values())
         area_dict = ReportService.get_area_branch_comparison(uow, assigned_branch_ids=assigned_ids, start_date=start_date, end_date=end_date, as_of_date=as_of_date)
         area_df = area_dict.get("dataframe")
 
@@ -787,7 +831,7 @@ def export_csv(
 ):
     """Generates and streams individual CSV reports."""
     _check_reports_permission(current_user)
-    scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
+    scope_level, resolved_branch_id, branch_names, branch_name_to_id = _resolve_scope_and_branches(current_user, uow, branch_name)
 
     if report_type == "trial_balance":
         tb_dict = ReportService.get_trial_balance(uow, branch_id=resolved_branch_id, as_of_date=as_of_date, start_date=start_date, end_date=end_date)
@@ -798,7 +842,7 @@ def export_csv(
         df = sav_dict.get("savers_dataframe", pd.DataFrame())
         filename = f"savings_summary_{datetime.now().strftime('%Y%m%d')}.csv"
     elif report_type == "repayments":
-        rep_dict = ReportService.get_repayment_summary(uow, branch_id=resolved_branch_id, start_date=start_date, end_date=end_date, product_name=product_name if product_name != "All Products" else None, officer_name=officer_name if officer_name != "All Officers" else None)
+        rep_dict = ReportService.get_repayment_summary(uow, branch_id=resolved_branch_id, start_date=start_date, end_date=end_date, as_of_date=as_of_date, product_name=product_name if product_name != "All Products" else None, officer_name=officer_name if officer_name != "All Officers" else None)
         df = rep_dict.get("repayments_dataframe", pd.DataFrame())
         filename = f"repayments_summary_{datetime.now().strftime('%Y%m%d')}.csv"
     elif report_type == "loans":
@@ -811,9 +855,17 @@ def export_csv(
                 df = df[df["Branch"] == branch_name] if "Branch" in df.columns else df
             else:
                 df = df[df["Branch"].isin(branch_names)] if "Branch" in df.columns else df
+        else:
+            if branch_name and branch_name not in ["All Branches (Consolidated)", "All Branches", "All"]:
+                df = df[df["Branch"] == branch_name] if "Branch" in df.columns else df
         filename = f"raw_loans_{datetime.now().strftime('%Y%m%d')}.csv"
     elif report_type == "area_comparison":
-        assigned_ids = resolved_branch_id if isinstance(resolved_branch_id, list) else ([resolved_branch_id] if resolved_branch_id else [])
+        if isinstance(resolved_branch_id, list):
+            assigned_ids = resolved_branch_id
+        elif isinstance(resolved_branch_id, str) and resolved_branch_id:
+            assigned_ids = [resolved_branch_id]
+        else:
+            assigned_ids = list(branch_name_to_id.values())
         area_dict = ReportService.get_area_branch_comparison(uow, assigned_branch_ids=assigned_ids, start_date=start_date, end_date=end_date, as_of_date=as_of_date)
         df = area_dict.get("dataframe", pd.DataFrame())
         filename = f"area_branch_comparison_{datetime.now().strftime('%Y%m%d')}.csv"
@@ -996,12 +1048,7 @@ def get_monthly_reconciliation(
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = branch_id or _resolve_single_branch_id(resolved_branch_id, uow)
-    if not bid:
-        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
-        if res_b.data:
-            bid = res_b.data[0]["branch_id"]
-
+    bid = _resolve_validated_branch_id(scope_level, resolved_branch_id, branch_id, uow)
     if not bid:
         raise HTTPException(status_code=400, detail="Unable to resolve branch.")
 
@@ -1023,14 +1070,10 @@ def save_monthly_reconciliation(
     """
     Saves user-entered bank statement reconciliation and treasury adjustments.
     """
-    _check_reports_permission(current_user)
+    _check_reports_write_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
 
-    bid = payload.branch_id or _resolve_single_branch_id(resolved_branch_id, uow)
-    if not bid:
-        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
-        if res_b.data:
-            bid = res_b.data[0]["branch_id"]
+    bid = _resolve_validated_branch_id(scope_level, resolved_branch_id, payload.branch_id, uow)
     if not bid:
         raise HTTPException(status_code=400, detail="Valid branch_id required.")
 
@@ -1226,7 +1269,7 @@ def submit_monthly_workflow(
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """Tier 1: Branch Manager verifies and submits the monthly report to the Area Manager."""
-    _check_reports_permission(current_user)
+    _check_reports_write_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
 
     bid = _resolve_single_branch_id(resolved_branch_id, uow)
@@ -1255,8 +1298,9 @@ def endorse_monthly_workflow(
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """Tier 2: Area Manager reviews and endorses branch monthly report."""
+    _check_reports_write_permission(current_user)
     role = (current_user.role or "").strip()
-    if role not in ["AM", "Area Manager", "Admin", "Super Admin", "Director"]:
+    if role not in ["AM", "Area Manager", "Admin", "Super Admin"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: Only Area Managers or Admins can endorse monthly reports.")
 
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
@@ -1286,8 +1330,9 @@ def return_monthly_workflow(
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """Tier 2: Area Manager returns report to Branch Manager with audit query notes."""
+    _check_reports_write_permission(current_user)
     role = (current_user.role or "").strip()
-    if role not in ["AM", "Area Manager", "Admin", "Super Admin", "Director"]:
+    if role not in ["AM", "Area Manager", "Admin", "Super Admin"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: Only Area Managers or Admins can query monthly reports.")
 
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
@@ -1317,12 +1362,13 @@ def seal_area_monthly_workflow(
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """Tier 2: Area Manager seals regional package once all assigned branches are endorsed."""
+    _check_reports_write_permission(current_user)
     role = (current_user.role or "").strip()
-    if role not in ["AM", "Area Manager", "Admin", "Super Admin", "Director"]:
+    if role not in ["AM", "Area Manager", "Admin", "Super Admin"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: Only Area Managers or Admins can seal area monthly packages.")
 
     try:
-        return MonthlyReportWorkflowService.seal_area_by_am(
+        return MonthlyReportWorkflowService.seal_area_monthly_package(
             uow=uow,
             am_user_id=current_user.id,
             area_name=payload.area_name,
@@ -1343,9 +1389,10 @@ def lock_monthly_workflow(
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """Tier 3: Executive Admin locks and archives monthly report in institutional records."""
+    _check_reports_write_permission(current_user)
     role = (current_user.role or "").strip()
-    if role not in ["Admin", "Super Admin", "Director"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: Only Administrators or Directors can execute institutional lock.")
+    if role not in ["Admin", "Super Admin"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: Only Administrators can execute institutional lock.")
 
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, payload.branch_name)
     bid = _resolve_single_branch_id(resolved_branch_id, uow)

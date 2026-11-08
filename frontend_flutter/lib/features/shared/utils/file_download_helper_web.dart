@@ -2,7 +2,7 @@
 import 'dart:html' as html;
 import 'dart:typed_data';
 
-void downloadBlobFile(List<int> bytes, String fileName, String mimeType) {
+Future<String?> downloadBlobFile(List<int> bytes, String fileName, String mimeType) async {
   final Uint8List u8 = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
   final blob = html.Blob([u8], mimeType);
   final url = html.Url.createObjectUrlFromBlob(blob);
@@ -14,4 +14,5 @@ void downloadBlobFile(List<int> bytes, String fileName, String mimeType) {
   anchor.click();
   html.document.body?.children.remove(anchor);
   html.Url.revokeObjectUrl(url);
+  return fileName;
 }

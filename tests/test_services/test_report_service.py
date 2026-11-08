@@ -474,13 +474,13 @@ class TestReportService(unittest.TestCase):
 
         res = ReportService.get_monthly_credit_statement(self.mock_uow, "b1", 2026, 10)
         self.assertIn("rows", res)
-        disb_row = next(r for r in res["rows"] if r["item"] == "• Current Disbursed Amount (₦)")
+        disb_row = next(r for r in res["rows"] if r["item"] in ("Current Disbursed Principal (₦)", "• Current Disbursed Amount (₦)"))
         self.assertEqual(disb_row["total"], 80000.0)
-        inst_row = next(r for r in res["rows"] if r["item"] == "• Current Month Installment (₦) (Col 13)")
+        inst_row = next(r for r in res["rows"] if r["item"] in ("Current Month Installment (₦)", "• Current Month Installment (₦) (Col 13)"))
         self.assertEqual(inst_row["total"], 25000.0)
-        excess_row = next(r for r in res["rows"] if r["item"] == "• Current Month Excess (₦) (Col 10)")
+        excess_row = next(r for r in res["rows"] if r["item"] in ("Current Month Excess Collection (₦)", "• Current Month Excess (₦) (Col 10)"))
         self.assertEqual(excess_row["total"], 5000.0)
-        settled_row = next(r for r in res["rows"] if r["item"] == "• Current Full Repayment Amount (₦) (Col 28)")
+        settled_row = next(r for r in res["rows"] if r["item"] in ("Current Full Repayment Amount (₦)", "• Current Full Repayment Amount (₦) (Col 28)"))
         self.assertEqual(settled_row["total"], 80000.0)
 
     def test_dynamic_co_monthly_parity_closing_credit_formula(self):
