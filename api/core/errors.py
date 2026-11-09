@@ -214,9 +214,22 @@ def translate_error_to_icare_response(exc: Exception) -> Dict[str, Any]:
         }
 
     # Clean fallback for any generic exception
+    msg = "An unexpected system error occurred while processing this transaction."
+    if err_str and not any(secret in err_str.lower() for secret in ("key", "password", "token", "secret")):
+        if "'message':" in err_str:
+            try:
+                import ast
+                parsed = ast.literal_eval(err_str)
+                if isinstance(parsed, dict) and "message" in parsed:
+                    msg = parsed["message"]
+            except Exception:
+                pass
+        elif len(err_str) < 200:
+            msg = err_str.strip()
+
     return {
         "error_code": "SYSTEM_UNEXPECTED_ERROR",
         "title": "Operation Could Not Be Completed",
-        "message": "An unexpected system error occurred while processing this transaction.",
+        "message": msg,
         "action": "Please check your network and retry. If the issue persists, contact technical support."
     }

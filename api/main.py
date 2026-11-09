@@ -216,6 +216,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Structured global error handler providing human-friendly messages."""
+    logger.exception("Global exception caught on %s: %s", request.url, exc)
     try:
         import sentry_sdk
         if sentry_sdk.is_initialized():
