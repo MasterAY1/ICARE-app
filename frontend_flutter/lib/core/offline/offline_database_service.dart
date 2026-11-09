@@ -712,4 +712,73 @@ class OfflineDatabaseService {
       return getRecentSyncedBatches(limit: limit);
     }
   }
+
+  /// Permanently removes a specific queued or failed outbox batch by id.
+  Future<void> deleteOutboxBatch(int id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('offline_persisted_outbox');
+      if (raw != null) {
+        final list = (jsonDecode(raw) as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .where((item) => item['id'] != id)
+            .toList();
+        await prefs.setString('offline_persisted_outbox', jsonEncode(list));
+      }
+    } catch (_) {}
+
+    if (kIsWeb || useMemoryStore) {
+      _webOutbox.removeWhere((item) => item['id'] == id);
+      return;
+    }
+
+    try {
+      final db = await database;
+      await db.delete(
+        'offline_outbox',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    } catch (_) {
+      useMemoryStore = true;
+      _webOutbox.removeWhere((item) => item['id'] == id);
+    }
+  }
+
+  /// Clears all failed outbox batches from the device.
+  Future<int> clearFailedOutboxBatches() async {
+    int count = 0;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('offline_persisted_outbox');
+      if (raw != null) {
+        final list = (jsonDecode(raw) as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        final kept = list.where((item) => item['status'] != 'failed').toList();
+        count = list.length - kept.length;
+        await prefs.setString('offline_persisted_outbox', jsonEncode(kept));
+      }
+    } catch (_) {}
+
+    if (kIsWeb || useMemoryStore) {
+      final before = _webOutbox.length;
+      _webOutbox.removeWhere((item) => item['status'] == 'failed');
+      return count > 0 ? count : (before - _webOutbox.length);
+    }
+
+    try {
+      final db = await database;
+      final deleted = await db.delete(
+        'offline_outbox',
+        where: "status = 'failed'",
+      );
+      return deleted;
+    } catch (_) {
+      useMemoryStore = true;
+      final before = _webOutbox.length;
+      _webOutbox.removeWhere((item) => item['status'] == 'failed');
+      return count > 0 ? count : (before - _webOutbox.length);
+    }
+  }
 }

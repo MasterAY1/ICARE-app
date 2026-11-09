@@ -31,6 +31,7 @@ class BatchCollectionInput(BaseModel):
     group_savings_withdrawal: float = 0.0
     idempotency_key: Optional[str] = Field(None, description="Unique client transaction key for offline synchronization idempotency")
     batch_id: Optional[str] = Field(None, description="Batch identifier for idempotent submission")
+    is_late_entry: bool = Field(False, description="Explicit administrative or authorized late entry override")
 
 
 class BatchCollectionResponse(BaseModel):

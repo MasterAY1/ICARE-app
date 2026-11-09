@@ -22,7 +22,6 @@ import '../../../core/offline/offline_database_service.dart';
 
 import '../../../core/offline/offline_sync_manager.dart';
 import '../../../core/network/api_client.dart';
-import '../../../core/network/transaction_state.dart';
 
 import '../data/datasources/co_api_service.dart';
 
@@ -670,11 +669,14 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
     final grpSavAmt = double.tryParse(_grpSavingsCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
 
+    final isLateEntry = ref.read(collectionsLateEntryProvider);
     final payload = {
 
       'group_name': groupName,
 
       'date': dateStr,
+
+      'is_late_entry': isLateEntry,
 
       'group_savings_deposit': grpSavAmt,
 
@@ -5110,35 +5112,20 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                               const SizedBox(width: 4),
 
                               Text(
-
                                 'Unpaid (₦0)',
-
                                 style: TextStyle(
-
                                   fontSize: 10.5,
-
                                   fontWeight: FontWeight.w700,
-
                                   color: isNotPaid ? const Color(0xFFDC2626) : const Color(0xFF475569),
-
                                 ),
-
                               ),
-
                             ],
-
                           ),
-
                         ),
-
                       ),
-
                     ],
-
                   ),
-
                 ],
-
               ),
 
               const SizedBox(height: 6),
@@ -11992,9 +11979,29 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
       if (mounted) {
 
+        String cleanMessage = 'An error occurred while posting collections to the ledger.';
+        if (e is DioException) {
+          final resData = e.response?.data;
+          if (resData is Map) {
+            if (resData['message'] != null && resData['message'].toString().trim().isNotEmpty) {
+              cleanMessage = resData['message'].toString();
+            } else if (resData['detail'] != null && resData['detail'].toString().trim().isNotEmpty) {
+              cleanMessage = resData['detail'].toString();
+            }
+          } else if (e.response?.statusCode == 403) {
+            cleanMessage = 'Operational Restriction: Branch collections are closed for this date. Enable Late Entry or select an open working day.';
+          } else if (e.response?.statusCode == 409) {
+            cleanMessage = 'Lock Conflict: A transaction with this reference is currently being processed. Please wait a moment and check history.';
+          } else if (e.type == DioExceptionType.connectionTimeout || e.type == DioExceptionType.connectionError) {
+            cleanMessage = 'Network Connection Interrupted: The batch could not reach the server. You can queue this transaction offline.';
+          }
+        } else {
+          cleanMessage = e.toString().replaceAll(RegExp(r'^Exception:\s*'), '');
+        }
+
         setState(() {
 
-          _errorMessage = e.toString();
+          _errorMessage = cleanMessage;
 
           _phase = _ModalStage.error;
 
@@ -12574,13 +12581,21 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                           children: [
 
-                            Text(
+                            Flexible(
 
-                              'Staged Collections Checklist (${widget.stagedTransactions.length} Members)',
+                              child: Text(
 
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                                'Staged Collections Checklist (${widget.stagedTransactions.length} Members)',
+
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+
+                                overflow: TextOverflow.ellipsis,
+
+                              ),
 
                             ),
+
+                            const SizedBox(width: 8),
 
                             Container(
 
@@ -12598,9 +12613,9 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                               child: const Text(
 
-                                'Primary Vault Inflow',
+                                'Primary Vault',
 
-                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF065F46)),
+                                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF065F46)),
 
                               ),
 
@@ -12613,6 +12628,256 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
                       ),
 
                       const Divider(height: 1, color: Color(0xFFF1F5F9)),
+
+                      if (isMobile) ...[
+
+                        Padding(
+
+                          padding: const EdgeInsets.all(12),
+
+                          child: Column(
+
+                            children: [
+
+                              if (widget.grpSavings > 0)
+
+                                Container(
+
+                                  margin: const EdgeInsets.only(bottom: 8),
+
+                                  padding: const EdgeInsets.all(10),
+
+                                  decoration: BoxDecoration(
+
+                                    color: const Color(0xFFF0F9FF),
+
+                                    borderRadius: BorderRadius.circular(8),
+
+                                    border: Border.all(color: const Color(0xFFBAE6FD)),
+
+                                  ),
+
+                                  child: Row(
+
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
+                                    children: [
+
+                                      Expanded(
+
+                                        child: Text(
+
+                                          '${widget.groupName} (Communal)',
+
+                                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF0369A1)),
+
+                                          overflow: TextOverflow.ellipsis,
+
+                                        ),
+
+                                      ),
+
+                                      Text(
+
+                                        CurrencyFormatter.formatNaira(widget.grpSavings),
+
+                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF0284C7), fontFamily: 'monospace'),
+
+                                      ),
+
+                                    ],
+
+                                  ),
+
+                                ),
+
+                              ...widget.stagedTransactions.map((tx) {
+
+                                final cName = tx['client_name']?.toString() ?? 'Client';
+
+                                final cCode = tx['client_code']?.toString() ?? '';
+
+                                final sDep = (tx['savings_deposit_amount'] as num?)?.toDouble() ?? 0.0;
+
+                                final lRep = (tx['loan_repayment_amount'] as num?)?.toDouble() ?? 0.0;
+
+                                final expAmt = (tx['expected_amount'] as num?)?.toDouble() ?? 0.0;
+
+                                final ovAmt = (tx['overdue_amount'] as num?)?.toDouble() ?? 0.0;
+
+                                final pStat = tx['payment_status']?.toString() ?? 'PAID';
+
+                                String badgeText = 'FULL PAID';
+
+                                Color badgeBg = const Color(0xFFECFDF5);
+
+                                Color badgeFg = const Color(0xFF065F46);
+
+                                Color badgeBorder = const Color(0xFFA7F3D0);
+
+                                if (pStat == 'NOT_PAID' || (lRep == 0 && tx['mark_not_paid'] == true)) {
+
+                                  badgeText = 'NOT PAID';
+
+                                  badgeBg = const Color(0xFFFEF2F2);
+
+                                  badgeFg = const Color(0xFFDC2626);
+
+                                  badgeBorder = const Color(0xFFFECACA);
+
+                                } else if (pStat == 'PART_PAID') {
+
+                                  badgeText = 'PART PAID (₦${ovAmt.toStringAsFixed(0)} Arr)';
+
+                                  badgeBg = const Color(0xFFFFFBEB);
+
+                                  badgeFg = const Color(0xFFB45309);
+
+                                  badgeBorder = const Color(0xFFFDE68A);
+
+                                } else if (pStat == 'EXCESS') {
+
+                                  badgeText = 'EXCESS (+₦${(lRep - expAmt).toStringAsFixed(0)})';
+
+                                  badgeBg = const Color(0xFFEFF6FF);
+
+                                  badgeFg = const Color(0xFF1D4ED8);
+
+                                  badgeBorder = const Color(0xFFBFDBFE);
+
+                                }
+
+                                final repDisplay = (pStat == 'NOT_PAID' || lRep == 0)
+
+                                    ? '₦0.00'
+
+                                    : CurrencyFormatter.formatNaira(lRep);
+
+                                return Container(
+
+                                  margin: const EdgeInsets.only(bottom: 8),
+
+                                  padding: const EdgeInsets.all(10),
+
+                                  decoration: BoxDecoration(
+
+                                    color: const Color(0xFFF8FAFC),
+
+                                    borderRadius: BorderRadius.circular(8),
+
+                                    border: Border.all(color: const Color(0xFFE2E8F0)),
+
+                                  ),
+
+                                  child: Column(
+
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+
+                                    children: [
+
+                                      Row(
+
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
+                                        children: [
+
+                                          Expanded(
+
+                                            child: Column(
+
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+
+                                              children: [
+
+                                                Text(cName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: Color(0xFF0F172A)), overflow: TextOverflow.ellipsis),
+
+                                                Text(cCode, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+
+                                              ],
+
+                                            ),
+
+                                          ),
+
+                                          Container(
+
+                                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+
+                                            decoration: BoxDecoration(color: badgeBg, borderRadius: BorderRadius.circular(4), border: Border.all(color: badgeBorder)),
+
+                                            child: Text(badgeText, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: badgeFg)),
+
+                                          ),
+
+                                        ],
+
+                                      ),
+
+                                      const SizedBox(height: 8),
+
+                                      Row(
+
+                                        children: [
+
+                                          Expanded(
+
+                                            child: Column(
+
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+
+                                              children: [
+
+                                                const Text('Repayment', style: TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+
+                                                const SizedBox(height: 1),
+
+                                                Text(repDisplay, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: pStat == 'NOT_PAID' ? const Color(0xFFDC2626) : const Color(0xFF0F172A), fontFamily: 'monospace')),
+
+                                              ],
+
+                                            ),
+
+                                          ),
+
+                                          Expanded(
+
+                                            child: Column(
+
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+
+                                              children: [
+
+                                                const Text('Savings Deposit', style: TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+
+                                                const SizedBox(height: 1),
+
+                                                Text(sDep > 0 ? CurrencyFormatter.formatNaira(sDep) : '₦0.00', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: sDep > 0 ? const Color(0xFF047857) : const Color(0xFF64748B), fontFamily: 'monospace')),
+
+                                              ],
+
+                                            ),
+
+                                          ),
+
+                                        ],
+
+                                      ),
+
+                                    ],
+
+                                  ),
+
+                                );
+
+                              }),
+
+                            ],
+
+                          ),
+
+                        ),
+
+                      ] else ...[
 
                       SingleChildScrollView(
 
@@ -12867,28 +13132,18 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
                                 );
 
                               }),
-
                             ],
-
                           ),
-
                         ),
-
                       ),
-
                     ],
-
-                  ),
-
+                  ],
                 ),
-
-              ],
-
-            ),
-
+              ),
+            ],
           ),
-
         ),
+      ),
 
         const Divider(height: 1, color: Color(0xFFF1F5F9)),
 
@@ -12904,7 +13159,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
               Expanded(
 
-                flex: isMobile ? 2 : 1,
+                flex: 1,
 
                 child: SizedBox(
 
@@ -12916,7 +13171,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                     icon: const Icon(Icons.arrow_back, size: 16),
 
-                    label: const Text('Edit / Go Back', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                    label: Text(isMobile ? 'Edit' : 'Edit / Go Back', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
 
                     style: OutlinedButton.styleFrom(
 
@@ -12934,11 +13189,11 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
               ),
 
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
 
               Expanded(
 
-                flex: isMobile ? 3 : 2,
+                flex: 2,
 
                 child: SizedBox(
 
@@ -12954,11 +13209,11 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                       canSubmit
 
-                          ? 'Confirm & Save (${CurrencyFormatter.formatNaira(netCash)})'
+                          ? (isMobile ? 'Confirm (${CurrencyFormatter.formatNaira(netCash)})' : 'Confirm & Save (${CurrencyFormatter.formatNaira(netCash)})')
 
-                          : 'Operational Suspended (${widget.openReason})',
+                          : 'Suspended (${widget.openReason})',
 
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: isMobile ? 12.5 : 14),
 
                       overflow: TextOverflow.ellipsis,
 
@@ -13832,9 +14087,9 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
     return Center(
 
-      child: Padding(
+      child: SingleChildScrollView(
 
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(isMobile ? 16 : 24),
 
         child: Column(
 
@@ -13844,17 +14099,17 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
             Container(
 
-              width: 64,
+              width: 56,
 
-              height: 64,
+              height: 56,
 
               decoration: const BoxDecoration(color: Color(0xFFFEF2F2), shape: BoxShape.circle),
 
-              child: const Icon(Icons.error_outline, size: 36, color: Color(0xFFDC2626)),
+              child: const Icon(Icons.error_outline, size: 32, color: Color(0xFFDC2626)),
 
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
             const Text(
 
@@ -13866,17 +14121,35 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
             const SizedBox(height: 8),
 
-            Text(
+            Container(
 
-              _errorMessage ?? 'An error occurred while posting collections to the ledger. Staged data has been preserved.',
+              constraints: const BoxConstraints(maxWidth: 480),
 
-              textAlign: TextAlign.center,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
 
-              style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.4),
+              decoration: BoxDecoration(
+
+                color: const Color(0xFFFEF2F2),
+
+                borderRadius: BorderRadius.circular(10),
+
+                border: Border.all(color: const Color(0xFFFECACA)),
+
+              ),
+
+              child: Text(
+
+                _errorMessage ?? 'An error occurred while posting collections to the ledger. Staged data has been preserved.',
+
+                textAlign: TextAlign.center,
+
+                style: const TextStyle(fontSize: 12.5, color: Color(0xFF991B1B), height: 1.4, fontWeight: FontWeight.w500),
+
+              ),
 
             ),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
             Row(
 
@@ -13884,9 +14157,13 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
               children: [
 
-                OutlinedButton(
+                OutlinedButton.icon(
 
                   onPressed: () => setState(() => _phase = _ModalStage.confirmation),
+
+                  icon: const Icon(Icons.arrow_back, size: 16),
+
+                  label: const Text('Edit Collections', style: TextStyle(fontWeight: FontWeight.w700)),
 
                   style: OutlinedButton.styleFrom(
 
@@ -13896,19 +14173,21 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
 
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: 12),
 
                   ),
-
-                  child: const Text('Edit Collections', style: TextStyle(fontWeight: FontWeight.w700)),
 
                 ),
 
                 const SizedBox(width: 12),
 
-                ElevatedButton(
+                ElevatedButton.icon(
 
                   onPressed: _startPosting,
+
+                  icon: const Icon(Icons.refresh, size: 16),
+
+                  label: const Text('Retry Submission', style: TextStyle(fontWeight: FontWeight.w700)),
 
                   style: ElevatedButton.styleFrom(
 
@@ -13918,11 +14197,9 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
 
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: 12),
 
                   ),
-
-                  child: const Text('Retry Submission', style: TextStyle(fontWeight: FontWeight.w700)),
 
                 ),
 

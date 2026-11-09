@@ -193,6 +193,19 @@ class OfflineSyncManager {
   // 3. SYNC-UP (FLUSH PENDING OUTBOX TO SERVER)
   // ==========================================
 
+  /// Discards a specific outbox batch and refreshes the pending counter.
+  Future<void> discardOutboxBatch(int id) async {
+    await _db.deleteOutboxBatch(id);
+    await _outboxNotifier.refresh();
+  }
+
+  /// Clears all failed outbox batches and refreshes the pending counter.
+  Future<int> clearAllFailedBatches() async {
+    final count = await _db.clearFailedOutboxBatches();
+    await _outboxNotifier.refresh();
+    return count;
+  }
+
   /// Flushes all queued collection batches sequentially to the cloud backend.
   /// Ensures strict double-entry ledger atomicity via atomic_execute_operations.
   Future<SyncResult> syncOutbox() async {

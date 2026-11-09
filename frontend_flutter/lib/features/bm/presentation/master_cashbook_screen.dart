@@ -1484,8 +1484,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             children: [
               Expanded(
                 child: _buildTAccountPanel(
-                  title: 'DEBIT (CASH INFLOWS)',
-                  totalLabel: 'Total Inflows',
+                  title: 'DEBIT (INFLOWS & OPENING B/F)',
+                  totalLabel: 'Total Debit (B/F + Inflows)',
                   totalAmount: data.totalInflows,
                   headerColor: const Color(0xFF059669),
                   headerBg: const Color(0xFFECFDF5),
@@ -2097,7 +2097,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 children: [
                   _buildMetricCard(
                     width: cardW,
-                    label: 'Opening Balance',
+                    label: 'Opening Balance (B/F)',
                     value: _formatCurrency(data.inflows.openingBalance),
                     icon: Icons.lock_clock_outlined,
                     iconColor: const Color(0xFF065F46),
@@ -2105,15 +2105,15 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   ),
                   _buildMetricCard(
                     width: cardW,
-                    label: 'Total Inflows (Debit)',
-                    value: _formatCurrency(data.totalInflows),
+                    label: 'Today Inflows (Receipts)',
+                    value: _formatCurrency((data.totalInflows - data.inflows.openingBalance).clamp(0.0, double.infinity)),
                     icon: Icons.south_west_rounded,
                     iconColor: const Color(0xFF059669),
                     iconBg: const Color(0xFFECFDF5),
                   ),
                   _buildMetricCard(
                     width: cardW,
-                    label: 'Total Outflows (Credit)',
+                    label: 'Today Outflows (Credit)',
                     value: _formatCurrency(data.totalOutflows),
                     icon: Icons.north_east_rounded,
                     iconColor: const Color(0xFFDC2626),

@@ -1566,20 +1566,57 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                                       ],
                                     ),
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: isFailed ? const Color(0xFFFEF2F2) : const Color(0xFFFEF3C7),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      isFailed ? 'Failed' : 'Pending',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w700,
-                                        color: isFailed ? const Color(0xFFDC2626) : const Color(0xFFB45309),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: isFailed ? const Color(0xFFFEF2F2) : const Color(0xFFFEF3C7),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          isFailed ? 'Failed' : 'Pending',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w700,
+                                            color: isFailed ? const Color(0xFFDC2626) : const Color(0xFFB45309),
+                                          ),
+                                        ),
                                       ),
-                                    ),
+                                      if (isFailed) ...[
+                                        const SizedBox(width: 6),
+                                        InkWell(
+                                          onTap: () async {
+                                            final bId = item['id'] as int?;
+                                            if (bId != null) {
+                                              await syncMgr.discardOutboxBatch(bId);
+                                              if (mounted) {
+                                                setState(() {
+                                                  _statusMsg = 'Batch #$bId discarded from outbox.';
+                                                  _isSuccess = true;
+                                                });
+                                              }
+                                            }
+                                          },
+                                          borderRadius: BorderRadius.circular(4),
+                                          child: const Padding(
+                                            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.delete_outline, size: 14, color: Color(0xFFDC2626)),
+                                                SizedBox(width: 2),
+                                                Text(
+                                                  'Discard',
+                                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFFDC2626)),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 ],
                               ),
@@ -1636,6 +1673,22 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
         ),
       ),
       actions: [
+        if (pendingCount > 0)
+          TextButton.icon(
+            onPressed: _isSyncing
+                ? null
+                : () async {
+                    final cleared = await syncMgr.clearAllFailedBatches();
+                    if (mounted) {
+                      setState(() {
+                        _statusMsg = cleared > 0 ? 'Cleared $cleared failed transaction(s).' : 'No failed transactions to clear.';
+                        _isSuccess = true;
+                      });
+                    }
+                  },
+            icon: const Icon(Icons.delete_sweep_outlined, size: 16, color: Color(0xFFDC2626)),
+            label: const Text('Clear Failed', style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w700, fontSize: 12)),
+          ),
         TextButton(
           onPressed: _isSyncing ? null : () => Navigator.of(context).pop(),
           child: const Text('Close', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600)),

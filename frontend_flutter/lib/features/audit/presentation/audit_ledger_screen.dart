@@ -35,6 +35,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
 
   // Per-Tab Filter Values
   String? _selectedIntegrityBranch;
+  DateTime _selectedIntegrityDate = DateTime.now();
   String _selectedFeeType = 'ALL';
   String _selectedFeeBranch = 'All Branches';
   String _selectedFeeOfficer = 'All Officers';
@@ -92,6 +93,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
     _globalFromDate = DateTime(now.year, now.month, 1);
     _globalToDate = now;
     _collectionsFromDate = now.subtract(const Duration(days: 30));
+    _selectedIntegrityDate = now;
     _loadMetadata();
   }
 
@@ -432,7 +434,10 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
     final effectiveBranchId = _resolveTargetBranchId(_selectedIntegrityBranch!, branchId) ?? branchId;
 
     return FutureBuilder<Integrity6WayModel>(
-      future: ref.read(auditApiServiceProvider).get6WayIntegrity(branchId: effectiveBranchId),
+      future: ref.read(auditApiServiceProvider).get6WayIntegrity(
+        branchId: effectiveBranchId,
+        postingDate: _formatDate(_selectedIntegrityDate),
+      ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
@@ -453,35 +458,97 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
           children: [
             const Text('Live 6-Way Financial Integrity Verification', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
             const SizedBox(height: 4),
-            const Text('Automated mathematical balance verification across General Ledger, Audit Views, Cashbooks, Dashboards, and Reports.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
-            if (isAdmin || isAm) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.account_balance_outlined, size: 18, color: Color(0xFF64748B)),
-                    const SizedBox(width: 8),
-                    const Text('Branch Scope:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildDropdown(
-                        'Branch',
-                        _selectedIntegrityBranch!,
-                        bOptions,
-                        (v) => setState(() => _selectedIntegrityBranch = v),
-                        enabled: true,
-                      ),
+            const Text('Mathematical cross-verification of daily operational collections, receipts, and cash movements across General Ledger, Audit Views, Cashbooks, Dashboards, and Reports.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Wrap(
+                spacing: 16,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (isAdmin || isAm) ...[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.account_balance_outlined, size: 18, color: Color(0xFF64748B)),
+                        const SizedBox(width: 8),
+                        const Text('Branch:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 180,
+                          child: _buildDropdown(
+                            'Branch',
+                            _selectedIntegrityBranch!,
+                            bOptions,
+                            (v) => setState(() => _selectedIntegrityBranch = v),
+                            enabled: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else ...[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.account_balance_outlined, size: 18, color: Color(0xFF64748B)),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Branch: ${_selectedIntegrityBranch ?? "Current Branch"}',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                        ),
+                      ],
                     ),
                   ],
-                ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.event_outlined, size: 18, color: Color(0xFF64748B)),
+                      const SizedBox(width: 8),
+                      const Text('Operations Date:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _selectedIntegrityDate,
+                            firstDate: DateTime(2024),
+                            lastDate: DateTime(2030),
+                          );
+                          if (picked != null) {
+                            setState(() => _selectedIntegrityDate = picked);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _formatDate(_selectedIntegrityDate),
+                                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                              ),
+                              const SizedBox(width: 6),
+                              const Icon(Icons.calendar_today_outlined, size: 14, color: Color(0xFF64748B)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ],
+            ),
             const SizedBox(height: 16),
 
             // Status Banner (Strict Zero-Emoji, Rule 10)
@@ -553,12 +620,12 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                   spacing: 10,
                   runSpacing: 10,
                   children: [
-                    _buildKpiCard('1. General Ledger', _formatCurrency(data.ledgerTotal), width: cardW),
-                    _buildKpiCard('2. Audit Views', _formatCurrency(data.auditViewsTotal), width: cardW),
-                    _buildKpiCard('3. CO Cashbooks', _formatCurrency(data.coCashbooksTotal), width: cardW),
-                    _buildKpiCard('4. Master Cashbook', _formatCurrency(data.masterCashbookTotal), width: cardW),
-                    _buildKpiCard('5. Dashboard', _formatCurrency(data.dashboardTotal), width: cardW),
-                    _buildKpiCard('6. Reports', _formatCurrency(data.reportsTotal), width: cardW),
+                    _buildKpiCard('1. General Ledger (Receipts)', _formatCurrency(data.ledgerTotal), width: cardW),
+                    _buildKpiCard('2. Audit Views (Collections)', _formatCurrency(data.auditViewsTotal), width: cardW),
+                    _buildKpiCard('3. CO Cashbooks (Inflows)', _formatCurrency(data.coCashbooksTotal), width: cardW),
+                    _buildKpiCard('4. Master Cashbook (Today Receipts)', _formatCurrency(data.masterCashbookTotal), width: cardW),
+                    _buildKpiCard('5. Dashboard (Today Collections)', _formatCurrency(data.dashboardTotal), width: cardW),
+                    _buildKpiCard('6. Reports (Engine Receipts)', _formatCurrency(data.reportsTotal), width: cardW),
                   ],
                 );
               },

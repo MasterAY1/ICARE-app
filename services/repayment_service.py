@@ -12,7 +12,8 @@ class RepaymentService:
         # Check Business Date Freeze & Working Day (BR-DATE-002)
         from services.business_date_service import BusinessDateService
         rep_date = getattr(repayment, 'payment_date', None) or getattr(repayment, 'date', None)
-        if rep_date:
+        is_late_or_offline = bool(getattr(repayment, 'idempotency_key', None) or getattr(repayment, 'is_late_entry', False))
+        if rep_date and not is_late_or_offline:
             is_open, reason = BusinessDateService.is_operational_open(uow, repayment.branch, rep_date)
             if not is_open:
                 raise ValueError(f"Operational Restriction: Cannot post repayment. {reason}.")

@@ -693,8 +693,8 @@ def submit_single_client(
             "Group Name": payload.group_name or "Ungrouped",
             "Group ID": payload.group_id,
             "group_id": payload.group_id,
-            "Officer": current_user.username,
-            "Branch": current_user.branch,
+            "Officer": target_officer_username,
+            "Branch": target_branch_name,
             "client_id": payload.client_id,
             "id": payload.client_id,
             "loan_id": payload.loan_id,
@@ -726,8 +726,8 @@ def submit_single_client(
             "Date": date_str,
             "Client ID": f"GROUP-{payload.group_name}",
             "Client Name": f"{payload.group_name} (Group Savings from {payload.client_name})",
-            "Officer": current_user.username,
-            "Branch": current_user.branch,
+            "Officer": target_officer_username,
+            "Branch": target_branch_name,
             "Amount Paid": 0.0,
             "Transaction Type": "Group Meeting",
             "Note": f"Group Savings Deposit from {payload.client_name}",
@@ -792,21 +792,9 @@ def submit_batch_collections(
             headers={"Retry-After": str(retry_after)}
         )
 
-    is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id, target_date)
-    # If this is an offline queued batch (idempotency_key provided), collection was already
-    # recorded in the field; allow syncing to post atomically to Account 1000.
-    if not is_open and not payload.idempotency_key:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Cannot submit new collections today ({open_reason}).")
-
-    if payload.idempotency_key:
-        from services.idempotency_service import IdempotencyService
-        lock_res = IdempotencyService.acquire_lock(uow, payload.idempotency_key, "batch_collection", payload)
-        if lock_res.get("action") == "REPLAY":
-            cached = lock_res.get("response_body") or {}
-            return BatchCollectionResponse(**cached)
-
-    date_str = target_date.isoformat()
-    batch_id = payload.batch_id or payload.idempotency_key or f"COL-{date_str}-{uuid.uuid4().hex[:6].upper()}"
+    target_branch_id = current_user.branch_id
+    target_branch_name = current_user.branch
+    target_officer_username = current_user.username
 
     # Guard: verify all submitted clients belong to an authorized branch (supporting UUIDs and client_codes)
     submitted_client_ids = [item.client_id for item in payload.collections if item.client_id]
@@ -841,6 +829,43 @@ def submit_batch_collections(
                     if not b_id:
                         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Client {item.client_id} not found.")
                     check_branch_access(current_user, b_id, "submit collections for this client")
+
+            first_b_id = next((v for v in cid_branch_map.values() if v), None)
+            if first_b_id and (not target_branch_id or current_user.branch in ["Head Office", "All Branches", None]):
+                target_branch_id = first_b_id
+                try:
+                    res_bn = uow.client.table("branches").select("name").eq("branch_id", first_b_id).execute()
+                    if res_bn.data:
+                        target_branch_name = res_bn.data[0]["name"]
+                except Exception:
+                    pass
+
+    # Resolve officer assignment if submitting user is an Admin/BM/Director
+    if current_user.role in ["Admin", "Super Admin", "Director", "BM", "Branch Manager", "AM", "Area Manager"] and payload.group_name and payload.group_name != "Ungrouped":
+        try:
+            res_g = uow.client.table("groups").select("officer_id").eq("name", payload.group_name).execute()
+            if res_g.data and res_g.data[0].get("officer_id"):
+                off_uid = res_g.data[0]["officer_id"]
+                res_u = uow.client.table("app_users").select("username").eq("id", off_uid).execute()
+                if res_u.data and res_u.data[0].get("username"):
+                    target_officer_username = res_u.data[0]["username"]
+        except Exception:
+            pass
+
+    is_open, open_reason = BusinessDateService.is_operational_open(uow, target_branch_id or current_user.branch_id, target_date)
+    is_authorized_override = bool(payload.idempotency_key or getattr(payload, 'is_late_entry', False))
+    if not is_open and not is_authorized_override:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Cannot submit new collections today ({open_reason}).")
+
+    if payload.idempotency_key:
+        from services.idempotency_service import IdempotencyService
+        lock_res = IdempotencyService.acquire_lock(uow, payload.idempotency_key, "batch_collection", payload)
+        if lock_res.get("action") == "REPLAY":
+            cached = lock_res.get("response_body") or {}
+            return BatchCollectionResponse(**cached)
+
+    date_str = target_date.isoformat()
+    batch_id = payload.batch_id or payload.idempotency_key or f"COL-{date_str}-{uuid.uuid4().hex[:6].upper()}"
 
     to_insert = []
 
@@ -885,8 +910,8 @@ def submit_batch_collections(
             "Date": date_str,
             "Client ID": item.client_id,
             "Client Name": item.client_name,
-            "Officer": current_user.username,
-            "Branch": current_user.branch,
+            "Officer": target_officer_username,
+            "Branch": target_branch_name,
             "Amount Paid": rep,
             "Transaction Type": "Loan",
             "Note": f"Daily Collection - {payload.group_name}" if not is_marked_not_paid else "Marked NOT PAID (₦0 Collection)",
@@ -919,8 +944,8 @@ def submit_batch_collections(
             "Date": date_str,
             "Client ID": f"GROUP-{payload.group_name}",
             "Client Name": f"{payload.group_name} Meeting",
-            "Officer": current_user.username,
-            "Branch": current_user.branch,
+            "Officer": target_officer_username,
+            "Branch": target_branch_name,
             "Amount Paid": g_dep,
             "Transaction Type": "Group Meeting",
             "Note": f"Group Savings for {payload.group_name}",
@@ -934,51 +959,62 @@ def submit_batch_collections(
     if not to_insert:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No collection entries provided to save.")
 
-    from services.collection_batch_service import save_repayments
-    receipt = save_repayments(to_insert, batch_id=batch_id)
-    if receipt:
-        receipt["batch_id"] = batch_id
-        if payload.idempotency_key:
-            receipt["idempotency_key"] = payload.idempotency_key
-        receipt["group_name"] = payload.group_name
-        receipt["officer"] = current_user.username
-        receipt["branch"] = current_user.branch
-        receipt["date"] = date_str
-        receipt["timestamp"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
-
-    tot_fees = sum(
-        float(item.app_fee or 0.0) +
-        float(item.passbook_bonus or 0.0) +
-        float(item.misc_fees or 0.0)
-        for item in payload.collections
-    )
-    tot_rep = float(receipt.get("total_repayment", 0.0)) if receipt else 0.0
-    tot_sav = float(receipt.get("total_savings", 0.0)) if receipt else 0.0
-    tot_cash_in = (float(receipt.get("total_cash", 0.0)) if receipt else (tot_rep + tot_sav)) + tot_fees
-    if receipt:
-        receipt["total_cash"] = tot_cash_in
-
     try:
-        branch_id = current_user.branch_id or (uow.cashbook._resolve_branch_id(current_user.branch) if hasattr(uow, 'cashbook') else None)
-        officer_id = (uow.loans._resolve_officer_id(current_user.username) if hasattr(uow, 'loans') else None) or current_user.id
-        if branch_id and hasattr(uow, 'cashbook') and hasattr(uow.cashbook, 'rebuild_projection'):
-            uow.cashbook.rebuild_projection(branch_id, target_date, officer_id=officer_id)
-    except Exception:
-        pass
+        from services.collection_batch_service import save_repayments
+        receipt = save_repayments(to_insert, batch_id=batch_id)
+        if receipt:
+            receipt["batch_id"] = batch_id
+            if payload.idempotency_key:
+                receipt["idempotency_key"] = payload.idempotency_key
+            receipt["group_name"] = payload.group_name
+            receipt["officer"] = target_officer_username
+            receipt["branch"] = target_branch_name
+            receipt["date"] = date_str
+            receipt["timestamp"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
 
-    resp = BatchCollectionResponse(
-        success=True,
-        total_cash_in=tot_cash_in,
-        total_repayments=tot_rep,
-        total_savings=tot_sav,
-        items_processed=len(to_insert),
-        message=f"Successfully posted {len(to_insert)} collection entries for {payload.group_name}! (Total Cash In: ₦{tot_cash_in:,.2f})",
-        receipt=receipt
-    )
-    if payload.idempotency_key:
-        from services.idempotency_service import IdempotencyService
-        IdempotencyService.commit_result(uow, payload.idempotency_key, 200, resp)
-    return resp
+        tot_fees = sum(
+            float(item.app_fee or 0.0) +
+            float(item.passbook_bonus or 0.0) +
+            float(item.misc_fees or 0.0)
+            for item in payload.collections
+        )
+        tot_rep = float(receipt.get("total_repayment", 0.0)) if receipt else 0.0
+        tot_sav = float(receipt.get("total_savings", 0.0)) if receipt else 0.0
+        tot_cash_in = (float(receipt.get("total_cash", 0.0)) if receipt else (tot_rep + tot_sav)) + tot_fees
+        if receipt:
+            receipt["total_cash"] = tot_cash_in
+
+        try:
+            branch_id = target_branch_id or current_user.branch_id or (uow.cashbook._resolve_branch_id(target_branch_name) if hasattr(uow, 'cashbook') else None)
+            officer_id = (uow.loans._resolve_officer_id(target_officer_username) if hasattr(uow, 'loans') else None) or current_user.id
+            if branch_id and hasattr(uow, 'cashbook') and hasattr(uow.cashbook, 'rebuild_projection'):
+                uow.cashbook.rebuild_projection(branch_id, target_date, officer_id=officer_id)
+        except Exception:
+            pass
+
+        resp = BatchCollectionResponse(
+            success=True,
+            total_cash_in=tot_cash_in,
+            total_repayments=tot_rep,
+            total_savings=tot_sav,
+            items_processed=len(to_insert),
+            message=f"Successfully posted {len(to_insert)} collection entries for {payload.group_name}! (Total Cash In: ₦{tot_cash_in:,.2f})",
+            receipt=receipt
+        )
+        if payload.idempotency_key:
+            from services.idempotency_service import IdempotencyService
+            IdempotencyService.commit_result(uow, payload.idempotency_key, 200, resp)
+        return resp
+    except Exception as ex:
+        if payload.idempotency_key:
+            try:
+                from services.idempotency_service import IdempotencyService
+                status_c = getattr(ex, "status_code", 400)
+                detail_m = getattr(ex, "detail", str(ex))
+                IdempotencyService.record_failure(uow, payload.idempotency_key, str(detail_m), status_code=status_c)
+            except Exception:
+                pass
+        raise
 
 
 @router.get("/transaction/{idempotency_key}")

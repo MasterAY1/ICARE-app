@@ -143,7 +143,8 @@ class IdempotencyService:
         cls,
         uow: SupabaseUnitOfWork,
         key: str,
-        error_message: str
+        error_message: str,
+        status_code: int = 500
     ) -> None:
         """
         Marks an idempotency record as failed, allowing retry or auditing.
@@ -155,7 +156,7 @@ class IdempotencyService:
         try:
             uow.client.table("idempotency_keys").update({
                 "status": "FAILED",
-                "response_code": 500,
+                "response_code": status_code,
                 "response_body": {"error": error_message}
             }).eq("key", clean_key).execute()
         except Exception as ex:

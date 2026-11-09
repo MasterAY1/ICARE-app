@@ -318,9 +318,36 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
           ),
           const SizedBox(height: 4),
-          const Text(
-            'Branch Daily Operations, Officer Status, & Approvals',
-            style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 10,
+            runSpacing: 4,
+            children: [
+              const Text(
+                'Branch Daily Operations, Officer Status, & Approvals',
+                style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+              ),
+              if (data.businessDate.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.event_outlined, size: 12, color: Color(0xFF475569)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Operations Date: ${data.meetingDay}, ${data.businessDate}',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 16),
 

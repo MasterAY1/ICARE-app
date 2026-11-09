@@ -997,6 +997,9 @@ class PortfolioService:
                     else:
                         prod_cat_val = "Other Loans"
 
+                    eff_active_loan = 0.0 if (is_comp_loan or outstanding_bal <= 0) else act_cred
+                    eff_fixed_repay = 0.0 if (is_comp_loan or outstanding_bal <= 0) else repay_fixed
+
                     client_rows.append({
                         "Client ID": cid_str,
                         "Client Code": row_code,
@@ -1007,9 +1010,9 @@ class PortfolioService:
                         "Loan ID": loan_id,
                         "Savings Balance": row_savings,
                         "Principal Loan": disbursed,
-                        "Active Loan": act_cred,
+                        "Active Loan": eff_active_loan,
                         "Outstanding Balance": outstanding_bal,
-                        "Fixed Repayment": repay_fixed,
+                        "Fixed Repayment": eff_fixed_repay,
                         "Total Paid": tot_paid_lifetime,
                         "Period Excess Paid": client_excess,
                         "Status": status_str,
