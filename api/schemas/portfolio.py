@@ -78,6 +78,8 @@ class ClientDossierResponse(BaseModel):
     collection_compliance: Dict[str, Any] = {}
     lifecycle_status: Dict[str, Any] = {}
     audit_history: List[Dict[str, Any]] = []
+    status_history: List[Dict[str, Any]] = []
+    audit_trail: List[Dict[str, Any]] = []
 
 
 class ChangeClientStatusRequest(BaseModel):

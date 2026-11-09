@@ -1334,9 +1334,38 @@ class PortfolioService:
 
         # 5. Collection History
         try:
+            collections = []
             cp = getattr(uow, 'collection_performance', None)
             if cp and hasattr(cp, 'find_by_client'):
                 collections = cp.find_by_client(actual_cid)
+            if not collections and hasattr(uow, 'audit_view') and hasattr(uow.audit_view, 'get_collection_performance'):
+                collections = uow.audit_view.get_collection_performance(client_id=str(actual_cid), limit=500)
+            if not collections and repayments:
+                for r in repayments:
+                    paid = float(r.get("amount_paid") or 0.0)
+                    expected = float(r.get("expected_amount") or 0.0)
+                    if expected <= 0.0 and paid > 0.0:
+                        expected = paid
+                    status = r.get("payment_status")
+                    if not status or str(status).upper() not in ["PAID", "PART_PAYMENT", "NOT_PAID"]:
+                        status = "PAID" if paid >= expected and expected > 0 else ("PART_PAYMENT" if paid > 0 else "NOT_PAID")
+                    m_date = str(r.get("date") or r.get("created_at") or "")[:10]
+                    collections.append({
+                        "id": r.get("id"),
+                        "client_id": r.get("client_id"),
+                        "loan_id": r.get("loan_id"),
+                        "officer_id": r.get("officer_id") or o_id,
+                        "branch_id": r.get("branch_id") or b_id,
+                        "officer_name": officer_name,
+                        "meeting_date": m_date,
+                        "date": m_date,
+                        "expected_amount": expected,
+                        "amount_paid": paid,
+                        "collected_amount": paid,
+                        "status": status,
+                        "remarks": r.get("note") or r.get("transaction_type") or "Meeting repayment",
+                        "created_at": r.get("created_at")
+                    })
         except Exception:
             collections = []
 

@@ -6790,13 +6790,13 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
         final comp = dossier['collection_compliance'] as Map<String, dynamic>? ?? {};
 
-        final compTable = comp['compliance_table'] as List<dynamic>? ?? [];
+        final compTable = (comp['compliance_table'] ?? comp['rows']) as List<dynamic>? ?? [];
 
         final lifecycle = dossier['lifecycle_status'] as Map<String, dynamic>? ?? {};
 
-        final statusHistory = dossier['status_history'] as List<dynamic>? ?? [];
+        final statusHistory = (dossier['status_history'] ?? lifecycle['history']) as List<dynamic>? ?? [];
 
-        final auditTrail = dossier['audit_trail'] as List<dynamic>? ?? [];
+        final auditTrail = (dossier['audit_trail'] ?? dossier['audit_history']) as List<dynamic>? ?? [];
 
         final name = cInfo['name']?.toString() ?? 'Client Profile';
 
@@ -8583,13 +8583,15 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   Widget _buildCollectionHistorySubtab(Map<String, dynamic> comp, List<dynamic> compTable) {
 
-    final exp = (comp['total_expected'] as num?)?.toDouble() ?? 0.0;
+    final compMetrics = comp['metrics'] as Map<String, dynamic>? ?? {};
 
-    final act = (comp['total_collected'] as num?)?.toDouble() ?? 0.0;
+    final exp = ((comp['total_expected'] ?? compMetrics['total_expected']) as num?)?.toDouble() ?? 0.0;
 
-    final variance = (comp['collection_variance'] as num?)?.toDouble() ?? 0.0;
+    final act = ((comp['total_collected'] ?? compMetrics['total_collected']) as num?)?.toDouble() ?? 0.0;
 
-    final rate = (comp['compliance_rate'] as num?)?.toDouble() ?? 0.0;
+    final variance = ((comp['collection_variance'] ?? compMetrics['variance'] ?? compMetrics['collection_variance']) as num?)?.toDouble() ?? 0.0;
+
+    final rate = ((comp['compliance_rate'] ?? compMetrics['compliance_rate']) as num?)?.toDouble() ?? 0.0;
 
     return Column(
 
@@ -8721,13 +8723,13 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                         children: compTable.map((m) {
 
-                          final expM = (m['expected'] as num?)?.toDouble() ?? 0.0;
+                          final expM = ((m['expected'] ?? m['expected_amount']) as num?)?.toDouble() ?? 0.0;
 
-                          final colM = (m['collected'] as num?)?.toDouble() ?? 0.0;
+                          final colM = ((m['collected'] ?? m['amount_paid'] ?? m['collected_amount']) as num?)?.toDouble() ?? 0.0;
 
                           final varM = (m['variance'] as num?)?.toDouble() ?? (expM - colM);
 
-                          final st = m['compliance_status']?.toString() ?? 'Compliant';
+                          final st = m['compliance_status']?.toString() ?? m['status']?.toString() ?? 'Compliant';
 
                           return Container(
 
@@ -8839,13 +8841,13 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                           rows: compTable.map((m) {
 
-                            final expM = (m['expected'] as num?)?.toDouble() ?? 0.0;
+                            final expM = ((m['expected'] ?? m['expected_amount']) as num?)?.toDouble() ?? 0.0;
 
-                            final colM = (m['collected'] as num?)?.toDouble() ?? 0.0;
+                            final colM = ((m['collected'] ?? m['amount_paid'] ?? m['collected_amount']) as num?)?.toDouble() ?? 0.0;
 
                             final varM = (m['variance'] as num?)?.toDouble() ?? (expM - colM);
 
-                            final st = m['compliance_status']?.toString() ?? 'Compliant';
+                            final st = m['compliance_status']?.toString() ?? m['status']?.toString() ?? 'Compliant';
 
                             return DataRow(cells: [
 
@@ -9161,11 +9163,11 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                       return DataRow(cells: [
 
-                        DataCell(_buildLifecycleBadge(h['from_status']?.toString() ?? 'Unknown')),
+                        DataCell(_buildLifecycleBadge(h['from_status']?.toString() ?? h['previous_status']?.toString() ?? 'Unknown')),
 
-                        DataCell(_buildLifecycleBadge(h['to_status']?.toString() ?? 'Unknown')),
+                        DataCell(_buildLifecycleBadge(h['to_status']?.toString() ?? h['new_status']?.toString() ?? 'Unknown')),
 
-                        DataCell(Text(h['changed_at']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                        DataCell(Text(h['changed_at']?.toString() ?? h['date_time']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
 
                         DataCell(Text(h['reason']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
 
@@ -10059,7 +10061,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                               Text(
 
-                                a['timestamp']?.toString() ?? '',
+                                (a['timestamp'] ?? a['created_at'])?.toString() ?? '',
 
                                 style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
 
@@ -10073,7 +10075,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                           Text(
 
-                            a['details']?.toString() ?? 'No details logged',
+                            (a['details'] ?? a['description'])?.toString() ?? 'No details logged',
 
                             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF1E293B)),
 
@@ -10083,7 +10085,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                           Text(
 
-                            'By: ${a['performed_by'] ?? "System"} · Entity: ${a['entity'] ?? "Client"}',
+                            'By: ${a['performed_by'] ?? a['user_id'] ?? "System"} · Entity: ${a['entity'] ?? a['table_name'] ?? "Client"}',
 
                             style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
 
@@ -10131,15 +10133,15 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                       return DataRow(cells: [
 
-                        DataCell(Text(a['timestamp']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                        DataCell(Text((a['timestamp'] ?? a['created_at'])?.toString() ?? '', style: const TextStyle(fontSize: 12))),
 
                         DataCell(Text(a['action']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Color(0xFF0F172A)))),
 
-                        DataCell(Text(a['entity']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                        DataCell(Text((a['entity'] ?? a['table_name'])?.toString() ?? '', style: const TextStyle(fontSize: 12))),
 
-                        DataCell(Text(a['performed_by']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                        DataCell(Text((a['performed_by'] ?? a['user_id'])?.toString() ?? '', style: const TextStyle(fontSize: 12))),
 
-                        DataCell(Text(a['details']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                        DataCell(Text((a['details'] ?? a['description'])?.toString() ?? '', style: const TextStyle(fontSize: 12))),
 
                       ]);
 

@@ -504,38 +504,64 @@ def get_client_dossier(
             })
 
     # 6. Meeting Collection History & Compliance (Streamlit L12991–13081)
-    coll_metrics = {"total_expected": 0.0, "total_collected": 0.0, "variance": 0.0, "compliance_rate": 0.0}
+    coll_metrics = {"total_expected": 0.0, "total_collected": 0.0, "variance": 0.0, "collection_variance": 0.0, "compliance_rate": 0.0}
     coll_rows = []
     if isinstance(c_perf, pd.DataFrame) and not c_perf.empty:
-        exp_col = "expected_amount" if "expected_amount" in c_perf.columns else ("Expected" if "Expected" in c_perf.columns else None)
-        paid_col = "amount_paid" if "amount_paid" in c_perf.columns else ("collected_amount" if "collected_amount" in c_perf.columns else ("Paid" if "Paid" in c_perf.columns else None))
-
-        tot_exp = float(pd.to_numeric(c_perf[exp_col], errors='coerce').sum()) if exp_col else 0.0
-        tot_paid = float(pd.to_numeric(c_perf[paid_col], errors='coerce').sum()) if paid_col else 0.0
-        tot_var = max(0.0, tot_exp - tot_paid)
-        comp_pct = (tot_paid / tot_exp * 100.0) if tot_exp > 0 else (100.0 if tot_paid > 0 else 0.0)
-
-        coll_metrics = {
-            "total_expected": tot_exp,
-            "total_collected": tot_paid,
-            "variance": tot_var,
-            "compliance_rate": round(comp_pct, 1)
-        }
-
         for _, row in c_perf.iterrows():
             exp_val = float(row.get("expected_amount") or row.get("Expected") or 0.0)
             paid_val = float(row.get("amount_paid") or row.get("collected_amount") or row.get("Paid") or 0.0)
+            if exp_val <= 0.0 and paid_val > 0.0:
+                exp_val = paid_val
             raw_st = str(row.get("status") or row.get("collection_status") or "").upper()
             st_badge = "PAID" if (raw_st in ["PAID", "COMPLETE"] or (exp_val > 0 and paid_val >= exp_val)) else ("PART PAYMENT" if (raw_st in ["PART_PAYMENT", "PARTIAL"] or (paid_val > 0 and paid_val < exp_val)) else "NOT PAID")
             
             coll_rows.append({
                 "meeting_date": str(row.get("meeting_date") or row.get("date") or "")[:10],
                 "expected": exp_val,
+                "expected_amount": exp_val,
                 "collected": paid_val,
+                "amount_paid": paid_val,
                 "variance": max(0.0, exp_val - paid_val),
                 "compliance_status": st_badge,
+                "officer_name": str(row.get("officer_name") or c_info.get("officer_name") or "Unassigned"),
                 "remarks": str(row.get("remarks") or row.get("note") or "Meeting collection")
             })
+
+    # Authoritative fallback to repayments if collection performance table yielded no records
+    if not coll_rows and isinstance(r_hist, pd.DataFrame) and not r_hist.empty:
+        for _, row in r_hist.iterrows():
+            paid_val = float(row.get("amount_paid") or 0.0)
+            exp_val = float(row.get("expected_amount") or 0.0)
+            if exp_val <= 0.0 and paid_val > 0.0:
+                exp_val = paid_val
+            raw_st = str(row.get("payment_status") or "").upper()
+            st_badge = "PAID" if (raw_st in ["PAID", "COMPLETE"] or (exp_val > 0 and paid_val >= exp_val)) else ("PART PAYMENT" if (raw_st in ["PART_PAYMENT", "PARTIAL"] or (paid_val > 0 and paid_val < exp_val)) else "NOT PAID")
+            coll_rows.append({
+                "meeting_date": str(row.get("date") or row.get("created_at") or "")[:10],
+                "expected": exp_val,
+                "expected_amount": exp_val,
+                "collected": paid_val,
+                "amount_paid": paid_val,
+                "variance": max(0.0, exp_val - paid_val),
+                "compliance_status": st_badge,
+                "officer_name": str(c_info.get("officer_name") or "Unassigned"),
+                "remarks": str(row.get("note") or row.get("transaction_type") or "Meeting collection")
+            })
+
+    coll_rows.sort(key=lambda x: str(x.get("meeting_date") or ""), reverse=True)
+
+    tot_exp = sum(r["expected"] for r in coll_rows)
+    tot_paid = sum(r["collected"] for r in coll_rows)
+    tot_var = max(0.0, tot_exp - tot_paid)
+    comp_pct = (tot_paid / tot_exp * 100.0) if tot_exp > 0 else (100.0 if tot_paid > 0 else 0.0)
+
+    coll_metrics = {
+        "total_expected": tot_exp,
+        "total_collected": tot_paid,
+        "variance": tot_var,
+        "collection_variance": tot_var,
+        "compliance_rate": round(comp_pct, 1)
+    }
 
     # 7. Lifecycle Status & Audit History (Streamlit L13083–13176)
     curr_status_res = uow.client.table("clients").select("status, status_id, status_changed_at, status_note, client_statuses(name, color_code, icon)").eq("client_id", cur_cid).execute()
@@ -547,18 +573,34 @@ def get_client_dossier(
     history_records = ClientStatusService.get_client_history(uow, str(cur_cid))
     h_rows = []
     for h in (history_records or []):
+        old_st = h.get("old_status_name") or (h.get("old_status") or {}).get("name", "Initial")
+        new_st = h.get("new_status_name") or (h.get("new_status") or {}).get("name", "N/A")
+        changer_name = (h.get("changer") or {}).get("full_name") or "System / Officer"
+        dt_str = str(h.get("changed_at", ""))[:19].replace("T", " ")
         h_rows.append({
-            "date_time": str(h.get("changed_at", ""))[:19].replace("T", " "),
-            "previous_status": h.get("old_status_name") or (h.get("old_status") or {}).get("name", "Initial"),
-            "new_status": h.get("new_status_name") or (h.get("new_status") or {}).get("name", "N/A"),
+            "date_time": dt_str,
+            "changed_at": dt_str,
+            "previous_status": old_st,
+            "from_status": old_st,
+            "new_status": new_st,
+            "to_status": new_st,
             "trigger": h.get("trigger_type", "MANUAL"),
             "reason": h.get("reason", "N/A"),
-            "changed_by": (h.get("changer") or {}).get("full_name") or "System / Officer"
+            "changed_by": changer_name
         })
 
     audit_records = []
     if isinstance(a_hist, pd.DataFrame) and not a_hist.empty:
-        audit_records = a_hist.fillna("").to_dict(orient="records")
+        for _, a_row in a_hist.iterrows():
+            ts = str(a_row.get("created_at") or a_row.get("timestamp") or "")[:19].replace("T", " ")
+            audit_records.append({
+                "timestamp": ts,
+                "created_at": ts,
+                "action": str(a_row.get("action") or "Audit Log"),
+                "entity": str(a_row.get("entity") or a_row.get("table_name") or "Client"),
+                "performed_by": str(a_row.get("performed_by") or a_row.get("user_id") or "System"),
+                "details": str(a_row.get("details") or a_row.get("description") or a_row.get("notes") or "Logged event")
+            })
 
     return ClientDossierResponse(
         client_code=client_code,
@@ -597,6 +639,11 @@ def get_client_dossier(
         repayment_ledger=repayment_rows,
         savings_ledger=savings_rows,
         collection_compliance={
+            "total_expected": tot_exp,
+            "total_collected": tot_paid,
+            "collection_variance": tot_var,
+            "compliance_rate": round(comp_pct, 1),
+            "compliance_table": coll_rows,
             "metrics": coll_metrics,
             "rows": coll_rows
         },
@@ -607,7 +654,9 @@ def get_client_dossier(
             "status_note": curr_rec.get("status_note") or "None",
             "history": h_rows
         },
-        audit_history=audit_records
+        status_history=h_rows,
+        audit_history=audit_records,
+        audit_trail=audit_records
     )
 
 

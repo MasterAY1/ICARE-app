@@ -137204,25 +137204,33 @@ j=A.aC(j,n?B.a0:B.B,f,14)
 i=n?"Hide Cancelled":"Show All (Audit)"
 h=t.p
 return A.f(f,A.o(A.a([A.i(A.a([B.b4l,A.i(A.a([s,B.F,A.aQ(!1,o,!0,A.f(f,A.i(A.a([j,B.ar,A.b(i,f,f,f,f,f,A.U(f,f,n?B.a0:B.B,f,f,f,f,f,f,f,f,11,f,f,B.o,f,f,!0,f,f,f,f,f,f,f,f),f,f,f)],h),B.e,B.c,B.A,0,f,f),B.h,f,f,new A.h(m,f,k,l,f,f,B.i),f,f,f,B.bJ,f,f,f),f,!0,f,f,f,f,f,f,f,f,f,f,new A.bh9(g),f,f,f,f,f,f,f)],h),B.e,B.c,B.b,0,f,f)],h),B.e,B.E,B.b,0,f,f),B.D,A.bd(new A.bha(g,r)),B.ax],h),B.l,f,B.c,B.b),B.h,f,f,new A.h(B.k,f,p,q,f,f,B.i),f,f,f,B.Q,f,f,f)},
-arN(a,b){var s,r,q,p,o,n,m,l=null,k=J.F(a),j=A.u(k.h(a,"total_expected")),i=j==null?l:j
-if(i==null)i=0
-j=A.u(k.h(a,"total_collected"))
-s=j==null?l:j
-if(s==null)s=0
-j=A.u(k.h(a,"collection_variance"))
-r=j==null?l:j
+arN(a,b){var s,r,q,p,o,n,m,l,k,j=null,i="total_expected",h="total_collected",g="collection_variance",f="compliance_rate",e=J.F(a),d=t.h.a(e.h(a,"metrics"))
+if(d==null)d=A.K(t.N,t.z)
+s=e.h(a,i)
+s=A.u(s==null?J.G(d,i):s)
+r=s==null?j:s
 if(r==null)r=0
-k=A.u(k.h(a,"compliance_rate"))
-q=k==null?l:k
-k=A.bd(new A.bf_(this,i,s,r,q==null?0:q))
-j=A.d(8)
-p=A.t(B.n,B.j,1)
-o=J.F(b)
-n=t.p
-m=A.a([A.i(A.a([B.aQK,A.b(""+o.gB(b)+" Meetings Recorded",l,l,l,l,l,B.ia,l,l,l)],n),B.e,B.E,B.b,0,l,l),B.D],n)
-if(o.ga8(b))m.push(B.Ze)
-else m.push(A.bd(new A.bf0(this,b)))
-return A.o(A.a([k,B.D,A.f(l,A.o(m,B.l,l,B.c,B.b),B.h,l,l,new A.h(B.k,l,p,j,l,l,B.i),l,l,l,B.Q,l,l,l)],n),B.l,l,B.c,B.b)},
+s=e.h(a,h)
+s=A.u(s==null?J.G(d,h):s)
+q=s==null?j:s
+if(q==null)q=0
+s=e.h(a,g)
+if(s==null)s=J.G(d,"variance")
+s=A.u(s==null?J.G(d,g):s)
+p=s==null?j:s
+if(p==null)p=0
+e=e.h(a,f)
+e=A.u(e==null?J.G(d,f):e)
+o=e==null?j:e
+e=A.bd(new A.bf_(this,r,q,p,o==null?0:o))
+s=A.d(8)
+n=A.t(B.n,B.j,1)
+m=J.F(b)
+l=t.p
+k=A.a([A.i(A.a([B.aQK,A.b(""+m.gB(b)+" Meetings Recorded",j,j,j,j,j,B.ia,j,j,j)],l),B.e,B.E,B.b,0,j,j),B.D],l)
+if(m.ga8(b))k.push(B.Ze)
+else k.push(A.bd(new A.bf0(this,b)))
+return A.o(A.a([e,B.D,A.f(j,A.o(k,B.l,j,B.c,B.b),B.h,j,j,new A.h(B.k,j,n,s,j,j,B.i),j,j,j,B.Q,j,j,j)],l),B.l,j,B.c,B.b)},
 asL(a,b,c){var s,r,q,p,o,n,m,l=null,k=J.F(a),j=k.h(a,"current_status"),i=j==null?l:J.l(j)
 if(i==null)i="Registered"
 j=k.h(a,"last_changed")
@@ -138412,45 +138420,49 @@ $2(a,b){var s=null,r=A.d(8)
 return A.f(s,A.b("Error loading client dossier: "+A.r(a),s,s,s,s,s,B.r6,s,s,s),B.h,s,s,new A.h(B.oy,s,s,r,s,s,B.i),s,s,s,B.ao,s,s,s)},
 $S:40}
 A.bfp.prototype={
-$1(a){var s,r,q,p,o,n,m,l,k,j,i,h,g,f=null,e=J.F(a),d=t.h,c=d.a(e.h(a,"customer_info"))
-if(c==null)c=A.K(t.N,t.z)
-s=d.a(e.h(a,"guarantor_info"))
+$1(a0){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d=null,c=J.F(a0),b=t.h,a=b.a(c.h(a0,"customer_info"))
+if(a==null)a=A.K(t.N,t.z)
+s=b.a(c.h(a0,"guarantor_info"))
 if(s==null)s=A.K(t.N,t.z)
-r=d.a(e.h(a,"executive_banner"))
+r=b.a(c.h(a0,"executive_banner"))
 if(r==null)r=A.K(t.N,t.z)
 q=t.g
-p=q.a(e.h(a,"loan_history"))
+p=q.a(c.h(a0,"loan_history"))
 if(p==null)p=[]
-o=q.a(e.h(a,"repayment_ledger"))
+o=q.a(c.h(a0,"repayment_ledger"))
 if(o==null)o=[]
-n=q.a(e.h(a,"savings_ledger"))
+n=q.a(c.h(a0,"savings_ledger"))
 if(n==null)n=[]
-m=d.a(e.h(a,"collection_compliance"))
+m=b.a(c.h(a0,"collection_compliance"))
 if(m==null)m=A.K(t.N,t.z)
-l=q.a(J.G(m,"compliance_table"))
-if(l==null)l=[]
-k=d.a(e.h(a,"lifecycle_status"))
-if(k==null)k=A.K(t.N,t.z)
-j=q.a(e.h(a,"status_history"))
+l=J.F(m)
+k=l.h(m,"compliance_table")
+j=q.a(k==null?l.h(m,"rows"):k)
 if(j==null)j=[]
-i=q.a(e.h(a,"audit_trail"))
-if(i==null)i=[]
-e=J.F(c)
-d=e.h(c,"name")
-h=d==null?f:J.l(d)
-if(h==null)h="Client Profile"
-d=this.a
-g=d.gS().ae($.bET(),t.N)
-q=A.a([A.b(h+" ("+this.b+")",f,f,f,f,f,B.aJl,f,f,f),B.u,A.bd(new A.bfo(d,r)),B.ax,d.as8(g),B.D],t.p)
-if(g==="Customer Profile")q.push(d.arY(c,s))
-else if(g==="Loan History")q.push(d.asO(p))
-else if(g==="Repayment Ledger")q.push(d.atQ(o))
-else if(g==="Savings Ledger")q.push(d.atW(n))
-else if(g==="Collection History")q.push(d.arN(m,l))
-else if(g==="Lifecycle Status"){e=e.h(c,"client_id")
-e=e==null?f:J.l(e)
-q.push(d.asL(k,j,e==null?"":e))}else if(g==="Audit Trail")q.push(d.arp(i))
-return A.o(q,B.l,f,B.c,B.b)},
+i=b.a(c.h(a0,"lifecycle_status"))
+if(i==null)i=A.K(t.N,t.z)
+b=c.h(a0,"status_history")
+h=q.a(b==null?J.G(i,"history"):b)
+if(h==null)h=[]
+b=c.h(a0,"audit_trail")
+g=q.a(b==null?c.h(a0,"audit_history"):b)
+if(g==null)g=[]
+c=J.F(a)
+b=c.h(a,"name")
+f=b==null?d:J.l(b)
+if(f==null)f="Client Profile"
+b=this.a
+e=b.gS().ae($.bET(),t.N)
+q=A.a([A.b(f+" ("+this.b+")",d,d,d,d,d,B.aJl,d,d,d),B.u,A.bd(new A.bfo(b,r)),B.ax,b.as8(e),B.D],t.p)
+if(e==="Customer Profile")q.push(b.arY(a,s))
+else if(e==="Loan History")q.push(b.asO(p))
+else if(e==="Repayment Ledger")q.push(b.atQ(o))
+else if(e==="Savings Ledger")q.push(b.atW(n))
+else if(e==="Collection History")q.push(b.arN(m,j))
+else if(e==="Lifecycle Status"){c=c.h(a,"client_id")
+c=c==null?d:J.l(c)
+q.push(b.asL(i,h,c==null?"":c))}else if(e==="Audit Trail")q.push(b.arp(g))
+return A.o(q,B.l,d,B.c,B.b)},
 $S:152}
 A.bfo.prototype={
 $2(a,b){var s,r,q,p,o,n,m=null,l="outstanding_balance",k=this.a,j=this.b,i=J.F(j),h=A.u(i.h(j,"total_active_credit"))
@@ -138841,71 +138853,85 @@ s=A.D(s,s.$ti.i("N.E"))
 return A.h8(A.bw(A.ej(q,q,B.aqU,q,q,q,new A.bn(B.v,t.B),q,q,q,s),q,B.w,q,q,B.G),q,q,q,!0)},
 $S:57}
 A.beY.prototype={
-$1(a){var s,r,q,p,o,n,m,l,k,j,i=null,h="officer_name",g=J.F(a),f=A.u(g.h(a,"expected")),e=f==null?i:f
-if(e==null)e=0
-f=A.u(g.h(a,"collected"))
-s=f==null?i:f
+$1(a){var s,r,q,p,o,n,m,l,k,j,i,h=null,g="officer_name",f=J.F(a),e=f.h(a,"expected")
+e=A.u(e==null?f.h(a,"expected_amount"):e)
+s=e==null?h:e
 if(s==null)s=0
-f=A.u(g.h(a,"variance"))
-r=f==null?i:f
-if(r==null)r=e-s
-f=g.h(a,"compliance_status")
-q=f==null?i:J.l(f)
-if(q==null)q="Compliant"
-f=A.d(8)
-p=A.t(B.n,B.j,1)
-o=g.h(a,"meeting_date")
-o=o==null?i:J.l(o)
-n=this.a
-m=t.p
-o=A.i(A.a([A.b(o==null?"":o,i,i,i,i,i,B.eT,i,i,i),n.nT(q)],m),B.e,B.E,B.b,0,i,i)
-l=$.am()
-k=l.n(e)
-k=A.k(n.r7("Expected",k,B.ab),1)
-j=l.n(s)
-j=A.k(n.r7("Collected",j,B.M),1)
-l=l.n(r)
-o=A.a([o,B.H,A.i(A.a([k,j,A.k(n.r7("Variance",l,r<=0?B.M:B.r),1)],m),B.e,B.c,B.b,0,i,i)],m)
-n=g.h(a,h)
-n=n==null?i:J.l(n)
-if((n==null?"":n).length===0){n=g.h(a,"remarks")
-n=n==null?i:J.l(n)
-n=(n==null?"":n).length!==0}else n=!0
-if(n){n=g.h(a,h)
-n=A.r(n==null?"Unassigned":n)
-g=g.h(a,"remarks")
-B.d.t(o,A.a([B.H,A.b("Officer: "+n+" \xb7 Remarks: "+A.r(g==null?"None":g),i,i,i,i,i,B.b3,i,i,i)],m))}return A.f(i,A.o(o,B.l,i,B.c,B.b),B.h,i,i,new A.h(B.k,i,p,f,i,i,B.i),i,i,B.e1,B.aY,i,i,i)},
+e=f.h(a,"collected")
+if(e==null)e=f.h(a,"amount_paid")
+e=A.u(e==null?f.h(a,"collected_amount"):e)
+r=e==null?h:e
+if(r==null)r=0
+e=A.u(f.h(a,"variance"))
+q=e==null?h:e
+if(q==null)q=s-r
+e=f.h(a,"compliance_status")
+e=e==null?h:J.l(e)
+if(e==null){e=f.h(a,"status")
+e=e==null?h:J.l(e)
+p=e}else p=e
+if(p==null)p="Compliant"
+e=A.d(8)
+o=A.t(B.n,B.j,1)
+n=f.h(a,"meeting_date")
+n=n==null?h:J.l(n)
+m=this.a
+l=t.p
+n=A.i(A.a([A.b(n==null?"":n,h,h,h,h,h,B.eT,h,h,h),m.nT(p)],l),B.e,B.E,B.b,0,h,h)
+k=$.am()
+j=k.n(s)
+j=A.k(m.r7("Expected",j,B.ab),1)
+i=k.n(r)
+i=A.k(m.r7("Collected",i,B.M),1)
+k=k.n(q)
+n=A.a([n,B.H,A.i(A.a([j,i,A.k(m.r7("Variance",k,q<=0?B.M:B.r),1)],l),B.e,B.c,B.b,0,h,h)],l)
+m=f.h(a,g)
+m=m==null?h:J.l(m)
+if((m==null?"":m).length===0){m=f.h(a,"remarks")
+m=m==null?h:J.l(m)
+m=(m==null?"":m).length!==0}else m=!0
+if(m){m=f.h(a,g)
+m=A.r(m==null?"Unassigned":m)
+f=f.h(a,"remarks")
+B.d.t(n,A.a([B.H,A.b("Officer: "+m+" \xb7 Remarks: "+A.r(f==null?"None":f),h,h,h,h,h,B.b3,h,h,h)],l))}return A.f(h,A.o(n,B.l,h,B.c,B.b),B.h,h,h,new A.h(B.k,h,o,e,h,h,B.i),h,h,B.e1,B.aY,h,h,h)},
 $S:53}
 A.beZ.prototype={
-$1(a){var s,r,q,p,o,n,m,l,k=null,j=J.F(a),i=A.u(j.h(a,"expected")),h=i==null?k:i
-if(h==null)h=0
-i=A.u(j.h(a,"collected"))
-s=i==null?k:i
+$1(a){var s,r,q,p,o,n,m,l,k,j=null,i=J.F(a),h=i.h(a,"expected")
+h=A.u(h==null?i.h(a,"expected_amount"):h)
+s=h==null?j:h
 if(s==null)s=0
-i=A.u(j.h(a,"variance"))
-r=i==null?k:i
-if(r==null)r=h-s
-i=j.h(a,"compliance_status")
-q=i==null?k:J.l(i)
-if(q==null)q="Compliant"
-i=j.h(a,"meeting_date")
-i=i==null?k:J.l(i)
-i=A.a_(A.b(i==null?"":i,k,k,k,k,k,B.aD,k,k,k))
-p=$.am()
-o=p.n(h)
-o=A.a_(A.b(o,k,k,k,k,k,B.dB,k,k,k))
-n=p.n(s)
-n=A.a_(A.b(n,k,k,k,k,k,B.qU,k,k,k))
-p=p.n(r)
-m=r<=0?B.M:B.r
-m=A.a_(A.b(p,k,k,k,k,k,A.U(k,k,m,k,k,k,k,k,k,k,A.a([new A.Bg()],t.eL),12,k,k,B.C,k,k,!0,k,k,k,k,k,k,k,k),k,k,k))
-p=j.h(a,"officer_name")
-p=p==null?k:J.l(p)
-p=A.a_(A.b(p==null?"":p,k,k,k,k,k,B.aD,k,k,k))
-l=A.a_(this.a.nT(q))
-j=j.h(a,"remarks")
-j=j==null?k:J.l(j)
-return A.dP(A.a([i,o,n,m,p,l,A.a_(A.b(j==null?"":j,k,k,k,k,k,B.aD,k,k,k))],t.F),k,k,k,!1)},
+h=i.h(a,"collected")
+if(h==null)h=i.h(a,"amount_paid")
+h=A.u(h==null?i.h(a,"collected_amount"):h)
+r=h==null?j:h
+if(r==null)r=0
+h=A.u(i.h(a,"variance"))
+q=h==null?j:h
+if(q==null)q=s-r
+h=i.h(a,"compliance_status")
+h=h==null?j:J.l(h)
+if(h==null){h=i.h(a,"status")
+h=h==null?j:J.l(h)
+p=h}else p=h
+if(p==null)p="Compliant"
+h=i.h(a,"meeting_date")
+h=h==null?j:J.l(h)
+h=A.a_(A.b(h==null?"":h,j,j,j,j,j,B.aD,j,j,j))
+o=$.am()
+n=o.n(s)
+n=A.a_(A.b(n,j,j,j,j,j,B.dB,j,j,j))
+m=o.n(r)
+m=A.a_(A.b(m,j,j,j,j,j,B.qU,j,j,j))
+o=o.n(q)
+l=q<=0?B.M:B.r
+l=A.a_(A.b(o,j,j,j,j,j,A.U(j,j,l,j,j,j,j,j,j,j,A.a([new A.Bg()],t.eL),12,j,j,B.C,j,j,!0,j,j,j,j,j,j,j,j),j,j,j))
+o=i.h(a,"officer_name")
+o=o==null?j:J.l(o)
+o=A.a_(A.b(o==null?"":o,j,j,j,j,j,B.aD,j,j,j))
+k=A.a_(this.a.nT(p))
+i=i.h(a,"remarks")
+i=i==null?j:J.l(i)
+return A.dP(A.a([h,n,m,l,o,k,A.a_(A.b(i==null?"":i,j,j,j,j,j,B.aD,j,j,j))],t.F),j,j,j,!1)},
 $S:56}
 A.bgv.prototype={
 $2(a,b){var s,r=null,q=this.a,p=A.bY(B.aiK,r,r,!1,B.aml,r,new A.bgt(q),r,r,q.dy,t.N),o=A.bb(r,B.ac,!1,r,!0,B.t,r,A.bh(),q.fr,r,r,r,r,r,2,B.aiZ,B.w,!0,r,!0,r,!1,r,B.aa,r,r,r,r,r,r,r,r,1,r,r,!1,"\u2022",r,r,r,r,r,!1,r,r,!1,r,!0,r,B.Q,r,r,r,r,r,r,r,r,r,r,r,r,!0,B.Y,r,B.P,r,r,r,r),n=A.at(r,r,B.a0,r,r,r,r,r,r,B.k,r,r,B.a7i,r,r,r,r,r,r,r),m=q.fx
@@ -138928,13 +138954,16 @@ $S:0}
 A.bgw.prototype={
 $1(a){var s,r,q=null,p=this.a,o=J.F(a),n=o.h(a,"from_status")
 n=n==null?q:J.l(n)
-n=A.a_(p.uG(n==null?"Unknown":n))
+if(n==null){n=o.h(a,"previous_status")
+n=n==null?q:J.l(n)}n=A.a_(p.uG(n==null?"Unknown":n))
 s=o.h(a,"to_status")
 s=s==null?q:J.l(s)
-p=A.a_(p.uG(s==null?"Unknown":s))
+if(s==null){s=o.h(a,"new_status")
+s=s==null?q:J.l(s)}p=A.a_(p.uG(s==null?"Unknown":s))
 s=o.h(a,"changed_at")
 s=s==null?q:J.l(s)
-s=A.a_(A.b(s==null?"":s,q,q,q,q,q,B.aD,q,q,q))
+if(s==null){s=o.h(a,"date_time")
+s=s==null?q:J.l(s)}s=A.a_(A.b(s==null?"":s,q,q,q,q,q,B.aD,q,q,q))
 r=o.h(a,"reason")
 r=r==null?q:J.l(r)
 r=A.a_(A.b(r==null?"":r,q,q,q,q,q,B.aD,q,q,q))
@@ -139416,37 +139445,45 @@ s=A.D(s,s.$ti.i("N.E"))
 return A.h8(A.bw(A.ej(r,r,B.aoA,r,r,r,new A.bn(B.v,t.B),r,r,r,s),r,B.w,r,r,B.G),r,r,r,!0)},
 $S:57}
 A.beJ.prototype={
-$1(a){var s,r=null,q=A.d(8),p=A.t(B.n,B.j,1),o=A.d(6),n=A.t(B.aX,B.j,1),m=J.F(a),l=m.h(a,"action")
-l=l==null?r:J.l(l)
-o=A.f(r,A.b(l==null?"Action":l,r,r,r,r,r,B.jU,r,r,r),B.h,r,r,new A.h(B.ad,r,n,o,r,r,B.i),r,r,r,B.bG,r,r,r)
-n=m.h(a,"timestamp")
-n=n==null?r:J.l(n)
-l=t.p
-n=A.i(A.a([o,A.b(n==null?"":n,r,r,r,r,r,B.b3,r,r,r)],l),B.e,B.E,B.b,0,r,r)
-o=m.h(a,"details")
-o=o==null?r:J.l(o)
-o=A.b(o==null?"No details logged":o,r,r,r,r,r,B.aHB,r,r,r)
-s=m.h(a,"performed_by")
+$1(a){var s,r,q=null,p=A.d(8),o=A.t(B.n,B.j,1),n=A.d(6),m=A.t(B.aX,B.j,1),l=J.F(a),k=l.h(a,"action")
+k=k==null?q:J.l(k)
+n=A.f(q,A.b(k==null?"Action":k,q,q,q,q,q,B.jU,q,q,q),B.h,q,q,new A.h(B.ad,q,m,n,q,q,B.i),q,q,q,B.bG,q,q,q)
+m=l.h(a,"timestamp")
+if(m==null)m=l.h(a,"created_at")
+m=m==null?q:J.l(m)
+k=t.p
+m=A.i(A.a([n,A.b(m==null?"":m,q,q,q,q,q,B.b3,q,q,q)],k),B.e,B.E,B.b,0,q,q)
+n=l.h(a,"details")
+if(n==null)n=l.h(a,"description")
+n=n==null?q:J.l(n)
+n=A.b(n==null?"No details logged":n,q,q,q,q,q,B.aHB,q,q,q)
+s=l.h(a,"performed_by")
+if(s==null)s=l.h(a,"user_id")
 s=A.r(s==null?"System":s)
-m=m.h(a,"entity")
-return A.f(r,A.o(A.a([n,B.H,o,B.ah,A.b("By: "+s+" \xb7 Entity: "+A.r(m==null?"Client":m),r,r,r,r,r,B.b3,r,r,r)],l),B.l,r,B.c,B.b),B.h,r,r,new A.h(B.k,r,p,q,r,r,B.i),r,r,B.e1,B.aY,r,r,r)},
+r=l.h(a,"entity")
+l=r==null?l.h(a,"table_name"):r
+return A.f(q,A.o(A.a([m,B.H,n,B.ah,A.b("By: "+s+" \xb7 Entity: "+A.r(l==null?"Client":l),q,q,q,q,q,B.b3,q,q,q)],k),B.l,q,B.c,B.b),B.h,q,q,new A.h(B.k,q,o,p,q,q,B.i),q,q,B.e1,B.aY,q,q,q)},
 $S:53}
 A.beK.prototype={
-$1(a){var s,r,q,p=null,o=J.F(a),n=o.h(a,"timestamp")
-n=n==null?p:J.l(n)
-n=A.a_(A.b(n==null?"":n,p,p,p,p,p,B.aD,p,p,p))
-s=o.h(a,"action")
-s=s==null?p:J.l(s)
-s=A.a_(A.b(s==null?"":s,p,p,p,p,p,B.k_,p,p,p))
-r=o.h(a,"entity")
-r=r==null?p:J.l(r)
-r=A.a_(A.b(r==null?"":r,p,p,p,p,p,B.aD,p,p,p))
-q=o.h(a,"performed_by")
-q=q==null?p:J.l(q)
-q=A.a_(A.b(q==null?"":q,p,p,p,p,p,B.aD,p,p,p))
-o=o.h(a,"details")
-o=o==null?p:J.l(o)
-return A.dP(A.a([n,s,r,q,A.a_(A.b(o==null?"":o,p,p,p,p,p,B.aD,p,p,p))],t.F),p,p,p,!1)},
+$1(a){var s,r,q,p,o=null,n=J.F(a),m=n.h(a,"timestamp")
+if(m==null)m=n.h(a,"created_at")
+m=m==null?o:J.l(m)
+m=A.a_(A.b(m==null?"":m,o,o,o,o,o,B.aD,o,o,o))
+s=n.h(a,"action")
+s=s==null?o:J.l(s)
+s=A.a_(A.b(s==null?"":s,o,o,o,o,o,B.k_,o,o,o))
+r=n.h(a,"entity")
+if(r==null)r=n.h(a,"table_name")
+r=r==null?o:J.l(r)
+r=A.a_(A.b(r==null?"":r,o,o,o,o,o,B.aD,o,o,o))
+q=n.h(a,"performed_by")
+if(q==null)q=n.h(a,"user_id")
+q=q==null?o:J.l(q)
+q=A.a_(A.b(q==null?"":q,o,o,o,o,o,B.aD,o,o,o))
+p=n.h(a,"details")
+n=p==null?n.h(a,"description"):p
+n=n==null?o:J.l(n)
+return A.dP(A.a([m,s,r,q,A.a_(A.b(n==null?"":n,o,o,o,o,o,B.aD,o,o,o))],t.F),o,o,o,!1)},
 $S:56}
 A.bzz.prototype={
 $1(a){return"Individual Savings"},
