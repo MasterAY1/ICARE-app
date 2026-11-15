@@ -10,10 +10,12 @@ class CashbookInflows(BaseModel):
     savings_deposit: float = 0.0
     laps_reserve: float = 0.0
     rep_daily: float = 0.0
+    rep_120_days: float = 0.0
     rep_12_weeks: float = 0.0
     rep_24_weeks: float = 0.0
     rep_monthly: float = 0.0
     daily_11_pct: float = 0.0
+    daily_20_pct: float = 0.0
     weekly_11_pct: float = 0.0
     weekly_20_pct: float = 0.0
     risk_premium_returns: float = 0.0
@@ -22,6 +24,8 @@ class CashbookInflows(BaseModel):
     credit_form_damage: float = 0.0
     passbook: float = 0.0
     bonus: float = 0.0
+    misc_fees: float = 0.0
+    eod_misc_fee: float = 0.0
     cash_and_carry: float = 0.0
     asset_credit_sales: float = 0.0
     bank_withdrawal: float = 0.0
@@ -29,6 +33,7 @@ class CashbookInflows(BaseModel):
 
 class CashbookOutflows(BaseModel):
     active_loan_daily: float = 0.0
+    active_loan_120d: float = 0.0
     active_loan_12w: float = 0.0
     active_loan_24w: float = 0.0
     active_loan_monthly: float = 0.0

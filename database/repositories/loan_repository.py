@@ -178,6 +178,15 @@ class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
             except Exception:
                 pass
 
+        status_val = entity.status.value if hasattr(entity.status, 'value') else entity.status
+        explicit_disb = (
+            entity.disbursement_date.isoformat()
+            if hasattr(entity, 'disbursement_date') and entity.disbursement_date
+            else entity.extra_fields.get("disbursement_date")
+        )
+        if not explicit_disb and str(status_val).strip().lower() != "pending":
+            explicit_disb = entity.start_date.isoformat() if entity.start_date else date.today().isoformat()
+
         db_dict = {
             "client_id": clean_uuid(c_id),
             "product_id": product_id,
@@ -188,9 +197,9 @@ class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
             "active_credit": entity.extra_fields.get("active_credit", entity.amount),
             "loan_repay": entity.extra_fields.get("loan_repay", entity.expected_installment),
             "total_due": entity.extra_fields.get("total_due", entity.total_payable),
-            "status": entity.status.value if hasattr(entity.status, 'value') else entity.status,
+            "status": status_val,
             "product_category": entity.extra_fields.get("product_category", "Finance"),
-            "disbursement_date": (entity.disbursement_date.isoformat() if hasattr(entity, 'disbursement_date') and entity.disbursement_date else (entity.extra_fields.get("disbursement_date") or (entity.start_date.isoformat() if entity.start_date else date.today().isoformat()))),
+            "disbursement_date": explicit_disb,
             "start_date": entity.start_date.isoformat() if entity.start_date else None,
             "expected_end_date": entity.end_date.isoformat() if entity.end_date else None,
             "extra_fields": entity.extra_fields

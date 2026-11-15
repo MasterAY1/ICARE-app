@@ -15,6 +15,7 @@ class MasterCashbookInflowsData {
   final double fundsReceivedOtherArea;
   final double assetCreditSales;
   final double cashAndCarry;
+  final double loanReceivedAsset;
   final double loanReceivedFinance;
   final double daily11Pct;
   final double daily20Pct;
@@ -43,6 +44,7 @@ class MasterCashbookInflowsData {
     this.fundsReceivedOtherArea = 0.0,
     this.assetCreditSales = 0.0,
     this.cashAndCarry = 0.0,
+    this.loanReceivedAsset = 0.0,
     this.loanReceivedFinance = 0.0,
     this.daily11Pct = 0.0,
     this.daily20Pct = 0.0,
@@ -74,6 +76,7 @@ class MasterCashbookInflowsData {
       fundsReceivedOtherArea: toD(json['funds_received_other_area']),
       assetCreditSales: toD(json['asset_credit_sales']),
       cashAndCarry: toD(json['cash_and_carry']),
+      loanReceivedAsset: toD(json['loan_received_asset']),
       loanReceivedFinance: toD(json['loan_received_finance']),
       daily11Pct: toD(json['daily_11_pct']),
       daily20Pct: toD(json['daily_20_pct']),
@@ -470,6 +473,7 @@ class MonthlyLedgerRowData {
   final double fundsReceivedOtherArea;
   final double assetCreditSales;
   final double cashAndCarry;
+  final double loanReceivedAsset;
   final double loanReceivedFinance;
   final double daily11Pct;
   final double daily20Pct;
@@ -518,6 +522,7 @@ class MonthlyLedgerRowData {
     this.fundsReceivedOtherArea = 0.0,
     this.assetCreditSales = 0.0,
     this.cashAndCarry = 0.0,
+    this.loanReceivedAsset = 0.0,
     this.loanReceivedFinance = 0.0,
     this.daily11Pct = 0.0,
     this.daily20Pct = 0.0,
@@ -569,6 +574,7 @@ class MonthlyLedgerRowData {
       fundsReceivedOtherArea: toD(json['funds_received_other_area']),
       assetCreditSales: toD(json['asset_credit_sales']),
       cashAndCarry: toD(json['cash_and_carry']),
+      loanReceivedAsset: toD(json['loan_received_asset']),
       loanReceivedFinance: toD(json['loan_received_finance']),
       daily11Pct: toD(json['daily_11_pct']),
       daily20Pct: toD(json['daily_20_pct']),

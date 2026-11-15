@@ -3,17 +3,38 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../core/errors/app_error_formatter.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../data/datasources/co_api_service.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
+import 'co_dashboard_screen.dart';
+import 'daily_cashbook_screen.dart';
+import '../../bm/presentation/bm_dashboard_screen.dart';
+import '../../bm/presentation/master_cashbook_screen.dart';
 
 // ==========================================
 // STATE PROVIDERS
 // ==========================================
 
 final withdrawalTabProvider = StateProvider<String>((ref) => 'Individual Savings');
-final withdrawalOpDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
+final withdrawalBusinessDateProvider = FutureProvider.autoDispose<DateTime?>((ref) async {
+  final api = ref.watch(coApiServiceProvider);
+  try {
+    final res = await api.getOriginationBusinessDate();
+    final raw = res['business_date']?.toString().trim();
+    if (raw != null && raw.length >= 10) {
+      return DateTime.tryParse(raw.substring(0, 10));
+    }
+  } catch (_) {}
+  return null;
+});
+final withdrawalManualOpDateProvider = StateProvider<DateTime?>((ref) => null);
+final withdrawalOpDateProvider = Provider<DateTime>((ref) {
+  return ref.watch(withdrawalManualOpDateProvider) ??
+      ref.watch(withdrawalBusinessDateProvider).valueOrNull ??
+      DateTime.now();
+});
 final dwShowAllProvider = StateProvider<bool>((ref) => false);
 final dwCategoryProvider = StateProvider<String>((ref) => 'All Types');
 final dwSearchProvider = StateProvider<String>((ref) => '');
@@ -72,10 +93,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // Tab 1: Individual State
   String _indGroupFilter = 'All Groups';
   String? _indSelectedClientId;
-  String _indDestOp = 'Client Bank Account (Transfer)';
+  String _indDestOp = 'Cash Withdrawal';
   String? _indSelectedLoanId;
   String _indFeeType = 'credit_form_damage';
-  final String _indTransferTargetCat = 'Individual Member';
+  String _indTransferTargetCat = 'IndividualSavings';
   String? _indTransferRecipientId;
   final _indAmountCtrl = TextEditingController();
   final _indRemarksCtrl = TextEditingController();
@@ -83,19 +104,23 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
 
   // Tab 2: Group State
   String? _grpSelectedGroupId;
-  String _grpDestOp = 'Group Bank Account (Transfer)';
+  String _grpDestOp = 'Cash Withdrawal';
   String? _grpSelectedMemberId;
   String? _grpSelectedLoanId;
-  final String _grpFeeType = 'credit_form_damage';
-  final String _grpTransferTargetCat = 'Group Member';
+  String _grpFeeType = 'credit_form_damage';
+  String _grpTransferTargetCat = 'IndividualSavings';
   String? _grpTransferRecipientId;
+  String? _grpLapsBeneficiaryClientId;
+  String? _grpLapsBeneficiaryClientName;
   final _grpAmountCtrl = TextEditingController();
   final _grpRemarksCtrl = TextEditingController();
   bool _grpAutoExec = false;
 
   // Tab 3: Misc State
+  String _miscPayoutMethod = 'Cash';
   final _miscAmountCtrl = TextEditingController();
   final _miscRemarksCtrl = TextEditingController();
+  bool _miscAutoExec = true;
 
   // Tab 4: LAPS State
   String? _selectedLapsClientId;
@@ -114,8 +139,61 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   String? _flashMessage;
   bool _isSuccessFlash = true;
   bool _isSubmitting = false;
+  final Map<String, String> _attemptIdemKeys = {};
+  int _attemptSeq = 0;
+
+  String _getAttemptIdemKey(String formTag) {
+    return _attemptIdemKeys.putIfAbsent(
+      formTag,
+      () => '$formTag-${DateTime.now().microsecondsSinceEpoch}-${_attemptSeq++}',
+    );
+  }
+
+  void _clearAttemptIdemKey(String formTag) {
+    _attemptIdemKeys.remove(formTag);
+  }
+
+  String get _currentUsername {
+    final authState = ref.read(authControllerProvider);
+    return authState is AuthStateAuthenticated ? authState.user.username.trim() : '';
+  }
+
+  bool get _isManager {
+    final authState = ref.read(authControllerProvider);
+    final role = authState is AuthStateAuthenticated ? authState.user.role : 'Credit Officer';
+    return const {'Branch Manager', 'BM', 'Area Manager', 'AM', 'Admin', 'Super Admin'}.contains(role);
+  }
+
+  static final RegExp _internalTagPattern = RegExp(
+    r'\[(?:DEST_ID|DEST_NAME|DEST_TYPE|FEE|LOAN_OFFSET|IDEMPOTENCY):[^\]]*\]\s*',
+    caseSensitive: false,
+  );
+
+  String _cleanRemarks(dynamic raw) {
+    return (raw ?? '').toString().replaceAll(_internalTagPattern, '').trim();
+  }
+
+  void _invalidateAfterWithdrawalMutation() {
+    ref.invalidate(withdrawalBusinessDateProvider);
+    ref.invalidate(individualOptionsProvider);
+    ref.invalidate(groupOptionsProvider);
+    ref.invalidate(miscBalanceProvider);
+    ref.invalidate(lapsOptionsProvider);
+    ref.invalidate(dailyWithdrawalsProvider);
+    ref.invalidate(pendingApprovalsProvider);
+    ref.invalidate(coDashboardProvider);
+    ref.invalidate(bmDashboardDataProvider);
+    ref.invalidate(masterDailyCashbookProvider);
+    ref.invalidate(coCashbookDataProvider);
+  }
 
   static const List<Map<String, dynamic>> _indDestOptions = [
+    {
+      'value': 'Cash Withdrawal',
+      'title': 'Cash Withdrawal',
+      'subtitle': 'Physical cash withdrawal paid from branch vault cash',
+      'icon': Icons.payments_outlined,
+    },
     {
       'value': 'Client Bank Account (Transfer)',
       'title': 'Client Bank Account (Transfer)',
@@ -149,6 +227,12 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   ];
 
   static const List<Map<String, dynamic>> _grpDestOptions = [
+    {
+      'value': 'Cash Withdrawal',
+      'title': 'Cash Withdrawal',
+      'subtitle': 'Physical cash withdrawal paid from branch vault cash',
+      'icon': Icons.payments_outlined,
+    },
     {
       'value': 'Group Bank Account (Transfer)',
       'title': 'Group Bank Account (Transfer)',
@@ -205,7 +289,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // ==========================================================================
   // TAB 1: INDIVIDUAL SAVINGS SUBMISSION
   // ==========================================================================
-  Future<void> _submitIndividualWithdrawal(Map<String, dynamic> clientData) async {
+  Future<void> _submitIndividualWithdrawal(
+    Map<String, dynamic> clientData, {
+    required List<Map<String, dynamic>> allClients,
+    required List<Map<String, dynamic>> allGroups,
+  }) async {
     final amt = double.tryParse(_indAmountCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
     final bal = (clientData['savings_balance'] as num?)?.toDouble() ?? 0.0;
     final cId = clientData['client_id']?.toString() ?? '';
@@ -215,13 +303,59 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       _showFlash('Amount must be greater than zero.', isSuccess: false);
       return;
     }
-    if (amt > bal) {
+    if (amt > bal + 0.01) {
       _showFlash('Insufficient balance. Available: ${CurrencyFormatter.formatNaira(bal)}', isSuccess: false);
       return;
     }
-    if (_indDestOp == 'Loan Repayment / Asset Debt Offset' && (_indSelectedLoanId == null || _indSelectedLoanId!.isEmpty)) {
-      _showFlash('Select an eligible loan for debt offset.', isSuccess: false);
+    if (_indDestOp == 'Loan Repayment / Asset Debt Offset') {
+      if (_indSelectedLoanId == null || _indSelectedLoanId!.isEmpty) {
+        _showFlash('Select an eligible loan for debt offset.', isSuccess: false);
+        return;
+      }
+      final loans = (clientData['eligible_loans'] as List<dynamic>? ?? [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      final targetLoan = loans.firstWhere(
+        (l) => l['loan_id']?.toString() == _indSelectedLoanId,
+        orElse: () => <String, dynamic>{},
+      );
+      final loanBal = (targetLoan['balance'] as num?)?.toDouble();
+      if (loanBal != null && amt > loanBal + 0.01) {
+        _showFlash(
+          'Offset amount exceeds remaining loan balance of ${CurrencyFormatter.formatNaira(loanBal)}.',
+          isSuccess: false,
+        );
+        return;
+      }
+    }
+    if (_indDestOp == 'Another Member or Group Savings' && (_indTransferRecipientId == null || _indTransferRecipientId!.isEmpty)) {
+      _showFlash('Select a transfer recipient account.', isSuccess: false);
       return;
+    }
+
+    String? destId;
+    String? destName;
+    String? destType;
+    if (_indDestOp == 'Loan Repayment / Asset Debt Offset') {
+      destId = _indSelectedLoanId;
+      destType = 'Loan';
+    } else if (_indDestOp == 'Another Member or Group Savings') {
+      destId = _indTransferRecipientId;
+      destType = _indTransferTargetCat;
+      if (_indTransferTargetCat == 'GroupSavings') {
+        final grp = allGroups.firstWhere(
+          (g) => g['group_id']?.toString() == destId,
+          orElse: () => <String, dynamic>{},
+        );
+        destName = grp['name']?.toString() ?? grp['label']?.toString();
+      } else {
+        final cli = allClients.firstWhere(
+          (c) => c['client_id']?.toString() == destId,
+          orElse: () => <String, dynamic>{},
+        );
+        destName = cli['name']?.toString();
+      }
     }
 
     setState(() => _isSubmitting = true);
@@ -229,25 +363,22 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       final opDate = ref.read(withdrawalOpDateProvider);
       final dateStr = DateFormat('yyyy-MM-dd').format(opDate);
 
-      String remFinal = _indRemarksCtrl.text.trim();
-      if (_indDestOp == 'Loan Repayment / Asset Debt Offset') {
-        remFinal = '[LOAN_OFFSET:$_indSelectedLoanId] $remFinal'.trim();
-      } else if (_indDestOp == 'Fee Payment from Savings') {
-        remFinal = '[FEE:$_indFeeType] $remFinal'.trim();
-      } else if (_indDestOp == 'Another Member or Group Savings') {
-        remFinal = '[DEST_ID:$_indTransferRecipientId][DEST_TYPE:$_indTransferTargetCat] $remFinal'.trim();
-      }
-
-      final payload = {
+      final payload = <String, dynamic>{
         'savings_type': 'Individual',
         'operation_type': _indDestOp,
         'client_id': cId,
         'client_name': cName,
-        'loan_id': _indSelectedLoanId,
+        'loan_id': _indDestOp == 'Loan Repayment / Asset Debt Offset' ? _indSelectedLoanId : null,
+        'destination_id': destId,
+        'destination_name': destName,
+        'destination_type': destType,
+        'fee_type': _indDestOp == 'Fee Payment from Savings' ? _indFeeType : null,
         'amount': amt,
         'operational_date': dateStr,
-        'remarks': remFinal,
-        'auto_execute': _indAutoExec,
+        'payout_method': _indDestOp == 'Client Bank Account (Transfer)' ? 'Bank Transfer' : 'Cash',
+        'remarks': _indRemarksCtrl.text.trim(),
+        'auto_execute': _isManager ? _indAutoExec : false,
+        'idempotency_key': _getAttemptIdemKey('ind'),
       };
 
       final api = ref.read(coApiServiceProvider);
@@ -256,10 +387,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       _showFlash(res['message']?.toString() ?? 'Withdrawal request submitted successfully!');
       _indAmountCtrl.clear();
       _indRemarksCtrl.clear();
-      ref.invalidate(individualOptionsProvider);
-      ref.invalidate(dailyWithdrawalsProvider);
+      _clearAttemptIdemKey('ind');
+      _invalidateAfterWithdrawalMutation();
     } catch (e) {
-      _showFlash('Execution failed: $e', isSuccess: false);
+      _showFlash(AppErrorDetails.from(e).message, isSuccess: false);
     } finally {
       setState(() => _isSubmitting = false);
     }
@@ -268,7 +399,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // ==========================================================================
   // TAB 2: GROUP SAVINGS SUBMISSION
   // ==========================================================================
-  Future<void> _submitGroupWithdrawal(Map<String, dynamic> grpData) async {
+  Future<void> _submitGroupWithdrawal(
+    Map<String, dynamic> grpData, {
+    required List<Map<String, dynamic>> allClients,
+    required List<Map<String, dynamic>> allGroups,
+  }) async {
     final amt = double.tryParse(_grpAmountCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
     final bal = (grpData['savings_balance'] as num?)?.toDouble() ?? 0.0;
     final gId = grpData['group_id']?.toString() ?? '';
@@ -278,13 +413,92 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       _showFlash('Amount must be greater than zero.', isSuccess: false);
       return;
     }
-    if (amt > bal) {
+    if (amt > bal + 0.01) {
       _showFlash('Insufficient group balance. Available: ${CurrencyFormatter.formatNaira(bal)}', isSuccess: false);
       return;
     }
-    if (_grpDestOp.contains('Loan Repayment') && (_grpSelectedLoanId == null || _grpSelectedLoanId!.isEmpty)) {
-      _showFlash('Select a member and loan for debt offset.', isSuccess: false);
+    final grpMembers = (grpData['members'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+    if (_grpDestOp.contains('Loan Repayment')) {
+      if (_grpSelectedMemberId == null || _grpSelectedLoanId == null || _grpSelectedLoanId!.isEmpty) {
+        _showFlash('Select a member and eligible loan for debt offset.', isSuccess: false);
+        return;
+      }
+      final selMem = grpMembers.firstWhere(
+        (m) => m['client_id']?.toString() == _grpSelectedMemberId,
+        orElse: () => <String, dynamic>{},
+      );
+      final mLoans = (selMem['eligible_loans'] as List<dynamic>? ?? [])
+          .whereType<Map>()
+          .map((l) => Map<String, dynamic>.from(l))
+          .toList();
+      final targetLoan = mLoans.firstWhere(
+        (l) => l['loan_id']?.toString() == _grpSelectedLoanId,
+        orElse: () => <String, dynamic>{},
+      );
+      final loanBal = (targetLoan['balance'] as num?)?.toDouble();
+      if (loanBal != null && amt > loanBal + 0.01) {
+        _showFlash(
+          'Offset amount exceeds member remaining loan balance of ${CurrencyFormatter.formatNaira(loanBal)}.',
+          isSuccess: false,
+        );
+        return;
+      }
+    }
+    if (_grpDestOp == 'Another Member or Group Savings' && (_grpTransferRecipientId == null || _grpTransferRecipientId!.isEmpty)) {
+      _showFlash('Select a transfer destination.', isSuccess: false);
       return;
+    }
+    if (_grpDestOp.contains('LAPS Reserve') && (_grpLapsBeneficiaryClientId == null || _grpLapsBeneficiaryClientId!.isEmpty)) {
+      _showFlash('Select a beneficiary group member for LAPS protection transfer.', isSuccess: false);
+      return;
+    }
+
+    String? destId;
+    String? destName;
+    String? destType;
+    String? reqClientId;
+    String? reqClientName = gName;
+
+    if (_grpDestOp.contains('Loan Repayment')) {
+      destId = _grpSelectedLoanId;
+      destType = 'Loan';
+      reqClientId = _grpSelectedMemberId;
+    } else if (_grpDestOp.contains('Fee Payment')) {
+      if (_grpSelectedMemberId != null && _grpSelectedMemberId!.isNotEmpty) {
+        final feeMem = grpMembers.firstWhere(
+          (m) => m['client_id']?.toString() == _grpSelectedMemberId,
+          orElse: () => <String, dynamic>{},
+        );
+        reqClientId = _grpSelectedMemberId;
+        destId = _grpSelectedMemberId;
+        destName = feeMem['name']?.toString();
+        destType = 'Member';
+      }
+    } else if (_grpDestOp == 'Another Member or Group Savings') {
+      destId = _grpTransferRecipientId;
+      destType = _grpTransferTargetCat;
+      if (_grpTransferTargetCat == 'GroupSavings') {
+        final grp = allGroups.firstWhere(
+          (g) => g['group_id']?.toString() == destId,
+          orElse: () => <String, dynamic>{},
+        );
+        destName = grp['name']?.toString() ?? grp['label']?.toString();
+      } else {
+        final cli = allClients.firstWhere(
+          (c) => c['client_id']?.toString() == destId,
+          orElse: () => <String, dynamic>{},
+        );
+        destName = cli['name']?.toString();
+      }
+    } else if (_grpDestOp.contains('LAPS Reserve')) {
+      reqClientId = _grpLapsBeneficiaryClientId;
+      reqClientName = _grpLapsBeneficiaryClientName ?? gName;
+      destId = _grpLapsBeneficiaryClientId;
+      destName = _grpLapsBeneficiaryClientName;
+      destType = 'LAPS';
     }
 
     setState(() => _isSubmitting = true);
@@ -292,26 +506,24 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       final opDate = ref.read(withdrawalOpDateProvider);
       final dateStr = DateFormat('yyyy-MM-dd').format(opDate);
 
-      String remFinal = _grpRemarksCtrl.text.trim();
-      if (_grpDestOp.contains('Loan Repayment')) {
-        remFinal = '[LOAN_OFFSET:$_grpSelectedLoanId] $remFinal'.trim();
-      } else if (_grpDestOp.contains('Fee Payment')) {
-        remFinal = '[FEE:$_grpFeeType] $remFinal'.trim();
-      } else if (_grpDestOp.contains('Another Member')) {
-        remFinal = '[DEST_ID:$_grpTransferRecipientId][DEST_TYPE:$_grpTransferTargetCat] $remFinal'.trim();
-      }
-
-      final payload = {
+      final payload = <String, dynamic>{
         'savings_type': 'Group',
         'operation_type': _grpDestOp,
-        'client_id': _grpSelectedMemberId,
-        'client_name': gName,
-        'group_name': gId,
-        'loan_id': _grpSelectedLoanId,
+        'client_id': reqClientId,
+        'client_name': reqClientName,
+        'group_id': gId,
+        'group_name': gName,
+        'loan_id': _grpDestOp.contains('Loan Repayment') ? _grpSelectedLoanId : null,
+        'destination_id': destId,
+        'destination_name': destName,
+        'destination_type': destType,
+        'fee_type': _grpDestOp.contains('Fee Payment') ? _grpFeeType : null,
         'amount': amt,
         'operational_date': dateStr,
-        'remarks': remFinal,
-        'auto_execute': _grpAutoExec,
+        'payout_method': _grpDestOp == 'Group Bank Account (Transfer)' ? 'Bank Transfer' : 'Cash',
+        'remarks': _grpRemarksCtrl.text.trim(),
+        'auto_execute': _isManager ? _grpAutoExec : false,
+        'idempotency_key': _getAttemptIdemKey('grp'),
       };
 
       final api = ref.read(coApiServiceProvider);
@@ -320,10 +532,56 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       _showFlash(res['message']?.toString() ?? 'Group withdrawal request submitted successfully!');
       _grpAmountCtrl.clear();
       _grpRemarksCtrl.clear();
-      ref.invalidate(groupOptionsProvider);
-      ref.invalidate(dailyWithdrawalsProvider);
+      _clearAttemptIdemKey('grp');
+      _invalidateAfterWithdrawalMutation();
     } catch (e) {
-      _showFlash('Execution failed: $e', isSuccess: false);
+      _showFlash(AppErrorDetails.from(e).message, isSuccess: false);
+    } finally {
+      setState(() => _isSubmitting = false);
+    }
+  }
+
+  // ==========================================================================
+  // TAB 3: MISC SAVINGS SUBMISSION (BRANCH MANAGER / DESIGNATED OFFICER)
+  // ==========================================================================
+  Future<void> _submitMiscWithdrawal(double bal) async {
+    final amt = double.tryParse(_miscAmountCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+    if (amt <= 0) {
+      _showFlash('Withdrawal amount must be greater than zero.', isSuccess: false);
+      return;
+    }
+    if (amt > bal + 0.01) {
+      _showFlash('Insufficient Misc pool balance. Available: ${CurrencyFormatter.formatNaira(bal)}', isSuccess: false);
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      final opDate = ref.read(withdrawalOpDateProvider);
+      final dateStr = DateFormat('yyyy-MM-dd').format(opDate);
+      final opType = _miscPayoutMethod == 'Bank Transfer' ? 'Bank Transfer' : 'Cash Withdrawal';
+
+      final payload = <String, dynamic>{
+        'savings_type': 'Misc',
+        'operation_type': opType,
+        'amount': amt,
+        'operational_date': dateStr,
+        'payout_method': _miscPayoutMethod,
+        'remarks': _miscRemarksCtrl.text.trim(),
+        'auto_execute': _isManager ? _miscAutoExec : false,
+        'idempotency_key': _getAttemptIdemKey('misc'),
+      };
+
+      final api = ref.read(coApiServiceProvider);
+      final res = await api.submitWithdrawalRequest(payload);
+
+      _showFlash(res['message']?.toString() ?? 'Misc savings withdrawal processed successfully!');
+      _miscAmountCtrl.clear();
+      _miscRemarksCtrl.clear();
+      _clearAttemptIdemKey('misc');
+      _invalidateAfterWithdrawalMutation();
+    } catch (e) {
+      _showFlash(AppErrorDetails.from(e).message, isSuccess: false);
     } finally {
       setState(() => _isSubmitting = false);
     }
@@ -336,12 +594,13 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
     final amt = double.tryParse(_lapsAmountCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
     final bal = (lapsRec['balance'] as num?)?.toDouble() ?? 0.0;
     final cId = lapsRec['client_id']?.toString() ?? '';
+    final cName = lapsRec['client_name']?.toString();
 
     if (amt <= 0) {
       _showFlash('Payout amount must be greater than zero.', isSuccess: false);
       return;
     }
-    if (amt > bal) {
+    if (amt > bal + 0.01) {
       _showFlash('Insufficient LAPS balance. Available: ${CurrencyFormatter.formatNaira(bal)}', isSuccess: false);
       return;
     }
@@ -352,15 +611,17 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       final dateStr = DateFormat('yyyy-MM-dd').format(opDate);
 
       final isReturn = _lapsPayoutMethod == 'Return to Savings';
-      final payload = {
+      final payload = <String, dynamic>{
         'savings_type': 'LAPS',
         'operation_type': isReturn ? 'LAPS Return to Customer Savings' : 'LAPS Payout',
         'client_id': cId,
+        'client_name': cName,
         'amount': amt,
         'operational_date': dateStr,
         'payout_method': _lapsPayoutMethod,
         'remarks': _lapsRemarksCtrl.text.trim(),
-        'auto_execute': _lapsAutoExec,
+        'auto_execute': _isManager ? _lapsAutoExec : false,
+        'idempotency_key': _getAttemptIdemKey('laps'),
       };
 
       final api = ref.read(coApiServiceProvider);
@@ -369,10 +630,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       _showFlash(res['message']?.toString() ?? 'LAPS payout submitted successfully!');
       _lapsAmountCtrl.clear();
       _lapsRemarksCtrl.clear();
-      ref.invalidate(lapsOptionsProvider);
-      ref.invalidate(dailyWithdrawalsProvider);
+      _clearAttemptIdemKey('laps');
+      _invalidateAfterWithdrawalMutation();
     } catch (e) {
-      _showFlash('Execution failed: $e', isSuccess: false);
+      _showFlash(AppErrorDetails.from(e).message, isSuccess: false);
     } finally {
       setState(() => _isSubmitting = false);
     }
@@ -387,10 +648,9 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       final api = ref.read(coApiServiceProvider);
       final res = await api.approveWithdrawal(reqId);
       _showFlash(res['message']?.toString() ?? 'Withdrawal approved successfully!');
-      ref.invalidate(pendingApprovalsProvider);
-      ref.invalidate(dailyWithdrawalsProvider);
+      _invalidateAfterWithdrawalMutation();
     } catch (e) {
-      _showFlash('Approval failed: $e', isSuccess: false);
+      _showFlash(AppErrorDetails.from(e).message, isSuccess: false);
     } finally {
       setState(() => _isSubmitting = false);
     }
@@ -412,10 +672,9 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
         _rejectingRequestId = null;
         _rejectReasonCtrl.clear();
       });
-      ref.invalidate(pendingApprovalsProvider);
-      ref.invalidate(dailyWithdrawalsProvider);
+      _invalidateAfterWithdrawalMutation();
     } catch (e) {
-      _showFlash('Rejection failed: $e', isSuccess: false);
+      _showFlash(AppErrorDetails.from(e).message, isSuccess: false);
     } finally {
       setState(() => _isSubmitting = false);
     }
@@ -465,7 +724,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               lastDate: DateTime(2030),
             );
             if (picked != null) {
-              ref.read(withdrawalOpDateProvider.notifier).state = picked;
+              ref.read(withdrawalManualOpDateProvider.notifier).state = picked;
             }
           },
         ),
@@ -506,13 +765,18 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // ==========================================================================
   Widget _buildIndividualTab(bool isManager) {
     final indAsync = ref.watch(individualOptionsProvider);
+    final grpVal = ref.watch(groupOptionsProvider).valueOrNull;
+    final allGroups = ((grpVal?['all_groups'] ?? grpVal?['groups']) as List<dynamic>?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        [];
 
     return indAsync.when(
       loading: () => const IcareFormSkeleton(fieldCount: 4),
-      error: (err, _) => _buildErrorCard('Error loading individual options: $err', () => ref.refresh(individualOptionsProvider)),
+      error: (err, _) => _buildErrorCard(AppErrorDetails.from(err).message, () => ref.refresh(individualOptionsProvider)),
       data: (data) {
         final groups = (data['groups'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? ['All Groups'];
-        final allClients = (data['clients'] as List<dynamic>?)?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+        final allClients = (data['clients'] as List<dynamic>?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
 
         // Filter clients by group
         final filteredClients = allClients.where((c) {
@@ -545,13 +809,48 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
         );
 
         final bal = (selClient['savings_balance'] as num?)?.toDouble() ?? 0.0;
-        final loans = (selClient['eligible_loans'] as List<dynamic>?)?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+        final loans = ((selClient['eligible_loans'] as List<dynamic>?)
+                    ?.map((e) => Map<String, dynamic>.from(e as Map))
+                    .toList() ??
+                [])
+            .where((l) => (l['status']?.toString().trim().toLowerCase() ?? '') != 'pending')
+            .toList();
 
         // Selected loan
-        if (loans.isNotEmpty && (_indSelectedLoanId == null || !loans.any((l) => l['loan_id'] == _indSelectedLoanId))) {
-          _indSelectedLoanId = loans.first['loan_id']?.toString();
+        if (loans.isNotEmpty) {
+          if (_indSelectedLoanId == null || !loans.any((l) => l['loan_id'] == _indSelectedLoanId)) {
+            _indSelectedLoanId = loans.first['loan_id']?.toString();
+          }
+        } else {
+          _indSelectedLoanId = null;
         }
         Map<String, dynamic>? selLoan = loans.isNotEmpty ? loans.firstWhere((l) => l['loan_id'] == _indSelectedLoanId, orElse: () => loans.first) : null;
+
+        final validIndTransferItems = _indTransferTargetCat == 'GroupSavings'
+            ? allGroups
+                .map((g) => DropdownMenuItem<String>(
+                      value: g['group_id']?.toString(),
+                      child: Text(
+                        (g['label'] ?? g['name'] ?? 'Group').toString(),
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: true,
+                      ),
+                    ))
+                .toList()
+            : allClients
+                .where((c) => c['client_id']?.toString() != _indSelectedClientId)
+                .map((c) => DropdownMenuItem<String>(
+                      value: c['client_id']?.toString(),
+                      child: Text(
+                        '${c['name']} (${c['client_code']})',
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: true,
+                      ),
+                    ))
+                .toList();
+        final safeIndTransferVal = validIndTransferItems.any((i) => i.value == _indTransferRecipientId)
+            ? _indTransferRecipientId
+            : null;
 
         return _buildFormCard(
           title: 'Individual Savings Withdrawal',
@@ -573,7 +872,14 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   ),
                   items: groups.map((g) => DropdownMenuItem(value: g, child: Text(g, overflow: TextOverflow.ellipsis, softWrap: true))).toList(),
                   onChanged: (val) {
-                    if (val != null) setState(() => _indGroupFilter = val);
+                    if (val != null) {
+                      setState(() {
+                        _indGroupFilter = val;
+                        _indSelectedClientId = null;
+                        _indSelectedLoanId = null;
+                        _clearAttemptIdemKey('ind');
+                      });
+                    }
                   },
                 );
 
@@ -592,7 +898,13 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     return DropdownMenuItem(value: c['client_id']?.toString(), child: Text(label, overflow: TextOverflow.ellipsis, softWrap: true));
                   }).toList(),
                   onChanged: (val) {
-                    if (val != null) setState(() => _indSelectedClientId = val);
+                    if (val != null) {
+                      setState(() {
+                        _indSelectedClientId = val;
+                        _indSelectedLoanId = null;
+                        _clearAttemptIdemKey('ind');
+                      });
+                    }
                   },
                 );
 
@@ -735,21 +1047,38 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               const SizedBox(height: 10),
             ] else if (_indDestOp == 'Another Member or Group Savings') ...[
               DropdownButtonFormField<String>(
-                value: _indTransferRecipientId,
+                value: _indTransferTargetCat,
                 isExpanded: true,
                 decoration: const InputDecoration(
-                  labelText: 'Recipient Member',
+                  labelText: 'Transfer Destination Type',
                   isDense: true,
-                  
                   border: OutlineInputBorder(),
                   contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
-                items: allClients.where((c) => c['client_id'] != _indSelectedClientId).map((c) {
-                  return DropdownMenuItem(
-                    value: c['client_id']?.toString(),
-                    child: Text('${c['name']} (${c['client_code']})', overflow: TextOverflow.ellipsis, softWrap: true),
-                  );
-                }).toList(),
+                items: const [
+                  DropdownMenuItem(value: 'IndividualSavings', child: Text('Another Client Savings Account')),
+                  DropdownMenuItem(value: 'GroupSavings', child: Text('Group Collective Savings Account')),
+                ],
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() {
+                      _indTransferTargetCat = val;
+                      _indTransferRecipientId = null;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: safeIndTransferVal,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: _indTransferTargetCat == 'GroupSavings' ? 'Recipient Group Account' : 'Recipient Member',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                items: validIndTransferItems,
                 onChanged: (val) {
                   if (val != null) setState(() => _indTransferRecipientId = val);
                 },
@@ -795,8 +1124,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               CheckboxListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Direct BM Authorization & Immediate Ledger Posting', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                subtitle: const Text('Direct BM execution: Posts immediately to ledgers without pending queue.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                title: const Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                subtitle: const Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                 value: _indAutoExec,
                 activeColor: const Color(0xFF15803D),
                 onChanged: (v) => setState(() => _indAutoExec = v ?? false),
@@ -823,12 +1152,18 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   _isSubmitting
                       ? 'Processing...'
                       : (isManager && _indAutoExec)
-                          ? 'Authorize & Post Withdrawal to Ledger'
+                          ? 'Authorize & Settle Withdrawal'
                           : 'Submit for BM Approval',
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                   softWrap: true,
                 ),
-                onPressed: _isSubmitting ? null : () => _submitIndividualWithdrawal(selClient),
+                onPressed: _isSubmitting
+                    ? null
+                    : () => _submitIndividualWithdrawal(
+                          selClient,
+                          allClients: allClients,
+                          allGroups: allGroups,
+                        ),
               ),
             ),
           ],
@@ -838,16 +1173,25 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   }
 
   // ==========================================================================
-  // TAB 2 BUILDER: GROUP SAVINGS (app.py L7647–7956)
+  // TAB 2 BUILDER: GROUP SAVINGS
   // ==========================================================================
   Widget _buildGroupTab(bool isManager) {
     final grpAsync = ref.watch(groupOptionsProvider);
+    final indVal = ref.watch(individualOptionsProvider).valueOrNull;
+    final allClients = (indVal?['clients'] as List<dynamic>?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        [];
 
     return grpAsync.when(
       loading: () => const IcareFormSkeleton(fieldCount: 4),
-      error: (err, _) => _buildErrorCard('Error loading group options: $err', () => ref.refresh(groupOptionsProvider)),
+      error: (err, _) => _buildErrorCard(AppErrorDetails.from(err).message, () => ref.refresh(groupOptionsProvider)),
       data: (data) {
-        final groups = (data['groups'] as List<dynamic>?)?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+        final groups = (data['groups'] as List<dynamic>?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
+        final allGroups = ((data['all_groups'] ?? data['groups']) as List<dynamic>?)
+                ?.map((e) => Map<String, dynamic>.from(e as Map))
+                .toList() ??
+            [];
 
         if (groups.isEmpty) {
           return Container(
@@ -867,8 +1211,76 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
           _grpSelectedGroupId = groups.first['group_id']?.toString();
         }
         final selGrp = groups.firstWhere((g) => g['group_id'] == _grpSelectedGroupId, orElse: () => groups.first);
-
+        final gId = selGrp['group_id']?.toString() ?? '';
         final bal = (selGrp['savings_balance'] as num?)?.toDouble() ?? 0.0;
+        final members = (selGrp['members'] as List<dynamic>?)
+                ?.map((e) => Map<String, dynamic>.from(e as Map))
+                .toList() ??
+            [];
+
+        if (members.isNotEmpty) {
+          if (_grpSelectedMemberId == null || !members.any((m) => m['client_id']?.toString() == _grpSelectedMemberId)) {
+            _grpSelectedMemberId = members.first['client_id']?.toString();
+          }
+          if (_grpLapsBeneficiaryClientId == null || !members.any((m) => m['client_id']?.toString() == _grpLapsBeneficiaryClientId)) {
+            _grpLapsBeneficiaryClientId = members.first['client_id']?.toString();
+            _grpLapsBeneficiaryClientName = members.first['name']?.toString();
+          }
+        } else {
+          _grpSelectedMemberId = null;
+          _grpSelectedLoanId = null;
+          _grpLapsBeneficiaryClientId = null;
+          _grpLapsBeneficiaryClientName = null;
+        }
+
+        final Map<String, dynamic>? selMember = members.isNotEmpty
+            ? members.firstWhere((m) => m['client_id']?.toString() == _grpSelectedMemberId, orElse: () => members.first)
+            : null;
+        final memberLoans = ((selMember?['eligible_loans'] as List<dynamic>?)
+                    ?.map((e) => Map<String, dynamic>.from(e as Map))
+                    .toList() ??
+                [])
+            .where((l) => (l['status']?.toString().trim().toLowerCase() ?? '') != 'pending')
+            .toList();
+        if (memberLoans.isNotEmpty) {
+          if (_grpSelectedLoanId == null || !memberLoans.any((l) => l['loan_id']?.toString() == _grpSelectedLoanId)) {
+            _grpSelectedLoanId = memberLoans.first['loan_id']?.toString();
+          }
+        } else {
+          _grpSelectedLoanId = null;
+        }
+        final Map<String, dynamic>? selMemberLoan = memberLoans.isNotEmpty
+            ? memberLoans.firstWhere((l) => l['loan_id']?.toString() == _grpSelectedLoanId, orElse: () => memberLoans.first)
+            : null;
+
+        final validGrpTransferItems = _grpTransferTargetCat == 'GroupSavings'
+            ? allGroups
+                .where((g) => g['group_id']?.toString() != gId)
+                .map((g) => DropdownMenuItem<String>(
+                      value: g['group_id']?.toString(),
+                      child: Text(
+                        (g['label'] ?? g['name'] ?? 'Group').toString(),
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: true,
+                      ),
+                    ))
+                .toList()
+            : allClients
+                .map((c) => DropdownMenuItem<String>(
+                      value: c['client_id']?.toString(),
+                      child: Text(
+                        '${c['name']} (${c['client_code']})',
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: true,
+                      ),
+                    ))
+                .toList();
+        final safeGrpTransferVal = validGrpTransferItems.any((i) => i.value == _grpTransferRecipientId)
+            ? _grpTransferRecipientId
+            : null;
+        final safeGrpDestOp = _grpDestOptions.any((o) => o['value'] == _grpDestOp)
+            ? _grpDestOp
+            : _grpDestOptions.first['value'] as String;
 
         return _buildFormCard(
           title: 'Group Savings Withdrawal',
@@ -881,13 +1293,21 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               decoration: const InputDecoration(
                 labelText: 'Select Group',
                 isDense: true,
-                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
               items: groups.map((g) => DropdownMenuItem(value: g['group_id']?.toString(), child: Text(g['name']?.toString() ?? 'Group', overflow: TextOverflow.ellipsis, softWrap: true))).toList(),
               onChanged: (val) {
-                if (val != null) setState(() => _grpSelectedGroupId = val);
+                if (val != null) {
+                  setState(() {
+                    _grpSelectedGroupId = val;
+                    _grpSelectedMemberId = null;
+                    _grpSelectedLoanId = null;
+                    _grpLapsBeneficiaryClientId = null;
+                    _grpLapsBeneficiaryClientName = null;
+                    _clearAttemptIdemKey('grp');
+                  });
+                }
               },
             ),
             const SizedBox(height: 10),
@@ -903,12 +1323,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
 
             // 3. Compact Destination Dropdown
             DropdownButtonFormField<String>(
-              value: _grpDestOp,
+              value: safeGrpDestOp,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Destination',
                 isDense: true,
-                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -929,7 +1348,218 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             ),
             const SizedBox(height: 10),
 
-            // 4. Quick Amount Presets & Amount Input
+            // 4. Conditional Destination Fields
+            if (safeGrpDestOp.contains('Loan Repayment')) ...[
+              if (members.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFBEB),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFFDE68A)),
+                  ),
+                  child: const Text('No active members found in this group.', style: TextStyle(color: Color(0xFF92400E), fontSize: 12)),
+                )
+              else ...[
+                DropdownButtonFormField<String>(
+                  value: members.any((m) => m['client_id']?.toString() == _grpSelectedMemberId) ? _grpSelectedMemberId : null,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Select Group Member',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  items: members.map((m) {
+                    return DropdownMenuItem<String>(
+                      value: m['client_id']?.toString(),
+                      child: Text('${m['name']} (${m['client_code']})', overflow: TextOverflow.ellipsis, softWrap: true),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() {
+                        _grpSelectedMemberId = val;
+                        _grpSelectedLoanId = null;
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+                if (memberLoans.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFBEB),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFFDE68A)),
+                    ),
+                    child: const Text('No active loans found for the selected member to offset.', style: TextStyle(color: Color(0xFF92400E), fontSize: 12)),
+                  )
+                else ...[
+                  DropdownButtonFormField<String>(
+                    value: memberLoans.any((l) => l['loan_id']?.toString() == _grpSelectedLoanId) ? _grpSelectedLoanId : null,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Target Member Loan for Debt Offset',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    items: memberLoans.map((l) {
+                      final lbl = l['label']?.toString() ?? 'Loan ${l['loan_id']?.toString().substring(0, 8)}';
+                      return DropdownMenuItem<String>(value: l['loan_id']?.toString(), child: Text(lbl, overflow: TextOverflow.ellipsis, softWrap: true));
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => _grpSelectedLoanId = val);
+                    },
+                  ),
+                  if (selMemberLoan != null) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildMetricTile(
+                            'Loan Balance',
+                            CurrencyFormatter.formatNaira((selMemberLoan['balance'] as num?)?.toDouble() ?? 0.0),
+                            const Color(0xFFDC2626),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildMetricTile(
+                            'Active Credit',
+                            CurrencyFormatter.formatNaira((selMemberLoan['active_credit'] as num?)?.toDouble() ?? 0.0),
+                            const Color(0xFF2563EB),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ],
+              const SizedBox(height: 10),
+            ] else if (safeGrpDestOp.contains('Fee Payment')) ...[
+              if (members.isNotEmpty) ...[
+                DropdownButtonFormField<String>(
+                  value: members.any((m) => m['client_id']?.toString() == _grpSelectedMemberId) ? _grpSelectedMemberId : null,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Attribute Fee to Group Member (Optional)',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  items: members.map((m) {
+                    return DropdownMenuItem<String>(
+                      value: m['client_id']?.toString(),
+                      child: Text('${m['name']} (${m['client_code']})', overflow: TextOverflow.ellipsis, softWrap: true),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    setState(() {
+                      _grpSelectedMemberId = val;
+                      _clearAttemptIdemKey('grp');
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+              DropdownButtonFormField<String>(
+                value: _grpFeeType,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Fee Type',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'credit_form_damage', child: Text('Credit Form Damage Fee')),
+                  DropdownMenuItem(value: 'passbook', child: Text('Passbook Fee')),
+                  DropdownMenuItem(value: 'app_fee', child: Text('Application Fee')),
+                  DropdownMenuItem(value: 'misc_fees', child: Text('Misc Fee / Penalty')),
+                  DropdownMenuItem(value: 'other', child: Text('Other Fee / Shortfall')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setState(() => _grpFeeType = val);
+                },
+              ),
+              const SizedBox(height: 10),
+            ] else if (safeGrpDestOp == 'Another Member or Group Savings') ...[
+              DropdownButtonFormField<String>(
+                value: _grpTransferTargetCat,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Transfer Destination Type',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'IndividualSavings', child: Text('Individual Member Savings Account')),
+                  DropdownMenuItem(value: 'GroupSavings', child: Text('Another Group Savings Account')),
+                ],
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() {
+                      _grpTransferTargetCat = val;
+                      _grpTransferRecipientId = null;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: safeGrpTransferVal,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: _grpTransferTargetCat == 'GroupSavings' ? 'Recipient Group Account' : 'Recipient Client',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                items: validGrpTransferItems,
+                onChanged: (val) {
+                  if (val != null) setState(() => _grpTransferRecipientId = val);
+                },
+              ),
+              const SizedBox(height: 10),
+            ] else if (safeGrpDestOp.contains('LAPS Reserve')) ...[
+              DropdownButtonFormField<String>(
+                value: members.any((m) => m['client_id']?.toString() == _grpLapsBeneficiaryClientId) ? _grpLapsBeneficiaryClientId : null,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Beneficiary Group Member (LAPS Record Holder)',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                items: members.map((m) {
+                  return DropdownMenuItem<String>(
+                    value: m['client_id']?.toString(),
+                    child: Text('${m['name']} (${m['client_code']})', overflow: TextOverflow.ellipsis, softWrap: true),
+                  );
+                }).toList(),
+                onChanged: (val) {
+                  if (val != null) {
+                    final matched = members.firstWhere(
+                      (m) => m['client_id']?.toString() == val,
+                      orElse: () => <String, dynamic>{},
+                    );
+                    setState(() {
+                      _grpLapsBeneficiaryClientId = val;
+                      _grpLapsBeneficiaryClientName = matched['name']?.toString();
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
+
+            // 5. Quick Amount Presets & Amount Input
             _buildAmountPresetChips(availableBalance: bal, controller: _grpAmountCtrl),
             const SizedBox(height: 8),
 
@@ -940,14 +1570,13 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 labelText: 'Amount (₦)',
                 hintText: 'Enter group withdrawal amount...',
                 isDense: true,
-                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
             ),
             const SizedBox(height: 10),
 
-            // 5. Remarks
+            // 6. Remarks
             TextField(
               controller: _grpRemarksCtrl,
               maxLines: 1,
@@ -955,20 +1584,19 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 labelText: 'Remarks & Group Resolution Notes',
                 hintText: 'Resolution reference or details...',
                 isDense: true,
-                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
             ),
             const SizedBox(height: 10),
 
-            // 6. BM Direct Authorization Toggle
+            // 7. BM Direct Authorization Toggle
             if (isManager) ...[
               CheckboxListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Direct BM Authorization & Immediate Ledger Posting', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                subtitle: const Text('Direct BM execution: Posts immediately to ledgers without pending queue.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                title: const Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                subtitle: const Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                 value: _grpAutoExec,
                 activeColor: const Color(0xFF15803D),
                 onChanged: (v) => setState(() => _grpAutoExec = v ?? false),
@@ -977,7 +1605,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               const SizedBox(height: 10),
             ],
 
-            // 7. Submit Button
+            // 8. Submit Button
             SizedBox(
               width: double.infinity,
               height: 42,
@@ -995,12 +1623,18 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   _isSubmitting
                       ? 'Processing...'
                       : (isManager && _grpAutoExec)
-                          ? 'Authorize & Post Group Withdrawal to Ledger'
+                          ? 'Authorize & Settle Group Withdrawal'
                           : 'Submit for BM Approval',
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                   softWrap: true,
                 ),
-                onPressed: _isSubmitting ? null : () => _submitGroupWithdrawal(selGrp),
+                onPressed: _isSubmitting
+                    ? null
+                    : () => _submitGroupWithdrawal(
+                          selGrp,
+                          allClients: allClients,
+                          allGroups: allGroups,
+                        ),
               ),
             ),
           ],
@@ -1010,16 +1644,17 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   }
 
   // ==========================================================================
-  // TAB 3 BUILDER: MISC SAVINGS (app.py L7958–8183)
+  // TAB 3 BUILDER: MISC SAVINGS
   // ==========================================================================
   Widget _buildMiscTab(bool isManager) {
     final miscAsync = ref.watch(miscBalanceProvider);
 
     return miscAsync.when(
       loading: () => const IcareFormSkeleton(fieldCount: 2),
-      error: (err, _) => _buildErrorCard('Error loading misc balance: $err', () => ref.refresh(miscBalanceProvider)),
+      error: (err, _) => _buildErrorCard(AppErrorDetails.from(err).message, () => ref.refresh(miscBalanceProvider)),
       data: (data) {
         final bal = (data['misc_balance'] as num?)?.toDouble() ?? 0.0;
+        final canWithdraw = (data['can_withdraw'] == true) || isManager;
         final roleNotice = data['role_notice']?.toString() ?? 'Misc Savings is managed by the Branch Manager.';
 
         return _buildFormCard(
@@ -1029,8 +1664,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             _buildInlineBalanceStrip(
               label: 'Branch Misc Pool',
               balance: bal,
-              tag: 'MISC LEDGER FUND',
-              subtitle: 'Protected Vault Cash Reserve',
+              tag: 'MISC POOL RESERVE',
+              subtitle: data['branch']?.toString() ?? 'Protected Vault Cash Reserve',
             ),
             const SizedBox(height: 12),
             Container(
@@ -1065,6 +1700,88 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 ],
               ),
             ),
+            if (canWithdraw) ...[
+              const SizedBox(height: 14),
+              DropdownButtonFormField<String>(
+                value: _miscPayoutMethod,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Payout Settlement Method',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'Cash', child: Text('Physical Vault Cash Payout')),
+                  DropdownMenuItem(value: 'Bank Transfer', child: Text('Direct Bank Transfer Payout')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setState(() => _miscPayoutMethod = val);
+                },
+              ),
+              const SizedBox(height: 10),
+              _buildAmountPresetChips(availableBalance: bal, controller: _miscAmountCtrl),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _miscAmountCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Misc Withdrawal Amount (₦)',
+                  hintText: 'Enter amount...',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _miscRemarksCtrl,
+                maxLines: 1,
+                decoration: const InputDecoration(
+                  labelText: 'Authorization Remarks',
+                  hintText: 'Purpose or voucher reference...',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (isManager) ...[
+                CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                  subtitle: const Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                  value: _miscAutoExec,
+                  activeColor: const Color(0xFF15803D),
+                  onChanged: (v) => setState(() => _miscAutoExec = v ?? true),
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+                const SizedBox(height: 10),
+              ],
+              SizedBox(
+                width: double.infinity,
+                height: 42,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: (isManager && _miscAutoExec) ? const Color(0xFF15803D) : const Color(0xFF064E3B),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  icon: _isSubmitting
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : Icon((isManager && _miscAutoExec) ? Icons.verified_rounded : Icons.send_rounded, size: 16),
+                  label: Text(
+                    _isSubmitting
+                        ? 'Processing...'
+                        : ((isManager && _miscAutoExec) ? 'Authorize & Settle Misc Withdrawal' : 'Submit Misc Withdrawal Request'),
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
+                  onPressed: (_isSubmitting || bal <= 0) ? null : () => _submitMiscWithdrawal(bal),
+                ),
+              ),
+            ],
           ],
         );
       },
@@ -1072,14 +1789,14 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   }
 
   // ==========================================================================
-  // TAB 4 BUILDER: LAPS SAVINGS (app.py L8185–8319)
+  // TAB 4 BUILDER: LAPS SAVINGS
   // ==========================================================================
   Widget _buildLapsTab(bool isManager) {
     final lapsAsync = ref.watch(lapsOptionsProvider);
 
     return lapsAsync.when(
       loading: () => const IcareTableSkeleton(rowCount: 6, hasFilterBar: false),
-      error: (err, _) => _buildErrorCard('Error loading LAPS records: $err', () => ref.refresh(lapsOptionsProvider)),
+      error: (err, _) => _buildErrorCard(AppErrorDetails.from(err).message, () => ref.refresh(lapsOptionsProvider)),
       data: (data) {
         final records = (data['records'] as List<dynamic>?)?.map((e) => e as Map<String, dynamic>).toList() ?? [];
 
@@ -1117,17 +1834,21 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               decoration: const InputDecoration(
                 labelText: 'Select LAPS Record',
                 isDense: true,
-                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
               items: records.map((r) {
                 final cid = r['client_id']?.toString() ?? '';
                 final b = (r['balance'] as num?)?.toDouble() ?? 0.0;
-                final shortId = cid.length > 12 ? cid.substring(0, 12) : cid;
+                final cName = r['client_name']?.toString();
+                final cCode = r['client_code']?.toString();
+                final fallbackShort = cid.length > 8 ? cid.substring(0, 8) : cid;
+                final displayName = (cName != null && cName.isNotEmpty)
+                    ? (cCode != null && cCode.isNotEmpty ? '$cName ($cCode)' : cName)
+                    : 'Client $fallbackShort';
                 return DropdownMenuItem(
                   value: cid,
-                  child: Text('$shortId... — ${CurrencyFormatter.formatNaira(b)}', overflow: TextOverflow.ellipsis, softWrap: true),
+                  child: Text('$displayName — ${CurrencyFormatter.formatNaira(b)}', overflow: TextOverflow.ellipsis, softWrap: true),
                 );
               }).toList(),
               onChanged: (val) {
@@ -1138,9 +1859,13 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
 
             // 2. Compact Inline Balance Strip
             _buildInlineBalanceStrip(
-              label: 'LAPS Protection Balance',
+              label: (selLaps['client_name']?.toString().isNotEmpty ?? false)
+                  ? selLaps['client_name'].toString()
+                  : 'LAPS Protection Balance',
               balance: bal,
-              tag: 'CLOSED CLIENT RESERVE',
+              tag: (selLaps['client_code']?.toString().isNotEmpty ?? false)
+                  ? selLaps['client_code'].toString()
+                  : 'CLOSED CLIENT RESERVE',
               subtitle: 'Protected Savings Liability',
             ),
             const SizedBox(height: 12),
@@ -1273,8 +1998,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               CheckboxListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Direct BM Authorization & Immediate Ledger Posting', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                subtitle: const Text('Direct BM execution: Posts immediately to ledgers without pending queue.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                title: const Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                subtitle: const Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                 value: _lapsAutoExec,
                 activeColor: const Color(0xFF15803D),
                 onChanged: (v) => setState(() => _lapsAutoExec = v ?? false),
@@ -1305,7 +2030,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                               ? 'Authorize & Restore Balance to Customer Savings'
                               : 'Submit LAPS Restoration for BM Approval')
                           : ((isManager && _lapsAutoExec)
-                              ? 'Authorize & Post LAPS Payout to Ledger'
+                              ? 'Authorize & Settle LAPS Payout'
                               : 'Submit LAPS Payout for BM Approval'),
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                   softWrap: true,
@@ -1328,12 +2053,13 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
     return pendingAsync.when(
       loading: () => const IcareTableSkeleton(rowCount: 4, hasFilterBar: false),
       error: (err, _) => _buildErrorCard(
-        'Error loading pending approvals: $err',
+        AppErrorDetails.from(err).message,
         () => ref.refresh(pendingApprovalsProvider),
       ),
       data: (data) {
-        final pendingList = (data['pending_requests'] as List<dynamic>?)
-                ?.map((e) => e as Map<String, dynamic>)
+        final rawPending = (data['requests'] ?? data['pending_requests']) as List<dynamic>?;
+        final pendingList = rawPending
+                ?.map((e) => Map<String, dynamic>.from(e as Map))
                 .toList() ??
             [];
 
@@ -1374,7 +2100,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'There are no withdrawal requests pending Branch Manager review or ledger authorization.',
+                  'There are no withdrawal requests pending Branch Manager review or authorization.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
                 ),
@@ -1383,6 +2109,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
           );
         }
 
+        final actorLow = _currentUsername.toLowerCase();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1417,7 +2144,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                       ),
                       const SizedBox(height: 1),
                       const Text(
-                        'Review officer-submitted withdrawal requests for ledger posting approval or rejection.',
+                        'Review submitted withdrawal requests for approval or rejection.',
                         style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                         softWrap: true,
                       ),
@@ -1436,8 +2163,9 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               final opType = req['operation_type']?.toString() ?? 'Withdrawal';
               final amt = (req['amount'] as num?)?.toDouble() ?? 0.0;
               final reqBy = req['requested_by']?.toString() ?? 'Credit Officer';
+              final isSelfRequested = actorLow.isNotEmpty && reqBy.trim().toLowerCase() == actorLow;
               final opDate = req['operational_date']?.toString() ?? '';
-              final remarks = req['remarks']?.toString() ?? '';
+              final remarks = _cleanRemarks(req['remarks']);
               final isRejecting = _rejectingRequestId == reqId;
 
               final initials = clientName.trim().isNotEmpty
@@ -1637,7 +2365,30 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     const SizedBox(height: 10),
 
                     // Actions or In-line Rejection Form
-                    if (isRejecting) ...[
+                    if (isSelfRequested) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFFBEB),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.verified_user_outlined, size: 14, color: Color(0xFFB45309)),
+                            SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Maker-Checker: Awaiting peer manager review',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF92400E)),
+                                softWrap: true,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else if (isRejecting) ...[
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
@@ -1739,7 +2490,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                             ),
                             icon: const Icon(Icons.check_circle_outline_rounded, size: 14),
                             label: const Text(
-                              'Approve & Post to Ledger',
+                              'Approve & Settle',
                               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
                             ),
                           ),
@@ -1757,7 +2508,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   }
 
   // ==========================================================================
-  // TAB 6 BUILDER: DAILY WITHDRAWALS (app.py L8459–8800)
+  // TAB 6 BUILDER: DAILY WITHDRAWALS
   // ==========================================================================
   Widget _buildDailyWithdrawalsTab(bool isManager) {
     final dwAsync = ref.watch(dailyWithdrawalsProvider);
@@ -1766,13 +2517,14 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
 
     return dwAsync.when(
       loading: () => const IcareTableSkeleton(rowCount: 8, hasFilterBar: false),
-      error: (err, _) => _buildErrorCard('Error loading daily withdrawals: $err', () => ref.refresh(dailyWithdrawalsProvider)),
+      error: (err, _) => _buildErrorCard(AppErrorDetails.from(err).message, () => ref.refresh(dailyWithdrawalsProvider)),
       data: (data) {
         final kpis = data['kpis'] as Map<String, dynamic>? ?? {};
         final totWithdrawn = (kpis['total_withdrawn'] as num?)?.toDouble() ?? 0.0;
         final feesDeducted = (kpis['loan_fees_deducted'] as num?)?.toDouble() ?? 0.0;
         final cashBankPaid = (kpis['cash_bank_paid'] as num?)?.toDouble() ?? 0.0;
         final debtOffsets = (kpis['debt_fee_offsets'] as num?)?.toDouble() ?? 0.0;
+        final lapsReserved = (kpis['laps_reserved'] as num?)?.toDouble() ?? 0.0;
         final waitCount = (kpis['waiting_for_approval_count'] as num?)?.toInt() ?? 0;
         final waitAmt = (kpis['waiting_for_approval_amount'] as num?)?.toDouble() ?? 0.0;
 
@@ -1827,14 +2579,15 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             ),
             const SizedBox(height: 12),
 
-            // Top 5 KPI Cards (app.py L8662-8668)
+            // Top 6 KPI Cards
             LayoutBuilder(
               builder: (context, constraints) {
                 final c1 = _buildMetricTile(showAll ? 'Total Withdrawn' : 'Total Today', CurrencyFormatter.formatNaira(totWithdrawn), const Color(0xFF0F172A));
                 final c2 = _buildMetricTile('Loan Fees', CurrencyFormatter.formatNaira(feesDeducted), const Color(0xFF2563EB));
                 final c3 = _buildMetricTile('Cash & Bank Paid', CurrencyFormatter.formatNaira(cashBankPaid), const Color(0xFF15803D));
                 final c4 = _buildMetricTile('Debt/Fee Offsets', CurrencyFormatter.formatNaira(debtOffsets), const Color(0xFFD97706));
-                final c5 = _buildMetricTile('Waiting Approval', '$waitCount req (${CurrencyFormatter.formatNaira(waitAmt)})', const Color(0xFFB91C1C));
+                final c5 = _buildMetricTile('LAPS Reserve', CurrencyFormatter.formatNaira(lapsReserved), const Color(0xFF7C3AED));
+                final c6 = _buildMetricTile('Waiting Approval', '$waitCount req (${CurrencyFormatter.formatNaira(waitAmt)})', const Color(0xFFB91C1C));
 
                 if (constraints.maxWidth >= 900) {
                   return Row(
@@ -1848,6 +2601,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                       Expanded(child: c4),
                       const SizedBox(width: 8),
                       Expanded(child: c5),
+                      const SizedBox(width: 8),
+                      Expanded(child: c6),
                     ],
                   );
                 } else if (constraints.maxWidth >= 500) {
@@ -1855,7 +2610,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     children: [
                       Row(children: [Expanded(child: c1), const SizedBox(width: 6), Expanded(child: c2), const SizedBox(width: 6), Expanded(child: c3)]),
                       const SizedBox(height: 6),
-                      Row(children: [Expanded(child: c4), const SizedBox(width: 6), Expanded(child: c5)]),
+                      Row(children: [Expanded(child: c4), const SizedBox(width: 6), Expanded(child: c5), const SizedBox(width: 6), Expanded(child: c6)]),
                     ],
                   );
                 } else {
@@ -1865,7 +2620,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                       const SizedBox(height: 6),
                       Row(children: [Expanded(child: c3), const SizedBox(width: 6), Expanded(child: c4)]),
                       const SizedBox(height: 6),
-                      c5,
+                      Row(children: [Expanded(child: c5), const SizedBox(width: 6), Expanded(child: c6)]),
                     ],
                   );
                 }
@@ -1873,7 +2628,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             ),
             const SizedBox(height: 12),
 
-            // Filters Row (app.py L8671-8679)
+            // Filters Row
             LayoutBuilder(
               builder: (context, constraints) {
                 final isNarrow = constraints.maxWidth < 650;
@@ -1892,6 +2647,9 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     DropdownMenuItem(value: 'Cash & Bank Payouts', child: Text('Cash & Bank Payouts', softWrap: true)),
                     DropdownMenuItem(value: 'Loan & Fee Offsets', child: Text('Loan & Fee Offsets', softWrap: true)),
                     DropdownMenuItem(value: 'Group Withdrawals', child: Text('Group Withdrawals', softWrap: true)),
+                    DropdownMenuItem(value: 'Misc & LAPS', child: Text('Misc & LAPS', softWrap: true)),
+                    DropdownMenuItem(value: 'LAPS Reserve', child: Text('LAPS Reserve', softWrap: true)),
+                    DropdownMenuItem(value: 'Reversals', child: Text('Reversals', softWrap: true)),
                   ],
                   onChanged: (val) {
                     if (val != null) ref.read(dwCategoryProvider.notifier).state = val;
@@ -1982,6 +2740,30 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
     );
   }
 
+  Widget _buildStatusPill(String rawStatus) {
+    final s = rawStatus.toUpperCase().trim();
+    Color bg = const Color(0xFFDCFCE7);
+    Color txt = const Color(0xFF15803D);
+    if (s == 'REVERSAL' || s == 'REJECTED') {
+      bg = const Color(0xFFFEE2E2);
+      txt = const Color(0xFFB91C1C);
+    } else if (s == 'REVERSED' || s == 'PENDING' || s == 'PROCESSING') {
+      bg = const Color(0xFFFEF3C7);
+      txt = const Color(0xFFB45309);
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        s.isEmpty ? 'ACTIVE' : s,
+        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: txt),
+      ),
+    );
+  }
+
   Widget _buildAllWithdrawalsTable(List<Map<String, dynamic>> records) {
     if (records.isEmpty) {
       return Container(
@@ -2013,9 +2795,15 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               DataColumn(label: Text('Amount', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
               DataColumn(label: Text('Details', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
               DataColumn(label: Text('Reference', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+              DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
             ],
             rows: records.map((r) {
               final amt = (r['amount'] as num?)?.toDouble() ?? 0.0;
+              final recStatus = (r['status']?.toString() ?? 'ACTIVE').toUpperCase();
+              final isNeg = amt < 0 || recStatus == 'REVERSAL';
+              final formattedAmt = amt < 0
+                  ? '-${CurrencyFormatter.formatNaira(amt.abs())}'
+                  : CurrencyFormatter.formatNaira(amt);
               return DataRow(cells: [
                 DataCell(Text(r['date']?.toString() ?? '', style: const TextStyle(fontSize: 11))),
                 DataCell(
@@ -2037,11 +2825,21 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     child: Text(r['category']?.toString() ?? '', style: const TextStyle(fontSize: 11), softWrap: true),
                   ),
                 ),
-                DataCell(Text(CurrencyFormatter.formatNaira(amt), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
+                DataCell(
+                  Text(
+                    formattedAmt,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      color: isNeg ? const Color(0xFFB91C1C) : const Color(0xFF0F172A),
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
                 DataCell(
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 170),
-                    child: Text(r['details']?.toString() ?? '', style: const TextStyle(fontSize: 11), softWrap: true),
+                    child: Text(_cleanRemarks(r['details']), style: const TextStyle(fontSize: 11), softWrap: true),
                   ),
                 ),
                 DataCell(
@@ -2050,6 +2848,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     child: Text(r['reference']?.toString() ?? '', style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 10), softWrap: true),
                   ),
                 ),
+                DataCell(_buildStatusPill(recStatus)),
               ]);
             }).toList(),
           ),
@@ -2180,7 +2979,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 DataCell(
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 170),
-                    child: Text(r['approval_notes']?.toString() ?? '', style: const TextStyle(fontSize: 11), softWrap: true),
+                    child: Text(_cleanRemarks(r['approval_notes']), style: const TextStyle(fontSize: 11), softWrap: true),
                   ),
                 ),
                 DataCell(
@@ -2215,7 +3014,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
         final op = req['operation_type']?.toString() ?? 'Withdrawal';
         final refCode = req['reference']?.toString() ?? '-';
         final opDate = req['operational_date']?.toString() ?? '';
-        final remarks = req['remarks']?.toString() ?? '';
+        final remarks = _cleanRemarks(req['remarks']);
         final rejReason = req['rejection_reason']?.toString() ?? '';
         final appBy = req['approved_by']?.toString() ?? '';
 
@@ -2223,7 +3022,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
         String badgeText;
         if (stStatus == 'APPROVED') {
           badgeColor = const Color(0xFF15803D);
-          badgeText = '[Approved & Posted]';
+          badgeText = '[Approved]';
         } else if (stStatus == 'REJECTED') {
           badgeColor = const Color(0xFFB91C1C);
           badgeText = '[Rejected]';
@@ -2376,7 +3175,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                       softWrap: true,
                     ),
                     Text(
-                      isManager ? 'BM Direct Authorization Mode' : 'Credit Officer Request Mode',
+                      isManager ? 'Branch Manager Mode' : 'Credit Officer Request Mode',
                       style: TextStyle(
                         fontSize: 11,
                         color: isManager ? const Color(0xFF15803D) : const Color(0xFF2563EB),
@@ -2422,13 +3221,45 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             ),
           );
 
+          final actionBar = Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              dateCapsule,
+              InkWell(
+                onTap: _invalidateAfterWithdrawalMutation,
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.refresh_rounded, size: 13, color: Color(0xFF334155)),
+                      SizedBox(width: 4),
+                      Text(
+                        'Refresh',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+
           if (isNarrow) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 titleRow,
                 const SizedBox(height: 6),
-                dateCapsule,
+                actionBar,
               ],
             );
           }
@@ -2438,7 +3269,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             children: [
               Expanded(child: titleRow),
               const SizedBox(width: 10),
-              dateCapsule,
+              actionBar,
             ],
           );
         },

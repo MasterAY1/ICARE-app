@@ -11,6 +11,7 @@ class WelcomeInfo(BaseModel):
     officer_name: str = Field(..., alias="officer_name")
     branch_name: str = Field(..., alias="branch_name")
     date_str: str = Field(..., alias="date_str")
+    date_iso: Optional[str] = Field(None, alias="date_iso")
     meeting_day: str = Field(..., alias="meeting_day")
     time_str: str = Field(..., alias="time_str")
 
@@ -25,6 +26,8 @@ class RepaymentSummary(BaseModel):
     rep_12_weeks_clients: int = 0
     rep_24_weeks_amt: float = 0.0
     rep_24_weeks_clients: int = 0
+    rep_120_days_amt: float = 0.0
+    rep_120_days_clients: int = 0
     rep_daily_amt: float = 0.0
     rep_daily_clients: int = 0
     rep_monthly_amt: float = 0.0
@@ -47,6 +50,7 @@ class PaymentStatusBucket(BaseModel):
 
 class RepaymentStatus(BaseModel):
     full_payment: PaymentStatusBucket = Field(default_factory=PaymentStatusBucket)
+    normal_payment: Optional[PaymentStatusBucket] = Field(default_factory=PaymentStatusBucket)
     part_payment: PaymentStatusBucket = Field(default_factory=PaymentStatusBucket)
     excess_payment: PaymentStatusBucket = Field(default_factory=PaymentStatusBucket)
     not_paid: PaymentStatusBucket = Field(default_factory=PaymentStatusBucket)

@@ -21,11 +21,19 @@ import '../../../core/offline/connectivity_service.dart';
 import '../../../core/offline/offline_database_service.dart';
 
 import '../../../core/offline/offline_sync_manager.dart';
+import '../../../core/errors/app_error_formatter.dart';
+
 import '../../../core/network/api_client.dart';
 
 import '../data/datasources/co_api_service.dart';
 
 import '../../shared/presentation/co_app_scaffold.dart';
+
+import 'co_dashboard_screen.dart';
+
+import 'daily_cashbook_screen.dart';
+
+import 'portfolio_overview_screen.dart';
 
 // ==========================================
 
@@ -39,7 +47,15 @@ final collectionsModeProvider = StateProvider<String>((ref) => 'Group Collection
 
 final collectionsSelectedGroupProvider = StateProvider<String?>((ref) => null);
 
-final collectionsDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
+final collectionsBusinessDateProvider = StateProvider<DateTime?>((ref) => null);
+
+final collectionsDateProvider = StateProvider<DateTime?>((ref) => null);
+
+final effectiveCollectionsDateProvider = Provider<DateTime>((ref) {
+  return ref.watch(collectionsDateProvider) ??
+      ref.watch(collectionsBusinessDateProvider) ??
+      DateTime.now();
+});
 
 final collectionsLateEntryProvider = StateProvider<bool>((ref) => false);
 
@@ -57,7 +73,11 @@ final collectionSheetFutureProvider = FutureProvider.autoDispose<Map<String, dyn
 
   final dt = ref.watch(collectionsDateProvider);
 
-  final dateStr = DateFormat('yyyy-MM-dd').format(dt);
+  final cachedBizDt = ref.read(collectionsBusinessDateProvider);
+
+  final String? queryDateStr = dt != null ? DateFormat('yyyy-MM-dd').format(dt) : null;
+
+  final String dateStr = queryDateStr ?? DateFormat('yyyy-MM-dd').format(cachedBizDt ?? DateTime.now());
 
   final isOnline = ref.watch(isOnlineProvider);
 
@@ -65,84 +85,74 @@ final collectionSheetFutureProvider = FutureProvider.autoDispose<Map<String, dyn
 
   final dbService = ref.watch(offlineDatabaseServiceProvider);
 
-  if (!isOnline) {
-
-    if (grp != null) {
-
-      final cached = await syncMgr.getOfflineSheet(grp);
-
-      if (cached != null) return cached;
-
-    }
-
+  Future<Map<String, dynamic>?> resolveOfflineSheet() async {
     final cachedGroups = await dbService.getCachedGroupNames();
-
-    if (cachedGroups.isNotEmpty) {
-
-      final targetGrp = grp ?? cachedGroups.first;
-
-      final cached = await syncMgr.getOfflineSheet(targetGrp);
-
-      if (cached != null) {
-
-        final mutable = Map<String, dynamic>.from(cached);
-
-        mutable['available_groups'] = cachedGroups;
-
-        return mutable;
-
-      }
-
+    Map<String, dynamic>? cached;
+    if (grp != null) {
+      cached = await syncMgr.getOfflineSheet(grp, dateStr: dateStr);
     }
+    if (cached == null && cachedGroups.isNotEmpty) {
+      final fallbackGrp = cachedGroups.contains(grp) ? grp! : cachedGroups.first;
+      cached = await syncMgr.getOfflineSheet(fallbackGrp, dateStr: dateStr);
+    }
+    if (cached != null) {
+      final mutable = Map<String, dynamic>.from(cached);
+      if (cachedGroups.isNotEmpty) {
+        mutable['available_groups'] = cachedGroups;
+      }
+      return mutable;
+    }
+    return null;
+  }
 
+  if (!isOnline) {
+    final offlineSheet = await resolveOfflineSheet();
+    if (offlineSheet != null) {
+      return offlineSheet;
+    }
+    throw DioException(
+      requestOptions: RequestOptions(path: '/api/v1/co/collections/sheet'),
+      error: 'Offline cache miss: No pre-cached group sheets found on this device. Connect to the internet once to sync your groups.',
+      type: DioExceptionType.connectionError,
+    );
   }
 
   try {
-
-    final sheet = await api.getCollectionSheet(groupName: grp, date: dateStr);
-
-    final hasMembers = sheet['members'] != null || sheet['clients'] != null;
-
-    if (grp != null && hasMembers) {
-
-      syncMgr.preCacheGroupSheet(grp, dateStr).ignore();
-
-    }
-
-    return sheet;
-
-  } catch (e) {
-
-    if (grp != null) {
-
-      final cached = await syncMgr.getOfflineSheet(grp);
-
-      if (cached != null) return cached;
-
-    }
-
-    final cachedGroups = await dbService.getCachedGroupNames();
-
-    if (cachedGroups.isNotEmpty) {
-
-      final targetGrp = grp ?? cachedGroups.first;
-
-      final cached = await syncMgr.getOfflineSheet(targetGrp);
-
-      if (cached != null) {
-
-        final mutable = Map<String, dynamic>.from(cached);
-
-        mutable['available_groups'] = cachedGroups;
-
-        return mutable;
-
+    final sheet = await api.getCollectionSheet(groupName: grp, date: queryDateStr);
+    final serverDateStr = sheet['date']?.toString().trim();
+    final effectiveDateStr = (serverDateStr != null && serverDateStr.isNotEmpty) ? serverDateStr : dateStr;
+    if (serverDateStr != null && serverDateStr.isNotEmpty) {
+      final parsedBizDate = DateTime.tryParse(serverDateStr);
+      if (parsedBizDate != null) {
+        Future.microtask(() {
+          if (ref.read(collectionsBusinessDateProvider) != parsedBizDate) {
+            ref.read(collectionsBusinessDateProvider.notifier).state = parsedBizDate;
+          }
+        });
       }
-
     }
-
+    final effectiveGrp = (grp ?? sheet['group_name'])?.toString().trim();
+    final hasMembers = sheet['members'] != null || sheet['clients'] != null;
+    if (effectiveGrp != null && effectiveGrp.isNotEmpty && hasMembers) {
+      await syncMgr.cacheLoadedGroupSheet(effectiveGrp, sheet, dateStr: effectiveDateStr);
+    }
+    final availGroups = (sheet['available_groups'] as List?)
+            ?.map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toList() ??
+        <String>[];
+    if (availGroups.isNotEmpty) {
+      syncMgr.preCacheAllAvailableGroups(availGroups, effectiveDateStr, skipGroup: effectiveGrp).ignore();
+    } else {
+      syncMgr.preCacheSingleClients().ignore();
+    }
+    return sheet;
+  } catch (e) {
+    final offlineSheet = await resolveOfflineSheet();
+    if (offlineSheet != null) {
+      return offlineSheet;
+    }
     rethrow;
-
   }
 
 });
@@ -217,7 +227,11 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
   // Staging / Review State for Mode 1
 
-  bool _isReviewingGroup = false;
+  bool _isOpeningBatchModal = false;
+
+  bool _isOpeningSingleClientModal = false;
+
+  String _lastSheetCtrlScopeKey = '';
 
   List<Map<String, dynamic>> _stagedTransactions = [];
 
@@ -265,11 +279,13 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
   // Tab 2 History State
 
-  DateTime _histDate = DateTime.now();
+  DateTime? _histDate;
 
   final TextEditingController _histSearchCtrl = TextEditingController();
 
-  final String _histOfficer = 'All Officers';
+  String _histOfficer = 'All Officers';
+
+  List<String> _histAvailableOfficers = const ['All Officers'];
 
   int _histClientPage = 1;
 
@@ -281,7 +297,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
   String _revCategory = 'Loan Repayments';
 
-  DateTime _revDate = DateTime.now();
+  DateTime? _revDate;
 
   final TextEditingController _revSearchCtrl = TextEditingController();
 
@@ -443,7 +459,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
       final savStr = _memberSavingsCtrls[cid]?.text.replaceAll(',', '').trim() ?? '';
 
-      final repAmt = isNotPaid ? 0.0 : (double.tryParse(repStr) ?? expRep);
+      final repAmt = isNotPaid ? 0.0 : (repStr.isEmpty ? 0.0 : (double.tryParse(repStr) ?? 0.0));
 
       final savAmt = double.tryParse(savStr) ?? 0.0;
 
@@ -535,6 +551,16 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
   }
 
+  void _invalidateCollectionRelatedProviders() {
+    ref.invalidate(collectionSheetFutureProvider);
+    ref.invalidate(singleClientOptionsProvider);
+    ref.invalidate(collectionsHistoryProvider);
+    ref.invalidate(reversalOptionsProvider);
+    ref.invalidate(coDashboardProvider);
+    ref.invalidate(coCashbookDataProvider);
+    ref.invalidate(portfolioDataProvider);
+  }
+
   /// Displays the 4-phase animated collection confirmation, posting, and receipt modal
 
   void _showAnimatedCollectionFlowModal({
@@ -552,6 +578,10 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
     required bool isLateEntry,
 
   }) {
+
+    if (_isOpeningBatchModal) return;
+
+    _isOpeningBatchModal = true;
 
     final grpSavAmt = double.tryParse(_grpSavingsCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
 
@@ -597,8 +627,6 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
             setState(() {
 
-              _isReviewingGroup = false;
-
               _stagedTransactions = [];
 
               _grpSavingsCtrl.clear();
@@ -613,9 +641,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
             });
 
-            ref.invalidate(collectionSheetFutureProvider);
-
-            ref.invalidate(singleClientOptionsProvider);
+            _invalidateCollectionRelatedProviders();
 
           },
 
@@ -625,13 +651,13 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
             setState(() {
 
-              _isReviewingGroup = false;
-
               _stagedTransactions = [];
 
               ref.read(collectionsTabProvider.notifier).state = 1; // Tab 1: History
 
             });
+
+            _invalidateCollectionRelatedProviders();
 
           },
 
@@ -659,7 +685,11 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
       },
 
-    );
+    ).then((_) {
+
+      if (mounted) _isOpeningBatchModal = false;
+
+    });
 
   }
 
@@ -700,16 +730,14 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
         collectionDate: dateStr,
         payload: payload,
       );
-      ref.invalidate(collectionSheetFutureProvider);
-      ref.invalidate(singleClientOptionsProvider);
+      _invalidateCollectionRelatedProviders();
       return offlineRes;
     }
 
     try {
       final api = ref.read(coApiServiceProvider);
       final res = await api.submitBatchCollections(payload);
-      ref.invalidate(collectionSheetFutureProvider);
-      ref.invalidate(singleClientOptionsProvider);
+      _invalidateCollectionRelatedProviders();
       return res;
     } catch (e) {
       // Permanent errors (400, 401, 403, 422) must NEVER be queued or retried automatically
@@ -718,17 +746,19 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
       }
 
       if (e is DioException) {
-        // Network drop or timeout: Outcome is unknown. Attempt status recovery using exact same key.
-        final client = ref.read(apiClientProvider);
-        try {
-          final statusCheck = await client.checkTransactionStatus(batchKey);
-          if (statusCheck != null && statusCheck['status'] == 'Confirmed') {
-            final body = statusCheck['response_body'] as Map<String, dynamic>? ?? {};
-            ref.invalidate(collectionSheetFutureProvider);
-            ref.invalidate(singleClientOptionsProvider);
-            return body;
-          }
-        } catch (_) {}
+        // Network drop during response or timeout: Outcome is unknown. Attempt status recovery
+        // unless it was an immediate connectionError where the request never reached the server.
+        if (e.type != DioExceptionType.connectionError) {
+          final client = ref.read(apiClientProvider);
+          try {
+            final statusCheck = await client.checkTransactionStatus(batchKey);
+            if (statusCheck != null && statusCheck['status'] == 'Confirmed') {
+              final body = statusCheck['response_body'] as Map<String, dynamic>? ?? {};
+              _invalidateCollectionRelatedProviders();
+              return body;
+            }
+          } catch (_) {}
+        }
 
         // Enqueue into offline outbox preserving the EXACT original idempotency key
         final offlineRes = await syncMgr.queueOfflineBatch(
@@ -736,47 +766,10 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
           collectionDate: dateStr,
           payload: payload,
         );
-        ref.invalidate(collectionSheetFutureProvider);
-        ref.invalidate(singleClientOptionsProvider);
+        _invalidateCollectionRelatedProviders();
         return offlineRes;
       }
       rethrow;
-    }
-
-  }
-
-  /// Atomically confirms & posts batch group collections to ledger (app.py L6081)
-
-  /// Kept for backward compatibility with existing callers.
-
-  Future<void> _confirmAndSaveBatch(String groupName, String dateStr) async {
-
-    setState(() => _isSubmitting = true);
-
-    try {
-
-      final res = await _executeBatchPost(groupName, dateStr);
-
-      setState(() {
-
-        _isReviewingGroup = false;
-
-        _stagedTransactions = [];
-
-        _receiptData = res['receipt'] as Map<String, dynamic>?;
-
-      });
-
-      _showNotification('Collections posted successfully!', isSuccess: true);
-
-    } catch (e) {
-
-      _showNotification('Failed to post batch collections: $e', isSuccess: false);
-
-    } finally {
-
-      setState(() => _isSubmitting = false);
-
     }
 
   }
@@ -865,7 +858,13 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
   }) {
 
+    if (_isOpeningSingleClientModal) return;
+
+    _isOpeningSingleClientModal = true;
+
     final isOnline = ref.read(isOnlineProvider);
+
+    final isLateEntry = ref.read(collectionsLateEntryProvider);
 
     showGeneralDialog(
 
@@ -920,6 +919,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
               'group_name': clientObj['group_name'],
               'loan_id': _scSelectedLoanId,
               'date': dateStr,
+              'is_late_entry': isLateEntry,
               'savings_deposit': savVal,
               'group_savings_deposit': grpSavVal,
               'loan_repayment': repVal,
@@ -942,13 +942,13 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
                 collectionDate: dateStr,
                 payload: payload,
               );
-              ref.invalidate(singleClientOptionsProvider);
+              _invalidateCollectionRelatedProviders();
               return offlineRes;
             }
 
             try {
               final res = await api.submitSingleCollection(payload);
-              ref.invalidate(singleClientOptionsProvider);
+              _invalidateCollectionRelatedProviders();
               return res;
             } catch (e) {
               // Permanent errors must NEVER be retried or queued
@@ -957,22 +957,24 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
               }
 
               if (e is DioException) {
-                final client = ref.read(apiClientProvider);
-                try {
-                  final statusCheck = await client.checkTransactionStatus(singleKey);
-                  if (statusCheck != null && statusCheck['status'] == 'Confirmed') {
-                    final body = statusCheck['response_body'] as Map<String, dynamic>? ?? {};
-                    ref.invalidate(singleClientOptionsProvider);
-                    return body;
-                  }
-                } catch (_) {}
+                if (e.type != DioExceptionType.connectionError) {
+                  final client = ref.read(apiClientProvider);
+                  try {
+                    final statusCheck = await client.checkTransactionStatus(singleKey);
+                    if (statusCheck != null && statusCheck['status'] == 'Confirmed') {
+                      final body = statusCheck['response_body'] as Map<String, dynamic>? ?? {};
+                      _invalidateCollectionRelatedProviders();
+                      return body;
+                    }
+                  } catch (_) {}
+                }
 
                 final offlineRes = await syncMgr.queueOfflineSingleCollection(
                   clientName: singleClientName,
                   collectionDate: dateStr,
                   payload: payload,
                 );
-                ref.invalidate(singleClientOptionsProvider);
+                _invalidateCollectionRelatedProviders();
                 return offlineRes;
               }
               rethrow;
@@ -1004,9 +1006,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
             });
 
-            ref.invalidate(singleClientOptionsProvider);
-
-            ref.invalidate(collectionSheetFutureProvider);
+            _invalidateCollectionRelatedProviders();
 
           },
 
@@ -1038,13 +1038,19 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
             });
 
+            _invalidateCollectionRelatedProviders();
+
           },
 
         );
 
       },
 
-    );
+    ).then((_) {
+
+      if (mounted) _isOpeningSingleClientModal = false;
+
+    });
 
   }
 
@@ -1082,7 +1088,9 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
         'record_id': refId,
 
-        'record_type': _revCategory == 'Loan Repayments' ? 'Repayment' : 'Savings Deposit',
+        'record_type': _revCategory == 'Loan Repayments'
+            ? 'Repayment'
+            : (_revCategory == 'Savings Withdrawals' ? 'SavingsWithdrawal' : 'Savings Deposit'),
 
         'reason': reason,
 
@@ -1102,7 +1110,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
     } catch (e) {
 
-      _showNotification('Failed to submit reversal request: $e', isSuccess: false);
+      _showNotification('Failed to submit reversal request: ${AppErrorDetails.from(e).message}', isSuccess: false);
 
     } finally {
 
@@ -1502,8 +1510,6 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
             onTap: () {
 
-              setState(() => _isReviewingGroup = false);
-
               ref.read(collectionsModeProvider.notifier).state = m;
 
             },
@@ -1688,7 +1694,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
                 ref.read(collectionsLateEntryProvider.notifier).state = false;
 
-                ref.read(collectionsDateProvider.notifier).state = DateTime.now();
+                ref.read(collectionsDateProvider.notifier).state = null;
 
               },
 
@@ -2034,7 +2040,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
     final mode = ref.watch(collectionsModeProvider);
 
-    final activeDate = ref.watch(collectionsDateProvider);
+    final activeDate = ref.watch(effectiveCollectionsDateProvider);
 
     final isLateEntry = ref.watch(collectionsLateEntryProvider);
 
@@ -3337,7 +3343,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
     final sheetAsync = ref.watch(collectionSheetFutureProvider);
 
-    final selectedDate = ref.watch(collectionsDateProvider);
+    final selectedDate = ref.watch(effectiveCollectionsDateProvider);
 
     final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
 
@@ -3359,7 +3365,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
             const SizedBox(width: 10),
 
-            Expanded(child: Text('Error loading collection sheet: $err', style: const TextStyle(color: Color(0xFF991B1B), fontSize: 13))),
+            Expanded(child: Text('Error loading collection sheet: ${AppErrorDetails.from(err).message}', style: const TextStyle(color: Color(0xFF991B1B), fontSize: 13))),
 
           ],
 
@@ -3383,13 +3389,35 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
         final members = (sheetData['members'] as List<dynamic>?) ?? [];
 
-        // If in Staging / Review Mode, render Review Screen (app.py L6012)
+        final nextScopeKey = '$currentGroup::$dateStr';
 
-        if (_isReviewingGroup) {
+        if (_lastSheetCtrlScopeKey.isNotEmpty && _lastSheetCtrlScopeKey != nextScopeKey) {
 
-          return _buildReviewGroupCollectionsView(currentGroup, dateStr, isOpen, openReason);
+          for (final c in _memberRepaymentCtrls.values) {
+
+            c.dispose();
+
+          }
+
+          for (final c in _memberSavingsCtrls.values) {
+
+            c.dispose();
+
+          }
+
+          _memberRepaymentCtrls.clear();
+
+          _memberSavingsCtrls.clear();
+
+          _memberNotPaidFlags.clear();
+
+          _grpSavingsCtrl.clear();
+
+          _stagedTransactions = [];
 
         }
+
+        _lastSheetCtrlScopeKey = nextScopeKey;
 
         return Column(
 
@@ -5412,954 +5440,6 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
   // =========================================================================
 
-  // REVIEW GROUP COLLECTIONS STAGING SCREEN (app.py L6012–6090)
-
-  // =========================================================================
-
-  Widget _buildReviewGroupCollectionsView(String groupName, String dateStr, bool isOpen, String openReason) {
-
-    final grpSavAmt = double.tryParse(_grpSavingsCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
-
-    double totalRep = 0.0;
-
-    double totalSav = grpSavAmt;
-
-    int paidCount = 0;
-
-    int notPaidCount = 0;
-
-    for (var tx in _stagedTransactions) {
-
-      final rep = (tx['loan_repayment_amount'] as num?)?.toDouble() ?? 0.0;
-
-      final sav = (tx['savings_deposit_amount'] as num?)?.toDouble() ?? 0.0;
-
-      totalRep += rep;
-
-      totalSav += sav;
-
-      if (rep > 0) {
-
-        paidCount++;
-
-      } else if (tx['payment_status'] == 'NOT_PAID') {
-
-        notPaidCount++;
-
-      }
-
-    }
-
-    final totalIn = totalRep + totalSav;
-
-    final netCash = totalIn; // Total Cash Inflow
-
-    final isLateEntry = ref.watch(collectionsLateEntryProvider);
-
-    final canSubmit = isOpen || isLateEntry;
-
-    return Column(
-
-      crossAxisAlignment: CrossAxisAlignment.start,
-
-      children: [
-
-        // Title & Navigation pill
-
-        Row(
-
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
-          children: [
-
-            Expanded(
-
-              child: Column(
-
-                crossAxisAlignment: CrossAxisAlignment.start,
-
-                children: [
-
-                  const Text(
-
-                    'Review Group Collections',
-
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.3),
-
-                  ),
-
-                  const SizedBox(height: 3),
-
-                  Text(
-
-                    'Verify all collection entries for $groupName before final ledger commitment.',
-
-                    style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-
-                  ),
-
-                ],
-
-              ),
-
-            ),
-
-            OutlinedButton.icon(
-
-              onPressed: () => setState(() => _isReviewingGroup = false),
-
-              icon: const Icon(Icons.arrow_back, size: 16),
-
-              label: const Text('Back to Edit', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-
-              style: OutlinedButton.styleFrom(
-
-                foregroundColor: const Color(0xFF334155),
-
-                side: const BorderSide(color: Color(0xFFCBD5E1)),
-
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-
-              ),
-
-            ),
-
-          ],
-
-        ),
-
-        const SizedBox(height: 16),
-
-        // Modern 3-Tile Executive Summary Grid (Total Money Given Out removed)
-
-        LayoutBuilder(
-
-          builder: (context, constraints) {
-
-            final w = constraints.maxWidth;
-
-            final card1 = _buildReviewMetricCard(
-
-              title: 'Net Cash Expected From Group',
-
-              value: CurrencyFormatter.formatNaira(netCash, showDecimals: true),
-
-              subtitle: 'Gross physical cash payable to vault',
-
-              icon: Icons.payments_outlined,
-
-              accentColor: const Color(0xFF059669),
-
-              bgColor: const Color(0xFFF0FDF4),
-
-              isHero: true,
-
-            );
-
-            final card2 = _buildReviewMetricCard(
-
-              title: 'Total Loan Repayments',
-
-              value: CurrencyFormatter.formatNaira(totalRep, showDecimals: true),
-
-              subtitle: '$paidCount paying member(s)${notPaidCount > 0 ? ' • $notPaidCount arrears' : ''}',
-
-              icon: Icons.assignment_turned_in_outlined,
-
-              accentColor: const Color(0xFF2563EB),
-
-              bgColor: const Color(0xFFEFF6FF),
-
-            );
-
-            final card3 = _buildReviewMetricCard(
-
-              title: 'Total Net Savings',
-
-              value: CurrencyFormatter.formatNaira(totalSav, showDecimals: true),
-
-              subtitle: grpSavAmt > 0
-
-                  ? 'Includes ${CurrencyFormatter.formatNaira(grpSavAmt)} communal savings'
-
-                  : 'Individual member savings',
-
-              icon: Icons.savings_outlined,
-
-              accentColor: const Color(0xFF0D9488),
-
-              bgColor: const Color(0xFFF0FDFA),
-
-            );
-
-            if (w < 700) {
-
-              return Column(
-
-                children: [
-
-                  card1,
-
-                  const SizedBox(height: 10),
-
-                  Row(
-
-                    children: [
-
-                      Expanded(child: card2),
-
-                      const SizedBox(width: 10),
-
-                      Expanded(child: card3),
-
-                    ],
-
-                  ),
-
-                ],
-
-              );
-
-            }
-
-            return Row(
-
-              children: [
-
-                Expanded(flex: 4, child: card1),
-
-                const SizedBox(width: 12),
-
-                Expanded(flex: 3, child: card2),
-
-                const SizedBox(width: 12),
-
-                Expanded(flex: 3, child: card3),
-
-              ],
-
-            );
-
-          },
-
-        ),
-
-        const SizedBox(height: 16),
-
-        // Optional Group Communal Savings Callout Banner
-
-        if (grpSavAmt > 0) ...[
-
-          Container(
-
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-
-            decoration: BoxDecoration(
-
-              color: const Color(0xFFF0F9FF),
-
-              borderRadius: BorderRadius.circular(10),
-
-              border: Border.all(color: const Color(0xFFBAE6FD)),
-
-            ),
-
-            child: Row(
-
-              children: [
-
-                Container(
-
-                  padding: const EdgeInsets.all(6),
-
-                  decoration: BoxDecoration(
-
-                    color: const Color(0xFFE0F2FE),
-
-                    borderRadius: BorderRadius.circular(6),
-
-                  ),
-
-                  child: const Icon(Icons.account_balance, size: 16, color: Color(0xFF0284C7)),
-
-                ),
-
-                const SizedBox(width: 10),
-
-                Expanded(
-
-                  child: Text(
-
-                    'Group Communal Savings: ${CurrencyFormatter.formatNaira(grpSavAmt)} entered for $groupName will be posted alongside individual collections.',
-
-                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0369A1)),
-
-                  ),
-
-                ),
-
-              ],
-
-            ),
-
-          ),
-
-          const SizedBox(height: 14),
-
-        ],
-
-        // Review Items Card Table
-
-        Container(
-
-          decoration: BoxDecoration(
-
-            color: Colors.white,
-
-            borderRadius: BorderRadius.circular(12),
-
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-
-            boxShadow: const [
-
-              BoxShadow(
-
-                color: Color(0x060F172A),
-
-                blurRadius: 6,
-
-                offset: Offset(0, 2),
-
-              ),
-
-            ],
-
-          ),
-
-          child: Column(
-
-            crossAxisAlignment: CrossAxisAlignment.start,
-
-            children: [
-
-              Padding(
-
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-
-                child: Row(
-
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
-                  children: [
-
-                    Text(
-
-                      'Staged Collections Checklist (${_stagedTransactions.length} Members)',
-
-                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-
-                    ),
-
-                    const Text(
-
-                      'Primary Vault Inflow',
-
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF059669)),
-
-                    ),
-
-                  ],
-
-                ),
-
-              ),
-
-              const Divider(height: 1, color: Color(0xFFF1F5F9)),
-
-              SingleChildScrollView(
-
-                scrollDirection: Axis.horizontal,
-
-                child: ConstrainedBox(
-
-                  constraints: const BoxConstraints(minWidth: 680),
-
-                  child: Table(
-
-                    columnWidths: const {
-
-                      0: FlexColumnWidth(2.6),
-
-                      1: FlexColumnWidth(1.4),
-
-                      2: FlexColumnWidth(1.8),
-
-                      3: FlexColumnWidth(1.8),
-
-                    },
-
-                    children: [
-
-                      TableRow(
-
-                        decoration: const BoxDecoration(color: Color(0xFFF8FAFC)),
-
-                        children: const [
-
-                          Padding(padding: EdgeInsets.symmetric(horizontal: 14, vertical: 11), child: Text('Client / Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF475569)))),
-
-                          Padding(padding: EdgeInsets.symmetric(horizontal: 14, vertical: 11), child: Text('Savings (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF475569)))),
-
-                          Padding(padding: EdgeInsets.symmetric(horizontal: 14, vertical: 11), child: Text('Repayment (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF475569)))),
-
-                          Padding(padding: EdgeInsets.symmetric(horizontal: 14, vertical: 11), child: Text('Payment Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF475569)))),
-
-                        ],
-
-                      ),
-
-                      if (grpSavAmt > 0)
-
-                        TableRow(
-
-                          decoration: const BoxDecoration(
-
-                            border: Border(top: BorderSide(color: Color(0xFFF1F5F9))),
-
-                          ),
-
-                          children: [
-
-                            Padding(
-
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-
-                              child: Text('$groupName (Communal)', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: Color(0xFF0369A1))),
-
-                            ),
-
-                            Padding(
-
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-
-                              child: Text(CurrencyFormatter.formatNaira(grpSavAmt), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: Color(0xFF0F172A))),
-
-                            ),
-
-                            const Padding(
-
-                              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-
-                              child: Text('—', style: TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8))),
-
-                            ),
-
-                            Padding(
-
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-
-                              child: Container(
-
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-
-                                decoration: BoxDecoration(color: const Color(0xFFE0F2FE), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFBAE6FD))),
-
-                                child: const Text('GROUP SAVINGS', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF0284C7)), textAlign: TextAlign.center),
-
-                              ),
-
-                            ),
-
-                          ],
-
-                        ),
-
-                      ..._stagedTransactions.map((tx) {
-
-                        final cName = tx['client_name']?.toString() ?? '';
-
-                        final cCode = tx['client_code']?.toString() ?? '';
-
-                        final sDep = (tx['savings_deposit_amount'] as num?)?.toDouble() ?? 0.0;
-
-                        final lRep = (tx['loan_repayment_amount'] as num?)?.toDouble() ?? 0.0;
-
-                        final expAmt = (tx['expected_amount'] as num?)?.toDouble() ?? 0.0;
-
-                        final pStat = tx['payment_status']?.toString() ?? 'PAID';
-
-                        final ovAmt = (tx['overdue_amount'] as num?)?.toDouble() ?? 0.0;
-
-                        String badgeText = 'FULL PAID';
-
-                        Color badgeBg = const Color(0xFFECFDF5);
-
-                        Color badgeFg = const Color(0xFF065F46);
-
-                        Color badgeBorder = const Color(0xFFA7F3D0);
-
-                        String repDisplay = CurrencyFormatter.formatNaira(lRep);
-
-                        if (pStat == 'NOT_PAID') {
-
-                          badgeText = 'NOT PAID (₦${ovAmt.toStringAsFixed(0)} Arrears)';
-
-                          badgeBg = const Color(0xFFFEF2F2);
-
-                          badgeFg = const Color(0xFFDC2626);
-
-                          badgeBorder = const Color(0xFFFECACA);
-
-                          repDisplay = '₦0 (Exp ₦${expAmt.toStringAsFixed(0)})';
-
-                        } else if (pStat == 'PART_PAID') {
-
-                          badgeText = 'PART PAID (₦${ovAmt.toStringAsFixed(0)} Arrears)';
-
-                          badgeBg = const Color(0xFFFFFBEB);
-
-                          badgeFg = const Color(0xFFB45309);
-
-                          badgeBorder = const Color(0xFFFDE68A);
-
-                        } else if (pStat == 'EXCESS') {
-
-                          badgeText = 'EXCESS (+₦${(lRep - expAmt).toStringAsFixed(0)})';
-
-                          badgeBg = const Color(0xFFEFF6FF);
-
-                          badgeFg = const Color(0xFF1D4ED8);
-
-                          badgeBorder = const Color(0xFFBFDBFE);
-
-                        }
-
-                        return TableRow(
-
-                          decoration: const BoxDecoration(
-
-                            border: Border(top: BorderSide(color: Color(0xFFF1F5F9))),
-
-                          ),
-
-                          children: [
-
-                            Padding(
-
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-
-                              child: Column(
-
-                                crossAxisAlignment: CrossAxisAlignment.start,
-
-                                children: [
-
-                                  Text(cName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: Color(0xFF0F172A)), softWrap: true),
-
-                                  Text(cCode, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
-
-                                ],
-
-                              ),
-
-                            ),
-
-                            Padding(
-
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-
-                              child: Text(
-
-                                sDep > 0 ? CurrencyFormatter.formatNaira(sDep) : '—',
-
-                                style: TextStyle(
-
-                                  fontSize: 12.5,
-
-                                  fontWeight: sDep > 0 ? FontWeight.w700 : FontWeight.w500,
-
-                                  color: sDep > 0 ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
-
-                                  fontFamily: 'monospace',
-
-                                ),
-
-                              ),
-
-                            ),
-
-                            Padding(
-
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-
-                              child: Text(
-
-                                repDisplay,
-
-                                style: TextStyle(
-
-                                  fontSize: 12.5,
-
-                                  fontWeight: lRep > 0 ? FontWeight.w700 : FontWeight.w500,
-
-                                  color: pStat == 'NOT_PAID' ? const Color(0xFFDC2626) : const Color(0xFF0F172A),
-
-                                  fontFamily: 'monospace',
-
-                                ),
-
-                              ),
-
-                            ),
-
-                            Padding(
-
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-
-                              child: Container(
-
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-
-                                decoration: BoxDecoration(
-
-                                  color: badgeBg,
-
-                                  borderRadius: BorderRadius.circular(6),
-
-                                  border: Border.all(color: badgeBorder),
-
-                                ),
-
-                                child: Text(
-
-                                  badgeText,
-
-                                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: badgeFg),
-
-                                  textAlign: TextAlign.center,
-
-                                ),
-
-                              ),
-
-                            ),
-
-                          ],
-
-                        );
-
-                      }),
-
-                    ],
-
-                  ),
-
-                ),
-
-              ),
-
-            ],
-
-          ),
-
-        ),
-
-        const SizedBox(height: 20),
-
-        // Action Buttons: Edit / Go Back and Confirm & Commit Collections
-
-        LayoutBuilder(
-
-          builder: (context, constraints) {
-
-            final isMobile = constraints.maxWidth < 600;
-
-            final backBtn = SizedBox(
-
-              height: 48,
-
-              child: OutlinedButton.icon(
-
-                onPressed: () => setState(() => _isReviewingGroup = false),
-
-                icon: const Icon(Icons.arrow_back, size: 18),
-
-                label: const Text('Edit / Go Back', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-
-                style: OutlinedButton.styleFrom(
-
-                  foregroundColor: const Color(0xFF334155),
-
-                  side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
-
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-
-                ),
-
-              ),
-
-            );
-
-            final isOnline = ref.watch(isOnlineProvider);
-
-            final submitBtn = SizedBox(
-
-              height: 48,
-
-              child: ElevatedButton.icon(
-
-                onPressed: (!canSubmit || _isSubmitting) ? null : () => _confirmAndSaveBatch(groupName, dateStr),
-
-                icon: _isSubmitting
-
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-
-                    : Icon(isOnline ? Icons.check_circle_outline : Icons.cloud_upload_outlined, size: 18),
-
-                label: Text(
-
-                  _isSubmitting
-
-                      ? (isOnline ? 'Posting to Ledger...' : 'Queueing in Outbox...')
-
-                      : (canSubmit
-
-                          ? (isOnline
-
-                              ? 'Confirm & Save Collections (${CurrencyFormatter.formatNaira(netCash)})'
-
-                              : 'Queue Offline Batch (${CurrencyFormatter.formatNaira(netCash)})')
-
-                          : 'Operational Suspended ($openReason)'),
-
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
-
-                ),
-
-                style: ElevatedButton.styleFrom(
-
-                  backgroundColor: isOnline ? const Color(0xFF064E3B) : const Color(0xFFD97706),
-
-                  foregroundColor: Colors.white,
-
-                  disabledBackgroundColor: const Color(0xFF94A3B8),
-
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-
-                  elevation: 1,
-
-                ),
-
-              ),
-
-            );
-
-            if (isMobile) {
-
-              return Column(
-
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-
-                children: [
-
-                  submitBtn,
-
-                  const SizedBox(height: 10),
-
-                  backBtn,
-
-                ],
-
-              );
-
-            }
-
-            return Row(
-
-              children: [
-
-                Expanded(flex: 2, child: backBtn),
-
-                const SizedBox(width: 14),
-
-                Expanded(flex: 3, child: submitBtn),
-
-              ],
-
-            );
-
-          },
-
-        ),
-
-      ],
-
-    );
-
-  }
-
-  Widget _buildReviewMetricCard({
-
-    required String title,
-
-    required String value,
-
-    required String subtitle,
-
-    required IconData icon,
-
-    required Color accentColor,
-
-    required Color bgColor,
-
-    bool isHero = false,
-
-  }) {
-
-    return Container(
-
-      padding: const EdgeInsets.all(14),
-
-      decoration: BoxDecoration(
-
-        color: Colors.white,
-
-        borderRadius: BorderRadius.circular(12),
-
-        border: Border(
-
-          top: BorderSide(color: accentColor, width: 3),
-
-          left: BorderSide(color: isHero ? accentColor.withValues(alpha: 0.3) : const Color(0xFFE2E8F0)),
-
-          right: BorderSide(color: isHero ? accentColor.withValues(alpha: 0.3) : const Color(0xFFE2E8F0)),
-
-          bottom: BorderSide(color: isHero ? accentColor.withValues(alpha: 0.3) : const Color(0xFFE2E8F0)),
-
-        ),
-
-        boxShadow: const [
-
-          BoxShadow(
-
-            color: Color(0x060F172A),
-
-            blurRadius: 4,
-
-            offset: Offset(0, 1),
-
-          ),
-
-        ],
-
-      ),
-
-      child: Column(
-
-        crossAxisAlignment: CrossAxisAlignment.start,
-
-        children: [
-
-          Row(
-
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
-            children: [
-
-              Expanded(
-
-                child: Text(
-
-                  title,
-
-                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
-
-                  softWrap: true,
-
-                  maxLines: 2,
-
-                  overflow: TextOverflow.ellipsis,
-
-                ),
-
-              ),
-
-              Container(
-
-                padding: const EdgeInsets.all(5),
-
-                decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(6)),
-
-                child: Icon(icon, size: 16, color: accentColor),
-
-              ),
-
-            ],
-
-          ),
-
-          const SizedBox(height: 6),
-
-          FittedBox(
-
-            fit: BoxFit.scaleDown,
-
-            alignment: Alignment.centerLeft,
-
-            child: Text(
-
-              value,
-
-              maxLines: 1,
-
-              softWrap: false,
-
-              style: TextStyle(
-
-                fontSize: 18,
-
-                fontWeight: FontWeight.w800,
-
-                color: isHero ? accentColor : const Color(0xFF0F172A),
-
-                fontFamily: 'monospace',
-
-                fontFeatures: const [FontFeature.tabularFigures()],
-
-              ),
-
-            ),
-
-          ),
-
-          const SizedBox(height: 4),
-
-          Text(
-
-            subtitle,
-
-            style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500),
-
-            softWrap: true,
-
-            maxLines: 2,
-
-            overflow: TextOverflow.ellipsis,
-
-          ),
-
-        ],
-
-      ),
-
-    );
-
-  }
-
-  // =========================================================================
-
   // MODE 2: SINGLE CLIENT QUICK ENTRY (app.py L5249–5380)
 
   // =========================================================================
@@ -6368,7 +5448,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
     final optsAsync = ref.watch(singleClientOptionsProvider);
 
-    final selectedDate = ref.watch(collectionsDateProvider);
+    final selectedDate = ref.watch(effectiveCollectionsDateProvider);
 
     final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
 
@@ -6382,7 +5462,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
         decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(8)),
 
-        child: Text('Error loading clients: $err', style: const TextStyle(color: Colors.red)),
+        child: Text('Error loading clients: ${AppErrorDetails.from(err).message}', style: const TextStyle(color: Colors.red)),
 
       ),
 
@@ -6535,6 +5615,12 @@ Status: CONFIRMED & POSTED TO LEDGER''';
         final remBal = activeLoan != null ? (activeLoan['remaining_balance'] as num?)?.toDouble() ?? 0.0 : 0.0;
 
         final expRep = activeLoan != null ? (activeLoan['expected_repayment'] as num?)?.toDouble() ?? 0.0 : 0.0;
+
+        final scOverdueArrears = activeLoan != null ? (activeLoan['overdue_arrears'] as num?)?.toDouble() ?? 0.0 : 0.0;
+
+        final scHasOverdue = activeLoan != null && (activeLoan['has_overdue'] == true || scOverdueArrears > 0);
+
+        final scCurrentInstallment = activeLoan != null ? (activeLoan['current_installment'] as num?)?.toDouble() ?? expRep : 0.0;
 
         final prodName = activeLoan != null ? activeLoan['product']?.toString() ?? 'Loan' : 'No Active Loan';
         final scTodayRep = selClient != null ? ((selClient['today_repayment'] as num?)?.toDouble() ?? 0.0) : 0.0;
@@ -7127,13 +6213,15 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                                   ? 'Client attendance logged with ₦0 payment. Overdue tracked in arrears.'
                                   : 'Loan Repayment: ${CurrencyFormatter.formatNaira(scTodayRep)} · Personal Savings: ${CurrencyFormatter.formatNaira(scTodaySav)} · Confirmed to Primary Vault Cash.')
                               : (expRep > 0
-                                  ? 'Expected loan repayment for this meeting cycle: ${CurrencyFormatter.formatNaira(expRep)}.'
+                                  ? (scHasOverdue
+                                      ? 'Total Due Today: ${CurrencyFormatter.formatNaira(expRep)} (Installment: ${CurrencyFormatter.formatNaira(scCurrentInstallment)} + Overdue Arrears: ${CurrencyFormatter.formatNaira(scOverdueArrears)}).'
+                                      : 'Expected loan repayment for this meeting cycle: ${CurrencyFormatter.formatNaira(expRep)}.')
                                   : 'No scheduled installment due today. You may record savings deposit or custom repayment below.'),
                           style: TextStyle(
                             fontSize: 11.5,
                             color: scIsRecordedToday
                                 ? (scTodayStat == 'NOT_PAID' ? const Color(0xFFB45309) : const Color(0xFF047857))
-                                : const Color(0xFF64748B),
+                                : (scHasOverdue ? const Color(0xFFB45309) : const Color(0xFF64748B)),
                           ),
                         ),
                       ],
@@ -8085,7 +7173,9 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
   Widget _buildTab2HistoryAndAudit() {
 
-    final dateStr = DateFormat('yyyy-MM-dd').format(_histDate);
+    final DateTime effHistDate = _histDate ?? ref.watch(effectiveCollectionsDateProvider);
+
+    final dateStr = DateFormat('yyyy-MM-dd').format(effHistDate);
 
     final search = _histSearchCtrl.text.trim();
 
@@ -8153,11 +7243,11 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                     context: context,
 
-                    initialDate: _histDate,
+                    initialDate: effHistDate,
 
                     firstDate: DateTime.now().subtract(const Duration(days: 365)),
 
-                    lastDate: DateTime.now(),
+                    lastDate: effHistDate.isAfter(DateTime.now()) ? effHistDate : DateTime.now(),
 
                   );
 
@@ -8201,7 +7291,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                       const SizedBox(width: 8),
 
-                      Text(DateFormat('dd MMM yyyy').format(_histDate), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                      Text(DateFormat('dd MMM yyyy').format(effHistDate), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
 
                       const SizedBox(width: 4),
 
@@ -8242,6 +7332,70 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                 onChanged: (_) => setState(() => _histClientPage = 1),
 
                 onSubmitted: (_) => setState(() => _histClientPage = 1),
+
+              );
+
+              final officerFilter = SizedBox(
+
+                width: isMobile ? double.infinity : 190,
+
+                child: DropdownButtonFormField<String>(
+
+                  value: _histAvailableOfficers.contains(_histOfficer) ? _histOfficer : 'All Officers',
+
+                  isExpanded: true,
+
+                  decoration: InputDecoration(
+
+                    labelText: 'Officer',
+
+                    labelStyle: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+
+                    filled: true,
+
+                    fillColor: const Color(0xFFF8FAFC),
+
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+
+                    isDense: true,
+
+                  ),
+
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+
+                  items: _histAvailableOfficers
+
+                      .map((o) => DropdownMenuItem<String>(
+
+                            value: o,
+
+                            child: Text(o, overflow: TextOverflow.ellipsis),
+
+                          ))
+
+                      .toList(),
+
+                  onChanged: (val) {
+
+                    if (val != null) {
+
+                      setState(() {
+
+                        _histOfficer = val;
+
+                        _histClientPage = 1;
+
+                      });
+
+                    }
+
+                  },
+
+                ),
 
               );
 
@@ -8291,6 +7445,14 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                     searchField,
 
+                    if (_histAvailableOfficers.length > 1) ...[
+
+                      const SizedBox(height: 10),
+
+                      officerFilter,
+
+                    ],
+
                   ],
 
                 );
@@ -8306,6 +7468,14 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                   const SizedBox(width: 12),
 
                   Expanded(child: searchField),
+
+                  if (_histAvailableOfficers.length > 1) ...[
+
+                    const SizedBox(width: 10),
+
+                    officerFilter,
+
+                  ],
 
                   const SizedBox(width: 10),
 
@@ -8333,11 +7503,32 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
             decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(10)),
 
-            child: Text('Error loading history: $err', style: const TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w600)),
+            child: Text('Error loading history: ${AppErrorDetails.from(err).message}', style: const TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w600)),
 
           ),
 
           data: (hData) {
+
+            final rawOfficers = (hData['available_officers'] as List<dynamic>?)
+                    ?.map((e) => e.toString().trim())
+                    .where((e) => e.isNotEmpty)
+                    .toList() ??
+                <String>[];
+            final nextOfficers = <String>[
+              'All Officers',
+              ...rawOfficers.where((o) => o != 'All Officers'),
+            ];
+            if (!nextOfficers.contains(_histOfficer)) {
+              nextOfficers.add(_histOfficer);
+            }
+            if (nextOfficers.length != _histAvailableOfficers.length ||
+                !List.generate(nextOfficers.length, (i) => nextOfficers[i] == _histAvailableOfficers[i]).every((e) => e)) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  setState(() => _histAvailableOfficers = nextOfficers);
+                }
+              });
+            }
 
             final totReps = (hData['total_repayments'] as num?)?.toDouble() ?? 0.0;
 
@@ -10649,7 +9840,9 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
   Widget _buildTab3ErrorCorrection() {
 
-    final dateStr = DateFormat('yyyy-MM-dd').format(_revDate);
+    final DateTime effRevDate = _revDate ?? ref.watch(effectiveCollectionsDateProvider);
+
+    final dateStr = DateFormat('yyyy-MM-dd').format(effRevDate);
 
     final search = _revSearchCtrl.text.trim();
 
@@ -10729,6 +9922,8 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                   _buildReversalCategoryButton('Savings Deposits', Icons.savings_outlined),
 
+                  _buildReversalCategoryButton('Savings Withdrawals', Icons.account_balance_wallet_outlined),
+
                 ],
 
               ),
@@ -10753,11 +9948,11 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                         context: context,
 
-                        initialDate: _revDate,
+                        initialDate: effRevDate,
 
                         firstDate: DateTime.now().subtract(const Duration(days: 365)),
 
-                        lastDate: DateTime.now(),
+                        lastDate: effRevDate.isAfter(DateTime.now()) ? effRevDate : DateTime.now(),
 
                       );
 
@@ -10801,7 +9996,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                           const SizedBox(width: 8),
 
-                          Text(DateFormat('dd MMM yyyy').format(_revDate), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                          Text(DateFormat('dd MMM yyyy').format(effRevDate), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
 
                           const SizedBox(width: 4),
 
@@ -10989,7 +10184,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
             decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(10)),
 
-            child: Text('Error loading options: $err', style: const TextStyle(color: Color(0xFFDC2626))),
+            child: Text('Error loading options: ${AppErrorDetails.from(err).message}', style: const TextStyle(color: Color(0xFFDC2626))),
 
           ),
 
@@ -11487,7 +10682,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
             decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(10)),
 
-            child: Text('Error loading requests: $err', style: const TextStyle(color: Color(0xFFDC2626))),
+            child: Text('Error loading requests: ${AppErrorDetails.from(err).message}', style: const TextStyle(color: Color(0xFFDC2626))),
 
           ),
 
@@ -11996,7 +11191,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
             cleanMessage = 'Network Connection Interrupted: The batch could not reach the server. You can queue this transaction offline.';
           }
         } else {
-          cleanMessage = e.toString().replaceAll(RegExp(r'^Exception:\s*'), '');
+          cleanMessage = AppErrorDetails.from(e).message;
         }
 
         setState(() {
@@ -12152,6 +11347,10 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
   }
 
   Widget _buildHeader(BuildContext context, bool isMobile) {
+    final isOfflineQueued = _receiptData?['is_offline_queued'] == true ||
+        _receiptData?['offline_queued'] == true ||
+        _receiptData?['status'] == 'QUEUED_LOCAL' ||
+        _receiptData?['watermark'] != null;
 
     final title = switch (_phase) {
 
@@ -12159,7 +11358,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
       _ModalStage.posting => 'Posting Collections to Ledger',
 
-      _ModalStage.success => 'Collection Confirmed',
+      _ModalStage.success => isOfflineQueued ? 'Collection Queued Offline' : 'Collection Confirmed',
 
       _ModalStage.error => 'Posting Interrupted',
 
@@ -12171,7 +11370,9 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
       _ModalStage.posting => 'Atomic double-entry transactions committing in real time.',
 
-      _ModalStage.success => 'All entries successfully committed to Primary Vault Cash.',
+      _ModalStage.success => isOfflineQueued
+          ? 'Saved to device outbox for automatic synchronization when back online.'
+          : 'All entries successfully committed to Primary Vault Cash.',
 
       _ModalStage.error => 'Ledger communication encountered an issue.',
 
@@ -12183,7 +11384,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
       _ModalStage.posting => Icons.sync,
 
-      _ModalStage.success => Icons.check_circle_outline,
+      _ModalStage.success => isOfflineQueued ? Icons.cloud_upload_outlined : Icons.check_circle_outline,
 
       _ModalStage.error => Icons.error_outline,
 
@@ -12195,7 +11396,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
       _ModalStage.posting => const Color(0xFFECFDF5),
 
-      _ModalStage.success => const Color(0xFFECFDF5),
+      _ModalStage.success => isOfflineQueued ? const Color(0xFFFFFBEB) : const Color(0xFFECFDF5),
 
       _ModalStage.error => const Color(0xFFFEF2F2),
 
@@ -12207,7 +11408,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
       _ModalStage.posting => const Color(0xFF059669),
 
-      _ModalStage.success => const Color(0xFF059669),
+      _ModalStage.success => isOfflineQueued ? const Color(0xFFD97706) : const Color(0xFF059669),
 
       _ModalStage.error => const Color(0xFFDC2626),
 
@@ -13455,7 +12656,10 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
     final recordedAt = r['timestamp']?.toString() ?? DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
 
-    final isOfflineQueued = r['is_offline_queued'] == true || r['status'] == 'QUEUED_LOCAL';
+    final isOfflineQueued = r['is_offline_queued'] == true ||
+        r['offline_queued'] == true ||
+        r['status'] == 'QUEUED_LOCAL' ||
+        r['watermark'] != null;
 
     final items = (r['items'] as List<dynamic>?) ?? widget.stagedTransactions;
 
@@ -13483,7 +12687,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
         'Records Accounted: $totalRecs\\n'
 
-        'Status: CONFIRMED & COMMITTED TO PRIMARY VAULT CASH';
+        'Status: ${isOfflineQueued ? 'QUEUED LOCALLY (PENDING NETWORK SYNC)' : 'CONFIRMED & COMMITTED TO PRIMARY VAULT CASH'}';
 
     return Column(
 
@@ -14613,7 +13817,7 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
 
         setState(() {
 
-          _errorMessage = e.toString();
+          _errorMessage = AppErrorDetails.from(e).message;
 
           _phase = _ModalStage.error;
 
@@ -14766,6 +13970,10 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
   Widget _buildHeader(BuildContext context, bool isMobile) {
 
     final clientName = widget.clientObj['client_name']?.toString() ?? 'Client';
+    final isOfflineQueued = _receiptData?['is_offline_queued'] == true ||
+        _receiptData?['offline_queued'] == true ||
+        _receiptData?['status'] == 'QUEUED_LOCAL' ||
+        _receiptData?['watermark'] != null;
 
     final title = switch (_phase) {
 
@@ -14773,7 +13981,7 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
 
       _ModalStage.posting => 'Posting Collection to Vault',
 
-      _ModalStage.success => 'Client Collection Confirmed',
+      _ModalStage.success => isOfflineQueued ? 'Client Collection Queued Offline' : 'Client Collection Confirmed',
 
       _ModalStage.error => 'Posting Interrupted',
 
@@ -14785,7 +13993,9 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
 
       _ModalStage.posting => 'Double-entry journal committing to Primary Vault Cash in real time.',
 
-      _ModalStage.success => 'Successfully committed to Vault Cash with complete client audit trail.',
+      _ModalStage.success => isOfflineQueued
+          ? 'Saved to device outbox for automatic synchronization when back online.'
+          : 'Successfully committed to Vault Cash with complete client audit trail.',
 
       _ModalStage.error => 'Ledger communication encountered an issue.',
 
@@ -14797,7 +14007,7 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
 
       _ModalStage.posting => Icons.sync,
 
-      _ModalStage.success => Icons.check_circle_outline,
+      _ModalStage.success => isOfflineQueued ? Icons.cloud_upload_outlined : Icons.check_circle_outline,
 
       _ModalStage.error => Icons.error_outline,
 
@@ -14809,7 +14019,7 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
 
       _ModalStage.posting => const Color(0xFFECFDF5),
 
-      _ModalStage.success => const Color(0xFFECFDF5),
+      _ModalStage.success => isOfflineQueued ? const Color(0xFFFFFBEB) : const Color(0xFFECFDF5),
 
       _ModalStage.error => const Color(0xFFFEF2F2),
 
@@ -14821,7 +14031,7 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
 
       _ModalStage.posting => const Color(0xFF059669),
 
-      _ModalStage.success => const Color(0xFF059669),
+      _ModalStage.success => isOfflineQueued ? const Color(0xFFD97706) : const Color(0xFF059669),
 
       _ModalStage.error => const Color(0xFFDC2626),
 

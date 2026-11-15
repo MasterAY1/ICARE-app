@@ -46,6 +46,8 @@ from api.schemas.audit import (
     RiskDistributionResponse,
     ReconciliationRepairRequest,
     ReconciliationRepairResponse,
+    WithdrawalAuditSummary,
+    WithdrawalAuditResponse,
 )
 
 router = APIRouter(prefix="/api/v1/audit", tags=["Audit Ledger"])
@@ -564,6 +566,108 @@ def get_savings_audit_ledger(
     )
 
     return SavingsLedgerResponse(metrics=metrics, records=enriched)
+
+
+# -----------------------------------------------------------------------------
+# TAB 4b: Withdrawal Approval & Lifecycle Audit Trail
+# -----------------------------------------------------------------------------
+@router.get("/withdrawals", response_model=WithdrawalAuditResponse)
+def get_withdrawal_lifecycle_audit(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    status_filter: str = "ALL",
+    branch_id: Optional[str] = None,
+    search: Optional[str] = None,
+    uow: SupabaseUnitOfWork = Depends(get_uow),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """Audit trail of withdrawal requests across PENDING -> APPROVED / REJECTED + user_audit_logs."""
+    import re
+    b_id, _ = _resolve_scope(current_user, branch_id, None)
+    d_from = date.fromisoformat(date_from) if date_from else date.today().replace(day=1)
+    d_to = date.fromisoformat(date_to) if date_to else date.today()
+
+    wr_q = uow.client.table("withdrawal_requests").select("*")
+    if b_id and b_id != "ALL":
+        wr_q = wr_q.eq("branch_id", b_id)
+    wr_q = wr_q.gte("created_at", f"{d_from.isoformat()}T00:00:00").lte("created_at", f"{d_to.isoformat()}T23:59:59.999999")
+    role = (current_user.role or "").strip()
+    if role in ["CO", "Officer", "Credit Officer", "CREDIT_OFFICER"]:
+        wr_q = wr_q.eq("requested_by", current_user.username)
+    raw_reqs = wr_q.order("created_at", desc=True).limit(300).execute().data or []
+
+    def _clean_rem(txt: Optional[str]) -> str:
+        t = str(txt or "")
+        for pat in (
+            r"\[DEST_ID:[^\]]*\]", r"\[DEST_NAME:[^\]]*\]", r"\[DEST_TYPE:[^\]]*\]",
+            r"\[FEE:[^\]]*\]", r"\[LOAN_OFFSET:[^\]]*\]",
+        ):
+            t = re.sub(pat, "", t, flags=re.IGNORECASE)
+        return re.sub(r"\s+", " ", t).strip()
+
+    formatted_reqs = []
+    for r in raw_reqs:
+        st_val = str(r.get("status") or "PENDING").upper()
+        if status_filter != "ALL" and st_val != status_filter.upper():
+            continue
+        rem_clean = _clean_rem(r.get("remarks"))
+        row = {
+            "id": str(r.get("id") or ""),
+            "Date": str(r.get("operational_date") or str(r.get("created_at") or ""))[:10],
+            "Client": str(r.get("client_name") or "-"),
+            "Savings Type": str(r.get("savings_type") or "Individual"),
+            "Operation": str(r.get("operation_type") or "Withdrawal"),
+            "Payout Method": str(r.get("payout_method") or "Cash"),
+            "Amount": float(r.get("amount") or 0.0),
+            "Requested By": str(r.get("requested_by") or "-"),
+            "Approved By": str(r.get("approved_by") or "-"),
+            "Status": st_val,
+            "Reference": str(r.get("reference") or "-"),
+            "Remarks": rem_clean,
+            "Rejection Reason": str(r.get("rejection_reason") or ""),
+            "Executed Table": str(r.get("executed_table") or ""),
+            "Executed Record ID": str(r.get("executed_record_id") or ""),
+        }
+        if search:
+            sk = search.lower().strip()
+            if sk not in row["Client"].lower() and sk not in row["Reference"].lower() and sk not in row["Requested By"].lower() and sk not in row["Remarks"].lower():
+                continue
+        formatted_reqs.append(row)
+
+    audit_events = []
+    try:
+        aq = uow.client.table("user_audit_logs").select("*").eq("module", "Withdrawals")
+        if b_id and b_id != "ALL" and current_user.branch:
+            aq = aq.eq("branch", current_user.branch)
+        aq_res = aq.order("timestamp", desc=True).limit(100).execute().data or []
+        for ev in aq_res:
+            audit_events.append({
+                "timestamp": str(ev.get("timestamp") or "")[:19].replace("T", " "),
+                "username": str(ev.get("username") or "-"),
+                "role": str(ev.get("role") or "-"),
+                "action": str(ev.get("action") or "-"),
+                "display_name": str(ev.get("display_name") or "-"),
+                "previous_value": str(ev.get("previous_value") or ""),
+                "new_value": str(ev.get("new_value") or ""),
+                "status": str(ev.get("status") or ""),
+            })
+    except Exception:
+        pass
+
+    summary = WithdrawalAuditSummary(
+        total_requests=len(formatted_reqs),
+        pending_count=sum(1 for x in formatted_reqs if x["Status"] == "PENDING"),
+        approved_count=sum(1 for x in formatted_reqs if x["Status"] == "APPROVED"),
+        rejected_count=sum(1 for x in formatted_reqs if x["Status"] == "REJECTED"),
+        approved_amount=sum(x["Amount"] for x in formatted_reqs if x["Status"] == "APPROVED"),
+        pending_amount=sum(x["Amount"] for x in formatted_reqs if x["Status"] == "PENDING"),
+    )
+
+    return WithdrawalAuditResponse(
+        summary=summary,
+        requests=formatted_reqs,
+        audit_events=audit_events,
+    )
 
 
 # -----------------------------------------------------------------------------

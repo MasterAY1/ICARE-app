@@ -150,15 +150,53 @@ class ApplyLoanResponse(BaseModel):
     message: str
 
 
+class SchedulePreviewRequest(BaseModel):
+    product_category: str = Field("Finance")
+    product_type: str = Field("Weekly 12W")
+    requested_amount: float = Field(..., gt=0)
+    downpayment_mode: Optional[str] = "Cash (Physical Payment)"
+    cash_downpayment: float = 0.0
+    savings_downpayment: float = 0.0
+    gap_fee: float = 0.0
+    application_date: Optional[str] = None
+    client_id: Optional[str] = None
+
+
+class SchedulePreviewItem(BaseModel):
+    installment_number: int
+    due_date: str
+    principal: float
+    interest: float
+    total_due: float
+
+
+class SchedulePreviewResponse(BaseModel):
+    product_type: str
+    product_category: str
+    frequency: str
+    duration: int
+    interest: float
+    active_credit: float
+    expected_installment: float
+    gap_fee: float
+    total_upfront_required: float
+    first_due_date: Optional[str] = None
+    expected_end_date: Optional[str] = None
+    installments: List[SchedulePreviewItem] = []
+
+
 class PendingLoanItem(BaseModel):
     loan_id: str
     client_id: str
     client_name: str
+    client_code: Optional[str] = None
     group_name: str
     date: Optional[str] = None
     credit_officer: str
     loan_amount: float
     loan_product: str
+    product_category: str = "Finance"
+    exceeds_bm_limit: bool = False
 
 
 class PendingDisbursementsResponse(BaseModel):
@@ -181,8 +219,10 @@ class DisburseLoanResponse(BaseModel):
 
 class UpdateClientGuarantorInput(BaseModel):
     name: str = Field(..., min_length=1)
+    nickname: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+    business_address: Optional[str] = None
     marital_status: str = "Married"
     business_type: Optional[str] = "Trader"
     average_monthly_income: float = 0.0
@@ -190,6 +230,7 @@ class UpdateClientGuarantorInput(BaseModel):
     id_means: str = "National ID (NIN)"
     id_number: Optional[str] = None
     guarantor_name: Optional[str] = None
+    guarantor_nickname: Optional[str] = None
     guarantor_phone: Optional[str] = None
     guarantor_address: Optional[str] = None
     guarantor_marital_status: Optional[str] = "Married"

@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/icare_theme.dart';
@@ -14,6 +15,14 @@ class IcareApp extends ConsumerWidget {
       title: 'ICARE — Core Banking',
       debugShowCheckedModeBanner: false,
       theme: IcareTheme.lightTheme,
+      scrollBehavior: const MaterialScrollBehavior().copyWith(
+        dragDevices: {
+          PointerDeviceKind.touch,
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.trackpad,
+          PointerDeviceKind.stylus,
+        },
+      ),
       onGenerateRoute: (settings) {
         final rawName = settings.name ?? '';
         final uri = Uri.tryParse(rawName);

@@ -550,3 +550,60 @@ class ReconciliationRepairResponseModel {
     );
   }
 }
+
+class WithdrawalAuditSummaryModel {
+  final int totalRequests;
+  final int pendingCount;
+  final int approvedCount;
+  final int rejectedCount;
+  final double approvedAmount;
+  final double pendingAmount;
+
+  WithdrawalAuditSummaryModel({
+    required this.totalRequests,
+    required this.pendingCount,
+    required this.approvedCount,
+    required this.rejectedCount,
+    required this.approvedAmount,
+    required this.pendingAmount,
+  });
+
+  factory WithdrawalAuditSummaryModel.fromJson(Map<String, dynamic> json) {
+    return WithdrawalAuditSummaryModel(
+      totalRequests: (json['total_requests'] as num?)?.toInt() ?? 0,
+      pendingCount: (json['pending_count'] as num?)?.toInt() ?? 0,
+      approvedCount: (json['approved_count'] as num?)?.toInt() ?? 0,
+      rejectedCount: (json['rejected_count'] as num?)?.toInt() ?? 0,
+      approvedAmount: (json['approved_amount'] as num?)?.toDouble() ?? 0.0,
+      pendingAmount: (json['pending_amount'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+}
+
+class WithdrawalAuditResponseModel {
+  final WithdrawalAuditSummaryModel summary;
+  final List<Map<String, dynamic>> requests;
+  final List<Map<String, dynamic>> auditEvents;
+
+  WithdrawalAuditResponseModel({
+    required this.summary,
+    required this.requests,
+    required this.auditEvents,
+  });
+
+  factory WithdrawalAuditResponseModel.fromJson(Map<String, dynamic> json) {
+    return WithdrawalAuditResponseModel(
+      summary: WithdrawalAuditSummaryModel.fromJson(
+        json['summary'] as Map<String, dynamic>? ?? {},
+      ),
+      requests: (json['requests'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList() ??
+          [],
+      auditEvents: (json['audit_events'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList() ??
+          [],
+    );
+  }
+}

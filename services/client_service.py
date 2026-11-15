@@ -6,6 +6,7 @@ Enterprise Service for Client Management:
 """
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+import json
 import uuid
 
 from interfaces.unit_of_work import UnitOfWork
@@ -15,6 +16,26 @@ from api.core.errors import ICAREException
 
 class ClientService:
     """Enterprise service governing client lifecycle operations."""
+
+    @staticmethod
+    def _resolve_user_uuid(uow: UnitOfWork, actor: Optional[str]) -> Optional[str]:
+        if not actor:
+            return None
+        s = str(actor).strip()
+        if not s or s == "00000000-0000-0000-0000-000000000000":
+            return None
+        try:
+            uuid.UUID(s)
+            return s
+        except Exception:
+            pass
+        try:
+            res = uow.client.table("app_users").select("id").eq("username", s).limit(1).execute()
+            if res.data:
+                return str(res.data[0]["id"])
+        except Exception:
+            pass
+        return None
 
     @staticmethod
     def submit_profile_update_request(
@@ -56,8 +77,10 @@ class ClientService:
         # 3. Capture previous values from client profile
         prev_data = {
             "name": client.name,
+            "nickname": getattr(client, "nickname", None),
             "phone": client.phone,
             "address": client.address,
+            "business_address": getattr(client, "business_address", None),
             "marital_status": client.marital_status,
             "business_type": client.business_type,
             "average_monthly_income": getattr(client, "average_monthly_income", None),
@@ -80,6 +103,7 @@ class ClientService:
             l_extra = l_row.get("extra_fields") or {}
             prev_data.update({
                 "guarantor_name": l_extra.get("guarantor_name"),
+                "guarantor_nickname": l_extra.get("guarantor_nickname"),
                 "guarantor_phone": l_extra.get("guarantor_phone"),
                 "guarantor_address": l_extra.get("guarantor_home_address"),
                 "guarantor_marital_status": l_extra.get("guarantor_marital_status"),
@@ -91,28 +115,39 @@ class ClientService:
             })
 
         req_id = str(uuid.uuid4())
+        req_uid = ClientService._resolve_user_uuid(uow, requested_by)
+        target_bid = branch_id or client.branch_id
         insert_payload = {
             "request_id": req_id,
             "client_id": client_id,
-            "branch_id": branch_id or client.branch_id,
-            "requested_by": requested_by,
+            "branch_id": target_bid,
+            "requested_by": req_uid or requested_by,
             "proposed_changes": proposed_changes,
             "previous_values": prev_data,
             "status": ClientProfileUpdateStatus.PENDING.value,
             "created_at": datetime.now().isoformat()
         }
 
-        uow.client.table("client_profile_update_requests").insert(insert_payload).execute()
-
-        # Audit event
-        uow.client.table("audit_logs").insert({
-            "action": "SUBMIT_CLIENT_UPDATE_REQUEST",
-            "entity": "clients",
-            "entity_id": client_id,
-            "user_id": requested_by,
-            "branch_id": branch_id or client.branch_id,
-            "details": f"Submitted client edit request {req_id} for {client.name}"
-        }).execute()
+        operations = [
+            {
+                "type": "insert",
+                "table": "client_profile_update_requests",
+                "record": insert_payload,
+            },
+            {
+                "type": "insert",
+                "table": "audit_logs",
+                "record": {
+                    "id": str(uuid.uuid4()),
+                    "user_id": req_uid,
+                    "action": "SUBMIT_CLIENT_UPDATE_REQUEST",
+                    "description": f"Submitted client edit request {req_id} for {client.name}",
+                    "table_name": "client_profile_update_requests",
+                    "record_id": req_id,
+                },
+            },
+        ]
+        uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
 
         return {
             "request_id": req_id,
@@ -185,18 +220,40 @@ class ClientService:
                 action="No further action can be taken on this request."
             )
 
+        app_uid = ClientService._resolve_user_uuid(uow, approved_by)
+        req_by = req_row.get("requested_by")
+        if req_by and str(req_by) == str(app_uid or approved_by):
+            raise ICAREException(
+                error_code="SELF_APPROVAL_FORBIDDEN",
+                title="Four-Eyes Segregation Violation",
+                message="You cannot approve your own client profile update request.",
+                action="Another manager must review and approve this change."
+            )
+
         client_id = req_row["client_id"]
         changes = req_row.get("proposed_changes") or {}
+        operations: List[Dict[str, Any]] = []
+
+        # Query clients table (for validation/audit context)
+        uow.client.table("clients").select("client_id, name").eq("client_id", client_id).limit(1).execute()
 
         # 1. Update clients table
-        client_fields = {}
-        for k in ["name", "phone", "address", "marital_status", "business_type", "average_monthly_income", "other_obligations", "id_means", "id_number"]:
+        client_fields: Dict[str, Any] = {}
+        for k in [
+            "name", "nickname", "phone", "address", "business_address",
+            "marital_status", "business_type", "average_monthly_income",
+            "other_obligations", "id_means", "id_number"
+        ]:
             if k in changes and changes[k] is not None:
                 client_fields[k] = changes[k]
 
         if client_fields:
-            client_fields["updated_at"] = datetime.now().isoformat()
-            uow.client.table("clients").update(client_fields).eq("client_id", client_id).execute()
+            operations.append({
+                "type": "update",
+                "table": "clients",
+                "match": {"client_id": client_id},
+                "record": client_fields,
+            })
 
         # 2. Update loan guarantor extra_fields if present
         res_l = (
@@ -209,9 +266,11 @@ class ClientService:
         )
         if res_l.data:
             latest_loan = res_l.data[0]
-            loan_extra = latest_loan.get("extra_fields") or {}
+            loan_extra = dict(latest_loan.get("extra_fields") or {})
             if "guarantor_name" in changes:
                 loan_extra["guarantor_name"] = changes.get("guarantor_name")
+            if "guarantor_nickname" in changes:
+                loan_extra["guarantor_nickname"] = changes.get("guarantor_nickname")
             if "guarantor_phone" in changes:
                 loan_extra["guarantor_phone"] = changes.get("guarantor_phone")
             if "guarantor_address" in changes:
@@ -225,13 +284,21 @@ class ClientService:
             if "guarantor_office_address" in changes:
                 loan_extra["guarantor_office_address"] = changes.get("guarantor_office_address")
 
-            loan_update = {"extra_fields": loan_extra}
+            loan_update: Dict[str, Any] = {
+                "_allow_active_metadata_update": True,
+                "extra_fields": loan_extra,
+            }
             if "guarantor_id_means" in changes:
                 loan_update["guarantor_id_means"] = changes.get("guarantor_id_means")
             if "guarantor_id_number" in changes:
                 loan_update["guarantor_id_number"] = changes.get("guarantor_id_number")
 
-            uow.client.table("loans").update(loan_update).eq("loan_id", latest_loan["loan_id"]).execute()
+            operations.append({
+                "type": "update",
+                "table": "loans",
+                "match": {"loan_id": latest_loan["loan_id"]},
+                "record": loan_update,
+            })
 
         # 3. Update public.guarantors table
         g_name = changes.get("guarantor_name")
@@ -239,32 +306,50 @@ class ClientService:
         if g_name and g_phone:
             res_g = uow.guarantors.find_by_phone(g_phone)
             if res_g:
-                uow.client.table("guarantors").update({
-                    "name": g_name,
-                    "address": changes.get("guarantor_address"),
-                    "occupation": changes.get("guarantor_occupation"),
-                    "business_address": changes.get("guarantor_office_address"),
-                    "id_means": changes.get("guarantor_id_means"),
-                    "id_number": changes.get("guarantor_id_number")
-                }).eq("guarantor_id", res_g.guarantor_id).execute()
+                operations.append({
+                    "type": "update",
+                    "table": "guarantors",
+                    "match": {"guarantor_id": res_g.guarantor_id},
+                    "record": {
+                        "name": g_name,
+                        "address": changes.get("guarantor_address"),
+                        "occupation": changes.get("guarantor_occupation"),
+                        "business_address": changes.get("guarantor_office_address"),
+                        "id_means": changes.get("guarantor_id_means"),
+                        "id_number": changes.get("guarantor_id_number"),
+                    },
+                })
 
-        # 4. Mark request APPROVED
-        uow.client.table("client_profile_update_requests").update({
-            "status": ClientProfileUpdateStatus.APPROVED.value,
-            "reviewed_by": approved_by,
-            "reviewed_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
-        }).eq("request_id", request_id).execute()
+        # 4. Mark request APPROVED (guarded by PENDING status in RPC)
+        operations.append({
+            "type": "update",
+            "table": "client_profile_update_requests",
+            "match": {
+                "request_id": request_id,
+                "status": ClientProfileUpdateStatus.PENDING.value,
+            },
+            "record": {
+                "status": ClientProfileUpdateStatus.APPROVED.value,
+                "reviewed_by": app_uid or approved_by,
+                "reviewed_at": datetime.now().isoformat(),
+            },
+        })
 
         # 5. Audit
-        uow.client.table("audit_logs").insert({
-            "action": "APPROVE_CLIENT_UPDATE",
-            "entity": "clients",
-            "entity_id": client_id,
-            "user_id": approved_by,
-            "branch_id": req_row.get("branch_id"),
-            "details": f"Approved client update request {request_id}"
-        }).execute()
+        operations.append({
+            "type": "insert",
+            "table": "audit_logs",
+            "record": {
+                "id": str(uuid.uuid4()),
+                "user_id": app_uid,
+                "action": "APPROVE_CLIENT_UPDATE",
+                "description": f"Approved client update request {request_id}",
+                "table_name": "client_profile_update_requests",
+                "record_id": request_id,
+            },
+        })
+
+        uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
 
         return {
             "request_id": request_id,
@@ -311,23 +396,36 @@ class ClientService:
                 action="No further action can be taken on this request."
             )
 
-        uow.client.table("client_profile_update_requests").update({
-            "status": ClientProfileUpdateStatus.REJECTED.value,
-            "rejection_reason": reason.strip(),
-            "reviewed_by": rejected_by,
-            "reviewed_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
-        }).eq("request_id", request_id).execute()
-
-        # Audit
-        uow.client.table("audit_logs").insert({
-            "action": "REJECT_CLIENT_UPDATE",
-            "entity": "clients",
-            "entity_id": req_row["client_id"],
-            "user_id": rejected_by,
-            "branch_id": req_row.get("branch_id"),
-            "details": f"Rejected update request {request_id}: {reason.strip()}"
-        }).execute()
+        rej_uid = ClientService._resolve_user_uuid(uow, rejected_by)
+        operations = [
+            {
+                "type": "update",
+                "table": "client_profile_update_requests",
+                "match": {
+                    "request_id": request_id,
+                    "status": ClientProfileUpdateStatus.PENDING.value,
+                },
+                "record": {
+                    "status": ClientProfileUpdateStatus.REJECTED.value,
+                    "rejection_reason": reason.strip(),
+                    "reviewed_by": rej_uid or rejected_by,
+                    "reviewed_at": datetime.now().isoformat(),
+                },
+            },
+            {
+                "type": "insert",
+                "table": "audit_logs",
+                "record": {
+                    "id": str(uuid.uuid4()),
+                    "user_id": rej_uid,
+                    "action": "REJECT_CLIENT_UPDATE",
+                    "description": f"Rejected update request {request_id}: {reason.strip()}",
+                    "table_name": "client_profile_update_requests",
+                    "record_id": request_id,
+                },
+            },
+        ]
+        uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
 
         return {
             "request_id": request_id,
@@ -471,12 +569,12 @@ class ClientService:
 
             # Audit Log
             uow.client.table("audit_logs").insert({
+                "id": str(uuid.uuid4()),
+                "user_id": ClientService._resolve_user_uuid(uow, transferred_by or to_officer_id),
                 "action": f"CLIENT_TRANSFER_{t_type}",
-                "entity": "clients",
-                "entity_id": client_id,
-                "user_id": transferred_by or to_officer_id,
-                "branch_id": to_branch_id,
-                "details": f"Reassigned client {client.name} ({t_type}): from officer {from_officer_id} to officer {dest_officer_name}"
+                "description": f"Reassigned client {client.name} ({t_type}): from officer {from_officer_id} to officer {dest_officer_name}",
+                "table_name": "clients",
+                "record_id": client_id,
             }).execute()
 
             return {
@@ -540,12 +638,12 @@ class ClientService:
 
         # Audit Log
         uow.client.table("audit_logs").insert({
+            "id": str(uuid.uuid4()),
+            "user_id": ClientService._resolve_user_uuid(uow, transferred_by or from_officer_id),
             "action": f"CLIENT_TRANSFER_REQUESTED_{t_type}",
-            "entity": "clients",
-            "entity_id": client_id,
-            "user_id": transferred_by or from_officer_id,
-            "branch_id": from_branch_id,
-            "details": f"Initiated transfer request for client {client.name} ({t_type}): from branch {from_branch_id} to branch {dest_branch_name} (Awaiting AM Sign-off)"
+            "description": f"Initiated transfer request for client {client.name} ({t_type}): from branch {from_branch_id} to branch {dest_branch_name} (Awaiting AM Sign-off)",
+            "table_name": "client_transfers",
+            "record_id": transfer_id,
         }).execute()
 
         return {
@@ -714,12 +812,12 @@ class ClientService:
 
         # 4. Audit Log
         uow.client.table("audit_logs").insert({
+            "id": str(uuid.uuid4()),
+            "user_id": ClientService._resolve_user_uuid(uow, accepted_by or to_officer_id),
             "action": "CLIENT_TRANSFER_COMPLETED",
-            "entity": "clients",
-            "entity_id": client_id,
-            "user_id": accepted_by or to_officer_id,
-            "branch_id": to_branch_id,
-            "details": f"Accepted and assigned transferred client {client_name} to officer {dest_officer_name} ({dest_branch_name})"
+            "description": f"Accepted and assigned transferred client {client_name} to officer {dest_officer_name} ({dest_branch_name})",
+            "table_name": "client_transfers",
+            "record_id": transfer_id,
         }).execute()
 
         return {
@@ -759,11 +857,12 @@ class ClientService:
         }).eq("transfer_id", transfer_id).execute()
 
         uow.client.table("audit_logs").insert({
+            "id": str(uuid.uuid4()),
+            "user_id": ClientService._resolve_user_uuid(uow, rejected_by),
             "action": "CLIENT_TRANSFER_REJECTED",
-            "entity": "client_transfers",
-            "entity_id": transfer_id,
-            "user_id": rejected_by,
-            "details": f"Rejected client transfer #{transfer_id[:8]}. Reason: {reason.strip()}"
+            "description": f"Rejected client transfer #{transfer_id[:8]}. Reason: {reason.strip()}",
+            "table_name": "client_transfers",
+            "record_id": transfer_id,
         }).execute()
 
         return {

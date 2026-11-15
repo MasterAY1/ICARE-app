@@ -219,4 +219,25 @@ class AuditApiService {
     );
     return ReconciliationRepairResponseModel.fromJson(response.data as Map<String, dynamic>);
   }
+
+  /// Withdrawal Requests & Approval Lifecycle Audit
+  Future<WithdrawalAuditResponseModel> getWithdrawalAudit({
+    String? dateFrom,
+    String? dateTo,
+    String statusFilter = 'ALL',
+    String? branchId,
+    String? search,
+  }) async {
+    final params = <String, dynamic>{'status_filter': statusFilter};
+    if (dateFrom != null) params['date_from'] = dateFrom;
+    if (dateTo != null) params['date_to'] = dateTo;
+    if (branchId != null && branchId.isNotEmpty) params['branch_id'] = branchId;
+    if (search != null && search.isNotEmpty) params['search'] = search;
+
+    final response = await _apiClient.get(
+      '/api/v1/audit/withdrawals',
+      queryParameters: params,
+    );
+    return WithdrawalAuditResponseModel.fromJson(response.data as Map<String, dynamic>);
+  }
 }

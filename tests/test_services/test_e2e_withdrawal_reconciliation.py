@@ -161,8 +161,11 @@ class TestE2EWithdrawalReconciliation(unittest.TestCase):
         res_bank = CoCashbookProjectionBuilder.rebuild_co_projection(
             self.mock_uow, self.branch_id, self.officer_id, self.date_val
         )
-        self.assertEqual(res_bank["laps_returns"], 0.0)
-        self.assertEqual(res_bank["total_outflows"], 0.0)
+        self.assertEqual(res_bank["laps_returns"], 15000.0)
+        self.assertEqual(res_bank["bank_withdrawal"], 15000.0)
+        self.assertEqual(res_bank["total_outflows"], 15000.0)
+        self.assertEqual(res_bank["total_inflows"], 15000.0)
+        self.assertEqual(res_bank["closing_balance"], 0.0)
 
     def test_e2e_bank_withdrawal_cash_inflow(self):
         """Test Bank Withdrawal: Inflow into vault cash position."""

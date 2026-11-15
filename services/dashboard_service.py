@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 
 from interfaces.unit_of_work import UnitOfWork
-from services.business_date_service import get_nigerian_holidays
+from services.business_date_service import BusinessDateService, get_nigerian_holidays
 from services.collection_performance_service import CollectionPerformanceService
 from services.co_cashbook_projection_builder import CoCashbookProjectionBuilder
 from services.master_cashbook_projection_builder import MasterCashbookProjectionBuilder
@@ -25,6 +25,102 @@ from services.savings_service import SavingsService
 
 
 class DashboardService:
+
+    @staticmethod
+    def _resolve_closure_state(
+        uow: UnitOfWork,
+        target_date: date,
+        branch_id: Optional[str] = None,
+    ) -> tuple[bool, str]:
+        """Determine operational closure using BusinessDateService with weekend/holiday fallback."""
+        if branch_id and branch_id != "All":
+            try:
+                is_open, reason = BusinessDateService.is_operational_open(uow, branch_id, target_date)
+                return (not is_open), ("" if is_open else (reason or "Branch Closure / Holiday"))
+            except Exception:
+                pass
+        if target_date.weekday() >= 5:
+            return True, f"Weekend ({target_date.strftime('%A')})"
+        try:
+            ng_holidays = get_nigerian_holidays(years=[target_date.year])
+            if target_date in ng_holidays:
+                return True, ng_holidays.get(target_date) or "Public Holiday"
+            q_cl = (
+                uow.client.table("branch_closures")
+                .select("*")
+                .lte("start_date", target_date.isoformat())
+                .gte("end_date", target_date.isoformat())
+            )
+            if branch_id and branch_id != "All":
+                q_cl = q_cl.or_(f"branch_id.is.null,branch_id.eq.{branch_id}")
+            res_cl = q_cl.execute()
+            if res_cl.data:
+                return True, res_cl.data[0].get("reason") or "Branch Closure / Holiday"
+        except Exception:
+            pass
+        return False, ""
+
+    @staticmethod
+    def _prefetch_schedules(uow: UnitOfWork, loan_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+        """Fetch loan_schedule rows in small loan batches so 60D/120D schedules never truncate."""
+        schedules_by_loan: Dict[str, List[Dict[str, Any]]] = {}
+        clean_ids = [str(lid) for lid in loan_ids if lid]
+        chunk_size = 15
+        for i in range(0, len(clean_ids), chunk_size):
+            chunk = clean_ids[i:i + chunk_size]
+            try:
+                res_sch = (
+                    uow.client.table("loan_schedule")
+                    .select("*")
+                    .in_("loan_id", chunk)
+                    .order("installment_number")
+                    .limit(5000)
+                    .execute()
+                )
+                for row in (res_sch.data or []):
+                    lid_k = str(row.get("loan_id") or "")
+                    if lid_k:
+                        schedules_by_loan.setdefault(lid_k, []).append(row)
+            except Exception:
+                pass
+        return schedules_by_loan
+
+    @staticmethod
+    def _is_offset_repayment(row: Dict[str, Any]) -> bool:
+        """Return True if a repayment row represents a non-cash savings offset rather than physical cash."""
+        tx_type = str(row.get("transaction_type") or "").upper()
+        p_mode = str(row.get("payment_mode") or "").upper()
+        note_u = str(row.get("note") or "").upper()
+        return tx_type == "LOAN_OFFSET" or p_mode in ("SAVINGS_OFFSET", "LOAN_OFFSET") or "[LOAN_OFFSET:" in note_u
+
+    @staticmethod
+    def _is_noncash_savings_row(row: Dict[str, Any]) -> bool:
+        """Return True for onboarding legacy rows or non-cash savings/laps offset transfers."""
+        ref = str(row.get("reference") or "").upper()
+        rem = str(row.get("remarks") or "").lower()
+        if ref.startswith("ONBOARDING") or "onboarding" in rem or "legacy" in rem:
+            return True
+        noncash_markers = (
+            "loan_offset",
+            "[loan_offset:",
+            "loan offset",
+            "lapstransferred",
+            "laps transferred",
+            "fee_offset",
+            "fee offset",
+            "savings_transfer",
+            "auto_deduct",
+        )
+        return any(m in rem for m in noncash_markers)
+
+    @staticmethod
+    def _resolve_loan_cycle(prod_name: str, cycle: str = "", duration: int = 0) -> str:
+        bucket = CoCashbookProjectionBuilder._classify_loan_product(prod_name, cycle, duration)
+        if bucket in ("60d", "120d"):
+            return "Daily"
+        if bucket == "monthly":
+            return "Monthly"
+        return "Weekly"
 
     @classmethod
     def _calculate_payment_breakdown(
@@ -36,37 +132,24 @@ class DashboardService:
         schedules_by_loan: Optional[Dict[str, List[Dict[str, Any]]]] = None
     ) -> Dict[str, Any]:
         """
-        Authoritative engine for payment categorization per BR-DASH-002.
-        Calculates full, normal, excess, part, and not paid metrics.
+        Authoritative engine for payment categorization per BR-DASH-002 / BR-DASH-005.
+        Calculates full, normal, excess, part, not paid, and overdue arrears metrics.
         """
         date_str = target_date.isoformat()
         meeting_day = target_date.strftime("%A")
         is_weekend = target_date.weekday() >= 5
+        is_branch_closed, _ = cls._resolve_closure_state(uow, target_date, branch_id)
 
-        # Dynamic Closure & Holiday Check
-        is_branch_closed = False
-        try:
-            ng_holidays = get_nigerian_holidays(years=[target_date.year])
-            if target_date in ng_holidays:
-                is_branch_closed = True
-
-            q_cl = uow.client.table("branch_closures").select("*") \
-                .lte("start_date", target_date.isoformat()) \
-                .gte("end_date", target_date.isoformat())
-            if branch_id:
-                q_cl = q_cl.or_(f"branch_id.is.null,branch_id.eq.{branch_id}")
-            res_cl = q_cl.execute()
-            if res_cl.data:
-                is_branch_closed = True
-        except Exception:
-            is_branch_closed = False
-
-        q = uow.client.table("loans").select("*, clients(name, client_code), loan_products(name)").in_("status", ["ACTIVE", "Approved", "Active", "Completed"])
-        if branch_id:
+        q = (
+            uow.client.table("loans")
+            .select("*, clients(name, client_code), loan_products(name, repayment_cycle, installments)")
+            .in_("status", ["ACTIVE", "Approved", "Active", "Completed"])
+        )
+        if branch_id and branch_id != "All":
             q = q.eq("branch_id", branch_id)
         if officer_id:
             q = q.eq("officer_id", officer_id)
-        
+
         try:
             loans_res = q.execute()
             all_loans = loans_res.data or []
@@ -77,7 +160,12 @@ class DashboardService:
         try:
             loan_client_ids = [l.get("client_id") for l in all_loans if l.get("client_id")]
             if loan_client_ids:
-                g_query = uow.client.table("client_memberships").select("client_id, groups(name, meeting_day)").in_("client_id", loan_client_ids).execute()
+                g_query = (
+                    uow.client.table("client_memberships")
+                    .select("client_id, groups(name, meeting_day)")
+                    .in_("client_id", loan_client_ids)
+                    .execute()
+                )
                 for gm in (g_query.data or []):
                     grp = gm.get("groups") or {}
                     cid_s = str(gm.get("client_id"))
@@ -87,44 +175,61 @@ class DashboardService:
 
         s_d_str = f"{date_str}T00:00:00"
         e_d_str = f"{date_str}T23:59:59"
-        q_rep = uow.client.table("repayments").select("loan_id, client_id, amount_paid").gte("date", s_d_str).lte("date", e_d_str)
+        q_rep = (
+            uow.client.table("repayments")
+            .select("loan_id, client_id, amount_paid, transaction_type, payment_mode, note")
+            .gte("date", s_d_str)
+            .lte("date", e_d_str)
+        )
         if branch_id and branch_id != "All":
             q_rep = q_rep.eq("branch_id", branch_id)
         if officer_id:
             q_rep = q_rep.eq("officer_id", officer_id)
-        
+
         try:
             rep_res = q_rep.execute()
             raw_reps = rep_res.data or []
             reps = [
-                r for r in raw_reps 
-                if str(r.get("transaction_type", "")).upper() != "ONBOARDING_LEGACY" 
+                r for r in raw_reps
+                if str(r.get("transaction_type", "")).upper() != "ONBOARDING_LEGACY"
                 and str(r.get("note", "")).strip() != "Legacy Repayments Onboarded"
             ]
         except Exception:
             reps = []
 
-        rep_map = {}
-        rep_by_loan = {}
+        rep_by_loan: Dict[str, float] = {}
         for r in reps:
-            cid_s = str(r.get("client_id") or "")
             lid_s = str(r.get("loan_id") or "")
             amt = float(r.get("amount_paid") or 0.0)
-            if cid_s:
-                rep_map[cid_s] = rep_map.get(cid_s, 0.0) + amt
             if lid_s:
                 rep_by_loan[lid_s] = rep_by_loan.get(lid_s, 0.0) + amt
-            
+
+        # Fetch authoritative payoff/excess records for target_date
+        payoff_by_loan: Dict[str, Dict[str, Any]] = {}
+        try:
+            q_po = uow.client.table("loan_payoff_excess_records").select("*").eq("date", date_str)
+            if branch_id and branch_id != "All":
+                q_po = q_po.eq("branch_id", branch_id)
+            if officer_id:
+                q_po = q_po.eq("officer_id", officer_id)
+            po_res = q_po.execute()
+            for po in (po_res.data or []):
+                lid_p = str(po.get("loan_id") or "")
+                if lid_p:
+                    payoff_by_loan[lid_p] = po
+        except Exception:
+            pass
+
         # Fetch lifetime repayments for these loans to determine dynamic remaining balance
-        lifetime_reps_map = {}
+        lifetime_reps_map: Dict[str, float] = {}
         try:
             loan_ids = [str(l.get("loan_id")) for l in all_loans if l.get("loan_id")]
-            if loan_ids:
-                for i in range(0, len(loan_ids), 100):
-                    chunk = loan_ids[i:i + 100]
-                    all_rep_res = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", chunk).execute()
-                    for r in (all_rep_res.data or []):
-                        lid_s = str(r.get("loan_id"))
+            for i in range(0, len(loan_ids), 100):
+                chunk = loan_ids[i:i + 100]
+                all_rep_res = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", chunk).execute()
+                for r in (all_rep_res.data or []):
+                    lid_s = str(r.get("loan_id") or "")
+                    if lid_s:
                         lifetime_reps_map[lid_s] = lifetime_reps_map.get(lid_s, 0.0) + float(r.get("amount_paid") or 0.0)
         except Exception:
             pass
@@ -137,28 +242,19 @@ class DashboardService:
         overdue_count, overdue_amt = 0, 0.0
 
         if schedules_by_loan is None:
-            schedules_by_loan = {}
             active_lids = [str(l.get("loan_id")) for l in all_loans if l.get("loan_id")]
-            chunk_size = 100
-            for i in range(0, len(active_lids), chunk_size):
-                chunk = active_lids[i:i + chunk_size]
-                try:
-                    res_sch = uow.client.table("loan_schedule").select("*").in_("loan_id", chunk).order("installment_number").limit(2000).execute()
-                    for row in (res_sch.data or []):
-                        lid_k = str(row.get("loan_id"))
-                        if lid_k not in schedules_by_loan:
-                            schedules_by_loan[lid_k] = []
-                        schedules_by_loan[lid_k].append(row)
-                except Exception:
-                    pass
+            schedules_by_loan = cls._prefetch_schedules(uow, active_lids)
 
-        full_paid_clients = set()
+        full_paid_loans = set()
 
         for l in all_loans:
             cid = str(l.get("client_id") or "")
-            if not cid: continue
-            
+            if not cid:
+                continue
+
             lid_s = str(l.get("loan_id") or "")
+            if not lid_s:
+                continue
             c_paid_today = rep_by_loan.get(lid_s, 0.0)
             tot_paid_loan = lifetime_reps_map.get(lid_s, 0.0)
             act_cred = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
@@ -167,7 +263,7 @@ class DashboardService:
 
             disb_dt_str = str(l.get("disbursement_date") or l.get("date") or "")[:10]
             start_dt_str = str(l.get("start_date") or "")[:10]
-            target_dt_str = target_date.isoformat()
+            target_dt_str = date_str
             is_legacy = bool((l.get("extra_fields") or {}).get("is_legacy", False))
             is_disbursed_today = (disb_dt_str == target_dt_str) and not is_legacy
             is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
@@ -175,50 +271,60 @@ class DashboardService:
             g_mday = group_mday_map.get(cid) or l.get("meeting_day") or "Daily"
             prod_info = l.get("loan_products") or {}
             p_name_lower = str(prod_info.get("name") or l.get("product_type") or "").lower()
-            
-            if "daily" in p_name_lower or "60" in p_name_lower or "120" in p_name_lower:
-                loan_cycle = "Daily"
-            elif "monthly" in p_name_lower or "3m" in p_name_lower or "6m" in p_name_lower:
-                loan_cycle = "Monthly"
-            else:
-                loan_cycle = "Weekly"
-                
+            p_cycle = str(prod_info.get("repayment_cycle") or l.get("repayment_cycle") or "")
+            p_dur = int(l.get("duration") or prod_info.get("installments") or 0)
+            loan_cycle = cls._resolve_loan_cycle(p_name_lower, p_cycle, p_dur)
+
             if is_weekend or is_branch_closed or is_disbursed_today or is_future_start:
                 is_expected_today = False
             elif loan_cycle == "Daily":
                 is_expected_today = True
             elif loan_cycle == "Weekly":
-                is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower() or str(g_mday).strip().lower() == "daily")
+                is_expected_today = (
+                    str(g_mday).strip().lower() == str(meeting_day).strip().lower()
+                    or str(g_mday).strip().lower() == "daily"
+                )
             elif loan_cycle == "Monthly":
                 sched_rows = schedules_by_loan.get(lid_s, []) if schedules_by_loan else []
-                is_expected_today = any(str(r.get("due_date", "")).split("T")[0] == target_date.isoformat() for r in sched_rows)
+                is_expected_today = any(
+                    str(r.get("due_date", "")).split("T")[0] == target_dt_str
+                    for r in sched_rows
+                )
             else:
                 is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower())
 
-            # 1. Full Payment: Represents exclusively clients who completely paid off their active loan today (BR-DASH-005)
-            is_full_payoff_today = False
-            if c_paid_today > 0 and (remaining_bal <= 0.0 or tot_paid_loan >= act_cred or l.get("status") == "Completed"):
-                prior_paid = tot_paid_loan - c_paid_today
-                if prior_paid < tot_due_base or l.get("status") == "Completed":
-                    is_full_payoff_today = True
+            persisted_po = payoff_by_loan.get(lid_s)
+            po_type = str(persisted_po.get("record_type") or "").upper() if persisted_po else ""
+            is_persisted_payoff = po_type in ("FULL_PAYOFF", "FULL_PAYOFF_AND_EXCESS", "FULL_PAYOFF_WITH_EXCESS")
+            prior_paid = tot_paid_loan - c_paid_today
+            is_full_payoff_today = is_persisted_payoff or (
+                c_paid_today > 0
+                and (remaining_bal <= 0.01 or l.get("status") in ["Completed", "Closed"])
+                and (prior_paid < (tot_due_base - 0.01) or l.get("status") in ["Completed", "Closed"])
+            )
 
             if is_full_payoff_today:
-                if cid not in full_paid_clients:
+                if lid_s not in full_paid_loans:
+                    full_paid_loans.add(lid_s)
                     full_count += 1
-                    # Display active credit for the full payoff cycle (e.g. 198,000)
-                    client_active_loans = [al for al in all_loans if str(al.get("client_id")) == cid and al.get("status") in ["Active", "Approved", "ACTIVE"]]
-                    if client_active_loans:
-                        disp_act = float(client_active_loans[0].get("active_credit") or client_active_loans[0].get("loan_amount") or act_cred)
-                    else:
-                        disp_act = act_cred
+                    disp_act = (
+                        float(persisted_po.get("active_credit_settled") or act_cred)
+                        if persisted_po
+                        else act_cred
+                    )
                     full_amt += disp_act
-                    full_paid_clients.add(cid)
 
-                    # If this payoff loan paid more than scheduled single installment (e.g. Olugbodi Sheriffat), also capture surplus in excess payments
-                    repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0)
-                    if repay_amt > 0 and c_paid_today > repay_amt:
+                    po_excess = float(persisted_po.get("excess_amount") or 0.0) if persisted_po else 0.0
+                    if po_excess > 0:
                         excess_count += 1
-                        excess_amt += (c_paid_today - repay_amt)
+                        excess_amt += po_excess
+                    else:
+                        repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0)
+                        if repay_amt <= 0 and p_dur > 0 and act_cred > 0:
+                            repay_amt = round(act_cred / p_dur, 2)
+                        if repay_amt > 0 and c_paid_today > repay_amt:
+                            excess_count += 1
+                            excess_amt += round(c_paid_today - repay_amt, 2)
 
             elif l.get("status") in ["Active", "Approved", "ACTIVE"]:
                 from services.schedule_service import ScheduleService
@@ -236,24 +342,35 @@ class DashboardService:
                     overdue_count += 1
                     overdue_amt += ov_arr
 
-                if not is_expected_today and c_paid_today == 0:
+                if not is_expected_today and c_paid_today <= 0:
                     continue
 
                 repay_amt = tot_due_today if is_expected_today else 0.0
                 if is_expected_today and repay_amt <= 0:
                     repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0)
-                    if repay_amt <= 0:
-                        dur = int(l.get("duration") or 0)
-                        if dur > 0 and act_cred > 0:
-                            repay_amt = round(act_cred / dur, 2)
+                    if repay_amt <= 0 and p_dur > 0 and act_cred > 0:
+                        repay_amt = round(act_cred / p_dur, 2)
 
-                if c_paid_today > repay_amt and repay_amt > 0:
+                if c_paid_today > 0 and not is_expected_today:
+                    po_excess = float(persisted_po.get("excess_amount") or 0.0) if persisted_po else 0.0
+                    inst_ref = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0)
+                    if po_excess > 0:
+                        excess_count += 1
+                        excess_amt += po_excess
+                    elif inst_ref > 0 and c_paid_today > inst_ref:
+                        excess_count += 1
+                        excess_amt += round(c_paid_today - inst_ref, 2)
+                    else:
+                        norm_count += 1
+                        norm_amt += c_paid_today
+                elif c_paid_today > repay_amt and repay_amt > 0:
                     excess_count += 1
-                    excess_amt += (c_paid_today - repay_amt)
-                elif c_paid_today == repay_amt and repay_amt > 0:
+                    po_excess = float(persisted_po.get("excess_amount") or 0.0) if persisted_po else 0.0
+                    excess_amt += po_excess if po_excess > 0 else round(c_paid_today - repay_amt, 2)
+                elif abs(c_paid_today - repay_amt) <= 1.0 and repay_amt > 0:
                     norm_count += 1
                     norm_amt += c_paid_today
-                elif c_paid_today > 0 and c_paid_today < repay_amt:
+                elif 0 < c_paid_today < repay_amt:
                     part_count += 1
                     part_amt += c_paid_today
                 elif c_paid_today == 0 and is_expected_today and repay_amt > 0:
@@ -261,12 +378,12 @@ class DashboardService:
                     not_paid_amt += repay_amt
 
         return {
-            "full_payments": {"count": full_count, "amount": full_amt},
-            "normal_payments": {"count": norm_count, "amount": norm_amt},
-            "excess_payments": {"count": excess_count, "amount": excess_amt},
-            "part_payments": {"count": part_count, "amount": part_amt},
-            "not_paid": {"count": not_paid_count, "amount": not_paid_amt},
-            "overdue_arrears": {"count": overdue_count, "amount": overdue_amt}
+            "full_payments": {"count": full_count, "amount": round(full_amt, 2)},
+            "normal_payments": {"count": norm_count, "amount": round(norm_amt, 2)},
+            "excess_payments": {"count": excess_count, "amount": round(excess_amt, 2)},
+            "part_payments": {"count": part_count, "amount": round(part_amt, 2)},
+            "not_paid": {"count": not_paid_count, "amount": round(not_paid_amt, 2)},
+            "overdue_arrears": {"count": overdue_count, "amount": round(overdue_amt, 2)},
         }
 
     @staticmethod
@@ -282,10 +399,13 @@ class DashboardService:
         Builds operational dashboard dataset for Credit Officer ("My Work Today").
         """
         if not target_date:
-            target_date = date.today()
+            target_date = BusinessDateService.get_business_date(uow, branch_id)
 
         date_str = target_date.isoformat()
         meeting_day = target_date.strftime("%A")
+        is_weekend = target_date.weekday() >= 5
+        is_branch_closed, closure_reason = DashboardService._resolve_closure_state(uow, target_date, branch_id)
+        is_open = not is_branch_closed
 
         # Default structures
         cash_position = {
@@ -301,11 +421,13 @@ class DashboardService:
         if branch_id and officer_id:
             try:
                 p_date_str = target_date.isoformat()
-                res_cb = uow.client.table("co_cashbooks").select("*").eq("branch_id", branch_id).eq("officer_id", officer_id).eq("date", p_date_str).execute()
-                if res_cb.data:
-                    cb = res_cb.data[0]
-                else:
-                    cb = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, officer_id, target_date)
+                cb = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, officer_id, target_date) if is_open else None
+                if not cb:
+                    res_cb = uow.client.table("co_cashbooks").select("*").eq("branch_id", branch_id).eq("officer_id", officer_id).eq("date", p_date_str).execute()
+                    if res_cb.data:
+                        cb = res_cb.data[0]
+                    else:
+                        cb = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, officer_id, target_date)
                 if cb:
                     op_bal = float(cb.get("opening_balance") or 0.0)
                     tot_left = float(cb.get("total_inflows") or 0.0)
@@ -325,18 +447,26 @@ class DashboardService:
             except Exception:
                 pass
 
-        # 2. Query repayments
+        # 2. Query repayments (scoped by officer_id and branch_id)
         reps = []
         try:
             if officer_id:
                 s_d_str = f"{date_str}T00:00:00"
                 e_d_str = f"{date_str}T23:59:59"
-                rep_res = uow.client.table("repayments").select("*, loans(loan_products(name))") \
-                    .eq("officer_id", officer_id).gte("date", s_d_str).lte("date", e_d_str).execute()
+                q_rep = (
+                    uow.client.table("repayments")
+                    .select("*, loans(duration, repayment_cycle, product_type, loan_products(name, repayment_cycle, installments))")
+                    .eq("officer_id", officer_id)
+                    .gte("date", s_d_str)
+                    .lte("date", e_d_str)
+                )
+                if branch_id and branch_id != "All":
+                    q_rep = q_rep.eq("branch_id", branch_id)
+                rep_res = q_rep.execute()
                 raw_reps = rep_res.data or []
                 reps = [
-                    r for r in raw_reps 
-                    if str(r.get("transaction_type", "")).upper() != "ONBOARDING_LEGACY" 
+                    r for r in raw_reps
+                    if str(r.get("transaction_type", "")).upper() != "ONBOARDING_LEGACY"
                     and str(r.get("note", "")).strip() != "Legacy Repayments Onboarded"
                 ]
         except Exception:
@@ -346,6 +476,12 @@ class DashboardService:
         rep_12w_clients = set()
         rep_24w_amt = 0.0
         rep_24w_clients = set()
+        rep_120d_amt = 0.0
+        rep_120d_clients = set()
+        rep_daily_amt = 0.0
+        rep_daily_clients = set()
+        rep_monthly_amt = 0.0
+        rep_monthly_clients = set()
         total_collected_today = 0.0
 
         sav_deposited = 0.0
@@ -355,64 +491,101 @@ class DashboardService:
 
         for r in reps:
             try:
+                if DashboardService._is_offset_repayment(r):
+                    continue
                 cid = r.get("client_id") or r.get("Client ID")
                 l_pay = float(r.get("amount_paid") or r.get("Loan Repayment Amount") or 0.0)
 
                 total_collected_today += l_pay
 
-                p_name = ""
-                if r.get("loans") and r.get("loans").get("loan_products"):
-                    p_name = str(r["loans"]["loan_products"].get("name") or "").lower()
+                loan_meta = r.get("loans") or {}
+                lp_meta = loan_meta.get("loan_products") or {}
+                p_name = str(lp_meta.get("name") or loan_meta.get("product_type") or "")
+                p_cycle = str(lp_meta.get("repayment_cycle") or loan_meta.get("repayment_cycle") or "")
+                p_dur = int(loan_meta.get("duration") or lp_meta.get("installments") or 0)
+                bucket = CoCashbookProjectionBuilder._classify_loan_product(p_name, p_cycle, p_dur)
 
-                if any(k in p_name for k in ["24", "120", "21%", "6m", "6 month"]):
+                if bucket == "120d":
+                    rep_120d_amt += l_pay
+                    if cid and l_pay > 0:
+                        rep_120d_clients.add(cid)
+                elif bucket == "60d":
+                    rep_daily_amt += l_pay
+                    if cid and l_pay > 0:
+                        rep_daily_clients.add(cid)
+                elif bucket == "monthly":
+                    rep_monthly_amt += l_pay
+                    if cid and l_pay > 0:
+                        rep_monthly_clients.add(cid)
+                elif bucket == "24w":
                     rep_24w_amt += l_pay
-                    if cid and l_pay > 0: rep_24w_clients.add(cid)
+                    if cid and l_pay > 0:
+                        rep_24w_clients.add(cid)
                 else:
                     rep_12w_amt += l_pay
-                    if cid and l_pay > 0: rep_12w_clients.add(cid)
+                    if cid and l_pay > 0:
+                        rep_12w_clients.add(cid)
             except Exception:
                 pass
 
-        # 2b. Query savings from individual_savings, group_savings, and internal_savings for today per BR-SAV-001 & BR-SAV-002
+        # 2b. Query cash savings from individual_savings, group_savings, and internal_savings per BR-SAV-001 & BR-SAV-002
         try:
             if officer_id:
                 # 1. Individual Savings
-                sav_res = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount, reference, remarks") \
-                    .eq("officer_id", officer_id).eq("posting_date", date_str).execute()
+                sav_q = (
+                    uow.client.table("individual_savings")
+                    .select("client_id, deposit_amount, withdrawal_amount, reference, remarks")
+                    .eq("officer_id", officer_id)
+                    .eq("posting_date", date_str)
+                )
+                if branch_id and branch_id != "All":
+                    sav_q = sav_q.eq("branch_id", branch_id)
+                sav_res = sav_q.execute()
                 for s in (sav_res.data or []):
-                    if str(s.get("reference") or "").startswith("ONBOARDING") or "onboarding" in str(s.get("remarks") or "").lower():
+                    if DashboardService._is_noncash_savings_row(s):
                         continue
                     cid = s.get("client_id")
                     dep = float(s.get("deposit_amount") or 0.0)
                     wd = float(s.get("withdrawal_amount") or 0.0)
                     if dep > 0:
                         sav_deposited += dep
-                        if cid: sav_dep_clients.add(cid)
+                        if cid:
+                            sav_dep_clients.add(cid)
                     elif dep < 0:
                         sav_deposited += dep
                     if wd > 0:
                         sav_withdrawn += wd
-                        if cid: sav_wd_clients.add(cid)
+                        if cid:
+                            sav_wd_clients.add(cid)
                     elif wd < 0:
                         sav_withdrawn += wd
 
                 # 2. Group Savings
-                grp_res = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount, reference, remarks") \
-                    .eq("officer_id", officer_id).eq("posting_date", date_str).execute()
+                grp_q = (
+                    uow.client.table("group_savings")
+                    .select("group_id, deposit_amount, withdrawal_amount, reference, remarks")
+                    .eq("officer_id", officer_id)
+                    .eq("posting_date", date_str)
+                )
+                if branch_id and branch_id != "All":
+                    grp_q = grp_q.eq("branch_id", branch_id)
+                grp_res = grp_q.execute()
                 for g in (grp_res.data or []):
-                    if str(g.get("reference") or "").startswith("ONBOARDING") or "onboarding" in str(g.get("remarks") or "").lower():
+                    if DashboardService._is_noncash_savings_row(g):
                         continue
                     gid = g.get("group_id")
                     dep = float(g.get("deposit_amount") or 0.0)
                     wd = float(g.get("withdrawal_amount") or 0.0)
                     if dep > 0:
                         sav_deposited += dep
-                        if gid: sav_dep_clients.add(f"group_{gid}")
+                        if gid:
+                            sav_dep_clients.add(f"group_{gid}")
                     elif dep < 0:
                         sav_deposited += dep
                     if wd > 0:
                         sav_withdrawn += wd
-                        if gid: sav_wd_clients.add(f"group_{gid}")
+                        if gid:
+                            sav_wd_clients.add(f"group_{gid}")
                     elif wd < 0:
                         sav_withdrawn += wd
 
@@ -427,19 +600,31 @@ class DashboardService:
                         pass
 
                 if is_misc_officer:
-                    misc_q = uow.client.table("internal_savings").select("id, deposit_amount, withdrawal_amount, reference, remarks") \
+                    misc_q = (
+                        uow.client.table("internal_savings")
+                        .select("id, deposit_amount, withdrawal_amount, reference, remarks")
                         .eq("posting_date", date_str)
-                    if branch_id:
+                    )
+                    if branch_id and branch_id != "All":
                         misc_q = misc_q.eq("branch_id", branch_id)
                     misc_res = misc_q.execute()
                     for m in (misc_res.data or []):
-                        if str(m.get("reference") or "").startswith("ONBOARDING") or "legacy" in str(m.get("remarks") or "").lower():
+                        if DashboardService._is_noncash_savings_row(m):
                             continue
+                        mid = m.get("id")
                         dep = float(m.get("deposit_amount") or 0.0)
                         wd = float(m.get("withdrawal_amount") or 0.0)
                         if dep > 0:
                             sav_deposited += dep
+                            if mid is not None:
+                                sav_dep_clients.add(f"misc_{mid}")
+                        elif dep < 0:
+                            sav_deposited += dep
                         if wd > 0:
+                            sav_withdrawn += wd
+                            if mid is not None:
+                                sav_wd_clients.add(f"misc_{mid}")
+                        elif wd < 0:
                             sav_withdrawn += wd
         except Exception:
             pass
@@ -461,23 +646,17 @@ class DashboardService:
         grp_map: Dict[str, Dict[str, Any]] = {}
         attention_rows = []
 
-        full_paid_count = 0
-        full_paid_amt = 0.0
-        part_paid_count = 0
-        part_paid_amt = 0.0
-        excess_paid_count = 0
-        excess_amt = 0.0
-        not_paid_count = 0
-        not_paid_amt = 0.0
-
         # Build group_map for active loans including authoritative group meeting_day
         group_map = {}
         group_mday_map = {}
         co_lifetime_reps_map = {}
         schedules_by_loan: Dict[str, List[dict]] = {}
         try:
-            # Query all groups to detect duplicate names and disambiguate identically to Collections
-            all_groups_res = uow.client.table("groups").select("group_id, name, meeting_day, group_number").execute()
+            # Query branch groups to detect duplicate names and disambiguate identically to Collections
+            q_grps = uow.client.table("groups").select("group_id, name, meeting_day, group_number")
+            if branch_id and branch_id != "All":
+                q_grps = q_grps.eq("branch_id", branch_id)
+            all_groups_res = q_grps.execute()
             all_groups_list = all_groups_res.data or []
             grp_name_counts = {}
             for g in all_groups_list:
@@ -501,7 +680,7 @@ class DashboardService:
                     g_name_str = _resolve_grp_label(grp)
                     group_map[cid_s] = g_name_str
                     group_mday_map[g_name_str] = grp.get("meeting_day") or "Daily"
-            
+
             loan_ids = [str(l.get("loan_id")) for l in active_loans if l.get("loan_id")]
             if loan_ids:
                 for i in range(0, len(loan_ids), 100):
@@ -511,60 +690,21 @@ class DashboardService:
                         lid_s = str(r.get("loan_id"))
                         co_lifetime_reps_map[lid_s] = co_lifetime_reps_map.get(lid_s, 0.0) + float(r.get("amount_paid") or 0.0)
 
-                # Batch pre-fetch schedules in chunks of 100 to prevent N+1 query loop and timeouts
-                chunk_size = 100
-                for i in range(0, len(loan_ids), chunk_size):
-                    chunk = loan_ids[i:i + chunk_size]
-                    try:
-                        res_sch_chunk = uow.client.table("loan_schedule").select("*").in_("loan_id", chunk).order("installment_number").limit(2000).execute()
-                        for row in (res_sch_chunk.data or []):
-                            lid_k = str(row.get("loan_id"))
-                            if lid_k not in schedules_by_loan:
-                                schedules_by_loan[lid_k] = []
-                            schedules_by_loan[lid_k].append(row)
-                    except Exception:
-                        pass
+                schedules_by_loan = DashboardService._prefetch_schedules(uow, loan_ids)
         except Exception:
             pass
-
-        is_weekend = target_date.weekday() >= 5
-
-        # Dynamic Closure & Holiday Check
-        is_branch_closed = False
-        closure_reason = ""
-        try:
-            ng_holidays = get_nigerian_holidays(years=[target_date.year])
-            if target_date in ng_holidays:
-                is_branch_closed = True
-                closure_reason = ng_holidays.get(target_date) or "Public Holiday"
-
-            q_cl = uow.client.table("branch_closures").select("*") \
-                .lte("start_date", target_date.isoformat()) \
-                .gte("end_date", target_date.isoformat())
-            if branch_id:
-                q_cl = q_cl.or_(f"branch_id.is.null,branch_id.eq.{branch_id}")
-            res_cl = q_cl.execute()
-            if res_cl.data:
-                is_branch_closed = True
-                closure_reason = res_cl.data[0].get("reason") or closure_reason or "Branch Closure / Holiday"
-        except Exception:
-            is_branch_closed = False
 
         for l in active_loans:
             try:
                 g_name = group_map.get(str(l.get("client_id"))) or "Individual Group"
                 g_mday = group_mday_map.get(g_name) or l.get("meeting_day") or "Daily"
-                
-                # Resolve loan cycle/frequency
+
+                # Resolve loan cycle/frequency via shared product classifier
                 prod_info = l.get("loan_products") or {}
                 p_name_lower = str(prod_info.get("name") or l.get("product_type") or "").lower()
-                
-                if "daily" in p_name_lower or "60" in p_name_lower or "120" in p_name_lower:
-                    loan_cycle = "Daily"
-                elif "monthly" in p_name_lower or "3m" in p_name_lower or "6m" in p_name_lower:
-                    loan_cycle = "Monthly"
-                else:
-                    loan_cycle = "Weekly"
+                p_cycle = str(prod_info.get("repayment_cycle") or l.get("repayment_cycle") or "")
+                p_dur = int(l.get("duration") or prod_info.get("installments") or 0)
+                loan_cycle = DashboardService._resolve_loan_cycle(p_name_lower, p_cycle, p_dur)
 
                 # Check if loan repayment is expected TODAY
                 disb_dt_str = str(l.get("disbursement_date") or l.get("date") or "")[:10]
@@ -574,7 +714,10 @@ class DashboardService:
                 is_disbursed_today = (disb_dt_str == target_dt_str) and not is_legacy
                 is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
 
-                is_meeting_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower() or str(g_mday).strip().lower() == "daily")
+                is_meeting_today = (
+                    str(g_mday).strip().lower() == str(meeting_day).strip().lower()
+                    or str(g_mday).strip().lower() == "daily"
+                )
                 cid = l.get("client_id")
                 lid = l.get("loan_id")
                 if lid:
@@ -593,7 +736,10 @@ class DashboardService:
                     is_expected_today = is_meeting_today
                 elif loan_cycle == "Monthly":
                     sched_rows = schedules_by_loan.get(str(lid), []) if schedules_by_loan else []
-                    is_expected_today = any(str(r.get("due_date", "")).split("T")[0] == target_date.isoformat() for r in sched_rows)
+                    is_expected_today = any(
+                        str(r.get("due_date", "")).split("T")[0] == target_dt_str
+                        for r in sched_rows
+                    )
                 else:
                     is_expected_today = (str(g_mday).strip().lower() == str(meeting_day).strip().lower())
 
@@ -607,7 +753,7 @@ class DashboardService:
                     meeting_day_str=g_mday,
                     total_paid_sch=tot_paid_co
                 )
-                has_arrears_flag = due_info.get("has_overdue", False)
+                has_arrears_flag = bool(due_info.get("has_overdue", False))
                 overdue_arrears_amt = float(due_info.get("overdue_arrears") or 0.0)
                 curr_inst_amt = float(due_info.get("current_installment") or 0.0)
 
@@ -642,7 +788,7 @@ class DashboardService:
                 if is_expected_today and repay_amt <= 0 and not is_branch_closed:
                     repay_amt = float(l.get("loan_repay") or l.get("fixed_repayment") or 0.0)
                     if repay_amt <= 0:
-                        dur = int(l.get("duration") or 0)
+                        dur = p_dur
                         ac = float(l.get("active_credit") or 0.0)
                         if dur > 0 and ac > 0:
                             repay_amt = round(ac / dur, 2)
@@ -658,28 +804,16 @@ class DashboardService:
                 c_code = c_info.get("client_code") or l.get("client_code") or "N/A"
                 act_cred = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
                 tot_due_base = float(l.get("total_due") if l.get("total_due") is not None else act_cred)
-                tot_paid_loan = co_lifetime_reps_map.get(str(l.get("loan_id") or ""), 0.0)
-                remaining_bal = max(0.0, tot_due_base - tot_paid_loan)
+                remaining_bal = max(0.0, tot_due_base - tot_paid_co)
 
-                # Classify repayment status for Today's Repayment Summary (BR-DASH-005)
                 if c_paid > 0:
                     grp_map[g_name]["Clients Paid"] += 1
-                    # Check if client fully paid off their lifetime active credit TODAY
-                    lifetime_reps = co_lifetime_reps_map.get(str(lid), 0.0)
-                    prior_reps = lifetime_reps - c_paid
-                    is_loan_fully_cleared_today = (act_cred > 0 and (act_cred - lifetime_reps) <= 0.0 and (act_cred - prior_reps) > 0) or (l.get("status") in ["Completed", "Closed"] and c_paid > 0)
-
-                    if is_loan_fully_cleared_today:
-                        full_paid_count += 1
-                        full_paid_amt += act_cred
-                        if repay_amt > 0 and c_paid > repay_amt:
-                            excess_paid_count += 1
-                            excess_amt += (c_paid - repay_amt)
-                    elif repay_amt > 0 and abs(c_paid - repay_amt) <= 1.0:
-                        pass
-                    elif repay_amt > 0 and c_paid < repay_amt:
-                        part_paid_count += 1
-                        part_paid_amt += c_paid
+                    prior_reps = tot_paid_co - c_paid
+                    is_loan_fully_cleared_today = (
+                        (remaining_bal <= 0.01 and prior_reps < (tot_due_base - 0.01))
+                        or (l.get("status") in ["Completed", "Closed"] and c_paid > 0)
+                    )
+                    if not is_loan_fully_cleared_today and repay_amt > 0 and c_paid < repay_amt:
                         issue_msg = "Arrears Shortfall" if has_arrears_flag else "Part Payment"
                         risk_tag = "Arrears" if has_arrears_flag else "Shortfall"
                         attention_rows.append({
@@ -688,25 +822,17 @@ class DashboardService:
                             "Issue Type": issue_msg, "Risk Level": risk_tag,
                             "Action": f"Follow Up with Group Leader (₦{repay_amt - c_paid:,.0f} due)"
                         })
-                    elif repay_amt > 0 and c_paid > repay_amt:
-                        excess_paid_count += 1
-                        excess_amt += (c_paid - repay_amt)
-                    else:
-                        pass
-                else:
-                    if is_expected_today:
-                        grp_map[g_name]["Clients Not Paid"] += 1
-                        not_paid_count += 1
-                        not_paid_amt += repay_amt
-                        issue_type = "Overdue Arrears + Current" if has_arrears_flag else "Pending"
-                        risk_lvl = "Overdue Arrears" if has_arrears_flag else "Pending"
-                        action_msg = f"Collect ₦{overdue_arrears_amt:,.0f} arrears + ₦{curr_inst_amt:,.0f} today" if has_arrears_flag else "Collect at Group Meeting"
-                        attention_rows.append({
-                            "Client Name": c_name, "Client Code": c_code, "Group": g_name,
-                            "Expected (₦)": repay_amt, "Paid (₦)": 0.0, "Shortfall (₦)": repay_amt,
-                            "Issue Type": issue_type, "Risk Level": risk_lvl,
-                            "Action": action_msg
-                        })
+                elif is_expected_today:
+                    grp_map[g_name]["Clients Not Paid"] += 1
+                    issue_type = "Overdue Arrears + Current" if has_arrears_flag else "Pending"
+                    risk_lvl = "Overdue Arrears" if has_arrears_flag else "Pending"
+                    action_msg = f"Collect ₦{overdue_arrears_amt:,.0f} arrears + ₦{curr_inst_amt:,.0f} today" if has_arrears_flag else "Collect at Group Meeting"
+                    attention_rows.append({
+                        "Client Name": c_name, "Client Code": c_code, "Group": g_name,
+                        "Expected (₦)": repay_amt, "Paid (₦)": 0.0, "Shortfall (₦)": repay_amt,
+                        "Issue Type": issue_type, "Risk Level": risk_lvl,
+                        "Action": action_msg
+                    })
             except Exception:
                 continue
 
@@ -717,7 +843,7 @@ class DashboardService:
             col_c = g_data["Collected"]
             out_c = max(0.0, exp_c - col_c)
             g_data["Outstanding"] = out_c
-            
+
             if is_branch_closed:
                 g_data["Compliance %"] = 100.0
                 g_data["Status"] = f"Closed ({closure_reason})"
@@ -726,9 +852,9 @@ class DashboardService:
                 g_data["Compliance %"] = min(100.0, comp)
                 g_data["Status"] = "Completed" if col_c >= exp_c else ("In Progress" if col_c > 0 else "Pending")
             else:
-                g_data["Compliance %"] = 100.0 if col_c > 0 else 100.0
+                g_data["Compliance %"] = 100.0
                 g_data["Status"] = "Completed" if col_c > 0 else "Scheduled"
-            
+
             meeting_portfolio_rows.append(g_data)
 
         meeting_portfolio_df = pd.DataFrame(meeting_portfolio_rows) if meeting_portfolio_rows else pd.DataFrame(
@@ -749,6 +875,7 @@ class DashboardService:
                 "officer_name": officer_name,
                 "branch_name": branch_name,
                 "date_str": target_date.strftime("%d %B %Y"),
+                "date_iso": target_date.isoformat(),
                 "meeting_day": target_date.strftime("%A"),
                 "time_str": datetime.now().strftime("%I:%M %p")
             },
@@ -757,22 +884,29 @@ class DashboardService:
                 "reason": closure_reason
             },
             "repayment_summary": {
-                "rep_12_weeks_amt": rep_12w_amt,
+                "rep_12_weeks_amt": round(rep_12w_amt, 2),
                 "rep_12_weeks_clients": len(rep_12w_clients),
-                "rep_24_weeks_amt": rep_24w_amt,
+                "rep_24_weeks_amt": round(rep_24w_amt, 2),
                 "rep_24_weeks_clients": len(rep_24w_clients),
-                "total_collected_today": total_collected_today
+                "rep_120_days_amt": round(rep_120d_amt, 2),
+                "rep_120_days_clients": len(rep_120d_clients),
+                "rep_daily_amt": round(rep_daily_amt, 2),
+                "rep_daily_clients": len(rep_daily_clients),
+                "rep_monthly_amt": round(rep_monthly_amt, 2),
+                "rep_monthly_clients": len(rep_monthly_clients),
+                "total_collected_today": round(total_collected_today, 2),
             },
             "meeting_portfolio": meeting_portfolio_df,
             "savings": {
-                "deposited_amt": sav_deposited,
+                "deposited_amt": round(sav_deposited, 2),
                 "deposited_clients": len(sav_dep_clients),
-                "withdrawn_amt": sav_withdrawn,
+                "withdrawn_amt": round(sav_withdrawn, 2),
                 "withdrawn_clients": len(sav_wd_clients),
-                "net_savings": sav_deposited - sav_withdrawn
+                "net_savings": round(sav_deposited - sav_withdrawn, 2)
             },
             "repayment_status": {
                 "full_payment": payment_breakdown["full_payments"],
+                "normal_payment": payment_breakdown["normal_payments"],
                 "part_payment": payment_breakdown["part_payments"],
                 "excess_payment": payment_breakdown["excess_payments"],
                 "not_paid": payment_breakdown["not_paid"],
@@ -798,7 +932,8 @@ class DashboardService:
         Builds operational dashboard dataset for Branch Manager ("My Branch Today").
         """
         if not target_date:
-            target_date = date.today()
+            scope_branch = branch_id or branch_name
+            target_date = BusinessDateService.get_business_date(uow, scope_branch) if scope_branch else date.today()
 
         # Dynamic Closure & Holiday Check
         is_branch_closed = False
@@ -836,11 +971,15 @@ class DashboardService:
                 return cp
             try:
                 p_date_str = target_date.isoformat()
-                res_mc = uow.client.table("master_cashbook").select("*").eq("branch_id", branch_id).eq("date", p_date_str).execute()
-                if res_mc.data:
-                    mb = res_mc.data[0]
-                else:
-                    mb = MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, target_date)
+                from services.business_date_service import BusinessDateService
+                is_open, _ = BusinessDateService.is_operational_open(uow, branch_id, target_date)
+                mb = MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, target_date) if is_open else None
+                if not mb:
+                    res_mc = uow.client.table("master_cashbook").select("*").eq("branch_id", branch_id).eq("date", p_date_str).execute()
+                    if res_mc.data:
+                        mb = res_mc.data[0]
+                    else:
+                        mb = MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, target_date)
                 if mb:
                     op_bal = float(mb.get("opening_balance") or 0.0)
                     tot_left = float(mb.get("total_inflows") or 0.0)
@@ -1085,31 +1224,44 @@ class DashboardService:
         PAR% = (Total Overdue / Total Active Credit) * 100
         """
         try:
-            q = uow.client.table("loans").select("loan_id, active_credit").eq("status", "Active")
+            q = (
+                uow.client.table("loans")
+                .select("loan_id, active_credit")
+                .in_("status", ["Active", "ACTIVE", "Approved"])
+            )
             if branch_id and branch_id != "All":
                 q = q.eq("branch_id", branch_id)
             res = q.execute()
             loans_data = res.data or []
             if not loans_data:
                 return "0.0%"
-            
+
             total_active_credit = sum(float(l.get("active_credit") or 0.0) for l in loans_data)
             if total_active_credit <= 0:
                 return "0.0%"
 
-            active_loan_ids = [l["loan_id"] for l in loans_data]
-            today_str = date.today().isoformat()
+            active_loan_ids = [l["loan_id"] for l in loans_data if l.get("loan_id")]
+            if not active_loan_ids:
+                return "0.0%"
+            b_scope = branch_id if branch_id and branch_id != "All" else None
+            today_str = BusinessDateService.get_business_date(uow, b_scope).isoformat()
             total_overdue = 0.0
 
-            # Bulk query overdue schedule items for all active loans
-            overdue_res = uow.client.table("loan_schedule").select("total_due, paid_amount") \
-                .in_("loan_id", active_loan_ids).lt("due_date", today_str).execute()
-
-            for item in (overdue_res.data or []):
-                d_amt = float(item.get("total_due") or 0.0)
-                p_amt = float(item.get("paid_amount") or 0.0)
-                if d_amt > p_amt:
-                    total_overdue += (d_amt - p_amt)
+            # Bulk query overdue schedule items in batches so large portfolios never hit URL/row limits
+            for i in range(0, len(active_loan_ids), 50):
+                chunk = active_loan_ids[i:i + 50]
+                overdue_res = (
+                    uow.client.table("loan_schedule")
+                    .select("total_due, paid_amount")
+                    .in_("loan_id", chunk)
+                    .lt("due_date", today_str)
+                    .execute()
+                )
+                for item in (overdue_res.data or []):
+                    d_amt = float(item.get("total_due") or 0.0)
+                    p_amt = float(item.get("paid_amount") or 0.0)
+                    if d_amt > p_amt:
+                        total_overdue += (d_amt - p_amt)
 
             par_val = round((total_overdue / total_active_credit) * 100.0, 1)
             return f"{par_val}%"
@@ -1127,7 +1279,8 @@ class DashboardService:
         Builds operational dashboard dataset for Area Manager ("My Region").
         """
         if not target_date:
-            target_date = date.today()
+            scope_branch = assigned_branches[0] if assigned_branches else None
+            target_date = BusinessDateService.get_business_date(uow, scope_branch) if scope_branch else date.today()
 
         ng_holidays = get_nigerian_holidays(years=[target_date.year])
 

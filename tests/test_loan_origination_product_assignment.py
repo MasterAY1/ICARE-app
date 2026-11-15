@@ -3,7 +3,7 @@ Test suite for Credit Officer Product Assignment and Legacy Onboarding Schedule 
 """
 import pytest
 from datetime import date
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from fastapi import HTTPException
 from api.schemas.auth import UserInfo
 from models.user import CurrentUser
@@ -29,6 +29,7 @@ def test_apply_for_loan_rejects_unassigned_product():
     mock_uow = MagicMock()
     mock_client = MagicMock()
     mock_client.branch_id = "branch-1"
+    mock_client.officer_id = "user-1"
     mock_uow.clients.find_by_id.return_value = mock_client
 
     co_user = CurrentUser(
@@ -57,14 +58,33 @@ def test_apply_for_loan_allows_assigned_product():
     mock_uow = MagicMock()
     mock_client = MagicMock()
     mock_client.branch_id = "branch-1"
+    mock_client.officer_id = "user-1"
+    mock_client.name = "Test Client"
+    mock_client.group_id = None
+    mock_client.next_of_kin = None
     mock_uow.clients.find_by_id.return_value = mock_client
-    
-    # Mock individual savings balance >= upfront requirement
-    mock_uow.client.table.return_value.select.return_value.eq.return_value.execute.side_effect = [
-        MagicMock(data=[{"deposit_amount": 20000.0}]),  # res_dep
-        MagicMock(data=[]),                             # res_wd
-        MagicMock(data=[{"product_id": "p-1", "name": "Weekly 12W", "installments": 12, "repayment_cycle": "Weekly"}]) # product
-    ]
+
+    def mock_table(table_name):
+        t = MagicMock()
+        if table_name == "individual_savings":
+            t.select.return_value.eq.return_value.execute.return_value = MagicMock(
+                data=[{"deposit_amount": 20000.0, "withdrawal_amount": 0.0}]
+            )
+        elif table_name == "loan_products":
+            t.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(
+                data=[{"product_id": "p-1", "name": "Weekly 12W", "installments": 12, "repayment_cycle": "Weekly"}]
+            )
+        elif table_name == "branches":
+            t.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[{"name": "omitoro"}])
+        elif table_name == "loans":
+            t.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+            t.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(data=[])
+        else:
+            t.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+            t.select.return_value.execute.return_value = MagicMock(data=[])
+        return t
+
+    mock_uow.client.table.side_effect = mock_table
 
     co_user = CurrentUser(
         id="user-1",
@@ -82,12 +102,12 @@ def test_apply_for_loan_allows_assigned_product():
         upfront_fee_mode="deduct"
     )
 
-    # Mock DB insert and schedule generation
-    mock_uow.client.table.return_value.insert.return_value.execute.return_value = MagicMock()
-
-    res = apply_for_loan(payload, current_user=co_user, uow=mock_uow)
+    with patch("services.renewal_service.RenewalService.check_eligibility", return_value=(True, [], [])), \
+         patch("services.schedule_service.ScheduleService.generate_schedule"):
+        res = apply_for_loan(payload, current_user=co_user, uow=mock_uow)
     assert res.success is True
     assert res.loan_id is not None
+    assert mock_uow.client.rpc.called
 
 
 def test_legacy_loan_not_suppressed_by_disbursed_today():

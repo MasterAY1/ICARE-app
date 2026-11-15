@@ -6,6 +6,7 @@ and ClientStatusService directly against Supabase schema with 1:1 parity against
 from typing import Optional, List, Dict, Any
 from datetime import date, datetime, timedelta
 import io
+import json
 import re
 import uuid
 from PIL import Image, ImageOps
@@ -17,6 +18,7 @@ from api.schemas.origination import (
     GroupOption, ClientSearchItem, ClientProfileDetails, GuarantorDetails,
     RegisterClientInput, RegisterClientResponse,
     EligibilityCheckRequest, EligibilityCheckResponse,
+    SchedulePreviewRequest, SchedulePreviewItem, SchedulePreviewResponse,
     ApplyLoanInput, ApplyLoanResponse,
     PendingDisbursementsResponse, PendingLoanItem,
     DisburseLoanRequest, DisburseLoanResponse,
@@ -26,6 +28,7 @@ from models.user import CurrentUser
 from domain.entities.client import Client
 from domain.entities.loan import Loan
 from domain.enums import LoanStatus
+from mappers.base_mappers import LoanMapper
 from services.loan_product_engine import LoanProductEngine
 from services.schedule_service import ScheduleService
 from services.renewal_service import RenewalService
@@ -34,6 +37,98 @@ from services.client_status_service import ClientStatusService
 from services.business_date_service import BusinessDateService
 
 router = APIRouter(prefix="/api/v1/co/origination", tags=["CO Origination"])
+
+_BM_DISBURSEMENT_CEILING = 300000.0
+_ALLOWED_UPLOAD_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "jfif", "pdf"}
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def _resolve_current_officer_id(current_user: CurrentUser, uow: SupabaseUnitOfWork) -> Optional[str]:
+    """Resolves the active user's database officer UUID, safely handling mock repositories."""
+    resolved = None
+    if hasattr(uow, "loans") and hasattr(uow.loans, "_resolve_officer_id"):
+        try:
+            candidate = uow.loans._resolve_officer_id(current_user.username)
+            if isinstance(candidate, (str, uuid.UUID)) and str(candidate).strip():
+                resolved = str(candidate).strip()
+        except Exception:
+            resolved = None
+    return resolved or current_user.id
+
+
+def _verify_client_ownership(current_user: CurrentUser, uow: SupabaseUnitOfWork, client: Any, action: str) -> None:
+    """Enforces branch scoping AND strict Credit Officer client ownership."""
+    c_branch = getattr(client, "branch_id", None) if not isinstance(client, dict) else client.get("branch_id")
+    check_branch_access(current_user, c_branch, action)
+    norm_role = RBACScopeService.normalize_role(current_user.role)
+    if norm_role == "CO":
+        valid_ids = {str(current_user.id)} if current_user.id else set()
+        resolved = _resolve_current_officer_id(current_user, uow)
+        if resolved:
+            valid_ids.add(str(resolved))
+        c_officer = getattr(client, "officer_id", None) if not isinstance(client, dict) else client.get("officer_id")
+        if c_officer and valid_ids and str(c_officer) not in valid_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You are not authorized to {action} for a client assigned to another officer."
+            )
+
+
+def _extract_guarantor_fallback(client: Any) -> Dict[str, Any]:
+    """Parses structured guarantor metadata cached on clients.next_of_kin if present."""
+    raw = getattr(client, "next_of_kin", None) if not isinstance(client, dict) else client.get("next_of_kin")
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip().startswith("{"):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+    return {}
+
+
+def _resolve_meeting_day(uow: SupabaseUnitOfWork, client_id: str, group_id: Optional[str] = None) -> str:
+    """Resolves meeting day from client_memberships or clients.group_id."""
+    try:
+        res_m = (
+            uow.client.table("client_memberships")
+            .select("groups(meeting_day)")
+            .eq("client_id", client_id)
+            .is_("end_date", "null")
+            .limit(1)
+            .execute()
+        )
+        if res_m.data and isinstance(res_m.data[0].get("groups"), dict):
+            md = res_m.data[0]["groups"].get("meeting_day") or ""
+            if md:
+                return str(md)
+    except Exception:
+        pass
+    try:
+        gid = group_id
+        if not gid:
+            c_res = uow.client.table("clients").select("group_id").eq("client_id", client_id).limit(1).execute()
+            if c_res.data:
+                gid = c_res.data[0].get("group_id")
+        if gid:
+            g_res = uow.client.table("groups").select("meeting_day").eq("group_id", gid).limit(1).execute()
+            if g_res.data and g_res.data[0].get("meeting_day"):
+                return str(g_res.data[0]["meeting_day"])
+    except Exception:
+        pass
+    return ""
+
+
+@router.get("/business-date")
+def get_origination_business_date(
+    current_user: CurrentUser = Depends(require_role(["CO", "Credit Officer", "Officer", "BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """Returns the authoritative active business date for the user's branch."""
+    b_date = BusinessDateService.get_business_date(uow, current_user.branch_id)
+    return {"business_date": b_date.isoformat()}
 
 
 @router.get("/groups", response_model=List[GroupOption])
@@ -50,18 +145,18 @@ def get_origination_groups(
         if res_b.data:
             branch_id = res_b.data[0]["branch_id"]
 
-    query = uow.client.table("groups").select("group_id, name, group_number, meeting_day, officer_id")
+    query = uow.client.table("groups").select("group_id, name, group_number, meeting_day, officer_id, is_deleted")
     if branch_id:
         query = query.eq("branch_id", branch_id)
 
-    # If Credit Officer, query groups assigned to this officer or branch
-    if current_user.role in ['CO', 'Officer', 'Credit Officer']:
-        officer_id = uow.loans._resolve_officer_id(current_user.username) or current_user.id
+    norm_role = RBACScopeService.normalize_role(current_user.role)
+    if norm_role == "CO":
+        officer_id = _resolve_current_officer_id(current_user, uow)
         if officer_id:
             query = query.eq("officer_id", officer_id)
 
     res_g = query.execute()
-    groups_list = res_g.data or []
+    groups_list = [g for g in (res_g.data or []) if not g.get("is_deleted")]
 
     # Disambiguate duplicate group names matching Streamlit app.py L3370-3382
     counts: Dict[str, int] = {}
@@ -104,7 +199,7 @@ def search_clients_for_origination(
     # RBAC hierarchy filtering
     norm_role = RBACScopeService.normalize_role(current_user.role)
     if norm_role == "CO":
-        user_id = uow.loans._resolve_officer_id(current_user.username) or current_user.id
+        user_id = _resolve_current_officer_id(current_user, uow)
         found_clients = [c for c in found_clients if c.officer_id == user_id]
     elif norm_role == "Branch Manager" and current_user.branch_id:
         found_clients = [c for c in found_clients if c.branch_id == current_user.branch_id]
@@ -159,8 +254,8 @@ def get_client_origination_details(
     if not client:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
 
-    # Guard: verify user is authorized to access client's branch
-    check_branch_access(current_user, client.branch_id, "view client origination details")
+    # Guard: verify user is authorized to access client's branch & ownership
+    _verify_client_ownership(current_user, uow, client, "view client origination details")
 
     # Branch name
     res_b = uow.client.table("branches").select("name").eq("branch_id", client.branch_id).execute() if client.branch_id else None
@@ -179,29 +274,30 @@ def get_client_origination_details(
     res_wd = uow.client.table("individual_savings").select("withdrawal_amount").eq("client_id", client_id).execute()
     sav_bal = sum(float(d.get("deposit_amount") or 0) for d in (res_dep.data or [])) - sum(float(w.get("withdrawal_amount") or 0) for w in (res_wd.data or []))
 
-    # Guarantor details: query latest loan extra_fields & first-class guarantors
+    # Guarantor details: check latest loan extra_fields first, fallback to registration metadata on client
     guar_details = None
     res_l = uow.client.table("loans").select("*").eq("client_id", client_id).order("created_at", desc=True).limit(1).execute()
     latest_loan = res_l.data[0] if res_l and res_l.data else {}
     extra = latest_loan.get("extra_fields") or {}
+    nok_g = _extract_guarantor_fallback(client)
 
-    g_name = extra.get("guarantor_name") or ""
-    g_phone = extra.get("guarantor_phone") or ""
+    g_name = extra.get("guarantor_name") or nok_g.get("full_name") or nok_g.get("name") or ""
+    g_phone = extra.get("guarantor_phone") or nok_g.get("phone") or ""
 
     if g_name or g_phone:
         guar_details = GuarantorDetails(
             full_name=g_name,
-            nickname=extra.get("guarantor_nickname"),
+            nickname=extra.get("guarantor_nickname") or nok_g.get("nickname"),
             phone=g_phone,
-            address=extra.get("guarantor_home_address"),
-            marital_status=extra.get("guarantor_marital_status") or "Married",
-            occupation=extra.get("guarantor_occupation") or "Trader",
-            relationship=extra.get("guarantor_relationship"),
-            office_address=extra.get("guarantor_office_address"),
-            id_means=latest_loan.get("guarantor_id_means") or "National ID (NIN)",
-            id_number=latest_loan.get("guarantor_id_number"),
-            id_card_url=latest_loan.get("guarantor_id_card_url"),
-            passport_url=latest_loan.get("guarantor_passport_url")
+            address=extra.get("guarantor_home_address") or nok_g.get("address"),
+            marital_status=extra.get("guarantor_marital_status") or nok_g.get("marital_status") or "Married",
+            occupation=extra.get("guarantor_occupation") or nok_g.get("occupation") or "Trader",
+            relationship=extra.get("guarantor_relationship") or nok_g.get("relationship"),
+            office_address=extra.get("guarantor_office_address") or nok_g.get("office_address"),
+            id_means=latest_loan.get("guarantor_id_means") or nok_g.get("id_means") or "National ID (NIN)",
+            id_number=latest_loan.get("guarantor_id_number") or nok_g.get("id_number"),
+            id_card_url=latest_loan.get("guarantor_id_card_url") or nok_g.get("id_card_url"),
+            passport_url=latest_loan.get("guarantor_passport_url") or nok_g.get("passport_url")
         )
 
     return ClientProfileDetails(
@@ -237,6 +333,11 @@ def check_loan_eligibility(
     """
     Evaluates loan renewal/origination eligibility via RenewalService (app.py L4372-4388).
     """
+    client = uow.clients.find_by_id(payload.client_id)
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
+    _verify_client_ownership(current_user, uow, client, "check loan eligibility")
+
     is_eligible, reasons, warnings = RenewalService.check_eligibility(
         uow, payload.client_id, payload.requested_amount, payload.product_type, payload.product_category
     )
@@ -244,6 +345,114 @@ def check_loan_eligibility(
         is_eligible=is_eligible,
         reasons=reasons,
         warnings=warnings
+    )
+
+
+@router.post("/preview-schedule", response_model=SchedulePreviewResponse)
+def preview_loan_schedule(
+    payload: SchedulePreviewRequest,
+    current_user: CurrentUser = Depends(require_role(["CO", "Credit Officer", "Officer", "BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Generates an authoritative working-day, Nigerian holiday, and branch-closure adjusted
+    amortization preview matching ScheduleService and LoanProductEngine.
+    """
+    if payload.requested_amount <= 0:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Requested amount must be greater than zero.")
+
+    branch_id = current_user.branch_id
+    meeting_day = ""
+    if payload.client_id:
+        client = uow.clients.find_by_id(payload.client_id)
+        if client:
+            _verify_client_ownership(current_user, uow, client, "preview loan schedule")
+            branch_id = client.branch_id or branch_id
+            meeting_day = _resolve_meeting_day(uow, payload.client_id, client.group_id)
+
+    base_date = (
+        date.fromisoformat(payload.application_date)
+        if payload.application_date
+        else BusinessDateService.get_business_date(uow, branch_id)
+    )
+    closures = BusinessDateService.get_branch_closures(uow, branch_id) if branch_id else []
+    closed_dates = BusinessDateService.expand_closure_dates(closures)
+
+    setup = LoanProductEngine.calculate_loan_setup(
+        payload.requested_amount, payload.product_type, payload.product_category
+    )
+    interest = float(setup.get("interest", 0.0))
+    duration = int(setup.get("duration", 12) or 1)
+    cycle = str(setup.get("freq", "Weekly"))
+
+    initial_dp = max(0.0, float(payload.cash_downpayment or 0.0) + float(payload.savings_downpayment or 0.0))
+    gap_fee = max(0.0, float(payload.gap_fee or 0.0))
+
+    if payload.product_category == "Asset":
+        total_cost = payload.requested_amount + interest
+        active_credit = max(0.0, total_cost - initial_dp)
+        expected_inst = round(active_credit / duration, 2) if duration > 0 else 0.0
+        total_upfront = 0.0
+        gap_fee = 0.0
+    elif "cash and carry" in payload.product_type.lower() or "cash & carry" in payload.product_type.lower():
+        active_credit = payload.requested_amount
+        expected_inst = payload.requested_amount
+        gap_fee = 0.0
+        total_upfront = 0.0
+    else:
+        active_credit = max(0.0, payload.requested_amount - gap_fee)
+        expected_inst = round(active_credit / duration, 2) if duration > 0 else 0.0
+        total_upfront = interest + gap_fee
+
+    if cycle == "One-Time" or "cash and carry" in payload.product_type.lower() or "cash & carry" in payload.product_type.lower():
+        return SchedulePreviewResponse(
+            product_type=payload.product_type,
+            product_category=payload.product_category,
+            frequency="One-Time",
+            duration=1,
+            interest=round(interest, 2),
+            active_credit=round(active_credit, 2),
+            expected_installment=round(expected_inst, 2),
+            gap_fee=0.0,
+            total_upfront_required=round(total_upfront, 2),
+            first_due_date=base_date.isoformat(),
+            expected_end_date=base_date.isoformat(),
+            installments=[],
+        )
+
+    dates = LoanProductEngine.generate_repayment_schedule(
+        start_date=base_date,
+        duration=duration,
+        frequency=cycle,
+        meeting_day=meeting_day,
+        closed_dates=closed_dates,
+    )
+
+    inst_principal = round(active_credit / duration, 2) if duration > 0 else 0.0
+    items: List[SchedulePreviewItem] = []
+    for idx, d in enumerate(dates, start=1):
+        p_val = inst_principal + (gap_fee if idx == 1 and payload.product_category != "Asset" and gap_fee > 0 else 0.0)
+        items.append(SchedulePreviewItem(
+            installment_number=idx,
+            due_date=d.isoformat(),
+            principal=round(p_val, 2),
+            interest=0.0,
+            total_due=round(p_val, 2),
+        ))
+
+    return SchedulePreviewResponse(
+        product_type=payload.product_type,
+        product_category=payload.product_category,
+        frequency=cycle,
+        duration=duration,
+        interest=round(interest, 2),
+        active_credit=round(active_credit, 2),
+        expected_installment=round(expected_inst, 2),
+        gap_fee=round(gap_fee, 2),
+        total_upfront_required=round(total_upfront, 2),
+        first_due_date=dates[0].isoformat() if dates else base_date.isoformat(),
+        expected_end_date=dates[-1].isoformat() if dates else base_date.isoformat(),
+        installments=items,
     )
 
 
@@ -285,11 +494,20 @@ def register_client(
             detail="Authenticated user has no valid branch assignment. Cannot register client."
         )
 
-    officer_id = uow.loans._resolve_officer_id(current_user.username) or current_user.id
+    officer_id = _resolve_current_officer_id(current_user, uow)
+    norm_role = RBACScopeService.normalize_role(current_user.role)
+    reg_date = (
+        date.fromisoformat(payload.registration_date)
+        if payload.registration_date
+        else BusinessDateService.get_business_date(uow, branch_id)
+    )
 
-    # 1. Group creation / resolution
+    operations: List[Dict[str, Any]] = []
+
+    # 1. Group creation / resolution (atomic with client insert when creating new group)
     final_group_id = None
     final_group_number = ""
+    is_new_group_created = False
 
     if payload.group_mode == "+ Create New Group":
         new_g_name = (payload.new_group_name or "").strip()
@@ -299,37 +517,53 @@ def register_client(
         if not new_g_name or not new_g_num:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please enter the Group Name and Group Number.")
 
-        # Check if group with same number exists in this branch
-        res_eg = uow.client.table("groups").select("group_id, group_number").eq("branch_id", branch_id).eq("group_number", new_g_num).execute()
+        res_eg = uow.client.table("groups").select("group_id, group_number, officer_id").eq("branch_id", branch_id).eq("group_number", new_g_num).execute()
         if res_eg.data:
             final_group_id = res_eg.data[0]["group_id"]
-            final_group_number = res_eg.data[0]["group_number"]
+            final_group_number = str(res_eg.data[0].get("group_number") or "")
+            if norm_role == "CO" and res_eg.data[0].get("officer_id") and str(res_eg.data[0]["officer_id"]) != str(officer_id):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Existing group belongs to another officer.")
         else:
-            new_group = {
-                "name": new_g_name,
-                "group_number": new_g_num,
-                "meeting_day": meeting_day,
-                "branch_id": branch_id,
-                "officer_id": officer_id,
-                "current_member_sequence": 0
-            }
-            res_g_ins = uow.client.table("groups").insert(new_group).execute()
-            if res_g_ins.data:
-                final_group_id = res_g_ins.data[0]["group_id"]
-                final_group_number = res_g_ins.data[0]["group_number"]
+            final_group_id = str(uuid.uuid4())
+            final_group_number = new_g_num
+            is_new_group_created = True
+            operations.append({
+                "type": "insert",
+                "table": "groups",
+                "record": {
+                    "group_id": final_group_id,
+                    "name": new_g_name,
+                    "group_number": new_g_num,
+                    "meeting_day": meeting_day,
+                    "branch_id": branch_id,
+                    "officer_id": officer_id,
+                    "status": "Active",
+                    "current_member_sequence": 1,
+                },
+            })
     elif payload.group_mode != "Individual (No Group)":
         if payload.group_id:
-            final_group_id = payload.group_id
-            res_g = uow.client.table("groups").select("group_number").eq("group_id", final_group_id).execute()
-            if res_g.data:
-                final_group_number = res_g.data[0].get("group_number") or ""
+            res_g = uow.client.table("groups").select("group_id, group_number, branch_id, officer_id").eq("group_id", payload.group_id).execute()
+            if not res_g.data or str(res_g.data[0].get("branch_id")) != str(branch_id):
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Selected group not found in your branch.")
+            if norm_role == "CO" and res_g.data[0].get("officer_id") and str(res_g.data[0]["officer_id"]) != str(officer_id):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Selected group is not assigned to you.")
+            final_group_id = res_g.data[0]["group_id"]
+            final_group_number = str(res_g.data[0].get("group_number") or "")
         else:
-            res_g = uow.client.table("groups").select("group_id, group_number").eq("branch_id", branch_id).eq("name", payload.group_mode).execute()
-            if res_g.data:
-                final_group_id = res_g.data[0]["group_id"]
-                final_group_number = res_g.data[0].get("group_number") or ""
+            base_group_name = re.sub(r"\s*\(#.*\)\s*$", "", str(payload.group_mode or "").strip()).strip()
+            res_g = uow.client.table("groups").select("group_id, group_number, officer_id").eq("branch_id", branch_id).eq("name", base_group_name).execute()
+            if not res_g.data:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Selected group '{payload.group_mode}' not found in your branch.")
+            if len(res_g.data) > 1 and norm_role == "CO":
+                matching = [g for g in res_g.data if str(g.get("officer_id")) == str(officer_id)]
+                g_row = matching[0] if matching else res_g.data[0]
+            else:
+                g_row = res_g.data[0]
+            final_group_id = g_row["group_id"]
+            final_group_number = str(g_row.get("group_number") or "")
 
-    # 2. Sequential Client Code Generation (app.py L3497-3509)
+    # 2. Sequential Client Code Generation
     if not final_group_id:
         g_code = "IND"
         res_count = uow.client.table("clients").select("client_id", count="exact").is_("group_id", "null").eq("branch_id", branch_id).execute()
@@ -337,82 +571,139 @@ def register_client(
     else:
         digits_match = re.findall(r'\d+', str(final_group_number))
         g_code = digits_match[-1].zfill(2) if digits_match else str(final_group_number).zfill(2)
-        next_seq = uow.clients.get_next_member_sequence(final_group_id)
+        next_seq = 1 if is_new_group_created else uow.clients.get_next_member_sequence(final_group_id)
 
     member_number_str = str(next_seq).zfill(3)
     generated_client_code = f"{branch_code}-{g_code}-{member_number_str}"
-
     client_uuid = str(uuid.uuid4())
-    reg_date = date.fromisoformat(payload.registration_date) if payload.registration_date else date.today()
+    status_id = ClientStatusService.resolve_status_id(uow, "Registered") or "11111111-1111-1111-1111-111111110001"
 
-    # 3. Create client entity
-    client_entity = Client(
-        id=client_uuid,
-        name=name_val,
-        client_code=generated_client_code,
-        nickname=payload.nickname,
-        phone=phone_val,
-        address=payload.address or "",
-        business_address=payload.business_address,
-        dob=date(1990, 1, 1),
-        gender="Female",
-        marital_status=payload.marital_status,
-        occupation="Trader",
-        business_type=payload.business_type,
-        id_means=payload.id_means,
-        id_number=payload.id_number,
-        id_card_url=payload.id_card_url or "",
-        next_of_kin="",
-        passport_url=payload.passport_url or "",
-        signature_url="",
-        registration_date=reg_date,
-        branch_id=branch_id,
-        group_id=final_group_id,
-        officer_id=officer_id,
-        status="Registered",
-        status_id="11111111-1111-1111-1111-111111110001",
-        average_monthly_income=float(payload.average_monthly_income or 0.0),
-        other_obligations=payload.other_obligations
-    )
-    uow.clients.create(client_entity)
+    # Persist structured guarantor metadata on clients.next_of_kin so Tab 2 and /apply inherit it pre-loan
+    nok_payload = None
+    if payload.guarantor and payload.guarantor.full_name and payload.guarantor.full_name.strip():
+        g = payload.guarantor
+        nok_payload = json.dumps({
+            "full_name": g.full_name.strip(),
+            "nickname": g.nickname.strip() if g.nickname else None,
+            "phone": (g.phone or "").strip(),
+            "address": (g.address or "").strip(),
+            "marital_status": g.marital_status or "Single",
+            "occupation": (g.occupation or "Trader").strip(),
+            "relationship": (g.relationship or "").strip(),
+            "office_address": (g.office_address or "").strip(),
+            "id_means": g.id_means or "National ID (NIN)",
+            "id_number": (g.id_number or "").strip(),
+            "id_card_url": payload.guarantor_id_card_url or "",
+            "passport_url": payload.guarantor_passport_url or "",
+        })
 
-    # 4. Create membership (app.py L3584-3590)
-    if final_group_id:
-        uow.client.table("client_memberships").insert({
-            "client_id": client_entity.id,
-            "group_id": final_group_id,
+    # 3. Client insert operation
+    operations.append({
+        "type": "insert",
+        "table": "clients",
+        "record": {
+            "client_id": client_uuid,
+            "name": name_val,
+            "client_code": generated_client_code,
+            "nickname": payload.nickname,
+            "phone": phone_val,
+            "address": payload.address or "",
+            "business_address": payload.business_address,
+            "marital_status": payload.marital_status,
+            "occupation": "Trader",
+            "business_type": payload.business_type,
+            "id_means": payload.id_means,
+            "id_number": payload.id_number,
+            "id_card_url": payload.id_card_url or "",
+            "next_of_kin": nok_payload or "",
+            "passport_url": payload.passport_url or "",
+            "registration_date": reg_date.isoformat(),
             "branch_id": branch_id,
-            "officer_id": client_entity.officer_id,
-            "start_date": reg_date.isoformat()
-        }).execute()
+            "group_id": final_group_id,
+            "officer_id": officer_id,
+            "status": "Registered",
+            "status_id": status_id,
+            "status_changed_by": current_user.id or officer_id,
+            "status_note": f"Client registered by {current_user.username}",
+            "average_monthly_income": float(payload.average_monthly_income or 0.0),
+            "other_obligations": payload.other_obligations,
+        },
+    })
 
-    # 5. Save Guarantor details to guarantors table if provided (app.py L3592-3612)
+    # 4. Create membership + initial status history
+    if final_group_id:
+        operations.append({
+            "type": "insert",
+            "table": "client_memberships",
+            "record": {
+                "membership_id": str(uuid.uuid4()),
+                "client_id": client_uuid,
+                "group_id": final_group_id,
+                "branch_id": branch_id,
+                "officer_id": officer_id,
+                "start_date": reg_date.isoformat(),
+            },
+        })
+
+    operations.append({
+        "type": "insert",
+        "table": "client_status_history",
+        "record": {
+            "id": str(uuid.uuid4()),
+            "client_id": client_uuid,
+            "old_status_id": None,
+            "new_status_id": status_id,
+            "changed_by": current_user.id or officer_id,
+            "reason": f"Client registered ({generated_client_code})",
+            "trigger_type": "MANUAL",
+            "trigger_reference": client_uuid,
+        },
+    })
+
+    # 5. Save Guarantor details atomically if provided
     if payload.guarantor and payload.guarantor.full_name and payload.guarantor.full_name.strip():
         g = payload.guarantor
         g_name_val = g.full_name.strip()
         g_phone_val = (g.phone or "").strip()
-        from domain.entities.guarantor import Guarantor
         existing_g = uow.guarantors.find_by_phone(g_phone_val) if g_phone_val else None
         if not existing_g:
-            g_entity = Guarantor(
-                guarantor_id=str(uuid.uuid4()),
-                name=g_name_val,
-                phone=g_phone_val,
-                address=(g.address or "").strip(),
-                occupation=(g.occupation or "Trader").strip(),
-                business_address=(g.office_address or "").strip(),
-                id_means=g.id_means,
-                id_number=(g.id_number or "").strip(),
-                id_card_url=payload.guarantor_id_card_url or "",
-                passport_url=payload.guarantor_passport_url or ""
-            )
-            uow.guarantors.create_guarantor(g_entity)
+            operations.append({
+                "type": "insert",
+                "table": "guarantors",
+                "record": {
+                    "guarantor_id": str(uuid.uuid4()),
+                    "name": g_name_val,
+                    "phone": g_phone_val,
+                    "address": (g.address or "").strip(),
+                    "occupation": (g.occupation or "Trader").strip(),
+                    "business_address": (g.office_address or "").strip(),
+                    "id_means": g.id_means,
+                    "id_number": (g.id_number or "").strip(),
+                    "id_card_url": payload.guarantor_id_card_url or "",
+                    "passport_url": payload.guarantor_passport_url or "",
+                },
+            })
+
+    operations.append({
+        "type": "insert",
+        "table": "audit_logs",
+        "record": {
+            "id": str(uuid.uuid4()),
+            "user_id": current_user.id or officer_id,
+            "action": "REGISTER_CLIENT",
+            "description": f"Registered client {name_val} ({generated_client_code})",
+            "table_name": "clients",
+            "record_id": client_uuid,
+        },
+    })
+
+    uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
 
     return RegisterClientResponse(
         success=True,
         client_id=client_uuid,
         client_code=generated_client_code,
-        message=f"Successfully registered **{name_val}**! Assigned Client ID: **{generated_client_code}**"
+        message=f"Successfully registered {name_val}. Assigned Client ID: {generated_client_code}"
     )
 
 
@@ -431,15 +722,27 @@ async def upload_document(
     raw_bytes = await file.read()
     if not raw_bytes:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
+    if len(raw_bytes) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Uploaded file exceeds maximum allowed size of 10 MB.")
+
+    if client_id:
+        c_obj = uow.clients.find_by_id(client_id)
+        if not c_obj:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found for document upload.")
+        _verify_client_ownership(current_user, uow, c_obj, "upload documents")
 
     filename = file.filename or "upload"
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in _ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file format '.{ext or 'unknown'}'. Allowed formats: JPG, JPEG, PNG, WEBP, PDF."
+        )
 
-    is_image = ext in ["jpg", "jpeg", "png", "webp", "jfif"] or (file.content_type and file.content_type.startswith("image/"))
-
+    is_image = ext in {"jpg", "jpeg", "png", "webp", "jfif"}
     target_bytes = raw_bytes
-    target_content_type = file.content_type or "application/octet-stream"
-    target_ext = ext or "bin"
+    target_content_type = "application/pdf" if ext == "pdf" else "image/jpeg"
+    target_ext = ext
 
     if is_image:
         try:
@@ -525,17 +828,28 @@ def apply_for_loan(
     if not client:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
 
-    # Guard: ensure officer is authorized for this client's branch
-    check_branch_access(current_user, client.branch_id, "submit loan application for this client")
+    # Guard: verify branch AND CO officer ownership
+    _verify_client_ownership(current_user, uow, client, "submit loan application")
 
     # Guard: check allowed products assignment if defined for credit officer
-    if current_user.role in ["CO", "Credit Officer", "Officer"] and current_user.allowed_products:
+    norm_role = RBACScopeService.normalize_role(current_user.role)
+    if norm_role == "CO" and current_user.allowed_products:
         normalized_allowed = [p.strip().lower() for p in current_user.allowed_products]
         if payload.product_type.strip().lower() not in normalized_allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"You are not authorized to originate loans for '{payload.product_type}'. Please select from your assigned products: {', '.join(current_user.allowed_products)}."
             )
+
+    # 1b. Enforce authoritative RenewalService eligibility gate on server
+    is_eligible, elig_reasons, _elig_warnings = RenewalService.check_eligibility(
+        uow, payload.client_id, payload.requested_amount, payload.product_type, payload.product_category
+    )
+    if not is_eligible:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Client is not eligible for this loan: {'; '.join(elig_reasons)}"
+        )
 
     # 2. Check savings balance
     res_dep = uow.client.table("individual_savings").select("deposit_amount").eq("client_id", payload.client_id).execute()
@@ -549,62 +863,50 @@ def apply_for_loan(
         except Exception:
             pass
 
-    # 3. Product parameters & interest rate calculation
-    rate = 0.12
-    duration = 12
-    cycle = "Weekly"
-
-    pt = payload.product_type
-    if "Cash and Carry" in pt:
-        rate = 0.0
-        duration = 1
-        cycle = "One-Time"
-    elif "120" in pt:
-        rate = 0.21
-        duration = 120
-        cycle = "Daily"
-    elif "Daily" in pt or "60" in pt:
-        rate = 0.12
-        duration = 60
-        cycle = "Daily"
-    elif "3 Month" in pt or "3M" in pt:
-        rate = 0.12
-        duration = 3
-        cycle = "Monthly"
-    elif "6 Month" in pt or "6M" in pt:
-        rate = 0.21
-        duration = 6
-        cycle = "Monthly"
-    elif "12 Week" in pt or "12W" in pt:
-        rate = 0.12
-        duration = 12
-        cycle = "Weekly"
-    elif "24 Week" in pt or "24W" in pt:
-        rate = 0.21
-        duration = 24
-        cycle = "Weekly"
-
-    interest = payload.requested_amount * rate
+    # 3. Product parameters & interest calculation via authoritative LoanProductEngine
+    setup = LoanProductEngine.calculate_loan_setup(
+        payload.requested_amount, payload.product_type, payload.product_category
+    )
+    interest = float(setup.get("interest", 0.0))
+    duration = int(setup.get("duration", 12) or 1)
+    cycle = str(setup.get("freq", "Weekly"))
+    is_cash_and_carry = (
+        "cash and carry" in payload.product_type.lower()
+        or "cash & carry" in payload.product_type.lower()
+        or cycle == "One-Time"
+    )
 
     # 4. Financial Calculations
-    initial_downpayment = payload.cash_downpayment + payload.savings_downpayment
-    gap_fee = payload.gap_fee
-    total_upfront_required = interest + gap_fee
+    cash_dp = max(0.0, float(payload.cash_downpayment or 0.0))
+    sav_dp = max(0.0, float(payload.savings_downpayment or 0.0))
+    initial_downpayment = cash_dp + sav_dp
+    gap_fee = 0.0 if (payload.product_category == "Asset" or is_cash_and_carry) else max(0.0, float(payload.gap_fee or 0.0))
+    total_upfront_required = 0.0 if (payload.product_category == "Asset" or is_cash_and_carry) else (interest + gap_fee)
 
     if payload.product_category == "Asset":
         total_cost = payload.requested_amount + interest
-        final_active_credit = total_cost - initial_downpayment
+        if initial_downpayment > total_cost:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Total downpayment cannot exceed total asset cost."
+            )
+        final_active_credit = max(0.0, total_cost - initial_downpayment)
         final_total_payable = final_active_credit
         final_expected_installment = round(final_active_credit / duration, 2) if duration > 0 else 0.0
 
-        if payload.savings_downpayment > 0 and savings_bal < payload.savings_downpayment:
+        if sav_dp > 0 and savings_bal < sav_dp:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"INSUFFICIENT SAVINGS: Client has ₦{savings_bal:,.2f} but needs ₦{payload.savings_downpayment:,.2f} from savings for downpayment."
+                detail=f"INSUFFICIENT SAVINGS: Client has ₦{savings_bal:,.2f} but needs ₦{sav_dp:,.2f} from savings for downpayment."
             )
     else:
+        if gap_fee > payload.requested_amount:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Gap fee cannot exceed requested loan amount."
+            )
         final_active_credit = payload.requested_amount - gap_fee
-        final_total_payable = payload.requested_amount + interest
+        final_total_payable = final_active_credit
         final_expected_installment = round(final_active_credit / duration, 2) if duration > 0 else 0.0
 
         if total_upfront_required > 0 and savings_bal < total_upfront_required:
@@ -613,7 +915,7 @@ def apply_for_loan(
                 detail=f"INSUFFICIENT SAVINGS: Client has ₦{savings_bal:,.2f} but needs ₦{total_upfront_required:,.2f}. Please collect additional savings first."
             )
 
-    # 5. Active / Pending loan duplicate validation with Auto-Heal (app.py L4482-4506)
+    # 5. Active / Pending loan duplicate validation with Auto-Heal
     check_prod_cat = payload.product_category
     res_existing = uow.client.table("loans").select("*").eq("client_id", payload.client_id).eq("status", "Pending").execute()
     res_active = uow.client.table("loans").select("*").eq("client_id", payload.client_id).eq("status", "Active").execute()
@@ -628,7 +930,6 @@ def apply_for_loan(
                 rep_res = uow.client.table("repayments").select("amount_paid").eq("loan_id", lid).execute()
                 tot_p = sum(float(r.get("amount_paid") or 0.0) for r in (rep_res.data or []))
                 if max(0.0, tot_d - tot_p) <= 0.0:
-                    # Auto-heal: loan is fully paid
                     ClientStatusService.on_loan_repayment_check(uow, payload.client_id, lid)
                     continue
             is_blocked = True
@@ -636,17 +937,87 @@ def apply_for_loan(
     if is_blocked:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot submit: This client already has an Active or Pending {check_prod_cat} loan!"
+            detail=f"Cannot submit: This client already has an Active or Pending {check_prod_cat} loan."
         )
 
-    # 6. Create Loan Entity
+    # 6. Create Loan Entity + Provisional Schedule + Client Status atomically
     loan_id = str(uuid.uuid4())
-    app_date = date.fromisoformat(payload.application_date) if payload.application_date else date.today()
-
     res_b = uow.client.table("branches").select("name").eq("branch_id", client.branch_id).execute() if client.branch_id else None
-    loan_branch_name = res_b.data[0]["name"] if res_b and res_b.data else current_user.branch
+    loan_branch_name = res_b.data[0]["name"] if res_b and isinstance(res_b.data, list) and res_b.data else current_user.branch
     loan_branch_id = client.branch_id or current_user.branch_id
+    app_date = (
+        date.fromisoformat(payload.application_date)
+        if payload.application_date
+        else BusinessDateService.get_business_date(uow, loan_branch_id)
+    )
 
+    # Resolve product_id
+    product_id = None
+    try:
+        res_p = uow.client.table("loan_products").select("product_id").eq("name", payload.product_type).limit(1).execute()
+        if isinstance(res_p.data, list) and res_p.data:
+            product_id = res_p.data[0].get("product_id")
+    except Exception:
+        pass
+    if not product_id and hasattr(uow, "loans") and hasattr(uow.loans, "_resolve_product_id"):
+        try:
+            p_cand = uow.loans._resolve_product_id(payload.product_type)
+            if isinstance(p_cand, (str, uuid.UUID)) and str(p_cand).strip():
+                product_id = str(p_cand).strip()
+        except Exception:
+            product_id = None
+    if not product_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown loan product '{payload.product_type}'.")
+
+    # Compute provisional schedule dates based on branch closures + group meeting day
+    meeting_day = _resolve_meeting_day(uow, payload.client_id, getattr(client, "group_id", None))
+    closures = BusinessDateService.get_branch_closures(uow, loan_branch_id) if loan_branch_id else []
+    closed_dates = BusinessDateService.expand_closure_dates(closures)
+    if is_cash_and_carry:
+        sched_dates = [app_date]
+    else:
+        sched_dates = LoanProductEngine.generate_repayment_schedule(
+            start_date=app_date,
+            duration=duration,
+            frequency=cycle,
+            meeting_day=meeting_day,
+            closed_dates=closed_dates,
+        )
+    prov_start_date = sched_dates[0] if sched_dates else app_date
+    prov_end_date = sched_dates[-1] if sched_dates else app_date
+
+    # Inherit guarantor metadata from registration / latest loan so it stays visible pre-disbursement
+    nok_g = _extract_guarantor_fallback(client)
+    res_prev_l = uow.client.table("loans").select("extra_fields, guarantor_id_means, guarantor_id_number, guarantor_id_card_url, guarantor_passport_url").eq("client_id", payload.client_id).order("created_at", desc=True).limit(1).execute()
+    prev_l = res_prev_l.data[0] if res_prev_l and isinstance(res_prev_l.data, list) and res_prev_l.data and isinstance(res_prev_l.data[0], dict) else {}
+    prev_extra = prev_l.get("extra_fields") if isinstance(prev_l.get("extra_fields"), dict) else {}
+
+    loan_extra = {
+        "lifecycle_status": "Submitted",
+        "product_type": payload.product_type,
+        "notes": payload.notes,
+        "product_category": payload.product_category,
+        "downpayment_source": payload.downpayment_mode if payload.product_category == "Asset" else None,
+        "downpayment_cash": cash_dp if payload.product_category == "Asset" else 0.0,
+        "downpayment_savings": sav_dp if payload.product_category == "Asset" else 0.0,
+        "initial_downpayment": initial_downpayment,
+        "active_credit": final_active_credit,
+        "loan_repay": final_expected_installment,
+        "total_due": final_active_credit,
+        "gap_fee": gap_fee,
+        "upfront_interest": interest if (payload.product_category == "Finance" and not is_cash_and_carry) else 0.0,
+        "total_upfront_required": total_upfront_required,
+        "guarantor_name": prev_extra.get("guarantor_name") or nok_g.get("full_name") or nok_g.get("name"),
+        "guarantor_nickname": prev_extra.get("guarantor_nickname") or nok_g.get("nickname"),
+        "guarantor_phone": prev_extra.get("guarantor_phone") or nok_g.get("phone"),
+        "guarantor_home_address": prev_extra.get("guarantor_home_address") or nok_g.get("address"),
+        "guarantor_marital_status": prev_extra.get("guarantor_marital_status") or nok_g.get("marital_status"),
+        "guarantor_occupation": prev_extra.get("guarantor_occupation") or nok_g.get("occupation"),
+        "guarantor_relationship": prev_extra.get("guarantor_relationship") or nok_g.get("relationship"),
+        "guarantor_office_address": prev_extra.get("guarantor_office_address") or nok_g.get("office_address"),
+    }
+
+    officer_uid = getattr(client, "officer_id", None) or current_user.id
     loan_entity = Loan(
         id=loan_id,
         client_id=payload.client_id,
@@ -661,39 +1032,82 @@ def apply_for_loan(
         status=LoanStatus.PENDING,
         branch=loan_branch_name,
         credit_officer=current_user.username,
-        officer_id=client.officer_id or current_user.id,
+        officer_id=officer_uid,
         branch_id=loan_branch_id,
-        start_date=app_date,
+        start_date=prov_start_date,
+        end_date=prov_end_date,
         is_asset=(payload.product_category == "Asset"),
-        extra_fields={
-            "lifecycle_status": "Submitted",
-            "notes": payload.notes,
-            "product_category": payload.product_category,
-            "downpayment_source": payload.downpayment_mode if payload.product_category == "Asset" else None,
-            "downpayment_cash": payload.cash_downpayment if payload.product_category == "Asset" else 0.0,
-            "downpayment_savings": payload.savings_downpayment if payload.product_category == "Asset" else 0.0,
-            "initial_downpayment": initial_downpayment,
-            "active_credit": final_active_credit,
-            "loan_repay": final_expected_installment,
-            "total_due": final_active_credit,
-            "gap_fee": gap_fee,
-            "upfront_interest": interest if payload.product_category == "Finance" else 0.0,
-            "total_upfront_required": total_upfront_required if payload.product_category == "Finance" else 0.0
-        }
+        extra_fields=loan_extra,
     )
-    uow.loans.create(loan_entity)
 
-    # 7. Update client status to 'Pending Loan' (BR-CLI-003.1)
-    try:
-        ClientStatusService.on_loan_submitted(uow, payload.client_id, loan_id, client.officer_id)
-    except Exception as e:
-        print(f"[STATUS TRACE] Failed to update client status: {e}")
+    operations: List[Dict[str, Any]] = [
+        {
+            "type": "insert",
+            "table": "loans",
+            "record": {
+                "loan_id": loan_id,
+                "client_id": payload.client_id,
+                "product_id": product_id,
+                "branch_id": loan_branch_id,
+                "officer_id": officer_uid,
+                "date": app_date.isoformat(),
+                "loan_amount": round(payload.requested_amount, 2),
+                "active_credit": round(final_active_credit, 2),
+                "loan_repay": round(final_expected_installment, 2),
+                "total_due": round(final_total_payable, 2),
+                "status": "Pending",
+                "product_category": payload.product_category,
+                "start_date": prov_start_date.isoformat(),
+                "expected_end_date": prov_end_date.isoformat(),
+                "disbursement_date": None,
+                "extra_fields": loan_extra,
+                "guarantor_id_means": prev_l.get("guarantor_id_means") or nok_g.get("id_means"),
+                "guarantor_id_number": prev_l.get("guarantor_id_number") or nok_g.get("id_number"),
+                "guarantor_id_card_url": prev_l.get("guarantor_id_card_url") or nok_g.get("id_card_url"),
+                "guarantor_passport_url": prev_l.get("guarantor_passport_url") or nok_g.get("passport_url"),
+            },
+        }
+    ]
 
-    # 8. Generate scheduled installments
-    try:
-        ScheduleService.generate_schedule(uow, loan_entity, app_date + timedelta(days=7))
-    except Exception as e:
-        print(f"[SCHEDULE TRACE] Schedule generation notice: {e}")
+    # 7. Update client status to 'Pending Loan' inside atomic batch (BR-CLI-003.1)
+    ClientStatusService.on_loan_submitted(
+        uow, payload.client_id, loan_id, officer_uid, defer_operations=operations
+    )
+
+    # 8. Generate scheduled installments inside atomic batch
+    if not is_cash_and_carry:
+        ScheduleService.generate_schedule(uow, loan_entity, app_date, defer_operations=operations)
+
+    operations.append({
+        "type": "insert",
+        "table": "audit_logs",
+        "record": {
+            "id": str(uuid.uuid4()),
+            "user_id": current_user.id or officer_uid,
+            "action": "SUBMIT_LOAN_APPLICATION",
+            "description": f"Submitted {payload.product_category} ({payload.product_type}) loan application {loan_id[:8]} for {client.name} (₦{payload.requested_amount:,.2f})",
+            "table_name": "loans",
+            "record_id": loan_id,
+        },
+    })
+
+    uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
+
+    # Link guarantor row if available
+    g_phone_link = loan_extra.get("guarantor_phone")
+    if g_phone_link:
+        try:
+            g_found = uow.guarantors.find_by_phone(g_phone_link)
+            if g_found:
+                from domain.entities.guarantor import LoanGuarantor
+                uow.guarantors.link_to_loan(LoanGuarantor(
+                    id=str(uuid.uuid4()),
+                    loan_id=loan_id,
+                    guarantor_id=g_found.guarantor_id,
+                    relationship=loan_extra.get("guarantor_relationship") or "",
+                ))
+        except Exception:
+            pass
 
     return ApplyLoanResponse(
         success=True,
@@ -701,7 +1115,7 @@ def apply_for_loan(
         active_credit=final_active_credit,
         expected_installment=final_expected_installment,
         status="Pending",
-        message="Application submitted successfully! Repayment schedule generated and loan is Pending BM Approval."
+        message="Application submitted successfully! Repayment schedule generated and loan is Pending Branch Manager Approval."
     )
 
 
@@ -714,10 +1128,10 @@ def get_pending_disbursements(
     Returns pending loan applications with columns matching Streamlit app.py L3234-3250.
     """
     branch_id = current_user.branch_id
-    officer_id = uow.loans._resolve_officer_id(current_user.username) or current_user.id
+    officer_id = _resolve_current_officer_id(current_user, uow)
 
     query = uow.client.table("loans").select(
-        "loan_id, client_id, loan_amount, active_credit, date, status, officer_id, branch_id, extra_fields, clients(name, client_code, group_id), app_users(username, full_name), loan_products(name)"
+        "loan_id, client_id, loan_amount, active_credit, date, status, product_category, officer_id, branch_id, extra_fields, is_deleted, clients(name, client_code, group_id), app_users(username, full_name), loan_products(name)"
     ).eq("status", "Pending")
 
     norm_role = RBACScopeService.normalize_role(current_user.role)
@@ -738,12 +1152,15 @@ def get_pending_disbursements(
     group_map = {str(g["group_id"]): g["name"] for g in (res_all_groups.data or [])}
 
     for l in (res_data := (res.data or [])):
+        if l.get("is_deleted"):
+            continue
         amt = float(l.get("loan_amount") or 0.0)
         if amt <= 0:
             continue
 
         c = l.get("clients") or {}
         c_name = c.get("name") or "Unknown Client"
+        c_code = c.get("client_code")
         gid = str(c.get("group_id") or "")
         grp_name = group_map.get(gid, "-")
 
@@ -753,16 +1170,20 @@ def get_pending_disbursements(
         lp = l.get("loan_products") or {}
         extra = l.get("extra_fields") or {}
         prod_name = lp.get("name") or extra.get("product_type") or "Weekly 12W"
+        prod_cat = l.get("product_category") or extra.get("product_category") or "Finance"
 
         loans.append(PendingLoanItem(
             loan_id=str(l.get("loan_id")),
             client_id=str(l.get("client_id")),
             client_name=c_name,
+            client_code=c_code,
             group_name=grp_name,
             date=str(l.get("date") or ""),
             credit_officer=officer_name,
             loan_amount=amt,
-            loan_product=prod_name
+            loan_product=prod_name,
+            product_category=prod_cat,
+            exceeds_bm_limit=(norm_role == "Branch Manager" and amt > _BM_DISBURSEMENT_CEILING),
         ))
 
     can_auth = current_user.role in ["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"]
@@ -781,78 +1202,93 @@ def disburse_loan(
     """
     Checker Action: Authorizes and activates disbursement (app.py L3252-3332).
     """
-    # 1. Parse date and validate working day
     disb_date = date.fromisoformat(payload.disbursement_date)
     today_str = disb_date.strftime("%Y-%m-%d")
 
-    # Get custom closures
-    res_c = uow.client.table("custom_closures").select("closure_date, reason").execute()
-    closures = [(c["closure_date"], c.get("reason", "Closure")) for c in (res_c.data or [])]
-
-    is_workday, workday_reason = BusinessDateService.is_working_day(disb_date, closures)
-    if not is_workday:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Non-Working Day Restriction: Loans cannot be activated or disbursed on {workday_reason}. Please select a valid working day."
-        )
-
-    # 2. Find target loan and verify branch access
-    res_l = uow.client.table("loans").select("*").eq("loan_id", payload.loan_id).execute()
+    # 1. Find target loan with product, branch, client & officer metadata
+    res_l = (
+        uow.client.table("loans")
+        .select("*, loan_products(name), branches(name), app_users(username, full_name), clients(name, client_code, group_id)")
+        .eq("loan_id", payload.loan_id)
+        .execute()
+    )
     if not res_l.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan not found.")
 
     loan_row = res_l.data[0]
-    check_branch_access(current_user, loan_row.get("branch_id"), "disburse loans")
-    product = str(loan_row.get("product_type", ""))
+    branch_id = loan_row.get("branch_id")
+    check_branch_access(current_user, branch_id, "disburse loans")
 
-    # Find meeting day from group
-    meeting_day = ""
-    res_m = uow.client.table("client_memberships").select("groups(meeting_day)").eq("client_id", loan_row["client_id"]).execute()
-    if res_m.data and res_m.data[0].get("groups"):
-        meeting_day = res_m.data[0]["groups"].get("meeting_day") or ""
+    if str(loan_row.get("status") or "") != "Pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Loan cannot be disbursed because its current status is '{loan_row.get('status')}'."
+        )
 
-    # 3. Calculate initial start date
-    if "Daily" in product or "60" in product or "120" in product:
-        initial_start_date = disb_date + timedelta(days=1)
+    # Enforce BM ceiling of ₦300,000
+    norm_role = RBACScopeService.normalize_role(current_user.role)
+    loan_amt = float(loan_row.get("loan_amount") or 0.0)
+    if norm_role == "Branch Manager" and loan_amt > _BM_DISBURSEMENT_CEILING:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Loan amount (₦{loan_amt:,.2f}) exceeds Branch Manager limit of ₦{_BM_DISBURSEMENT_CEILING:,.0f}. Escalated to Area Manager."
+        )
+
+    # Validate working day + operational EOD open status using branch_closures
+    closures = BusinessDateService.get_branch_closures(uow, branch_id)
+    is_open, open_reason = BusinessDateService.is_operational_open(uow, branch_id, disb_date)
+    if not is_open:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Operational Restriction: Cannot disburse loan on {disb_date.isoformat()}. {open_reason}."
+        )
+
+    extra_row = loan_row.get("extra_fields") or {}
+    lp_row = loan_row.get("loan_products") or {}
+    product = str(lp_row.get("name") or extra_row.get("product_type") or loan_row.get("product_type") or "").strip()
+    if not product:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Loan product is missing and cannot be resolved.")
+
+    c_row = loan_row.get("clients") or {}
+    meeting_day = _resolve_meeting_day(uow, loan_row["client_id"], c_row.get("group_id"))
+    closed_dates = BusinessDateService.expand_closure_dates(closures)
+
+    setup = LoanProductEngine.calculate_loan_setup(loan_amt or 100000.0, product, loan_row.get("product_category") or "Finance")
+    loan_freq = str(setup.get("freq", "Daily"))
+    duration_in_installments = int(setup.get("duration", 60) or 1)
+    is_cash_and_carry = "cash and carry" in product.lower() or "cash & carry" in product.lower() or loan_freq == "One-Time"
+
+    if is_cash_and_carry:
+        final_start_date = disb_date
+        expected_end_date = disb_date
+        is_adjusted = False
     else:
-        days_of_week = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
-        if meeting_day and meeting_day in days_of_week:
-            target_weekday = days_of_week[meeting_day]
-            current_weekday = disb_date.weekday()
-            days_ahead = target_weekday - current_weekday
-            if days_ahead <= 0:
-                days_ahead += 7
-            initial_start_date = disb_date + timedelta(days=days_ahead)
-        else:
-            initial_start_date = disb_date + timedelta(days=7)
+        schedule = LoanProductEngine.generate_repayment_schedule(
+            disb_date,
+            duration_in_installments,
+            loan_freq,
+            meeting_day=meeting_day,
+            closed_dates=closed_dates,
+        )
+        final_start_date = schedule[0] if schedule else disb_date
+        expected_end_date = schedule[-1] if schedule else final_start_date
+        # Compute nominal (unshifted) first installment date to detect holiday/closure adjustment accurately
+        nom_schedule = LoanProductEngine.generate_repayment_schedule(
+            disb_date,
+            duration_in_installments,
+            loan_freq,
+            meeting_day=meeting_day,
+            closed_dates=[],
+        )
+        is_adjusted = bool(nom_schedule and schedule and schedule[0] != nom_schedule[0])
 
-    final_start_date = BusinessDateService.get_next_working_day(initial_start_date, closures)
-    is_adjusted = (final_start_date != initial_start_date)
+    loan_domain = LoanMapper.to_domain(loan_row)
+    loan_domain.product_type = product
+    loan_domain.start_date = final_start_date
+    loan_domain.end_date = expected_end_date
+    loan_domain.expected_end_date = expected_end_date
 
-    # 4. Generate schedule end date
-    setup = LoanProductEngine.calculate_loan_setup(100000, product)
-    loan_freq = setup.get("freq", "Daily")
-    duration_in_installments = setup.get("duration", 60)
-
-    schedule = LoanProductEngine.generate_repayment_schedule(
-        final_start_date, duration_in_installments, loan_freq,
-        meeting_day=meeting_day, closed_dates=[c[0] for c in closures]
-    )
-    expected_end_date = schedule[-1] if schedule else final_start_date
-
-    # 5. Execute disbursement via LoanService
-    loans = uow.loans.find_by_client_id(loan_row["client_id"])
-    target_loans = [L for L in loans if str(L.id) == str(payload.loan_id)]
-    if not target_loans:
-        target_loans = [L for L in loans if (L.status.value == "Pending" if hasattr(L.status, 'value') else L.status == "Pending")]
-
-    if not target_loans:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No pending loan found to disburse.")
-
-    for L in target_loans:
-        L.start_date = final_start_date
-        L.expected_end_date = expected_end_date
-        LoanService.disburse_loan(uow, L, disbursement_date=disb_date)
+    LoanService.disburse_loan(uow, loan_domain, disbursement_date=disb_date)
 
     shift_msg = None
     if is_adjusted:
@@ -860,7 +1296,7 @@ def disburse_loan(
 
     return DisburseLoanResponse(
         success=True,
-        message=f"Successfully activated and disbursed loan! Disbursement Date set to {today_str}.",
+        message=f"Successfully activated and disbursed loan. Disbursement Date set to {today_str}.",
         schedule_adjusted=is_adjusted,
         final_start_date=final_start_date.strftime("%Y-%m-%d"),
         shift_reason=shift_msg
@@ -881,19 +1317,20 @@ def update_client_and_guarantor(
     if not c_name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Client Name is required.")
 
-    # Guard: verify client exists and user has branch access
     client = uow.clients.find_by_id(client_id)
     if not client:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
-    check_branch_access(current_user, client.branch_id, "update client details")
+    _verify_client_ownership(current_user, uow, client, "update client details")
 
-    # Enterprise Four-Eyes Governance: If requested by Credit Officer, submit for BM review
-    if current_user.role in ["CO", "Credit Officer", "Officer"]:
+    norm_role = RBACScopeService.normalize_role(current_user.role)
+    if norm_role == "CO":
         from services.client_service import ClientService
         proposed = {
             "name": c_name,
+            "nickname": payload.nickname.strip() if payload.nickname else None,
             "phone": payload.phone.strip() if payload.phone else None,
             "address": payload.address.strip() if payload.address else None,
+            "business_address": payload.business_address.strip() if payload.business_address else None,
             "marital_status": payload.marital_status,
             "business_type": payload.business_type.strip() if payload.business_type else None,
             "average_monthly_income": payload.average_monthly_income,
@@ -901,6 +1338,7 @@ def update_client_and_guarantor(
             "id_means": payload.id_means,
             "id_number": payload.id_number.strip() if payload.id_number else None,
             "guarantor_name": payload.guarantor_name.strip() if payload.guarantor_name else None,
+            "guarantor_nickname": payload.guarantor_nickname.strip() if payload.guarantor_nickname else None,
             "guarantor_phone": payload.guarantor_phone.strip() if payload.guarantor_phone else None,
             "guarantor_address": payload.guarantor_address.strip() if payload.guarantor_address else None,
             "guarantor_marital_status": payload.guarantor_marital_status,
@@ -924,31 +1362,38 @@ def update_client_and_guarantor(
             request_id=res_req["request_id"]
         )
 
-    # 1. Update Client Record (Direct update for BM / AM / Admin)
+    # Direct atomic update for BM / AM / Admin
+    operations: List[Dict[str, Any]] = []
     client_update_data = {
         "name": c_name,
+        "nickname": payload.nickname.strip() if payload.nickname else None,
         "phone": payload.phone.strip() if payload.phone else None,
         "address": payload.address.strip() if payload.address else None,
+        "business_address": payload.business_address.strip() if payload.business_address else None,
         "marital_status": payload.marital_status,
         "business_type": payload.business_type.strip() if payload.business_type else None,
         "average_monthly_income": payload.average_monthly_income,
         "other_obligations": payload.other_obligations.strip() if payload.other_obligations else None,
         "id_means": payload.id_means,
-        "id_number": payload.id_number.strip() if payload.id_number else None
+        "id_number": payload.id_number.strip() if payload.id_number else None,
     }
-    uow.client.table("clients").update(client_update_data).eq("client_id", client_id).execute()
+    operations.append({
+        "type": "update",
+        "table": "clients",
+        "match": {"client_id": client_id},
+        "record": client_update_data,
+    })
 
-    # 2. Update latest loan guarantor extra_fields
     res_l = uow.client.table("loans").select("*").eq("client_id", client_id).order("created_at", desc=True).limit(1).execute()
     latest_loan = res_l.data[0] if res_l and res_l.data else {}
-
     g_name = (payload.guarantor_name or "").strip()
     g_phone = (payload.guarantor_phone or "").strip()
 
     if latest_loan:
-        loan_extra = latest_loan.get("extra_fields") or {}
+        loan_extra = dict(latest_loan.get("extra_fields") or {})
         loan_extra.update({
             "guarantor_name": g_name or None,
+            "guarantor_nickname": payload.guarantor_nickname.strip() if payload.guarantor_nickname else None,
             "guarantor_phone": g_phone or None,
             "guarantor_home_address": payload.guarantor_address.strip() if payload.guarantor_address else None,
             "guarantor_marital_status": payload.guarantor_marital_status,
@@ -956,43 +1401,64 @@ def update_client_and_guarantor(
             "guarantor_relationship": payload.guarantor_relationship.strip() if payload.guarantor_relationship else None,
             "guarantor_office_address": payload.guarantor_office_address.strip() if payload.guarantor_office_address else None,
         })
-        loan_update_data = {
-            "extra_fields": loan_extra,
-            "guarantor_id_means": payload.guarantor_id_means,
-            "guarantor_id_number": payload.guarantor_id_number.strip() if payload.guarantor_id_number else None
-        }
-        uow.client.table("loans").update(loan_update_data).eq("loan_id", latest_loan["loan_id"]).execute()
+        operations.append({
+            "type": "update",
+            "table": "loans",
+            "match": {"loan_id": latest_loan["loan_id"]},
+            "record": {
+                "_allow_active_metadata_update": True,
+                "extra_fields": loan_extra,
+                "guarantor_id_means": payload.guarantor_id_means,
+                "guarantor_id_number": payload.guarantor_id_number.strip() if payload.guarantor_id_number else None,
+            },
+        })
 
-    # 3. Sync to public.guarantors table
+    guarantor_id = None
     if g_name and g_phone:
         res_g = uow.guarantors.find_by_phone(g_phone)
+        g_fields = {
+            "name": g_name,
+            "address": payload.guarantor_address.strip() if payload.guarantor_address else None,
+            "occupation": payload.guarantor_occupation.strip() if payload.guarantor_occupation else None,
+            "business_address": payload.guarantor_office_address.strip() if payload.guarantor_office_address else None,
+            "id_means": payload.guarantor_id_means,
+            "id_number": payload.guarantor_id_number.strip() if payload.guarantor_id_number else None,
+        }
         if res_g:
             guarantor_id = res_g.guarantor_id
-            g_update = {
-                "name": g_name,
-                "address": payload.guarantor_address.strip() if payload.guarantor_address else None,
-                "occupation": payload.guarantor_occupation.strip() if payload.guarantor_occupation else None,
-                "business_address": payload.guarantor_office_address.strip() if payload.guarantor_office_address else None,
-                "id_means": payload.guarantor_id_means,
-                "id_number": payload.guarantor_id_number.strip() if payload.guarantor_id_number else None
-            }
-            uow.client.table("guarantors").update(g_update).eq("guarantor_id", guarantor_id).execute()
+            operations.append({
+                "type": "update",
+                "table": "guarantors",
+                "match": {"guarantor_id": guarantor_id},
+                "record": g_fields,
+            })
         else:
-            from domain.entities.guarantor import Guarantor
-            g_new = Guarantor(
-                guarantor_id=str(uuid.uuid4()),
-                name=g_name,
-                phone=g_phone,
-                address=payload.guarantor_address.strip() if payload.guarantor_address else None,
-                occupation=payload.guarantor_occupation.strip() if payload.guarantor_occupation else None,
-                business_address=payload.guarantor_office_address.strip() if payload.guarantor_office_address else None,
-                id_means=payload.guarantor_id_means,
-                id_number=payload.guarantor_id_number.strip() if payload.guarantor_id_number else None
-            )
-            g_ent = uow.guarantors.create_guarantor(g_new)
-            guarantor_id = g_ent.guarantor_id
+            guarantor_id = str(uuid.uuid4())
+            g_fields["guarantor_id"] = guarantor_id
+            g_fields["phone"] = g_phone
+            operations.append({
+                "type": "insert",
+                "table": "guarantors",
+                "record": g_fields,
+            })
 
-        if latest_loan:
+    operations.append({
+        "type": "insert",
+        "table": "audit_logs",
+        "record": {
+            "id": str(uuid.uuid4()),
+            "user_id": current_user.id,
+            "action": "UPDATE_CLIENT_PROFILE",
+            "description": f"Direct manager profile update for client {c_name}",
+            "table_name": "clients",
+            "record_id": client_id,
+        },
+    })
+
+    uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
+
+    if guarantor_id and latest_loan:
+        try:
             res_link = uow.client.table("loan_guarantors").select("*").eq("loan_id", latest_loan["loan_id"]).eq("guarantor_id", guarantor_id).execute()
             if not res_link.data:
                 from domain.entities.guarantor import LoanGuarantor
@@ -1002,6 +1468,8 @@ def update_client_and_guarantor(
                     guarantor_id=guarantor_id,
                     relationship=payload.guarantor_relationship or ""
                 ))
+        except Exception:
+            pass
 
     return UpdateClientGuarantorResponse(
         success=True,

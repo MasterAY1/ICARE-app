@@ -10,6 +10,8 @@ import '../../../core/offline/offline_database_service.dart';
 import '../data/datasources/bm_api_service.dart';
 import '../data/models/bm_dashboard_models.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
+import 'master_cashbook_screen.dart';
+import '../../co/presentation/withdrawal_operations_screen.dart';
 
 final bmDashboardDataProvider = FutureProvider.autoDispose<BmDashboardDataModel>((ref) async {
   // Retain data in memory for 60 seconds after unmount to prevent tab-switching refetches
@@ -110,6 +112,15 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     });
   }
 
+  void _invalidateAllCashbookAndDashboardProviders() {
+    ref.invalidate(bmDashboardDataProvider);
+    ref.invalidate(masterDailyCashbookProvider);
+    ref.invalidate(coAggregationProvider);
+    ref.invalidate(monthlyLedgerProvider);
+    ref.invalidate(dailyWithdrawalsProvider);
+    ref.invalidate(pendingApprovalsProvider);
+  }
+
   @override
   Widget build(BuildContext context) {
     final dashboardAsync = ref.watch(bmDashboardDataProvider);
@@ -168,7 +179,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed: () => ref.refresh(bmDashboardDataProvider),
+                  onPressed: _invalidateAllCashbookAndDashboardProviders,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: isConnectionError ? const Color(0xFFD97706) : const Color(0xFF064E3B),
                   ),
@@ -258,7 +269,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 IconButton(
                   icon: const Icon(Icons.refresh, size: 20, color: Color(0xFF334155)),
                   tooltip: 'Refresh Dashboard',
-                  onPressed: () => ref.refresh(bmDashboardDataProvider),
+                  onPressed: _invalidateAllCashbookAndDashboardProviders,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -291,7 +302,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     IconButton(
                       icon: const Icon(Icons.refresh, size: 20, color: Color(0xFF334155)),
                       tooltip: 'Refresh Dashboard',
-                      onPressed: () => ref.refresh(bmDashboardDataProvider),
+                      onPressed: _invalidateAllCashbookAndDashboardProviders,
                     ),
                     const SizedBox(width: 8),
                     OutlinedButton.icon(
@@ -753,7 +764,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               IconButton(
                 icon: const Icon(Icons.refresh, size: 18, color: Color(0xFF64748B)),
                 tooltip: 'Refresh Approvals',
-                onPressed: () => ref.refresh(bmDashboardDataProvider),
+                onPressed: _invalidateAllCashbookAndDashboardProviders,
               ),
             ],
           ),
@@ -869,7 +880,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               OutlinedButton.icon(
-                onPressed: () => ref.refresh(bmDashboardDataProvider),
+                onPressed: _invalidateAllCashbookAndDashboardProviders,
                 icon: const Icon(Icons.refresh, size: 14, color: Color(0xFF2563EB)),
                 label: const Text('Refresh Queue', style: TextStyle(color: Color(0xFF2563EB), fontSize: 12, fontWeight: FontWeight.w600)),
                 style: OutlinedButton.styleFrom(
@@ -1903,7 +1914,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                           const SizedBox(height: 4),
                           Text('Op: ${wr.operationType} | Requested by: ${wr.requestedBy}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
                           if (wr.remarks != null && wr.remarks!.isNotEmpty)
-                            Text(wr.remarks!, style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Color(0xFF94A3B8))),
+                            Text(
+                              wr.remarks!.replaceAll(RegExp(r'\[(?:DEST_ID|DEST_NAME|DEST_TYPE|FEE|LOAN_OFFSET|IDEMPOTENCY):[^\]]*\]\s*', caseSensitive: false), '').trim(),
+                              style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Color(0xFF94A3B8)),
+                            ),
                         ],
                       ),
                     ),
@@ -3146,7 +3160,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       final api = ref.read(bmApiServiceProvider);
       final res = await api.approveLoan(loanId: loanId, disbursementDate: DateFormat('yyyy-MM-dd').format(date));
       _showFlash(res['message']?.toString() ?? 'Loan approved & disbursed for $clientName!');
-      ref.invalidate(bmDashboardDataProvider);
+      _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approval failed: $e'), backgroundColor: const Color(0xFFDC2626)));
@@ -3161,7 +3175,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       final api = ref.read(bmApiServiceProvider);
       final res = await api.rejectLoan(loanId: loanId, reason: 'Rejected by BM');
       _showFlash(res['message']?.toString() ?? 'Loan rejected for $clientName.');
-      ref.invalidate(bmDashboardDataProvider);
+      _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Rejection failed: $e'), backgroundColor: const Color(0xFFDC2626)));
@@ -3186,7 +3200,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       );
       _showFlash(res['message']?.toString() ?? 'Batch approved loans successfully.');
       _selectedLoanIds.clear();
-      ref.invalidate(bmDashboardDataProvider);
+      _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Batch approval failed: $e'), backgroundColor: const Color(0xFFDC2626)));
@@ -3201,7 +3215,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       final api = ref.read(bmApiServiceProvider);
       final res = await api.approveWithdrawal(withdrawalId: id, operationalDate: DateFormat('yyyy-MM-dd').format(date));
       _showFlash(res['message']?.toString() ?? 'Withdrawal of ${CurrencyFormatter.format(amount)} for $clientName approved!');
-      ref.invalidate(bmDashboardDataProvider);
+      _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approval failed: $e'), backgroundColor: const Color(0xFFDC2626)));
@@ -3237,7 +3251,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
         final api = ref.read(bmApiServiceProvider);
         final res = await api.rejectWithdrawal(withdrawalId: id, reason: reasonCtrl.text.trim().isEmpty ? 'Rejected by BM' : reasonCtrl.text.trim());
         _showFlash(res['message']?.toString() ?? 'Withdrawal request rejected.');
-        ref.invalidate(bmDashboardDataProvider);
+        _invalidateAllCashbookAndDashboardProviders();
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Rejection failed: $e'), backgroundColor: const Color(0xFFDC2626)));
@@ -3263,7 +3277,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       );
       _showFlash(res['message']?.toString() ?? 'Batch approved withdrawals successfully.');
       _selectedWrIds.clear();
-      ref.invalidate(bmDashboardDataProvider);
+      _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Batch approval failed: $e'), backgroundColor: const Color(0xFFDC2626)));
@@ -3332,7 +3346,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       final api = ref.read(bmApiServiceProvider);
       final res = await api.approveCorrection(correctionId: corr.id);
       _showFlash(res['message']?.toString() ?? 'Reversal approved and executed atomically!');
-      ref.invalidate(bmDashboardDataProvider);
+      _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approval failed: $e'), backgroundColor: const Color(0xFFDC2626)));
@@ -3386,7 +3400,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
         reason: reasonCtrl.text.trim().isNotEmpty ? reasonCtrl.text.trim() : 'Rejected by BM',
       );
       _showFlash(res['message']?.toString() ?? 'Reversal rejected.');
-      ref.invalidate(bmDashboardDataProvider);
+      _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Rejection failed: $e'), backgroundColor: const Color(0xFFDC2626)));
@@ -3453,7 +3467,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       final res = await api.batchApproveCorrections(correctionIds: _selectedCorrIds.toList());
       _showFlash(res['message']?.toString() ?? 'Batch approved reversals successfully.');
       _selectedCorrIds.clear();
-      ref.invalidate(bmDashboardDataProvider);
+      _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Batch approval failed: $e'), backgroundColor: const Color(0xFFDC2626)));

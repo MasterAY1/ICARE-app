@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class BatchCollectionItem(BaseModel):
     client_id: str = Field(..., min_length=1)
     client_name: str = Field(..., min_length=1)
+    loan_id: Optional[str] = None
     loan_product: Optional[str] = "Daily 60 Days"
     loan_repayment_amount: float = 0.0
     savings_deposit_amount: float = 0.0
@@ -32,6 +33,7 @@ class BatchCollectionInput(BaseModel):
     idempotency_key: Optional[str] = Field(None, description="Unique client transaction key for offline synchronization idempotency")
     batch_id: Optional[str] = Field(None, description="Batch identifier for idempotent submission")
     is_late_entry: bool = Field(False, description="Explicit administrative or authorized late entry override")
+    is_offline_sync: bool = Field(False, description="True only when replayed from the offline outbox queue")
 
 
 class BatchCollectionResponse(BaseModel):

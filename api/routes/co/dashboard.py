@@ -9,6 +9,7 @@ from database.repositories.unit_of_work import SupabaseUnitOfWork
 from api.dependencies import get_uow, get_current_user, require_role
 from api.schemas.dashboard import CoDashboardResponse
 from models.user import CurrentUser
+from services.business_date_service import BusinessDateService
 from services.dashboard_service import DashboardService
 
 router = APIRouter(prefix="/api/v1/co", tags=["CO Dashboard"])
@@ -23,7 +24,7 @@ def get_co_dashboard(
     """
     Returns presentation-ready CO Dashboard dataset for the authenticated officer.
     """
-    target_date = date.today()
+    target_date: Optional[date] = None
     if date_str:
         try:
             target_date = date.fromisoformat(date_str)
@@ -34,6 +35,9 @@ def get_co_dashboard(
             )
 
     try:
+        if target_date is None:
+            target_date = BusinessDateService.get_business_date(uow, current_user.branch_id)
+
         data = DashboardService.get_co_dashboard_data(
             uow=uow,
             branch_name=current_user.branch,
@@ -58,6 +62,8 @@ def get_co_dashboard(
 
         return data
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -2,18 +2,28 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../network/api_client.dart';
+import '../offline/offline_database_service.dart';
 import 'auth_state.dart';
 import 'session_storage.dart';
 
 final authControllerProvider = StateNotifierProvider<AuthController, AuthState>((ref) {
   final apiClient = ref.watch(apiClientProvider);
-  return AuthController(apiClient);
+  final offlineDb = ref.watch(offlineDatabaseServiceProvider);
+  return AuthController(apiClient, offlineDb);
 });
 
 class AuthController extends StateNotifier<AuthState> {
   final ApiClient _apiClient;
+  final OfflineDatabaseService? _offlineDb;
 
-  AuthController(this._apiClient) : super(const AuthStateInitial());
+  AuthController(this._apiClient, [this._offlineDb]) : super(const AuthStateInitial());
+
+  void _bindOfflineScope(AuthUser user) {
+    final branchScope = (user.branchId != null && user.branchId!.isNotEmpty)
+        ? user.branchId!
+        : user.branch;
+    _offlineDb?.setSessionScope(userId: user.id, branchId: branchScope);
+  }
 
   Future<void> restoreSession() async {
     try {
@@ -24,6 +34,7 @@ class AuthController extends StateNotifier<AuthState> {
         if (token.isNotEmpty && token != 'null' && userJson.isNotEmpty && userJson != 'null') {
           final userMap = jsonDecode(userJson) as Map<String, dynamic>;
           final user = AuthUser.fromJson(userMap);
+          _bindOfflineScope(user);
           _apiClient.setAuthToken(token);
           state = AuthStateAuthenticated(user: user, token: token);
         } else {
@@ -62,6 +73,7 @@ class AuthController extends StateNotifier<AuthState> {
           final userMap = data['user'] is Map<String, dynamic> ? data['user'] as Map<String, dynamic> : {'username': username};
           final user = AuthUser.fromJson(userMap);
 
+          _bindOfflineScope(user);
           _apiClient.setAuthToken(token);
           await sessionStorage.saveSession(token, jsonEncode(user.toJson()));
           state = AuthStateAuthenticated(user: user, token: token);
@@ -90,6 +102,9 @@ class AuthController extends StateNotifier<AuthState> {
 
   Future<void> logout() async {
     _apiClient.setAuthToken(null);
+    try {
+      await _offlineDb?.clearSessionStorage();
+    } catch (_) {}
     try {
       await sessionStorage.clearSession();
     } catch (_) {}

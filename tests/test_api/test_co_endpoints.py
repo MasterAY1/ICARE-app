@@ -154,6 +154,7 @@ def test_co_cashbook_success(setup_dependencies):
         mock_uow.loans._resolve_officer_id.return_value = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
         mock_uow.client.table().select().eq().eq().eq().execute.return_value = MagicMock(data=[
             {
+                "status": "Closed",
                 "opening_balance": 15000.0,
                 "savings_deposit": 5000.0,
                 "rep_daily": 25000.0,
@@ -206,7 +207,7 @@ def test_withdrawal_request_insufficient_balance(setup_dependencies):
         }, headers=HEADERS)
 
         assert res.status_code == 400
-        assert "Insufficient balance" in res.json()["detail"]
+        assert "Insufficient available balance" in res.json()["detail"]
 
 
 def test_withdrawal_request_success(setup_dependencies):
@@ -245,10 +246,13 @@ def test_withdrawal_misc_balance_co_role(setup_dependencies):
 
 def test_withdrawal_laps_options(setup_dependencies):
     mock_uow, mock_user = setup_dependencies
-    mock_uow.client.table().select().execute.return_value = MagicMock(data=[
+    mock_uow.loans._resolve_officer_id.return_value = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    mock_uow.client.table().select().eq().execute.return_value = MagicMock(data=[
         {
             "id": "laps-1",
             "client_id": "c-closed-1",
+            "branch_id": "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22",
+            "officer_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
             "deposit_amount": 50000.0,
             "withdrawal_amount": 15000.0,
             "remarks": "Closed client pool",

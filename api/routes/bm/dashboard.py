@@ -4,6 +4,7 @@ Provides presentation-ready dashboard dataset and approval endpoints for BM / Su
 """
 from typing import Optional, List, Dict, Any
 from datetime import date, datetime
+import re
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 import pandas as pd
@@ -94,11 +95,12 @@ def _check_branch_access(current_user: CurrentUser, target_branch_id: Optional[s
 
 def _execute_withdrawal_approval(uow_exec: SupabaseUnitOfWork, wr_item: dict, op_date: date, branch: str, user: str):
     w_id = wr_item["id"]
+    now_iso = datetime.now().isoformat()
     # Atomic status lock: claim the withdrawal request using atomic conditional update
     claim_res = uow_exec.client.table("withdrawal_requests").update({
         "status": "PROCESSING",
         "approved_by": user,
-        "approved_at": datetime.now().isoformat()
+        "approved_at": now_iso
     }).eq("id", w_id).eq("status", "PENDING").execute()
 
     if not claim_res.data:
@@ -112,95 +114,40 @@ def _execute_withdrawal_approval(uow_exec: SupabaseUnitOfWork, wr_item: dict, op
     resolved_branch = _resolve_branch_name(uow_exec, wr_branch_id) if wr_branch_id else ""
     posting_branch = resolved_branch or branch
 
-    w_type = wr_item.get("savings_type")
-    w_op = wr_item.get("operation_type")
-    w_amt = float(wr_item.get("amount", 0))
-    w_name = wr_item.get("client_name", "")
-    w_by = wr_item.get("requested_by", user)
-    w_remarks = wr_item.get("remarks") or ""
+    wr_update_op = {
+        "type": "update",
+        "table": "withdrawal_requests",
+        "match": {"id": w_id, "status": "PROCESSING"},
+        "record": {
+            "status": "APPROVED",
+            "approved_by": user,
+            "approved_at": now_iso,
+            "operational_date": op_date.isoformat(),
+        },
+    }
 
-    s_type = "GroupSavings" if w_type == "Group" else ("MiscSavings" if w_type == "Misc" else "IndividualSavings")
-    if w_op in ["Cash Withdrawal", "Bank Transfer", "Client Bank Account (Transfer)", "Group Bank Account (Transfer)"]:
-        if w_type == "Individual":
-            SavingsService.post_individual_savings(
-                uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
-                branch=posting_branch, officer=w_by, deposit_amount=0.0, withdrawal_amount=w_amt,
-                reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
-                posting_date=op_date
-            )
-        elif w_type == "Group":
-            SavingsService.post_group_savings(
-                uow=uow_exec, group_name=wr_item.get("group_name") or w_name, branch=posting_branch,
-                officer=w_by, deposit_amount=0.0, withdrawal_amount=w_amt,
-                reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
-                posting_date=op_date
-            )
-        elif w_type == "Misc":
-            SavingsService.post_misc_savings(
-                uow=uow_exec, client_id=wr_item.get("client_id") or "", client_name=w_name,
-                branch=posting_branch, officer=w_by, deposit_amount=0.0, withdrawal_amount=w_amt,
-                reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
-                posting_date=op_date
-            )
-    elif w_op in ["Loan Offset", "Asset Downpayment", "Loan Repayment / Asset Debt Offset"]:
-        SavingsService.post_loan_offset_from_savings(
-            uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
-            loan_id=wr_item.get("loan_id"), source_savings_type=s_type,
-            branch=posting_branch, officer=w_by, amount=w_amt,
-            reference=wr_item.get("reference"), remarks=f"[BM APPROVED {w_op.upper()}] {w_remarks}",
-            posting_date=op_date
+    try:
+        SavingsService.execute_approved_withdrawal(
+            uow=uow_exec,
+            wr_item=wr_item,
+            op_date=op_date,
+            branch=posting_branch,
+            actor_username=user,
+            actor_role="Branch Manager",
+            extra_operations=[wr_update_op],
+            validate_balance=True,
+            narration_prefix="[BM APPROVED]",
         )
-    elif w_op in ["Fee Offset", "Fee Payment from Savings"]:
-        fee_code = "misc_fees"
-        if "[FEE:" in w_remarks:
-            try: fee_code = w_remarks.split("[FEE:")[1].split("]")[0].strip()
-            except Exception: pass
-        SavingsService.post_fee_offset_from_savings(
-            uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
-            source_savings_type=s_type, branch=posting_branch, officer=w_by,
-            fee_type=fee_code, amount=w_amt,
-            reference=wr_item.get("reference"), remarks=f"[BM APPROVED FEE OFFSET] {w_remarks}",
-            posting_date=op_date
-        )
-    elif w_op in ["Savings Transfer", "Transfer to Another Savings", "Another Member or Group Savings"]:
-        dest_id = wr_item.get("client_id")
-        dest_name = w_name
-        dest_type = "IndividualSavings"
-        if "[DEST_ID:" in w_remarks:
-            try:
-                dest_id = w_remarks.split("[DEST_ID:")[1].split("]")[0].strip()
-                dest_name = w_remarks.split("[DEST_NAME:")[1].split("]")[0].strip()
-                dest_type = w_remarks.split("[DEST_TYPE:")[1].split("]")[0].strip()
-            except Exception: pass
-        SavingsService.transfer_savings(
-            uow=uow_exec, source_id=wr_item.get("client_id"), source_name=w_name,
-            source_type=s_type, destination_id=dest_id,
-            destination_name=dest_name, destination_type=dest_type,
-            branch=posting_branch, officer=w_by, amount=w_amt,
-            reference=wr_item.get("reference"), remarks=f"[BM APPROVED TRANSFER] {w_remarks}",
-            posting_date=op_date
-        )
-    elif w_op == "LAPS Transfer":
-        SavingsService.transfer_to_laps(
-            uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
-            source_savings_type=s_type, branch=posting_branch, officer=w_by, amount=w_amt,
-            reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
-            posting_date=op_date
-        )
-    elif w_op == "LAPS Payout":
-        cash_paid = (wr_item.get("payout_method") or "Cash") == "Cash"
-        SavingsService.pay_laps(
-            uow=uow_exec, client_id=wr_item.get("client_id"), client_name=w_name,
-            branch=posting_branch, officer=w_by, amount=w_amt, cash_paid=cash_paid,
-            reference=wr_item.get("reference"), remarks=f"[BM APPROVED] {w_remarks}",
-            posting_date=op_date
-        )
-
-    uow_exec.client.table("withdrawal_requests").update({
-        "status": "APPROVED",
-        "approved_by": user,
-        "approved_at": datetime.now().isoformat()
-    }).eq("id", w_id).execute()
+    except Exception:
+        try:
+            uow_exec.client.table("withdrawal_requests").update({
+                "status": "PENDING",
+                "approved_by": None,
+                "approved_at": None,
+            }).eq("id", w_id).eq("status", "PROCESSING").execute()
+        except Exception:
+            pass
+        raise
 
 
 @router.get("/dashboard", response_model=BmDashboardResponse)
@@ -315,6 +262,21 @@ def get_bm_dashboard(
                 disbursement_date=str(pl.get("date"))[:10] if pl.get("date") else None
             ))
 
+        def _strip_wr_tags(val: Optional[str]) -> Optional[str]:
+            if not val:
+                return None
+            cleaned = str(val)
+            for pat in (
+                r"\[DEST_ID:[^\]]*\]",
+                r"\[DEST_NAME:[^\]]*\]",
+                r"\[DEST_TYPE:[^\]]*\]",
+                r"\[FEE:[^\]]*\]",
+                r"\[LOAN_OFFSET:[^\]]*\]",
+            ):
+                cleaned = re.sub(pat, "", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
+            return cleaned or None
+
         pending_wr_items: List[PendingWithdrawalApprovalItem] = []
         for wr in (res_wr.data or []):
             pending_wr_items.append(PendingWithdrawalApprovalItem(
@@ -327,14 +289,20 @@ def get_bm_dashboard(
                 amount=float(wr.get("amount") or 0.0),
                 requested_by=str(wr.get("requested_by") or "Officer"),
                 reference=wr.get("reference"),
-                remarks=wr.get("remarks"),
+                remarks=_strip_wr_tags(wr.get("remarks")),
                 operational_date=str(wr.get("operational_date"))[:10] if wr.get("operational_date") else None,
                 created_at=str(wr.get("created_at")) if wr.get("created_at") else None
             ))
 
         # Batch enrich pending corrections with transaction amount and client details
         rep_ids = [str(c["record_id"]) for c in (res_corr.data or []) if c.get("record_type") in ["Repayment", "Loan"]]
-        sav_ids = [str(c["record_id"]) for c in (res_corr.data or []) if c.get("record_type") in ["Savings", "SavingsDeposit", "individual_savings"]]
+        sav_ids = [
+            str(c["record_id"]) for c in (res_corr.data or [])
+            if c.get("record_type") in [
+                "Savings", "SavingsDeposit", "SavingsWithdrawal", "Savings Withdrawal",
+                "individual_savings", "group_savings", "internal_savings", "laps_savings",
+            ]
+        ]
         try_ids = [str(c["record_id"]) for c in (res_corr.data or []) if c.get("record_type") in ["Treasury", "TreasuryTransaction", "Expense", "Salary", "Fee", "FeeCharged"]]
 
         rep_meta = {}
@@ -353,17 +321,42 @@ def get_bm_dashboard(
 
         sav_meta = {}
         if sav_ids:
-            try:
-                s_res = uow.client.table("individual_savings").select("id, deposit_amount, clients(name, client_code)").in_("id", sav_ids).execute()
-                for s in (s_res.data or []):
-                    c_info = s.get("clients") or {} if isinstance(s.get("clients"), dict) else {}
-                    sav_meta[str(s["id"])] = {
-                        "amount": float(s.get("deposit_amount") or 0.0),
-                        "client_name": c_info.get("name") or "Member",
-                        "client_code": c_info.get("client_code") or ""
-                    }
-            except Exception:
-                pass
+            for s_tbl, s_sel, lbl_default in [
+                ("individual_savings", "id, deposit_amount, withdrawal_amount, clients(name, client_code)", "Member"),
+                ("group_savings", "id, deposit_amount, withdrawal_amount, groups(name)", "Group"),
+                ("internal_savings", "id, deposit_amount, withdrawal_amount, remarks", "Branch Misc Reserve"),
+                ("laps_savings", "id, client_id, deposit_amount, withdrawal_amount, remarks", "LAPS Reserve"),
+            ]:
+                remaining = [sid for sid in sav_ids if sid not in sav_meta]
+                if not remaining:
+                    break
+                try:
+                    s_res = uow.client.table(s_tbl).select(s_sel).in_("id", remaining).execute()
+                    for s in (s_res.data or []):
+                        dep_v = float(s.get("deposit_amount") or 0.0)
+                        wth_v = float(s.get("withdrawal_amount") or 0.0)
+                        amt_v = dep_v if dep_v != 0 else wth_v
+                        if s_tbl == "individual_savings":
+                            c_info = s.get("clients") or {} if isinstance(s.get("clients"), dict) else {}
+                            c_n = c_info.get("name") or lbl_default
+                            c_c = c_info.get("client_code") or ""
+                        elif s_tbl == "group_savings":
+                            g_info = s.get("groups") or {} if isinstance(s.get("groups"), dict) else {}
+                            c_n = g_info.get("name") or lbl_default
+                            c_c = "GROUP"
+                        elif s_tbl == "internal_savings":
+                            c_n = lbl_default
+                            c_c = "MISC"
+                        else:
+                            c_n = lbl_default
+                            c_c = str(s.get("client_id") or "")[:8] or "LAPS"
+                        sav_meta[str(s["id"])] = {
+                            "amount": amt_v,
+                            "client_name": c_n,
+                            "client_code": c_c,
+                        }
+                except Exception:
+                    pass
 
         try_meta = {}
         if try_ids:
@@ -568,8 +561,18 @@ def approve_withdrawal(
     wr_branch_id = wr.get("branch_id")
     _check_branch_access(current_user, wr_branch_id, "approve withdrawals")
 
+    curr_st = str(wr.get("status") or "").upper()
+    if curr_st == "REJECTED":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot approve a rejected withdrawal request.")
+
     try:
         op_d = date.fromisoformat(payload.operational_date)
+        is_open, open_reason = BusinessDateService.is_operational_open(uow, wr_branch_id or current_user.branch_id, op_d)
+        if not is_open:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Operational Activity Suspended ({open_reason}): Approvals blocked for closed branch date."
+            )
         _execute_withdrawal_approval(uow, wr, op_d, current_user.branch, current_user.username)
         return ActionResponse(
             success=True,
@@ -587,19 +590,49 @@ def reject_withdrawal(
     current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
-    res = uow.client.table("withdrawal_requests").select("branch_id").eq("id", payload.withdrawal_id).execute()
+    res = uow.client.table("withdrawal_requests").select("id, branch_id, status, client_name").eq("id", payload.withdrawal_id).execute()
     if not res.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Withdrawal request not found.")
-    wr_branch_id = res.data[0].get("branch_id")
+    wr = res.data[0]
+    wr_branch_id = wr.get("branch_id")
     _check_branch_access(current_user, wr_branch_id, "reject withdrawals")
 
+    curr_st = str(wr.get("status") or "").upper()
+    if curr_st in ("APPROVED", "PROCESSING"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Cannot reject request in status '{curr_st}'.")
+    if curr_st == "REJECTED":
+        return ActionResponse(success=True, message=f"Withdrawal request #{payload.withdrawal_id[:8]} is already rejected.")
+
+    reason_text = payload.reason or "Rejected by BM"
     try:
-        uow.client.table("withdrawal_requests").update({
+        upd_res = uow.client.table("withdrawal_requests").update({
             "status": "REJECTED",
             "approved_by": current_user.username,
             "approved_at": datetime.now().isoformat(),
-            "rejection_reason": payload.reason or "Rejected by BM"
-        }).eq("id", payload.withdrawal_id).execute()
+            "rejection_reason": reason_text
+        }).eq("id", payload.withdrawal_id).eq("status", "PENDING").execute()
+        if not upd_res.data:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Withdrawal request is no longer PENDING.")
+        try:
+            actor_uuid, actor_uname, actor_role, _ = SavingsService._resolve_actor_audit_info(uow, current_user.username, current_user.role)
+            uow.client.table("user_audit_logs").insert(
+                SavingsService._build_user_audit_op(
+                    user_id=actor_uuid,
+                    username=actor_uname,
+                    role=actor_role,
+                    branch=_resolve_branch_name(uow, wr_branch_id) or current_user.branch or "",
+                    action="REJECT",
+                    module="Withdrawals",
+                    entity_type="withdrawal_requests",
+                    entity_id=payload.withdrawal_id,
+                    display_name=str(wr.get("client_name") or "Client"),
+                    previous_value={"status": "PENDING"},
+                    new_value={"status": "REJECTED", "reason": reason_text},
+                    audit_status="REJECTED",
+                )["record"]
+            ).execute()
+        except Exception:
+            pass
         return ActionResponse(
             success=True,
             message=f"Withdrawal request #{payload.withdrawal_id[:8]} rejected."
@@ -638,6 +671,9 @@ def batch_approve_withdrawals(
             wr_branch_id = wr_item.get("branch_id")
             _check_branch_access(current_user, wr_branch_id, "approve withdrawals")
             cur_d = date.fromisoformat(dates_map[wid]) if wid in dates_map else default_d
+            is_open, open_reason = BusinessDateService.is_operational_open(uow, wr_branch_id or current_user.branch_id, cur_d)
+            if not is_open:
+                raise ValueError(f"Operational Activity Suspended ({open_reason}) on {cur_d.isoformat()}")
             _execute_withdrawal_approval(uow, wr_item, cur_d, current_user.branch, current_user.username)
             s_cnt += 1
         except Exception as ex:

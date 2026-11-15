@@ -11,6 +11,7 @@ import '../../../core/widgets/icare_status_badge.dart';
 import '../../../core/widgets/icare_section_header.dart';
 import '../../../core/widgets/icare_data_table.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../core/errors/app_error_formatter.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/offline/connectivity_service.dart';
 import '../../../core/offline/offline_database_service.dart';
@@ -39,13 +40,22 @@ final coDashboardProvider = FutureProvider.autoDispose<CoDashboardData>((ref) as
     // Cache the fresh dashboard data
     dbService.cacheDashboardData(data.toJson(), role: 'co').ignore();
 
-    // Opportunistically pre-cache today's scheduled meeting collection sheets for offline field access
-    final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    // Opportunistically pre-cache active business date meeting collection sheets and single-client options
+    final bizIso = data.welcome['date_iso']?.toString().trim();
+    final todayStr = (bizIso != null && bizIso.isNotEmpty)
+        ? bizIso
+        : DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final groupNames = <String>[];
     for (final meeting in data.meetingPortfolio) {
-      final gName = meeting['group_name']?.toString();
-      if (gName != null && gName.isNotEmpty) {
-        syncMgr.preCacheGroupSheet(gName, todayStr).ignore();
+      final gName = (meeting['Group Name'] ?? meeting['group_name'])?.toString().trim();
+      if (gName != null && gName.isNotEmpty && !groupNames.contains(gName)) {
+        groupNames.add(gName);
       }
+    }
+    if (groupNames.isNotEmpty) {
+      syncMgr.preCacheAllAvailableGroups(groupNames, todayStr).ignore();
+    } else {
+      syncMgr.preCacheSingleClients().ignore();
     }
     return data;
   } catch (err) {
@@ -127,7 +137,7 @@ class CoDashboardScreen extends ConsumerWidget {
                     Text(
                       isConnectionError
                           ? 'You are currently working offline, but no cached dashboard data was found on this device. Please connect to the internet once to load and pre-cache your portfolio.'
-                          : '$err',
+                          : AppErrorDetails.from(err).message,
                       style: TextStyle(
                         color: isConnectionError ? const Color(0xFF78350F) : IcareColors.statusDangerText,
                         fontSize: 12.5,
@@ -339,7 +349,12 @@ class CoDashboardScreen extends ConsumerWidget {
         // ---------------------------------------------------------------------
         // LEVEL 4: Tactile Quick Action Shortcuts
         // ---------------------------------------------------------------------
-        _buildQuickActionShortcuts(context, ref),
+        _buildQuickActionShortcuts(
+          context,
+          ref,
+          isClosed: isClosed,
+          closureReason: closureReason,
+        ),
         const SizedBox(height: 20),
 
         // ---------------------------------------------------------------------
@@ -378,20 +393,24 @@ class CoDashboardScreen extends ConsumerWidget {
 
                 return ElevatedButton.icon(
                   key: Key('start_grp_$idx'),
-                  icon: const Icon(Icons.play_circle_outline, size: 15),
+                  icon: Icon(isClosed ? Icons.lock_clock_outlined : Icons.play_circle_outline, size: 15),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: IcareColors.primary,
+                    backgroundColor: isClosed ? const Color(0xFF94A3B8) : IcareColors.primary,
                     foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFFE2E8F0),
+                    disabledForegroundColor: const Color(0xFF64748B),
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   ),
-                  onPressed: () {
-                    ref.read(selectedCollectionGroupProvider.notifier).state = gName;
-                    ref.read(activeCoPageProvider.notifier).state = 'Collections';
-                  },
+                  onPressed: isClosed
+                      ? null
+                      : () {
+                          ref.read(selectedCollectionGroupProvider.notifier).state = gName;
+                          ref.read(activeCoPageProvider.notifier).state = 'Collections';
+                        },
                   label: Text(
-                    'Start $gName ($cleanStatus)',
+                    isClosed ? '$gName (Closed)' : 'Start $gName ($cleanStatus)',
                     style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                   ),
                 );
@@ -411,16 +430,37 @@ class CoDashboardScreen extends ConsumerWidget {
           const SizedBox(height: 8),
           _buildResponsiveCardRow([
             IcareMetricCard(
-              label: '60D / 12W / 3M',
+              label: 'Daily (60D)',
+              value: CurrencyFormatter.formatNaira((repS['rep_daily_amt'] as num?)?.toDouble() ?? 0.0),
+              delta: '${repS['rep_daily_clients'] ?? 0} Clients Paid',
+              icon: Icons.today_outlined,
+            ),
+            IcareMetricCard(
+              label: '12 Weeks (Weekly)',
               value: CurrencyFormatter.formatNaira((repS['rep_12_weeks_amt'] as num?)?.toDouble() ?? 0.0),
               delta: '${repS['rep_12_weeks_clients'] ?? 0} Clients Paid',
               icon: Icons.payments_outlined,
             ),
             IcareMetricCard(
-              label: '120D / 24W / 6M',
+              label: '24 Weeks (Weekly)',
               value: CurrencyFormatter.formatNaira((repS['rep_24_weeks_amt'] as num?)?.toDouble() ?? 0.0),
               delta: '${repS['rep_24_weeks_clients'] ?? 0} Clients Paid',
               icon: Icons.payments_outlined,
+            ),
+          ], spacing: 12),
+          const SizedBox(height: 12),
+          _buildResponsiveCardRow([
+            IcareMetricCard(
+              label: 'Daily (120D)',
+              value: CurrencyFormatter.formatNaira((repS['rep_120_days_amt'] as num?)?.toDouble() ?? 0.0),
+              delta: '${repS['rep_120_days_clients'] ?? 0} Clients Paid',
+              icon: Icons.calendar_view_month_outlined,
+            ),
+            IcareMetricCard(
+              label: 'Monthly (3M / 6M)',
+              value: CurrencyFormatter.formatNaira((repS['rep_monthly_amt'] as num?)?.toDouble() ?? 0.0),
+              delta: '${repS['rep_monthly_clients'] ?? 0} Clients Paid',
+              icon: Icons.event_repeat_outlined,
             ),
             IcareMetricCard(
               label: 'Total Repayment Today',
@@ -476,6 +516,13 @@ class CoDashboardScreen extends ConsumerWidget {
               delta: '${stCards['full_payment']?['count'] ?? 0} Loans Settled',
               topBorderColor: IcareColors.metricPayoff,
             ),
+            if (stCards['normal_payment'] != null)
+              IcareMetricCard(
+                label: 'Normal Payment',
+                value: CurrencyFormatter.formatNaira((stCards['normal_payment']?['amount'] as num?)?.toDouble() ?? 0.0),
+                delta: '${stCards['normal_payment']?['count'] ?? 0} On-Schedule',
+                topBorderColor: IcareColors.primary,
+              ),
             IcareMetricCard(
               label: 'Excess Payment',
               value: CurrencyFormatter.formatNaira((stCards['excess_payment']?['amount'] as num?)?.toDouble() ?? 0.0),
@@ -499,7 +546,7 @@ class CoDashboardScreen extends ConsumerWidget {
               IcareMetricCard(
                 label: 'Overdue Arrears',
                 value: CurrencyFormatter.formatNaira((stCards['overdue_arrears']?['amount'] as num?)?.toDouble() ?? 0.0),
-                delta: '${stCards['overdue_arrears']?['count'] ?? 0} Past Due Clients',
+                delta: '${stCards['overdue_arrears']?['count'] ?? 0} Clients · ${data.overduePortfolio['overdue_groups_count'] ?? 0} Groups',
                 isInverseDelta: true,
                 topBorderColor: IcareColors.metricArrears,
               ),
@@ -820,6 +867,7 @@ class CoDashboardScreen extends ConsumerWidget {
 
   Widget _buildMobileTabMeetings(BuildContext context, WidgetRef ref, CoDashboardData data) {
     final mPort = data.meetingPortfolio;
+    final isClosed = data.branchClosure['is_closed'] == true;
     if (mPort.isEmpty) {
       return _buildInfoBox('No active groups scheduled for today.');
     }
@@ -827,25 +875,29 @@ class CoDashboardScreen extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildMobileMeetingCards(mPort, ref),
+        _buildMobileMeetingCards(mPort, ref, isClosed: isClosed),
         const SizedBox(height: 12),
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            icon: const Icon(Icons.payments_outlined, size: 16),
+            icon: Icon(isClosed ? Icons.lock_clock_outlined : Icons.payments_outlined, size: 16),
             style: ElevatedButton.styleFrom(
               backgroundColor: IcareColors.primary,
               foregroundColor: Colors.white,
+              disabledBackgroundColor: const Color(0xFFE2E8F0),
+              disabledForegroundColor: const Color(0xFF64748B),
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               elevation: 0,
             ),
-            onPressed: () {
-              ref.read(activeCoPageProvider.notifier).state = 'Collections';
-            },
-            label: const Text(
-              'Go to Collections Batch',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            onPressed: isClosed
+                ? null
+                : () {
+                    ref.read(activeCoPageProvider.notifier).state = 'Collections';
+                  },
+            label: Text(
+              isClosed ? 'Branch Closed — Collections Locked' : 'Go to Collections Batch',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
             ),
           ),
         ),
@@ -863,6 +915,13 @@ class CoDashboardScreen extends ConsumerWidget {
     final rep12Clients = (repS['rep_12_weeks_clients'] as num?)?.toInt() ?? 0;
     final rep24Amt = (repS['rep_24_weeks_amt'] as num?)?.toDouble() ?? 0.0;
     final rep24Clients = (repS['rep_24_weeks_clients'] as num?)?.toInt() ?? 0;
+    final rep120dAmt = (repS['rep_120_days_amt'] as num?)?.toDouble() ?? 0.0;
+    final rep120dClients = (repS['rep_120_days_clients'] as num?)?.toInt() ?? 0;
+    final repDailyAmt = (repS['rep_daily_amt'] as num?)?.toDouble() ?? 0.0;
+    final repDailyClients = (repS['rep_daily_clients'] as num?)?.toInt() ?? 0;
+    final repMonthlyAmt = (repS['rep_monthly_amt'] as num?)?.toDouble() ?? 0.0;
+    final repMonthlyClients = (repS['rep_monthly_clients'] as num?)?.toInt() ?? 0;
+    final totalPayingClients = rep12Clients + rep24Clients + rep120dClients + repDailyClients + repMonthlyClients;
 
     final depAmt = (sav['deposited_amt'] as num?)?.toDouble() ?? 0.0;
     final depClients = (sav['deposited_clients'] as num?)?.toInt() ?? 0;
@@ -871,10 +930,12 @@ class CoDashboardScreen extends ConsumerWidget {
     final netSav = (sav['net_savings'] as num?)?.toDouble() ?? 0.0;
 
     final fullPay = stCards['full_payment'];
+    final normalPay = stCards['normal_payment'];
     final excessPay = stCards['excess_payment'];
     final partPay = stCards['part_payment'];
     final notPaid = stCards['not_paid'];
     final arrears = stCards['overdue_arrears'];
+    final overdueGroupsCount = (data.overduePortfolio['overdue_groups_count'] as num?)?.toInt() ?? 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -926,7 +987,7 @@ class CoDashboardScreen extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  '${rep12Clients + rep24Clients} Clients',
+                  '$totalPayingClients Clients',
                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
                 ),
               ),
@@ -938,20 +999,46 @@ class CoDashboardScreen extends ConsumerWidget {
           children: [
             Expanded(
               child: _buildMiniStatCard(
-                label: '60D / 12W / 3M',
-                value: CurrencyFormatter.formatNaira(rep12Amt),
-                subtext: '$rep12Clients Paid',
+                label: 'Daily (60D)',
+                value: CurrencyFormatter.formatNaira(repDailyAmt),
+                subtext: '$repDailyClients Paid',
               ),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: _buildMiniStatCard(
-                label: '120D / 24W / 6M',
+                label: '12 Weeks (Weekly)',
+                value: CurrencyFormatter.formatNaira(rep12Amt),
+                subtext: '$rep12Clients Paid',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMiniStatCard(
+                label: '24 Weeks (Weekly)',
                 value: CurrencyFormatter.formatNaira(rep24Amt),
                 subtext: '$rep24Clients Paid',
               ),
             ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildMiniStatCard(
+                label: 'Daily (120D)',
+                value: CurrencyFormatter.formatNaira(rep120dAmt),
+                subtext: '$rep120dClients Paid',
+              ),
+            ),
           ],
+        ),
+        const SizedBox(height: 8),
+        _buildMiniStatCard(
+          label: 'Monthly (3M / 6M)',
+          value: CurrencyFormatter.formatNaira(repMonthlyAmt),
+          subtext: '$repMonthlyClients Paid',
         ),
         const SizedBox(height: 16),
 
@@ -1020,10 +1107,10 @@ class CoDashboardScreen extends ConsumerWidget {
             const SizedBox(width: 8),
             Expanded(
               child: _buildMiniStatCard(
-                label: 'Excess Payment',
-                value: CurrencyFormatter.formatNaira((excessPay?['amount'] as num?)?.toDouble() ?? 0.0),
-                subtext: '${excessPay?['count'] ?? 0} Surplus',
-                topAccent: IcareColors.metricExcess,
+                label: 'Normal Payment',
+                value: CurrencyFormatter.formatNaira((normalPay?['amount'] as num?)?.toDouble() ?? 0.0),
+                subtext: '${normalPay?['count'] ?? 0} On-Schedule',
+                topAccent: IcareColors.primary,
               ),
             ),
           ],
@@ -1033,29 +1120,36 @@ class CoDashboardScreen extends ConsumerWidget {
           children: [
             Expanded(
               child: _buildMiniStatCard(
+                label: 'Excess Payment',
+                value: CurrencyFormatter.formatNaira((excessPay?['amount'] as num?)?.toDouble() ?? 0.0),
+                subtext: '${excessPay?['count'] ?? 0} Surplus',
+                topAccent: IcareColors.metricExcess,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildMiniStatCard(
                 label: 'Part Payment',
                 value: CurrencyFormatter.formatNaira((partPay?['amount'] as num?)?.toDouble() ?? 0.0),
                 subtext: '${partPay?['count'] ?? 0} Underpaid',
                 topAccent: IcareColors.metricPart,
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _buildMiniStatCard(
-                label: 'Not Paid',
-                value: CurrencyFormatter.formatNaira((notPaid?['amount'] as num?)?.toDouble() ?? 0.0),
-                subtext: '${notPaid?['count'] ?? 0} Clients',
-                topAccent: IcareColors.metricNotPaid,
-              ),
-            ),
           ],
+        ),
+        const SizedBox(height: 8),
+        _buildMiniStatCard(
+          label: 'Not Paid',
+          value: CurrencyFormatter.formatNaira((notPaid?['amount'] as num?)?.toDouble() ?? 0.0),
+          subtext: '${notPaid?['count'] ?? 0} Clients',
+          topAccent: IcareColors.metricNotPaid,
         ),
         if (arrears != null) ...[
           const SizedBox(height: 8),
           _buildMiniStatCard(
             label: 'Overdue Arrears',
             value: CurrencyFormatter.formatNaira((arrears['amount'] as num?)?.toDouble() ?? 0.0),
-            subtext: '${arrears['count'] ?? 0} Past Due Clients',
+            subtext: '${arrears['count'] ?? 0} Past Due Clients · $overdueGroupsCount Groups',
             topAccent: IcareColors.metricArrears,
             valueColor: const Color(0xFF991B1B),
           ),
@@ -1242,42 +1336,7 @@ class CoDashboardScreen extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Search Bar
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFCBD5E1)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.search, size: 18, color: Color(0xFF64748B)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  decoration: const InputDecoration(
-                    hintText: 'Search client or group name...',
-                    hintStyle: TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
-                    border: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(vertical: 8),
-                  ),
-                  style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
-                  onChanged: (val) {
-                    ref.read(coDashboardAttentionSearchProvider.notifier).state = val;
-                  },
-                ),
-              ),
-              if (searchQuery.isNotEmpty)
-                GestureDetector(
-                  onTap: () {
-                    ref.read(coDashboardAttentionSearchProvider.notifier).state = '';
-                  },
-                  child: const Icon(Icons.close, size: 16, color: Color(0xFF64748B)),
-                ),
-            ],
-          ),
-        ),
+        const _AttentionSearchBar(),
         const SizedBox(height: 10),
 
         // Count strip
@@ -1798,7 +1857,12 @@ class CoDashboardScreen extends ConsumerWidget {
   }
 
   /// Tactile Quick Action Navigation Shortcuts
-  Widget _buildQuickActionShortcuts(BuildContext context, WidgetRef ref) {
+  Widget _buildQuickActionShortcuts(
+    BuildContext context,
+    WidgetRef ref, {
+    bool isClosed = false,
+    String closureReason = '',
+  }) {
     final isMobile = IcareSpacing.isMobile(context);
 
     if (isMobile) {
@@ -1806,13 +1870,17 @@ class CoDashboardScreen extends ConsumerWidget {
         children: [
           Expanded(
             child: _buildActionShortcutIconButton(
-              icon: Icons.payments_outlined,
-              iconBg: const Color(0xFFECFDF5),
-              iconColor: const Color(0xFF065F46),
-              tooltip: 'Collections (Post batch)',
-              onTap: () {
-                ref.read(activeCoPageProvider.notifier).state = 'Collections';
-              },
+              icon: isClosed ? Icons.lock_clock_outlined : Icons.payments_outlined,
+              iconBg: isClosed ? const Color(0xFFF1F5F9) : const Color(0xFFECFDF5),
+              iconColor: isClosed ? const Color(0xFF94A3B8) : const Color(0xFF065F46),
+              tooltip: isClosed
+                  ? 'Collections locked ($closureReason)'
+                  : 'Collections (Post batch)',
+              onTap: isClosed
+                  ? null
+                  : () {
+                      ref.read(activeCoPageProvider.notifier).state = 'Collections';
+                    },
             ),
           ),
           const SizedBox(width: 10),
@@ -1847,14 +1915,16 @@ class CoDashboardScreen extends ConsumerWidget {
       children: [
         Expanded(
           child: _buildActionShortcutCard(
-            icon: Icons.payments_outlined,
-            iconBg: const Color(0xFFECFDF5),
-            iconColor: const Color(0xFF065F46),
+            icon: isClosed ? Icons.lock_clock_outlined : Icons.payments_outlined,
+            iconBg: isClosed ? const Color(0xFFF1F5F9) : const Color(0xFFECFDF5),
+            iconColor: isClosed ? const Color(0xFF94A3B8) : const Color(0xFF065F46),
             title: 'Collections',
-            subtitle: 'Post batch',
-            onTap: () {
-              ref.read(activeCoPageProvider.notifier).state = 'Collections';
-            },
+            subtitle: isClosed ? 'Closed today' : 'Post batch',
+            onTap: isClosed
+                ? null
+                : () {
+                    ref.read(activeCoPageProvider.notifier).state = 'Collections';
+                  },
           ),
         ),
         const SizedBox(width: 10),
@@ -1892,38 +1962,42 @@ class CoDashboardScreen extends ConsumerWidget {
     required Color iconBg,
     required Color iconColor,
     required String tooltip,
-    required VoidCallback onTap,
+    VoidCallback? onTap,
   }) {
+    final disabled = onTap == null;
     return Tooltip(
       message: tooltip,
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          onTap: onTap,
+      child: Opacity(
+        opacity: disabled ? 0.65 : 1.0,
+        child: Material(
+          color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          child: Container(
-            height: 48,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x080F172A),
-                  blurRadius: 8,
-                  offset: Offset(0, 2),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              height: 48,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x080F172A),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 19),
                 ),
-              ],
-            ),
-            child: Center(
-              child: Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: iconBg,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: iconColor, size: 19),
               ),
             ),
           ),
@@ -1938,62 +2012,66 @@ class CoDashboardScreen extends ConsumerWidget {
     required Color iconColor,
     required String title,
     required String subtitle,
-    required VoidCallback onTap,
+    VoidCallback? onTap,
   }) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
+    final disabled = onTap == null;
+    return Opacity(
+      opacity: disabled ? 0.65 : 1.0,
+      child: Material(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x080F172A),
-                blurRadius: 10,
-                offset: Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: iconBg,
-                  borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x080F172A),
+                  blurRadius: 10,
+                  offset: Offset(0, 3),
                 ),
-                child: Icon(icon, color: iconColor, size: 20),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF0F172A),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 20),
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF64748B),
+                const SizedBox(height: 8),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0F172A),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF64748B),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2010,7 +2088,10 @@ class CoDashboardScreen extends ConsumerWidget {
 
     final totalCollected = (repS['total_collected_today'] as num?)?.toDouble() ?? 0.0;
     final clientsPaid = ((repS['rep_12_weeks_clients'] as num?)?.toInt() ?? 0) +
-        ((repS['rep_24_weeks_clients'] as num?)?.toInt() ?? 0);
+        ((repS['rep_24_weeks_clients'] as num?)?.toInt() ?? 0) +
+        ((repS['rep_120_days_clients'] as num?)?.toInt() ?? 0) +
+        ((repS['rep_daily_clients'] as num?)?.toInt() ?? 0) +
+        ((repS['rep_monthly_clients'] as num?)?.toInt() ?? 0);
 
     final netSavings = (sav['net_savings'] as num?)?.toDouble() ?? 0.0;
     final depClients = (sav['deposited_clients'] as num?)?.toInt() ?? 0;
@@ -2021,6 +2102,7 @@ class CoDashboardScreen extends ConsumerWidget {
 
     final arrearsAmt = (stCards['overdue_arrears']?['amount'] as num?)?.toDouble() ?? 0.0;
     final arrearsCount = (stCards['overdue_arrears']?['count'] as num?)?.toInt() ?? 0;
+    final overdueGroupsCount = (data.overduePortfolio['overdue_groups_count'] as num?)?.toInt() ?? 0;
 
     int totalClientsExpected = 0;
     for (final m in mPort) {
@@ -2056,7 +2138,9 @@ class CoDashboardScreen extends ConsumerWidget {
     final cardArrears = _buildPortfolioHealthCard(
       label: 'Overdue Arrears',
       value: CurrencyFormatter.formatNaira(arrearsAmt),
-      subtext: '$arrearsCount clients flagged',
+      subtext: overdueGroupsCount > 0
+          ? '$arrearsCount clients · $overdueGroupsCount groups'
+          : '$arrearsCount clients flagged',
       accentColor: const Color(0xFFDC2626),
       isAlert: arrearsAmt > 0,
     );
@@ -2216,7 +2300,11 @@ class CoDashboardScreen extends ConsumerWidget {
   }
 
   /// Mobile Native Meeting Cards (eliminating wide spreadsheets on small screens)
-  Widget _buildMobileMeetingCards(List<Map<String, dynamic>> rows, WidgetRef ref) {
+  Widget _buildMobileMeetingCards(
+    List<Map<String, dynamic>> rows,
+    WidgetRef ref, {
+    bool isClosed = false,
+  }) {
     return Column(
       children: rows.asMap().entries.map((entry) {
         final idx = entry.key;
@@ -2412,21 +2500,25 @@ class CoDashboardScreen extends ConsumerWidget {
                       height: 42,
                       child: ElevatedButton.icon(
                         key: Key('mobile_start_grp_$idx'),
-                        onPressed: () {
-                          ref.read(selectedCollectionGroupProvider.notifier).state = gName;
-                          ref.read(activeCoPageProvider.notifier).state = 'Collections';
-                        },
+                        onPressed: isClosed
+                            ? null
+                            : () {
+                                ref.read(selectedCollectionGroupProvider.notifier).state = gName;
+                                ref.read(activeCoPageProvider.notifier).state = 'Collections';
+                              },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF064E3B),
                           foregroundColor: Colors.white,
+                          disabledBackgroundColor: const Color(0xFFE2E8F0),
+                          disabledForegroundColor: const Color(0xFF64748B),
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        icon: const Icon(Icons.play_circle_outline, size: 16),
+                        icon: Icon(isClosed ? Icons.lock_clock_outlined : Icons.play_circle_outline, size: 16),
                         label: Text(
-                          'Open Collection Sheet ($cleanStatus)',
+                          isClosed ? 'Branch Closed Today' : 'Open Collection Sheet ($cleanStatus)',
                           style: const TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w700,
@@ -2650,17 +2742,20 @@ class CoDashboardScreen extends ConsumerWidget {
   /// Attention List Institutional Data Table
   Widget _buildAttentionListTable(List<Map<String, dynamic>> rows) {
     return IcareDataTable(
-      minWidth: 580,
+      minWidth: 740,
       columns: const [
         DataColumn(label: Text('Client Name')),
+        DataColumn(label: Text('Client Code')),
         DataColumn(label: Text('Group')),
         DataColumn(label: Text('Expected (₦)'), numeric: true),
         DataColumn(label: Text('Paid (₦)'), numeric: true),
         DataColumn(label: Text('Shortfall (₦)'), numeric: true),
         DataColumn(label: Text('Status')),
+        DataColumn(label: Text('Action')),
       ],
       rows: rows.map((r) {
         final clientName = (r['Client Name'] ?? r['client_name'] ?? '').toString();
+        final clientCode = (r['Client Code'] ?? r['client_code'] ?? '').toString();
         final group = (r['Group'] ?? r['group_name'] ?? '').toString();
         final expected = (r['Expected (₦)'] ??
                 r['Expected'] ??
@@ -2672,9 +2767,11 @@ class CoDashboardScreen extends ConsumerWidget {
             (r['Shortfall (₦)'] ?? r['Shortfall'] ?? r['shortfall'] as num?)?.toDouble() ?? 0.0;
         final status =
             (r['Status'] ?? r['Issue Type'] ?? r['issue_type'] ?? r['status'] ?? 'Shortfall').toString();
+        final actionMsg = (r['Action'] ?? r['action'] ?? '').toString();
 
         return DataRow(cells: [
           DataCell(Text(clientName, style: IcareTypography.bodyBold)),
+          DataCell(Text(clientCode.isNotEmpty ? clientCode : 'N/A', style: IcareTypography.body)),
           DataCell(Text(group, style: IcareTypography.body)),
           DataCell(Text(CurrencyFormatter.formatNaira(expected), style: IcareTypography.tableFinancialNumber)),
           DataCell(Text(CurrencyFormatter.formatNaira(paid), style: IcareTypography.tableFinancialNumber)),
@@ -2683,19 +2780,30 @@ class CoDashboardScreen extends ConsumerWidget {
             style: IcareTypography.tableFinancialNumber.copyWith(color: IcareColors.statusDangerText),
           )),
           DataCell(IcareStatusBadge.fromStatus(status)),
+          DataCell(
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 220),
+              child: Text(
+                actionMsg.isNotEmpty ? actionMsg : 'Follow Up',
+                style: IcareTypography.body.copyWith(fontSize: 12),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
+              ),
+            ),
+          ),
         ]);
       }).toList(),
     );
   }
 
-  /// Cleans status text of emojis (1:1 replica of components.status_badge.format_status_text)
+  /// Cleans status text of any legacy non-corporate pictographs cleanly
   static String _cleanStatusText(String status) {
-    var s = status.trim();
-    const emojis = ['🟡', '🟢', '🔴', '✅', '❌', '⚠️', '⏳', '🔵', '🚨', 'ℹ️', '🏖️', '🎉'];
-    for (final e in emojis) {
-      s = s.replaceAll(e, '');
-    }
-    return s.trim();
+    return status
+        .replaceAll(
+          RegExp(r'[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F\u200D]', unicode: true),
+          '',
+        )
+        .trim();
   }
 
   Widget _buildInfoBox(String text) {
@@ -2714,6 +2822,75 @@ class CoDashboardScreen extends ConsumerWidget {
           Expanded(
             child: Text(text, style: const TextStyle(color: IcareColors.statusInfoText, fontSize: 13)),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttentionSearchBar extends ConsumerStatefulWidget {
+  const _AttentionSearchBar();
+
+  @override
+  ConsumerState<_AttentionSearchBar> createState() => _AttentionSearchBarState();
+}
+
+class _AttentionSearchBarState extends ConsumerState<_AttentionSearchBar> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: ref.read(coDashboardAttentionSearchProvider));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final searchQuery = ref.watch(coDashboardAttentionSearchProvider);
+    if (_ctrl.text != searchQuery && searchQuery.isEmpty) {
+      _ctrl.clear();
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search, size: 18, color: Color(0xFF64748B)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _ctrl,
+              decoration: const InputDecoration(
+                hintText: 'Search client or group name...',
+                hintStyle: TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 8),
+              ),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+              onChanged: (val) {
+                ref.read(coDashboardAttentionSearchProvider.notifier).state = val;
+              },
+            ),
+          ),
+          if (searchQuery.isNotEmpty)
+            GestureDetector(
+              onTap: () {
+                _ctrl.clear();
+                ref.read(coDashboardAttentionSearchProvider.notifier).state = '';
+              },
+              child: const Icon(Icons.close, size: 16, color: Color(0xFF64748B)),
+            ),
         ],
       ),
     );

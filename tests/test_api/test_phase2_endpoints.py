@@ -82,7 +82,9 @@ def test_register_client_success(setup_dependencies):
     data = res.json()
     assert data["success"] is True
     assert "OGI" in data["client_code"] and "005" in data["client_code"]
-    mock_uow.clients.create.assert_called_once()
+    mock_uow.client.rpc.assert_any_call("atomic_execute_operations", mock_uow.client.rpc.call_args[0][1])
+    ops = mock_uow.client.rpc.call_args[0][1]["p_operations"]
+    assert any(op.get("table") == "clients" and op.get("type") == "insert" for op in ops)
 
 
 def test_apply_loan_invalid_amount(setup_dependencies):
@@ -129,12 +131,15 @@ def test_apply_loan_success(setup_dependencies):
             t.insert.return_value.execute.return_value = MagicMock(data=[{"loan_id": "l-1"}])
         elif table_name == "branches":
             t.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[{"name": "Ogijo"}])
+        elif table_name == "loan_products":
+            t.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[{"product_id": "prod-daily-60"}])
         else:
             t.select.return_value.execute.return_value = MagicMock(data=[])
         return t
     mock_uow.client.table.side_effect = mock_table
 
-    with patch("services.loan_product_engine.LoanProductEngine.calculate_loan_setup") as mock_setup, \
+    with patch("services.renewal_service.RenewalService.check_eligibility", return_value=(True, [], [])), \
+         patch("services.loan_product_engine.LoanProductEngine.calculate_loan_setup") as mock_setup, \
          patch("services.schedule_service.ScheduleService.generate_schedule"):
         mock_setup.return_value = {
             "interest": 20000.0,
@@ -158,7 +163,9 @@ def test_apply_loan_success(setup_dependencies):
         assert data["success"] is True
         assert data["status"] == "Pending"
         assert data["active_credit"] == 100000.0
-        mock_uow.loans.create.assert_called_once()
+        assert mock_uow.client.rpc.called
+        ops = mock_uow.client.rpc.call_args[0][1]["p_operations"]
+        assert any(op.get("table") == "loans" and op.get("type") == "insert" for op in ops)
 
 
 def test_repayment_reversal_request(setup_dependencies):
@@ -193,3 +200,134 @@ def test_cashbook_reversal_request(setup_dependencies):
         assert data["success"] is True
         assert data["request_id"] == "req-cb-1"
         assert data["status"] == "Pending"
+
+
+def test_preview_schedule_endpoint(setup_dependencies):
+    mock_uow, _mock_user = setup_dependencies
+
+    def mock_table(table_name):
+        t = MagicMock()
+        t.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+        t.select.return_value.execute.return_value = MagicMock(data=[])
+        return t
+
+    mock_uow.client.table.side_effect = mock_table
+
+    payload = {
+        "product_category": "Finance",
+        "product_type": "Weekly 12W",
+        "requested_amount": 120000.0,
+        "gap_fee": 0.0,
+        "application_date": "2026-10-12",
+    }
+    res = client.post("/api/v1/co/origination/preview-schedule", json=payload, headers=HEADERS)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["duration"] == 12
+    assert data["frequency"] == "Weekly"
+    assert len(data["installments"]) == 12
+    assert data["first_due_date"] == data["installments"][0]["due_date"]
+    assert data["expected_end_date"] == data["installments"][-1]["due_date"]
+
+
+def test_disburse_bm_ceiling_enforced():
+    mock_uow = MagicMock()
+    bm_user = CurrentUser(
+        id="bm-1",
+        username="bm_ogijo",
+        full_name="BM Ogijo",
+        role="Branch Manager",
+        branch="Ogijo",
+        branch_id="b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22",
+        permissions=PERMISSIONS.get("Branch Manager", set()),
+    )
+
+    def mock_table(table_name):
+        t = MagicMock()
+        if table_name == "loans":
+            t.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[{
+                "loan_id": "loan-big-1",
+                "client_id": "c-1",
+                "branch_id": "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22",
+                "status": "Pending",
+                "loan_amount": 500000.0,
+                "product_category": "Finance",
+                "loan_products": {"name": "Weekly 12W"},
+                "clients": {"name": "Client One", "group_id": None},
+            }])
+        else:
+            t.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+        return t
+
+    mock_uow.client.table.side_effect = mock_table
+    app.dependency_overrides[get_uow] = lambda: mock_uow
+    app.dependency_overrides[get_current_user] = lambda: bm_user
+
+    try:
+        res = client.post(
+            "/api/v1/co/origination/disburse",
+            json={"loan_id": "loan-big-1", "disbursement_date": "2026-10-12"},
+            headers=HEADERS,
+        )
+        assert res.status_code == 403
+        assert "Exceeds" in res.json()["detail"] or "exceeds Branch Manager limit" in res.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_disburse_am_allows_over_bm_ceiling():
+    mock_uow = MagicMock()
+    am_user = CurrentUser(
+        id="am-1",
+        username="am_region",
+        full_name="Area Manager",
+        role="Area Manager",
+        branch="Ogijo",
+        branch_id="b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22",
+        assigned_branch_ids=["b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"],
+        permissions=PERMISSIONS.get("Area Manager", set()),
+    )
+
+    def mock_table(table_name):
+        t = MagicMock()
+        if table_name == "loans":
+            t.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[{
+                "loan_id": "loan-big-1",
+                "client_id": "c-1",
+                "branch_id": "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22",
+                "officer_id": "co-1",
+                "status": "Pending",
+                "loan_amount": 500000.0,
+                "active_credit": 500000.0,
+                "loan_repay": 41666.67,
+                "total_due": 500000.0,
+                "product_category": "Finance",
+                "loan_products": {"name": "Weekly 12W"},
+                "branches": {"name": "Ogijo"},
+                "app_users": {"username": "co_ayomide", "full_name": "Mr. Ayomide"},
+                "clients": {"name": "Client One", "group_id": None},
+                "extra_fields": {"product_type": "Weekly 12W"},
+            }])
+        elif table_name == "loan_schedule":
+            t.select.return_value.eq.return_value.order.return_value.execute.return_value = MagicMock(data=[])
+        else:
+            t.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+        return t
+
+    mock_uow.client.table.side_effect = mock_table
+    app.dependency_overrides[get_uow] = lambda: mock_uow
+    app.dependency_overrides[get_current_user] = lambda: am_user
+
+    try:
+        with patch("services.business_date_service.BusinessDateService.is_operational_open", return_value=(True, "")), \
+             patch("services.loan_service.LoanService.disburse_loan") as mock_disburse:
+            res = client.post(
+                "/api/v1/co/origination/disburse",
+                json={"loan_id": "loan-big-1", "disbursement_date": "2026-10-12"},
+                headers=HEADERS,
+            )
+            assert res.status_code == 200
+            assert res.json()["success"] is True
+            assert mock_disburse.called
+    finally:
+        app.dependency_overrides.clear()

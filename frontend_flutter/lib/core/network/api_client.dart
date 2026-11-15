@@ -200,41 +200,32 @@ class ApiClient {
     ));
   }
 
-  static bool _isPhysicalDisconnect(DioException err) {
-    if (err.type == DioExceptionType.connectionError ||
-        err.type == DioExceptionType.connectionTimeout) {
-      return true;
-    }
+  static bool _hasNetworkErrorMessage(DioException err) {
     final msg = (err.message ?? '').toLowerCase();
     final errStr = err.error?.toString().toLowerCase() ?? '';
-    if (msg.contains('socketexception') ||
-        msg.contains('failed host lookup') ||
-        msg.contains('network is unreachable') ||
-        errStr.contains('socketexception') ||
-        errStr.contains('failed host lookup')) {
-      return true;
-    }
-    return false;
+    const tokens = [
+      'xmlhttprequest',
+      'connection errored',
+      'failed to fetch',
+      'socketexception',
+      'failed host lookup',
+      'network is unreachable',
+      'connection refused',
+    ];
+    return tokens.any((t) => msg.contains(t) || errStr.contains(t));
   }
 
-  static bool _isConnectionError(DioException err) {
+  static bool _isPhysicalDisconnect(DioException err) {
     if (err.type == DioExceptionType.connectionError ||
         err.type == DioExceptionType.connectionTimeout ||
-        err.type == DioExceptionType.receiveTimeout ||
         err.type == DioExceptionType.sendTimeout) {
       return true;
     }
-    final msg = (err.message ?? '').toLowerCase();
-    final errStr = err.error?.toString().toLowerCase() ?? '';
-    if (msg.contains('xmlhttprequest') ||
-        msg.contains('connection errored') ||
-        msg.contains('socketexception') ||
-        msg.contains('failed host lookup') ||
-        msg.contains('network is unreachable') ||
-        errStr.contains('xmlhttprequest') ||
-        errStr.contains('connection errored') ||
-        errStr.contains('socketexception') ||
-        errStr.contains('failed host lookup')) {
+    return _hasNetworkErrorMessage(err);
+  }
+
+  static bool _isConnectionError(DioException err) {
+    if (_isPhysicalDisconnect(err) || err.type == DioExceptionType.receiveTimeout) {
       return true;
     }
     if (err.response?.statusCode != null && err.response!.statusCode! >= 502) {
@@ -267,7 +258,13 @@ class ApiClient {
   Future<Map<String, dynamic>?> checkTransactionStatus(String idempotencyKey) async {
     if (idempotencyKey.isEmpty) return null;
     try {
-      final res = await _dio.get('/api/v1/transactions/status/$idempotencyKey');
+      final res = await _dio.get(
+        '/api/v1/transactions/status/$idempotencyKey',
+        options: Options(
+          sendTimeout: const Duration(seconds: 4),
+          receiveTimeout: const Duration(seconds: 4),
+        ),
+      );
       if (res.statusCode == 200 && res.data is Map<String, dynamic>) {
         return res.data as Map<String, dynamic>;
       }

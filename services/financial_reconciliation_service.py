@@ -193,17 +193,127 @@ class FinancialReconciliationService:
         except Exception:
             exceptions["repayments_without_loan"] = []
 
-        # 4. Savings Withdrawal without Ledger Entry
-        exceptions["savings_withdrawal_no_ledger"] = []
+        # 4. Savings Withdrawal without Ledger Entry (across all 4 savings tables)
+        wth_no_ledger = []
+        neg_balances = []
+        dup_refs = []
+        dup_receipts = []
 
-        # 5. Negative Savings Balance
-        exceptions["negative_savings_balance"] = []
+        try:
+            withdrawal_event_types = [
+                "SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION",
+                "LoanOffsetFromSavings", "FeeOffsetFromSavings", "SavingsTransferred",
+                "LapsTransferred", "LapsPaidOut", "LapsRestoredToSavings"
+            ]
+            ev_res = uow.client.table("event_store").select("aggregate_id, event_type, payload").in_("event_type", withdrawal_event_types).execute()
+            ft_res = uow.client.table("financial_transactions").select("reference, amount, branch_id").execute()
+
+            ledger_agg_ids = set()
+            ledger_refs = set()
+            if isinstance(ev_res.data, list):
+                for ev in ev_res.data:
+                    if ev.get("aggregate_id"):
+                        ledger_agg_ids.add(str(ev["aggregate_id"]))
+                    p = ev.get("payload") or {}
+                    if isinstance(p, dict):
+                        for k in ("reference", "savings_id", "record_id"):
+                            if p.get(k):
+                                ledger_refs.add(str(p[k]))
+            if isinstance(ft_res.data, list):
+                for ft in ft_res.data:
+                    if ft.get("reference"):
+                        ledger_refs.add(str(ft["reference"]))
+
+            sav_tables_meta = [
+                ("individual_savings", "client_id"),
+                ("group_savings", "group_id"),
+                ("internal_savings", "branch_id"),
+                ("laps_savings", "client_id"),
+            ]
+            all_sav_rows_for_check = []
+            for tbl, key_col in sav_tables_meta:
+                q_s = uow.client.table(tbl).select(f"id, {key_col}, branch_id, deposit_amount, withdrawal_amount, reference, posting_date")
+                if branch_id and branch_id != "All":
+                    q_s = q_s.eq("branch_id", branch_id)
+                s_rows = q_s.execute().data or []
+                if isinstance(s_rows, list):
+                    bal_by_acct = {}
+                    seen_ref_side = {}
+                    for r in s_rows:
+                        if not isinstance(r, dict):
+                            continue
+                        acct_k = str(r.get(key_col) or r.get("branch_id") or "")
+                        dep = float(r.get("deposit_amount") or 0.0)
+                        wth = float(r.get("withdrawal_amount") or 0.0)
+                        bal_by_acct[acct_k] = bal_by_acct.get(acct_k, 0.0) + (dep - wth)
+
+                        ref_s = str(r.get("reference") or "").strip()
+                        if ref_s:
+                            side_tag = "WTH" if wth > 0 else ("DEP" if dep > 0 else "REV")
+                            dup_key = (tbl, side_tag, ref_s)
+                            seen_ref_side.setdefault(dup_key, []).append(str(r.get("id") or ""))
+
+                        if wth > 0:
+                            r_id = str(r.get("id") or "")
+                            has_ledger = (r_id in ledger_agg_ids) or (acct_k in ledger_agg_ids) or (ref_s and ref_s in ledger_refs)
+                            if not has_ledger and (ledger_agg_ids or ledger_refs):
+                                wth_no_ledger.append({
+                                    "table": tbl,
+                                    "id": r_id,
+                                    "account_key": acct_k,
+                                    "amount": wth,
+                                    "reference": ref_s,
+                                    "posting_date": r.get("posting_date"),
+                                })
+
+                    for acct_k, net_bal in bal_by_acct.items():
+                        if net_bal < -0.01:
+                            neg_balances.append({
+                                "table": tbl,
+                                "account_key": acct_k,
+                                "net_balance": round(net_bal, 2),
+                            })
+                    for (t_name, side_tag, ref_s), ids_list in seen_ref_side.items():
+                        if len(ids_list) > 1:
+                            dup_refs.append({
+                                "table": t_name,
+                                "side": side_tag,
+                                "reference": ref_s,
+                                "count": len(ids_list),
+                                "record_ids": ids_list,
+                            })
+        except Exception:
+            pass
 
         # 6. Duplicate Receipt Numbers
-        exceptions["duplicate_receipt_numbers"] = []
+        try:
+            q_rep = uow.client.table("repayments").select("id, loan_id, client_id, amount_paid, receipt_number, branch_id")
+            if branch_id and branch_id != "All":
+                q_rep = q_rep.eq("branch_id", branch_id)
+            r_rows = q_rep.execute().data or []
+            seen_rcpts = {}
+            for r in (r_rows if isinstance(r_rows, list) else []):
+                if not isinstance(r, dict):
+                    continue
+                rcpt = str(r.get("receipt_number") or "").strip()
+                if rcpt:
+                    seen_rcpts.setdefault(rcpt, []).append(str(r.get("id") or ""))
+            for rcpt, r_ids in seen_rcpts.items():
+                if len(r_ids) > 1:
+                    dup_receipts.append({"receipt_number": rcpt, "count": len(r_ids), "repayment_ids": r_ids})
+        except Exception:
+            pass
+
+        exceptions["savings_withdrawal_no_ledger"] = wth_no_ledger
+
+        # 5. Negative Savings Balance
+        exceptions["negative_savings_balance"] = neg_balances
+
+        # 6. Duplicate Receipt Numbers
+        exceptions["duplicate_receipt_numbers"] = dup_receipts
 
         # 7. Duplicate Transaction References
-        exceptions["duplicate_transaction_references"] = []
+        exceptions["duplicate_transaction_references"] = dup_refs
 
         # 8. Orphan Ledger Entries
         exceptions["orphan_ledger_entries"] = []
@@ -343,16 +453,19 @@ class FinancialReconciliationService:
         except Exception:
             reps_data = []
 
-        # 2. Fetch Savings Deposits on Date
-        sav_query = uow.client.table("individual_savings").select("deposit_amount").eq("branch_id", branch_id).eq("posting_date", p_date_str)
-        if officer_id:
-            sav_query = sav_query.eq("officer_id", officer_id)
-
-        try:
-            res_sav = sav_query.execute()
-            sav_data = res_sav.data or []
-        except Exception:
-            sav_data = []
+        # 2. Fetch Savings Deposits on Date across all CO savings pools
+        sav_data = []
+        for tbl in ("individual_savings", "group_savings", "internal_savings", "laps_savings"):
+            try:
+                sav_query = uow.client.table(tbl).select("deposit_amount").eq("branch_id", branch_id).eq("posting_date", p_date_str)
+                if officer_id:
+                    sav_query = sav_query.eq("officer_id", officer_id)
+                res_sav = sav_query.execute()
+                rows = getattr(res_sav, "data", None)
+                if isinstance(rows, list):
+                    sav_data.extend(rows)
+            except Exception:
+                pass
 
         # 3. Fetch Cashbook figures (Bank deposit & Closing balance)
         bank_deposited = 0.0
@@ -407,6 +520,8 @@ class FinancialReconciliationService:
             elif status == "PART_PAID":
                 shortfall = max(0.0, exp - amt)
                 if shortfall > 0:
+                    not_paid_amount += shortfall
+                    not_paid_count += 1
                     not_paid_clients.append({
                         "name": c_name,
                         "code": c_code,

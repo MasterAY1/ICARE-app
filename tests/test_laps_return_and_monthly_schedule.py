@@ -134,45 +134,52 @@ class TestLapsReturnAndMonthlySchedule(unittest.TestCase):
     def test_savings_service_return_laps_to_savings(self):
         """
         Verify SavingsService.return_laps_to_savings:
-        1. Records withdrawal in laps_savings
-        2. Records deposit in individual_savings
-        3. Restores client lifecycle status to 'Registered' (BR-CLI-004)
-        4. Emits LapsRestoredToSavings domain event
+        1. Records withdrawal in laps_savings and deposit in individual_savings atomically
+        2. Restores client lifecycle status to 'Registered' (BR-CLI-004)
+        3. Emits LapsRestoredToSavings domain event & financial transaction in same RPC
         """
         mock_uow = MagicMock()
+        mock_uow.event_store.is_processed.return_value = False
+        mock_uow.posting_rules.get_rule.return_value = None
         mock_client = MagicMock()
         mock_uow.client = mock_client
 
-        # Mock Registered status lookup
+        # Mock Registered status lookup & RPC execute
         mock_status_res = MagicMock()
         mock_status_res.data = [{"status_id": "status-reg-uuid", "status_name": "Registered"}]
         mock_client.table().select().eq().execute.return_value = mock_status_res
+        mock_client.rpc.return_value.execute.return_value = MagicMock(data={"success": True})
 
-        result = SavingsService.return_laps_to_savings(
-            uow=mock_uow,
-            client_id="c-1234",
-            client_name="Test Client",
-            branch="Ikorodu",
-            officer="CO1",
-            amount=18000.0,
-            reference="REF-001",
-            remarks="Client re-activated"
-        )
+        with patch("services.business_date_service.BusinessDateService.is_operational_open", return_value=(True, "Open")), \
+             patch.object(FinancialPostingEngine, "_resolve_branch_id", return_value="b-uuid-1"), \
+             patch.object(FinancialPostingEngine, "_resolve_officer_id", return_value="o-uuid-1"):
+            result = SavingsService.return_laps_to_savings(
+                uow=mock_uow,
+                client_id="c-1234",
+                client_name="Test Client",
+                branch="Ikorodu",
+                officer="CO1",
+                amount=18000.0,
+                reference="REF-001",
+                remarks="Client re-activated",
+                posting_date=date(2026, 8, 12),
+            )
 
         self.assertEqual(result["status"], "SUCCESS")
         self.assertEqual(result["amount"], 18000.0)
         self.assertFalse(result["affects_cash_vault"])
 
-        # Verify laps_savings and individual_savings calls
-        self.assertTrue(mock_uow.laps_savings.create.called)
-        self.assertTrue(mock_uow.individual_savings.create.called)
-
-        # Verify domain event emitted to event_store
-        self.assertTrue(mock_uow.event_store.append.called)
-        emitted_event = mock_uow.event_store.append.call_args[0][0]
-        self.assertEqual(emitted_event.event_type, "LapsRestoredToSavings")
-        self.assertEqual(emitted_event.payload["amount"], 18000.0)
-        self.assertEqual(emitted_event.payload["branch"], "Ikorodu")
+        rpc_calls = mock_client.rpc.call_args_list
+        self.assertTrue(any(c.args[0] == "atomic_execute_operations" for c in rpc_calls))
+        ops = [c.args[1]["p_operations"] for c in rpc_calls if c.args[0] == "atomic_execute_operations"][-1]
+        tables = [o.get("table") for o in ops]
+        self.assertIn("laps_savings", tables)
+        self.assertIn("individual_savings", tables)
+        self.assertIn("event_store", tables)
+        evt_op = [o for o in ops if o.get("table") == "event_store"][0]
+        self.assertEqual(evt_op["record"]["event_type"], "LapsRestoredToSavings")
+        self.assertEqual(evt_op["record"]["payload"]["amount"], 18000.0)
+        self.assertEqual(evt_op["record"]["payload"]["branch"], "Ikorodu")
 
     def test_onboarding_legacy_monthly_anchor_math(self):
         """

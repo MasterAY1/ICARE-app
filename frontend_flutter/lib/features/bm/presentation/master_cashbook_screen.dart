@@ -9,6 +9,7 @@ import '../../shared/utils/file_download_helper.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../shared/presentation/co_app_scaffold.dart';
 
 /// Target branch filter passed from external navigation (AM Dashboard, Handover modal, etc.)
 final masterCashbookTargetBranchProvider = StateProvider<String?>((ref) => null);
@@ -82,6 +83,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   final TextEditingController _xferBranchCtrl = TextEditingController();
   final TextEditingController _xferHoCtrl = TextEditingController();
   final TextEditingController _xferAreaCtrl = TextEditingController();
+  final TextEditingController _fundToAssetCtrl = TextEditingController();
   final TextEditingController _salariesCtrl = TextEditingController();
   final TextEditingController _adjInCtrl = TextEditingController();
   final TextEditingController _adjOutCtrl = TextEditingController();
@@ -122,6 +124,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   bool _isExecutingEod = false;
   bool _isDownloadingExcel = false;
   String? _lastLoadedTab1Key;
+  MasterCashbookDailyData? _lastLoadedTab1Data;
 
   @override
   void initState() {
@@ -154,6 +157,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     _xferBranchCtrl.dispose();
     _xferHoCtrl.dispose();
     _xferAreaCtrl.dispose();
+    _fundToAssetCtrl.dispose();
     _salariesCtrl.dispose();
     _adjInCtrl.dispose();
     _adjOutCtrl.dispose();
@@ -219,6 +223,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     _xferBranchCtrl.text = out.fundTransferredOtherBranch > 0 ? out.fundTransferredOtherBranch.toStringAsFixed(0) : '';
     _xferHoCtrl.text = out.fundTransferredHo > 0 ? out.fundTransferredHo.toStringAsFixed(0) : '';
     _xferAreaCtrl.text = out.fundToOtherArea > 0 ? out.fundToOtherArea.toStringAsFixed(0) : '';
+    _fundToAssetCtrl.text = out.fundToAssetProgram > 0 ? out.fundToAssetProgram.toStringAsFixed(0) : '';
     _salariesCtrl.text = out.staffSalaries > 0 ? out.staffSalaries.toStringAsFixed(0) : '';
 
     _adjInCtrl.text = inf.adjustmentIn > 0 ? inf.adjustmentIn.toStringAsFixed(0) : '';
@@ -252,6 +257,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         'fund_transferred_other_branch': double.tryParse(_xferBranchCtrl.text.trim()) ?? 0.0,
         'fund_transferred_ho': double.tryParse(_xferHoCtrl.text.trim()) ?? 0.0,
         'fund_to_other_area': double.tryParse(_xferAreaCtrl.text.trim()) ?? 0.0,
+        'fund_to_asset_program': double.tryParse(_fundToAssetCtrl.text.trim()) ?? 0.0,
         'staff_salaries': double.tryParse(_salariesCtrl.text.trim()) ?? 0.0,
         'adjustment_in': double.tryParse(_adjInCtrl.text.trim()) ?? 0.0,
         'adjustment_out': double.tryParse(_adjOutCtrl.text.trim()) ?? 0.0,
@@ -265,7 +271,10 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         const Color(0xFFECFDF5),
         Icons.check_circle_outline,
       );
+      _lastLoadedTab1Key = null;
       ref.invalidate(masterDailyCashbookProvider);
+      ref.invalidate(coAggregationProvider);
+      ref.invalidate(monthlyLedgerProvider);
     } catch (e) {
       _showBanner(
         'Failed to save manual entries: $e',
@@ -478,6 +487,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         Future.microtask(() {
           if (mounted) ref.read(masterCashbookTargetBranchProvider.notifier).state = null;
         });
+      }
+    });
+
+    ref.listen<int>(globalRefreshSignalProvider, (prev, next) {
+      if (prev != next) {
+        _lastLoadedTab1Key = null;
       }
     });
 
@@ -716,8 +731,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       ),
       data: (data) {
         final isAm = _isAm;
-        if (_lastLoadedTab1Key != key) {
+        if (_lastLoadedTab1Key != key || !identical(_lastLoadedTab1Data, data)) {
           _lastLoadedTab1Key = key;
+          _lastLoadedTab1Data = data;
           if (!isAm) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _populateManualControllers(data);
@@ -910,6 +926,39 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 ),
               ),
               const Spacer(),
+
+              if (isMobile)
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 19, color: Color(0xFF0F172A)),
+                  tooltip: 'Refresh Daily Cashbook',
+                  onPressed: () {
+                    _lastLoadedTab1Key = null;
+                    ref.invalidate(masterDailyCashbookProvider);
+                    ref.invalidate(coAggregationProvider);
+                    ref.invalidate(monthlyLedgerProvider);
+                  },
+                )
+              else ...[
+                OutlinedButton.icon(
+                  onPressed: () {
+                    _lastLoadedTab1Key = null;
+                    ref.invalidate(masterDailyCashbookProvider);
+                    ref.invalidate(coAggregationProvider);
+                    ref.invalidate(monthlyLedgerProvider);
+                  },
+                  icon: const Icon(Icons.refresh, size: 15, color: Color(0xFF0F172A)),
+                  label: const Text(
+                    'Refresh',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
 
               // Operational Status Pill (Desktop/Tablet)
               if (!isMobile)
@@ -1276,6 +1325,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       ('Funds Received from Other Areas', inf.fundsReceivedOtherArea),
       ('Asset Credit Sales', inf.assetCreditSales),
       ('Cash & Carry', inf.cashAndCarry),
+      ('Funds Received from Asset', inf.loanReceivedAsset),
       ('Funds from Finance', inf.loanReceivedFinance),
       ('Daily 11%', inf.daily11Pct),
       ('Daily 20%', inf.daily20Pct),
@@ -1300,9 +1350,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       ('Fund Transferred to Branch Office', out.fundTransferredOtherBranch),
       ('Fund Transferred to Head Office', out.fundTransferredHo),
       ('Fund Transferred to Other Areas', out.fundToOtherArea),
-      ('Fund To Assets', out.fundToAssetProgram),
+      ('Fund to Asset Program', out.fundToAssetProgram),
       ('Fund to Finance', out.fundToProductFinance),
-      ('Product/Savings Withdrawal', out.productWithdrawal + out.savingsWithdrawal),
+      ('Product/Savings Withdrawal', out.productWithdrawal),
       ('Staff Salaries', out.staffSalaries),
       ('Office Expenses', out.officeExpenses),
       ('Laps Return', out.lapsReturns),
@@ -1551,7 +1601,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           ),
           const SizedBox(height: 14),
           _buildTAccountBalancingBar(data),
-        ] else
+        ] else ...[
           // Spreadsheet Data Table
           Container(
             decoration: BoxDecoration(
@@ -1569,26 +1619,40 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   DataColumn(label: Text('Outflows (Right / Credit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
                   DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
                 ],
-                rows: List.generate(maxLen, (idx) {
-                  final infItem = idx < displayedInflows.length ? displayedInflows[idx] : ('', 0.0);
-                  final outItem = idx < displayedOutflows.length ? displayedOutflows[idx] : ('', 0.0);
+                rows: [
+                  ...List.generate(maxLen, (idx) {
+                    final infItem = idx < displayedInflows.length ? displayedInflows[idx] : ('', 0.0);
+                    final outItem = idx < displayedOutflows.length ? displayedOutflows[idx] : ('', 0.0);
 
-                  return DataRow(
-                    color: WidgetStateProperty.resolveWith<Color?>((states) {
-                      if (idx.isOdd) return const Color(0xFFF8FAFC);
-                      return Colors.white;
-                    }),
+                    return DataRow(
+                      color: WidgetStateProperty.resolveWith<Color?>((states) {
+                        if (idx.isOdd) return const Color(0xFFF8FAFC);
+                        return Colors.white;
+                      }),
+                      cells: [
+                        DataCell(Text(infItem.$1, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
+                        DataCell(Text(infItem.$1.isNotEmpty ? _formatCurrency(infItem.$2) : '', style: const TextStyle(fontSize: 12, color: Color(0xFF059669), fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
+                        DataCell(Text(outItem.$1, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
+                        DataCell(Text(outItem.$1.isNotEmpty ? _formatCurrency(outItem.$2) : '', style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
+                      ],
+                    );
+                  }),
+                  DataRow(
+                    color: WidgetStateProperty.all(const Color(0xFFF1F5F9)),
                     cells: [
-                      DataCell(Text(infItem.$1, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
-                      DataCell(Text(infItem.$1.isNotEmpty ? _formatCurrency(infItem.$2) : '', style: const TextStyle(fontSize: 12, color: Color(0xFF059669), fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
-                      DataCell(Text(outItem.$1, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
-                      DataCell(Text(outItem.$1.isNotEmpty ? _formatCurrency(outItem.$2) : '', style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
+                      const DataCell(Text('Total Debit (Opening + Receipts)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF065F46)))),
+                      DataCell(Text(_formatCurrency(data.totalInflows), style: const TextStyle(fontSize: 12, color: Color(0xFF059669), fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
+                      const DataCell(Text('Total Credit (Outflows)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF991B1B)))),
+                      DataCell(Text(_formatCurrency(data.totalOutflows), style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
                     ],
-                  );
-                }),
+                  ),
+                ],
               ),
             ),
           ),
+          const SizedBox(height: 14),
+          _buildTAccountBalancingBar(data),
+        ],
       ],
     );
   }
@@ -1769,37 +1833,42 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Icon(
-                isPos ? Icons.check_circle_outline : Icons.warning_amber_rounded,
-                size: 20,
-                color: isPos ? const Color(0xFF059669) : const Color(0xFFDC2626),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isPos ? 'VAULT POSITION BALANCED' : 'VAULT DEFICIT DETECTED',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: isPos ? const Color(0xFF065F46) : const Color(0xFF991B1B),
-                      letterSpacing: 0.4,
-                    ),
+          Expanded(
+            child: Row(
+              children: [
+                Icon(
+                  isPos ? Icons.check_circle_outline : Icons.warning_amber_rounded,
+                  size: 20,
+                  color: isPos ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                ),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isPos ? 'VAULT POSITION BALANCED' : 'VAULT DEFICIT DETECTED',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: isPos ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                      Text(
+                        'Opening (${_formatCurrency(data.inflows.openingBalance)}) + Receipts (${_formatCurrency(data.totalInflows - data.inflows.openingBalance)}) - Outflows (${_formatCurrency(data.totalOutflows)})',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: isPos ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+                        ),
+                      ),
+                    ],
                   ),
-                  Text(
-                    'Opening (${_formatCurrency(data.inflows.openingBalance)}) + Inflows (${_formatCurrency(data.totalInflows)}) - Outflows (${_formatCurrency(data.totalOutflows)})',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: isPos ? const Color(0xFF047857) : const Color(0xFFB91C1C),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
+          const SizedBox(width: 12),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -2025,6 +2094,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   const SizedBox(height: 10),
                   _buildNumberInputField('Fund Transferred to Other Areas', _xferAreaCtrl),
                   const SizedBox(height: 10),
+                  _buildNumberInputField('Fund to Asset Program', _fundToAssetCtrl),
+                  const SizedBox(height: 10),
                   _buildNumberInputField('Staff Salaries', _salariesCtrl),
                 ] else ...[
                   Row(
@@ -2034,8 +2105,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       Expanded(child: _buildNumberInputField('Fund Transferred to H.O.', _xferHoCtrl)),
                       const SizedBox(width: 12),
                       Expanded(child: _buildNumberInputField('Fund Transferred to Other Areas', _xferAreaCtrl)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(child: _buildNumberInputField('Fund to Asset Program', _fundToAssetCtrl)),
                       const SizedBox(width: 12),
                       Expanded(child: _buildNumberInputField('Staff Salaries', _salariesCtrl)),
+                      const SizedBox(width: 12),
+                      const Expanded(child: SizedBox()),
                     ],
                   ),
                 ],
@@ -3138,37 +3217,42 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Icon(
-                isPos ? Icons.check_circle_outline : Icons.warning_amber_rounded,
-                size: 20,
-                color: isPos ? const Color(0xFF059669) : const Color(0xFFDC2626),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isPos ? 'CO LEDGER BALANCED' : 'CO DEFICIT DETECTED',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: isPos ? const Color(0xFF065F46) : const Color(0xFF991B1B),
-                      letterSpacing: 0.4,
-                    ),
+          Expanded(
+            child: Row(
+              children: [
+                Icon(
+                  isPos ? Icons.check_circle_outline : Icons.warning_amber_rounded,
+                  size: 20,
+                  color: isPos ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                ),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isPos ? 'CO LEDGER BALANCED' : 'CO DEFICIT DETECTED',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: isPos ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                      Text(
+                        'Opening (${_formatCurrency(data.openingBalance)}) + Receipts (${_formatCurrency(data.totalInflows - data.openingBalance)}) - Outflows (${_formatCurrency(data.totalOutflows)})',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: isPos ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+                        ),
+                      ),
+                    ],
                   ),
-                  Text(
-                    'Opening (${_formatCurrency(data.openingBalance)}) + Inflows (${_formatCurrency(data.totalInflows)}) - Outflows (${_formatCurrency(data.totalOutflows)})',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: isPos ? const Color(0xFF047857) : const Color(0xFFB91C1C),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
+          const SizedBox(width: 12),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -3240,23 +3324,34 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   DataColumn(label: Text('Outflows (Right / Credit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
                   DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
                 ],
-                rows: List.generate(maxLen, (idx) {
-                  final inf = idx < displayedInflows.length ? displayedInflows[idx] : null;
-                  final out = idx < displayedOutflows.length ? displayedOutflows[idx] : null;
+                rows: [
+                  ...List.generate(maxLen, (idx) {
+                    final inf = idx < displayedInflows.length ? displayedInflows[idx] : null;
+                    final out = idx < displayedOutflows.length ? displayedOutflows[idx] : null;
 
-                  return DataRow(
-                    color: WidgetStateProperty.resolveWith<Color?>((states) {
-                      if (idx.isOdd) return const Color(0xFFF8FAFC);
-                      return Colors.white;
-                    }),
+                    return DataRow(
+                      color: WidgetStateProperty.resolveWith<Color?>((states) {
+                        if (idx.isOdd) return const Color(0xFFF8FAFC);
+                        return Colors.white;
+                      }),
+                      cells: [
+                        DataCell(Text(inf?.key ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
+                        DataCell(Text(inf != null ? _formatCurrency(inf.value) : '', style: const TextStyle(fontSize: 12, color: Color(0xFF059669), fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
+                        DataCell(Text(out?.key ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
+                        DataCell(Text(out != null ? _formatCurrency(out.value) : '', style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
+                      ],
+                    );
+                  }),
+                  DataRow(
+                    color: WidgetStateProperty.all(const Color(0xFFF1F5F9)),
                     cells: [
-                      DataCell(Text(inf?.key ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
-                      DataCell(Text(inf != null ? _formatCurrency(inf.value) : '', style: const TextStyle(fontSize: 12, color: Color(0xFF059669), fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
-                      DataCell(Text(out?.key ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
-                      DataCell(Text(out != null ? _formatCurrency(out.value) : '', style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
+                      const DataCell(Text('Total Debit (Opening + Receipts)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF065F46)))),
+                      DataCell(Text(_formatCurrency(data.totalInflows), style: const TextStyle(fontSize: 12, color: Color(0xFF059669), fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
+                      const DataCell(Text('Total Credit (Outflows)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF991B1B)))),
+                      DataCell(Text(_formatCurrency(data.totalOutflows), style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
                     ],
-                  );
-                }),
+                  ),
+                ],
               ),
             ),
           ),
@@ -4159,21 +4254,57 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildMonthlyLedgerTable(List<MonthlyLedgerRowData> rows, bool isMobile) {
-    // Column Totals for Summary Row
+    // Column Totals for Summary Row (every numeric column summed; Opening/Closing reflect Day-1 / Month-End)
+    final monthOpening = rows.isNotEmpty ? rows.first.openingBalance : 0.0;
+    final monthClosing = rows.isNotEmpty ? rows.last.closingBalance : 0.0;
     final totalSavings = rows.fold(0.0, (s, r) => s + r.savingsDeposit);
     final totalRepDaily = rows.fold(0.0, (s, r) => s + r.repDaily);
     final totalRep120 = rows.fold(0.0, (s, r) => s + r.rep120Days);
     final totalRep12w = rows.fold(0.0, (s, r) => s + r.rep12Weeks);
     final totalRep24w = rows.fold(0.0, (s, r) => s + r.rep24Weeks);
     final totalRepMth = rows.fold(0.0, (s, r) => s + r.repMonthly);
-    final totalInflows = rows.fold(0.0, (s, r) => s + r.totalInflows);
+    final totalLapsReserve = rows.fold(0.0, (s, r) => s + r.lapsReserve);
+    final totalFundsHo = rows.fold(0.0, (s, r) => s + r.fundsReceivedHo);
+    final totalFundsBranch = rows.fold(0.0, (s, r) => s + r.fundsReceivedOtherBranch);
+    final totalFundsArea = rows.fold(0.0, (s, r) => s + r.fundsReceivedOtherArea);
+    final totalAssetCredit = rows.fold(0.0, (s, r) => s + r.assetCreditSales);
+    final totalCashAndCarry = rows.fold(0.0, (s, r) => s + r.cashAndCarry);
+    final totalLoanRecAsset = rows.fold(0.0, (s, r) => s + r.loanReceivedAsset);
+    final totalLoanRecFinance = rows.fold(0.0, (s, r) => s + r.loanReceivedFinance);
+    final totalDaily11 = rows.fold(0.0, (s, r) => s + r.daily11Pct);
+    final totalDaily20 = rows.fold(0.0, (s, r) => s + r.daily20Pct);
+    final totalWeekly11 = rows.fold(0.0, (s, r) => s + r.weekly11Pct);
+    final totalWeekly20 = rows.fold(0.0, (s, r) => s + r.weekly20Pct);
+    final totalRiskPremium = rows.fold(0.0, (s, r) => s + r.riskPremiumReturns);
+    final totalContingency = rows.fold(0.0, (s, r) => s + r.contingency);
+    final totalFormDamage = rows.fold(0.0, (s, r) => s + r.creditFormDamage);
+    final totalBonus = rows.fold(0.0, (s, r) => s + r.bonus);
+    final totalAppFee = rows.fold(0.0, (s, r) => s + r.appFee);
+    final totalPassbook = rows.fold(0.0, (s, r) => s + r.passbook);
+    final totalBankWithdr = rows.fold(0.0, (s, r) => s + r.bankWithdrawal);
+    final totalAdjIn = rows.fold(0.0, (s, r) => s + r.adjustmentIn);
+    final totalInflows = monthOpening + rows.fold(0.0, (s, r) => s + (r.totalInflows - r.openingBalance));
     final totalDisb60d = rows.fold(0.0, (s, r) => s + r.disb60d);
     final totalDisb120d = rows.fold(0.0, (s, r) => s + r.disb120d);
     final totalDisb12w = rows.fold(0.0, (s, r) => s + r.disb12w);
     final totalDisb24w = rows.fold(0.0, (s, r) => s + r.disb24w);
     final totalDisbMth = rows.fold(0.0, (s, r) => s + r.disbMth);
+    final totalXferBranch = rows.fold(0.0, (s, r) => s + r.fundTransferredOtherBranch);
+    final totalXferHo = rows.fold(0.0, (s, r) => s + r.fundTransferredHo);
+    final totalXferArea = rows.fold(0.0, (s, r) => s + r.fundToOtherArea);
+    final totalToAssets = rows.fold(0.0, (s, r) => s + r.fundToAssetProgram);
+    final totalToFinance = rows.fold(0.0, (s, r) => s + r.fundToProductFinance);
+    final totalProdWithdr = rows.fold(0.0, (s, r) => s + r.productWithdrawal);
+    final totalSalaries = rows.fold(0.0, (s, r) => s + r.staffSalaries);
+    final totalOfficeExp = rows.fold(0.0, (s, r) => s + r.officeExpenses);
+    final totalLapsRet = rows.fold(0.0, (s, r) => s + r.lapsReturns);
     final totalBankDep = rows.fold(0.0, (s, r) => s + r.bankDeposit);
+    final totalAdjOut = rows.fold(0.0, (s, r) => s + r.adjustmentOut);
     final totalOutflows = rows.fold(0.0, (s, r) => s + r.totalOutflows);
+
+    final totalAssetReceipts = totalLoanRecAsset + totalCashAndCarry;
+    final assetVariance = totalAssetReceipts - totalToAssets;
+    final isAssetSettled = assetVariance.abs() < 0.01;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4221,6 +4352,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 DataColumn(label: Text('Funds from Area', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
                 DataColumn(label: Text('Asset Credit', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
                 DataColumn(label: Text('Cash & Carry', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
+                DataColumn(label: Text('Funds from Asset', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
                 DataColumn(label: Text('Loan Finance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
                 DataColumn(label: Text('Daily 11%', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
                 DataColumn(label: Text('Daily 20%', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
@@ -4278,6 +4410,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       DataCell(Text(_formatLedgerCell(r.fundsReceivedOtherArea), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
                       DataCell(Text(_formatLedgerCell(r.assetCreditSales), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
                       DataCell(Text(_formatLedgerCell(r.cashAndCarry), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
+                      DataCell(Text(_formatLedgerCell(r.loanReceivedAsset), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
                       DataCell(Text(_formatLedgerCell(r.loanReceivedFinance), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
                       DataCell(Text(_formatLedgerCell(r.daily11Pct), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
                       DataCell(Text(_formatLedgerCell(r.daily20Pct), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
@@ -4318,55 +4451,143 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   color: WidgetStateProperty.all(const Color(0xFFF1F5F9)),
                   cells: [
                     const DataCell(Text('MONTH TOTAL', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
+                    DataCell(Text(_formatLedgerCell(monthOpening), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
                     DataCell(Text(_formatLedgerCell(totalSavings), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
                     DataCell(Text(_formatLedgerCell(totalRepDaily), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
                     DataCell(Text(_formatLedgerCell(totalRep120), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
                     DataCell(Text(_formatLedgerCell(totalRep12w), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
                     DataCell(Text(_formatLedgerCell(totalRep24w), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
                     DataCell(Text(_formatLedgerCell(totalRepMth), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
+                    DataCell(Text(_formatLedgerCell(totalLapsReserve), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalFundsHo), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalFundsBranch), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalFundsArea), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalAssetCredit), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalCashAndCarry), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalLoanRecAsset), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalLoanRecFinance), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalDaily11), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalDaily20), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalWeekly11), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalWeekly20), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalRiskPremium), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalContingency), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalFormDamage), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalBonus), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalAppFee), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalPassbook), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalBankWithdr), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalAdjIn), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
                     DataCell(Text(_formatLedgerCell(totalInflows), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF059669), fontFamily: 'monospace'))),
                     DataCell(Text(_formatLedgerCell(totalDisb60d), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
                     DataCell(Text(_formatLedgerCell(totalDisb120d), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
                     DataCell(Text(_formatLedgerCell(totalDisb12w), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
                     DataCell(Text(_formatLedgerCell(totalDisb24w), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
                     DataCell(Text(_formatLedgerCell(totalDisbMth), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
+                    DataCell(Text(_formatLedgerCell(totalXferBranch), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalXferHo), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalXferArea), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalToAssets), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalToFinance), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalProdWithdr), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalSalaries), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalOfficeExp), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalLapsRet), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
                     DataCell(Text(_formatLedgerCell(totalBankDep), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
+                    DataCell(Text(_formatLedgerCell(totalAdjOut), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
                     DataCell(Text(_formatLedgerCell(totalOutflows), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFFDC2626), fontFamily: 'monospace'))),
-                    const DataCell(Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
+                    DataCell(Text(_formatLedgerCell(monthClosing), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontFamily: 'monospace'))),
                   ],
                 ),
               ],
             ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: isAssetSettled ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isAssetSettled ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Icon(
+                          isAssetSettled ? Icons.check_circle_outline : Icons.pending_actions_outlined,
+                          size: 18,
+                          color: isAssetSettled ? const Color(0xFF059669) : const Color(0xFFD97706),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            isAssetSettled
+                                ? 'Month-End Asset Program Settled'
+                                : 'Month-End Asset Program Settlement Variance',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: isAssetSettled ? const Color(0xFF065F46) : const Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isAssetSettled ? const Color(0xFFD1FAE5) : const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      isAssetSettled
+                          ? 'Balanced'
+                          : 'Variance: ${_formatCurrency(assetVariance)}',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'monospace',
+                        color: isAssetSettled ? const Color(0xFF065F46) : const Color(0xFF92400E),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 16,
+                runSpacing: 6,
+                children: [
+                  Text(
+                    'Funds from Asset: ${_formatCurrency(totalLoanRecAsset)}',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                  ),
+                  Text(
+                    'Cash & Carry: ${_formatCurrency(totalCashAndCarry)}',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                  ),
+                  Text(
+                    'Total Asset Receipts: ${_formatCurrency(totalAssetReceipts)}',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF065F46)),
+                  ),
+                  Text(
+                    'Fund to Asset Program: ${_formatCurrency(totalToAssets)}',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF991B1B)),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ],

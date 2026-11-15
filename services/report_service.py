@@ -1091,14 +1091,12 @@ class ReportService:
 
         cb_cc = 0.0
         cb_lapse_ret = 0.0
-        cb_f_rec_ho = 0.0
-        cb_cc = 0.0
-        cb_lapse_ret = 0.0
         cb_passbook = 0.0
         cb_app_fee = 0.0
         cb_bonus = 0.0
         cb_damage = 0.0
-        cb_f_asset = 0.0
+        cb_f_asset_rec = 0.0
+        cb_f_asset_pay = 0.0
         cb_f_rec_ho = 0.0
         cb_f_rec_br = 0.0
         cb_f_rec_area = 0.0
@@ -1109,19 +1107,20 @@ class ReportService:
 
         try:
             res_cb = uow.client.table("master_cashbook") \
-                .select("cash_and_carry, misc_fees, laps_returns, passbook, app_fee, bonus, credit_form_damage, fund_to_asset_program, loan_received_asset, funds_received_ho, funds_received_other_branch, funds_received_other_area, fund_transferred_ho, fund_transferred_other_branch, fund_to_other_area, daily_11_pct, daily_20_pct, weekly_11_pct, weekly_20_pct") \
+                .select("cash_and_carry, laps_returns, passbook, app_fee, bonus, credit_form_damage, fund_to_asset_program, loan_received_asset, funds_received_ho, funds_received_other_branch, funds_received_other_area, fund_transferred_ho, fund_transferred_other_branch, fund_to_other_area, daily_11_pct, daily_20_pct, weekly_11_pct, weekly_20_pct") \
                 .eq("branch_id", branch_id) \
                 .gte("date", start_date_str) \
                 .lte("date", end_date_str) \
                 .execute()
             for row in (res_cb.data or []):
-                cb_cc += float(row.get("cash_and_carry") or row.get("misc_fees") or 0.0)
+                cb_cc += float(row.get("cash_and_carry") or 0.0)
                 cb_lapse_ret += float(row.get("laps_returns") or 0.0)
                 cb_passbook += float(row.get("passbook") or 0.0)
                 cb_app_fee += float(row.get("app_fee") or 0.0)
                 cb_bonus += float(row.get("bonus") or 0.0)
                 cb_damage += float(row.get("credit_form_damage") or 0.0)
-                cb_f_asset += float(row.get("fund_to_asset_program") or row.get("loan_received_asset") or 0.0)
+                cb_f_asset_rec += float(row.get("loan_received_asset") or 0.0)
+                cb_f_asset_pay += float(row.get("fund_to_asset_program") or 0.0)
                 cb_f_rec_ho += float(row.get("funds_received_ho") or 0.0)
                 cb_f_rec_br += float(row.get("funds_received_other_branch") or 0.0)
                 cb_f_rec_area += float(row.get("funds_received_other_area") or 0.0)
@@ -1190,10 +1189,10 @@ class ReportService:
                 curr_data["tb_scraps_sales"] = cb_bonus
             if float(curr_data.get("tb_damages_fine") or 0.0) == 0.0 and cb_damage > 0:
                 curr_data["tb_damages_fine"] = cb_damage
-            if float(curr_data.get("fund_cash_ho_asset_receipt") or 0.0) == 0.0 and cb_f_asset > 0:
-                curr_data["fund_cash_ho_asset_receipt"] = cb_f_asset
-            if float(curr_data.get("fund_cash_ho_asset_payment") or 0.0) == 0.0 and cb_f_asset > 0:
-                curr_data["fund_cash_ho_asset_payment"] = cb_f_asset
+            if float(curr_data.get("fund_cash_ho_asset_receipt") or 0.0) == 0.0 and cb_f_asset_rec > 0:
+                curr_data["fund_cash_ho_asset_receipt"] = cb_f_asset_rec
+            if float(curr_data.get("fund_cash_ho_asset_payment") or 0.0) == 0.0 and cb_f_asset_pay > 0:
+                curr_data["fund_cash_ho_asset_payment"] = cb_f_asset_pay
             if float(curr_data.get("retained_earnings") or 0.0) == 0.0 and retained_earnings_auto > 0:
                 curr_data["retained_earnings"] = retained_earnings_auto
             if float(curr_data.get("head_office_asset_allocation") or 0.0) == 0.0 and ho_asset_alloc_auto > 0:
@@ -1231,11 +1230,11 @@ class ReportService:
             "overdue_cf": 0.0,
             "sales_profit_markup": sales_profit_markup_auto,
             "sales_cash_and_carry": cb_cc,
-            "fund_cash_ho_asset_receipt": cb_f_asset,
+            "fund_cash_ho_asset_receipt": cb_f_asset_rec,
             "fund_cash_ho_main_receipt": cb_f_rec_ho,
             "fund_cash_other_area_receipt": cb_f_rec_area,
             "fund_cash_branch_receipt": cb_f_rec_br,
-            "fund_cash_ho_asset_payment": cb_f_asset,
+            "fund_cash_ho_asset_payment": cb_f_asset_pay,
             "fund_cash_ho_main_payment": cb_f_pay_ho,
             "fund_cash_branch_payment": cb_f_pay_br,
             "deposit_withdrawal": 0.0,
@@ -1541,8 +1540,10 @@ class ReportService:
         tot_receipts = round(sum(r["amount"] for r in receipts), 2)
 
         # Preliminary payments before closing liquid position
+        # Note: Cash & Carry sales are remitted inside Fund Cash Remitted (Asset Program),
+        # so Direct Asset Costs are 0.0 when Fund to Asset Program tracks Asset remittances.
         payments = [
-            {"item": "Sales: Cash and Carry", "sub_detail": "Direct Asset Costs", "amount": sales_cc},
+            {"item": "Sales: Cash and Carry", "sub_detail": "Remitted via Asset Program", "amount": 0.0},
             {"item": "Finance Disbursed (Principal Loans)", "sub_detail": "New Credit Originations", "amount": disbursed_principal},
             {"item": "Fund Cash Remitted (Head Office & Branch)", "sub_detail": f"Asset: ₦{fund_ho_asset_pay:,.0f}, Main: ₦{fund_ho_main_pay:,.0f}, Branch: ₦{fund_br_pay:,.0f}", "amount": tot_fund_pay},
             {"item": "Deposit Withdrawals (Savings Payouts)", "sub_detail": "Savings Withdrawals Handed to Clients", "amount": deposit_wth_val},

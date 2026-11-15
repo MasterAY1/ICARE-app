@@ -13,6 +13,23 @@ from interfaces.unit_of_work import UnitOfWork
 class ClientStatusService:
     _status_cache: Dict[str, Dict[str, Any]] = {}
     _status_by_id_cache: Dict[str, Dict[str, Any]] = {}
+    ALLOWED_MANUAL_TARGETS = {"Inactive (Savings Only)", "Closed", "Suspended", "Registered"}
+
+    @classmethod
+    def validate_manual_transition(cls, current_status: Optional[str], target_status: str) -> Optional[str]:
+        """Enforces BR-CLI-004 manual status transition constraints."""
+        if target_status not in cls.ALLOWED_MANUAL_TARGETS:
+            return (
+                f"Status '{target_status}' cannot be set manually. "
+                "Manual transitions only permit Inactive (Savings Only), Closed, Suspended, or Dormant -> Registered."
+            )
+        curr_clean = str(current_status or "").strip()
+        if target_status == "Registered" and curr_clean != "Dormant":
+            return (
+                f"Transition to 'Registered' is only permitted from 'Dormant' status "
+                f"(current status: '{curr_clean or 'Unknown'}')."
+            )
+        return None
 
     @classmethod
     def get_all_statuses(cls, uow: UnitOfWork, force_refresh: bool = False) -> List[Dict[str, Any]]:
@@ -64,20 +81,41 @@ class ClientStatusService:
         Authoritative method to transition a client's lifecycle status (BR-CLI-001 & BR-CLI-007).
         Updates clients.status_id and appends an immutable record to client_status_history.
         """
+        if trigger_type == "MANUAL":
+            if not reason or not str(reason).strip():
+                raise ValueError("Reason for manual status change is required.")
+            if new_status_name not in cls.ALLOWED_MANUAL_TARGETS:
+                err_msg = cls.validate_manual_transition(None, new_status_name)
+                if err_msg:
+                    raise ValueError(err_msg)
+
         cls.get_all_statuses(uow)
         target_status = cls._status_cache.get(new_status_name)
         if not target_status:
+            if trigger_type == "MANUAL":
+                raise ValueError(f"Unknown status: {new_status_name}")
             print(f"[ClientStatusService] Unknown status: {new_status_name}")
             return False
 
         target_status_id = target_status["status_id"]
 
         # 1. Fetch current client status
+        curr_status_name = None
         try:
-            c_res = uow.client.table("clients").select("status_id").eq("client_id", client_id).execute()
+            c_res = uow.client.table("clients").select("status_id, status").eq("client_id", client_id).execute()
             old_status_id = c_res.data[0].get("status_id") if c_res.data else None
+            curr_raw = c_res.data[0].get("status") if c_res.data else None
+            if old_status_id:
+                curr_status_name = cls.resolve_status_name(uow, old_status_id)
+            if not curr_status_name or (curr_status_name == "Registered" and curr_raw and curr_raw != "Registered"):
+                curr_status_name = curr_raw
         except Exception:
             old_status_id = None
+
+        if trigger_type == "MANUAL":
+            err_msg = cls.validate_manual_transition(curr_status_name, new_status_name)
+            if err_msg:
+                raise ValueError(err_msg)
 
         if old_status_id == target_status_id:
             # Already in target status
@@ -120,31 +158,34 @@ class ClientStatusService:
             "status_note": reason or f"Transition to {new_status_name}"
         }
 
-        if defer_operations is not None:
-            # Add to atomic batch
-            defer_operations.append({
+        ops = [
+            {
                 "type": "update",
                 "table": "clients",
                 "record": client_update_record,
                 "match": {"client_id": client_id}
-            })
-            defer_operations.append({
+            },
+            {
                 "type": "insert",
                 "table": "client_status_history",
                 "record": history_record
-            })
+            }
+        ]
+
+        if defer_operations is not None:
+            # Add to atomic batch
+            defer_operations.extend(ops)
             return True
         else:
             try:
-                uow.client.table("clients").update(client_update_record).eq("client_id", client_id).execute()
-                uow.client.table("client_status_history").insert(history_record).execute()
+                uow.client.rpc("atomic_execute_operations", {"p_operations": ops}).execute()
                 return True
             except Exception as ex:
-                print(f"[ClientStatusService] Transition failed: {ex}")
+                print(f"[ClientStatusService] Atomic transition failed: {ex}")
                 return False
 
     @classmethod
-    def on_loan_submitted(cls, uow: UnitOfWork, client_id: str, loan_id: str, officer_id: Optional[str] = None):
+    def on_loan_submitted(cls, uow: UnitOfWork, client_id: str, loan_id: str, officer_id: Optional[str] = None, defer_operations: Optional[List[Dict[str, Any]]] = None):
         """
         Auto transition: Registered / Completed -> Pending Loan (BR-CLI-003.1).
         """
@@ -155,7 +196,8 @@ class ClientStatusService:
             changed_by=officer_id,
             reason="Loan application submitted",
             trigger_type="SYSTEM",
-            trigger_reference=loan_id
+            trigger_reference=loan_id,
+            defer_operations=defer_operations
         )
 
     @classmethod

@@ -77,6 +77,8 @@ class ClientDossierResponse(BaseModel):
     savings_ledger: List[Dict[str, Any]] = []
     collection_compliance: Dict[str, Any] = {}
     lifecycle_status: Dict[str, Any] = {}
+    loan_schedule: List[Dict[str, Any]] = []
+    risk_rating: Dict[str, Any] = {}
     audit_history: List[Dict[str, Any]] = []
     status_history: List[Dict[str, Any]] = []
     audit_trail: List[Dict[str, Any]] = []

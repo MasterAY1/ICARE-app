@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -43,6 +44,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   int _wizardStep = 1; // 1: Personal, 2: Business, 3: Guarantor, 4: Documents
   DateTime _regDate = DateTime.now();
   String _selectedGroupMode = 'Individual (No Group)';
+  String? _selectedGroupId;
+  bool _regDateTouched = false;
   final _newGroupNameCtrl = TextEditingController();
   final _newGroupNumberCtrl = TextEditingController();
   String _newGroupMeetingDay = 'Monday';
@@ -107,16 +110,21 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   final _financeGapFeeCtrl = TextEditingController();
 
   DateTime _appDate = DateTime.now();
+  bool _appDateTouched = false;
   final _loanAppNotesCtrl = TextEditingController();
 
   Map<String, dynamic>? _eligibilityResult;
   bool _isCheckingEligibility = false;
+  Map<String, dynamic>? _schedulePreview;
+  bool _isLoadingSchedule = false;
+  Timer? _calcDebounce;
 
   // ==========================================
   // TAB 3: PENDING DISBURSEMENTS CONTROLLERS
   // ==========================================
   String? _selectedPendingLoanId;
   DateTime _disbDate = DateTime.now();
+  bool _disbDateTouched = false;
   String? _disbSuccessNotice;
   String? _disbAdjustNotice;
 
@@ -129,8 +137,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   bool _isEditSearching = false;
 
   final _editNameCtrl = TextEditingController();
+  final _editNicknameCtrl = TextEditingController();
   final _editPhoneCtrl = TextEditingController();
   final _editAddressCtrl = TextEditingController();
+  final _editBizAddressCtrl = TextEditingController();
   String _editMarital = 'Married';
   final _editBizTypeCtrl = TextEditingController();
   final _editIncomeCtrl = TextEditingController();
@@ -139,6 +149,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   final _editIdNumberCtrl = TextEditingController();
 
   final _editGuarNameCtrl = TextEditingController();
+  final _editGuarNicknameCtrl = TextEditingController();
   final _editGuarPhoneCtrl = TextEditingController();
   final _editGuarAddressCtrl = TextEditingController();
   String _editGuarMarital = 'Married';
@@ -152,10 +163,32 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   void initState() {
     super.initState();
     _recomputeFinanceGapDefault();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadBranchBusinessDate());
+  }
+
+  Future<void> _loadBranchBusinessDate() async {
+    try {
+      final api = ref.read(coApiServiceProvider);
+      final res = await api.getOriginationBusinessDate();
+      final raw = res['business_date']?.toString();
+      if (raw != null && raw.isNotEmpty) {
+        final parsed = DateTime.tryParse(raw);
+        if (parsed != null && mounted) {
+          setState(() {
+            if (!_regDateTouched) _regDate = parsed;
+            if (!_appDateTouched) _appDate = parsed;
+            if (!_disbDateTouched) _disbDate = parsed;
+          });
+        }
+      }
+    } catch (_) {
+      // Non-fatal fallback keeps local date
+    }
   }
 
   @override
   void dispose() {
+    _calcDebounce?.cancel();
     _newGroupNameCtrl.dispose();
     _newGroupNumberCtrl.dispose();
     _clientNameCtrl.dispose();
@@ -183,13 +216,16 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     _loanAppNotesCtrl.dispose();
     _editSearchCtrl.dispose();
     _editNameCtrl.dispose();
+    _editNicknameCtrl.dispose();
     _editPhoneCtrl.dispose();
     _editAddressCtrl.dispose();
+    _editBizAddressCtrl.dispose();
     _editBizTypeCtrl.dispose();
     _editIncomeCtrl.dispose();
     _editObligationsCtrl.dispose();
     _editIdNumberCtrl.dispose();
     _editGuarNameCtrl.dispose();
+    _editGuarNicknameCtrl.dispose();
     _editGuarPhoneCtrl.dispose();
     _editGuarAddressCtrl.dispose();
     _editGuarOccupationCtrl.dispose();
@@ -231,6 +267,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   }
 
   void _recomputeFinanceGapDefault() {
+    if (_loanAppCategory == 'Asset' || _loanAppProduct.contains('Cash and Carry')) {
+      _financeGapFeeCtrl.clear();
+      return;
+    }
     final req = _currentAmount;
     final dur = _currentDuration;
     if (req <= 0 || dur <= 0) {
@@ -238,14 +278,13 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       return;
     }
     final rawVal = req / dur;
-    final roundStep = 50.0;
+    final roundStep = _currentCycle == 'Months' ? 100.0 : 50.0;
     if (rawVal % 1 != 0) {
       double loanRepay = (rawVal / roundStep).floor() * roundStep;
       double defGap = 0.0;
       while (true) {
         final gap = req - (loanRepay * dur);
-        bool isValid = gap >= 0;
-        if (isValid) {
+        if (gap >= 0) {
           defGap = gap;
           break;
         }
@@ -329,10 +368,11 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         'other_obligations': _clientObligationsCtrl.text.trim().isEmpty ? null : _clientObligationsCtrl.text.trim(),
         'id_means': _selectedIdMeans,
         'id_number': _clientIdNumberCtrl.text.trim().isEmpty ? null : _clientIdNumberCtrl.text.trim(),
-        'id_card_url': _idDocUrl ?? (_idDocFileName != null ? 'https://storage/client-ids/$_idDocFileName' : null),
-        'passport_url': _passportUrl ?? (_passportFileName != null ? 'https://storage/client-ids/$_passportFileName' : null),
-        'guarantor_id_card_url': _guarIdDocUrl ?? (_guarIdDocFileName != null ? 'https://storage/client-ids/$_guarIdDocFileName' : null),
-        'guarantor_passport_url': _guarPassportUrl ?? (_guarPassportFileName != null ? 'https://storage/client-ids/$_guarPassportFileName' : null),
+        'id_card_url': _idDocUrl,
+        'passport_url': _passportUrl,
+        'guarantor_id_card_url': _guarIdDocUrl,
+        'guarantor_passport_url': _guarPassportUrl,
+        'group_id': _selectedGroupId,
         'group_mode': _selectedGroupMode,
         'new_group_name': _newGroupNameCtrl.text.trim().isEmpty ? null : _newGroupNameCtrl.text.trim(),
         'new_group_number': _newGroupNumberCtrl.text.trim().isEmpty ? null : _newGroupNumberCtrl.text.trim(),
@@ -353,7 +393,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       });
 
       setState(() {
-        _flashMessage = res['message'] ?? 'Successfully registered **$name**! Assigned Client ID: **${res['client_code']}**';
+        final rawMsg = res['message']?.toString() ?? 'Successfully registered $name! Assigned Client ID: ${res['client_code']}';
+        _flashMessage = rawMsg.replaceAll('**', '');
+        _selectedGroupMode = 'Individual (No Group)';
+        _selectedGroupId = null;
         _clientNameCtrl.clear();
         _clientNicknameCtrl.clear();
         _clientPhoneCtrl.clear();
@@ -387,11 +430,13 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       ref.invalidate(originationGroupsProvider);
 
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Registration failed: $e'), backgroundColor: Colors.red),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
+        );
+      }
     } finally {
-      setState(() => _isSubmitting = false);
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -408,11 +453,13 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         _appSearchResults = results;
       });
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Search failed: $e'), backgroundColor: Colors.red),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
+        );
+      }
     } finally {
-      setState(() => _isAppSearching = false);
+      if (mounted) setState(() => _isAppSearching = false);
     }
   }
 
@@ -420,21 +467,46 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     try {
       final api = ref.read(coApiServiceProvider);
       final details = await api.getClientOriginationDetails(clientId);
+      if (!mounted) return;
       setState(() {
         _selectedAppClient = details;
         _eligibilityResult = null;
+        _schedulePreview = null;
       });
-      _runEligibilityCheck(clientId);
+      _scheduleRefreshCalculations(immediate: true);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load client details: $e'), backgroundColor: Colors.red),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
+        );
+      }
     }
+  }
+
+  void _scheduleRefreshCalculations({bool immediate = false}) {
+    _calcDebounce?.cancel();
+    if (immediate) {
+      if (_selectedAppClient != null) {
+        _runEligibilityCheck(_selectedAppClient!['client_id'].toString());
+      }
+      _loadSchedulePreview();
+      return;
+    }
+    _calcDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      if (_selectedAppClient != null) {
+        _runEligibilityCheck(_selectedAppClient!['client_id'].toString());
+      }
+      _loadSchedulePreview();
+    });
   }
 
   Future<void> _runEligibilityCheck(String clientId) async {
     final amt = _currentAmount;
-    if (amt <= 0) return;
+    if (amt <= 0) {
+      setState(() => _eligibilityResult = null);
+      return;
+    }
     setState(() => _isCheckingEligibility = true);
     try {
       final api = ref.read(coApiServiceProvider);
@@ -444,11 +516,44 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         'product_type': _loanAppProduct,
         'product_category': _loanAppCategory,
       });
-      setState(() => _eligibilityResult = res);
+      if (mounted) setState(() => _eligibilityResult = res);
     } catch (_) {
       // Non-fatal
     } finally {
-      setState(() => _isCheckingEligibility = false);
+      if (mounted) setState(() => _isCheckingEligibility = false);
+    }
+  }
+
+  Future<void> _loadSchedulePreview() async {
+    final amt = _currentAmount;
+    if (amt <= 0) {
+      setState(() => _schedulePreview = null);
+      return;
+    }
+    setState(() => _isLoadingSchedule = true);
+    try {
+      final api = ref.read(coApiServiceProvider);
+      final cashDp = double.tryParse(_assetCashDpCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+      final savDp = double.tryParse(_assetSavDpCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+      final gapFee = _loanAppCategory == 'Asset'
+          ? 0.0
+          : (double.tryParse(_financeGapFeeCtrl.text.replaceAll(',', '').trim()) ?? 0.0);
+      final res = await api.previewLoanSchedule({
+        'product_category': _loanAppCategory,
+        'product_type': _loanAppProduct,
+        'requested_amount': amt,
+        'downpayment_mode': _assetDpMode,
+        'cash_downpayment': cashDp,
+        'savings_downpayment': savDp,
+        'gap_fee': gapFee,
+        'application_date': _appDate.toIsoformatDate(),
+        if (_selectedAppClient != null) 'client_id': _selectedAppClient!['client_id'],
+      });
+      if (mounted) setState(() => _schedulePreview = res);
+    } catch (_) {
+      // Non-fatal
+    } finally {
+      if (mounted) setState(() => _isLoadingSchedule = false);
     }
   }
 
@@ -456,6 +561,15 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     if (_selectedAppClient == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a registered client.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    if (_eligibilityResult != null && _eligibilityResult!['is_eligible'] == false) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Client does not meet eligibility rules for this loan request.'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -470,7 +584,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     final savBal = (_selectedAppClient!['savings_balance'] as num?)?.toDouble() ?? 0.0;
     final cashDp = double.tryParse(_assetCashDpCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
     final savDp = double.tryParse(_assetSavDpCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
-    final gapFee = double.tryParse(_financeGapFeeCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+    final rawGap = double.tryParse(_financeGapFeeCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+    final isCashAndCarry = _loanAppProduct.contains('Cash and Carry');
+    final gapFee = (_loanAppCategory == 'Asset' || isCashAndCarry) ? 0.0 : rawGap;
 
     if (_loanAppCategory == 'Asset') {
       if (savDp > 0 && savBal < savDp) {
@@ -481,7 +597,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       }
     } else {
       final interest = amt * _currentRate;
-      final totalUpfront = interest + gapFee;
+      final totalUpfront = isCashAndCarry ? 0.0 : (interest + gapFee);
       if (totalUpfront > 0 && savBal < totalUpfront) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Cannot submit! Insufficient savings (Available: ${CurrencyFormatter.formatNaira(savBal)}, Required: ${CurrencyFormatter.formatNaira(totalUpfront)}).'), backgroundColor: Colors.red),
@@ -507,8 +623,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       });
 
       setState(() {
-        _flashMessage = 'Application submitted successfully! Repayment schedule generated and loan is Pending BM Approval.';
+        _flashMessage = 'Application submitted successfully! Repayment schedule generated and loan is Pending Approval.';
         _selectedAppClient = null;
+        _eligibilityResult = null;
+        _schedulePreview = null;
         _appSearchCtrl.clear();
         _appSearchResults = [];
       });
@@ -517,11 +635,13 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       ref.read(loanOriginationTabProvider.notifier).state = 'Pending Disbursements';
       ref.invalidate(pendingDisbursementsProvider);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to submit application: $e'), backgroundColor: Colors.red),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
+        );
+      }
     } finally {
-      setState(() => _isSubmitting = false);
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -555,11 +675,13 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       });
       ref.invalidate(pendingDisbursementsProvider);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to activate loan: $e'), backgroundColor: Colors.red),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
+        );
+      }
     } finally {
-      setState(() => _isSubmitting = false);
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -574,11 +696,13 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       final results = await api.searchClientsForOrigination(query.trim());
       setState(() => _editSearchResults = results);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Search failed: $e'), backgroundColor: Colors.red),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
+        );
+      }
     } finally {
-      setState(() => _isEditSearching = false);
+      if (mounted) setState(() => _isEditSearching = false);
     }
   }
 
@@ -589,8 +713,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       setState(() {
         _selectedEditClient = details;
         _editNameCtrl.text = details['name']?.toString() ?? '';
+        _editNicknameCtrl.text = details['nickname']?.toString() ?? '';
         _editPhoneCtrl.text = details['phone']?.toString() ?? '';
         _editAddressCtrl.text = details['address']?.toString() ?? '';
+        _editBizAddressCtrl.text = details['business_address']?.toString() ?? '';
         _editMarital = details['marital_status']?.toString() ?? 'Married';
         _editBizTypeCtrl.text = details['business_type']?.toString() ?? 'Trader';
         _editIncomeCtrl.text = ((details['average_monthly_income'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(0);
@@ -601,6 +727,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         final g = details['guarantor'] as Map<String, dynamic>?;
         if (g != null) {
           _editGuarNameCtrl.text = g['full_name']?.toString() ?? '';
+          _editGuarNicknameCtrl.text = g['nickname']?.toString() ?? '';
           _editGuarPhoneCtrl.text = g['phone']?.toString() ?? '';
           _editGuarAddressCtrl.text = g['address']?.toString() ?? '';
           _editGuarMarital = g['marital_status']?.toString() ?? 'Married';
@@ -611,6 +738,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
           _editGuarIdNumberCtrl.text = g['id_number']?.toString() ?? '';
         } else {
           _editGuarNameCtrl.clear();
+          _editGuarNicknameCtrl.clear();
           _editGuarPhoneCtrl.clear();
           _editGuarAddressCtrl.clear();
           _editGuarOccupationCtrl.clear();
@@ -620,9 +748,11 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         }
       });
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load client profile: $e'), backgroundColor: Colors.red),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -643,8 +773,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         _selectedEditClient!['client_id'],
         {
           'name': name,
+          'nickname': _editNicknameCtrl.text.trim(),
           'phone': _editPhoneCtrl.text.trim(),
           'address': _editAddressCtrl.text.trim(),
+          'business_address': _editBizAddressCtrl.text.trim(),
           'marital_status': _editMarital,
           'business_type': _editBizTypeCtrl.text.trim(),
           'average_monthly_income': double.tryParse(_editIncomeCtrl.text.trim()) ?? 0.0,
@@ -652,6 +784,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
           'id_means': _editIdMeans,
           'id_number': _editIdNumberCtrl.text.trim(),
           'guarantor_name': _editGuarNameCtrl.text.trim(),
+          'guarantor_nickname': _editGuarNicknameCtrl.text.trim(),
           'guarantor_phone': _editGuarPhoneCtrl.text.trim(),
           'guarantor_address': _editGuarAddressCtrl.text.trim(),
           'guarantor_marital_status': _editGuarMarital,
@@ -993,22 +1126,34 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
           // SINGLE CLIENT REGISTRATION MODE (app.py L3343-3630)
           groupsAsync.when(
             loading: () => const LinearProgressIndicator(),
-            error: (err, _) => Text('Error loading groups: $err', style: const TextStyle(color: Colors.red, fontSize: 12)),
+            error: (err, _) => Text('Error loading groups: ${AppErrorDetails.from(err).message}', style: const TextStyle(color: Colors.red, fontSize: 12)),
             data: (grpList) {
-              final options = [
-                'Individual (No Group)',
-                '+ Create New Group',
-                ...grpList.map((g) => g['display_label']?.toString() ?? g['name']?.toString() ?? ''),
+              final itemEntries = <Map<String, String?>>[
+                {'key': 'Individual (No Group)', 'label': 'Individual (No Group)', 'group_id': null},
+                {'key': '+ Create New Group', 'label': '+ Create New Group', 'group_id': null},
+                ...grpList.map((g) {
+                  final gid = g['group_id']?.toString();
+                  final label = g['display_label']?.toString() ?? g['name']?.toString() ?? '';
+                  return {
+                    'key': gid != null && gid.isNotEmpty ? 'group:$gid' : label,
+                    'label': label,
+                    'group_id': gid,
+                  };
+                }),
               ];
-              final effectiveVal = options.contains(_selectedGroupMode) ? _selectedGroupMode : 'Individual (No Group)';
+
+              final currentKey = _selectedGroupId != null && itemEntries.any((e) => e['key'] == 'group:$_selectedGroupId')
+                  ? 'group:$_selectedGroupId'
+                  : (itemEntries.any((e) => e['key'] == _selectedGroupMode) ? _selectedGroupMode : 'Individual (No Group)');
 
               // Find selected group data
               Map<String, dynamic>? selectedGroupData;
-              for (final g in grpList) {
-                final label = g['display_label']?.toString() ?? g['name']?.toString() ?? '';
-                if (label == effectiveVal) {
-                  selectedGroupData = g as Map<String, dynamic>;
-                  break;
+              if (_selectedGroupId != null) {
+                for (final g in grpList) {
+                  if (g['group_id']?.toString() == _selectedGroupId) {
+                    selectedGroupData = g as Map<String, dynamic>;
+                    break;
+                  }
                 }
               }
 
@@ -1017,34 +1162,40 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 children: [
                   DropdownButtonFormField<String>(
                     isExpanded: true,
-                    value: effectiveVal,
+                    value: currentKey,
                     decoration: const InputDecoration(
                       labelText: 'Assign to Group',
                       border: OutlineInputBorder(),
                       contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     ),
                     selectedItemBuilder: (BuildContext context) {
-                      return options.map<Widget>((opt) {
+                      return itemEntries.map<Widget>((opt) {
                         return Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            opt,
+                            opt['label'] ?? '',
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),
                         );
                       }).toList();
                     },
-                    items: options.map((opt) => DropdownMenuItem(
-                      value: opt,
+                    items: itemEntries.map((opt) => DropdownMenuItem<String>(
+                      value: opt['key'],
                       child: Text(
-                        opt,
+                        opt['label'] ?? '',
                         overflow: TextOverflow.ellipsis,
                         maxLines: 1,
                       ),
                     )).toList(),
                     onChanged: (val) {
-                      if (val != null) setState(() => _selectedGroupMode = val);
+                      if (val != null) {
+                        final matched = itemEntries.firstWhere((e) => e['key'] == val, orElse: () => itemEntries.first);
+                        setState(() {
+                          _selectedGroupId = matched['group_id'];
+                          _selectedGroupMode = matched['label'] ?? 'Individual (No Group)';
+                        });
+                      }
                     },
                   ),
 
@@ -1233,7 +1384,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         firstDate: DateTime(2020),
                         lastDate: DateTime(2035),
                       );
-                      if (picked != null) setState(() => _regDate = picked);
+                      if (picked != null) setState(() {
+                        _regDate = picked;
+                        _regDateTouched = true;
+                      });
                     },
                     child: InputDecorator(
                       decoration: const InputDecoration(
@@ -1895,6 +2049,36 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                               : (allowedTypesText.contains('PDF') ? 'image/*,application/pdf' : 'image/*');
                           final picked = await pickBrowserFile(accept: accept);
                           if (picked != null) {
+                            final ext = picked.fileName.contains('.')
+                                ? picked.fileName.split('.').last.toLowerCase()
+                                : '';
+                            final allowed = allowedTypesText.contains('XLSX')
+                                ? {'xlsx', 'xls'}
+                                : (allowedTypesText.contains('PDF')
+                                    ? {'jpg', 'jpeg', 'png', 'webp', 'jfif', 'pdf'}
+                                    : {'jpg', 'jpeg', 'png', 'webp', 'jfif'});
+                            if (!allowed.contains(ext)) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Unsupported file format ".$ext". Allowed: $allowedTypesText'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+                            if (picked.bytes.length > 10 * 1024 * 1024) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('File exceeds the 10 MB maximum upload limit.'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                              return;
+                            }
                             setState(() => _uploadingState[category] = true);
                             try {
                               final api = ref.read(coApiServiceProvider);
@@ -1913,7 +2097,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             } catch (e) {
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Upload failed: $e'), backgroundColor: Colors.red),
+                                  SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
                                 );
                               }
                             } finally {
@@ -2369,9 +2553,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                               }
                             });
                             _recomputeFinanceGapDefault();
-                            if (_selectedAppClient != null) {
-                              _runEligibilityCheck(_selectedAppClient!['client_id']);
-                            }
+                            _scheduleRefreshCalculations(immediate: true);
                           },
                     borderRadius: BorderRadius.circular(8),
                     child: Opacity(
@@ -2412,10 +2594,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                                 _loanAppProduct = assetProducts.first;
                               }
                             });
+                            _financeGapFeeCtrl.clear();
                             _recomputeFinanceGapDefault();
-                            if (_selectedAppClient != null) {
-                              _runEligibilityCheck(_selectedAppClient!['client_id']);
-                            }
+                            _scheduleRefreshCalculations(immediate: true);
                           },
                     borderRadius: BorderRadius.circular(8),
                     child: Opacity(
@@ -2469,9 +2650,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     if (val != null) {
                       setState(() => _loanAppProduct = val);
                       _recomputeFinanceGapDefault();
-                      if (_selectedAppClient != null) {
-                        _runEligibilityCheck(_selectedAppClient!['client_id']);
-                      }
+                      _scheduleRefreshCalculations(immediate: true);
                     }
                   },
                 ),
@@ -2487,6 +2666,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   onChanged: (_) {
                     setState(() {});
                     _recomputeFinanceGapDefault();
+                    _scheduleRefreshCalculations();
                   },
                 ),
               ],
@@ -2606,13 +2786,19 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       controller: _assetCashDpCtrl,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: 'Cash Downpayment (₦)', hintText: '0', prefixText: '₦ ', border: OutlineInputBorder()),
-                      onChanged: (_) => setState(() {}),
+                      onChanged: (_) {
+                        setState(() {});
+                        _scheduleRefreshCalculations();
+                      },
                     ),
                     TextField(
                       controller: _assetSavDpCtrl,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: 'Savings Downpayment (₦)', hintText: '0', prefixText: '₦ ', border: OutlineInputBorder()),
-                      onChanged: (_) => setState(() {}),
+                      onChanged: (_) {
+                        setState(() {});
+                        _scheduleRefreshCalculations();
+                      },
                     ),
                   ],
                 )
@@ -2621,14 +2807,20 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   controller: _assetCashDpCtrl,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(labelText: 'Cash Downpayment (₦)', hintText: '0', prefixText: '₦ ', border: OutlineInputBorder()),
-                  onChanged: (_) => setState(() {}),
+                  onChanged: (_) {
+                    setState(() {});
+                    _scheduleRefreshCalculations();
+                  },
                 )
               else
                 TextField(
                   controller: _assetSavDpCtrl,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(labelText: 'Savings Downpayment (₦)', hintText: '0', prefixText: '₦ ', border: OutlineInputBorder()),
-                  onChanged: (_) => setState(() {}),
+                  onChanged: (_) {
+                    setState(() {});
+                    _scheduleRefreshCalculations();
+                  },
                 ),
               const SizedBox(height: 14),
 
@@ -2732,7 +2924,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   helperText: 'Subtracted from principal and posted into base savings fund',
                   border: OutlineInputBorder(),
                 ),
-                onChanged: (_) => setState(() {}),
+                onChanged: (_) {
+                  setState(() {});
+                  _scheduleRefreshCalculations();
+                },
               ),
               const SizedBox(height: 14),
 
@@ -2827,6 +3022,14 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               ],
             ],
 
+            if (_isLoadingSchedule) ...[
+              const SizedBox(height: 14),
+              const LinearProgressIndicator(),
+            ] else if (_schedulePreview != null && _currentAmount > 0) ...[
+              const SizedBox(height: 14),
+              _buildSchedulePreviewCard(_schedulePreview!),
+            ],
+
             const SizedBox(height: 18),
 
             // Section 3: Date & Notes
@@ -2840,7 +3043,13 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       firstDate: DateTime(2020),
                       lastDate: DateTime(2035),
                     );
-                    if (picked != null) setState(() => _appDate = picked);
+                    if (picked != null) {
+                      setState(() {
+                        _appDate = picked;
+                        _appDateTouched = true;
+                      });
+                      _scheduleRefreshCalculations(immediate: true);
+                    }
                   },
                   child: InputDecorator(
                     decoration: const InputDecoration(
@@ -2864,7 +3073,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               width: double.infinity,
               height: 48,
               child: ElevatedButton.icon(
-                onPressed: _isSubmitting ? null : _handleSubmitLoanApplication,
+                onPressed: (_isSubmitting || (_eligibilityResult != null && _eligibilityResult!['is_eligible'] == false))
+                    ? null
+                    : _handleSubmitLoanApplication,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF065F46),
                   foregroundColor: Colors.white,
@@ -2874,7 +3085,12 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 icon: _isSubmitting
                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                     : const Icon(Icons.send_outlined, size: 18),
-                label: const Text('Submit Application for BM Approval', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                label: Text(
+                  (_eligibilityResult != null && _eligibilityResult!['is_eligible'] == false)
+                      ? 'Client Not Eligible — Review Criteria Above'
+                      : 'Submit Application for Approval',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                ),
               ),
             ),
           ],
@@ -2966,7 +3182,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             error: (err, _) => Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(6)),
-              child: Text('Error loading pending loans: $err', style: const TextStyle(color: Color(0xFF991B1B), fontSize: 13)),
+              child: Text('Error loading pending loans: ${AppErrorDetails.from(err).message}', style: const TextStyle(color: Color(0xFF991B1B), fontSize: 13)),
             ),
             data: (data) {
               final loans = (data['pending_loans'] as List<dynamic>?) ?? [];
@@ -3065,10 +3281,11 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         final cName = l['client_name']?.toString() ?? '';
                         final prod = l['loan_product']?.toString() ?? '';
                         final amt = (l['loan_amount'] as num?)?.toDouble() ?? 0.0;
+                        final amOnly = l['exceeds_bm_limit'] == true;
                         return DropdownMenuItem(
                           value: lid,
                           child: Text(
-                            '$cName — $prod (${CurrencyFormatter.formatNaira(amt)})',
+                            '$cName — $prod (${CurrencyFormatter.formatNaira(amt)})${amOnly ? ' [Area Manager Approval Required]' : ''}',
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),
@@ -3078,6 +3295,24 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     ),
                     const SizedBox(height: 12),
 
+                    if (_selectedPendingLoanId != null &&
+                        loans.any((l) => l['loan_id']?.toString() == _selectedPendingLoanId && l['exceeds_bm_limit'] == true)) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFFBEB),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: const Text(
+                          'Escalation Notice: This loan exceeds the Branch Manager authorization limit (₦300,000) and requires Area Manager approval.',
+                          style: TextStyle(color: Color(0xFF92400E), fontWeight: FontWeight.w600, fontSize: 12.5),
+                        ),
+                      ),
+                    ],
+
                     InkWell(
                       onTap: () async {
                         final picked = await showDatePicker(
@@ -3086,7 +3321,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           firstDate: DateTime(2020),
                           lastDate: DateTime(2035),
                         );
-                        if (picked != null) setState(() => _disbDate = picked);
+                        if (picked != null) setState(() {
+                          _disbDate = picked;
+                          _disbDateTouched = true;
+                        });
                       },
                       child: InputDecorator(
                         decoration: const InputDecoration(
@@ -3103,7 +3341,11 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       width: double.infinity,
                       height: 48,
                       child: ElevatedButton(
-                        onPressed: _isSubmitting || _selectedPendingLoanId == null ? null : _handleAuthorizeDisbursement,
+                        onPressed: (_isSubmitting ||
+                                _selectedPendingLoanId == null ||
+                                loans.any((l) => l['loan_id']?.toString() == _selectedPendingLoanId && l['exceeds_bm_limit'] == true))
+                            ? null
+                            : _handleAuthorizeDisbursement,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF065F46),
                           foregroundColor: Colors.white,
@@ -3230,8 +3472,15 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             _buildResponsiveInputRow(
               children: [
                 TextField(controller: _editNameCtrl, decoration: const InputDecoration(labelText: 'Full Name *', border: OutlineInputBorder())),
+                TextField(controller: _editNicknameCtrl, decoration: const InputDecoration(labelText: 'Nickname', border: OutlineInputBorder())),
                 TextField(controller: _editPhoneCtrl, decoration: const InputDecoration(labelText: 'Phone Number', border: OutlineInputBorder())),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _buildResponsiveInputRow(
+              children: [
                 TextField(controller: _editAddressCtrl, decoration: const InputDecoration(labelText: 'Home Address', border: OutlineInputBorder())),
+                TextField(controller: _editBizAddressCtrl, decoration: const InputDecoration(labelText: 'Business / Shop Address', border: OutlineInputBorder())),
               ],
             ),
             const SizedBox(height: 12),
@@ -3282,10 +3531,12 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             _buildResponsiveInputRow(
               children: [
                 TextField(controller: _editGuarNameCtrl, decoration: const InputDecoration(labelText: 'Guarantor Full Name', border: OutlineInputBorder())),
+                TextField(controller: _editGuarNicknameCtrl, decoration: const InputDecoration(labelText: 'Guarantor Nickname', border: OutlineInputBorder())),
                 TextField(controller: _editGuarPhoneCtrl, decoration: const InputDecoration(labelText: 'Guarantor Phone Number', border: OutlineInputBorder())),
-                TextField(controller: _editGuarAddressCtrl, decoration: const InputDecoration(labelText: 'Guarantor Home Address', border: OutlineInputBorder())),
               ],
             ),
+            const SizedBox(height: 12),
+            TextField(controller: _editGuarAddressCtrl, decoration: const InputDecoration(labelText: 'Guarantor Home Address', border: OutlineInputBorder())),
             const SizedBox(height: 12),
 
             _buildResponsiveInputRow(
@@ -3341,6 +3592,103 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                     : const Text('Save Client & Guarantor Updates', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
               ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSchedulePreviewCard(Map<String, dynamic> preview) {
+    final installments = (preview['installments'] as List<dynamic>?) ?? [];
+    final firstDue = preview['first_due_date']?.toString() ?? '-';
+    final endDue = preview['expected_end_date']?.toString() ?? '-';
+    final dur = preview['duration']?.toString() ?? '${installments.length}';
+    final freq = preview['frequency']?.toString() ?? '';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Repayment Schedule Preview',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: Color(0xFF0F172A)),
+              ),
+              Text(
+                '$dur installments · $freq',
+                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF065F46)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 16,
+            runSpacing: 6,
+            children: [
+              Text('First Repayment Date: $firstDue', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+              Text('Expected Maturity Date: $endDue', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+            ],
+          ),
+          if (installments.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(top: 6),
+              title: Text(
+                'View All ${installments.length} Projected Due Dates',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
+              ),
+              children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 220),
+                  child: SingleChildScrollView(
+                    child: Table(
+                      columnWidths: const {
+                        0: FlexColumnWidth(0.7),
+                        1: FlexColumnWidth(1.5),
+                        2: FlexColumnWidth(1.3),
+                      },
+                      border: TableBorder.all(color: const Color(0xFFE2E8F0)),
+                      children: [
+                        const TableRow(
+                          decoration: BoxDecoration(color: Color(0xFFF1F5F9)),
+                          children: [
+                            Padding(padding: EdgeInsets.all(6), child: Text('#', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11))),
+                            Padding(padding: EdgeInsets.all(6), child: Text('Due Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11))),
+                            Padding(padding: EdgeInsets.all(6), child: Text('Installment', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11))),
+                          ],
+                        ),
+                        ...installments.map((item) {
+                          final row = item as Map<String, dynamic>;
+                          return TableRow(
+                            children: [
+                              Padding(padding: const EdgeInsets.all(6), child: Text('${row['installment_number']}', style: const TextStyle(fontSize: 11))),
+                              Padding(padding: const EdgeInsets.all(6), child: Text('${row['due_date']}', style: const TextStyle(fontSize: 11))),
+                              Padding(
+                                padding: const EdgeInsets.all(6),
+                                child: Text(
+                                  CurrencyFormatter.formatNaira((row['total_due'] as num?)?.toDouble() ?? 0.0),
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ],
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ],

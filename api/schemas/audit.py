@@ -160,3 +160,18 @@ class ReconciliationRepairResponse(BaseModel):
     rebuilt_officer_count: int
     master_cashbook_rebuilt: bool
     verification_after_repair: Integrity6WayResponse
+
+
+class WithdrawalAuditSummary(BaseModel):
+    total_requests: int
+    pending_count: int
+    approved_count: int
+    rejected_count: int
+    approved_amount: float
+    pending_amount: float
+
+
+class WithdrawalAuditResponse(BaseModel):
+    summary: WithdrawalAuditSummary
+    requests: List[Dict[str, Any]] = Field(default_factory=list)
+    audit_events: List[Dict[str, Any]] = Field(default_factory=list)

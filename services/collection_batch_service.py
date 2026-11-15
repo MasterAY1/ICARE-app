@@ -74,6 +74,15 @@ def is_valid_uuid(val: Any) -> bool:
         return False
 
 
+def _strip_client_suffix(raw_cid: Any) -> str:
+    """Strips synthetic sheet suffixes (-ASSET, -L2, -L3, etc.) from a client identifier."""
+    s = str(raw_cid or '').strip()
+    if s.endswith('-ASSET'):
+        s = s[:-6]
+    s = re.sub(r'-L\d+$', '', s)
+    return s.strip()
+
+
 def save_repayment(
     data: Dict[str, Any],
     override_uow: Optional[SupabaseUnitOfWork] = None,
@@ -81,12 +90,15 @@ def save_repayment(
     loan_cache: Optional[Dict[Any, str]] = None,
     skip_repayment: bool = False,
     skip_savings: bool = False,
+    skip_misc: bool = False,
+    skip_fees: bool = False,
     known_exists: Optional[bool] = None,
     loan_data_cache: Optional[Dict[str, Dict[str, Any]]] = None,
     repayments_cache: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     schedule_cache: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     default_user: Optional[str] = None,
-    default_branch: Optional[str] = None
+    default_branch: Optional[str] = None,
+    allow_closed_date: bool = False,
 ) -> None:
     """
     Save repayment and route savings to respective buckets with idempotency skip support
@@ -130,10 +142,10 @@ def save_repayment(
 
             client_id = db_data.get('client_id', '')
 
-            # Resolve client_code to database UUID if it's not a UUID and not a group/global code
-            resolved_client_id = client_id
-            clean_client_code = str(client_id).replace('-ASSET', '').strip()
-            if client_id and not is_valid_uuid(client_id) and not str(client_id).startswith('GROUP-') and not str(client_id).startswith('GLOBAL-'):
+            # Resolve client_code or suffixed UUID (-ASSET / -L2) to canonical client UUID
+            clean_client_code = _strip_client_suffix(client_id)
+            resolved_client_id = clean_client_code if is_valid_uuid(clean_client_code) else client_id
+            if client_id and not is_valid_uuid(resolved_client_id) and not str(client_id).startswith('GROUP-') and not str(client_id).startswith('GLOBAL-'):
                 if client_cache and clean_client_code in client_cache:
                     resolved_client_id = client_cache[clean_client_code]
                 elif client_cache and str(client_id).strip() in client_cache:
@@ -223,7 +235,8 @@ def save_repayment(
                     posting_date=p_date,
                     group_id=g_id_val,
                     group_savings_id=sav_id_val,
-                    idempotency_key=sav_idem_key
+                    idempotency_key=sav_idem_key,
+                    allow_closed_date=allow_closed_date
                 )
                 return
 
@@ -241,6 +254,11 @@ def save_repayment(
                 )
                 return
 
+            # Accumulate all member-level operations (savings, repayment, schedule, status, payoff/overdue, misc, fees, assets, bank, expenses)
+            # into a SINGLE atomic_execute_operations RPC call.
+            member_ops: List[Dict[str, Any]] = []
+            cp_record_args: Optional[Dict[str, Any]] = None
+
             # 3. Route Individual Savings
             if not skip_savings and (savings_dep > 0 or savings_wd > 0):
                 sav_id_val = data.get('savings_tx_id') or data.get('tx_id')
@@ -256,7 +274,9 @@ def save_repayment(
                     remarks=db_data.get('note'),
                     posting_date=p_date,
                     savings_id=sav_id_val,
-                    idempotency_key=sav_idem_key
+                    idempotency_key=sav_idem_key,
+                    defer_operations=member_ops,
+                    allow_closed_date=allow_closed_date
                 )
 
             # 4. Route Loan Repayment (including explicit NOT_PAID / 0 collection records)
@@ -330,44 +350,56 @@ def save_repayment(
                 try:
                     l_data = loan_data_cache.get(active_loan_id) if loan_data_cache else None
                     r_data = repayments_cache.get(active_loan_id) if repayments_cache else None
-                    RepaymentService.post_repayment(
-                        uow,
-                        rep,
-                        known_exists=known_exists,
-                        preloaded_loan=l_data,
-                        preloaded_repayments=r_data
-                    )
-                except Exception as re:
-                    logger.error(f"[ERROR] Error inserting repayment for {client_id}: {re}")
-                    raise re
+                    try:
+                        RepaymentService.post_repayment(
+                            uow,
+                            rep,
+                            known_exists=known_exists,
+                            preloaded_loan=l_data,
+                            preloaded_repayments=r_data,
+                            allow_closed_date=allow_closed_date,
+                            include_extra_fields=False,
+                            defer_operations=member_ops
+                        )
+                    except TypeError:
+                        RepaymentService.post_repayment(
+                            uow,
+                            rep,
+                            known_exists=known_exists,
+                            preloaded_loan=l_data,
+                            preloaded_repayments=r_data
+                        )
+                except Exception as re_err:
+                    logger.error(f"[ERROR] Error inserting repayment for {client_id}: {re_err}")
+                    raise re_err
 
                 if active_loan_id and loan_repay > 0:
                     sch_rows = schedule_cache.get(active_loan_id) if schedule_cache else None
                     try:
-                        ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date, cached_schedule_rows=sch_rows)
+                        ScheduleService.record_repayment(
+                            uow, active_loan_id, loan_repay, p_date,
+                            cached_schedule_rows=sch_rows,
+                            defer_operations=member_ops
+                        )
                     except TypeError:
                         ScheduleService.record_repayment(uow, active_loan_id, loan_repay, p_date)
 
-                try:
-                    off_id = FinancialPostingEngine._resolve_officer_id(uow, officer)
-                    CollectionPerformanceService.record_meeting_collection(
-                        uow=uow,
-                        client_id=client_id,
-                        loan_id=active_loan_id or client_id,
-                        officer_id=off_id or str(uuid.uuid4()),
-                        meeting_date=p_date,
-                        expected_amount=exp_amt,
-                        amount_paid=loan_repay,
-                        remarks=db_data.get('note') or ("Marked as NOT PAID today" if is_marked_not_paid else "Meeting collection repayment")
-                    )
-                except Exception as ex_cp_rec:
-                    logger.info(f"[COLLECTION PERFORMANCE RECORD NOTE]: {ex_cp_rec}")
+                off_id = FinancialPostingEngine._resolve_officer_id(uow, officer)
+                cp_record_args = {
+                    "uow": uow,
+                    "client_id": client_id,
+                    "loan_id": active_loan_id or client_id,
+                    "officer_id": off_id or str(uuid.uuid4()),
+                    "meeting_date": p_date,
+                    "expected_amount": exp_amt,
+                    "amount_paid": loan_repay,
+                    "remarks": db_data.get('note') or ("Marked as NOT PAID today" if is_marked_not_paid else "Meeting collection repayment")
+                }
 
-            if skip_repayment:
-                return
-
-            # 5. Route Misc Savings
-            if misc_fees > 0:
+            # 5. Route Misc Savings (atomically in member_ops)
+            if not skip_misc and misc_fees > 0:
+                misc_id_val = data.get('misc_tx_id')
+                misc_idem_val = data.get('misc_idempotency_key') or misc_id_val
                 SavingsService.post_misc_savings(
                     uow,
                     client_id,
@@ -376,201 +408,226 @@ def save_repayment(
                     officer,
                     misc_fees,
                     remarks=db_data.get('note'),
-                    posting_date=p_date
+                    posting_date=p_date,
+                    misc_savings_id=misc_id_val,
+                    idempotency_key=misc_idem_val,
+                    defer_operations=member_ops,
+                    allow_closed_date=allow_closed_date
                 )
 
-            # 6. Route EOD / Global Inputs & Cash Flows
-            officer_uuid = FinancialPostingEngine._resolve_officer_id(uow, officer)
-            branch_uuid = FinancialPostingEngine._resolve_branch_id(uow, branch)
-            valid_aggregate_id = str(client_id) if is_valid_uuid(client_id) else (officer_uuid or branch_uuid or str(uuid.uuid4()))
+            # 6. Route EOD / Global Inputs & Cash Flows (atomically in member_ops)
+            p_date_str = p_date.isoformat()
+            if not skip_fees:
+                officer_uuid = FinancialPostingEngine._resolve_officer_id(uow, officer)
+                branch_uuid = FinancialPostingEngine._resolve_branch_id(uow, branch)
+                valid_aggregate_id = str(client_id) if is_valid_uuid(client_id) else (officer_uuid or branch_uuid or str(uuid.uuid4()))
 
-            # Bank Deposited (Field Cash to Bank)
-            bdep_amt = float(db_data.get('bank_deposited', 0) or 0)
-            if bdep_amt > 0:
-                ev_bdep = DomainEvent(
-                    event_id=str(uuid.uuid4()),
-                    aggregate_id=valid_aggregate_id,
-                    aggregate_type="Bank",
-                    event_type="BankDeposited",
-                    payload={
-                        "branch": branch,
-                        "branch_id": branch_uuid,
-                        "officer": officer,
-                        "officer_id": officer_uuid,
-                        "amount": bdep_amt,
-                        "date": p_date_str,
-                        "narration": f"End of Day cash deposit to bank by {officer}"
-                    }
-                )
-                uow.event_store.append(ev_bdep)
-                FinancialPostingEngine.post_event(uow, ev_bdep)
+                def _append_event_and_post(ev: DomainEvent) -> None:
+                    member_ops.append({
+                        "type": "insert",
+                        "table": "event_store",
+                        "record": {
+                            "event_id": ev.event_id,
+                            "aggregate_id": ev.aggregate_id,
+                            "aggregate_type": ev.aggregate_type,
+                            "event_type": ev.event_type,
+                            "version": ev.version,
+                            "payload": ev.payload,
+                            "metadata": getattr(ev, "metadata", {}) or {},
+                            "status": "Completed",
+                        }
+                    })
+                    _, post_op = FinancialPostingEngine.post_event(uow, ev, defer_commit=True)
+                    member_ops.append(post_op)
 
-            # Bank Withdrawal (Bank to Cash)
-            bwd_amt = float(db_data.get('bank_withdrawal', 0) or 0)
-            if bwd_amt > 0:
-                ev_bwd = DomainEvent(
-                    event_id=str(uuid.uuid4()),
-                    aggregate_id=valid_aggregate_id,
-                    aggregate_type="Bank",
-                    event_type="BankWithdrawn",
-                    payload={
-                        "branch": branch,
-                        "branch_id": branch_uuid,
-                        "officer": officer,
-                        "officer_id": officer_uuid,
-                        "amount": bwd_amt,
-                        "date": p_date_str,
-                        "narration": f"Bank withdrawal by {officer}"
-                    }
-                )
-                uow.event_store.append(ev_bwd)
-                FinancialPostingEngine.post_event(uow, ev_bwd)
+                # Bank Deposited (Field Cash to Bank)
+                bdep_amt = float(db_data.get('bank_deposited', 0) or 0)
+                if bdep_amt > 0:
+                    _append_event_and_post(DomainEvent(
+                        event_id=str(uuid.uuid4()),
+                        aggregate_id=valid_aggregate_id,
+                        aggregate_type="Bank",
+                        event_type="BankDeposited",
+                        payload={
+                            "branch": branch,
+                            "branch_id": branch_uuid,
+                            "officer": officer,
+                            "officer_id": officer_uuid,
+                            "amount": bdep_amt,
+                            "date": p_date_str,
+                            "narration": f"End of Day cash deposit to bank by {officer}"
+                        }
+                    ))
 
-            # Office Expenses
-            exp_amt = float(db_data.get('expenses', 0) or 0)
-            if exp_amt > 0:
-                ev_exp = DomainEvent(
-                    event_id=str(uuid.uuid4()),
-                    aggregate_id=valid_aggregate_id,
-                    aggregate_type="Expense",
-                    event_type="ExpenseRecorded",
-                    payload={
-                        "branch": branch,
-                        "branch_id": branch_uuid,
-                        "officer": officer,
-                        "officer_id": officer_uuid,
-                        "amount": exp_amt,
-                        "date": p_date_str,
-                        "narration": f"Office expenses paid by {officer}"
-                    }
-                )
-                uow.event_store.append(ev_exp)
-                FinancialPostingEngine.post_event(uow, ev_exp)
+                # Bank Withdrawal (Bank to Cash)
+                bwd_amt = float(db_data.get('bank_withdrawal', 0) or 0)
+                if bwd_amt > 0:
+                    _append_event_and_post(DomainEvent(
+                        event_id=str(uuid.uuid4()),
+                        aggregate_id=valid_aggregate_id,
+                        aggregate_type="Bank",
+                        event_type="BankWithdrawn",
+                        payload={
+                            "branch": branch,
+                            "branch_id": branch_uuid,
+                            "officer": officer,
+                            "officer_id": officer_uuid,
+                            "amount": bwd_amt,
+                            "date": p_date_str,
+                            "narration": f"Bank withdrawal by {officer}"
+                        }
+                    ))
 
-            # Helper for Fee recording with complete client attribution & persistence in public.fees
-            ev_ref = str(data.get('batch_id') or data.get('reference') or str(uuid.uuid4())[:8])
-            c_uuid_str = str(client_id) if is_valid_uuid(client_id) else None
+                # Office Expenses
+                exp_amt = float(db_data.get('expenses', 0) or 0)
+                if exp_amt > 0:
+                    _append_event_and_post(DomainEvent(
+                        event_id=str(uuid.uuid4()),
+                        aggregate_id=valid_aggregate_id,
+                        aggregate_type="Expense",
+                        event_type="ExpenseRecorded",
+                        payload={
+                            "branch": branch,
+                            "branch_id": branch_uuid,
+                            "officer": officer,
+                            "officer_id": officer_uuid,
+                            "amount": exp_amt,
+                            "date": p_date_str,
+                            "narration": f"Office expenses paid by {officer}"
+                        }
+                    ))
 
-            def _record_fee_with_client_attribution(amount_val: float, fee_category: str, narration_str: str) -> None:
-                if amount_val <= 0:
-                    return
-                event_fee = DomainEvent(
-                    event_id=str(uuid.uuid4()),
-                    aggregate_id=valid_aggregate_id,
-                    aggregate_type="Fee",
-                    event_type="FeeCharged",
-                    payload={
-                        "branch": branch,
-                        "branch_id": branch_uuid,
-                        "officer": officer,
-                        "officer_id": officer_uuid,
-                        "client_id": c_uuid_str,
-                        "client_name": str(client_name),
-                        "client": str(client_name),
-                        "amount": amount_val,
-                        "date": p_date_str,
-                        "classification": fee_category,
-                        "reference": ev_ref,
-                        "narration": narration_str
-                    }
-                )
-                uow.event_store.append(event_fee)
-                FinancialPostingEngine.post_event(uow, event_fee)
+                # Helper for Fee recording with complete client attribution & persistence in public.fees
+                ev_ref = str(data.get('fee_reference') or data.get('batch_id') or data.get('reference') or str(uuid.uuid4())[:8])
+                c_uuid_str = str(client_id) if is_valid_uuid(client_id) else None
+
+                def _record_fee_with_client_attribution(amount_val: float, fee_category: str, narration_str: str) -> None:
+                    if amount_val <= 0:
+                        return
+                    event_fee = DomainEvent(
+                        event_id=str(uuid.uuid4()),
+                        aggregate_id=valid_aggregate_id,
+                        aggregate_type="Fee",
+                        event_type="FeeCharged",
+                        payload={
+                            "branch": branch,
+                            "branch_id": branch_uuid,
+                            "officer": officer,
+                            "officer_id": officer_uuid,
+                            "client_id": c_uuid_str,
+                            "client_name": str(client_name),
+                            "client": str(client_name),
+                            "amount": amount_val,
+                            "date": p_date_str,
+                            "classification": fee_category,
+                            "reference": ev_ref,
+                            "narration": narration_str
+                        }
+                    )
+                    _append_event_and_post(event_fee)
+                    member_ops.append({
+                        "type": "insert",
+                        "table": "fees",
+                        "record": {
+                            "id": str(uuid.uuid4()),
+                            "posting_date": p_date_str,
+                            "client_id": c_uuid_str,
+                            "branch_id": branch_uuid,
+                            "officer_id": officer_uuid,
+                            "fee_type": fee_category,
+                            "amount": amount_val,
+                            "reference": ev_ref,
+                            "remarks": narration_str
+                        }
+                    })
+
+                # Passbook Fee / Bonus
+                pb_amt = float(db_data.get('passbook_bonus') or db_data.get('pass_book_paid') or db_data.get('passbook') or 0.0)
+                if pb_amt > 0:
+                    _record_fee_with_client_attribution(pb_amt, "PASSBOOK", f"Passbook fee from {client_name}")
+
+                # Bonus
+                bon_amt = float(db_data.get('bonus', 0) or 0.0)
+                if bon_amt > 0:
+                    _record_fee_with_client_attribution(bon_amt, "BONUS", f"Bonus fee from {client_name}")
+
+                # Processing Fee / App Fee
+                app_fee_amt = float(db_data.get('processing_fee_paid') or db_data.get('app_fee') or 0.0)
+                if app_fee_amt > 0:
+                    _record_fee_with_client_attribution(app_fee_amt, "PROCESSING_FEE", f"Processing Fee from {client_name}")
+
+                # Cash and Carry
+                cc_amount = float(db_data.get('cash_and_carry', 0) or 0.0)
+                if cc_amount > 0:
+                    _append_event_and_post(DomainEvent(
+                        event_id=str(uuid.uuid4()),
+                        aggregate_id=valid_aggregate_id,
+                        aggregate_type="Asset",
+                        event_type="AssetSoldCash",
+                        payload={
+                            "branch": branch,
+                            "branch_id": branch_uuid,
+                            "officer": officer,
+                            "officer_id": officer_uuid,
+                            "amount": cc_amount,
+                            "date": p_date_str,
+                            "narration": f"Cash & Carry asset sale to {client_name}"
+                        }
+                    ))
+
+                # Credit Form Damage
+                cfd_amount = float(db_data.get('credit_form_damage', 0) or 0.0)
+                if cfd_amount > 0:
+                    _record_fee_with_client_attribution(cfd_amount, "CREDIT_FORM_DAMAGE", f"Credit Form Damage fee from {client_name}")
+
+                # Credit Form
+                cf_amount = float(db_data.get('credit_form', 0) or 0.0)
+                if cf_amount > 0:
+                    _record_fee_with_client_attribution(cf_amount, "CREDIT_FORM", f"Credit Form fee from {client_name}")
+
+                # Asset Credit Sales
+                asset_cr_amount = float(db_data.get('asset_credit_sales', 0) or 0.0)
+                if asset_cr_amount > 0:
+                    _append_event_and_post(DomainEvent(
+                        event_id=str(uuid.uuid4()),
+                        aggregate_id=valid_aggregate_id,
+                        aggregate_type="Asset",
+                        event_type="AssetSoldCash",
+                        payload={
+                            "branch": branch,
+                            "branch_id": branch_uuid,
+                            "officer": officer,
+                            "officer_id": officer_uuid,
+                            "amount": asset_cr_amount,
+                            "date": p_date_str,
+                            "narration": f"Asset Credit Sales for {client_name}"
+                        }
+                    ))
+
+                # Route Markup and Contingency
+                d11_val = float(db_data.get('daily_11_pct') or 0.0)
+                d20_val = float(db_data.get('daily_20_pct') or 0.0)
+                w11_val = float(db_data.get('weekly_11_pct') or 0.0)
+                w20_val = float(db_data.get('weekly_20_pct') or 0.0)
+                mm_val = float(db_data.get('monthly_markup') or 0.0)
+                cont_val = float(db_data.get('contingency_paid') or 0.0)
+
+                _record_fee_with_client_attribution(d11_val, "MARKUP_11", f"daily 11% markup fee from {client_name}")
+                _record_fee_with_client_attribution(d20_val, "MARKUP_20", f"daily 20% markup fee from {client_name}")
+                _record_fee_with_client_attribution(w11_val, "MARKUP_11", f"weekly 11% markup fee from {client_name}")
+                _record_fee_with_client_attribution(w20_val, "MARKUP_20", f"weekly 20% markup fee from {client_name}")
+                _record_fee_with_client_attribution(mm_val, "MARKUP", f"monthly markup risk premium fee from {client_name}")
+                _record_fee_with_client_attribution(cont_val, "CONTINGENCY", f"contingency fee from {client_name}")
+
+            # Execute all accumulated member operations in ONE atomic database transaction
+            if member_ops:
+                uow.client.rpc("atomic_execute_operations", {"p_operations": member_ops}).execute()
+
+            if cp_record_args is not None:
                 try:
-                    uow.client.table("fees").insert({
-                        "posting_date": p_date_str,
-                        "client_id": c_uuid_str,
-                        "branch_id": branch_uuid,
-                        "officer_id": officer_uuid,
-                        "fee_type": fee_category,
-                        "amount": amount_val,
-                        "reference": ev_ref,
-                        "remarks": narration_str
-                    }).execute()
-                except Exception as ex_ins:
-                    logger.error(f"[FEES INSERT ERROR - {fee_category}]: {ex_ins}")
-
-            # Passbook Fee / Bonus
-            pb_amt = float(db_data.get('passbook_bonus') or db_data.get('pass_book_paid') or db_data.get('passbook') or 0.0)
-            if pb_amt > 0:
-                _record_fee_with_client_attribution(pb_amt, "PASSBOOK", f"Passbook fee from {client_name}")
-
-            # Bonus
-            bon_amt = float(db_data.get('bonus', 0) or 0.0)
-            if bon_amt > 0:
-                _record_fee_with_client_attribution(bon_amt, "BONUS", f"Bonus fee from {client_name}")
-
-            # Processing Fee / App Fee
-            app_fee_amt = float(db_data.get('processing_fee_paid') or db_data.get('app_fee') or 0.0)
-            if app_fee_amt > 0:
-                _record_fee_with_client_attribution(app_fee_amt, "PROCESSING_FEE", f"Processing Fee from {client_name}")
-
-            # Cash and Carry
-            cc_amount = float(db_data.get('cash_and_carry', 0) or 0.0)
-            if cc_amount > 0:
-                ev_cc = DomainEvent(
-                    event_id=str(uuid.uuid4()),
-                    aggregate_id=valid_aggregate_id,
-                    aggregate_type="Asset",
-                    event_type="AssetSoldCash",
-                    payload={
-                        "branch": branch,
-                        "branch_id": branch_uuid,
-                        "officer": officer,
-                        "officer_id": officer_uuid,
-                        "amount": cc_amount,
-                        "date": p_date_str,
-                        "narration": f"Cash & Carry asset sale to {client_name}"
-                    }
-                )
-                uow.event_store.append(ev_cc)
-                FinancialPostingEngine.post_event(uow, ev_cc)
-
-            # Credit Form Damage
-            cfd_amount = float(db_data.get('credit_form_damage', 0) or 0.0)
-            if cfd_amount > 0:
-                _record_fee_with_client_attribution(cfd_amount, "CREDIT_FORM_DAMAGE", f"Credit Form Damage fee from {client_name}")
-
-            # Credit Form
-            cf_amount = float(db_data.get('credit_form', 0) or 0.0)
-            if cf_amount > 0:
-                _record_fee_with_client_attribution(cf_amount, "CREDIT_FORM", f"Credit Form fee from {client_name}")
-
-            # Asset Credit Sales
-            asset_cr_amount = float(db_data.get('asset_credit_sales', 0) or 0.0)
-            if asset_cr_amount > 0:
-                ev_as = DomainEvent(
-                    event_id=str(uuid.uuid4()),
-                    aggregate_id=valid_aggregate_id,
-                    aggregate_type="Asset",
-                    event_type="AssetSoldCash",
-                    payload={
-                        "branch": branch,
-                        "branch_id": branch_uuid,
-                        "officer": officer,
-                        "officer_id": officer_uuid,
-                        "amount": asset_cr_amount,
-                        "date": p_date_str,
-                        "narration": f"Asset Credit Sales for {client_name}"
-                    }
-                )
-                uow.event_store.append(ev_as)
-                FinancialPostingEngine.post_event(uow, ev_as)
-
-            # Route Markup and Contingency
-            d11_val = float(db_data.get('daily_11_pct') or 0.0)
-            d20_val = float(db_data.get('daily_20_pct') or 0.0)
-            w11_val = float(db_data.get('weekly_11_pct') or 0.0)
-            w20_val = float(db_data.get('weekly_20_pct') or 0.0)
-            mm_val = float(db_data.get('monthly_markup') or 0.0)
-            cont_val = float(db_data.get('contingency_paid') or 0.0)
-
-            _record_fee_with_client_attribution(d11_val, "MARKUP_11", f"daily 11% markup fee from {client_name}")
-            _record_fee_with_client_attribution(d20_val, "MARKUP_20", f"daily 20% markup fee from {client_name}")
-            _record_fee_with_client_attribution(w11_val, "MARKUP_11", f"weekly 11% markup fee from {client_name}")
-            _record_fee_with_client_attribution(w20_val, "MARKUP_20", f"weekly 20% markup fee from {client_name}")
-            _record_fee_with_client_attribution(mm_val, "MARKUP", f"monthly markup risk premium fee from {client_name}")
-            _record_fee_with_client_attribution(cont_val, "CONTINGENCY", f"contingency fee from {client_name}")
+                    CollectionPerformanceService.record_meeting_collection(**cp_record_args)
+                except Exception as ex_cp_rec:
+                    logger.info(f"[COLLECTION PERFORMANCE RECORD NOTE]: {ex_cp_rec}")
 
     except Exception as e:
         logger.error(f"[ERROR] Error in save_repayment logic: {e}")
@@ -588,7 +645,8 @@ def _get_save_repayment_fn():
 
 def save_repayments(
     data_list: Optional[Union[List[Dict[str, Any]], pd.DataFrame]],
-    batch_id: Optional[str] = None
+    batch_id: Optional[str] = None,
+    allow_closed_date: bool = False
 ) -> Optional[Dict[str, Any]]:
     """
     Save multiple repayments to database with batch-scoped idempotency,
@@ -614,10 +672,16 @@ def save_repayments(
             d['tx_id'] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{batch_id}_{cid}_{idx}_rep"))
         if not d.get('savings_tx_id'):
             d['savings_tx_id'] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{batch_id}_{cid}_{idx}_sav"))
+        if not d.get('misc_tx_id'):
+            d['misc_tx_id'] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{batch_id}_{cid}_{idx}_misc"))
+        if not d.get('fee_reference'):
+            d['fee_reference'] = f"{batch_id}_{cid}_{idx}"
         if not d.get('idempotency_key'):
             d['idempotency_key'] = d['tx_id']
         if not d.get('savings_idempotency_key'):
             d['savings_idempotency_key'] = d['savings_tx_id']
+        if not d.get('misc_idempotency_key'):
+            d['misc_idempotency_key'] = d['misc_tx_id']
 
     report = {
         "batch_id": batch_id,
@@ -627,6 +691,7 @@ def save_repayments(
         "total_cash": 0.0,
         "total_repayment": 0.0,
         "total_savings": 0.0,
+        "total_fees": 0.0,
         "items": []
     }
 
@@ -635,6 +700,7 @@ def save_repayments(
     FinancialPostingEngine.defer_projections = True
 
     branch_id_to_rebuild = None
+    officer_id_to_rebuild = None
     date_to_rebuild = None
     any_new_records = False
 
@@ -645,9 +711,12 @@ def save_repayments(
             clean_codes = []
             for d in data_list:
                 cid = d.get('Client ID') or d.get('client_id')
-                if cid and not is_valid_uuid(cid) and not str(cid).startswith('GROUP-') and not str(cid).startswith('GLOBAL-'):
-                    clean_code = str(cid).replace('-ASSET', '').strip()
-                    clean_codes.append(clean_code)
+                stripped = _strip_client_suffix(cid)
+                if cid and is_valid_uuid(stripped):
+                    client_cache[str(cid).strip()] = stripped
+                    client_cache[stripped] = stripped
+                elif cid and not is_valid_uuid(cid) and not str(cid).startswith('GROUP-') and not str(cid).startswith('GLOBAL-'):
+                    clean_codes.append(stripped)
             if clean_codes:
                 try:
                     res_c = uow.client.table("clients").select("client_id, client_code").in_("client_code", list(set(clean_codes))).execute()
@@ -662,7 +731,8 @@ def save_repayments(
             all_resolved_cids = []
             for d in data_list:
                 cid = d.get('Client ID') or d.get('client_id')
-                resolved = client_cache.get(str(cid).strip(), client_cache.get(str(cid).replace('-ASSET', '').strip(), cid))
+                stripped = _strip_client_suffix(cid)
+                resolved = client_cache.get(str(cid).strip(), client_cache.get(stripped, stripped if is_valid_uuid(stripped) else cid))
                 if resolved and is_valid_uuid(resolved):
                     all_resolved_cids.append(str(resolved))
             if all_resolved_cids:
@@ -700,9 +770,24 @@ def save_repayments(
                 except Exception as ex_pr:
                     logger.debug(f"Pre-flight repayments lookup notice: {ex_pr}")
 
-            # 2. Idempotency Check: Pre-fetch existing records
+            # 2. Idempotency Check: Pre-fetch existing records across repayments, savings, misc, and fees
             all_tx_ids = [d['tx_id'] for d in data_list if d.get('tx_id') and is_valid_uuid(d['tx_id'])]
             all_sav_ids = [d['savings_tx_id'] for d in data_list if d.get('savings_tx_id') and is_valid_uuid(d['savings_tx_id'])]
+            all_misc_ids = [
+                d['misc_tx_id'] for d in data_list
+                if d.get('misc_tx_id') and is_valid_uuid(d['misc_tx_id'])
+                and float(d.get('Misc Fees') or d.get('misc_fees') or 0.0) > 0
+            ]
+            all_fee_refs = [
+                d['fee_reference'] for d in data_list
+                if d.get('fee_reference') and (
+                    float(d.get('App Fee') or d.get('app_fee') or 0.0)
+                    + float(d.get('Pass Book Bonus') or d.get('passbook_bonus') or 0.0)
+                    + float(d.get('Credit Form Damage') or d.get('credit_form_damage') or 0.0)
+                    + float(d.get('Bonus') or d.get('bonus') or 0.0)
+                    + float(d.get('Credit Form') or d.get('credit_form') or 0.0)
+                ) > 0
+            ]
 
             existing_rep_ids = set()
             if all_tx_ids:
@@ -725,28 +810,64 @@ def save_repayments(
                 except Exception as e:
                     logger.warning(f"[IDEMPOTENCY] Error checking existing group savings: {e}")
 
+            existing_misc_ids = set()
+            if all_misc_ids:
+                try:
+                    res_ex_misc = uow.client.table("internal_savings").select("id").in_("id", all_misc_ids).execute()
+                    existing_misc_ids.update({m["id"] for m in (res_ex_misc.data or [])})
+                except Exception as e:
+                    logger.warning(f"[IDEMPOTENCY] Error checking existing misc savings: {e}")
+
+            existing_fee_refs = set()
+            if all_fee_refs:
+                try:
+                    res_ex_fee = uow.client.table("fees").select("reference").in_("reference", all_fee_refs).execute()
+                    existing_fee_refs.update({f["reference"] for f in (res_ex_fee.data or []) if f.get("reference")})
+                except Exception as e:
+                    logger.warning(f"[IDEMPOTENCY] Error checking existing fees: {e}")
+
             # 3. Iterate through batch using in-memory caches and idempotency skips
             for data in data_list:
                 rep_tx_id = data.get('tx_id')
                 sav_tx_id = data.get('savings_tx_id')
+                misc_tx_id = data.get('misc_tx_id')
+                fee_ref = data.get('fee_reference')
 
                 l_rep = float(data.get('Loan Repayment Amount') or data.get('amount_paid') or 0.0)
                 s_dep = float(data.get('Savings Amount') or data.get('savings_amount') or 0.0)
+                misc_amt = float(data.get('Misc Fees') or data.get('misc_fees') or 0.0)
+                app_amt = float(data.get('App Fee') or data.get('app_fee') or data.get('processing_fee_paid') or 0.0)
+                pb_amt = float(data.get('Pass Book Bonus') or data.get('passbook_bonus') or data.get('pass_book_paid') or 0.0)
+                cfd_amt = float(data.get('Credit Form Damage') or data.get('credit_form_damage') or 0.0)
+                bon_amt = float(data.get('Bonus') or data.get('bonus') or 0.0)
+                cf_amt = float(data.get('Credit Form') or data.get('credit_form') or 0.0)
+                cc_amt = float(data.get('Cash and Carry') or data.get('cash_and_carry') or 0.0)
+                acr_amt = float(data.get('Asset Credit Sales') or data.get('asset_credit_sales') or 0.0)
+                item_fees = app_amt + pb_amt + misc_amt + cfd_amt + bon_amt + cf_amt + cc_amt + acr_amt
+
                 p_status_val = str(data.get('Payment Status') or data.get('payment_status') or "PAID").upper()
                 is_not_paid_mark = bool(data.get('mark_not_paid') or (p_status_val == "NOT_PAID" and str(data.get('Transaction Type')) != "Individual Savings Deposit"))
 
                 is_rep_done = bool(rep_tx_id and rep_tx_id in existing_rep_ids)
                 is_sav_done = bool(sav_tx_id and sav_tx_id in existing_sav_ids)
+                is_misc_done = bool(misc_tx_id and misc_tx_id in existing_misc_ids)
+                is_fees_done = bool(fee_ref and fee_ref in existing_fee_refs)
 
                 c_name = data.get('Client Name') or data.get('client_name') or data.get('Client ID') or 'Unknown'
 
                 rep_needed = (l_rep > 0 or is_not_paid_mark)
                 sav_needed = (s_dep > 0)
+                misc_needed = (misc_amt > 0)
+                fees_needed = ((app_amt + pb_amt + cfd_amt + bon_amt + cf_amt) > 0)
+                asset_only_needed = ((cc_amt + acr_amt) > 0)
 
                 already_saved_fully = (
+                    not asset_only_needed and
                     (not rep_needed or is_rep_done) and
                     (not sav_needed or is_sav_done) and
-                    (is_rep_done or is_sav_done)
+                    (not misc_needed or is_misc_done) and
+                    (not fees_needed or is_fees_done) and
+                    (is_rep_done or is_sav_done or is_misc_done or is_fees_done)
                 )
 
                 if already_saved_fully:
@@ -755,12 +876,12 @@ def save_repayments(
                         "client": c_name,
                         "repayment": l_rep,
                         "savings": s_dep,
+                        "fees": item_fees,
                         "status": "Recovered (Already Saved)"
                     })
                 else:
                     _save_fn = _get_save_repayment_fn()
-                    _save_fn(
-                        data,
+                    call_kwargs = dict(
                         override_uow=uow,
                         client_cache=client_cache,
                         loan_cache=loan_cache,
@@ -769,14 +890,22 @@ def save_repayments(
                         known_exists=is_rep_done,
                         loan_data_cache=loan_data_cache,
                         repayments_cache=repayments_cache,
-                        schedule_cache=schedule_cache
+                        schedule_cache=schedule_cache,
                     )
+                    if _save_fn is save_repayment:
+                        call_kwargs.update(
+                            skip_misc=is_misc_done,
+                            skip_fees=is_fees_done,
+                            allow_closed_date=allow_closed_date,
+                        )
+                    _save_fn(data, **call_kwargs)
                     any_new_records = True
                     report["new_processed"] += 1
                     if repayments_cache is not None and not is_rep_done and l_rep > 0:
                         cid_raw = data.get('Client ID') or data.get('client_id')
-                        c_uuid = client_cache.get(str(cid_raw).strip(), cid_raw) if client_cache else cid_raw
-                        a_lid = loan_cache.get(c_uuid) if loan_cache else None
+                        stripped_cid = _strip_client_suffix(cid_raw)
+                        c_uuid = client_cache.get(str(cid_raw).strip(), client_cache.get(stripped_cid, stripped_cid)) if client_cache else stripped_cid
+                        a_lid = data.get('loan_id') or (loan_cache.get(c_uuid) if loan_cache else None)
                         if a_lid:
                             repayments_cache.setdefault(a_lid, []).append({
                                 'id': data.get('tx_id'),
@@ -784,24 +913,32 @@ def save_repayments(
                                 'loan_id': a_lid
                             })
                     status_lbl = "Recorded (NOT PAID)" if (is_not_paid_mark and l_rep == 0) else "Processed"
-                    if (is_rep_done or is_sav_done) and not (is_not_paid_mark and l_rep == 0):
+                    if (is_rep_done or is_sav_done or is_misc_done or is_fees_done) and not (is_not_paid_mark and l_rep == 0):
                         status_lbl = "Completed (Partial Recovery)"
                     report["items"].append({
                         "client": c_name,
                         "repayment": l_rep,
                         "savings": s_dep,
+                        "fees": item_fees,
                         "status": status_lbl
                     })
 
                 report["total_repayment"] += l_rep
                 report["total_savings"] += s_dep
-                report["total_cash"] += (l_rep + s_dep)
+                report["total_fees"] += item_fees
+                report["total_cash"] += (l_rep + s_dep + item_fees)
 
-                # capture branch and date for final rebuild
+                # capture branch, officer and date for final rebuild
                 if not branch_id_to_rebuild and ('Branch' in data or 'branch' in data):
                     branch_name = data.get('Branch') or data.get('branch')
                     try:
                         branch_id_to_rebuild = FinancialPostingEngine._resolve_branch_id(uow, branch_name)
+                    except Exception:
+                        pass
+                if not officer_id_to_rebuild and ('Officer' in data or 'officer' in data):
+                    off_name = data.get('Officer') or data.get('officer')
+                    try:
+                        officer_id_to_rebuild = FinancialPostingEngine._resolve_officer_id(uow, off_name)
                     except Exception:
                         pass
 
@@ -812,7 +949,7 @@ def save_repayments(
             if any_new_records and branch_id_to_rebuild and date_to_rebuild:
                 try:
                     p_date = date.fromisoformat(str(date_to_rebuild).split("T")[0])
-                    uow.cashbook.rebuild_projection(branch_id_to_rebuild, p_date)
+                    uow.cashbook.rebuild_projection(branch_id_to_rebuild, p_date, officer_id=officer_id_to_rebuild)
                     logger.info("[COLLECTIONS] Batch Cashbook projection rebuilt successfully.")
                 except Exception as e:
                     logger.error(f"[COLLECTIONS] Error in batch projection rebuild: {e}")

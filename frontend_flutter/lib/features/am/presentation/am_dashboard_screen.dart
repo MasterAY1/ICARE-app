@@ -2630,7 +2630,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Route: ${t.sourceBranchName} ➔ ${t.destBranchName}',
+                  'Route: ${t.sourceBranchName} -> ${t.destBranchName}',
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
                 ),
                 const SizedBox(height: 4),
@@ -2678,7 +2678,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   children: [
                     Text(t.clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                     const SizedBox(height: 4),
-                    Text('Route: ${t.sourceBranchName} ➔ ${t.destBranchName}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                    Text('Route: ${t.sourceBranchName} -> ${t.destBranchName}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
                     Text('Balance: ${CurrencyFormatter.format(t.outstandingBalance)} | Savings: ${CurrencyFormatter.format(t.savingsBalance)}',
                         style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
                   ],

@@ -28,6 +28,8 @@ from services.portfolio_service import PortfolioService, STATUS_UUID_TO_NAME
 from services.client_status_service import ClientStatusService
 from services.client_service import ClientService
 from services.correction_service import CorrectionService
+from services.business_date_service import BusinessDateService
+from services.client_risk_rating_service import ClientRiskRatingService
 
 router = APIRouter(prefix="/api/v1/co/portfolio", tags=["CO Portfolio"])
 
@@ -50,7 +52,17 @@ def get_portfolio_overview(
     Returns role-scoped portfolio intelligence, category breakdown, group matrix,
     client list, group summary, and filter options (1:1 with app.py L12192–12716).
     """
-    today = date.today()
+    sel_branch = branch if branch and branch != "All" else None
+    b_date_scope = None
+    if sel_branch:
+        try:
+            b_date_scope = uow.loans._resolve_branch_id(sel_branch) or sel_branch
+        except Exception:
+            b_date_scope = sel_branch
+    elif getattr(scope, "branch_id", None) or getattr(current_user, "branch_id", None):
+        b_date_scope = getattr(scope, "branch_id", None) or getattr(current_user, "branch_id", None)
+
+    today = BusinessDateService.get_business_date(uow, b_date_scope) if b_date_scope else date.today()
     start_date = today
     end_date = today
 
@@ -80,7 +92,6 @@ def get_portfolio_overview(
             except ValueError: pass
 
     # Resolve Scope & Filters
-    sel_branch = branch if branch and branch != "All" else None
     sel_officer = officer if officer and officer != "All" else None
     sel_group = group if group and group != "All" else None
     sel_product = product if product and product != "All" else None
@@ -195,56 +206,72 @@ def get_portfolio_overview(
     except Exception:
         pass
 
-    # Build transfer options with rich objects (branches, officers, groups)
+    # Build transfer options strictly according to RBAC scope (no cross-branch leakage)
     transfer_branches = []
     transfer_officers = []
     transfer_groups = []
 
-    try:
-        res_tb = uow.client.table("branches").select("branch_id, name, code").eq("is_active", True).order("name").execute()
-        for b in (res_tb.data or []):
-            if b.get("name") and b.get("name") != "Head Office":
+    if scope.scope_level != "OFFICER":
+        try:
+            res_tb = uow.client.table("branches").select("branch_id, name, code").eq("is_active", True).order("name").execute()
+            for b in (res_tb.data or []):
+                b_uid = str(b.get("branch_id") or "")
+                if not (b.get("name") and b.get("name") != "Head Office"):
+                    continue
+                if scope.scope_level == "BRANCH" and scope.branch_id and b_uid != str(scope.branch_id):
+                    continue
+                if scope.scope_level == "REGION" and scope.assigned_branch_ids and b_uid not in scope.assigned_branch_ids:
+                    continue
                 transfer_branches.append({
-                    "branch_id": str(b.get("branch_id")),
+                    "branch_id": b_uid,
                     "name": str(b.get("name")),
                     "code": str(b.get("code") or "")
                 })
-    except Exception:
-        pass
+        except Exception:
+            pass
 
-    try:
-        q_toff = uow.client.table("user_roles") \
-            .select("user_id, roles!inner(name), app_users!inner(id, username, full_name, is_active, branch_id)") \
-            .eq("roles.name", "Credit Officer") \
-            .eq("app_users.is_active", True)
-        res_toff = q_toff.execute()
-        for r in (res_toff.data or []):
-            u = r.get("app_users") or {}
-            uid = u.get("id")
-            if uid:
-                fn = u.get("full_name") or u.get("username") or "Officer"
-                transfer_officers.append({
-                    "officer_id": str(uid),
-                    "name": fn,
-                    "username": u.get("username") or "",
-                    "branch_id": str(u.get("branch_id") or "")
-                })
-    except Exception:
-        pass
+        try:
+            q_toff = uow.client.table("user_roles") \
+                .select("user_id, roles!inner(name), app_users!inner(id, username, full_name, is_active, branch_id)") \
+                .eq("roles.name", "Credit Officer") \
+                .eq("app_users.is_active", True)
+            if scope.scope_level == "BRANCH" and scope.branch_id:
+                q_toff = q_toff.eq("app_users.branch_id", scope.branch_id)
+            elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
+                q_toff = q_toff.in_("app_users.branch_id", scope.assigned_branch_ids)
+            res_toff = q_toff.execute()
+            for r in (res_toff.data or []):
+                u = r.get("app_users") or {}
+                uid = u.get("id")
+                if uid:
+                    fn = u.get("full_name") or u.get("username") or "Officer"
+                    transfer_officers.append({
+                        "officer_id": str(uid),
+                        "name": fn,
+                        "username": u.get("username") or "",
+                        "branch_id": str(u.get("branch_id") or "")
+                    })
+        except Exception:
+            pass
 
-    try:
-        g_all_res = uow.client.table("groups").select("group_id, name, branch_id, officer_id").execute()
-        for g in (g_all_res.data or []):
-            gid = g.get("group_id")
-            if gid:
-                transfer_groups.append({
-                    "group_id": str(gid),
-                    "name": str(g.get("name") or "Group"),
-                    "branch_id": str(g.get("branch_id") or ""),
-                    "officer_id": str(g.get("officer_id") or "")
-                })
-    except Exception:
-        pass
+        try:
+            g_q_t = uow.client.table("groups").select("group_id, name, branch_id, officer_id")
+            if scope.scope_level == "BRANCH" and scope.branch_id:
+                g_q_t = g_q_t.eq("branch_id", scope.branch_id)
+            elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
+                g_q_t = g_q_t.in_("branch_id", scope.assigned_branch_ids)
+            g_all_res = g_q_t.execute()
+            for g in (g_all_res.data or []):
+                gid = g.get("group_id")
+                if gid:
+                    transfer_groups.append({
+                        "group_id": str(gid),
+                        "name": str(g.get("name") or "Group"),
+                        "branch_id": str(g.get("branch_id") or ""),
+                        "officer_id": str(g.get("officer_id") or "")
+                    })
+        except Exception:
+            pass
 
     # Build backward-compatible items
     group_items = []
@@ -355,32 +382,57 @@ def get_client_dossier(
     s_hist = dd.get("savings_history", pd.DataFrame())
     c_perf = dd.get("collection_history", pd.DataFrame())
     a_hist = dd.get("audit_history", pd.DataFrame())
+    l_sched = dd.get("loan_schedule", pd.DataFrame())
 
-    # 1. Executive Banner Metrics (Streamlit L12739–12776)
+    # 1. Executive Banner Metrics (BR-CLI-005: exclude settled zero-balance loans)
     c_active_credit = 0.0
     c_remaining_balance = 0.0
     c_total_paid = 0.0
+    primary_loan_id = None
+    latest_loan_id = None
     if isinstance(l_hist, pd.DataFrame) and not l_hist.empty:
         for _, l_row in l_hist.iterrows():
+            lid = str(l_row.get("loan_id", ""))
+            if not latest_loan_id and lid:
+                latest_loan_id = lid
             if str(l_row.get("status", "")).upper() in ["ACTIVE", "APPROVED"]:
                 a_cred = float(l_row.get("active_credit") or 0.0)
                 t_due = float(l_row.get("total_due") if l_row.get("total_due") is not None else a_cred)
-                c_active_credit += a_cred
-                lid = str(l_row.get("loan_id", ""))
                 p_paid = 0.0
                 if isinstance(r_hist, pd.DataFrame) and not r_hist.empty and "loan_id" in r_hist.columns:
                     p_paid = float(r_hist[r_hist["loan_id"].astype(str) == lid]["amount_paid"].sum())
                 elif isinstance(r_hist, pd.DataFrame) and not r_hist.empty and "amount_paid" in r_hist.columns:
                     p_paid = float(r_hist["amount_paid"].sum())
                 rem = max(0.0, t_due - p_paid)
-                c_remaining_balance += rem
+                if rem > 0.0:
+                    c_active_credit += a_cred
+                    c_remaining_balance += rem
+                    if not primary_loan_id and lid:
+                        primary_loan_id = lid
                 c_total_paid += ((a_cred - t_due) + p_paid)
 
-    c_savings_balance = 0.0
+    # Deduplicate legacy rows when OPENING-SAVINGS-BF exists, then compute chronological running balance
+    filtered_savings_recs = []
     if isinstance(s_hist, pd.DataFrame) and not s_hist.empty:
-        dep_tot = float(s_hist.get("deposit_amount", pd.Series([0.0])).sum())
-        wth_tot = float(s_hist.get("withdrawal_amount", pd.Series([0.0])).sum())
-        c_savings_balance = dep_tot - wth_tot
+        raw_sav_recs = s_hist.to_dict(orient="records")
+        has_opening_bf = any(str(r.get("reference") or "") == "OPENING-SAVINGS-BF" for r in raw_sav_recs)
+        for s_r in raw_sav_recs:
+            ref = str(s_r.get("reference") or "")
+            rem_s = str(s_r.get("remarks") or "").lower()
+            p_dt = str(s_r.get("posting_date") or "")[:10]
+            if has_opening_bf and (
+                ref.startswith("ONBOARDING")
+                or "onboarding" in rem_s
+                or p_dt == "1970-01-01"
+                or (ref != "OPENING-SAVINGS-BF" and p_dt < "2026-08-31")
+            ):
+                continue
+            filtered_savings_recs.append(s_r)
+
+    c_savings_balance = sum(
+        float(r.get("deposit_amount") or 0.0) - float(r.get("withdrawal_amount") or 0.0)
+        for r in filtered_savings_recs
+    )
 
     c_status_label = "Active Loan" if c_remaining_balance > 0 else ("Fully Settled" if (isinstance(l_hist, pd.DataFrame) and not l_hist.empty) else "No Active Loans")
 
@@ -429,7 +481,9 @@ def get_client_dossier(
                 "loan_id": lid,
                 "disbursement_date": str(row.get("date") or row.get("disbursement_date") or "")[:10],
                 "product": prod,
+                "product_name": prod,
                 "category": str(row.get("product_category") or "Standard"),
+                "principal": float(row.get("loan_amount") or 0.0),
                 "loan_principal": float(row.get("loan_amount") or 0.0),
                 "active_credit": a_cred,
                 "expected_installment": float(row.get("loan_repay") or 0.0),
@@ -469,11 +523,11 @@ def get_client_dossier(
                 "is_reversed": is_rev
             })
 
-    # 5. Formatted Savings Ledger with Running Balance (Streamlit L12964–12989)
+    # 5. Formatted Savings Ledger with true chronological Running Balance (newest-first display)
     savings_rows = []
-    if isinstance(s_hist, pd.DataFrame) and not s_hist.empty:
+    if filtered_savings_recs:
         reversed_sav_targets = set()
-        for _, row in s_hist.iterrows():
+        for row in filtered_savings_recs:
             rem_str = str(row.get("remarks") or "")
             dep = float(row.get("deposit_amount") or 0.0)
             if dep < 0 or "REVERSAL of" in rem_str:
@@ -485,15 +539,24 @@ def get_client_dossier(
                     except Exception:
                         pass
 
+        chrono_sav = sorted(
+            filtered_savings_recs,
+            key=lambda x: (
+                str(x.get("posting_date") or "")[:10],
+                str(x.get("created_at") or ""),
+                str(x.get("id") or ""),
+            ),
+        )
         running_bal = 0.0
-        for _, row in s_hist.iterrows():
+        chrono_rows = []
+        for row in chrono_sav:
             dep = float(row.get("deposit_amount") or 0.0)
             wth = float(row.get("withdrawal_amount") or 0.0)
             rem_str = str(row.get("remarks") or "")
             sid = str(row.get("id") or "")
             is_rev = (dep < 0) or ("REVERSAL of" in rem_str) or (sid in reversed_sav_targets)
             running_bal += (dep - wth)
-            savings_rows.append({
+            chrono_rows.append({
                 "id": sid,
                 "date": str(row.get("posting_date") or "")[:10],
                 "deposit": dep,
@@ -502,6 +565,7 @@ def get_client_dossier(
                 "remarks": rem_str,
                 "is_reversed": is_rev
             })
+        savings_rows = list(reversed(chrono_rows))
 
     # 6. Meeting Collection History & Compliance (Streamlit L12991–13081)
     coll_metrics = {"total_expected": 0.0, "total_collected": 0.0, "variance": 0.0, "collection_variance": 0.0, "compliance_rate": 0.0}
@@ -602,6 +666,45 @@ def get_client_dossier(
                 "details": str(a_row.get("details") or a_row.get("description") or a_row.get("notes") or "Logged event")
             })
 
+    # Build Loan Schedule rows across client's loans (active / most recent first)
+    loan_schedule_rows = []
+    if isinstance(l_sched, pd.DataFrame) and not l_sched.empty:
+        loan_prod_map = {}
+        if isinstance(l_hist, pd.DataFrame) and not l_hist.empty:
+            for _, lr in l_hist.iterrows():
+                lid_m = str(lr.get("loan_id") or "")
+                lp_m = lr.get("loan_products", {}).get("name", "Loan") if isinstance(lr.get("loan_products"), dict) else "Loan"
+                if lid_m:
+                    loan_prod_map[lid_m] = lp_m
+        for _, s_row in l_sched.iterrows():
+            lid_s = str(s_row.get("loan_id") or "")
+            t_due = float(s_row.get("total_due") or s_row.get("expected_amount") or 0.0)
+            p_amt = float(s_row.get("paid_amount") or 0.0)
+            loan_schedule_rows.append({
+                "id": str(s_row.get("schedule_id") or s_row.get("id") or ""),
+                "loan_id": lid_s,
+                "product_name": loan_prod_map.get(lid_s, "Loan"),
+                "installment_number": int(s_row.get("installment_number") or 0),
+                "due_date": str(s_row.get("due_date") or "")[:10],
+                "principal_due": float(s_row.get("principal_due") or 0.0),
+                "interest_due": float(s_row.get("interest_due") or 0.0),
+                "total_due": t_due,
+                "paid_amount": p_amt,
+                "remaining_due": max(0.0, t_due - p_amt),
+                "status": str(s_row.get("status") or ("Paid" if p_amt >= t_due and t_due > 0 else "Pending")),
+            })
+
+    # Compute Risk Rating (emoji-free) for active or latest loan
+    target_rating_loan_id = primary_loan_id or latest_loan_id
+    risk_rating_payload = {}
+    if target_rating_loan_id:
+        try:
+            risk_rating_payload = ClientRiskRatingService.compute_risk_rating(
+                uow, str(cur_cid), str(target_rating_loan_id)
+            )
+        except Exception:
+            risk_rating_payload = {}
+
     return ClientDossierResponse(
         client_code=client_code,
         customer_info={
@@ -609,6 +712,7 @@ def get_client_dossier(
             "client_code": str(c_info.get("client_code") or client_code),
             "name": str(c_info.get("name") or "Unknown"),
             "nickname": c_info.get("nickname") or "",
+            "status": resolved_curr_status,
             "group_name": c_info.get("groups", {}).get("name", "Individual") if isinstance(c_info.get("groups"), dict) else (c_info.get("group_name") or "Individual"),
             "phone": str(c_info.get("phone") or "N/A"),
             "phone_number": str(c_info.get("phone") or "N/A"),
@@ -652,8 +756,11 @@ def get_client_dossier(
             "color_code": cs_dict.get("color_code", "#9CA3AF"),
             "last_changed": str(curr_rec.get("status_changed_at") or "Initial Onboarding")[:19],
             "status_note": curr_rec.get("status_note") or "None",
+            "note": curr_rec.get("status_note") or "None",
             "history": h_rows
         },
+        loan_schedule=loan_schedule_rows,
+        risk_rating=risk_rating_payload,
         status_history=h_rows,
         audit_history=audit_records,
         audit_trail=audit_records
@@ -668,24 +775,35 @@ def update_client_lifecycle_status(
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
-    Manual Client Lifecycle Status Transition (Streamlit L13108–13151).
-    Validates reason and logs immutable audit trail.
+    Manual Client Lifecycle Status Transition (BR-CLI-004).
+    Validates ownership, allowed transitions, reason, and logs atomically to client_status_history.
     """
     if not req.reason.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reason for status change is required.")
 
-    res_c = uow.client.table("clients").select("branch_id").eq("client_id", req.client_id).execute()
-    if res_c.data:
-        check_branch_access(current_user, res_c.data[0].get("branch_id"), "change client status")
+    res_c = uow.client.table("clients").select("branch_id, officer_id").eq("client_id", req.client_id).execute()
+    if not res_c.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
 
-    success = ClientStatusService.transition_status(
-        uow=uow,
-        client_id=req.client_id,
-        new_status_name=req.target_status,
-        changed_by=current_user.id,
-        reason=req.reason.strip(),
-        trigger_type="MANUAL"
-    )
+    c_row = res_c.data[0]
+    check_branch_access(current_user, c_row.get("branch_id"), "change client status")
+    if scope.scope_level == "OFFICER" and scope.user_id and str(c_row.get("officer_id") or "") != str(scope.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You can only update lifecycle status for clients assigned to your portfolio."
+        )
+
+    try:
+        success = ClientStatusService.transition_status(
+            uow=uow,
+            client_id=req.client_id,
+            new_status_name=req.target_status,
+            changed_by=current_user.id,
+            reason=req.reason.strip(),
+            trigger_type="MANUAL"
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
 
     if not success:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to transition status.")
@@ -697,6 +815,7 @@ def update_client_lifecycle_status(
 def submit_dossier_reversal_request(
     req: DossierReversalRequest,
     current_user: CurrentUser = Depends(get_current_user),
+    scope: RBACScope = Depends(get_current_scope),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
@@ -705,14 +824,43 @@ def submit_dossier_reversal_request(
     if not req.reason.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reason for reversal is required.")
 
-    req_id = CorrectionService.request_correction(
-        uow=uow,
-        record_id=req.record_id,
-        record_type="Repayment",
-        reason=req.reason.strip(),
-        requested_by=current_user.username,
-        branch_id=current_user.branch_id
-    )
+    rep_res = uow.client.table("repayments").select("id, client_id, branch_id, officer_id").eq("id", req.record_id).execute()
+    if not rep_res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repayment record not found.")
+
+    rep_row = rep_res.data[0]
+    rec_branch_id = rep_row.get("branch_id") or current_user.branch_id
+    if rec_branch_id:
+        check_branch_access(current_user, rec_branch_id, "request repayment reversal")
+
+    if scope.scope_level == "OFFICER" and scope.user_id:
+        owner_oid = rep_row.get("officer_id")
+        if rep_row.get("client_id"):
+            try:
+                c_res = uow.client.table("clients").select("officer_id, branch_id").eq("client_id", rep_row["client_id"]).execute()
+                if c_res.data:
+                    owner_oid = c_res.data[0].get("officer_id") or owner_oid
+                    if c_res.data[0].get("branch_id"):
+                        check_branch_access(current_user, c_res.data[0].get("branch_id"), "request repayment reversal")
+            except Exception:
+                pass
+        if owner_oid and str(owner_oid) != str(scope.user_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: You can only flag repayments belonging to clients in your portfolio."
+            )
+
+    try:
+        req_id = CorrectionService.request_correction(
+            uow=uow,
+            record_id=req.record_id,
+            record_type="Repayment",
+            reason=req.reason.strip(),
+            requested_by=current_user.username,
+            branch_id=rec_branch_id
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
 
     return {"status": "success", "request_id": req_id, "message": f"Reversal request #{req_id[:8]} submitted to Branch Manager."}
 

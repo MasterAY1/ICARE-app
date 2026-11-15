@@ -99,16 +99,17 @@ class TestMasterCashbookProjectionBuilder(unittest.TestCase):
 
         self.assertEqual(result["funds_received_ho"], 50000.0)
         self.assertEqual(result["office_expenses"], 3000.0)
+        self.assertEqual(result["disb_12w"], 15000.0)
         self.assertEqual(result["fund_to_product_finance"], 15000.0)
         # BR-CASH-001: loan_received_finance equals fund_to_product_finance
         self.assertEqual(result["loan_received_finance"], 15000.0)
 
         # Inflows = 20000 (rep_daily) + 50000 (funds_received_ho) + 15000 (loan_received_finance) = 85000
         self.assertEqual(result["total_inflows"], 85000.0)
-        # Outflows = 1000 (product_withdrawal) + 15000 (fund_to_product_finance) + 3000 (office_expenses) = 19000
-        self.assertEqual(result["total_outflows"], 19000.0)
-        # Closing balance = 85000 - 19000 = 66000
-        self.assertEqual(result["closing_balance"], 66000.0)
+        # Outflows = 1000 (product_withdrawal) + 15000 (disb_12w) + 15000 (fund_to_product_finance) + 3000 (office_expenses) = 34000
+        self.assertEqual(result["total_outflows"], 34000.0)
+        # Closing balance = 85000 - 34000 = 51000
+        self.assertEqual(result["closing_balance"], 51000.0)
 
     def test_inter_area_funding_aggregation(self):
         co_data = [{
@@ -188,15 +189,18 @@ class TestMasterCashbookProjectionBuilder(unittest.TestCase):
         self.assertEqual(month_closing, 125000.0)
         self.assertEqual(month_opening + month_inflows - month_outflows, month_closing)
 
-    def test_bank_withdrawal_deduplication_with_loan_received_finance(self):
-        """Test BIA-BM-CASHBOOK-061: Bank Withdrawal from CO cashbook is not double-counted with loan_received_finance"""
+    def test_finance_loan_and_bank_withdrawal_symmetry(self):
+        """Test BIA-CASHBOOK-ACTIVE-CREDIT-021: Finance Principal symmetry & full CO Bank Withdrawal aggregation"""
         co_data = [{
             "officer_id": "co-1",
             "rep_daily": 30000.0,
-            "bank_withdrawal": 105000.0,  # 100k loan disbursement + 5k savings withdrawal
+            "daily_11_pct": 11000.0,
+            "bank_withdrawal": 100000.0,
+            "disb_60d": 98000.0,            # Active Credit = Principal (100k) - Gap Fee (2k)
+            "_finance_loan_principal": 100000.0,
             "fund_to_product_finance": 100000.0,
-            "product_withdrawal": 5000.0,
-            "bank_deposit": 30000.0
+            "product_withdrawal": 13000.0,  # Markup (11k) + Gap Fee (2k)
+            "bank_deposit": 30000.0,
         }]
 
         def table_side_effect(table_name):
@@ -216,16 +220,91 @@ class TestMasterCashbookProjectionBuilder(unittest.TestCase):
             self.mock_uow, "branch-01", date(2026, 7, 31)
         )
 
+        # Finance Principal symmetry: loan_received_finance == fund_to_product_finance == 100k
         self.assertEqual(result["fund_to_product_finance"], 100000.0)
         self.assertEqual(result["loan_received_finance"], 100000.0)
-        # Bank withdrawal must be deduplicated from 105k down to 5k (for product_withdrawal)
-        self.assertEqual(result["bank_withdrawal"], 5000.0)
-        # Inflows: 30k (rep) + 100k (loan_received_finance) + 5k (bank_wd) = 135,000
-        self.assertEqual(result["total_inflows"], 135000.0)
-        # Outflows: 100k (fund_to_product_finance) + 5k (product_wd) + 30k (bank_dep) = 135,000
-        self.assertEqual(result["total_outflows"], 135000.0)
-        # Perfectly balanced to 0.0 variance!
+        # Full CO Bank Withdrawal preserved without subtraction
+        self.assertEqual(result["bank_withdrawal"], 100000.0)
+        self.assertEqual(result["disb_60d"], 98000.0)
+        # Inflows (Left): 30k (rep) + 100k (loan_received_finance) + 11k (markup) + 100k (bank_wd) = 241,000
+        self.assertEqual(result["total_inflows"], 241000.0)
+        # Outflows (Right): 98k (disb_60d) + 100k (fund_to_product_finance) + 13k (product_wd) + 30k (bank_dep) = 241,000
+        self.assertEqual(result["total_outflows"], 241000.0)
         self.assertEqual(result["closing_balance"], 0.0)
+
+    def test_asset_program_manual_treasury_and_month_end_settlement(self):
+        """Test Asset Loan roll-out to loan_received_asset while fund_to_asset_program stays manual BM Treasury input"""
+        co_data = [{
+            "officer_id": "co-1",
+            "asset_credit_sales": 508000.0,
+            "cash_and_carry": 175000.0,
+            "disb_12w": 400000.0,
+            "bank_withdrawal": 0.0,
+        }]
+        # Day-level BM manual Treasury ASSET_PROGRAM differs from daily loan_received_asset (e.g., 375k)
+        ledger_data = [{
+            "amount": 375000.0,
+            "side": "Credit",
+            "financial_transactions": {
+                "officer_id": None,
+                "event_store": {
+                    "event_type": "CashTransferred_HO_Out",
+                    "payload": {"transaction_type": "ASSET_PROGRAM"},
+                },
+            },
+        }]
+
+        def table_side_effect(table_name):
+            mock_table = MagicMock()
+            if table_name == "co_cashbooks":
+                mock_table.select().eq().eq().execute().data = co_data
+            elif table_name == "financial_ledger_entries":
+                mock_table.select().eq().eq().eq().execute().data = ledger_data
+            else:
+                mock_table.select().eq().eq().execute().data = []
+            return mock_table
+
+        self.mock_uow.client.table.side_effect = table_side_effect
+
+        result = MasterCashbookProjectionBuilder.rebuild_master_projection(
+            self.mock_uow, "branch-01", date(2026, 2, 2)
+        )
+
+        # CO asset_credit_sales rolls cleanly into loan_received_asset without double counting
+        self.assertEqual(result["loan_received_asset"], 508000.0)
+        self.assertEqual(result["asset_credit_sales"], 0.0)
+        self.assertEqual(result["cash_and_carry"], 175000.0)
+        # Manual BM Treasury ASSET_PROGRAM stays strictly separate on outflows
+        self.assertEqual(result["fund_to_asset_program"], 375000.0)
+        # Inflows = 175k + 508k = 683k; Outflows = 400k (disb_12w) + 375k (fund_to_asset_program) = 775k
+        self.assertEqual(result["total_inflows"], 683000.0)
+        self.assertEqual(result["total_outflows"], 775000.0)
+
+    def test_legacy_co_misc_fees_folded_into_savings_deposit(self):
+        co_data = [{
+            "officer_id": "co-1",
+            "savings_deposit": 12000.0,
+            "misc_fees": 3000.0,
+        }]
+
+        def table_side_effect(table_name):
+            mock_table = MagicMock()
+            if table_name == "co_cashbooks":
+                mock_table.select().eq().eq().execute().data = co_data
+            else:
+                mock_table.select().eq().eq().eq().execute().data = []
+                mock_table.select().eq().eq().execute().data = []
+            return mock_table
+
+        self.mock_uow.client.table.side_effect = table_side_effect
+
+        result = MasterCashbookProjectionBuilder.rebuild_master_projection(
+            self.mock_uow, "branch-01", date(2026, 7, 31)
+        )
+
+        self.assertEqual(result["savings_deposit"], 15000.0)
+        self.assertEqual(result["misc_fees"], 0.0)
+        self.assertEqual(result["total_inflows"], 15000.0)
 
 if __name__ == "__main__":
     unittest.main()

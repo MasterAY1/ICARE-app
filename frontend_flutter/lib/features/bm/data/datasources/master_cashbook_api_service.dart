@@ -15,13 +15,13 @@ class MasterCashbookApiService {
 
   /// Fetch Master Cashbook daily projection, tally and pending reversals
   Future<MasterCashbookDailyData> getMasterCashbookDaily({String? date, String? branch}) async {
-    final queryParams = <String, dynamic>{};
+    final queryParams = <String, dynamic>{'force_rebuild': true};
     if (date != null && date.isNotEmpty) queryParams['date'] = date;
     if (branch != null && branch.isNotEmpty) queryParams['branch'] = branch;
 
     final response = await _apiClient.get(
       '/api/v1/bm/cashbook/daily',
-      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+      queryParameters: queryParams,
     );
     return MasterCashbookDailyData.fromJson(response.data as Map<String, dynamic>);
   }
@@ -37,14 +37,14 @@ class MasterCashbookApiService {
 
   /// Fetch individual Credit Officer Daily Cashbook Ledger
   Future<CoAggregationData> getCoAggregation({String? date, String? officer, String? branch}) async {
-    final queryParams = <String, dynamic>{};
+    final queryParams = <String, dynamic>{'force_rebuild': true};
     if (date != null && date.isNotEmpty) queryParams['date'] = date;
     if (officer != null && officer.isNotEmpty) queryParams['officer'] = officer;
     if (branch != null && branch.isNotEmpty) queryParams['branch'] = branch;
 
     final response = await _apiClient.get(
       '/api/v1/bm/cashbook/co-aggregation',
-      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+      queryParameters: queryParams,
     );
     return CoAggregationData.fromJson(response.data as Map<String, dynamic>);
   }

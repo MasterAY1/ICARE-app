@@ -14,6 +14,7 @@ Enforces strict commercial banking presentation rules:
 
 from typing import List, Dict, Any, Optional
 from datetime import datetime, date
+import re
 
 
 CHART_OF_ACCOUNTS_MAP: Dict[str, str] = {
@@ -455,6 +456,18 @@ class AuditEnricher:
                 except Exception:
                     pass
 
+        reversed_refs = set()
+        for r in records:
+            r_dep = float(r.get("deposit_amount") or 0)
+            r_wth = float(r.get("withdrawal_amount") or 0)
+            r_ref = str(r.get("reference") or "")
+            r_idem = str(r.get("idempotency_key") or "")
+            if r_dep < 0 or r_wth < 0 or r_ref.startswith("REV-"):
+                if r_ref.startswith("REV-"):
+                    reversed_refs.add(r_ref[4:])
+                if r_idem.startswith("REV-"):
+                    reversed_refs.add(r_idem[4:])
+
         enriched = []
         for r in records:
             ledger_type = r.get("_ledger_type") or "Savings"
@@ -476,14 +489,35 @@ class AuditEnricher:
             dep = float(r.get("deposit_amount") or 0)
             wth = float(r.get("withdrawal_amount") or 0)
             r_id = str(r.get("id") or "")
+            r_ref = str(r.get("reference") or "")
             bal = tx_running_bal.get(r_id, float(r.get("balance") or (dep - wth)))
+
+            raw_rem = str(r.get("remarks") or r.get("reference") or ("Deposit" if dep > 0 else "Withdrawal"))
+            clean_rem = raw_rem
+            for pat in (
+                r"\[DEST_ID:[^\]]*\]",
+                r"\[DEST_NAME:[^\]]*\]",
+                r"\[DEST_TYPE:[^\]]*\]",
+                r"\[FEE:[^\]]*\]",
+                r"\[LOAN_OFFSET:[^\]]*\]",
+            ):
+                clean_rem = re.sub(pat, "", clean_rem, flags=re.IGNORECASE)
+            clean_rem = re.sub(r"\s+", " ", clean_rem).strip()
+
+            is_rev_entry = dep < 0 or wth < 0 or r_ref.startswith("REV-") or "reversal of" in raw_rem.lower()
+            if is_rev_entry:
+                status_str = "REVERSAL"
+            elif r_id in reversed_refs or (r_ref and r_ref in reversed_refs):
+                status_str = "REVERSED"
+            else:
+                status_str = "ACTIVE"
 
             row = {
                 "Date": self.format_date(r.get("posting_date") or r.get("created_at")),
                 "Ledger": ledger_type,
                 "Client Code": code_disp,
                 "Client Name": name_disp,
-                "Remarks": r.get("remarks") or r.get("reference") or ("Deposit" if dep > 0 else "Withdrawal"),
+                "Remarks": clean_rem or ("Deposit" if dep > 0 else "Withdrawal"),
                 "Officer": self.resolve_officer(r.get("officer_id")),
                 "Branch": self.resolve_branch(r.get("branch_id"), officer_id=r.get("officer_id"), client_id=r.get("client_id")),
                 "Deposit": self.format_currency(dep),
@@ -494,7 +528,7 @@ class AuditEnricher:
                 "Withdrawal_Raw": wth,
                 "Balance_Raw": bal,
                 "Available_Balance_Raw": bal,
-                "Status": self.format_status_badge("ACTIVE"),
+                "Status": self.format_status_badge(status_str),
                 "_raw_record": r
             }
             enriched.append(row)

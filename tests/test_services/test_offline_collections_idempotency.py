@@ -74,7 +74,7 @@ class TestOfflineCollectionsIdempotency(unittest.TestCase):
         self.assertEqual(cm.exception.status_code, 403)
         self.assertIn("Date closed", str(cm.exception.detail))
 
-    @patch("app.save_repayments")
+    @patch("services.collection_batch_service.save_repayments")
     @patch("api.routes.co.collections.check_branch_access")
     @patch("api.routes.co.collections.BusinessDateService.is_operational_open")
     def test_closed_date_allowed_with_offline_idempotency_key(self, mock_is_open, mock_access, mock_save_rep):

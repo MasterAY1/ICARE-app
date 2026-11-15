@@ -17,14 +17,48 @@ class MasterCashbookProjectionBuilder:
             return None
 
         p_date_str = posting_date.isoformat()
-        # 1. Fetch all co_cashbooks for this branch on date first
+        # 1. Rebuild & fetch all co_cashbooks for this branch on date first
         co_rows = []
+        rebuilt_co_map = {}
+        try:
+            res_cos = uow.client.table("app_users").select("id, role, username") \
+                .eq("branch_id", branch_id).execute()
+            co_user_ids = [
+                str(u["id"]) for u in (res_cos.data or [])
+                if isinstance(u, dict) and u.get("id") and (
+                    "co" in str(u.get("role") or "").lower()
+                    or "credit" in str(u.get("role") or "").lower()
+                    or str(u.get("username") or "").lower().startswith("co")
+                )
+            ]
+            if co_user_ids:
+                from services.co_cashbook_projection_builder import CoCashbookProjectionBuilder
+                for oid in co_user_ids:
+                    try:
+                        rb = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, oid, posting_date)
+                        if isinstance(rb, dict):
+                            rebuilt_co_map[oid] = rb
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         try:
             res_co = uow.client.table("co_cashbooks").select("*") \
                 .eq("branch_id", branch_id).eq("date", p_date_str).execute()
-            co_rows = res_co.data or []
+            db_co_rows = res_co.data or []
+            if rebuilt_co_map:
+                merged_map = {}
+                for r in db_co_rows:
+                    if isinstance(r, dict) and r.get("officer_id"):
+                        merged_map[str(r["officer_id"])] = r
+                merged_map.update(rebuilt_co_map)
+                co_rows = list(merged_map.values())
+            else:
+                co_rows = db_co_rows
         except Exception:
-            pass
+            if rebuilt_co_map:
+                co_rows = list(rebuilt_co_map.values())
 
         # 2. Previous day opening balance resolution
         opening_bal = 0.0
@@ -78,17 +112,34 @@ class MasterCashbookProjectionBuilder:
         totals = {field: 0.0 for field in numeric_fields}
         totals["bank_withdrawal"] = 0.0
         co_bank_wd = 0.0
+        co_asset_credit_total = 0.0
+        co_asset_loan_explicit = 0.0
+        has_explicit_asset_loan = False
+        co_finance_principal_total = 0.0
+        has_explicit_finance_principal = False
 
         for row in co_rows:
             for field in numeric_fields:
                 totals[field] += float(row.get(field) or 0.0)
             co_bank_wd += float(row.get("bank_withdrawal") or 0.0)
+            co_asset_credit_total += float(row.get("asset_credit_sales") or 0.0)
+            if "_asset_loan_principal" in row:
+                has_explicit_asset_loan = True
+                co_asset_loan_explicit += float(row.get("_asset_loan_principal") or 0.0)
+            if "_finance_loan_principal" in row:
+                has_explicit_finance_principal = True
+                co_finance_principal_total += float(row.get("_finance_loan_principal") or 0.0)
 
         totals["bank_withdrawal"] = co_bank_wd
+        if totals.get("misc_fees", 0.0) != 0.0:
+            totals["savings_deposit"] = totals.get("savings_deposit", 0.0) + totals["misc_fees"]
+            totals["misc_fees"] = 0.0
 
         # 4. Fetch Branch Treasury Activities from Ledger
+        from services.co_cashbook_projection_builder import CoCashbookProjectionBuilder
         branch_treasury_finance = 0.0
         branch_treasury_asset = 0.0
+        co_non_loan_asset_credit = 0.0
         try:
             res_ledger = uow.client.table("financial_ledger_entries") \
                 .select("*, financial_transactions!inner(officer_id, event_store(event_type, payload))") \
@@ -99,6 +150,51 @@ class MasterCashbookProjectionBuilder:
             
             co_officer_ids = set(str(r.get("officer_id")) for r in co_rows if r.get("officer_id"))
 
+            def _apply_fee_to_totals(narr_text: str, delta: float) -> None:
+                n = (narr_text or "").lower()
+                if "passbook" in n or "pass book" in n or "pass_book" in n:
+                    totals["passbook"] += delta
+                elif "damage" in n and ("credit" in n or "form" in n):
+                    totals["credit_form_damage"] += delta
+                elif "processing" in n or "application" in n or "app fee" in n or "app_fee" in n or "credit form" in n or "credit_form" in n:
+                    totals["app_fee"] += delta
+                elif "contingency" in n:
+                    totals["contingency"] += delta
+                elif "bonus" in n:
+                    totals["bonus"] += delta
+                elif "11%" in n and ("weekly" in n or "12w" in n):
+                    totals["weekly_11_pct"] += delta
+                elif "20%" in n and ("weekly" in n or "24w" in n or "24" in n):
+                    totals["weekly_20_pct"] += delta
+                elif "11%" in n and ("daily" in n or "60" in n):
+                    totals["daily_11_pct"] += delta
+                elif "20%" in n and ("daily" in n or "120" in n):
+                    totals["daily_20_pct"] += delta
+                elif "month" in n or "3m" in n or "6m" in n or "monthly" in n or "risk" in n:
+                    totals["risk_premium_returns"] += delta
+                elif "weekly" in n:
+                    totals["weekly_11_pct"] += delta
+                elif "daily" in n:
+                    totals["daily_11_pct"] += delta
+                else:
+                    totals["savings_deposit"] += delta
+
+            def _apply_repayment_to_totals(ev_p: dict, delta: float) -> None:
+                p_name = str(ev_p.get("product_type") or ev_p.get("narration") or "").lower()
+                cyc = str(ev_p.get("repayment_cycle") or "")
+                dur = int(ev_p.get("duration") or 0)
+                bucket = CoCashbookProjectionBuilder._classify_loan_product(p_name, cyc, dur)
+                if bucket == "120d":
+                    totals["rep_120_days"] += delta
+                elif bucket == "60d":
+                    totals["rep_daily"] += delta
+                elif bucket == "24w":
+                    totals["rep_24_weeks"] += delta
+                elif bucket == "monthly":
+                    totals["rep_monthly"] += delta
+                else:
+                    totals["rep_12_weeks"] += delta
+
             for entry in (res_ledger.data or []):
                 amt = float(entry.get("amount") or 0.0)
                 side = entry.get("side")
@@ -107,6 +203,7 @@ class MasterCashbookProjectionBuilder:
                 event_type = ev_store.get("event_type")
                 payload = ev_store.get("payload") or {}
                 tx_officer_id = str(tx.get("officer_id") or "")
+                narr_l = str(payload.get("narration") or entry.get("narration") or "").lower()
                 
                 # Branch Inflows (Debit 1000)
                 if side == "Debit":
@@ -118,9 +215,66 @@ class MasterCashbookProjectionBuilder:
                             totals["funds_received_other_area"] += amt
                         else:
                             totals["funds_received_ho"] += amt
+                    elif event_type == "CashTransferred_HO_Out_Reversed":
+                        tx_type = payload.get("transaction_type")
+                        if tx_type == "INTER_BRANCH_OUT":
+                            totals["fund_transferred_other_branch"] -= amt
+                        elif tx_type == "INTER_AREA_OUT":
+                            totals["fund_to_other_area"] -= amt
+                        elif tx_type == "ASSET_PROGRAM":
+                            totals["fund_to_asset_program"] -= amt
+                        else:
+                            totals["fund_transferred_ho"] -= amt
                     elif event_type == "BankWithdrawn":
                         if tx_officer_id not in co_officer_ids:
                             totals["bank_withdrawal"] += amt
+                    elif event_type == "BankDepositReversed":
+                        if tx_officer_id not in co_officer_ids:
+                            totals["bank_deposit"] -= amt
+                    elif event_type == "ExpenseReversed":
+                        if tx_officer_id not in co_officer_ids:
+                            totals["office_expenses"] -= amt
+                    elif event_type == "SalaryReversed":
+                        totals["staff_salaries"] -= amt
+                    elif event_type in ["SavingsDeposited", "INDIVIDUAL_SAVINGS", "GROUP_SAVINGS", "SavingsDeposit", "SAVINGS_DEPOSIT"]:
+                        if tx_officer_id not in co_officer_ids:
+                            agg_type = entry.get("aggregate_type") or ev_store.get("aggregate_type")
+                            if agg_type == "LapsSavings":
+                                totals["laps_reserve"] += amt
+                            else:
+                                totals["savings_deposit"] += amt
+                    elif event_type in ["RepaymentReceived", "REPAYMENT"]:
+                        if tx_officer_id not in co_officer_ids:
+                            _apply_repayment_to_totals(payload, amt)
+                    elif event_type in ["FeeCharged", "MARKUP", "MARKUP_11", "MARKUP_20", "CONTINGENCY", "PROCESSING_FEE", "PASSBOOK", "PenaltyCharged"]:
+                        if tx_officer_id not in co_officer_ids:
+                            _apply_fee_to_totals(narr_l, amt)
+                    elif event_type == "AssetSoldCash":
+                        if tx_officer_id not in co_officer_ids:
+                            if "credit" in narr_l:
+                                totals["asset_credit_sales"] += amt
+                            else:
+                                totals["cash_and_carry"] += amt
+                        elif "credit" in narr_l:
+                            co_non_loan_asset_credit += amt
+                    elif event_type == "SavingsWithdrawalReversed":
+                        if tx_officer_id not in co_officer_ids:
+                            is_laps_rev = (
+                                bool(payload.get("is_laps"))
+                                or str(payload.get("reversed_event_type") or "") == "LapsPaidOut"
+                                or "laps" in str(payload.get("source_bucket") or "").lower()
+                            )
+                            is_auto_rev = CoCashbookProjectionBuilder._is_auto_deduction_withdrawal(event_type, narr_l, payload)
+                            is_bank_rev = (payload.get("cash_paid") is False) or ("bank" in str(payload.get("payout_method") or "").lower())
+                            if is_laps_rev:
+                                totals["laps_returns"] -= amt
+                            elif is_auto_rev:
+                                totals["product_withdrawal"] -= amt
+                            else:
+                                totals["product_withdrawal"] -= amt
+                                totals["savings_withdrawal"] -= amt
+                                if is_bank_rev:
+                                    totals["bank_withdrawal"] -= amt
                             
                 # Branch Outflows (Credit 1000)
                 elif side == "Credit":
@@ -130,8 +284,18 @@ class MasterCashbookProjectionBuilder:
                             totals["fund_transferred_other_branch"] += amt
                         elif tx_type == "INTER_AREA_OUT":
                             totals["fund_to_other_area"] += amt
+                        elif tx_type == "ASSET_PROGRAM":
+                            totals["fund_to_asset_program"] += amt
                         else:
                             totals["fund_transferred_ho"] += amt
+                    elif event_type == "CashTransferred_HO_In_Reversed":
+                        tx_type = payload.get("transaction_type")
+                        if tx_type == "INTER_BRANCH_IN":
+                            totals["funds_received_other_branch"] -= amt
+                        elif tx_type == "INTER_AREA_IN":
+                            totals["funds_received_other_area"] -= amt
+                        else:
+                            totals["funds_received_ho"] -= amt
                     elif event_type == "ExpenseRecorded":
                         if tx_officer_id not in co_officer_ids:
                             totals["office_expenses"] += amt
@@ -141,24 +305,108 @@ class MasterCashbookProjectionBuilder:
                         if tx_officer_id not in co_officer_ids:
                             cat = str(payload.get("product_category") or "")
                             p_type = str(payload.get("product_type") or "").lower()
-                            p_narr = str(payload.get("narration") or "").lower()
-                            if "asset" in cat.lower() or "asset" in p_type or "asset" in p_narr:
-                                totals["fund_to_asset_program"] += amt
-                                branch_treasury_asset += amt
+                            cyc = str(payload.get("repayment_cycle") or "")
+                            dur = int(payload.get("duration") or 0)
+                            princ = float(payload.get("amount") or amt)
+                            act_cr = float(payload.get("active_credit") or princ)
+                            if "asset" in cat.lower() or "asset" in p_type or "asset" in narr_l:
+                                totals["loan_received_asset"] += princ
+                                branch_treasury_asset += princ
                             else:
-                                totals["fund_to_product_finance"] += amt
-                                branch_treasury_finance += amt
+                                totals["fund_to_product_finance"] += princ
+                                branch_treasury_finance += princ
+                            bucket = CoCashbookProjectionBuilder._classify_loan_product(p_type or narr_l, cyc, dur)
+                            if bucket == "120d":
+                                totals["disb_120d"] += act_cr
+                            elif bucket == "60d":
+                                totals["disb_60d"] += act_cr
+                            elif bucket == "24w":
+                                totals["disb_24w"] += act_cr
+                            elif bucket == "monthly":
+                                totals["disb_mth"] += act_cr
+                            else:
+                                totals["disb_12w"] += act_cr
                     elif event_type == "BankDeposited":
                         if tx_officer_id not in co_officer_ids:
                             totals["bank_deposit"] += amt
+                    elif event_type == "BankWithdrawalReversed":
+                        if tx_officer_id not in co_officer_ids:
+                            totals["bank_withdrawal"] -= amt
+                    elif event_type in ["SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION"]:
+                        if tx_officer_id not in co_officer_ids:
+                            is_bank_p = (payload.get("cash_paid") is False) or ("bank" in str(payload.get("payout_method") or "").lower())
+                            if not CoCashbookProjectionBuilder._is_auto_deduction_withdrawal(event_type, narr_l, payload):
+                                totals["product_withdrawal"] += amt
+                                totals["savings_withdrawal"] += amt
+                                if is_bank_p:
+                                    totals["bank_withdrawal"] += amt
+                    elif event_type in ["LapsPaidOut", "LapsRestoredToSavings"]:
+                        if tx_officer_id not in co_officer_ids:
+                            totals["laps_returns"] += amt
+                    elif event_type == "FeeReversed":
+                        if tx_officer_id not in co_officer_ids:
+                            _apply_fee_to_totals(narr_l, -amt)
+                    elif event_type in ["SavingsReversed", "SavingsDepositReversed"]:
+                        if tx_officer_id not in co_officer_ids:
+                            agg_type = entry.get("aggregate_type") or ev_store.get("aggregate_type")
+                            if agg_type == "LapsSavings":
+                                totals["laps_reserve"] -= amt
+                            else:
+                                totals["savings_deposit"] -= amt
+                    elif event_type == "RepaymentReversed":
+                        if tx_officer_id not in co_officer_ids:
+                            _apply_repayment_to_totals(payload, -amt)
+
+            # 4b. Non-CO Bank-paid Savings / LAPS withdrawals & reversals (Account 1050)
+            res_1050 = uow.client.table("financial_ledger_entries") \
+                .select("*, financial_transactions!inner(officer_id, event_store(event_type, payload))") \
+                .eq("branch_id", branch_id) \
+                .eq("account_code", "1050") \
+                .eq("financial_transactions.posting_date", p_date_str) \
+                .execute()
+            for entry in (res_1050.data or []):
+                if entry.get("account_code") != "1050":
+                    continue
+                amt = float(entry.get("amount") or 0.0)
+                side = entry.get("side")
+                tx = entry.get("financial_transactions") or {}
+                ev_store = tx.get("event_store") or {}
+                event_type = ev_store.get("event_type")
+                payload = ev_store.get("payload") or {}
+                tx_officer_id = str(tx.get("officer_id") or "")
+                if tx_officer_id in co_officer_ids:
+                    continue
+                narr_l = str(payload.get("narration") or entry.get("narration") or "").lower()
+                is_auto = CoCashbookProjectionBuilder._is_auto_deduction_withdrawal(event_type, narr_l, payload)
+                if side == "Credit":
+                    if event_type in ["SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION"] and not is_auto:
+                        totals["product_withdrawal"] += amt
+                        totals["bank_withdrawal"] += amt
+                    elif event_type == "LapsPaidOut":
+                        totals["laps_returns"] += amt
+                        totals["bank_withdrawal"] += amt
+                elif side == "Debit" and event_type == "SavingsWithdrawalReversed":
+                    is_laps_rev = (
+                        bool(payload.get("is_laps"))
+                        or str(payload.get("reversed_event_type") or "") == "LapsPaidOut"
+                        or "laps" in str(payload.get("source_bucket") or "").lower()
+                    )
+                    if is_laps_rev:
+                        totals["laps_returns"] -= amt
+                        totals["bank_withdrawal"] -= amt
+                    elif is_auto:
+                        totals["product_withdrawal"] -= amt
+                    else:
+                        totals["product_withdrawal"] -= amt
+                        totals["bank_withdrawal"] -= amt
         except Exception as e:
             print(f"[SAVINGS TRACE] Master Cashbook failed to fetch branch ledger entries: {e}")
 
         # 5. Fallback: If no direct loans aggregated from CO rows AND no branch treasury loans, fetch from loans table
-        if totals["fund_to_product_finance"] == 0.0 and totals["fund_to_asset_program"] == 0.0 and not co_rows:
+        if branch_treasury_finance == 0.0 and branch_treasury_asset == 0.0 and totals["fund_to_product_finance"] == 0.0 and not co_rows:
             try:
                 res_loans = uow.client.table("loans") \
-                    .select("loan_amount, active_credit, extra_fields, loan_products(name, repayment_cycle)") \
+                    .select("loan_amount, active_credit, product_category, extra_fields, loan_products(name, repayment_cycle, installments)") \
                     .eq("branch_id", branch_id) \
                     .eq("disbursement_date", p_date_str) \
                     .in_("status", ["Active", "Approved", "Completed"]) \
@@ -177,26 +425,26 @@ class MasterCashbookProjectionBuilder:
                     princ = float(l.get("loan_amount") or 0.0)
                     act_cr = float(l.get("active_credit") or princ)
                     lp = l.get("loan_products") or {}
-                    p_name = str(lp.get("name") or "").lower()
+                    p_name = str(lp.get("name") or l.get("product_type") or "").lower()
                     p_cat = str(l.get("product_category") or ("Asset" if "asset" in p_name else "Finance"))
                     
                     if "Asset" in p_cat or "asset" in p_name:
-                        totals["fund_to_asset_program"] += princ
+                        totals["loan_received_asset"] += princ
                         branch_treasury_asset += princ
                     else:
-                        totals["fund_to_product_finance"] += act_cr
-                        branch_treasury_finance += act_cr
+                        totals["fund_to_product_finance"] += princ
+                        branch_treasury_finance += princ
                         
-                    cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in p_name else "Weekly")
-                    if "120" in p_name:
+                    cycle = lp.get("repayment_cycle") or l.get("repayment_cycle") or ("Daily" if "daily" in p_name else "Weekly")
+                    dur = int(l.get("duration") or 0)
+                    bucket = CoCashbookProjectionBuilder._classify_loan_product(p_name, cycle, dur)
+                    if bucket == "120d":
                         totals["disb_120d"] = totals.get("disb_120d", 0.0) + act_cr
-                    elif "60" in p_name or (cycle == "Daily" and "120" not in p_name):
+                    elif bucket == "60d":
                         totals["disb_60d"] = totals.get("disb_60d", 0.0) + act_cr
-                    elif "24" in p_name:
+                    elif bucket == "24w":
                         totals["disb_24w"] = totals.get("disb_24w", 0.0) + act_cr
-                    elif "12" in p_name or cycle == "Weekly":
-                        totals["disb_12w"] = totals.get("disb_12w", 0.0) + act_cr
-                    elif "3m" in p_name or "6m" in p_name or cycle == "Monthly":
+                    elif bucket == "monthly":
                         totals["disb_mth"] = totals.get("disb_mth", 0.0) + act_cr
                     else:
                         totals["disb_12w"] = totals.get("disb_12w", 0.0) + act_cr
@@ -204,25 +452,29 @@ class MasterCashbookProjectionBuilder:
             except Exception as e:
                 print(f"Master Cashbook failed to fetch direct loan disbursements: {e}")
 
-        # Balance loan_received_finance with fund_to_product_finance (BR-CASH-001)
-        if totals.get("fund_to_product_finance", 0.0) > 0 and totals.get("loan_received_finance", 0.0) == 0.0:
+        # Roll CO Asset Loan principal out of asset_credit_sales into loan_received_asset (no double-counting)
+        if has_explicit_asset_loan:
+            co_asset_loan_amt = co_asset_loan_explicit
+        else:
+            co_asset_loan_amt = max(0.0, co_asset_credit_total - co_non_loan_asset_credit)
+        if co_asset_loan_amt > 0:
+            totals["asset_credit_sales"] = max(0.0, totals.get("asset_credit_sales", 0.0) - co_asset_loan_amt)
+            totals["loan_received_asset"] = totals.get("loan_received_asset", 0.0) + co_asset_loan_amt
+
+        # Prefer true Finance Principal when explicit _finance_loan_principal metadata is present on CO rows
+        if has_explicit_finance_principal and co_finance_principal_total > 0:
+            totals["fund_to_product_finance"] = co_finance_principal_total + branch_treasury_finance
+
+        # Balance loan_received_finance with fund_to_product_finance (Finance Principal symmetry)
+        if totals.get("fund_to_product_finance", 0.0) > 0:
             totals["loan_received_finance"] = totals["fund_to_product_finance"]
         elif branch_treasury_finance > 0 and totals.get("loan_received_finance", 0.0) == 0.0:
             totals["loan_received_finance"] = branch_treasury_finance
 
-        if totals.get("fund_to_asset_program", 0.0) > 0 and totals.get("loan_received_asset", 0.0) == 0.0:
-            totals["loan_received_asset"] = totals["fund_to_asset_program"]
-        elif branch_treasury_asset > 0 and totals.get("loan_received_asset", 0.0) == 0.0:
-            totals["loan_received_asset"] = branch_treasury_asset
-
-        # Ensure Bank Withdrawal is not double-counted with loan_received_finance (BIA-BM-CASHBOOK-061)
-        loan_fin_funding = totals.get("loan_received_finance", 0.0) or totals.get("fund_to_product_finance", 0.0)
-        if loan_fin_funding > 0 and totals.get("bank_withdrawal", 0.0) > 0:
-            totals["bank_withdrawal"] = max(0.0, totals.get("bank_withdrawal", 0.0) - loan_fin_funding)
-
-        # Ensure Asset Credit Sales is not double-counted with loan_received_asset
-        if totals.get("asset_credit_sales", 0.0) > 0 and totals.get("loan_received_asset", 0.0) > 0:
-            totals["loan_received_asset"] = max(0.0, totals.get("loan_received_asset", 0.0) - totals.get("asset_credit_sales", 0.0))
+        # Ensure misc_fees is always unified into savings_deposit
+        if totals.get("misc_fees", 0.0) != 0.0:
+            totals["savings_deposit"] = totals.get("savings_deposit", 0.0) + totals["misc_fees"]
+        totals["misc_fees"] = 0.0
 
         # Corrected Master Cashbook Formulas (ICARE Business Rules)
         total_inflows = (
@@ -234,14 +486,16 @@ class MasterCashbookProjectionBuilder:
             totals["daily_11_pct"] + totals["daily_20_pct"] + totals["weekly_11_pct"] + totals["weekly_20_pct"] + totals["savings_adj_amount"] +
             totals["risk_premium_returns"] + totals["passbook"] + totals["app_fee"] +
             totals["asset_credit_sales"] + totals["cash_and_carry"] + totals["contingency"] +
-            totals["credit_form"] + totals["credit_form_damage"] + totals["bonus"] + totals["misc_fees"]
+            totals["credit_form"] + totals["credit_form_damage"] + totals["bonus"]
         )
 
-        prod_wd = totals["product_withdrawal"] if totals["product_withdrawal"] > 0 else totals["savings_withdrawal"]
+        prod_wd = max(totals["product_withdrawal"], totals["savings_withdrawal"])
         totals["product_withdrawal"] = prod_wd
 
         total_outflows = (
             totals["product_withdrawal"] +
+            totals.get("disb_60d", 0.0) + totals.get("disb_120d", 0.0) +
+            totals.get("disb_12w", 0.0) + totals.get("disb_24w", 0.0) + totals.get("disb_mth", 0.0) +
             totals["bank_deposit"] + totals["laps_returns"] +
             totals["fund_to_asset_program"] + totals["fund_to_product_finance"] +
             totals["fund_transferred_other_branch"] + totals["fund_transferred_ho"] + totals["fund_to_other_area"] +
@@ -291,9 +545,19 @@ class MasterCashbookProjectionBuilder:
         }
         mb_data.update(totals)
 
-        try:
-            res = uow.client.table("master_cashbook").upsert(mb_data, on_conflict="date,branch_id").execute()
-            return mb_data
-        except Exception as ex:
-            print("Error upserting master_cashbook:", ex)
-            return None
+        db_payload = {k: v for k, v in mb_data.items() if not k.startswith("_")}
+        for _ in range(10):
+            try:
+                uow.client.table("master_cashbook").upsert(db_payload, on_conflict="date,branch_id").execute()
+                return mb_data
+            except Exception as ex:
+                msg = str(ex)
+                if "PGRST204" in msg or "Could not find the '" in msg:
+                    import re
+                    m = re.search(r"Could not find the '([^']+)' column", msg)
+                    if m and m.group(1) in db_payload:
+                        del db_payload[m.group(1)]
+                        continue
+                print("Error upserting master_cashbook:", ex)
+                return mb_data
+        return mb_data

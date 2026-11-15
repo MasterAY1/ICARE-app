@@ -57,19 +57,60 @@ class OfflineSyncManager {
   // 1. SYNC-DOWN (PRE-CACHING FOR FIELD USE)
   // ==========================================
 
-  /// Pre-caches a group collection sheet from the server to local SQLite.
-  Future<void> preCacheGroupSheet(String groupName, [String? dateStr]) async {
+  /// Saves an already-fetched group collection sheet directly into local storage.
+  Future<void> cacheLoadedGroupSheet(String groupName, Map<String, dynamic> sheet, {String? dateStr}) async {
+    if (groupName.trim().isEmpty) return;
+    await _db.cacheGroupSheet(groupName, sheet, dateStr: dateStr);
+  }
+
+  Future<bool> _tryPreCacheGroup(String groupName, [String? dateStr]) async {
     try {
       final sheet = await _api.getCollectionSheet(groupName: groupName, date: dateStr);
-      await _db.cacheGroupSheet(groupName, sheet);
+      await _db.cacheGroupSheet(groupName, sheet, dateStr: dateStr);
+      return true;
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout) {
+        return false;
+      }
+      return true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Pre-caches a group collection sheet from the server to local storage.
+  Future<void> preCacheGroupSheet(String groupName, [String? dateStr]) async {
+    await _tryPreCacheGroup(groupName, dateStr);
+  }
+
+  /// Pre-caches single-client quick-entry options for offline use.
+  Future<void> preCacheSingleClients() async {
+    try {
+      await _api.getSingleClientOptions();
     } catch (_) {
       // Non-critical background caching failure
     }
   }
 
+  /// Pre-caches all available group collection sheets and single-client options in background.
+  Future<void> preCacheAllAvailableGroups(
+    List<String> groupNames,
+    String dateStr, {
+    String? skipGroup,
+  }) async {
+    await preCacheSingleClients();
+    for (final rawName in groupNames) {
+      final name = rawName.trim();
+      if (name.isEmpty || name == 'Ungrouped' || name == skipGroup) continue;
+      final keepGoing = await _tryPreCacheGroup(name, dateStr);
+      if (!keepGoing) break;
+    }
+  }
+
   /// Retrieves group sheet from local cache (fallback when offline).
-  Future<Map<String, dynamic>?> getOfflineSheet(String groupName) async {
-    return await _db.getCachedGroupSheet(groupName);
+  Future<Map<String, dynamic>?> getOfflineSheet(String groupName, {String? dateStr}) async {
+    return await _db.getCachedGroupSheet(groupName, dateStr: dateStr);
   }
 
   // ==========================================
@@ -89,10 +130,11 @@ class OfflineSyncManager {
         ? existingKey
         : generateIdempotencyKey(groupName);
     
-    // Inject idempotency key and batch ID into payload
+    // Inject idempotency key, batch ID, and explicit offline sync flag into payload
     final augmentedPayload = Map<String, dynamic>.from(payload);
     augmentedPayload['idempotency_key'] = key;
     augmentedPayload['batch_id'] = key;
+    augmentedPayload['is_offline_sync'] = true;
 
     final outboxId = await _db.queueBatchCollection(
       idempotencyKey: key,
@@ -101,12 +143,25 @@ class OfflineSyncManager {
       payload: augmentedPayload,
     );
 
+    final rawCols = (payload['collections'] as List?)
+            ?.whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList() ??
+        <Map<String, dynamic>>[];
+    final grpSav = (payload['group_savings_deposit'] as num?)?.toDouble() ?? 0.0;
+    await _db.applyOptimisticOfflineCollectionToCachedSheet(
+      groupName: groupName,
+      collections: rawCols,
+      groupSavingsDeposit: grpSav,
+      collectionDate: collectionDate,
+    );
+
     await _outboxNotifier.refresh();
 
     // Generate local offline receipt conforming to institutional standards
     final collections = (payload['collections'] as List<dynamic>? ?? []);
     double totalRepayments = 0.0;
-    double totalSavings = (payload['group_savings_deposit'] as num?)?.toDouble() ?? 0.0;
+    double totalSavings = grpSav;
 
     for (final c in collections) {
       if (c is Map<String, dynamic>) {
@@ -123,10 +178,13 @@ class OfflineSyncManager {
         'idempotency_key': key,
         'group_name': groupName,
         'total_cash': totalRepayments + totalSavings,
+        'total_repayment': totalRepayments,
         'total_repayments': totalRepayments,
         'total_savings': totalSavings,
         'total_submitted': collections.length,
         'timestamp': DateTime.now().toIso8601String(),
+        'is_offline_queued': true,
+        'offline_queued': true,
         'status': 'QUEUED_LOCAL',
         'watermark': 'OFFLINE RECORDING - PENDING SYNC',
       }
@@ -146,10 +204,11 @@ class OfflineSyncManager {
         ? existingKey
         : generateIdempotencyKey('SC_$clientName');
 
-    // Inject idempotency key and batch ID into payload
+    // Inject idempotency key, batch ID, and explicit offline sync flag into payload
     final augmentedPayload = Map<String, dynamic>.from(payload);
     augmentedPayload['idempotency_key'] = key;
     augmentedPayload['batch_id'] = key;
+    augmentedPayload['is_offline_sync'] = true;
 
     final outboxId = await _db.queueSingleCollection(
       idempotencyKey: key,
@@ -158,11 +217,19 @@ class OfflineSyncManager {
       payload: augmentedPayload,
     );
 
+    final grpName = payload['group_name']?.toString().trim() ?? '';
+    final grpSavAmt = (payload['group_savings_deposit'] as num?)?.toDouble() ?? 0.0;
+    await _db.applyOptimisticOfflineCollectionToCachedSheet(
+      groupName: grpName,
+      collections: [Map<String, dynamic>.from(payload)],
+      groupSavingsDeposit: grpSavAmt,
+      collectionDate: collectionDate,
+    );
+
     await _outboxNotifier.refresh();
 
     final repAmt = (payload['loan_repayment'] as num?)?.toDouble() ?? 0.0;
     final savAmt = (payload['savings_deposit'] as num?)?.toDouble() ?? 0.0;
-    final grpSavAmt = (payload['group_savings_deposit'] as num?)?.toDouble() ?? 0.0;
     final fees = ((payload['app_fee'] as num?)?.toDouble() ?? 0.0) +
                  ((payload['passbook_fee'] as num?)?.toDouble() ?? 0.0) +
                  ((payload['misc_fee'] as num?)?.toDouble() ?? 0.0);
@@ -181,6 +248,8 @@ class OfflineSyncManager {
         'total_savings': savAmt + grpSavAmt,
         'total_submitted': 1,
         'timestamp': DateTime.now().toIso8601String(),
+        'is_offline_queued': true,
+        'offline_queued': true,
         'status': 'QUEUED_LOCAL',
         'watermark': 'OFFLINE RECORDING - PENDING SYNC',
         'officer': 'Field Credit Officer',
@@ -247,26 +316,41 @@ class OfflineSyncManager {
         } catch (e) {
           failedCount++;
           String err;
+          bool isTransient = true;
           if (e is DioException) {
-            if (e.response?.statusCode == 401) {
+            final statusCode = e.response?.statusCode;
+            if (statusCode == 401) {
               err = 'Session expired. Please log in again to sync.';
+              isTransient = true;
+            } else if (e.type == DioExceptionType.connectionTimeout ||
+                e.type == DioExceptionType.sendTimeout ||
+                e.type == DioExceptionType.receiveTimeout ||
+                e.type == DioExceptionType.connectionError) {
+              err = 'Network connection failed (${e.type.name}).';
+              isTransient = true;
+            } else if (statusCode != null && statusCode >= 400 && statusCode < 500) {
+              isTransient = false;
+              if (e.response?.data is Map && (e.response!.data as Map).containsKey('detail')) {
+                err = (e.response!.data as Map)['detail'].toString();
+              } else {
+                err = 'Rejected ($statusCode): ${e.message ?? 'Validation error'}';
+              }
             } else if (e.response?.data is Map && (e.response!.data as Map).containsKey('detail')) {
               err = (e.response!.data as Map)['detail'].toString();
-            } else if (e.type == DioExceptionType.connectionTimeout || e.type == DioExceptionType.receiveTimeout) {
-              err = 'Server connection timed out. Please retry.';
-            } else if (e.type == DioExceptionType.connectionError) {
-              err = 'Network connection failed (${e.type.name}).';
             } else {
-              err = 'Server error (${e.response?.statusCode ?? e.type.name}): ${e.message ?? 'Unknown'}';
+              err = 'Server error (${statusCode ?? e.type.name}): ${e.message ?? 'Unknown'}';
             }
           } else {
             err = e.toString();
           }
 
           errorMessages.add('Batch #$id (${item['group_name']}): $err');
-          await _db.markOutboxBatchFailed(id, err);
-          // If connection dropped or server error, stop attempting subsequent batches
-          break;
+          await _db.markOutboxBatchFailed(id, err, isPermanent: !isTransient);
+          // Halt only on transient network, auth expiry, or 5xx outages; skip permanent 4xx poison items
+          if (isTransient) {
+            break;
+          }
+          continue;
         }
       }
 

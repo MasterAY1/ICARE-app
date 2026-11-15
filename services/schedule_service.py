@@ -1,6 +1,6 @@
 import uuid
 import math
-from typing import Optional, Any
+from typing import Optional, Any, List, Dict
 from datetime import date, datetime, timedelta
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from domain.entities.loan import Loan
@@ -8,13 +8,19 @@ from services.business_date_service import get_nigerian_holidays
 
 class ScheduleService:
     @staticmethod
-    def generate_schedule(uow: SupabaseUnitOfWork, loan: Loan, start_date: date) -> None:
+    def generate_schedule(
+        uow: SupabaseUnitOfWork,
+        loan: Loan,
+        start_date: date,
+        defer_operations: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
         """
         Generates amortization schedule installments in the database for a loan based on product rules.
         """
         # 1. Fetch loan product parameters via LoanProductEngine
         from services.loan_product_engine import LoanProductEngine
-        prod_cat = getattr(loan, 'product_category', None) or (loan.extra_fields.get("product_category") if hasattr(loan, 'extra_fields') and isinstance(loan.extra_fields, dict) else None) or ("Asset" if getattr(loan, 'is_asset', False) else "Finance")
+        extra = loan.extra_fields if isinstance(getattr(loan, 'extra_fields', None), dict) else {}
+        prod_cat = getattr(loan, 'product_category', None) or extra.get("product_category") or ("Asset" if getattr(loan, 'is_asset', False) else "Finance")
         setup = LoanProductEngine.calculate_loan_setup(loan.amount, loan.product_type, prod_cat)
         
         is_asset = "asset" in str(prod_cat).lower() or (loan.product_type and "asset" in str(loan.product_type).lower())
@@ -23,11 +29,12 @@ class ScheduleService:
 
         # In ICARE, active_credit is already derived at origination and strictly divisible by duration.
         # Prefer the established loan_repay, or active_credit / installments.
-        loan_repay = float(getattr(loan, 'loan_repay', 0.0) or 0.0)
+        loan_repay = float(getattr(loan, 'loan_repay', 0.0) or extra.get("loan_repay") or getattr(loan, 'expected_installment', 0.0) or 0.0)
+        active_credit = float(getattr(loan, 'active_credit', 0.0) or extra.get("active_credit") or getattr(loan, 'total_payable', 0.0) or 0.0)
         if loan_repay > 0:
             inst_total = loan_repay
-        elif getattr(loan, 'active_credit', 0.0) and installments > 0:
-            inst_total = float(loan.active_credit / installments)
+        elif active_credit > 0 and installments > 0:
+            inst_total = float(active_credit / installments)
         else:
             inst_total = float(setup.get("loan_repayment", 0.0))
 
@@ -107,10 +114,8 @@ class ScheduleService:
                 current_due_date = current_anchor
             elif cycle == "Weekly":
                 current_anchor += timedelta(weeks=1)
-                while not is_working_day(current_anchor):
-                    # For weekly group meetings, skip to the next week entirely if holiday
-                    current_anchor += timedelta(weeks=1)
-                current_due_date = current_anchor
+                # Preserve group meeting weekday anchor; only shift due date to next working day if holiday/closure
+                current_due_date = get_next_working_day(current_anchor)
             elif cycle == "Monthly":
                 current_anchor = add_months(base_date, i)
                 # For monthly, push forward to nearest valid working day
@@ -140,13 +145,21 @@ class ScheduleService:
                 "paid_date": None
             })
 
-        # Save to database (Clean existing pending schedule rows first to avoid duplicates)
+        # Save to database (atomic batch via defer_operations or direct insert)
         if schedule_rows:
-            try:
-                uow.client.table("loan_schedule").delete().eq("loan_id", loan.id).eq("status", "Pending").execute()
-            except Exception:
-                pass
-            uow.client.table("loan_schedule").insert(schedule_rows).execute()
+            if defer_operations is not None:
+                for row in schedule_rows:
+                    defer_operations.append({
+                        "type": "insert",
+                        "table": "loan_schedule",
+                        "record": row
+                    })
+            else:
+                try:
+                    uow.client.table("loan_schedule").delete().eq("loan_id", loan.id).eq("status", "Pending").execute()
+                except Exception:
+                    pass
+                uow.client.table("loan_schedule").insert(schedule_rows).execute()
 
     @staticmethod
     def get_expected_repayment(uow: SupabaseUnitOfWork, loan_id: str, evaluation_date: date = None) -> float:
@@ -452,7 +465,14 @@ class ScheduleService:
         return (sum(float(row["paid_amount"] or 0) for row in res.data), True)
 
     @staticmethod
-    def record_repayment(uow: SupabaseUnitOfWork, loan_id: str, amount: float, paid_date: date = None, cached_schedule_rows: list = None) -> float:
+    def record_repayment(
+        uow: SupabaseUnitOfWork,
+        loan_id: str,
+        amount: float,
+        paid_date: date = None,
+        cached_schedule_rows: list = None,
+        defer_operations: Optional[List[Dict[str, Any]]] = None
+    ) -> float:
         """
         Applies a manual repayment amount to the loan schedule in chronological sequence.
         Returns the excess amount (if any) that can reduce outstanding principal.
@@ -492,11 +512,20 @@ class ScheduleService:
                 status = "Partial"
                 remaining_repayment = 0.0
 
-            uow.client.table("loan_schedule").update({
+            upd_record = {
                 "paid_amount": new_paid_amount,
                 "status": status,
                 "paid_date": paid_date.isoformat()
-            }).eq("id", row["id"]).execute()
+            }
+            if defer_operations is not None:
+                defer_operations.append({
+                    "type": "update",
+                    "table": "loan_schedule",
+                    "record": upd_record,
+                    "match": {"id": row["id"]}
+                })
+            else:
+                uow.client.table("loan_schedule").update(upd_record).eq("id", row["id"]).execute()
 
         # If there is remaining_repayment (excess payment), it is applied directly to reduce principal
         # The user requested: excess goes to reduce principal/outstanding balance, do NOT skip meetings,
@@ -508,7 +537,8 @@ class ScheduleService:
         uow: SupabaseUnitOfWork,
         loan_id: str,
         amount: float,
-        reversal_date: Optional[date] = None
+        reversal_date: Optional[date] = None,
+        defer_operations: Optional[List[Dict[str, Any]]] = None
     ) -> float:
         """
         Reverses an amount previously applied to a loan schedule (BR-ERR-002).
@@ -547,11 +577,20 @@ class ScheduleService:
                 new_paid_date = row.get("paid_date")
                 remaining_to_reverse = 0.0
 
-            uow.client.table("loan_schedule").update({
+            upd_record = {
                 "paid_amount": new_paid_amount,
                 "status": status,
                 "paid_date": new_paid_date
-            }).eq("id", row["id"]).execute()
+            }
+            if defer_operations is not None:
+                defer_operations.append({
+                    "type": "update",
+                    "table": "loan_schedule",
+                    "record": upd_record,
+                    "match": {"id": row["id"]}
+                })
+            else:
+                uow.client.table("loan_schedule").update(upd_record).eq("id", row["id"]).execute()
 
         return remaining_to_reverse
 
@@ -669,10 +708,8 @@ class ScheduleService:
                         cand = last_due_date + timedelta(weeks=1)
                     else:
                         cand = old_due
-                    while not is_working_day(cand):
-                        cand += timedelta(weeks=1)
-                    new_due = cand
-                    last_due_date = new_due
+                    new_due = get_next_working_day(cand)
+                    last_due_date = cand
                 elif cycle_type == "Monthly":
                     if not is_working_day(old_due):
                         new_due = get_next_working_day(old_due)

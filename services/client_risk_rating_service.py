@@ -4,11 +4,11 @@ Computes client risk ratings from collection performance data.
 Ratings are computed, never manually entered.
 
 Risk Rating Scale:
-  95–100%  → ⭐ Excellent — Eligible for upgrade
-  85–94%   → 🟢 Good — Maintain current loan
-  70–84%   → 🟡 Fair — Monitor closely
-  50–69%   → 🟠 Risky — No loan increase
-  Below 50% → 🔴 High Risk — Downgrade or decline
+  95–100%  → [A+] Excellent — Eligible for upgrade
+  85–94%   → [A] Good — Maintain current loan
+  70–84%   → [B] Fair — Monitor closely
+  50–69%   → [C] Risky — No loan increase
+  Below 50% → [D] High Risk — Downgrade or decline
 
 Inputs:
   - Collection performance (compliance %, paid/part/missed meetings)
@@ -22,11 +22,11 @@ from interfaces.unit_of_work import UnitOfWork
 
 
 RATING_THRESHOLDS = [
-    (95, "EXCELLENT", "⭐", "Excellent — Eligible for upgrade"),
-    (85, "GOOD", "🟢", "Good — Maintain current loan"),
-    (70, "FAIR", "🟡", "Fair — Monitor closely"),
-    (50, "RISKY", "🟠", "Risky — No loan increase"),
-    (0,  "HIGH_RISK", "🔴", "High Risk — Downgrade or decline"),
+    (95, "EXCELLENT", "A+", "Excellent — Eligible for upgrade"),
+    (85, "GOOD", "A", "Good — Maintain current loan"),
+    (70, "FAIR", "B", "Fair — Monitor closely"),
+    (50, "RISKY", "C", "Risky — No loan increase"),
+    (0,  "HIGH_RISK", "D", "High Risk — Downgrade or decline"),
 ]
 
 
@@ -101,12 +101,12 @@ class ClientRiskRatingService:
 
         # 5. Determine Rating
         rating_score = "HIGH_RISK"
-        rating_emoji = "🔴"
+        rating_token = "D"
         rating_label = "High Risk — Downgrade or decline"
-        for threshold, score, emoji, label in RATING_THRESHOLDS:
+        for threshold, score, token, label in RATING_THRESHOLDS:
             if adjusted_score >= threshold:
                 rating_score = score
-                rating_emoji = emoji
+                rating_token = token
                 rating_label = label
                 break
 
@@ -132,7 +132,8 @@ class ClientRiskRatingService:
             "loans_completed": loans_completed,
             "overdue_balance": overdue_balance,
             "rating_score": rating_score,
-            "rating_emoji": rating_emoji,
+            "rating_tier": rating_token,
+            "rating_emoji": rating_token,
             "rating_label": rating_label,
             "eligible_for_upgrade": eligible_for_upgrade,
             "recommended_max_loan": recommended_max_loan

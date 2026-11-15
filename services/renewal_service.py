@@ -55,9 +55,8 @@ class RenewalService:
         else:
             # Active Loan Check (same category)
             for loan in active_loans:
-                loan_is_asset = loan.get("is_asset", False)
-                if not isinstance(loan_is_asset, bool):
-                    loan_is_asset = str(loan_is_asset).lower() == "true"
+                loan_cat = str(loan.get("product_category") or "").strip().lower()
+                loan_is_asset = (loan_cat == "asset") or (loan.get("is_asset") is True) or (str(loan.get("is_asset", "")).lower() == "true")
                 
                 if loan_is_asset == is_requested_asset:
                     is_eligible = False
@@ -65,9 +64,8 @@ class RenewalService:
                     break
             
             for loan in pending_loans:
-                loan_is_asset = loan.get("is_asset", False)
-                if not isinstance(loan_is_asset, bool):
-                    loan_is_asset = str(loan_is_asset).lower() == "true"
+                loan_cat = str(loan.get("product_category") or "").strip().lower()
+                loan_is_asset = (loan_cat == "asset") or (loan.get("is_asset") is True) or (str(loan.get("is_asset", "")).lower() == "true")
                 if loan_is_asset == is_requested_asset:
                     is_eligible = False
                     reasons.append(f"Client already has a pending {product_category} loan application awaiting BM approval.")

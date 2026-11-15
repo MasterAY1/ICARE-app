@@ -8,11 +8,26 @@ from services.posting_engine import FinancialPostingEngine
 
 class RepaymentService:
     @staticmethod
-    def post_repayment(uow: SupabaseUnitOfWork, repayment: Repayment, known_exists: Optional[bool] = None, preloaded_loan: Optional[dict] = None, preloaded_repayments: Optional[list] = None) -> Repayment:
+    def post_repayment(
+        uow: SupabaseUnitOfWork,
+        repayment: Repayment,
+        known_exists: Optional[bool] = None,
+        preloaded_loan: Optional[dict] = None,
+        preloaded_repayments: Optional[list] = None,
+        allow_closed_date: bool = False,
+        include_extra_fields: bool = True,
+        defer_operations: Optional[list] = None,
+        extra_operations: Optional[list] = None,
+    ) -> Repayment:
         # Check Business Date Freeze & Working Day (BR-DATE-002)
         from services.business_date_service import BusinessDateService
         rep_date = getattr(repayment, 'payment_date', None) or getattr(repayment, 'date', None)
-        is_late_or_offline = bool(getattr(repayment, 'idempotency_key', None) or getattr(repayment, 'is_late_entry', False))
+        idem_str = str(getattr(repayment, 'idempotency_key', '') or '').strip().lower()
+        is_late_or_offline = bool(
+            getattr(repayment, 'is_late_entry', False)
+            or allow_closed_date
+            or idem_str.startswith('offline')
+        )
         if rep_date and not is_late_or_offline:
             is_open, reason = BusinessDateService.is_operational_open(uow, repayment.branch, rep_date)
             if not is_open:
@@ -96,6 +111,28 @@ class RepaymentService:
 
         # 3. Create Event & Post (Only for actual loan repayment component)
         if repayment.loan_repayment_amount > 0:
+            prod_type = ""
+            rep_cycle = ""
+            loan_duration = 0
+            try:
+                l_row = preloaded_loan
+                if not isinstance(l_row, dict):
+                    loan_id_val = getattr(repayment, "loan_id", None)
+                    if loan_id_val and getattr(uow, "client", None):
+                        loan_res = uow.client.table("loans").select(
+                            "loan_id, product_category, extra_fields, loan_products(name, repayment_cycle, installments)"
+                        ).eq("loan_id", loan_id_val).limit(1).execute()
+                        if loan_res.data and isinstance(loan_res.data[0], dict):
+                            l_row = loan_res.data[0]
+                if isinstance(l_row, dict):
+                    lp = l_row.get("loan_products") if isinstance(l_row.get("loan_products"), dict) else {}
+                    ef = l_row.get("extra_fields") if isinstance(l_row.get("extra_fields"), dict) else {}
+                    prod_type = str(lp.get("name") or l_row.get("product_category") or "")
+                    rep_cycle = str(lp.get("repayment_cycle") or ef.get("repayment_cycle") or "")
+                    loan_duration = int(lp.get("installments") or ef.get("duration") or l_row.get("duration") or 0)
+            except Exception:
+                pass
+
             event = DomainEvent(
                 event_id=str(uuid.uuid4()),
                 aggregate_id=repayment.id,
@@ -107,14 +144,17 @@ class RepaymentService:
                     "amount": repayment.loan_repayment_amount,
                     "reference": repayment.id,
                     "loan_id": repayment.loan_id,
+                    "product_type": prod_type,
+                    "repayment_cycle": rep_cycle,
+                    "duration": loan_duration,
                     "date": repayment.payment_date.isoformat() if repayment.payment_date else None,
                     "narration": repayment.note or f"Loan repayment of {repayment.loan_repayment_amount} received."
                 }
             )
             add_event(event)
 
-        # 4. Process extra fees and input from EOD collection
-        extra = repayment.extra_fields or {}
+        # 4. Process extra fees and input from EOD collection (skipped when CollectionBatchService handles them)
+        extra = (repayment.extra_fields or {}) if include_extra_fields else {}
         # Mapping of dict key -> (Event Type, Narration)
         fee_mapping = {
             "App Fee": ("FeeCharged", "Processing / Application Fee"),
@@ -220,10 +260,7 @@ class RepaymentService:
                         }
                     })
 
-        # Execute all accumulated operations atomically
-        uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
-
-        # Check for loan full payment completion and transition client lifecycle status (BR-CLI-003.3 & BR-CLI-005)
+        # Check for loan full payment completion and transition client lifecycle status atomically (BR-CLI-003.3 & BR-CLI-005)
         try:
             if repayment.client_id and repayment.loan_id:
                 from services.client_status_service import ClientStatusService
@@ -232,6 +269,7 @@ class RepaymentService:
                     uow,
                     repayment.client_id,
                     repayment.loan_id,
+                    defer_operations=operations,
                     preloaded_loan=preloaded_loan,
                     preloaded_repayments=preloaded_repayments,
                     current_repayment_amount=cur_rep_amt,
@@ -240,27 +278,50 @@ class RepaymentService:
         except Exception as ex:
             print(f"[REPAYMENT TRACE] Client status lifecycle check failed: {ex}")
 
-        # Check and record Full Payoff and Excess Payment in dedicated table (BR-DASH-005, BR-DASH-007)
+        # Check and record Full Payoff and Excess Payment atomically (BR-DASH-005, BR-DASH-007)
         try:
             if repayment.loan_id and repayment.loan_repayment_amount > 0:
-                RepaymentService._record_payoff_and_excess_if_applicable(uow, repayment, preloaded_loan=preloaded_loan, preloaded_repayments=preloaded_repayments)
+                RepaymentService._record_payoff_and_excess_if_applicable(
+                    uow,
+                    repayment,
+                    preloaded_loan=preloaded_loan,
+                    preloaded_repayments=preloaded_repayments,
+                    defer_operations=operations
+                )
         except Exception as ex_pe:
             print(f"[REPAYMENT TRACE] Payoff/excess recording failed: {ex_pe}")
 
-        # Check and record Overdue Recovery in dedicated table (BR-DASH-004, BR-DASH-005, Invariants 8 & 9)
+        # Check and record Overdue Recovery atomically (BR-DASH-004, BR-DASH-005, Invariants 8 & 9)
         try:
             if repayment.loan_id and repayment.loan_repayment_amount > 0:
-                RepaymentService._record_overdue_recovery_if_applicable(uow, repayment, preloaded_loan=preloaded_loan, preloaded_repayments=preloaded_repayments)
+                RepaymentService._record_overdue_recovery_if_applicable(
+                    uow,
+                    repayment,
+                    preloaded_loan=preloaded_loan,
+                    preloaded_repayments=preloaded_repayments,
+                    defer_operations=operations
+                )
         except Exception as ex_or:
             print(f"[REPAYMENT TRACE] Overdue recovery recording failed: {ex_or}")
+
+        if extra_operations:
+            operations.extend(extra_operations)
+
+        if defer_operations is not None:
+            defer_operations.extend(operations)
+            return repayment
+
+        # Execute all accumulated operations atomically
+        uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
 
         # Rebuild projection (only if not deferred during batch execution)
         if not getattr(FinancialPostingEngine, 'defer_projections', False):
             try:
                 b_id = uow.repayments._resolve_branch_id(repayment.branch)
+                o_id = uow.repayments._resolve_officer_id(repayment.credit_officer)
                 from datetime import date
                 p_rebuild_date = repayment.payment_date if repayment.payment_date else date.today()
-                uow.cashbook.rebuild_projection(b_id, p_rebuild_date)
+                uow.cashbook.rebuild_projection(b_id, p_rebuild_date, officer_id=o_id)
             except Exception as ex:
                 print(f"[REPAYMENT TRACE] Cashbook rebuild failed: {ex}")
         else:
@@ -366,6 +427,53 @@ class RepaymentService:
         tx_id, post_op = FinancialPostingEngine.post_event(uow, ev, defer_commit=True)
         operations.append(post_op)
 
+        # 2.5 Revert schedule installment(s) atomically inside operations
+        target_loan_id = orig.get("loan_id")
+        if target_loan_id and orig_amount > 0:
+            try:
+                from services.schedule_service import ScheduleService
+                try:
+                    ScheduleService.reverse_repayment_schedule(uow, target_loan_id, orig_amount, defer_operations=operations)
+                except TypeError:
+                    ScheduleService.reverse_repayment_schedule(uow, target_loan_id, orig_amount)
+            except Exception as ex_sched:
+                print(f"[REPAYMENT REVERSAL] Schedule reversal failed: {ex_sched}")
+
+        # 2.6 If reversing this repayment reopens a Completed loan, revert loans.status & clients.status atomically
+        if target_loan_id and orig_amount > 0:
+            try:
+                l_chk = uow.client.table("loans").select("loan_id, client_id, status, active_credit, total_due, loan_amount").eq("loan_id", target_loan_id).limit(1).execute()
+                if isinstance(l_chk.data, list) and l_chk.data and isinstance(l_chk.data[0], dict):
+                    l_row = l_chk.data[0]
+                    if str(l_row.get("status") or "").strip().lower() == "completed":
+                        act_cred = float(l_row.get("active_credit") or l_row.get("loan_amount") or 0.0)
+                        tot_due_base = float(l_row.get("total_due") if l_row.get("total_due") is not None else act_cred)
+                        r_chk = uow.client.table("repayments").select("id, amount_paid").eq("loan_id", target_loan_id).execute()
+                        all_r = r_chk.data if isinstance(r_chk.data, list) else []
+                        net_before = sum(float(r.get("amount_paid") or 0.0) for r in all_r if isinstance(r, dict))
+                        net_after = max(0.0, net_before - abs(orig_amount))
+                        if tot_due_base > 0 and net_after < (tot_due_base - 0.01):
+                            operations.append({
+                                "type": "update",
+                                "table": "loans",
+                                "record": {"status": "Active"},
+                                "match": {"loan_id": target_loan_id}
+                            })
+                            c_uuid = l_row.get("client_id") or orig.get("client_id")
+                            if c_uuid:
+                                from services.client_status_service import ClientStatusService
+                                ClientStatusService.transition_status(
+                                    uow=uow,
+                                    client_id=str(c_uuid),
+                                    new_status_name="On Loan",
+                                    reason=f"Repayment reversal #{str(original_repayment_id)[:8]} reopened loan balance",
+                                    trigger_type="SYSTEM",
+                                    trigger_reference=str(original_repayment_id),
+                                    defer_operations=operations
+                                )
+            except Exception as ex_rev_stat:
+                print(f"[REPAYMENT REVERSAL] Loan/client status revert check note: {ex_rev_stat}")
+
         # 3. Execute all accumulated operations atomically
         uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
 
@@ -387,26 +495,18 @@ class RepaymentService:
         except Exception as ex_or_del:
             print(f"[REPAYMENT REVERSAL] Cleanup overdue recovery record failed: {ex_or_del}")
 
-        # 3.5 Revert schedule installment(s) if loan repayment
-        target_loan_id = orig.get("loan_id")
-        if target_loan_id and orig_amount > 0:
-            try:
-                from services.schedule_service import ScheduleService
-                ScheduleService.reverse_repayment_schedule(uow, target_loan_id, orig_amount)
-            except Exception as ex_sched:
-                print(f"[REPAYMENT REVERSAL] Schedule reversal failed: {ex_sched}")
-
         # 4. Rebuild projection
         try:
             branch_val = orig.get("branch_id")
+            officer_val = orig.get("officer_id")
             rebuild_date = rev_dt.date() if hasattr(rev_dt, 'date') and callable(rev_dt.date) else (date.fromisoformat(str(rev_dt)[:10]) if rev_dt else date.today())
-            uow.cashbook.rebuild_projection(uow, branch_val, rebuild_date)
+            uow.cashbook.rebuild_projection(branch_val, rebuild_date, officer_id=officer_val)
 
             orig_raw_date = orig.get("payment_date") or orig.get("date")
             if orig_raw_date:
                 orig_date = date.fromisoformat(str(orig_raw_date)[:10])
                 if orig_date != rebuild_date:
-                    uow.cashbook.rebuild_projection(uow, branch_val, orig_date)
+                    uow.cashbook.rebuild_projection(branch_val, orig_date, officer_id=officer_val)
         except Exception as ex:
             print(f"Deferred cashbook rebuild failed during reversal: {ex}")
 
@@ -480,7 +580,14 @@ class RepaymentService:
             }
 
     @classmethod
-    def _record_payoff_and_excess_if_applicable(cls, uow: SupabaseUnitOfWork, repayment: Repayment, preloaded_loan: Optional[dict] = None, preloaded_repayments: Optional[list] = None):
+    def _record_payoff_and_excess_if_applicable(
+        cls,
+        uow: SupabaseUnitOfWork,
+        repayment: Repayment,
+        preloaded_loan: Optional[dict] = None,
+        preloaded_repayments: Optional[list] = None,
+        defer_operations: Optional[list] = None
+    ):
         """
         Detects if a repayment triggered a Full Loan Payoff (remaining balance reaches ₦0)
         and/or an Excess Payment (amount_paid > expected_installment), and persists
@@ -591,26 +698,33 @@ class RepaymentService:
             notes=repayment.note or f"Automatic payoff/excess record ({rec_type})"
         )
 
-        if hasattr(uow, 'payoff_excess'):
+        payoff_payload = {
+            "id": rec.id,
+            "repayment_id": rec.repayment_id,
+            "loan_id": rec.loan_id,
+            "client_id": rec.client_id,
+            "officer_id": rec.officer_id,
+            "branch_id": rec.branch_id,
+            "date": rep_date.isoformat(),
+            "record_type": rec_type,
+            "amount_paid": paid_amt,
+            "expected_installment": exp_inst,
+            "active_credit_settled": active_settled,
+            "excess_amount": excess_amt,
+            "remaining_balance_before": round(rem_before, 2),
+            "remaining_balance_after": round(rem_after, 2),
+            "notes": rec.notes
+        }
+        if defer_operations is not None:
+            defer_operations.append({
+                "type": "insert",
+                "table": "loan_payoff_excess_records",
+                "record": payoff_payload
+            })
+        elif hasattr(uow, 'payoff_excess'):
             uow.payoff_excess.record_event(rec)
         else:
-            uow.client.table("loan_payoff_excess_records").insert({
-                "id": rec.id,
-                "repayment_id": rec.repayment_id,
-                "loan_id": rec.loan_id,
-                "client_id": rec.client_id,
-                "officer_id": rec.officer_id,
-                "branch_id": rec.branch_id,
-                "date": rep_date.isoformat(),
-                "record_type": rec_type,
-                "amount_paid": paid_amt,
-                "expected_installment": exp_inst,
-                "active_credit_settled": active_settled,
-                "excess_amount": excess_amt,
-                "remaining_balance_before": round(rem_before, 2),
-                "remaining_balance_after": round(rem_after, 2),
-                "notes": rec.notes
-            }).execute()
+            uow.client.table("loan_payoff_excess_records").insert(payoff_payload).execute()
 
     @classmethod
     def _record_overdue_recovery_if_applicable(
@@ -618,7 +732,8 @@ class RepaymentService:
         uow: SupabaseUnitOfWork,
         repayment: Repayment,
         preloaded_loan: Optional[dict] = None,
-        preloaded_repayments: Optional[list] = None
+        preloaded_repayments: Optional[list] = None,
+        defer_operations: Optional[list] = None
     ):
         """
         Detects if a repayment recovered overdue arrears (overdue_before > 0 and amount_paid > 0),
@@ -724,25 +839,32 @@ class RepaymentService:
             notes=note_val
         )
 
-        if hasattr(uow, 'overdue_recoveries'):
+        rec_payload = {
+            "id": rec.id,
+            "repayment_id": rec.repayment_id,
+            "loan_id": rec.loan_id,
+            "client_id": rec.client_id,
+            "officer_id": rec.officer_id,
+            "branch_id": rec.branch_id,
+            "recovery_date": rep_date.isoformat(),
+            "recovery_timestamp": rec.recovery_timestamp.isoformat(),
+            "recovered_amount": round(recovered_amt, 2),
+            "overdue_before": round(overdue_before, 2),
+            "overdue_after": round(overdue_after, 2),
+            "total_repayment_amount": round(paid_amt, 2),
+            "recovery_type": rec_type,
+            "notes": rec.notes
+        }
+        if defer_operations is not None:
+            defer_operations.append({
+                "type": "insert",
+                "table": "loan_overdue_recovery_records",
+                "record": rec_payload
+            })
+        elif hasattr(uow, 'overdue_recoveries'):
             uow.overdue_recoveries.record_event(rec)
         else:
-            uow.client.table("loan_overdue_recovery_records").insert({
-                "id": rec.id,
-                "repayment_id": rec.repayment_id,
-                "loan_id": rec.loan_id,
-                "client_id": rec.client_id,
-                "officer_id": rec.officer_id,
-                "branch_id": rec.branch_id,
-                "recovery_date": rep_date.isoformat(),
-                "recovery_timestamp": rec.recovery_timestamp.isoformat(),
-                "recovered_amount": round(recovered_amt, 2),
-                "overdue_before": round(overdue_before, 2),
-                "overdue_after": round(overdue_after, 2),
-                "total_repayment_amount": round(paid_amt, 2),
-                "recovery_type": rec_type,
-                "notes": rec.notes
-            }).execute()
+            uow.client.table("loan_overdue_recovery_records").insert(rec_payload).execute()
 
         # Emit OverdueRecovered domain event
         try:
@@ -767,7 +889,7 @@ class RepaymentService:
                     "narration": f"Overdue arrears recovery of ₦{recovered_amt:,.2f} recorded for loan {repayment.loan_id}"
                 }
             )
-            uow.client.table("event_store").insert({
+            ev_record = {
                 "event_id": ev.event_id,
                 "aggregate_id": ev.aggregate_id,
                 "aggregate_type": ev.aggregate_type,
@@ -775,7 +897,15 @@ class RepaymentService:
                 "version": 1,
                 "payload": ev.payload,
                 "status": "Completed"
-            }).execute()
+            }
+            if defer_operations is not None:
+                defer_operations.append({
+                    "type": "insert",
+                    "table": "event_store",
+                    "record": ev_record
+                })
+            else:
+                uow.client.table("event_store").insert(ev_record).execute()
         except Exception as ex_ev:
             print(f"[REPAYMENT TRACE] Emitting OverdueRecovered event failed: {ex_ev}")
 

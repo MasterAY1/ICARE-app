@@ -148,4 +148,4 @@ def test_eod_adjustments_success(setup_dependencies):
         data = res.json()
         assert data["success"] is True
         assert mock_post_ev.call_count == 3  # 3 deltas posted
-        mock_uow.cashbook.rebuild_projection.assert_called_once()
+        mock_uow.cashbook.cascade_co_projection.assert_called_once()

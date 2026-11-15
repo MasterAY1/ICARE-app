@@ -49,6 +49,9 @@ class SingleClientLoanOption(BaseModel):
     active_credit: float
     remaining_balance: float
     expected_repayment: float
+    overdue_arrears: float = 0.0
+    has_overdue: bool = False
+    current_installment: float = 0.0
 
 
 class SingleClientOption(BaseModel):
@@ -93,6 +96,7 @@ class SingleClientSubmitInput(BaseModel):
     expected_amount: float = 0.0
     idempotency_key: Optional[str] = Field(None, description="Unique client transaction key for offline idempotency")
     batch_id: Optional[str] = Field(None, description="Deterministic batch identifier")
+    is_offline_sync: bool = Field(False, description="True only when replayed from the offline outbox queue")
 
 
 class SingleClientSubmitResponse(BaseModel):
@@ -119,8 +123,11 @@ class GroupSummaryRow(BaseModel):
 class RepaymentHistoryRow(BaseModel):
     time: str
     officer: str
+    client_id: Optional[str] = None
     client_name: str
     client_code: str
+    group_name: Optional[str] = None
+    loan_id: Optional[str] = None
     product: str
     expected_amount: float
     amount_paid: float
@@ -132,8 +139,10 @@ class RepaymentHistoryRow(BaseModel):
 class SavingsHistoryRow(BaseModel):
     time: str
     officer: str
+    client_id: Optional[str] = None
     client_name: str
     client_code: str
+    group_name: Optional[str] = None
     deposit_amount: float
     remarks: str
     ref_id: str

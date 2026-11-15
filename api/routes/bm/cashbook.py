@@ -86,59 +86,75 @@ def get_daily_master_cashbook(
     iso_date = target_date.isoformat()
     is_open, open_reason = BusinessDateService.is_operational_open(uow, branch_id, target_date)
 
-    # 3. Read Projected Row from master_cashbook (or rebuild if absent / explicitly requested)
+    # 3. Read Projected Row from master_cashbook (always rebuild on open operational day or force_rebuild)
+    from services.master_cashbook_projection_builder import MasterCashbookProjectionBuilder
+    from services.co_cashbook_projection_builder import CoCashbookProjectionBuilder
+
+    cb_dict = None
     cb_entry = uow.cashbook.find_by_date_and_branch(iso_date, target_branch)
-    if not cb_entry or force_rebuild:
+    if not cb_entry or force_rebuild or is_open:
         try:
-            uow.cashbook.rebuild_projection(branch_id, target_date)
+            cb_dict = MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, target_date)
             cb_entry = uow.cashbook.find_by_date_and_branch(iso_date, target_branch)
         except Exception as ex:
             print(f"Error rebuilding projection: {ex}")
 
-    auto_rep_60d = cb_entry.rep_daily if cb_entry else 0.0
-    auto_rep_120d = getattr(cb_entry, "rep_120_days", 0.0) if cb_entry else 0.0
-    auto_rep_12w = cb_entry.rep_12_weeks if cb_entry else 0.0
-    auto_rep_24w = cb_entry.rep_24_weeks if cb_entry else 0.0
-    auto_rep_mth = cb_entry.rep_monthly if cb_entry else 0.0
-    auto_savings = cb_entry.savings_deposit if cb_entry else 0.0
-    auto_laps_res = cb_entry.laps_reserve if cb_entry else 0.0
-    auto_daily_11 = cb_entry.daily_11_pct if cb_entry else 0.0
-    auto_daily_20 = float(getattr(cb_entry, "daily_20_pct", 0.0) or 0.0) if cb_entry else 0.0
-    auto_weekly_11 = cb_entry.weekly_11_pct if cb_entry else 0.0
-    auto_weekly_20 = float(getattr(cb_entry, "weekly_20_pct", 0.0) or 0.0) if cb_entry else 0.0
-    auto_monthly_markup = cb_entry.risk_premium_returns if cb_entry else 0.0
-    auto_passbook = cb_entry.passbook if cb_entry else 0.0
-    auto_app_fee = cb_entry.app_fee if cb_entry else 0.0
-    auto_asset_cr_sales = cb_entry.asset_credit_sales if cb_entry else 0.0
-    auto_cash_carry = cb_entry.cash_and_carry if cb_entry else 0.0
-    auto_contingency = cb_entry.contingency if cb_entry else 0.0
-    auto_credit_form_dmg = cb_entry.credit_form_damage if cb_entry else 0.0
-    auto_bonus = cb_entry.bonus if cb_entry else 0.0
-    auto_misc = cb_entry.misc_fees if cb_entry else 0.0
-    auto_bank_wd = cb_entry.bank_withdrawal if cb_entry else 0.0
+    def _cb_val(field: str, default: float = 0.0) -> float:
+        if isinstance(cb_dict, dict) and cb_dict.get(field) is not None:
+            return float(cb_dict.get(field) or 0.0)
+        if cb_entry is not None:
+            return float(getattr(cb_entry, field, 0.0) or 0.0)
+        return default
 
-    auto_savings_wd = cb_entry.savings_withdrawal if cb_entry else 0.0
-    auto_prod_wd = cb_entry.product_withdrawal if cb_entry else 0.0
-    auto_expenses = cb_entry.office_expenses if cb_entry else 0.0
-    auto_laps_ret = cb_entry.laps_returns if cb_entry else 0.0
-    auto_bank_dep = cb_entry.bank_deposit if cb_entry else 0.0
-    auto_adj_in = float(getattr(cb_entry, "adjustment_in", 0.0) or 0.0) if cb_entry else 0.0
-    auto_adj_out = float(getattr(cb_entry, "adjustment_out", 0.0) or 0.0) if cb_entry else 0.0
-    auto_adj_reason = str(getattr(cb_entry, "adjustment_reason", "") or "") if cb_entry else ""
+    auto_rep_60d = _cb_val("rep_daily")
+    auto_rep_120d = _cb_val("rep_120_days")
+    auto_rep_12w = _cb_val("rep_12_weeks")
+    auto_rep_24w = _cb_val("rep_24_weeks")
+    auto_rep_mth = _cb_val("rep_monthly")
+    auto_savings = _cb_val("savings_deposit") + _cb_val("misc_fees")
+    auto_laps_res = _cb_val("laps_reserve")
+    auto_daily_11 = _cb_val("daily_11_pct")
+    auto_daily_20 = _cb_val("daily_20_pct")
+    auto_weekly_11 = _cb_val("weekly_11_pct")
+    auto_weekly_20 = _cb_val("weekly_20_pct")
+    auto_monthly_markup = _cb_val("risk_premium_returns")
+    auto_passbook = _cb_val("passbook")
+    auto_app_fee = _cb_val("app_fee") + _cb_val("credit_form")
+    auto_asset_cr_sales = _cb_val("asset_credit_sales")
+    auto_cash_carry = _cb_val("cash_and_carry")
+    auto_loan_rec_asset = _cb_val("loan_received_asset")
+    auto_contingency = _cb_val("contingency")
+    auto_credit_form_dmg = _cb_val("credit_form_damage")
+    auto_bonus = _cb_val("bonus")
+    auto_bank_wd = _cb_val("bank_withdrawal")
 
-    funds_ho = float(getattr(cb_entry, "funds_received_ho", 0.0) or 0.0) if cb_entry else 0.0
-    funds_branch = float(getattr(cb_entry, "funds_received_other_branch", 0.0) or 0.0) if cb_entry else 0.0
-    funds_area = float(getattr(cb_entry, "funds_received_other_area", 0.0) or 0.0) if cb_entry else 0.0
-    xfer_branch = float(getattr(cb_entry, "fund_transferred_other_branch", 0.0) or 0.0) if cb_entry else 0.0
-    xfer_ho = float(getattr(cb_entry, "fund_transferred_ho", 0.0) or 0.0) if cb_entry else 0.0
-    xfer_area = float(getattr(cb_entry, "fund_to_other_area", 0.0) or 0.0) if cb_entry else 0.0
-    salaries = float(getattr(cb_entry, "staff_salaries", 0.0) or 0.0) if cb_entry else 0.0
+    auto_savings_wd = _cb_val("savings_withdrawal")
+    auto_prod_wd = max(_cb_val("product_withdrawal"), auto_savings_wd)
+    auto_expenses = _cb_val("office_expenses")
+    auto_laps_ret = _cb_val("laps_returns")
+    auto_bank_dep = _cb_val("bank_deposit")
+    auto_adj_in = _cb_val("adjustment_in")
+    auto_adj_out = _cb_val("adjustment_out")
+    auto_adj_reason = str(
+        (cb_dict.get("adjustment_reason") if isinstance(cb_dict, dict) and cb_dict.get("adjustment_reason") is not None else getattr(cb_entry, "adjustment_reason", ""))
+        or ""
+    )
+
+    funds_ho = _cb_val("funds_received_ho")
+    funds_branch = _cb_val("funds_received_other_branch")
+    funds_area = _cb_val("funds_received_other_area")
+    xfer_branch = _cb_val("fund_transferred_other_branch")
+    xfer_ho = _cb_val("fund_transferred_ho")
+    xfer_area = _cb_val("fund_to_other_area")
+    manual_fund_asset = _cb_val("fund_to_asset_program")
+    proj_fund_finance = _cb_val("fund_to_product_finance")
+    salaries = _cb_val("staff_salaries")
 
     # 5-10. Concurrently Fetch Today Loans, Reconciliation Tally, Pending Reversals, and Treasury Transactions
     def _fetch_today_loans():
         try:
             res_l = uow.client.table("loans") \
-                .select("loan_amount, active_credit, extra_fields, product_category, loan_products(name, repayment_cycle)") \
+                .select("loan_amount, active_credit, extra_fields, product_category, product_type, repayment_cycle, duration, loan_products(name, repayment_cycle, installments)") \
                 .eq("branch_id", branch_id) \
                 .or_(f"disbursement_date.eq.{iso_date},date.eq.{iso_date}") \
                 .in_("status", ["Active", "Approved", "Completed"]) \
@@ -197,8 +213,8 @@ def get_daily_master_cashbook(
         raw_pending_rev = fut_rev.result()
         raw_treasury_tx = fut_tx.result()
 
-    auto_fund_asset = 0.0
-    auto_fund_finance = 0.0
+    loans_rec_asset_today = 0.0
+    loans_fund_finance_today = 0.0
     auto_disb_60d = 0.0
     auto_disb_120d = 0.0
     auto_disb_12w = 0.0
@@ -212,28 +228,38 @@ def get_daily_master_cashbook(
         active_cr = float(loan.get("active_credit") or principal)
         cat = str(loan.get("product_category") or "Finance")
         lp = loan.get("loan_products") or {}
-        prod = str(lp.get("name") or "").lower()
+        prod = str(lp.get("name") or loan.get("product_type") or "").lower()
+        cyc = str(lp.get("repayment_cycle") or loan.get("repayment_cycle") or "")
+        dur = int(loan.get("duration") or lp.get("installments") or 0)
 
         if "Asset" in cat or "asset" in prod:
-            auto_fund_asset += principal
+            loans_rec_asset_today += principal
         else:
-            auto_fund_finance += principal
+            loans_fund_finance_today += principal
 
-        if "120" in prod:
+        bucket = CoCashbookProjectionBuilder._classify_loan_product(prod, cyc, dur)
+        if bucket == "120d":
             auto_disb_120d += active_cr
-        elif "60" in prod:
+        elif bucket == "60d":
             auto_disb_60d += active_cr
-        elif "24w" in prod or "24" in prod:
+        elif bucket == "24w":
             auto_disb_24w += active_cr
-        elif "12w" in prod or "12" in prod:
-            auto_disb_12w += active_cr
-        elif "3m" in prod or "6m" in prod or "month" in prod:
+        elif bucket == "monthly":
             auto_disb_mth += active_cr
         else:
             auto_disb_12w += active_cr
 
+    if auto_loan_rec_asset == 0.0 and loans_rec_asset_today > 0:
+        auto_loan_rec_asset = loans_rec_asset_today
+    auto_fund_finance = proj_fund_finance if proj_fund_finance > 0 else loans_fund_finance_today
+    auto_disb_60d = _cb_val("disb_60d") or auto_disb_60d
+    auto_disb_120d = _cb_val("disb_120d") or auto_disb_120d
+    auto_disb_12w = _cb_val("disb_12w") or auto_disb_12w
+    auto_disb_24w = _cb_val("disb_24w") or auto_disb_24w
+    auto_disb_mth = _cb_val("disb_mth") or auto_disb_mth
+
     # 6. Opening Balance Resolution
-    auto_opening = float(cb_entry.opening_balance) if cb_entry and cb_entry.opening_balance is not None else 0.0
+    auto_opening = _cb_val("opening_balance")
     if auto_opening == 0.0:
         prev_date = (target_date - timedelta(days=1)).isoformat()
         try:
@@ -243,19 +269,20 @@ def get_daily_master_cashbook(
         except Exception:
             auto_opening = 0.0
 
-    # 7. Total Inflows and Outflows Calculation (app.py L11457-11474)
+    # 7. Total Inflows and Outflows Calculation (product_withdrawal already equals max(product_withdrawal, savings_withdrawal))
     total_inflows = (
         auto_opening + auto_savings + auto_rep_60d + auto_rep_120d + auto_rep_12w + auto_rep_24w + auto_rep_mth +
         auto_laps_res + funds_ho + funds_branch + funds_area +
-        auto_asset_cr_sales + auto_cash_carry + auto_fund_finance +
+        auto_asset_cr_sales + auto_cash_carry + auto_loan_rec_asset + auto_fund_finance +
         auto_daily_11 + auto_daily_20 + auto_weekly_11 + auto_weekly_20 + auto_monthly_markup +
         auto_contingency + auto_credit_form_dmg + auto_bonus + auto_app_fee + auto_passbook + auto_bank_wd +
         auto_adj_in
     )
 
     total_outflows = (
-        auto_prod_wd + auto_savings_wd +
-        auto_fund_asset + auto_fund_finance +
+        auto_prod_wd +
+        auto_disb_60d + auto_disb_120d + auto_disb_12w + auto_disb_24w + auto_disb_mth +
+        manual_fund_asset + auto_fund_finance +
         xfer_branch + xfer_ho + xfer_area +
         salaries + auto_expenses + auto_laps_ret + auto_bank_dep +
         auto_adj_out
@@ -393,6 +420,7 @@ def get_daily_master_cashbook(
         funds_received_other_area=funds_area,
         asset_credit_sales=auto_asset_cr_sales,
         cash_and_carry=auto_cash_carry,
+        loan_received_asset=auto_loan_rec_asset,
         loan_received_finance=auto_fund_finance,
         daily_11_pct=auto_daily_11,
         daily_20_pct=auto_daily_20,
@@ -417,7 +445,7 @@ def get_daily_master_cashbook(
         fund_transferred_other_branch=xfer_branch,
         fund_transferred_ho=xfer_ho,
         fund_to_other_area=xfer_area,
-        fund_to_asset_program=auto_fund_asset,
+        fund_to_asset_program=manual_fund_asset,
         fund_to_product_finance=auto_fund_finance,
         product_withdrawal=auto_prod_wd,
         savings_withdrawal=auto_savings_wd,
@@ -471,44 +499,75 @@ def save_master_cashbook_manual_entries(
             detail=f"Cannot save entries: Operational Activity Suspended ({open_reason})."
         )
 
+    import uuid
+    from domain.entities.event_store import DomainEvent
+    from services.posting_engine import FinancialPostingEngine
+    from services.master_cashbook_projection_builder import MasterCashbookProjectionBuilder
+
     user_identifier = current_user.username
     posted_any = False
 
     try:
-        if payload.funds_received_ho > 0:
-            TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_IN', payload.funds_received_ho, branch_name, user_identifier, remarks=f"HO Funding: {payload.funds_received_ho}", posting_date=target_date)
-            posted_any = True
-        if payload.funds_received_other_branch > 0:
-            TreasuryService.post_treasury_transaction(uow, 'INTER_BRANCH_IN', payload.funds_received_other_branch, branch_name, user_identifier, remarks=f"Branch Funding: {payload.funds_received_other_branch}", posting_date=target_date)
-            posted_any = True
-        if payload.funds_received_other_area > 0:
-            TreasuryService.post_treasury_transaction(uow, 'INTER_AREA_IN', payload.funds_received_other_area, branch_name, user_identifier, remarks=f"Area Funding: {payload.funds_received_other_area}", posting_date=target_date)
-            posted_any = True
-        if payload.fund_transferred_other_branch > 0:
-            TreasuryService.post_treasury_transaction(uow, 'INTER_BRANCH_OUT', payload.fund_transferred_other_branch, branch_name, user_identifier, remarks=f"Transfer to Branch: {payload.fund_transferred_other_branch}", posting_date=target_date)
-            posted_any = True
-        if payload.fund_transferred_ho > 0:
-            TreasuryService.post_treasury_transaction(uow, 'HO_TRANSFER_OUT', payload.fund_transferred_ho, branch_name, user_identifier, remarks=f"Transfer to HO: {payload.fund_transferred_ho}", posting_date=target_date)
-            posted_any = True
-        if payload.fund_to_other_area > 0:
-            TreasuryService.post_treasury_transaction(uow, 'INTER_AREA_OUT', payload.fund_to_other_area, branch_name, user_identifier, remarks=f"Transfer to Area: {payload.fund_to_other_area}", posting_date=target_date)
-            posted_any = True
-        if payload.staff_salaries > 0:
-            TreasuryService.post_treasury_transaction(uow, 'SALARY', payload.staff_salaries, branch_name, user_identifier, remarks=f"Salary Payment: {payload.staff_salaries}", posting_date=target_date)
-            posted_any = True
+        cur_cb = MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, target_date) or {}
+        try:
+            officer_uuid = TreasuryService._resolve_officer_id(uow, user_identifier)
+        except Exception:
+            officer_uuid = current_user.id
 
-        # Save Adjustment In/Out & Reason into master_cashbook record
-        if payload.adjustment_in > 0 or payload.adjustment_out > 0 or payload.adjustment_reason:
-            uow.client.table("master_cashbook").upsert({
-                "date": payload.date,
-                "branch_id": branch_id,
-                "adjustment_in": payload.adjustment_in,
-                "adjustment_out": payload.adjustment_out,
-                "adjustment_reason": payload.adjustment_reason.strip() if payload.adjustment_reason else None
-            }, on_conflict="date,branch_id").execute()
+        def _apply_treasury_delta(new_val: float, col: str, tx_type: str, rev_event_type: str, label: str) -> bool:
+            cur_val = float(cur_cb.get(col) or 0.0)
+            delta = float(new_val or 0.0) - cur_val
+            if delta > 0.001:
+                TreasuryService.post_treasury_transaction(
+                    uow, tx_type, delta, branch_name, user_identifier,
+                    remarks=f"{label}: {new_val}", posting_date=target_date
+                )
+                return True
+            if delta < -0.001:
+                amt_rev = abs(delta)
+                ev = DomainEvent(
+                    event_id=str(uuid.uuid4()),
+                    aggregate_id=str(uuid.uuid4()),
+                    aggregate_type="Treasury",
+                    event_type=rev_event_type,
+                    payload={
+                        "branch": branch_name,
+                        "branch_id": branch_id,
+                        "officer": user_identifier,
+                        "officer_id": officer_uuid,
+                        "amount": amt_rev,
+                        "transaction_type": tx_type,
+                        "date": target_date.isoformat(),
+                        "narration": f"BM Manual Adjustment ({label}: Reduced ₦{amt_rev:,.2f} to ₦{float(new_val or 0.0):,.2f})"
+                    }
+                )
+                uow.event_store.append(ev)
+                FinancialPostingEngine.post_event(uow, ev)
+                return True
+            return False
+
+        posted_any = any([
+            _apply_treasury_delta(payload.funds_received_ho, "funds_received_ho", "HO_TRANSFER_IN", "CashTransferred_HO_In_Reversed", "HO Funding"),
+            _apply_treasury_delta(payload.funds_received_other_branch, "funds_received_other_branch", "INTER_BRANCH_IN", "CashTransferred_HO_In_Reversed", "Branch Funding"),
+            _apply_treasury_delta(payload.funds_received_other_area, "funds_received_other_area", "INTER_AREA_IN", "CashTransferred_HO_In_Reversed", "Area Funding"),
+            _apply_treasury_delta(payload.fund_transferred_other_branch, "fund_transferred_other_branch", "INTER_BRANCH_OUT", "CashTransferred_HO_Out_Reversed", "Transfer to Branch"),
+            _apply_treasury_delta(payload.fund_transferred_ho, "fund_transferred_ho", "HO_TRANSFER_OUT", "CashTransferred_HO_Out_Reversed", "Transfer to HO"),
+            _apply_treasury_delta(payload.fund_to_other_area, "fund_to_other_area", "INTER_AREA_OUT", "CashTransferred_HO_Out_Reversed", "Transfer to Area"),
+            _apply_treasury_delta(payload.fund_to_asset_program, "fund_to_asset_program", "ASSET_PROGRAM", "CashTransferred_HO_Out_Reversed", "Fund to Asset Program"),
+            _apply_treasury_delta(payload.staff_salaries, "staff_salaries", "SALARY", "SalaryReversed", "Salary Payment"),
+        ])
+
+        # Unconditionally save Adjustment In/Out & Reason so clearing down to 0.0 is always persisted
+        uow.client.table("master_cashbook").upsert({
+            "date": payload.date,
+            "branch_id": branch_id,
+            "adjustment_in": float(payload.adjustment_in or 0.0),
+            "adjustment_out": float(payload.adjustment_out or 0.0),
+            "adjustment_reason": payload.adjustment_reason.strip() if payload.adjustment_reason else None
+        }, on_conflict="date,branch_id").execute()
 
         # Rebuild projection
-        uow.cashbook.rebuild_projection(branch_id, target_date)
+        MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, target_date)
 
         msg = "Treasury transactions posted and Cashbook projection rebuilt successfully!" if posted_any else "Cashbook projection updated and verified successfully!"
         return {"success": True, "message": msg}
@@ -569,34 +628,46 @@ def get_co_aggregation(
     officer_uuid = uow.loans._resolve_officer_id(target_co)
 
     # Rebuild & fetch CO cashbook projection
-    bf_cash = t_sav = t_r12w = t_r24w = t_r60d = t_rmth = t_cont = t_bwd = t_asale = t_app = t_pb = t_bon = t_cfd = 0.0
-    t_d11 = t_w11 = t_mm = t_pwd = t_exp = t_bdep = t_lres = t_ltrans = t_cc = 0.0
-    d_act = w_act_12 = w_act_24 = m_act = 0.0
+    bf_cash = t_sav = t_r12w = t_r24w = t_r60d = t_r120d = t_rmth = t_cont = t_bwd = t_asale = t_app = t_pb = t_bon = t_cfd = 0.0
+    t_d11 = t_d20 = t_w11 = t_w20 = t_mm = t_misc = t_pwd = t_exp = t_bdep = t_lres = t_ltrans = t_cc = 0.0
+    d_act = d_act_120d = w_act_12 = w_act_24 = m_act = 0.0
     left_total = right_total = closing_bal = 0.0
 
     if officer_uuid and branch_id:
         try:
-            res_co = uow.client.table("co_cashbooks").select("*").eq("date", iso_date).eq("branch_id", branch_id).eq("officer_id", officer_uuid).execute()
-            if not res_co.data or force_rebuild:
-                uow.cashbook.rebuild_projection(branch_id, target_date, officer_id=officer_uuid)
+            from services.co_cashbook_projection_builder import CoCashbookProjectionBuilder
+            c = {}
+            if force_rebuild or is_open:
+                c = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, officer_uuid, target_date) or {}
+            if not c:
                 res_co = uow.client.table("co_cashbooks").select("*").eq("date", iso_date).eq("branch_id", branch_id).eq("officer_id", officer_uuid).execute()
-            if res_co.data:
-                c = res_co.data[0]
+                if not res_co.data:
+                    c = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, officer_uuid, target_date) or {}
+                    if not c:
+                        res_co = uow.client.table("co_cashbooks").select("*").eq("date", iso_date).eq("branch_id", branch_id).eq("officer_id", officer_uuid).execute()
+                        c = res_co.data[0] if res_co.data else {}
+                else:
+                    c = res_co.data[0]
+            if c:
                 bf_cash = float(c.get("opening_balance") or 0)
                 t_sav = float(c.get("savings_deposit") or 0)
                 t_lres = float(c.get("laps_reserve") or 0)
                 t_r60d = float(c.get("rep_daily") or 0)
+                t_r120d = float(c.get("rep_120_days") or 0)
                 t_r12w = float(c.get("rep_12_weeks") or 0)
                 t_r24w = float(c.get("rep_24_weeks") or 0)
                 t_rmth = float(c.get("rep_monthly") or 0)
                 t_d11 = float(c.get("daily_11_pct") or 0)
+                t_d20 = float(c.get("daily_20_pct") or 0)
                 t_w11 = float(c.get("weekly_11_pct") or 0)
+                t_w20 = float(c.get("weekly_20_pct") or 0)
                 t_mm = float(c.get("risk_premium_returns") or 0)
                 t_cont = float(c.get("contingency") or 0)
-                t_app = float(c.get("app_fee") or 0)
+                t_app = float(c.get("app_fee") or 0) + float(c.get("credit_form") or 0)
                 t_cfd = float(c.get("credit_form_damage") or 0)
                 t_pb = float(c.get("passbook") or 0)
                 t_bon = float(c.get("bonus") or 0)
+                t_misc = float(c.get("misc_fees") or 0)
                 t_cc = float(c.get("cash_and_carry") or 0)
                 t_asale = float(c.get("asset_credit_sales") or 0)
                 t_bwd = float(c.get("bank_withdrawal") or 0)
@@ -610,7 +681,7 @@ def get_co_aggregation(
 
             # Fetch active loans originated today by this CO
             res_l = uow.client.table("loans") \
-                .select("loan_amount, active_credit, extra_fields, loan_products(name, repayment_cycle)") \
+                .select("loan_amount, active_credit, product_type, repayment_cycle, duration, extra_fields, loan_products(name, repayment_cycle, installments)") \
                 .eq("officer_id", officer_uuid).eq("branch_id", branch_id).or_(f"disbursement_date.eq.{iso_date},date.eq.{iso_date}") \
                 .in_("status", ["Active", "Approved", "Completed"]).execute()
             for l in (res_l.data or []):
@@ -618,14 +689,17 @@ def get_co_aggregation(
                     continue
                 act_cr = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
                 lp = l.get("loan_products") or {}
-                p_name = str(lp.get("name") or "").lower()
-                cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in p_name else "Weekly")
-                if cycle == "Daily":
+                p_name = str(lp.get("name") or l.get("product_type") or "").lower()
+                cycle = str(lp.get("repayment_cycle") or l.get("repayment_cycle") or "")
+                dur = int(l.get("duration") or lp.get("installments") or 0)
+                bucket = CoCashbookProjectionBuilder._classify_loan_product(p_name, cycle, dur)
+                if bucket == "120d":
+                    d_act_120d += act_cr
+                elif bucket == "60d":
                     d_act += act_cr
-                elif cycle == "Weekly":
-                    if "24" in p_name: w_act_24 += act_cr
-                    else: w_act_12 += act_cr
-                elif cycle == "Monthly":
+                elif bucket == "24w":
+                    w_act_24 += act_cr
+                elif bucket == "monthly":
                     m_act += act_cr
                 else:
                     w_act_12 += act_cr
@@ -634,20 +708,21 @@ def get_co_aggregation(
 
     if left_total == 0 and right_total == 0:
         left_total = (
-            bf_cash + t_lres + t_sav + t_r60d + t_r12w + t_r24w + t_rmth +
-            t_d11 + t_w11 + t_mm + t_cont + t_app + t_cfd + t_pb + t_bon +
+            bf_cash + t_lres + t_sav + t_r60d + t_r120d + t_r12w + t_r24w + t_rmth +
+            t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_cont + t_app + t_cfd + t_pb + t_bon + t_misc +
             t_asale + t_cc + t_bwd
         )
         right_total = (
-            d_act + w_act_12 + w_act_24 + m_act +
+            d_act + d_act_120d + w_act_12 + w_act_24 + m_act +
             t_pwd + t_exp + t_ltrans + t_bdep
         )
         closing_bal = left_total - right_total
 
     inflow_dict = {
         "Opening Balance": bf_cash,
-        "Savings Deposit": t_sav,
+        "Savings Deposit": t_sav + t_misc,
         "Credit Rep (Daily)": t_r60d,
+        "Credit Rep (120 Days)": t_r120d,
         "Credit Rep (12 Weeks)": t_r12w,
         "Credit Rep (24 Weeks)": t_r24w,
         "Credit Rep (Monthly)": t_rmth,
@@ -655,7 +730,9 @@ def get_co_aggregation(
         "Asset Credit Sales": t_asale,
         "Cash & Carry": t_cc,
         "Daily 11% Markup": t_d11,
+        "Daily 20% Markup": t_d20,
         "Weekly 11% Markup": t_w11,
+        "Weekly 20% Markup": t_w20,
         "Monthly / 20% Markup": t_mm,
         "Contingency (1%)": t_cont,
         "Credit Form / App Fee": t_app,
@@ -667,6 +744,7 @@ def get_co_aggregation(
 
     outflow_dict = {
         "Active Loan (Daily)": d_act,
+        "Active Loan (120 Days)": d_act_120d,
         "Active Loan (12 Weeks)": w_act_12,
         "Active Loan (24 Weeks)": w_act_24,
         "Active Loan (Monthly)": m_act,
@@ -770,6 +848,7 @@ COL_RENAME_EXCEL = {
     "funds_received_other_area": "Funds Received from Other Areas",
     "asset_credit_sales": "Asset Credit Sales",
     "cash_and_carry": "Cash & Carry",
+    "loan_received_asset": "Funds Received from Asset",
     "loan_received_finance": "Funds from Finance",
     "daily_11_pct": "Daily 11%",
     "daily_20_pct": "Daily 20%",
@@ -816,7 +895,7 @@ def _build_monthly_ledger_dataframe(uow: SupabaseUnitOfWork, selected_branch: st
         "rep_daily", "rep_120_days", "rep_12_weeks", "rep_24_weeks", "rep_monthly",
         "laps_reserve",
         "funds_received_ho", "funds_received_other_branch", "funds_received_other_area",
-        "asset_credit_sales", "cash_and_carry", "loan_received_finance",
+        "asset_credit_sales", "cash_and_carry", "loan_received_asset", "loan_received_finance",
         "daily_11_pct", "daily_20_pct", "weekly_11_pct", "weekly_20_pct", "risk_premium_returns",
         "contingency", "credit_form_damage", "bonus", "app_fee", "passbook", "bank_withdrawal",
         "adjustment_in",
@@ -872,7 +951,7 @@ def _build_monthly_ledger_dataframe(uow: SupabaseUnitOfWork, selected_branch: st
             if d_key not in loan_disb_map:
                 loan_disb_map[d_key] = {
                     "disb_60d": 0.0, "disb_120d": 0.0, "disb_12w": 0.0, "disb_24w": 0.0, "disb_mth": 0.0,
-                    "fund_asset": 0.0, "fund_finance": 0.0
+                    "loan_asset": 0.0, "fund_finance": 0.0
                 }
             princ = float(l_row.get("loan_amount") or 0.0)
             act_cr = float(l_row.get("active_credit") or princ)
@@ -881,7 +960,7 @@ def _build_monthly_ledger_dataframe(uow: SupabaseUnitOfWork, selected_branch: st
             p_name = str(lp.get("name") or "").lower()
 
             if "Asset" in p_cat or "asset" in p_name:
-                loan_disb_map[d_key]["fund_asset"] += princ
+                loan_disb_map[d_key]["loan_asset"] += princ
             else:
                 loan_disb_map[d_key]["fund_finance"] += princ
 
@@ -915,8 +994,8 @@ def _build_monthly_ledger_dataframe(uow: SupabaseUnitOfWork, selected_branch: st
                 ledger_df.at[idx, "disb_24w"] = d_info["disb_24w"]
             if float(row.get("disb_mth") or 0.0) == 0:
                 ledger_df.at[idx, "disb_mth"] = d_info["disb_mth"]
-            if d_info["fund_asset"] > 0 and float(row.get("fund_to_asset_program") or 0.0) == 0:
-                ledger_df.at[idx, "fund_to_asset_program"] = d_info["fund_asset"]
+            if d_info["loan_asset"] > 0 and float(row.get("loan_received_asset") or 0.0) == 0:
+                ledger_df.at[idx, "loan_received_asset"] = d_info["loan_asset"]
             if d_info["fund_finance"] > 0 and float(row.get("fund_to_product_finance") or 0.0) == 0:
                 ledger_df.at[idx, "fund_to_product_finance"] = d_info["fund_finance"]
             if d_info["fund_finance"] > 0 and float(row.get("loan_received_finance") or 0.0) == 0:
@@ -1010,6 +1089,7 @@ def get_monthly_ledger(
             funds_received_other_area=float(r["funds_received_other_area"]),
             asset_credit_sales=float(r["asset_credit_sales"]),
             cash_and_carry=float(r["cash_and_carry"]),
+            loan_received_asset=float(r["loan_received_asset"]),
             loan_received_finance=float(r["loan_received_finance"]),
             daily_11_pct=float(r["daily_11_pct"]),
             daily_20_pct=float(r["daily_20_pct"]),
@@ -1074,6 +1154,26 @@ def export_monthly_ledger_excel(
 
     display_df = _build_monthly_ledger_dataframe(uow, selected_branch, month, year)
     display_df_renamed = display_df.rename(columns=COL_RENAME_EXCEL)
+
+    if not display_df.empty:
+        total_row = {}
+        for col in display_df_renamed.columns:
+            if col == "Date":
+                total_row[col] = "MONTH TOTAL"
+            elif col == "Opening Balance":
+                total_row[col] = float(display_df["opening_balance"].iloc[0])
+            elif col == "Closing Balance":
+                total_row[col] = float(display_df["closing_balance"].iloc[-1])
+            elif col == "Total Inflows":
+                total_row[col] = float(display_df["opening_balance"].iloc[0]) + float(
+                    (display_df["total_inflows"] - display_df["opening_balance"]).sum()
+                )
+            else:
+                total_row[col] = float(display_df_renamed[col].sum())
+        display_df_renamed = pd.concat(
+            [display_df_renamed, pd.DataFrame([total_row])],
+            ignore_index=True,
+        )
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:

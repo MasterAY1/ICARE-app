@@ -15,7 +15,7 @@ class LoanProductEngine:
         prod_str = str(product_type)
         prod_low = prod_str.lower()
         
-        if "cash and carry" in prod_low:
+        if "cash and carry" in prod_low or "cash & carry" in prod_low:
             rate = 0.0
             duration = 1
             freq = "One-Time"
@@ -131,7 +131,7 @@ class LoanProductEngine:
         from dateutil.relativedelta import relativedelta
         from services.business_date_service import get_nigerian_holidays
 
-        ng_holidays = get_nigerian_holidays()
+        ng_holidays = get_nigerian_holidays(years=[start_date.year, start_date.year + 1, start_date.year + 2, start_date.year + 3])
         if closed_dates is None:
             closed_dates = []
 

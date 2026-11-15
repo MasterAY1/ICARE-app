@@ -56,6 +56,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   final _savSearchCtrl = TextEditingController();
   int _selectedSavInspectIdx = 0;
   bool _showRawSavTech = false;
+  String _selectedWrAuditStatus = 'ALL';
 
   String _selectedLoanView = 'Loan Disbursements';
   String _selectedLoanProd = 'All Products';
@@ -122,7 +123,9 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
       if (mounted) {
         setState(() {
           _meta = meta;
-          final userBranch = user?.branch ?? (meta.branches.isNotEmpty ? meta.branches.first.name : 'Ogijo');
+          final userBranch = (user?.branch != null && user!.branch.isNotEmpty)
+              ? user.branch
+              : (meta.branches.isNotEmpty ? meta.branches.first.name : '');
           if (isAm) {
             _selectedIntegrityBranch = meta.branches.isNotEmpty ? meta.branches.first.name : userBranch;
             _selectedFeeBranch = 'All Assigned Branches';
@@ -429,9 +432,16 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   Widget _buildTab1Integrity(String branchId, bool isOfficer, bool isBm, bool isAm, bool isAdmin) {
     final bOptions = _getBranchOptions(isAdmin, isAm: isAm, includeAll: false);
     if (_selectedIntegrityBranch == null || !bOptions.contains(_selectedIntegrityBranch)) {
-      _selectedIntegrityBranch = bOptions.isNotEmpty ? bOptions.first : (branchId.isNotEmpty ? branchId : 'Ogijo');
+      _selectedIntegrityBranch = bOptions.isNotEmpty ? bOptions.first : branchId;
     }
     final effectiveBranchId = _resolveTargetBranchId(_selectedIntegrityBranch!, branchId) ?? branchId;
+    if (effectiveBranchId.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(8)),
+        child: const Text('No active branch context resolved. Please ensure your account has an assigned branch.', style: TextStyle(color: Color(0xFFB45309))),
+      );
+    }
 
     return FutureBuilder<Integrity6WayModel>(
       future: ref.read(auditApiServiceProvider).get6WayIntegrity(
@@ -1240,6 +1250,122 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                   ),
                   const SizedBox(height: 14),
                   _buildExportButton('Export $_selectedSavSub CSV', () => _exportCsvFromRecords(records, 'savings_${_selectedSavSub.toLowerCase().replaceAll(' ', '_')}')),
+                ],
+              ],
+            );
+          },
+        ),
+
+        const SizedBox(height: 24),
+        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+        const SizedBox(height: 20),
+
+        // Withdrawal Requests & Authorization Lifecycle Audit Sub-Section
+        Row(
+          children: [
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Withdrawal Requests & Authorization Audit',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'End-to-end audit trail of withdrawal requests, approvals, rejections, and ledger postings.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 170,
+              child: _buildDropdown(
+                'Request Status',
+                _selectedWrAuditStatus,
+                ['ALL', 'PENDING', 'APPROVED', 'REJECTED'],
+                (v) => setState(() => _selectedWrAuditStatus = v),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        FutureBuilder<WithdrawalAuditResponseModel>(
+          future: ref.read(auditApiServiceProvider).getWithdrawalAudit(
+            dateFrom: _formatDate(_globalFromDate),
+            dateTo: _formatDate(_globalToDate),
+            statusFilter: _selectedWrAuditStatus,
+            branchId: _resolveTargetBranchId(_selectedSavBranch, branchId),
+            search: _savSearchCtrl.text.trim(),
+          ),
+          builder: (context, wrSnap) {
+            if (wrSnap.connectionState == ConnectionState.waiting) {
+              return const IcareTableSkeleton(rowCount: 4, hasFilterBar: false);
+            }
+            if (wrSnap.hasError) {
+              return Text('Error loading withdrawal audit: ${wrSnap.error}', style: const TextStyle(color: Color(0xFFDC2626)));
+            }
+
+            final wrData = wrSnap.data!;
+            final s = wrData.summary;
+            final reqRows = wrData.requests.map((r) {
+              return <String, dynamic>{
+                'Date': r['operational_date'] ?? '-',
+                'Client / Group': r['client_name'] ?? '-',
+                'Bucket': r['savings_type'] ?? '-',
+                'Operation': r['operation_type'] ?? '-',
+                'Amount': _formatCurrency((r['amount'] as num?)?.toDouble() ?? 0.0),
+                'Payout': r['payout_method'] ?? '-',
+                'Requested By': r['requested_by'] ?? '-',
+                'Approved By': r['approved_by'] ?? '-',
+                'Reference': r['reference'] ?? '-',
+                'Remarks': r['remarks'] ?? '',
+                'Status': r['status'] ?? 'PENDING',
+              };
+            }).toList();
+
+            final evtRows = wrData.auditEvents.map((e) {
+              return <String, dynamic>{
+                'Timestamp': (e['created_at']?.toString() ?? '').replaceFirst('T', ' ').split('.').first,
+                'Actor': e['username'] ?? '-',
+                'Role': e['role'] ?? '-',
+                'Action': e['action'] ?? '-',
+                'Target': e['display_name'] ?? '-',
+                'Branch': e['branch'] ?? '-',
+                'Status': e['status'] ?? 'SUCCESS',
+              };
+            }).toList();
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildKpiRow5([
+                  _KpiItem('Total Requests', s.totalRequests.toString()),
+                  _KpiItem('Pending Approval', '${s.pendingCount} (${_formatCurrency(s.pendingAmount)})'),
+                  _KpiItem('Approved Count', s.approvedCount.toString()),
+                  _KpiItem('Approved Volume', _formatCurrency(s.approvedAmount)),
+                  _KpiItem('Rejected Count', s.rejectedCount.toString()),
+                ]),
+                const SizedBox(height: 12),
+                if (reqRows.isEmpty)
+                  _buildEmptyState('No withdrawal requests match the selected date and status filters.')
+                else
+                  _buildDynamicDataTable(reqRows, const [
+                    'Date', 'Client / Group', 'Bucket', 'Operation', 'Amount', 'Payout', 'Requested By', 'Approved By', 'Reference', 'Remarks', 'Status'
+                  ]),
+                if (evtRows.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Authorization & Action Events',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildDynamicDataTable(evtRows, const [
+                    'Timestamp', 'Actor', 'Role', 'Action', 'Target', 'Branch', 'Status'
+                  ]),
                 ],
               ],
             );
@@ -2376,7 +2502,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
       if (!includeAll) {
         if (bNames.isNotEmpty) return bNames;
         final ub = user?.branch;
-        return (ub != null && ub.isNotEmpty) ? [ub] : ['Ogijo'];
+        return (ub != null && ub.isNotEmpty) ? [ub] : <String>[];
       }
       return ['All Assigned Branches', ...bNames];
     }
@@ -2389,10 +2515,10 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
       if (_meta != null && _meta!.branches.isNotEmpty) {
         return [_meta!.branches.first.name];
       }
-      return ['Ogijo'];
+      return <String>[];
     }
 
-    if (_meta == null) return includeAll ? ['All Branches'] : ['Ogijo'];
+    if (_meta == null) return includeAll ? ['All Branches'] : <String>[];
     final bNames = _meta!.branches.map((b) => b.name).toList();
     return includeAll ? ['All Branches', ...bNames] : bNames;
   }
@@ -3164,13 +3290,13 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
       Color txt = const Color(0xFF475569);
       final cleanVal = val.replaceAll(RegExp(r'[^\w\s]'), '').trim().toUpperCase();
 
-      if (cleanVal.contains('PAID') || cleanVal.contains('APPROVED') || cleanVal.contains('BALANCED') || cleanVal.contains('DISBURSED') || cleanVal.contains('COMPLETED') || cleanVal.contains('ACTIVE')) {
+      if (cleanVal.contains('PAID') || cleanVal.contains('APPROVED') || cleanVal.contains('BALANCED') || cleanVal.contains('DISBURSED') || cleanVal.contains('COMPLETED') || cleanVal.contains('ACTIVE') || cleanVal.contains('SUCCESS')) {
         bg = const Color(0xFFDCFCE7);
         txt = const Color(0xFF15803D);
       } else if (cleanVal.contains('PART') || cleanVal.contains('PENDING')) {
         bg = const Color(0xFFFEF3C7);
         txt = const Color(0xFFB45309);
-      } else if (cleanVal.contains('NOT') || cleanVal.contains('OVERDUE') || cleanVal.contains('REJECTED') || cleanVal.contains('UNBALANCED') || cleanVal.contains('MISMATCH')) {
+      } else if (cleanVal.contains('NOT') || cleanVal.contains('OVERDUE') || cleanVal.contains('REJECTED') || cleanVal.contains('REVERS') || cleanVal.contains('UNBALANCED') || cleanVal.contains('MISMATCH')) {
         bg = const Color(0xFFFEE2E2);
         txt = const Color(0xFFB91C1C);
       }

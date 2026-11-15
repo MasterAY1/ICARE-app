@@ -19,29 +19,42 @@ class OnlineStatusNotifier extends StateNotifier<bool> {
   final ConnectivityService _service;
   StreamSubscription<bool>? _sub;
 
-  OnlineStatusNotifier(this._service) : super(true) {
+  OnlineStatusNotifier(this._service) : super(_service.isOnline) {
     _init();
   }
 
   void _init() async {
-    state = await _service.checkActualConnection();
     _sub = _service.statusStream.listen((online) {
-      state = online;
+      if (mounted) {
+        state = online;
+      }
     });
+    final online = await _service.checkActualConnection(forceImmediateOffline: true);
+    if (mounted) {
+      state = online;
+    }
   }
 
-  void refresh() async {
-    state = await _service.checkActualConnection();
+  Future<bool> refresh() async {
+    final online = await _service.checkActualConnection(forceImmediateOffline: true);
+    if (mounted) {
+      state = online;
+    }
+    return online;
   }
 
   void setOffline() {
-    state = false;
     _service.reportOffline();
+    if (mounted) {
+      state = false;
+    }
   }
 
   void setOnline() {
-    state = true;
     _service.reportOnline();
+    if (mounted) {
+      state = true;
+    }
   }
 
   @override
@@ -55,8 +68,8 @@ class OnlineStatusNotifier extends StateNotifier<bool> {
 class ConnectivityService {
   final Connectivity _connectivity = Connectivity();
   final Dio _healthClient = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 12),
-    receiveTimeout: const Duration(seconds: 12),
+    connectTimeout: const Duration(seconds: 5),
+    receiveTimeout: const Duration(seconds: 5),
   ));
 
   final StreamController<bool> _controller = StreamController<bool>.broadcast();
@@ -81,10 +94,7 @@ class ConnectivityService {
         _updateStatus(false);
       } else {
         // Double-check with a lightweight ping to verify actual data throughput
-        final actuallyOnline = await checkActualConnection();
-        if (actuallyOnline) {
-          _updateStatus(true);
-        }
+        await checkActualConnection(forceImmediateOffline: true);
       }
     });
 
@@ -110,8 +120,8 @@ class ConnectivityService {
   }
 
   void _updateStatus(bool isOnline) {
-    if (_lastStatus != isOnline) {
-      _lastStatus = isOnline;
+    _lastStatus = isOnline;
+    if (!_controller.isClosed) {
       _controller.add(isOnline);
     }
   }
@@ -121,8 +131,8 @@ class ConnectivityService {
     return cleanUrl.endsWith('/') ? '${cleanUrl}api/health' : '$cleanUrl/api/health';
   }
 
-  /// Pings backend health endpoint or reliable DNS to check true connectivity.
-  Future<bool> checkActualConnection() async {
+  /// Pings backend health endpoint to check true connectivity.
+  Future<bool> checkActualConnection({bool forceImmediateOffline = false}) async {
     try {
       final res = await _connectivity.checkConnectivity();
       if (res.every((r) => r == ConnectivityResult.none)) {
@@ -130,8 +140,14 @@ class ConnectivityService {
         _updateStatus(false);
         return false;
       }
-      
-      final healthRes = await _healthClient.get(_healthUrl);
+
+      final healthRes = await _healthClient.get(
+        _healthUrl,
+        options: Options(
+          sendTimeout: const Duration(seconds: 4),
+          receiveTimeout: const Duration(seconds: 4),
+        ),
+      );
       final isHealthy = healthRes.statusCode == 200;
       if (isHealthy) {
         _consecutiveFailures = 0;
@@ -139,18 +155,22 @@ class ConnectivityService {
         return true;
       } else {
         _consecutiveFailures++;
-        if (_consecutiveFailures >= 2) {
+        if (forceImmediateOffline || _consecutiveFailures >= 2) {
+          _consecutiveFailures = 2;
           _updateStatus(false);
+          return false;
         }
-        return false;
+        return _lastStatus;
       }
     } catch (_) {
-      // Require at least 2 consecutive failures before declaring offline to prevent UI flapping
+      // Require 2 consecutive failures for background heartbeat, or immediate when forced
       _consecutiveFailures++;
-      if (_consecutiveFailures >= 2) {
+      if (forceImmediateOffline || _consecutiveFailures >= 2) {
+        _consecutiveFailures = 2;
         _updateStatus(false);
+        return false;
       }
-      return false;
+      return _lastStatus;
     }
   }
 

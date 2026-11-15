@@ -20,6 +20,7 @@ class MasterCashbookInflows(BaseModel):
     funds_received_other_area: float = 0.0
     asset_credit_sales: float = 0.0
     cash_and_carry: float = 0.0
+    loan_received_asset: float = 0.0
     loan_received_finance: float = 0.0
     daily_11_pct: float = 0.0
     daily_20_pct: float = 0.0
@@ -127,6 +128,7 @@ class MasterCashbookManualInputsRequest(BaseModel):
     fund_transferred_other_branch: float = 0.0
     fund_transferred_ho: float = 0.0
     fund_to_other_area: float = 0.0
+    fund_to_asset_program: float = 0.0
     staff_salaries: float = 0.0
     adjustment_in: float = 0.0
     adjustment_out: float = 0.0
@@ -178,6 +180,7 @@ class MonthlyLedgerRow(BaseModel):
     funds_received_other_area: float = 0.0
     asset_credit_sales: float = 0.0
     cash_and_carry: float = 0.0
+    loan_received_asset: float = 0.0
     loan_received_finance: float = 0.0
     daily_11_pct: float = 0.0
     daily_20_pct: float = 0.0

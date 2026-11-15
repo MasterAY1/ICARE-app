@@ -161,7 +161,16 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
         'text/csv',
       );
       if (!mounted) return;
-      final locationNote = savedPath != null && savedPath.isNotEmpty ? ' ($savedPath)' : '';
+      if (savedPath == null || savedPath.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: unable to save $fileName to device storage.'),
+            backgroundColor: const Color(0xFFDC2626),
+          ),
+        );
+        return;
+      }
+      final locationNote = ' ($savedPath)';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Exported ${rows.length} $recordLabel$locationNote.'),
@@ -1481,7 +1490,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
         decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(8)),
 
-        child: Text('Error loading portfolio data: $err', style: const TextStyle(color: Colors.red)),
+        child: Text(AppErrorDetails.from(err).message, style: const TextStyle(color: Colors.red)),
 
       ),
 
@@ -2473,7 +2482,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   Widget _buildLifecycleMetricsRow(Map<String, dynamic> s) {
 
-    final c1 = _buildSmallMetricCard('Registered', '${s['total_clients'] ?? 0} Clients', const Color(0xFF0284C7));
+    final c1 = _buildSmallMetricCard('Registered', '${s['registered_clients'] ?? 0} Clients', const Color(0xFF0284C7));
 
     final c2 = _buildSmallMetricCard('On Loan', '${s['active_clients'] ?? 0} Clients', const Color(0xFF059669));
 
@@ -2489,11 +2498,13 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
     final c8 = _buildSmallMetricCard('Closed', '${s['closed_clients'] ?? 0} Clients', const Color(0xFF94A3B8));
 
+    final c9 = _buildSmallMetricCard('Defaulters', '${s['defaulters'] ?? 0} Clients', const Color(0xFFB91C1C));
+
     return LayoutBuilder(
 
       builder: (context, constraints) {
 
-        if (constraints.maxWidth >= 1050) {
+        if (constraints.maxWidth >= 1150) {
 
           return IntrinsicHeight(
 
@@ -2517,7 +2528,9 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                 Expanded(child: c7), const SizedBox(width: 8),
 
-                Expanded(child: c8),
+                Expanded(child: c8), const SizedBox(width: 8),
+
+                Expanded(child: c9),
 
               ],
 
@@ -2537,7 +2550,19 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                   crossAxisAlignment: CrossAxisAlignment.stretch,
 
-                  children: [Expanded(child: c1), const SizedBox(width: 8), Expanded(child: c2), const SizedBox(width: 8), Expanded(child: c3), const SizedBox(width: 8), Expanded(child: c4)],
+                  children: [
+
+                    Expanded(child: c1), const SizedBox(width: 8),
+
+                    Expanded(child: c2), const SizedBox(width: 8),
+
+                    Expanded(child: c3), const SizedBox(width: 8),
+
+                    Expanded(child: c4), const SizedBox(width: 8),
+
+                    Expanded(child: c5),
+
+                  ],
 
                 ),
 
@@ -2551,7 +2576,17 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                   crossAxisAlignment: CrossAxisAlignment.stretch,
 
-                  children: [Expanded(child: c5), const SizedBox(width: 8), Expanded(child: c6), const SizedBox(width: 8), Expanded(child: c7), const SizedBox(width: 8), Expanded(child: c8)],
+                  children: [
+
+                    Expanded(child: c6), const SizedBox(width: 8),
+
+                    Expanded(child: c7), const SizedBox(width: 8),
+
+                    Expanded(child: c8), const SizedBox(width: 8),
+
+                    Expanded(child: c9),
+
+                  ],
 
                 ),
 
@@ -2616,6 +2651,20 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                   crossAxisAlignment: CrossAxisAlignment.stretch,
 
                   children: [Expanded(child: c7), const SizedBox(width: 8), Expanded(child: c8)],
+
+                ),
+
+              ),
+
+              const SizedBox(height: 8),
+
+              IntrinsicHeight(
+
+                child: Row(
+
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+
+                  children: [Expanded(child: c9), const SizedBox(width: 8), const Spacer()],
 
                 ),
 
@@ -4327,6 +4376,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
     final w24 = catSum['24_week'] as Map<String, dynamic>? ?? {};
 
+    final astAll = catSum['asset_all'] as Map<String, dynamic>? ?? {};
+
     final dly = catSum['daily'] as Map<String, dynamic>? ?? {};
 
     final mth = catSum['monthly'] as Map<String, dynamic>? ?? {};
@@ -4336,6 +4387,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
       {'title': '12-Week Loans', 'data': w12},
 
       {'title': '24-Week Loans', 'data': w24},
+
+      {'title': 'Asset Loans', 'data': astAll},
 
       {'title': 'Daily Loans', 'data': dly},
 
@@ -4368,6 +4421,12 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
         cardIcon = Icons.date_range_rounded;
 
         cardColor = const Color(0xFF4F46E5);
+
+      } else if (title.contains('Asset')) {
+
+        cardIcon = Icons.shopping_bag_outlined;
+
+        cardColor = const Color(0xFFD97706);
 
       } else if (title.contains('Daily')) {
 
@@ -4593,7 +4652,12 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
               crossAxisAlignment: CrossAxisAlignment.stretch,
 
-              children: cards.map((c) => Expanded(child: Padding(padding: const EdgeInsets.only(right: 12), child: buildCard(c)))).toList(),
+              children: List.generate(cards.length, (i) => Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: i == cards.length - 1 ? 0 : 12),
+                  child: buildCard(cards[i]),
+                ),
+              )),
 
             ),
 
@@ -4645,6 +4709,13 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                 ),
 
+              ),
+
+              const SizedBox(height: 10),
+
+              SizedBox(
+                width: double.infinity,
+                child: buildCard(cards[4]),
               ),
 
             ],
@@ -5197,7 +5268,13 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                     return InkWell(
 
-                      onTap: () => ref.read(portfolioViewModeProvider.notifier).state = mode,
+                      onTap: () {
+                        if (mode == 'Group Aggregate Summary' &&
+                            ref.read(portfolioQuickFilterProvider) == 'All Registered Clients') {
+                          ref.read(portfolioQuickFilterProvider.notifier).state = 'All Active Loans';
+                        }
+                        ref.read(portfolioViewModeProvider.notifier).state = mode;
+                      },
 
                       child: Container(
 
@@ -5233,9 +5310,24 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
               );
 
+              final allowedFilters = <String>[
+                'All Active Loans',
+                'Overdue Loans',
+                '12-Week Loans',
+                '24-Week Loans',
+                'Asset Loans',
+                'Daily Loans',
+                'Monthly Loans',
+                if (viewMode == 'Detailed Client List') 'All Registered Clients',
+              ];
+
+              final validQuickFilter = allowedFilters.contains(quickFilter)
+                  ? quickFilter
+                  : 'All Active Loans';
+
               final quickFilterDropdown = DropdownButtonFormField<String>(
 
-                value: quickFilter,
+                value: validQuickFilter,
 
                 decoration: const InputDecoration(
 
@@ -5249,25 +5341,9 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                 style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A)),
 
-                items: [
-
-                  const DropdownMenuItem(value: 'All Active Loans', child: Text('All Active Loans')),
-
-                  const DropdownMenuItem(value: '12-Week Loans', child: Text('12-Week Loans')),
-
-                  const DropdownMenuItem(value: '24-Week Loans', child: Text('24-Week Loans')),
-
-                  const DropdownMenuItem(value: 'Asset Loans', child: Text('Asset Loans')),
-
-                  const DropdownMenuItem(value: 'Daily Loans', child: Text('Daily Loans')),
-
-                  const DropdownMenuItem(value: 'Monthly Loans', child: Text('Monthly Loans')),
-
-                  if (viewMode == 'Detailed Client List')
-
-                    const DropdownMenuItem(value: 'All Registered Clients', child: Text('All Registered Clients')),
-
-                ],
+                items: allowedFilters
+                    .map((f) => DropdownMenuItem(value: f, child: Text(f)))
+                    .toList(),
 
                 onChanged: (val) {
 
@@ -5365,6 +5441,12 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   Widget _buildDetailedClientTable(List<dynamic> clients, String quickFilter, String searchQuery) {
 
+    bool isOverdueRecord(dynamic c) {
+      final overdueAmt = (c['Overdue Amount'] as num?)?.toDouble() ?? 0.0;
+      final statusVal = (c['Status']?.toString() ?? '').toLowerCase();
+      return overdueAmt > 0.01 || statusVal == 'overdue';
+    }
+
     var filtered = clients.where((c) {
 
       final cat = c['Loan Category']?.toString() ?? '';
@@ -5372,6 +5454,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
       final prod = c['Loan Product']?.toString() ?? '';
 
       final activeLoan = (c['Active Loan'] as num?)?.toDouble() ?? 0.0;
+
+      if (quickFilter == 'Overdue Loans' && !isOverdueRecord(c)) return false;
 
       if (quickFilter == '12-Week Loans' && cat != '12-Week Loans') return false;
 
@@ -5404,6 +5488,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     }).toList()
 
       ..sort((a, b) => (a['Client Code'] ?? '').toString().compareTo((b['Client Code'] ?? '').toString()));
+
+    final overdueRows = filtered.where(isOverdueRecord).toList();
 
     if (filtered.isEmpty) {
 
@@ -6015,32 +6101,61 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
             const SizedBox(height: 12),
 
-            ElevatedButton.icon(
-
-              icon: const Icon(Icons.download, size: 16),
-
-              label: Text('Export Filtered Portfolio (${filtered.length} Clients CSV)'),
-
-              onPressed: () => _exportRecordsToCsv(
-                rows: filtered,
-                columns: const [
-                  'Client Code',
-                  'Client Name',
-                  'Group',
-                  'Loan Product',
-                  'Savings Balance',
-                  'Principal Loan',
-                  'Active Loan',
-                  'Outstanding Balance',
-                  'Total Paid',
-                  'Period Excess Paid',
-                  'Status',
-                  'Lifecycle Status',
-                ],
-                filePrefix: 'ICARE_Client_Portfolio',
-                recordLabel: 'client records',
-              ),
-
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.download, size: 16),
+                  label: Text('Export Filtered Portfolio (${filtered.length} Clients CSV)'),
+                  onPressed: () => _exportRecordsToCsv(
+                    rows: filtered,
+                    columns: const [
+                      'Client Code',
+                      'Client Name',
+                      'Group',
+                      'Loan Product',
+                      'Savings Balance',
+                      'Principal Loan',
+                      'Active Loan',
+                      'Outstanding Balance',
+                      'Overdue Amount',
+                      'Total Paid',
+                      'Period Excess Paid',
+                      'Status',
+                      'Lifecycle Status',
+                    ],
+                    filePrefix: 'ICARE_Client_Portfolio',
+                    recordLabel: 'client records',
+                  ),
+                ),
+                if (overdueRows.isNotEmpty)
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFDC2626),
+                      side: const BorderSide(color: Color(0xFFFCA5A5)),
+                    ),
+                    icon: const Icon(Icons.warning_amber_rounded, size: 16),
+                    label: Text('Export Overdue List (${overdueRows.length} Clients CSV)'),
+                    onPressed: () => _exportRecordsToCsv(
+                      rows: overdueRows,
+                      columns: const [
+                        'Client Code',
+                        'Client Name',
+                        'Group',
+                        'Loan Product',
+                        'Active Loan',
+                        'Outstanding Balance',
+                        'Overdue Amount',
+                        'Total Paid',
+                        'Status',
+                        'Lifecycle Status',
+                      ],
+                      filePrefix: 'ICARE_Overdue_Portfolio',
+                      recordLabel: 'overdue loan records',
+                    ),
+                  ),
+              ],
             ),
 
           ],
@@ -6067,7 +6182,13 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
         final activeLoan = (c['Active Loan'] as num?)?.toDouble() ?? 0.0;
 
+        final overdueAmt = (c['Overdue Amount'] as num?)?.toDouble() ?? 0.0;
+
+        final statusVal = (c['Status']?.toString() ?? '').toLowerCase();
+
         if (activeLoan <= 0) return false;
+
+        if (quickFilter == 'Overdue Loans' && overdueAmt <= 0.01 && statusVal != 'overdue') return false;
 
         if (quickFilter == '12-Week Loans' && cat != '12-Week Loans') return false;
 
@@ -6770,7 +6891,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
         decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(8)),
 
-        child: Text('Error loading client dossier: $err', style: const TextStyle(color: Colors.red)),
+        child: Text(AppErrorDetails.from(err).message, style: const TextStyle(color: Colors.red)),
 
       ),
 
@@ -6791,6 +6912,10 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
         final comp = dossier['collection_compliance'] as Map<String, dynamic>? ?? {};
 
         final compTable = (comp['compliance_table'] ?? comp['rows']) as List<dynamic>? ?? [];
+
+        final loanSchedule = dossier['loan_schedule'] as List<dynamic>? ?? [];
+
+        final riskRating = dossier['risk_rating'] as Map<String, dynamic>? ?? {};
 
         final lifecycle = dossier['lifecycle_status'] as Map<String, dynamic>? ?? {};
 
@@ -6824,7 +6949,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
               builder: (context, constraints) {
 
-                final c1 = _buildKpiCard('Total Active Credit', CurrencyFormatter.formatNaira((banner['total_active_credit'] as num?)?.toDouble() ?? 0.0), 'Active Principal + Markup', const Color(0xFF0F172A), icon: Icons.credit_card_outlined);
+                final c1 = _buildKpiCard('Total Active Credit', CurrencyFormatter.formatNaira((banner['total_active_credit'] as num?)?.toDouble() ?? 0.0), 'Principal Net of Gap Fee', const Color(0xFF0F172A), icon: Icons.credit_card_outlined);
 
                 final c2 = _buildKpiCard('Outstanding Balance', CurrencyFormatter.formatNaira((banner['outstanding_balance'] as num?)?.toDouble() ?? 0.0), 'Unpaid Balance', const Color(0xFFDC2626), isAlert: ((banner['outstanding_balance'] as num?)?.toDouble() ?? 0.0) > 0, icon: Icons.hourglass_bottom_outlined);
 
@@ -6912,6 +7037,10 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
               _buildLoanHistorySubtab(loans)
 
+            else if (subTab == 'Loan Schedule')
+
+              _buildLoanScheduleSubtab(loanSchedule)
+
             else if (subTab == 'Repayment Ledger')
 
               _buildRepaymentLedgerSubtab(repayments)
@@ -6923,6 +7052,10 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
             else if (subTab == 'Collection History')
 
               _buildCollectionHistorySubtab(comp, compTable)
+
+            else if (subTab == 'Risk Rating')
+
+              _buildRiskRatingSubtab(riskRating)
 
             else if (subTab == 'Lifecycle Status')
 
@@ -6950,11 +7083,15 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
       {'name': 'Loan History', 'icon': Icons.history_edu_outlined},
 
+      {'name': 'Loan Schedule', 'icon': Icons.calendar_month_outlined},
+
       {'name': 'Repayment Ledger', 'icon': Icons.receipt_long_outlined},
 
       {'name': 'Savings Ledger', 'icon': Icons.account_balance_wallet_outlined},
 
       {'name': 'Collection History', 'icon': Icons.event_available_outlined},
+
+      {'name': 'Risk Rating', 'icon': Icons.verified_outlined},
 
       {'name': 'Lifecycle Status', 'icon': Icons.sync_alt_outlined},
 
@@ -7082,6 +7219,12 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   Widget _buildCustomerProfileSubtab(Map<String, dynamic> c, Map<String, dynamic> g) {
 
+    final authState = ref.watch(authControllerProvider);
+
+    final role = authState is AuthStateAuthenticated ? authState.user.role : 'CO';
+
+    final isOfficer = role == 'CO' || role == 'Credit Officer' || role == 'Officer' || role == 'CREDIT_OFFICER';
+
     final name = c['name']?.toString() ?? 'N/A';
 
     final initials = name.split(' ').map((p) => p.isNotEmpty ? p[0].toUpperCase() : '').take(2).join();
@@ -7166,42 +7309,46 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                         _buildLifecycleBadge(c['status']?.toString() ?? 'Active'),
 
-                        const SizedBox(width: 8),
+                        if (!isOfficer) ...[
 
-                        OutlinedButton.icon(
+                          const SizedBox(width: 8),
 
-                          style: OutlinedButton.styleFrom(
+                          OutlinedButton.icon(
 
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            style: OutlinedButton.styleFrom(
 
-                            minimumSize: Size.zero,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
 
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              minimumSize: Size.zero,
 
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
 
-                            side: const BorderSide(color: Color(0xFF2563EB)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+
+                              side: const BorderSide(color: Color(0xFF2563EB)),
+
+                            ),
+
+                            icon: const Icon(Icons.swap_horiz_rounded, size: 14, color: Color(0xFF2563EB)),
+
+                            label: const Text('Transfer Portfolio', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+
+                            onPressed: () {
+                              final cid = c['id']?.toString() ?? c['client_id']?.toString() ?? '';
+                              final curBranchId = c['branch_id']?.toString();
+                              final curOfficerId = c['officer_id']?.toString();
+                              _showTransferClientDialog(
+                                context,
+                                cid,
+                                name,
+                                currentBranchId: curBranchId,
+                                currentOfficerId: curOfficerId,
+                              );
+                            },
 
                           ),
 
-                          icon: const Icon(Icons.swap_horiz_rounded, size: 14, color: Color(0xFF2563EB)),
-
-                          label: const Text('Transfer Portfolio', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
-
-                          onPressed: () {
-                            final cid = c['id']?.toString() ?? c['client_id']?.toString() ?? '';
-                            final curBranchId = c['branch_id']?.toString();
-                            final curOfficerId = c['officer_id']?.toString();
-                            _showTransferClientDialog(
-                              context,
-                              cid,
-                              name,
-                              currentBranchId: curBranchId,
-                              currentOfficerId: curOfficerId,
-                            );
-                          },
-
-                        ),
+                        ],
 
                       ],
 
@@ -8151,9 +8298,11 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
       if (mounted) {
 
+        final err = AppErrorDetails.from(e);
+
         ScaffoldMessenger.of(context).showSnackBar(
 
-          SnackBar(content: Text('Error submitting reversal: '), backgroundColor: Colors.red),
+          SnackBar(content: Text('${err.title}: ${err.message}'), backgroundColor: Colors.red),
 
         );
 
@@ -8999,25 +9148,26 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                 builder: (context, constraints) {
 
+                  final allowedTargets = <String>[
+                    'Inactive (Savings Only)',
+                    'Closed',
+                    'Suspended',
+                    if (curStatus.trim() == 'Dormant') 'Registered',
+                  ];
+
+                  final validTargetStatus = allowedTargets.contains(_targetStatus)
+                      ? _targetStatus
+                      : allowedTargets.first;
+
                   final statusDropdown = DropdownButtonFormField<String>(
 
-                    value: _targetStatus,
+                    value: validTargetStatus,
 
                     decoration: const InputDecoration(labelText: 'Target Lifecycle Status', border: OutlineInputBorder()),
 
-                    items: const [
-
-                      DropdownMenuItem(value: 'Registered', child: Text('Registered')),
-
-                      DropdownMenuItem(value: 'Inactive (Savings Only)', child: Text('Inactive (Savings Only)')),
-
-                      DropdownMenuItem(value: 'Closed', child: Text('Closed')),
-
-                      DropdownMenuItem(value: 'Suspended', child: Text('Suspended')),
-
-                      DropdownMenuItem(value: 'Dormant', child: Text('Dormant')),
-
-                    ],
+                    items: allowedTargets
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .toList(),
 
                     onChanged: (val) {
 
@@ -9047,7 +9197,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                     ),
 
-                    onPressed: _isSubmittingStatus ? null : () => _submitStatusChange(clientId),
+                    onPressed: _isSubmittingStatus ? null : () => _submitStatusChange(clientId, targetStatus: validTargetStatus),
 
                     child: _isSubmittingStatus ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text('Transition Status'),
 
@@ -9195,7 +9345,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   }
 
-  Future<void> _submitStatusChange(String clientId) async {
+  Future<void> _submitStatusChange(String clientId, {required String targetStatus}) async {
 
     if (_statusReasonCtrl.text.trim().isEmpty) {
 
@@ -9219,7 +9369,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
         clientId: clientId,
 
-        targetStatus: _targetStatus,
+        targetStatus: targetStatus,
 
         reason: _statusReasonCtrl.text.trim(),
 
@@ -9229,7 +9379,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
         ScaffoldMessenger.of(context).showSnackBar(
 
-          SnackBar(content: Text('Client status transitioned to $_targetStatus successfully.')),
+          SnackBar(content: Text('Client status transitioned to $targetStatus successfully.')),
 
         );
 
@@ -9304,7 +9454,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                 if (ctx.mounted) {
                   setDialogState(() {
                     isLoadingOptions = false;
-                    optionsError = e.toString();
+                    optionsError = AppErrorDetails.from(e).message;
                   });
                 }
               }
@@ -9800,7 +9950,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                 if (ctx.mounted) {
                   setDialogState(() {
                     isLoadingOptions = false;
-                    optionsError = e.toString();
+                    optionsError = AppErrorDetails.from(e).message;
                   });
                 }
               }
@@ -10163,6 +10313,268 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
     );
 
+  }
+
+  Widget _buildLoanScheduleSubtab(List<dynamic> loanSchedule) {
+    final totalInstallments = loanSchedule.length;
+    final paidCount = loanSchedule.where((s) => (s['status']?.toString() ?? '').toLowerCase() == 'paid').length;
+    final overdueCount = loanSchedule.where((s) => (s['status']?.toString() ?? '').toLowerCase() == 'overdue').length;
+    final totDue = loanSchedule.fold<double>(0.0, (sum, s) => sum + ((s['total_due'] as num?)?.toDouble() ?? 0.0));
+    final totPaid = loanSchedule.fold<double>(0.0, (sum, s) => sum + ((s['paid_amount'] as num?)?.toDouble() ?? 0.0));
+    final totRem = loanSchedule.fold<double>(0.0, (sum, s) => sum + ((s['remaining_due'] as num?)?.toDouble() ?? 0.0));
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.calendar_month_outlined, size: 18, color: Color(0xFF064E3B)),
+              SizedBox(width: 8),
+              Text(
+                'Repayment Schedule & Installments',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF0F172A)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              SizedBox(width: 155, child: _buildSmallMetricCard('Installments', '$totalInstallments Total ($paidCount Paid)', const Color(0xFF0284C7))),
+              SizedBox(width: 155, child: _buildSmallMetricCard('Overdue Items', '$overdueCount Overdue', overdueCount > 0 ? const Color(0xFFDC2626) : const Color(0xFF059669))),
+              SizedBox(width: 175, child: _buildSmallMetricCard('Scheduled Total', CurrencyFormatter.formatNaira(totDue), const Color(0xFF0F172A))),
+              SizedBox(width: 175, child: _buildSmallMetricCard('Paid to Date', CurrencyFormatter.formatNaira(totPaid), const Color(0xFF059669))),
+              SizedBox(width: 175, child: _buildSmallMetricCard('Remaining Due', CurrencyFormatter.formatNaira(totRem), totRem > 0 ? const Color(0xFFDC2626) : const Color(0xFF059669))),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (loanSchedule.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('No repayment schedule records found for this client.', style: TextStyle(color: Color(0xFF64748B))),
+              ),
+            )
+          else
+            Scrollbar(
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                  columns: const [
+                    DataColumn(numeric: true, label: Text('#', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                    DataColumn(label: Text('Product', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                    DataColumn(label: Text('Due Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                    DataColumn(numeric: true, label: Text('Principal (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                    DataColumn(numeric: true, label: Text('Interest (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                    DataColumn(numeric: true, label: Text('Total Due (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                    DataColumn(numeric: true, label: Text('Paid (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                    DataColumn(numeric: true, label: Text('Remaining (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                    DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                  ],
+                  rows: loanSchedule.map((row) {
+                    final st = row['status']?.toString() ?? 'Pending';
+                    final stLower = st.toLowerCase();
+                    Color badgeBg = const Color(0xFFF1F5F9);
+                    Color badgeFg = const Color(0xFF475569);
+                    if (stLower == 'paid') {
+                      badgeBg = const Color(0xFFECFDF5);
+                      badgeFg = const Color(0xFF059669);
+                    } else if (stLower == 'overdue') {
+                      badgeBg = const Color(0xFFFEF2F2);
+                      badgeFg = const Color(0xFFDC2626);
+                    } else if (stLower == 'partial') {
+                      badgeBg = const Color(0xFFFFFBEB);
+                      badgeFg = const Color(0xFFD97706);
+                    }
+                    final rem = (row['remaining_due'] as num?)?.toDouble() ?? 0.0;
+                    return DataRow(
+                      cells: [
+                        DataCell(Text('${row['installment_number'] ?? ''}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
+                        DataCell(Text(row['product_name']?.toString() ?? 'Loan', style: const TextStyle(fontSize: 12))),
+                        DataCell(Text(row['due_date']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
+                        DataCell(Text(CurrencyFormatter.formatNaira((row['principal_due'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12))),
+                        DataCell(Text(CurrencyFormatter.formatNaira((row['interest_due'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12))),
+                        DataCell(Text(CurrencyFormatter.formatNaira((row['total_due'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
+                        DataCell(Text(CurrencyFormatter.formatNaira((row['paid_amount'] as num?)?.toDouble() ?? 0.0), style: const TextStyle(fontSize: 12, color: Color(0xFF059669), fontWeight: FontWeight.w600))),
+                        DataCell(Text(CurrencyFormatter.formatNaira(rem), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: rem > 0 ? const Color(0xFFDC2626) : const Color(0xFF059669)))),
+                        DataCell(
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(color: badgeBg, borderRadius: BorderRadius.circular(12)),
+                            child: Text(st, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: badgeFg)),
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRiskRatingSubtab(Map<String, dynamic> riskRating) {
+    if (riskRating.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: const Center(
+          child: Text('No behavioral risk rating telemetry available yet for this client.', style: TextStyle(color: Color(0xFF64748B))),
+        ),
+      );
+    }
+
+    final tier = riskRating['rating_tier']?.toString() ?? 'D';
+    final label = riskRating['rating_label']?.toString() ?? 'Unrated';
+    final scoreBand = riskRating['rating_score']?.toString() ?? 'NEW';
+    final compPct = (riskRating['compliance_pct'] as num?)?.toDouble() ?? 0.0;
+    final adjScore = (riskRating['adjusted_score'] as num?)?.toDouble() ?? 0.0;
+    final paidM = (riskRating['paid_meetings'] as num?)?.toInt() ?? 0;
+    final partM = (riskRating['part_payment_meetings'] as num?)?.toInt() ?? 0;
+    final missedM = (riskRating['missed_meetings'] as num?)?.toInt() ?? 0;
+    final consecMissed = (riskRating['consecutive_missed'] as num?)?.toInt() ?? 0;
+    final totExp = (riskRating['total_expected'] as num?)?.toDouble() ?? 0.0;
+    final totPaid = (riskRating['total_paid'] as num?)?.toDouble() ?? 0.0;
+    final completed = (riskRating['loans_completed'] as num?)?.toInt() ?? 0;
+    final overdueBal = (riskRating['overdue_balance'] as num?)?.toDouble() ?? 0.0;
+    final recMax = (riskRating['recommended_max_loan'] as num?)?.toDouble() ?? 0.0;
+    final upgradeOk = riskRating['eligible_for_upgrade'] == true;
+
+    Color tierColor = const Color(0xFF059669);
+    Color tierBg = const Color(0xFFECFDF5);
+    if (tier == 'B') {
+      tierColor = const Color(0xFFD97706);
+      tierBg = const Color(0xFFFFFBEB);
+    } else if (tier == 'C' || tier == 'D') {
+      tierColor = const Color(0xFFDC2626);
+      tierBg = const Color(0xFFFEF2F2);
+    }
+
+    final payRatio = totExp > 0 ? (totPaid / totExp).clamp(0.0, 1.0) : 0.0;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: tierBg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: tierColor.withValues(alpha: 0.35)),
+                ),
+                child: Center(
+                  child: Text(
+                    tier,
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: tierColor),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$label ($scoreBand)',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Adjusted Score: ${adjScore.toStringAsFixed(1)} · Raw Compliance: ${compPct.toStringAsFixed(1)}%',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: upgradeOk ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: upgradeOk ? const Color(0xFF6EE7B7) : const Color(0xFFFCD34D)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      upgradeOk ? Icons.check_circle_outline : Icons.pause_circle_outline,
+                      size: 14,
+                      color: upgradeOk ? const Color(0xFF059669) : const Color(0xFFB45309),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      upgradeOk ? 'Eligible for Loan Upgrade' : 'Upgrade Hold',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: upgradeOk ? const Color(0xFF059669) : const Color(0xFFB45309),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Divider(color: Color(0xFFE2E8F0)),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              SizedBox(width: 185, child: _buildKpiCard('Recommended Cap', CurrencyFormatter.formatNaira(recMax), 'Based on credit behavior', const Color(0xFF064E3B), icon: Icons.workspace_premium_outlined)),
+              SizedBox(width: 155, child: _buildSmallMetricCard('Paid Meetings', '$paidM Full', const Color(0xFF059669))),
+              SizedBox(width: 155, child: _buildSmallMetricCard('Part Payments', '$partM Partial', const Color(0xFFD97706))),
+              SizedBox(width: 155, child: _buildSmallMetricCard('Missed Meetings', '$missedM Missed', missedM > 0 ? const Color(0xFFDC2626) : const Color(0xFF059669))),
+              SizedBox(width: 165, child: _buildSmallMetricCard('Consecutive Missed', '$consecMissed Streak', consecMissed > 0 ? const Color(0xFFDC2626) : const Color(0xFF64748B))),
+              SizedBox(width: 155, child: _buildSmallMetricCard('Loans Completed', '$completed Settled', const Color(0xFF0284C7))),
+              SizedBox(width: 175, child: _buildSmallMetricCard('Overdue Balance', CurrencyFormatter.formatNaira(overdueBal), overdueBal > 0 ? const Color(0xFFDC2626) : const Color(0xFF059669))),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'Cumulative Collection Progress (${CurrencyFormatter.formatNaira(totPaid)} / ${CurrencyFormatter.formatNaira(totExp)})',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: payRatio,
+              minHeight: 10,
+              backgroundColor: const Color(0xFFE2E8F0),
+              color: tierColor,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
 }

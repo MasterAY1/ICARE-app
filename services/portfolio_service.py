@@ -7,12 +7,14 @@ Enforces 100% financial metric reconciliation with DashboardService and AuditRep
 from typing import Dict, Any, List, Optional
 from datetime import date, datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
+import re
 import pandas as pd
 
 from interfaces.unit_of_work import UnitOfWork
 from services.rbac_scope_service import RBACScope, RBACScopeService
 from services.savings_service import SavingsService
 from services.schedule_service import ScheduleService
+from services.business_date_service import BusinessDateService
 from database.query_utils import fetch_all_paginated
 
 STATUS_UUID_TO_NAME = {
@@ -74,10 +76,20 @@ class PortfolioService:
         """
         Calculates hierarchical portfolio intelligence for CO, BM, AM, Admin, and Director views.
         """
-        if not start_date:
-            start_date = date.today()
-        if not end_date:
-            end_date = date.today()
+        if not start_date or not end_date:
+            default_b_scope = None
+            if selected_branch and selected_branch != "All":
+                try:
+                    default_b_scope = uow.loans._resolve_branch_id(selected_branch) or selected_branch
+                except Exception:
+                    default_b_scope = selected_branch
+            elif scope.branch_id:
+                default_b_scope = scope.branch_id
+            default_d = BusinessDateService.get_business_date(uow, default_b_scope) if default_b_scope else date.today()
+            if not start_date:
+                start_date = default_d
+            if not end_date:
+                end_date = default_d
 
 
         # 1. Concurrently Fetch Loans, Clients & Groups based on scope
@@ -134,6 +146,11 @@ class PortfolioService:
                 if p_name == selected_product:
                     filtered_loans.append(l)
             loans_raw = filtered_loans
+            prod_client_ids = {str(l.get("client_id")) for l in loans_raw if l.get("client_id")}
+            clients_raw = [
+                c for c in clients_raw
+                if str(c.get("client_id") or c.get("id") or "") in prod_client_ids
+            ]
 
         # Authoritative group name lookup from clients.group_id -> groups.name
         group_map = {}
@@ -181,10 +198,14 @@ class PortfolioService:
 
         # 1. Fetch Savings across All 3 Tiers (Individual, Group, Misc), Repayments & Payoffs Concurrently
         filtered_cids = [str(c.get("client_id") or c.get("id")) for c in clients_raw if (c.get("client_id") or c.get("id"))]
+        all_portfolio_loan_ids = sorted({str(l.get("loan_id")) for l in loans_raw if l.get("loan_id")})
         active_loan_ids = list(set([str(l.get("loan_id")) for l in loans_raw if l.get("loan_id") and str(l.get("status") or "").upper() in ["ACTIVE", "APPROVED"]]))
         
         start_date_str = start_date.isoformat()
         end_date_str = end_date.isoformat()
+        week_start_str = (end_date - timedelta(days=end_date.weekday())).isoformat()
+        month_start_str = end_date.replace(day=1).isoformat()
+        rep_fetch_start_str = min(start_date_str, week_start_str, month_start_str)
 
         def _fetch_ind_savings():
             if not filtered_cids:
@@ -227,31 +248,69 @@ class PortfolioService:
 
         def _fetch_misc_savings():
             try:
+                if (selected_group and selected_group != "All") or (selected_product and selected_product != "All"):
+                    return []
+
                 active_branch_name = selected_branch if (selected_branch and selected_branch != "All") else getattr(scope, "branch_name", None)
-                m_off_id, m_off_name = SavingsService.get_branch_misc_savings_officer(uow, active_branch_name) if active_branch_name else ("", "")
+                active_branch_id = None
+                if selected_branch and selected_branch != "All":
+                    try:
+                        active_branch_id = uow.loans._resolve_branch_id(selected_branch)
+                    except Exception:
+                        active_branch_id = None
+                elif getattr(scope, "branch_id", None):
+                    active_branch_id = scope.branch_id
+
+                misc_scope_ref = active_branch_id or active_branch_name
+                m_off_id, m_off_name = SavingsService.get_branch_misc_savings_officer(uow, misc_scope_ref) if misc_scope_ref else ("", "")
+
                 should_include_misc = True
-                if selected_group and selected_group != "All":
-                    should_include_misc = False
-                elif selected_officer and selected_officer != "All":
+                if selected_officer and selected_officer != "All":
                     officer_sel_clean = str(selected_officer).strip().lower()
-                    should_include_misc = bool(m_off_name and (officer_sel_clean == m_off_name.lower() or officer_sel_clean == str(m_off_id).lower() or "co3" in officer_sel_clean))
+                    sel_oid = None
+                    try:
+                        sel_oid = uow.loans._resolve_officer_id(selected_officer)
+                    except Exception:
+                        sel_oid = None
+                    should_include_misc = bool(
+                        (m_off_id and sel_oid and str(sel_oid).lower() == str(m_off_id).lower())
+                        or (m_off_name and officer_sel_clean == m_off_name.strip().lower())
+                        or (m_off_id and officer_sel_clean == str(m_off_id).lower())
+                    )
                 elif scope.scope_level == "OFFICER" and scope.user_id:
-                    should_include_misc = bool(m_off_name and (str(scope.user_id) == str(m_off_id) or str(scope.username).lower() == m_off_name.lower() or "co3" in str(scope.username).lower()))
+                    should_include_misc = bool(
+                        (m_off_id and str(scope.user_id).lower() == str(m_off_id).lower())
+                        or (m_off_name and str(getattr(scope, "username", "") or "").strip().lower() == m_off_name.strip().lower())
+                    )
 
                 if should_include_misc:
-                    misc_q = uow.client.table("internal_savings").select("deposit_amount, withdrawal_amount, posting_date, branch").lte("posting_date", end_date_str)
-                    if active_branch_name:
-                        misc_q = misc_q.ilike("branch", f"%{active_branch_name}%")
-                    return fetch_all_paginated(misc_q)
+                    misc_q = uow.client.table("internal_savings").select("id, branch_id, officer_id, deposit_amount, withdrawal_amount, posting_date, branch").lte("posting_date", end_date_str)
+                    rows = fetch_all_paginated(misc_q)
+                    if active_branch_id or active_branch_name:
+                        b_id_low = str(active_branch_id or "").strip().lower()
+                        b_name_low = str(active_branch_name or "").strip().lower()
+                        rows = [
+                            r for r in rows
+                            if (b_id_low and str(r.get("branch_id") or "").strip().lower() == b_id_low)
+                            or (not r.get("branch_id") and b_name_low and str(r.get("branch") or "").strip().lower() == b_name_low)
+                        ]
+                    elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
+                        allowed_bids = {str(b).strip().lower() for b in scope.assigned_branch_ids if b}
+                        allowed_bnames = {str(bn).strip().lower() for bn in (getattr(scope, "assigned_branch_names", None) or []) if bn}
+                        rows = [
+                            r for r in rows
+                            if (str(r.get("branch_id") or "").strip().lower() in allowed_bids)
+                            or (not r.get("branch_id") and str(r.get("branch") or "").strip().lower() in allowed_bnames)
+                        ]
+                    return rows
             except Exception:
                 pass
             return []
 
         def _fetch_repayments_period():
             try:
-                s_d_str = start_date.strftime("%Y-%m-%d")
-                e_d_str = end_date.strftime("%Y-%m-%d") + "T23:59:59"
-                r_query = uow.client.table("repayments").select("*").gte("date", s_d_str).lte("date", e_d_str)
+                e_d_str = end_date_str + "T23:59:59"
+                r_query = uow.client.table("repayments").select("*").gte("date", rep_fetch_start_str).lte("date", e_d_str)
                 if scope.scope_level == "OFFICER" and scope.user_id:
                     r_query = r_query.eq("officer_id", scope.user_id)
                 elif scope.scope_level == "BRANCH" and scope.branch_id:
@@ -279,27 +338,36 @@ class PortfolioService:
                     reps = [r for r in reps if r.get("loan_id") and str(r.get("loan_id")) in prod_loan_ids]
                 if selected_group and selected_group != "All":
                     reps = [r for r in reps if group_map.get(str(r.get("client_id")), "Individual") == selected_group]
-                return reps
+
+                period_reps = []
+                wtd_total = 0.0
+                mtd_total = 0.0
+                for r in reps:
+                    r_date = str(r.get("date") or "")[:10]
+                    amt = float(r.get("amount_paid") or 0.0)
+                    if start_date_str <= r_date <= end_date_str:
+                        period_reps.append(r)
+                    if week_start_str <= r_date <= end_date_str:
+                        wtd_total += amt
+                    if month_start_str <= r_date <= end_date_str:
+                        mtd_total += amt
+                return {"period": period_reps, "wtd": wtd_total, "mtd": mtd_total}
             except Exception:
-                return []
+                return {"period": [], "wtd": 0.0, "mtd": 0.0}
 
         def _fetch_lifetime_repayments():
             lt_map = {}
+            if not all_portfolio_loan_ids:
+                return lt_map
             try:
-                lt_query = uow.client.table("repayments").select("loan_id, amount_paid")
-                if scope.scope_level == "OFFICER" and scope.user_id:
-                    lt_query = lt_query.eq("officer_id", scope.user_id)
-                elif scope.scope_level == "BRANCH" and scope.branch_id:
-                    lt_query = lt_query.eq("branch_id", scope.branch_id)
-                elif scope.scope_level == "REGION" and scope.assigned_branch_ids:
-                    lt_query = lt_query.in_("branch_id", scope.assigned_branch_ids)
-                elif active_loan_ids:
-                    lt_query = lt_query.in_("loan_id", active_loan_ids[:200])
-                rows = fetch_all_paginated(lt_query)
-                for r in rows:
-                    lid_s = str(r.get("loan_id"))
-                    amt = float(r.get("amount_paid") or 0.0)
-                    lt_map[lid_s] = lt_map.get(lid_s, 0.0) + amt
+                for idx in range(0, len(all_portfolio_loan_ids), 100):
+                    chunk = all_portfolio_loan_ids[idx:idx + 100]
+                    lt_query = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", chunk)
+                    rows = fetch_all_paginated(lt_query)
+                    for r in rows:
+                        lid_s = str(r.get("loan_id"))
+                        amt = float(r.get("amount_paid") or 0.0)
+                        lt_map[lid_s] = lt_map.get(lid_s, 0.0) + amt
             except Exception:
                 pass
             return lt_map
@@ -342,7 +410,10 @@ class PortfolioService:
             ind_savings_rows = fut_ind.result()
             grp_savings_data = fut_grp.result()
             misc_savings_rows = fut_misc.result()
-            repayments_today = fut_rep_p.result()
+            rep_bundle = fut_rep_p.result()
+            repayments_today = rep_bundle.get("period", [])
+            wtd_collection_actual = float(rep_bundle.get("wtd", 0.0) or 0.0)
+            mtd_collection_actual = float(rep_bundle.get("mtd", 0.0) or 0.0)
             lifetime_repayments_map = fut_lt_rep.result()
             prefetched_payoffs = fut_payoffs.result()
             prefetched_recoveries = fut_recoveries.result()
@@ -538,9 +609,6 @@ class PortfolioService:
                     total_outstanding_balance += out_bal
                     if exp_in_period > 0:
                         total_expected_repayment += exp_in_period
-            elif st_raw in ["COMPLETED", "CLOSED"]:
-                if paid_in_period > 0:
-                    total_expected_repayment += paid_in_period
                 
         # Calculate disbursement summary within the selected date range
         s_d_str_iso = start_date.isoformat()
@@ -560,21 +628,9 @@ class PortfolioService:
         disb_tot_loan_amt = sum(float(l.get("loan_amount") or 0.0) for l in disbursed_in_period)
         disb_tot_act_cred = sum(float(l.get("active_credit") or 0.0) for l in disbursed_in_period)
 
-        # In microfinance portfolio reporting:
-        # CO3 tracking target = ₦3,948,000 (Active Credit capacity including asset loan)
-        # CO4 tracking target = ₦1,505,000 (Disbursed Loan Principal including asset loan)
-        co3_id = "60fa48a4-16a2-4ab8-b9c5-d13d72a040cc"
-        effective_disb_amt = 0.0
-        for l in disbursed_in_period:
-            l_off = str(l.get("officer_id") or "")
-            if l_off == co3_id:
-                effective_disb_amt += float(l.get("active_credit") or 0.0)
-            else:
-                effective_disb_amt += float(l.get("loan_amount") or 0.0)
-
         disbursement_summary = {
             "count": len(disbursed_in_period),
-            "amount": effective_disb_amt,
+            "amount": disb_tot_loan_amt,
             "loan_amount": disb_tot_loan_amt,
             "active_credit": disb_tot_act_cred,
             "client_count": len(set(str(l.get("client_id")) for l in disbursed_in_period if l.get("client_id")))
@@ -582,9 +638,9 @@ class PortfolioService:
 
         today_collection = sum(float(r.get("amount_paid") or 0.0) for r in repayments_today)
 
-        # Weekly & Monthly Collections
-        this_week_collection = today_collection * 5.0  # Projection fallback
-        this_month_collection = today_collection * 22.0  # Projection fallback
+        # Weekly & Monthly Collections derived from actual scoped repayments
+        this_week_collection = wtd_collection_actual
+        this_month_collection = mtd_collection_actual
 
         full_payments_count = 0
         full_payments_amt = 0.0
@@ -762,8 +818,10 @@ class PortfolioService:
             else:
                 type_lbl = r_type.title()
 
+            p_dt = str(r.get("date") or "")[:10]
             payoff_excess_rows.append({
-                "Date": str(r.get("date") or "")[:10],
+                "Date": p_dt,
+                "Payment Date": p_dt,
                 "Client Code": r.get("client_code") or "Unknown",
                 "Client Name": r.get("client_name") or "Unknown",
                 "Group": r.get("group_name") or "Individual",
@@ -777,12 +835,35 @@ class PortfolioService:
                 "Notes": r.get("notes") or "—"
             })
         payoff_excess_df = pd.DataFrame(payoff_excess_rows) if payoff_excess_rows else pd.DataFrame(
-            columns=["Date", "Client Code", "Client Name", "Group", "Loan Product", "Type", "Amount Paid", "Expected Installment", "Excess Amount", "Active Credit Settled", "Remaining Balance", "Notes"]
+            columns=["Date", "Payment Date", "Client Code", "Client Name", "Group", "Loan Product", "Type", "Amount Paid", "Expected Installment", "Excess Amount", "Active Credit Settled", "Remaining Balance", "Notes"]
         )
 
-        # Build Itemized Overdue Recovery Audit DataFrame
+        # Build Itemized Overdue Recovery Audit DataFrame (filtered symmetrically with active filters)
         overdue_recovery_rows = []
         recovery_records = list(prefetched_recoveries)
+        if selected_branch and selected_branch != "All":
+            b_id = None
+            try: b_id = uow.loans._resolve_branch_id(selected_branch)
+            except Exception: b_id = None
+            if b_id:
+                recovery_records = [r for r in recovery_records if str(r.get("branch_id") or "").lower() == str(b_id).lower()]
+        if selected_officer and selected_officer != "All":
+            o_id = None
+            try: o_id = uow.loans._resolve_officer_id(selected_officer)
+            except Exception: o_id = None
+            if o_id:
+                recovery_records = [r for r in recovery_records if str(r.get("officer_id") or "").lower() == str(o_id).lower()]
+        if selected_product and selected_product != "All":
+            recovery_records = [
+                r for r in recovery_records
+                if (r.get("loans", {}).get("loan_products", {}) or {}).get("name") == selected_product
+            ]
+        if selected_group and selected_group != "All":
+            recovery_records = [
+                r for r in recovery_records
+                if group_map.get(str(r.get("client_id") or ""), "Individual") == selected_group
+            ]
+
         for r in sorted(recovery_records, key=lambda x: str(x.get("recovery_timestamp") or x.get("recovery_date") or ""), reverse=True):
             r_type = str(r.get("recovery_type") or "").upper()
             type_lbl = "Full Recovery" if r_type == "FULL_RECOVERY" else "Partial Recovery"
@@ -833,17 +914,30 @@ class PortfolioService:
                 if c_reps:
                     completed_loans_today_by_client.setdefault(cid_str, []).append(l)
 
-        # Pre-fetch loan schedules in batch to prevent sequential HTTP request bottlenecks
+        # Pre-fetch loan schedules in chunked batches with full pagination so large portfolios do not truncate
         all_loan_ids = [str(l.get("loan_id")) for l in loans_raw if l.get("loan_id")]
         sched_paid_map = {}
         sched_has_map = set()
+        sched_overdue_amt_map = {}
         if all_loan_ids:
             try:
-                sched_res = uow.client.table("loan_schedule").select("loan_id, paid_amount").in_("loan_id", all_loan_ids).execute()
-                for s_row in (sched_res.data or []):
-                    lid = str(s_row.get("loan_id"))
-                    sched_has_map.add(lid)
-                    sched_paid_map[lid] = sched_paid_map.get(lid, 0.0) + float(s_row.get("paid_amount") or 0.0)
+                for idx in range(0, len(all_loan_ids), 50):
+                    chunk = all_loan_ids[idx:idx + 50]
+                    sched_q = (
+                        uow.client.table("loan_schedule")
+                        .select("loan_id, due_date, total_due, expected_amount, paid_amount, status")
+                        .in_("loan_id", chunk)
+                    )
+                    for s_row in fetch_all_paginated(sched_q):
+                        lid = str(s_row.get("loan_id"))
+                        p_amt = float(s_row.get("paid_amount") or 0.0)
+                        sched_has_map.add(lid)
+                        sched_paid_map[lid] = sched_paid_map.get(lid, 0.0) + p_amt
+                        due_dt_str = str(s_row.get("due_date") or "")[:10]
+                        if due_dt_str and due_dt_str < end_date_str:
+                            d_amt = float(s_row.get("total_due") or s_row.get("expected_amount") or 0.0)
+                            if d_amt > p_amt:
+                                sched_overdue_amt_map[lid] = sched_overdue_amt_map.get(lid, 0.0) + (d_amt - p_amt)
             except Exception:
                 pass
 
@@ -882,6 +976,7 @@ class PortfolioService:
                     "Fixed Repayment": 0.0,
                     "Total Paid": 0.0,
                     "Period Excess Paid": 0.0,
+                    "Overdue Amount": 0.0,
                     "Status": c_lifecycle_status,
                     "Lifecycle Status": c_lifecycle_status
                 })
@@ -927,16 +1022,19 @@ class PortfolioService:
                         product_summary[prod_name]["loan_balance"] += outstanding_bal
                         product_summary[prod_name]["count"] += 1
 
-                    # Due date check for overdue status
+                    # Schedule & maturity due date check for overdue arrears & PAR%
                     exp_end = l.get("expected_end_date") or l.get("end_date")
-                    is_past_due = False
+                    is_maturity_past_due = False
                     if exp_end:
                         try:
                             exp_date = date.fromisoformat(str(exp_end)[:10])
                             if exp_date < end_date and outstanding_bal > 0:
-                                is_past_due = True
+                                is_maturity_past_due = True
                         except Exception:
                             pass
+
+                    sched_arrears = min(outstanding_bal, sched_overdue_amt_map.get(loan_id, 0.0)) if (loan_id and loan_id in sched_has_map) else 0.0
+                    loan_overdue_amt = outstanding_bal if is_maturity_past_due else sched_arrears
 
                     # Check period expected for this loan
                     p_name_l = prod_name.lower()
@@ -959,11 +1057,19 @@ class PortfolioService:
                     is_disbursed_today = (disb_dt_str == target_dt_str) and not is_legacy
                     is_future_start = bool(start_dt_str and start_dt_str > target_dt_str)
 
+                    # Overdue arrears & PAR% accumulate independently of partial period payments
+                    is_comp_loan = str(l.get("status") or "").upper() in ["COMPLETED", "CLOSED"] or outstanding_bal <= 0.0
+                    is_past_due = (not is_comp_loan) and (loan_overdue_amt > 0.01)
+                    if is_past_due:
+                        overdue_count += 1
+                        overdue_amt += loan_overdue_amt
+
                     # Status label assignment for UI
-                    is_comp_loan = str(l.get("status") or "").upper() in ["COMPLETED", "CLOSED"]
                     client_excess = ep_by_loan_id.get(loan_id, ep_by_client_id.get(cid_str, 0.0))
-                    if is_comp_loan and (paid_period_l > 0 or str(l.get("status")).upper() in ["COMPLETED", "CLOSED"]):
-                        status_str = "Completed (Paid Off)"
+                    if is_comp_loan:
+                        status_str = "Completed (Paid Off)" if paid_period_l > 0 else "Completed"
+                    elif is_past_due:
+                        status_str = "Overdue"
                     elif client_excess > 0:
                         status_str = "Excess Paid"
                     elif paid_period_l > 0:
@@ -971,14 +1077,8 @@ class PortfolioService:
                             status_str = "Excess Paid"
                         else:
                             status_str = "Active Loan"
-                    elif is_past_due:
-                        overdue_count += 1
-                        overdue_amt += outstanding_bal
-                        status_str = "Overdue"
                     elif is_disbursed_today or is_future_start:
                         status_str = "Active Loan (New)"
-                    elif is_comp_loan:
-                        status_str = "Completed"
                     else:
                         status_str = "Active Loan"
 
@@ -1015,12 +1115,13 @@ class PortfolioService:
                         "Fixed Repayment": eff_fixed_repay,
                         "Total Paid": tot_paid_lifetime,
                         "Period Excess Paid": client_excess,
+                        "Overdue Amount": round(loan_overdue_amt, 2),
                         "Status": status_str,
                         "Lifecycle Status": c_lifecycle_status
                     })
 
         client_rows.sort(key=lambda r: str(r.get("Client Code") or ""))
-        detailed_client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client ID", "Client Code", "Client Name", "Group", "Loan Product", "Loan Category", "Loan ID", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Period Excess Paid", "Status", "Lifecycle Status"])
+        detailed_client_df = pd.DataFrame(client_rows) if client_rows else pd.DataFrame(columns=["Client ID", "Client Code", "Client Name", "Group", "Loan Product", "Loan Category", "Loan ID", "Savings Balance", "Principal Loan", "Active Loan", "Outstanding Balance", "Fixed Repayment", "Total Paid", "Period Excess Paid", "Overdue Amount", "Status", "Lifecycle Status"])
         raw_client_codes = sorted(list(set([r["Client Code"] for r in client_rows if r.get("Client Code") and str(r.get("Client Code")).strip() not in ["", "N/A", "None"]]))) if client_rows else []
         
         # 1. Build Group Summary DataFrame
@@ -1271,23 +1372,26 @@ class PortfolioService:
         collections = []
         audit_records = []
 
-        # 1. Customer Info
+        # 1. Customer Info (supports client_code, -ASSET / -L<n> virtual row suffix, UUID, or nickname)
         try:
-            # selected_ccode is passed here, which is 'client_code'
-            res = uow.client.table("clients").select("*, groups(name)").eq("client_code", client_id).execute()
-            if not res.data:
-                # Fallback to UUID or nickname
-                try: res = uow.client.table("clients").select("*").eq("id", client_id).execute()
-                except: res = None
-                
-                if not res or not res.data:
-                    res = uow.client.table("clients").select("*").eq("nickname", client_id).execute()
-                    
+            raw_lookup = str(client_id or "").strip()
+            base_lookup = re.sub(r"-(ASSET|L\d+)$", "", raw_lookup, flags=re.IGNORECASE)
+            res = uow.client.table("clients").select("*, groups(name)").eq("client_code", raw_lookup).execute()
+            if (not res or not res.data) and base_lookup and base_lookup != raw_lookup:
+                res = uow.client.table("clients").select("*, groups(name)").eq("client_code", base_lookup).execute()
+            if not res or not res.data:
+                try:
+                    res = uow.client.table("clients").select("*, groups(name)").eq("client_id", base_lookup or raw_lookup).execute()
+                except Exception:
+                    res = None
+            if not res or not res.data:
+                res = uow.client.table("clients").select("*, groups(name)").eq("nickname", base_lookup or raw_lookup).execute()
+
             info = res.data[0] if (res and res.data) else {}
         except Exception:
             info = {}
 
-        actual_cid = info.get("id") or info.get("client_id") or client_id
+        actual_cid = info.get("client_id") or info.get("id") or client_id
 
         # Resolve officer and branch names for client profile
         b_id = info.get("branch_id")
@@ -1369,12 +1473,73 @@ class PortfolioService:
         except Exception:
             collections = []
 
-        # 6. Audit History
+        # 6. Audit History (query audit_logs via record_id across client, loans, savings, and repayments)
         try:
-            res = uow.client.table("audit_logs").select("*").eq("client_id", actual_cid).order("created_at", desc=True).limit(50).execute()
-            audit_records = res.data or []
+            rec_id_pool = [str(actual_cid)]
+            rec_id_pool.extend(str(l.get("loan_id")) for l in loans if l.get("loan_id"))
+            rec_id_pool.extend(str(s.get("id")) for s in savings[:50] if s.get("id"))
+            rec_id_pool.extend(str(r.get("id")) for r in repayments[:50] if r.get("id"))
+            unique_rec_ids = list(dict.fromkeys(rid for rid in rec_id_pool if rid))
+
+            raw_audit_map = {}
+            for idx in range(0, len(unique_rec_ids), 50):
+                chunk = unique_rec_ids[idx:idx + 50]
+                res_aud = (
+                    uow.client.table("audit_logs")
+                    .select("*")
+                    .in_("record_id", chunk)
+                    .order("created_at", desc=True)
+                    .limit(50)
+                    .execute()
+                )
+                for row in (res_aud.data or []):
+                    aid = str(row.get("id") or f"{row.get('created_at')}-{row.get('record_id')}")
+                    raw_audit_map[aid] = row
+
+            raw_audit_list = sorted(
+                raw_audit_map.values(),
+                key=lambda x: str(x.get("created_at") or ""),
+                reverse=True,
+            )[:50]
+
+            actor_uids = sorted({str(r.get("user_id")) for r in raw_audit_list if r.get("user_id")})
+            actor_name_map = {}
+            if actor_uids:
+                try:
+                    u_aud_res = uow.client.table("app_users").select("id, full_name, username").in_("id", actor_uids).execute()
+                    for au in (u_aud_res.data or []):
+                        actor_name_map[str(au.get("id"))] = au.get("full_name") or au.get("username") or "System"
+                except Exception:
+                    pass
+
+            audit_records = []
+            for r in raw_audit_list:
+                rec_copy = dict(r)
+                uid_s = str(r.get("user_id") or "")
+                if uid_s and uid_s in actor_name_map:
+                    rec_copy["performed_by"] = actor_name_map[uid_s]
+                if not rec_copy.get("details") and rec_copy.get("description"):
+                    rec_copy["details"] = rec_copy.get("description")
+                audit_records.append(rec_copy)
         except Exception:
             audit_records = []
+
+        # 7. Loan Schedule History (installments for active and past loans)
+        loan_schedule_rows = []
+        try:
+            client_loan_ids = list(dict.fromkeys(str(l.get("loan_id")) for l in loans if l.get("loan_id")))
+            for idx in range(0, len(client_loan_ids), 50):
+                chunk = client_loan_ids[idx:idx + 50]
+                res_ls = (
+                    uow.client.table("loan_schedule")
+                    .select("*")
+                    .in_("loan_id", chunk)
+                    .order("due_date", desc=False)
+                    .execute()
+                )
+                loan_schedule_rows.extend(res_ls.data or [])
+        except Exception:
+            loan_schedule_rows = []
 
         return {
             "customer_info": info,
@@ -1382,5 +1547,6 @@ class PortfolioService:
             "repayment_history": pd.DataFrame(repayments) if repayments else pd.DataFrame(),
             "savings_history": pd.DataFrame(savings) if savings else pd.DataFrame(),
             "collection_history": pd.DataFrame(collections) if collections else pd.DataFrame(),
+            "loan_schedule": pd.DataFrame(loan_schedule_rows) if loan_schedule_rows else pd.DataFrame(),
             "audit_history": pd.DataFrame(audit_records) if audit_records else pd.DataFrame()
         }

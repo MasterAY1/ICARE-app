@@ -1033,7 +1033,7 @@ class AreaManagerService:
         # Check existing notes to preserve BM note
         existing = uow.client.table("area_eod_confirmations").select("id, notes").eq("branch_id", branch_id).eq("closure_date", date_str).execute()
         prior_note = existing.data[0].get("notes") if existing.data else None
-        final_notes = notes or (f"{prior_note} • Confirmed by AM {am_name}." if prior_note else f"Confirmed by AM {am_name} with Account 1000 vault balance of ₦{vault_cash:,.2f}.")
+        final_notes = notes or (f"{prior_note} • Confirmed by AM {am_name}." if prior_note else f"Confirmed by AM {am_name} with Primary Vault Ledger balance of ₦{vault_cash:,.2f}.")
 
         # Upsert area_eod_confirmations
         payload = {
@@ -1053,6 +1053,8 @@ class AreaManagerService:
             uow.client.table("area_eod_confirmations").update(payload).eq("id", rec_id).execute()
         else:
             uow.client.table("area_eod_confirmations").insert(payload).execute()
+
+        BusinessDateService.invalidate_operational_cache(branch_name=branch_id, target_date=closure_date)
 
         return {
             "success": True,
@@ -1105,6 +1107,8 @@ class AreaManagerService:
         else:
             uow.client.table("area_eod_confirmations").insert(payload).execute()
 
+        BusinessDateService.invalidate_operational_cache(branch_name=branch_id, target_date=closure_date)
+
         return {
             "success": True,
             "branch_id": branch_id,
@@ -1148,6 +1152,9 @@ class AreaManagerService:
             "notes": f"Area 1 Daily Operations Locked and Sealed by AM {am_name}."
         }).in_("branch_id", assigned_bids).eq("closure_date", date_str).execute()
 
+        for bid in assigned_bids:
+            BusinessDateService.invalidate_operational_cache(branch_name=bid, target_date=closure_date)
+
         return {
             "success": True,
             "area_name": area_name,
@@ -1169,15 +1176,14 @@ class AreaManagerService:
         Returns the digital handover package for a branch (matching physical paper reports):
         Daily Collections Workbook, Master Cashbook Ledger, Monthly Executive Parity, and Officer Breakdown.
         """
-        if not target_date:
-            target_date = date.today()
-
         assigned = cls.get_assigned_branches(uow, am_user_id)
         valid_bids = {b["branch_id"]: b["name"] for b in assigned}
         if branch_id not in valid_bids:
             raise ValueError("Forbidden: Branch is outside your assigned supervisory area.")
 
         bname = valid_bids[branch_id]
+        if not target_date:
+            target_date = BusinessDateService.get_business_date(uow, branch_id or bname)
         date_str = target_date.isoformat()
 
         # BM details
@@ -1248,15 +1254,14 @@ class AreaManagerService:
         """
         Returns full supervisory drill-down details for an individual branch (equivalent to BM console).
         """
-        if not target_date:
-            target_date = date.today()
-
         assigned = cls.get_assigned_branches(uow, am_user_id)
         valid_bids = {b["branch_id"]: b["name"] for b in assigned}
         if branch_id not in valid_bids:
             raise ValueError("Forbidden: Branch is outside your assigned supervisory area.")
 
         bname = valid_bids[branch_id]
+        if not target_date:
+            target_date = BusinessDateService.get_business_date(uow, branch_id or bname)
         bm_data = DashboardService.get_bm_dashboard_data(uow, bname, branch_id=branch_id, target_date=target_date)
 
         # Convert officer DataFrame to list of dicts
@@ -1329,7 +1334,7 @@ class AreaManagerService:
             ("Today's Expected Collection (₦)", f"₦{reg['today_expected']:,.2f}"),
             ("Today's Actual Collections (₦)", f"₦{reg['today_collected']:,.2f}"),
             ("Regional Collection Compliance (%)", f"{reg['compliance_pct']}%"),
-            ("Physical Vault Cash Position (Account 1000) (₦)", f"₦{reg['vault_cash_acct_1000']:,.2f}"),
+            ("Physical Vault Cash Position (₦)", f"₦{reg['vault_cash_acct_1000']:,.2f}"),
             ("Portfolio at Risk (PAR 30%)", reg["par"]),
             ("Clients with Defaulter Status", reg["defaulters_count"]),
         ]

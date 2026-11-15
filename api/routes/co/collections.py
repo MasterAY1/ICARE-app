@@ -5,6 +5,7 @@ Reuses save_repayments, ScheduleService, RepaymentService, BusinessDateService, 
 """
 from typing import Optional, List, Dict, Any
 from datetime import date, datetime, timedelta
+import re
 import uuid
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from database.repositories.unit_of_work import SupabaseUnitOfWork
@@ -40,6 +41,30 @@ from services.correction_service import CorrectionService
 router = APIRouter(prefix="/api/v1/co/collections", tags=["CO Collections"])
 
 
+def _resolve_target_date(uow: SupabaseUnitOfWork, branch_id: Optional[str], date_str: Optional[str]) -> date:
+    """Resolves explicit ISO date or falls back to the branch's active business date (BR-DATE-001)."""
+    raw_date = getattr(date_str, "default", date_str) if not isinstance(date_str, str) else date_str
+    if isinstance(raw_date, str) and raw_date.strip():
+        try:
+            return date.fromisoformat(raw_date.strip()[:10])
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use YYYY-MM-DD.")
+    try:
+        biz = BusinessDateService.get_business_date(uow, branch_id or "")
+        if isinstance(biz, date):
+            return biz
+    except Exception:
+        pass
+    return date.today()
+
+
+def _strip_synthetic_client_suffix(cid: Any) -> str:
+    s = str(cid or "").strip()
+    if s.endswith("-ASSET"):
+        s = s[:-6]
+    return re.sub(r"-L\d+$", "", s).strip()
+
+
 def _short_name_mobile(full_name: str, max_chars: int = 14) -> str:
     if not full_name:
         return "Unknown"
@@ -63,12 +88,7 @@ def get_collection_sheet(
     """
     Returns live collection sheet for the requested group and officer matching app.py L5522-6000.
     """
-    target_date = date.today()
-    if date_str:
-        try:
-            target_date = date.fromisoformat(date_str)
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use YYYY-MM-DD.")
+    target_date = _resolve_target_date(uow, current_user.branch_id, date_str)
 
     meeting_day = target_date.strftime("%A")
     is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id, target_date)
@@ -421,12 +441,14 @@ def get_collection_sheet(
 
 @router.get("/single-client-options", response_model=SingleClientOptionsResponse)
 def get_single_client_options(
+    date_str: Optional[str] = Query(None, alias="date"),
     current_user: CurrentUser = Depends(require_role(["CO", "Credit Officer", "Officer", "BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
     Returns active clients and their active loans for Single Client Quick Entry (app.py L5252-5333).
     """
+    target_date = _resolve_target_date(uow, current_user.branch_id, date_str)
     officer_id = uow.loans._resolve_officer_id(current_user.username) or current_user.id
     res_c = uow.client.table("clients").select(
         "client_id, client_code, name, status, group_id, groups(name), client_memberships(group_id, groups(name)), client_statuses(name)"
@@ -439,8 +461,8 @@ def get_single_client_options(
 
     client_ids = [c["client_id"] for c in all_c]
 
-    # Pre-fetch today's collections for all clients of this officer
-    today_str = date.today().isoformat()
+    # Pre-fetch collections for target business date for all clients of this officer
+    today_str = target_date.isoformat()
     today_sc_reps = {}
     today_sc_rep_status = {}
     try:
@@ -487,7 +509,7 @@ def get_single_client_options(
     all_active_loans = []
     try:
         res_l = uow.client.table("loans").select(
-            "loan_id, client_id, loan_amount, active_credit, total_due, loan_repay, extra_fields, loan_products(name)"
+            "loan_id, client_id, loan_amount, active_credit, total_due, loan_repay, start_date, duration, product_category, extra_fields, loan_products(name, repayment_cycle, installments)"
         ).in_("client_id", client_ids).in_("status", ["Active", "Approved", "ACTIVE"]).execute()
         for l in (res_l.data or []):
             cid = l.get("client_id")
@@ -498,18 +520,20 @@ def get_single_client_options(
     except Exception:
         pass
 
-    # Bulk pre-fetch schedules and repayments for all officer's active loans in chunks of 100
+    # Bulk pre-fetch full schedule rows and repayments for all officer's active loans in chunks of 100
     all_loan_ids = [l.get("loan_id") for l in all_active_loans if l.get("loan_id")]
     sched_paid_by_lid = {}
+    sched_rows_by_lid: Dict[str, List[Dict[str, Any]]] = {}
     has_sched_set = set()
     if all_loan_ids:
         for i in range(0, len(all_loan_ids), 100):
             chunk = all_loan_ids[i:i+100]
             try:
-                res_sch = uow.client.table("loan_schedule").select("loan_id, paid_amount").in_("loan_id", chunk).execute()
+                res_sch = uow.client.table("loan_schedule").select("*").in_("loan_id", chunk).order("installment_number").execute()
                 for row in (res_sch.data or []):
                     lid = row.get("loan_id")
                     has_sched_set.add(lid)
+                    sched_rows_by_lid.setdefault(lid, []).append(row)
                     sched_paid_by_lid[lid] = sched_paid_by_lid.get(lid, 0.0) + float(row.get("paid_amount") or 0.0)
             except Exception:
                 pass
@@ -529,7 +553,15 @@ def get_single_client_options(
 
     all_grp_ids = list({c.get("group_id") for c in all_c if c.get("group_id")})
     grp_sav_map = {}
+    grp_meeting_map = {}
     if all_grp_ids:
+        try:
+            res_gm = uow.client.table("groups").select("group_id, meeting_day").in_("group_id", all_grp_ids).execute()
+            for gm in (res_gm.data or []):
+                if gm.get("group_id") and gm.get("meeting_day"):
+                    grp_meeting_map[gm["group_id"]] = gm["meeting_day"]
+        except Exception:
+            pass
         try:
             res_gs = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount").in_("group_id", all_grp_ids).execute()
             for g in (res_gs.data or []):
@@ -571,9 +603,29 @@ def get_single_client_options(
             lp = l.get("loan_products") or {}
             p_name = str(lp.get("name") or "Standard Loan")
 
-            dur = float((l.get("extra_fields") or {}).get("duration") or 1)
+            dur = float((l.get("extra_fields") or {}).get("duration") or lp.get("installments") or l.get("duration") or 1)
             inst = float(l.get("loan_repay") or (tot_due / dur if dur > 0 else tot_due))
-            exp_rep = min(inst, rem_bal) if rem_bal > 0 else 0.0
+
+            due_info = ScheduleService.get_loan_due_breakdown(
+                uow=uow,
+                loan_id=str(lid),
+                evaluation_date=target_date,
+                client_id=str(cid),
+                loan_data=l,
+                schedule_rows=sched_rows_by_lid.get(lid, []),
+                meeting_day_str=grp_meeting_map.get(c_group_id),
+                total_paid_sch=paid_amt
+            )
+            ov_arrears = float(due_info.get("overdue_arrears") or 0.0)
+            has_ov = bool(due_info.get("has_overdue", False))
+            curr_inst = float(due_info.get("current_installment") or inst or 0.0)
+            due_today = float(due_info.get("total_due_today") or 0.0)
+            if rem_bal <= 0:
+                exp_rep = 0.0
+            elif due_today > 0:
+                exp_rep = min(due_today, rem_bal)
+            else:
+                exp_rep = min(inst, rem_bal)
 
             loan_options.append(SingleClientLoanOption(
                 loan_id=str(lid),
@@ -581,7 +633,10 @@ def get_single_client_options(
                 product=p_name,
                 active_credit=act_cred,
                 remaining_balance=rem_bal,
-                expected_repayment=exp_rep
+                expected_repayment=exp_rep,
+                overdue_arrears=ov_arrears,
+                has_overdue=has_ov,
+                current_installment=curr_inst
             ))
 
         t_rep = today_sc_reps.get(str(cid), 0.0)
@@ -624,12 +679,7 @@ def submit_single_client(
     """
     Atomically posts an ad-hoc single client collection matching app.py L5377-5521.
     """
-    target_date = date.today()
-    if payload.date:
-        try:
-            target_date = date.fromisoformat(payload.date)
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use YYYY-MM-DD.")
+    target_date = _resolve_target_date(uow, current_user.branch_id, payload.date)
 
     # Rate limit check for rapid double-clicking
     from services.rate_limiter import get_financial_rate_limiter
@@ -642,9 +692,10 @@ def submit_single_client(
             headers={"Retry-After": str(retry_after)}
         )
 
-    # Verify operational open status (honoring offline idempotency key exemption per BR-DATE-002)
+    # Verify operational open status (offline queued syncs carry is_offline_sync=True or offline* idempotency_key per BR-DATE-002)
+    is_offline_exempt = bool(getattr(payload, "is_offline_sync", False)) or str(payload.idempotency_key or "").strip().lower().startswith("offline")
     is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id, target_date)
-    if not is_open and not payload.idempotency_key:
+    if not is_open and not is_offline_exempt:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Cannot submit new collections today ({open_reason}).")
 
     # Verify client exists and user is authorized for client's branch
@@ -653,6 +704,20 @@ def submit_single_client(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
     target_branch_id = res_c.data[0].get("branch_id")
     check_branch_access(current_user, target_branch_id, "submit collections for this client")
+    if target_branch_id and target_branch_id != current_user.branch_id and not is_offline_exempt:
+        b_open, b_reason = BusinessDateService.is_operational_open(uow, target_branch_id, target_date)
+        if not b_open:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Cannot submit new collections today ({b_reason}).")
+
+    target_branch_name = current_user.branch
+    target_officer_username = current_user.username
+    if target_branch_id and (not target_branch_name or target_branch_name in ["Head Office", "All Branches", None]):
+        try:
+            res_bn = uow.client.table("branches").select("name").eq("branch_id", target_branch_id).execute()
+            if res_bn.data:
+                target_branch_name = res_bn.data[0]["name"]
+        except Exception:
+            pass
 
     if payload.idempotency_key:
         from services.idempotency_service import IdempotencyService
@@ -682,7 +747,7 @@ def submit_single_client(
         else: rep_60d = rep_amt
 
     records_to_insert = []
-    if is_not_paid or payload.savings_deposit > 0 or rep_amt > 0 or payload.app_fee > 0 or payload.passbook_fee > 0 or payload.misc_fee > 0 or payload.group_savings_deposit == 0:
+    if is_not_paid or payload.savings_deposit > 0 or rep_amt > 0 or payload.app_fee > 0 or payload.passbook_fee > 0 or payload.misc_fee > 0:
         records_to_insert.append({
             "batch_id": sc_batch_id,
             "tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{payload.client_id}_rep")),
@@ -740,17 +805,31 @@ def submit_single_client(
             "Payment Status": "PAID"
         })
 
+    if not records_to_insert:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No collection amounts provided to submit.")
+
     from services.collection_batch_service import save_repayments
-    receipt = save_repayments(records_to_insert, batch_id=sc_batch_id)
+    try:
+        receipt = save_repayments(records_to_insert, batch_id=sc_batch_id, allow_closed_date=is_offline_exempt)
+    except TypeError:
+        receipt = save_repayments(records_to_insert, batch_id=sc_batch_id)
+    sc_fees = float(payload.app_fee or 0.0) + float(payload.passbook_fee or 0.0) + float(payload.misc_fee or 0.0)
     if receipt:
         receipt["batch_id"] = sc_batch_id
         if payload.idempotency_key:
             receipt["idempotency_key"] = payload.idempotency_key
         receipt["group_name"] = f"Single Client: {payload.client_name} ({payload.group_name})" if payload.group_name != "Ungrouped" else f"Single Client: {payload.client_name}"
-        receipt["officer"] = current_user.username
-        receipt["branch"] = current_user.branch
+        receipt["officer"] = target_officer_username
+        receipt["branch"] = target_branch_name
         receipt["date"] = date_str
         receipt["timestamp"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
+        tot_rep_sc = float(receipt.get("total_repayment", 0.0) or 0.0)
+        tot_sav_sc = float(receipt.get("total_savings", 0.0) or 0.0)
+        tot_fees_sc = float(receipt.get("total_fees", sc_fees) or sc_fees)
+        receipt["total_fees"] = tot_fees_sc
+        receipt["total_cash"] = float(receipt.get("total_cash") or 0.0)
+        if receipt["total_cash"] < (tot_rep_sc + tot_sav_sc + tot_fees_sc):
+            receipt["total_cash"] = tot_rep_sc + tot_sav_sc + tot_fees_sc
 
     resp = SingleClientSubmitResponse(
         success=True,
@@ -774,12 +853,7 @@ def submit_batch_collections(
     """
     Atomically posts group collections and returns receipt matching app.py L6081-6101 & save_repayments.
     """
-    target_date = date.today()
-    if payload.date:
-        try:
-            target_date = date.fromisoformat(payload.date)
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use YYYY-MM-DD.")
+    target_date = _resolve_target_date(uow, current_user.branch_id, payload.date)
 
     # Rate limit check for rapid double-clicking
     from services.rate_limiter import get_financial_rate_limiter
@@ -796,7 +870,7 @@ def submit_batch_collections(
     target_branch_name = current_user.branch
     target_officer_username = current_user.username
 
-    # Guard: verify all submitted clients belong to an authorized branch (supporting UUIDs and client_codes)
+    # Guard: verify all submitted clients belong to an authorized branch (supporting UUIDs, client_codes, -ASSET, and -L2 suffixes)
     submitted_client_ids = [item.client_id for item in payload.collections if item.client_id]
     if submitted_client_ids:
         def _is_uuid(val):
@@ -806,8 +880,9 @@ def submit_batch_collections(
             except (ValueError, TypeError, AttributeError):
                 return False
 
-        uuid_cids = [cid for cid in submitted_client_ids if _is_uuid(cid)]
-        code_cids = [cid for cid in submitted_client_ids if not _is_uuid(cid) and not str(cid).startswith("GROUP-")]
+        stripped_map = {cid: _strip_synthetic_client_suffix(cid) for cid in submitted_client_ids if not str(cid).startswith("GROUP-")}
+        uuid_cids = list({sv for sv in stripped_map.values() if _is_uuid(sv)})
+        code_cids = list({sv for sv in stripped_map.values() if not _is_uuid(sv)})
 
         cid_branch_map = {}
         if uuid_cids:
@@ -825,7 +900,8 @@ def submit_batch_collections(
         if cid_branch_map:
             for item in payload.collections:
                 if item.client_id and not item.client_id.startswith("GROUP-"):
-                    b_id = cid_branch_map.get(item.client_id)
+                    stripped_id = stripped_map.get(item.client_id, item.client_id)
+                    b_id = cid_branch_map.get(item.client_id) or cid_branch_map.get(stripped_id)
                     if not b_id:
                         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Client {item.client_id} not found.")
                     check_branch_access(current_user, b_id, "submit collections for this client")
@@ -840,12 +916,23 @@ def submit_batch_collections(
                 except Exception:
                     pass
 
-    # Resolve officer assignment if submitting user is an Admin/BM/Director
+    # Resolve officer assignment if submitting user is an Admin/BM/Director (handles disambiguated group labels)
     if current_user.role in ["Admin", "Super Admin", "Director", "BM", "Branch Manager", "AM", "Area Manager"] and payload.group_name and payload.group_name != "Ungrouped":
         try:
-            res_g = uow.client.table("groups").select("officer_id").eq("name", payload.group_name).execute()
-            if res_g.data and res_g.data[0].get("officer_id"):
-                off_uid = res_g.data[0]["officer_id"]
+            g_res_data = []
+            m_g = re.match(r"^(.+?)\s*\(\s*#(\d+)(?:\s*-\s*[^)]+)?\s*\)$", payload.group_name)
+            if m_g:
+                q_g = uow.client.table("groups").select("officer_id").eq("group_number", m_g.group(2).strip()).ilike("name", m_g.group(1).strip())
+                if target_branch_id:
+                    q_g = q_g.eq("branch_id", target_branch_id)
+                g_res_data = q_g.execute().data or []
+            if not g_res_data:
+                q_g2 = uow.client.table("groups").select("officer_id").eq("name", payload.group_name)
+                if target_branch_id:
+                    q_g2 = q_g2.eq("branch_id", target_branch_id)
+                g_res_data = q_g2.execute().data or []
+            if g_res_data and g_res_data[0].get("officer_id"):
+                off_uid = g_res_data[0]["officer_id"]
                 res_u = uow.client.table("app_users").select("username").eq("id", off_uid).execute()
                 if res_u.data and res_u.data[0].get("username"):
                     target_officer_username = res_u.data[0]["username"]
@@ -853,7 +940,11 @@ def submit_batch_collections(
             pass
 
     is_open, open_reason = BusinessDateService.is_operational_open(uow, target_branch_id or current_user.branch_id, target_date)
-    is_authorized_override = bool(payload.idempotency_key or getattr(payload, 'is_late_entry', False))
+    is_authorized_override = (
+        bool(getattr(payload, "is_offline_sync", False))
+        or str(payload.idempotency_key or "").strip().lower().startswith("offline")
+        or bool(getattr(payload, 'is_late_entry', False))
+    )
     if not is_open and not is_authorized_override:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Cannot submit new collections today ({open_reason}).")
 
@@ -910,6 +1001,7 @@ def submit_batch_collections(
             "Date": date_str,
             "Client ID": item.client_id,
             "Client Name": item.client_name,
+            "loan_id": item.loan_id,
             "Officer": target_officer_username,
             "Branch": target_branch_name,
             "Amount Paid": rep,
@@ -961,7 +1053,10 @@ def submit_batch_collections(
 
     try:
         from services.collection_batch_service import save_repayments
-        receipt = save_repayments(to_insert, batch_id=batch_id)
+        try:
+            receipt = save_repayments(to_insert, batch_id=batch_id, allow_closed_date=is_authorized_override)
+        except TypeError:
+            receipt = save_repayments(to_insert, batch_id=batch_id)
         if receipt:
             receipt["batch_id"] = batch_id
             if payload.idempotency_key:
@@ -975,13 +1070,18 @@ def submit_batch_collections(
         tot_fees = sum(
             float(item.app_fee or 0.0) +
             float(item.passbook_bonus or 0.0) +
-            float(item.misc_fees or 0.0)
+            float(item.misc_fees or 0.0) +
+            float(item.asset_credit_sales or 0.0) +
+            float(item.cash_and_carry or 0.0) +
+            float(item.credit_form_damage or 0.0) +
+            float(item.bonus or 0.0)
             for item in payload.collections
         )
         tot_rep = float(receipt.get("total_repayment", 0.0)) if receipt else 0.0
         tot_sav = float(receipt.get("total_savings", 0.0)) if receipt else 0.0
-        tot_cash_in = (float(receipt.get("total_cash", 0.0)) if receipt else (tot_rep + tot_sav)) + tot_fees
+        tot_cash_in = tot_rep + tot_sav + tot_fees
         if receipt:
+            receipt["total_fees"] = tot_fees
             receipt["total_cash"] = tot_cash_in
 
         try:
@@ -1053,17 +1153,12 @@ def get_collections_history(
     """
     Returns audit history matching app.py L6401-6978.
     """
-    target_date = date.today()
-    if date_str:
-        try:
-            target_date = date.fromisoformat(date_str)
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format.")
+    target_date = _resolve_target_date(uow, current_user.branch_id, date_str)
 
     hist_date_str = target_date.isoformat()
     search_term = (search or "").strip().lower()
 
-    is_manager = current_user.role in ["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"]
+    is_manager = current_user.role in ["BM", "Branch Manager", "AM", "Area Manager", "Director", "Admin", "Super Admin"]
     available_officers: List[str] = []
 
     # Preload group id -> group name map to guarantee bulletproof group resolution (app.py L6457-6464)
@@ -1263,6 +1358,7 @@ def get_collections_history(
 
         c_name = c_dict.get("name") or cid
         c_code = c_dict.get("client_code") or ""
+        off_disp = hist_user_cache.get(s.get("officer_id"), current_user.username)
         raw_s_time = str(s.get("created_at") or "")[11:16]
         t_str = raw_s_time if raw_s_time and raw_s_time != "00:00" else "—"
 
@@ -1327,6 +1423,8 @@ def get_collections_history(
     repayment_rows: List[RepaymentHistoryRow] = []
     for r in clean_reps:
         c_dict = r.get("clients") or {} if isinstance(r.get("clients"), dict) else {}
+        g_dict = c_dict.get("groups") or {} if isinstance(c_dict.get("groups"), dict) else {}
+        g_name_r = g_dict.get("name") or all_groups_map.get(c_dict.get("group_id")) or "Ungrouped"
         c_name = c_dict.get("name") or "Unknown"
         c_code = c_dict.get("client_code") or ""
         l_dict = r.get("loans") or {} if isinstance(r.get("loans"), dict) else {}
@@ -1339,7 +1437,7 @@ def get_collections_history(
         off_disp = hist_user_cache.get(r.get("officer_id"), current_user.username)
 
         if search_term:
-            if not (search_term in c_name.lower() or search_term in c_code.lower() or search_term in ref_id.lower() or search_term in p_stat.lower() or search_term in off_disp.lower()):
+            if not (search_term in c_name.lower() or search_term in c_code.lower() or search_term in g_name_r.lower() or search_term in ref_id.lower() or search_term in p_stat.lower() or search_term in off_disp.lower()):
                 continue
 
         raw_r_time = str(r.get("created_at") or "")[11:16]
@@ -1352,8 +1450,11 @@ def get_collections_history(
         repayment_rows.append(RepaymentHistoryRow(
             time=rep_time,
             officer=off_disp,
+            client_id=cid_r or None,
             client_name=c_name,
             client_code=c_code,
+            group_name=g_name_r,
+            loan_id=str(r.get("loan_id") or "") or None,
             product=p_name,
             expected_amount=exp_amt,
             amount_paid=amt,
@@ -1365,6 +1466,8 @@ def get_collections_history(
     savings_rows: List[SavingsHistoryRow] = []
     for s in clean_sav:
         c_dict = s.get("clients") or {} if isinstance(s.get("clients"), dict) else {}
+        g_dict = c_dict.get("groups") or {} if isinstance(c_dict.get("groups"), dict) else {}
+        g_name_s = g_dict.get("name") or all_groups_map.get(c_dict.get("group_id")) or "Ungrouped"
         c_name = c_dict.get("name") or "Unknown"
         c_code = c_dict.get("client_code") or ""
         amt = float(s.get("deposit_amount") or 0.0)
@@ -1373,7 +1476,7 @@ def get_collections_history(
         off_disp = hist_user_cache.get(s.get("officer_id"), current_user.username)
 
         if search_term:
-            if not (search_term in c_name.lower() or search_term in c_code.lower() or search_term in ref_id.lower() or search_term in rem.lower() or search_term in off_disp.lower()):
+            if not (search_term in c_name.lower() or search_term in c_code.lower() or search_term in g_name_s.lower() or search_term in ref_id.lower() or search_term in rem.lower() or search_term in off_disp.lower()):
                 continue
 
         raw_s_time = str(s.get("created_at") or "")[11:16]
@@ -1382,8 +1485,10 @@ def get_collections_history(
         savings_rows.append(SavingsHistoryRow(
             time=sav_time,
             officer=off_disp,
+            client_id=str(s.get("client_id") or "") or None,
             client_name=c_name,
             client_code=c_code,
+            group_name=g_name_s,
             deposit_amount=amt,
             remarks=rem,
             ref_id=ref_id[:8]
@@ -1403,14 +1508,17 @@ def get_collections_history(
         off_disp = hist_user_cache.get(g.get("officer_id"), current_user.username)
 
         if search_term:
-            if not (search_term in c_name.lower() or search_term in c_code.lower() or search_term in ref_id.lower() or search_term in rem.lower() or search_term in off_disp.lower()):
+            if not (search_term in c_name.lower() or search_term in c_code.lower() or search_term in g_name.lower() or search_term in ref_id.lower() or search_term in rem.lower() or search_term in off_disp.lower()):
                 continue
 
+        raw_gs_time = str(g.get("created_at") or g.get("posting_date") or "")[11:16]
         savings_rows.append(SavingsHistoryRow(
-            time=str(g.get("created_at") or g.get("posting_date") or "")[11:16],
+            time=raw_gs_time if raw_gs_time and raw_gs_time != "00:00" else "—",
             officer=off_disp,
+            client_id=None,
             client_name=c_name,
             client_code=c_code,
+            group_name=g_name,
             deposit_amount=amt,
             remarks=rem,
             ref_id=ref_id[:8]
@@ -1518,7 +1626,7 @@ def get_collections_history(
 
 @router.get("/reversal-options", response_model=ReversalCandidatesResponse)
 def get_reversal_options(
-    category: str = Query("Loan Repayments", description="'Loan Repayments' or 'Savings Deposits'"),
+    category: str = Query("Loan Repayments", description="'Loan Repayments', 'Savings Deposits', or 'Savings Withdrawals'"),
     date_str: Optional[str] = Query(None, alias="date"),
     all_recent: bool = Query(False),
     search: Optional[str] = Query(None),
@@ -1526,20 +1634,18 @@ def get_reversal_options(
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
-    Returns transactions available to flag for reversal matching app.py L7074-7186.
+    Returns transactions available to flag for reversal (Loan Repayments, Savings Deposits, Savings Withdrawals).
     """
-    target_date = date.today()
-    if date_str:
-        try: target_date = date.fromisoformat(date_str)
-        except ValueError: pass
+    target_date = _resolve_target_date(uow, current_user.branch_id, date_str)
 
     corr_date_str = target_date.isoformat()
     officer_id = uow.loans._resolve_officer_id(current_user.username) or current_user.id
+    is_manager = current_user.role in ["BM", "Branch Manager", "AM", "Area Manager", "Director", "Admin", "Super Admin"]
     search_term = (search or "").strip().lower()
 
     blocked_ids = set()
     try:
-        res_reqs = uow.client.table("correction_requests").select("record_id").in_("status", ["Pending", "Approved"]).execute()
+        res_reqs = uow.client.table("correction_requests").select("record_id").in_("status", ["Pending", "Processing", "Approved"]).execute()
         for r in (res_reqs.data or []):
             if r.get("record_id"): blocked_ids.add(str(r["record_id"]))
     except Exception:
@@ -1547,11 +1653,15 @@ def get_reversal_options(
 
     items = []
     if category == "Loan Repayments":
-        q = uow.client.table("repayments").select("id, client_id, amount_paid, expected_amount, date, note, clients(name, client_code)").eq("officer_id", officer_id)
+        q = uow.client.table("repayments").select("id, client_id, amount_paid, expected_amount, date, note, clients(name, client_code)")
+        if not is_manager:
+            q = q.eq("officer_id", officer_id)
+        elif current_user.branch_id:
+            q = q.eq("branch_id", current_user.branch_id)
         if not all_recent:
             q = q.gte("date", f"{corr_date_str} 00:00:00").lte("date", f"{corr_date_str} 23:59:59")
         else:
-            fourteen_days_ago = (datetime.now().date() - timedelta(days=14)).isoformat()
+            fourteen_days_ago = (target_date - timedelta(days=14)).isoformat()
             q = q.gte("date", f"{fourteen_days_ago} 00:00:00")
 
         records = q.order("date", desc=True).limit(500).execute().data or []
@@ -1584,44 +1694,264 @@ def get_reversal_options(
                 note=note or "Daily Collection",
                 label=label
             ))
+    elif category in ("Savings Withdrawals", "Savings Withdrawal"):
+        fourteen_days_ago = (target_date - timedelta(days=14)).isoformat()
+        reversed_refs = set()
+        w_tables = [
+            ("individual_savings", "id, client_id, officer_id, branch_id, withdrawal_amount, posting_date, reference, remarks, clients(name, client_code)", "Individual Withdrawal"),
+            ("group_savings", "id, group_id, officer_id, branch_id, withdrawal_amount, posting_date, reference, remarks, groups(name)", "Group Withdrawal"),
+            ("internal_savings", "id, officer_id, branch_id, withdrawal_amount, posting_date, reference, remarks", "Misc Withdrawal"),
+            ("laps_savings", "id, client_id, officer_id, branch_id, withdrawal_amount, posting_date, reference, remarks", "LAPS Withdrawal"),
+        ]
+        all_rows_by_tbl = []
+        candidate_w_ids: List[str] = []
+        client_name_cache: Dict[str, dict] = {}
+        try:
+            q_cl = uow.client.table("clients").select("client_id, client_code, name")
+            if current_user.branch_id:
+                q_cl = q_cl.eq("branch_id", current_user.branch_id)
+            c_rows = q_cl.execute().data or []
+            for cr in c_rows:
+                if cr.get("client_id"):
+                    client_name_cache[str(cr["client_id"])] = cr
+        except Exception:
+            pass
+
+        for tbl_name, sel_cols, cat_lbl in w_tables:
+            try:
+                q = uow.client.table(tbl_name).select(sel_cols).neq("withdrawal_amount", 0)
+                if not is_manager:
+                    q = q.eq("officer_id", officer_id)
+                elif current_user.branch_id:
+                    q = q.eq("branch_id", current_user.branch_id)
+                if not all_recent:
+                    q = q.eq("posting_date", corr_date_str)
+                else:
+                    q = q.gte("posting_date", fourteen_days_ago)
+                rows = q.order("posting_date", desc=True).limit(200).execute().data or []
+                for rw in rows:
+                    ref_s = str(rw.get("reference") or "")
+                    w_val = float(rw.get("withdrawal_amount") or 0.0)
+                    rw_id = str(rw.get("id") or "")
+                    if w_val < 0 or ref_s.startswith("REV-"):
+                        if ref_s.startswith("REV-"):
+                            reversed_refs.add(ref_s[4:])
+                        reversed_refs.add(rw_id)
+                    elif rw_id:
+                        candidate_w_ids.append(rw_id)
+                all_rows_by_tbl.append((tbl_name, cat_lbl, rows))
+            except Exception:
+                continue
+
+        # Exclude compound withdrawals (LoanOffsetFromSavings, FeeOffsetFromSavings, SavingsTransferred, LapsTransferred, LapsRestoredToSavings)
+        # that must never be reversed as a single cash vault inflow.
+        compound_event_agg_ids = set()
+        if candidate_w_ids:
+            for idx_c in range(0, len(candidate_w_ids), 100):
+                chunk = candidate_w_ids[idx_c:idx_c+100]
+                try:
+                    ev_res = uow.client.table("event_store").select("aggregate_id, event_type").in_("aggregate_id", chunk).execute()
+                    for evr in (ev_res.data or []):
+                        if evr.get("event_type") in (
+                            "LoanOffsetFromSavings",
+                            "FeeOffsetFromSavings",
+                            "LoanOffset",
+                            "FeeOffset",
+                            "SavingsTransferred",
+                            "LapsTransferred",
+                            "LapsRestoredToSavings",
+                        ):
+                            compound_event_agg_ids.add(str(evr.get("aggregate_id")))
+                except Exception:
+                    pass
+
+        compound_wr_refs = set()
+        candidate_refs = []
+        for _, _, rows in all_rows_by_tbl:
+            for rw in rows:
+                rf = str(rw.get("reference") or "").strip()
+                if rf and not rf.startswith("REV-"):
+                    candidate_refs.append(rf)
+        if candidate_refs:
+            compound_wr_ops = {
+                "Loan Offset",
+                "Asset Downpayment",
+                "Loan Repayment / Asset Debt Offset",
+                "Loan Repayment / Asset Debt Offset (Member Debt)",
+                "Fee Payment",
+                "Fee Payment from Savings",
+                "Fee Payment from Group Savings",
+                "Savings Transfer",
+                "Transfer to Another Savings",
+                "Another Member or Group Savings",
+                "LAPS Transfer",
+                "LAPS Reserve",
+                "LAPS Reserve (Group Closed)",
+                "Return to Savings",
+                "Return to Client Savings",
+                "LAPS Return to Customer Savings",
+            }
+            for idx_r in range(0, len(candidate_refs), 100):
+                r_chunk = candidate_refs[idx_r:idx_r+100]
+                try:
+                    wr_res = uow.client.table("withdrawal_requests").select("reference, operation_type").in_("reference", r_chunk).execute()
+                    for wrow in (wr_res.data or []):
+                        if str(wrow.get("operation_type") or "").strip() in compound_wr_ops and wrow.get("reference"):
+                            compound_wr_refs.add(str(wrow["reference"]))
+                except Exception:
+                    pass
+
+        compound_markers = (
+            "Auto-deducted Upfront Fees",
+            "Loan Offset",
+            "Loan offset",
+            "Fee offset",
+            "[LOAN OFFSET]",
+            "[FEE PAYMENT]",
+            "[SAVINGS TRANSFER]",
+            "[LAPS TRANSFER]",
+            "Transfer to LAPS",
+            "LAPS transfer",
+            "Transfer to Group",
+            "Transfer to Individual",
+            "Transferred from",
+            "Restored from LAPS",
+        )
+
+        for tbl_name, cat_lbl, rows in all_rows_by_tbl:
+            for s in rows:
+                tx_id = str(s.get("id") or "")
+                amt = float(s.get("withdrawal_amount") or 0.0)
+                rem = str(s.get("remarks") or "")
+                ref_s = str(s.get("reference") or "")
+                is_compound = (
+                    tx_id in compound_event_agg_ids
+                    or (ref_s and ref_s in compound_wr_refs)
+                    or ref_s.startswith("LOAN-OFFSET-")
+                    or ref_s.startswith("FEE-OFFSET-")
+                    or ref_s.startswith("SAV-XFER-")
+                    or ref_s.startswith("LAPS-XFER-")
+                    or ref_s.startswith("LAPS-RET-")
+                    or any(m in rem for m in compound_markers)
+                )
+                if (
+                    tx_id in blocked_ids
+                    or tx_id in reversed_refs
+                    or (ref_s and ref_s in reversed_refs)
+                    or amt <= 0
+                    or "REVERSAL of" in rem
+                    or "CORRECTION:" in rem
+                    or is_compound
+                ):
+                    continue
+                if tbl_name == "group_savings":
+                    g_dict = s.get("groups") or {} if isinstance(s.get("groups"), dict) else {}
+                    c_name = f"{g_dict.get('name') or 'Group'} (Group)"
+                    c_code = "GROUP"
+                elif tbl_name == "internal_savings":
+                    c_name = "Branch Misc Reserve"
+                    c_code = "MISC"
+                else:
+                    c_dict = s.get("clients") or {} if isinstance(s.get("clients"), dict) else {}
+                    cid = str(s.get("client_id") or "")
+                    cached = client_name_cache.get(cid, {})
+                    c_name = c_dict.get("name") or cached.get("name") or (f"Member {cid[:8]}" if cid else "Unknown")
+                    c_code = c_dict.get("client_code") or cached.get("client_code") or "NO-CODE"
+
+                tx_date = str(s.get("posting_date", ""))[:10]
+                if search_term and not (search_term in c_name.lower() or search_term in c_code.lower() or search_term in tx_id.lower() or search_term in ref_s.lower()):
+                    continue
+
+                short_n = _short_name_mobile(c_name)
+                amt_str = f"₦{amt:,.2f}" if (amt % 1 != 0) else f"₦{amt:,.0f}"
+                label = f"{amt_str} | {c_code} | {short_n} (#{tx_id[:6]})"
+
+                items.append(ReversalCandidateItem(
+                    ref_id=tx_id,
+                    client_name=c_name,
+                    client_code=c_code,
+                    amount=amt,
+                    date=tx_date,
+                    category=cat_lbl,
+                    note=rem or cat_lbl,
+                    label=label
+                ))
     else:
-        q = uow.client.table("individual_savings").select("id, client_id, deposit_amount, posting_date, remarks, clients(name, client_code)").eq("officer_id", officer_id).gt("deposit_amount", 0)
-        if not all_recent:
-            q = q.eq("posting_date", corr_date_str)
-        else:
-            fourteen_days_ago = (datetime.now().date() - timedelta(days=14)).isoformat()
-            q = q.gte("posting_date", fourteen_days_ago)
+        fourteen_days_ago = (target_date - timedelta(days=14)).isoformat()
+        d_tables = [
+            ("individual_savings", "id, client_id, deposit_amount, posting_date, reference, remarks, clients(name, client_code)", "SavingsDeposit"),
+            ("group_savings", "id, group_id, deposit_amount, posting_date, reference, remarks, groups(name)", "GroupSavings"),
+            ("internal_savings", "id, client_id, deposit_amount, posting_date, reference, remarks", "MiscSavings"),
+        ]
+        for tbl_name, sel_cols, cat_code in d_tables:
+            try:
+                q = uow.client.table(tbl_name).select(sel_cols)
+                if not is_manager:
+                    q = q.eq("officer_id", officer_id)
+                elif current_user.branch_id:
+                    q = q.eq("branch_id", current_user.branch_id)
+                if not all_recent:
+                    q = q.eq("posting_date", corr_date_str)
+                else:
+                    q = q.gte("posting_date", fourteen_days_ago)
 
-        records = q.order("posting_date", desc=True).limit(500).execute().data or []
-        for s in records:
-            tx_id = str(s.get("id") or "")
-            amt = float(s.get("deposit_amount") or 0.0)
-            rem = str(s.get("remarks") or "")
-            if tx_id in blocked_ids or amt <= 0 or "REVERSAL of" in rem or "CORRECTION:" in rem:
+                records = q.order("posting_date", desc=True).limit(300).execute().data or []
+                reversed_dep_refs = set()
+                for rw in records:
+                    ref_s = str(rw.get("reference") or "")
+                    dep_v = float(rw.get("deposit_amount") or 0.0)
+                    if dep_v < 0 or ref_s.startswith("REV-"):
+                        if ref_s.startswith("REV-"):
+                            reversed_dep_refs.add(ref_s[4:])
+                        reversed_dep_refs.add(str(rw.get("id") or ""))
+
+                for s in records:
+                    tx_id = str(s.get("id") or "")
+                    amt = float(s.get("deposit_amount") or 0.0)
+                    rem = str(s.get("remarks") or "")
+                    ref_s = str(s.get("reference") or "")
+                    if (
+                        tx_id in blocked_ids
+                        or tx_id in reversed_dep_refs
+                        or (ref_s and ref_s in reversed_dep_refs)
+                        or amt <= 0
+                        or "REVERSAL of" in rem
+                        or "CORRECTION:" in rem
+                    ):
+                        continue
+
+                    if tbl_name == "group_savings":
+                        g_dict = s.get("groups") or {} if isinstance(s.get("groups"), dict) else {}
+                        c_name = f"{g_dict.get('name') or 'Group'} (Group)"
+                        c_code = "GROUP"
+                    elif tbl_name == "internal_savings":
+                        c_name = "Branch Misc Savings"
+                        c_code = "MISC"
+                    else:
+                        c_dict = s.get("clients") or {} if isinstance(s.get("clients"), dict) else {}
+                        c_name = c_dict.get("name") or str(s.get("client_id") or "Unknown")
+                        c_code = c_dict.get("client_code") or "NO-CODE"
+                    tx_date = str(s.get("posting_date", ""))[:10]
+
+                    if search_term and not (search_term in c_name.lower() or search_term in c_code.lower() or search_term in tx_id.lower()):
+                        continue
+
+                    short_n = _short_name_mobile(c_name)
+                    amt_str = f"₦{amt:,.2f}" if (amt % 1 != 0) else f"₦{amt:,.0f}"
+                    label = f"{amt_str} | {c_code} | {short_n} (#{tx_id[:6]})"
+
+                    items.append(ReversalCandidateItem(
+                        ref_id=tx_id,
+                        client_name=c_name,
+                        client_code=c_code,
+                        amount=amt,
+                        date=tx_date,
+                        category=cat_code,
+                        note=rem or ("Group Deposit" if tbl_name == "group_savings" else ("Misc Deposit" if tbl_name == "internal_savings" else "Member Deposit")),
+                        label=label
+                    ))
+            except Exception:
                 continue
-
-            c_dict = s.get("clients") or {} if isinstance(s.get("clients"), dict) else {}
-            c_name = c_dict.get("name") or str(s.get("client_id") or "Unknown")
-            c_code = c_dict.get("client_code") or "NO-CODE"
-            tx_date = str(s.get("posting_date", ""))[:10]
-
-            if search_term and not (search_term in c_name.lower() or search_term in c_code.lower() or search_term in tx_id.lower()):
-                continue
-
-            short_n = _short_name_mobile(c_name)
-            amt_str = f"₦{amt:,.2f}" if (amt % 1 != 0) else f"₦{amt:,.0f}"
-            label = f"{amt_str} | {c_code} | {short_n} (#{tx_id[:6]})"
-
-            items.append(ReversalCandidateItem(
-                ref_id=tx_id,
-                client_name=c_name,
-                client_code=c_code,
-                amount=amt,
-                date=tx_date,
-                category="Savings Deposit",
-                note=rem or "Member Deposit",
-                label=label
-            ))
 
     return ReversalCandidatesResponse(category=category, items=items)
 
@@ -1667,20 +1997,22 @@ def request_repayment_reversal(
     """
     Submits a repayment reversal request for BM approval under Four-Eyes rule BR-ERR-001 (app.py L7204-7223).
     """
+    rec_type = payload.record_type or "Repayment"
     req_id = CorrectionService.request_correction(
         uow=uow,
         record_id=payload.record_id,
-        record_type=payload.record_type or "Repayment",
+        record_type=rec_type,
         reason=payload.reason,
         requested_by=current_user.id or current_user.username,
         branch_id=current_user.branch_id
     )
 
+    msg_label = "Savings withdrawal" if "withdrawal" in rec_type.lower() else ("Savings deposit" if "saving" in rec_type.lower() else "Repayment")
     return ReversalRequestResponse(
         success=True,
         request_id=req_id,
         status="Pending",
-        message="Repayment reversal request submitted to Branch Manager for approval."
+        message=f"{msg_label} reversal request submitted to Branch Manager for approval."
     )
 
 

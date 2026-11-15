@@ -103,10 +103,24 @@ class FinancialPostingEngine:
                     cls._rules_cache[rule_key] = rule
 
             if not rule:
-                if event.event_type == "LapsRestoredToSavings":
+                _synthetic_rules = {
+                    "LapsRestoredToSavings": ("2030", "2000"),
+                    "FeeReversed": ("3000", "1000"),
+                    "ExpenseReversed": ("1000", "4000"),
+                    "BankDepositReversed": ("1000", "1050"),
+                    "BankWithdrawalReversed": ("1050", "1000"),
+                    "SalaryReversed": ("1000", "4100"),
+                    "SavingsDepositReversed": ("2000", "1000"),
+                    "SavingsReversed": ("2000", "1000"),
+                    "SavingsWithdrawalReversed": ("1000", "2000"),
+                    "CashTransferred_HO_In_Reversed": ("3100", "1000"),
+                    "CashTransferred_HO_Out_Reversed": ("1000", "3100"),
+                }
+                pair = _synthetic_rules.get(event.event_type)
+                if pair:
                     class _SyntheticRule:
-                        debit_account = "2030"
-                        credit_account = "2000"
+                        debit_account = pair[0]
+                        credit_account = pair[1]
                     rule = _SyntheticRule()
                 else:
                     raise ValueError(f"No active posting rule found for event type: {event.event_type} v{event.version}")
@@ -151,8 +165,18 @@ class FinancialPostingEngine:
 
             debit_acc = rule.debit_account
             credit_acc = rule.credit_account
-            if event.event_type == "LapsPaidOut" and not payload.get("cash_paid", True):
+            is_bank_payout = (payload.get("cash_paid") is False) or ("bank" in str(payload.get("payout_method") or "").lower())
+            if event.event_type == "LapsPaidOut" and is_bank_payout:
                 credit_acc = "1050"  # Bank account for non-cash payout
+            elif event.event_type == "SavingsWithdrawn" and is_bank_payout:
+                credit_acc = "1050"  # Bank transfer withdrawal credits Bank (1050) instead of Vault Cash (1000)
+            elif event.event_type == "SavingsWithdrawalReversed":
+                if is_bank_payout:
+                    debit_acc = "1050"  # Bank withdrawal reversal debits Bank (1050) instead of Vault Cash (1000)
+                if payload.get("is_laps"):
+                    credit_acc = "2030"  # LAPS payout reversal restores LAPS liability (2030)
+            elif event.event_type == "SavingsReversed" and payload.get("is_laps"):
+                debit_acc = "2030"
             elif event.event_type == "LapsRestoredToSavings":
                 debit_acc = "2030"
                 credit_acc = "2000" 

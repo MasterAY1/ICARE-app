@@ -71,7 +71,8 @@ class TreasuryService:
             "INTER_BRANCH_IN": "CashTransferred_HO_In",
             "INTER_BRANCH_OUT": "CashTransferred_HO_Out",
             "INTER_AREA_IN": "CashTransferred_HO_In",
-            "INTER_AREA_OUT": "CashTransferred_HO_Out"
+            "INTER_AREA_OUT": "CashTransferred_HO_Out",
+            "ASSET_PROGRAM": "CashTransferred_HO_Out"
         }
         event_type = mapping.get(tx_type, "ExpenseRecorded")
         evt_id = str(uuid.uuid4())
@@ -156,7 +157,15 @@ class TreasuryService:
         return record_id
 
     @classmethod
-    def reverse_treasury_transaction(cls, uow: SupabaseUnitOfWork, original_tx_id: str, reason: str, reversed_by: str) -> str:
+    @classmethod
+    def reverse_treasury_transaction(
+        cls,
+        uow: SupabaseUnitOfWork,
+        original_tx_id: str,
+        reason: str,
+        reversed_by: str,
+        posting_date: Optional[date] = None,
+    ) -> str:
         """
         Executes a compensating reversing entry for an erroneous treasury/manual transaction (BR-ERR-002).
         """
@@ -180,14 +189,36 @@ class TreasuryService:
                 "FeeCharged": "FeeReversed",
                 "ExpenseRecorded": "ExpenseReversed",
                 "SalaryPaid": "SalaryReversed",
-                "BankDeposited": "BankWithdrawn",
-                "BankWithdrawn": "BankDeposited",
+                "BankDeposited": "BankDepositReversed",
+                "BankWithdrawn": "BankWithdrawalReversed",
                 "CashTransferred_HO_In": "CashTransferred_HO_Out",
                 "CashTransferred_HO_Out": "CashTransferred_HO_In"
             }
             rev_event_type = reversal_ev_map.get(orig_ev_type, "ExpenseReversed")
             
             new_id = str(uuid.uuid4())
+            from services.business_date_service import BusinessDateService
+            b_id_resolved = (
+                cls._resolve_branch_id(uow, str(branch_val))
+                if not str(branch_val).startswith("0000") and len(str(branch_val)) < 36
+                else str(branch_val or "")
+            )
+            if posting_date is not None:
+                ev_target_date = posting_date if isinstance(posting_date, date) else date.fromisoformat(str(posting_date)[:10])
+            elif orig_payload.get("posting_date") or orig_payload.get("date"):
+                raw_dt = str(orig_payload.get("posting_date") or orig_payload.get("date"))[:10]
+                try:
+                    ev_target_date = date.fromisoformat(raw_dt)
+                except Exception:
+                    ev_target_date = BusinessDateService.get_business_date(uow, b_id_resolved)
+            else:
+                ev_target_date = BusinessDateService.get_business_date(uow, b_id_resolved)
+            if b_id_resolved:
+                is_open_ev, reason_ev = BusinessDateService.is_operational_open(uow, b_id_resolved, ev_target_date)
+                if not is_open_ev:
+                    raise ValueError(f"Reversal rejected: Operational date {ev_target_date.isoformat()} is closed ({reason_ev}).")
+            ev_date_str = ev_target_date.isoformat()
+
             rev_event = DomainEvent(
                 event_id=str(uuid.uuid4()),
                 aggregate_id=new_id,
@@ -197,6 +228,8 @@ class TreasuryService:
                     "branch": branch_val,
                     "officer": officer_val,
                     "amount": amount,
+                    "date": ev_date_str,
+                    "posting_date": ev_date_str,
                     "reference": new_id,
                     "narration": f"REVERSAL of {orig_ev_type} ({original_tx_id}). Reason: {reason} (by {reversed_by})"
                 }
@@ -219,8 +252,7 @@ class TreasuryService:
             uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
             
             try:
-                b_id = cls._resolve_branch_id(uow, str(branch_val)) if not str(branch_val).startswith("0000") and len(str(branch_val)) < 36 else branch_val
-                uow.cashbook.rebuild_projection(uow, b_id, date.today())
+                uow.cashbook.rebuild_projection(uow, b_id_resolved, ev_target_date)
             except Exception:
                 pass
             return new_id
@@ -238,8 +270,9 @@ class TreasuryService:
             "INTER_BRANCH_OUT": ("INTER_BRANCH_IN", "CashTransferred_HO_In"),
             "INTER_AREA_IN": ("INTER_AREA_OUT", "CashTransferred_HO_Out"),
             "INTER_AREA_OUT": ("INTER_AREA_IN", "CashTransferred_HO_In"),
-            "BANK_DEPOSIT": ("BANK_WITHDRAWAL", "BankWithdrawn"),
-            "BANK_WITHDRAWAL": ("BANK_DEPOSIT", "BankDeposited"),
+            "ASSET_PROGRAM": ("ASSET_PROGRAM", "CashTransferred_HO_Out_Reversed"),
+            "BANK_DEPOSIT": ("BANK_DEPOSIT", "BankDepositReversed"),
+            "BANK_WITHDRAWAL": ("BANK_WITHDRAWAL", "BankWithdrawalReversed"),
             "OFFICE_EXPENSE": ("OFFICE_EXPENSE", "ExpenseReversed"),
             "SALARY": ("SALARY", "SalaryReversed"),
             "FLOAT": ("FLOAT", "ExpenseReversed"),
@@ -248,7 +281,22 @@ class TreasuryService:
         
         comp_tx_type, rev_event_type = reversal_map.get(orig_type, ("OFFICE_EXPENSE", "ExpenseReversed"))
         new_id = str(uuid.uuid4())
-        today_date = date.today()
+        from services.business_date_service import BusinessDateService
+        if posting_date is not None:
+            today_date = posting_date if isinstance(posting_date, date) else date.fromisoformat(str(posting_date)[:10])
+        else:
+            orig_dt_raw = orig.get("posting_date") or orig.get("transaction_date") or orig.get("date")
+            if orig_dt_raw:
+                try:
+                    today_date = date.fromisoformat(str(orig_dt_raw)[:10])
+                except Exception:
+                    today_date = BusinessDateService.get_business_date(uow, str(branch_id or ""))
+            else:
+                today_date = BusinessDateService.get_business_date(uow, str(branch_id or ""))
+        if branch_id:
+            is_open, reason_msg = BusinessDateService.is_operational_open(uow, branch_id, today_date)
+            if not is_open:
+                raise ValueError(f"Reversal rejected: Operational date {today_date.isoformat()} is closed ({reason_msg}).")
         p_date_str = today_date.isoformat()
 
         operations = []
@@ -277,6 +325,8 @@ class TreasuryService:
                 "branch": branch_id,
                 "officer": officer_id,
                 "amount": amount,
+                "date": p_date_str,
+                "posting_date": p_date_str,
                 "reference": new_id,
                 "narration": f"REVERSAL of Treasury {orig_type} ({original_tx_id}). Reason: {reason}",
                 "transaction_type": comp_tx_type,

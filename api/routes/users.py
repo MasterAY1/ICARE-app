@@ -515,6 +515,8 @@ def create_branch_closure(
             end_date=e_date
         )
 
+        from services.business_date_service import BusinessDateService
+        BusinessDateService.invalidate_operational_cache(branch_name=target_branch_id)
         return CreateBranchClosureResponse(
             success=True,
             message="Branch closure added and loan schedules rescheduled successfully!",
@@ -543,6 +545,8 @@ def delete_branch_closure(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Closure not found or already deleted."
             )
+        from services.business_date_service import BusinessDateService
+        BusinessDateService.invalidate_operational_cache()
         return GenericActionResponse(success=True, message="Branch closure deleted successfully.")
     except Exception as e:
         raise HTTPException(

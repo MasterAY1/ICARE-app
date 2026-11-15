@@ -33,7 +33,7 @@ class TestCoCashbookProjectionBuilder(unittest.TestCase):
         self.assertEqual(result["closing_balance"], 50000.0)
 
     def test_savings_withdrawal_no_double_counting(self):
-        # Ledger entry for SavingsWithdrawn: DR 2000, CR 1000
+        # Cash withdrawal from vault: DR 2000, CR 1000 -> reduces vault cash, NO phantom bank withdrawal
         entries = [{
             "account_code": "1000",
             "side": "Credit",
@@ -53,7 +53,8 @@ class TestCoCashbookProjectionBuilder(unittest.TestCase):
 
         self.assertEqual(result["savings_withdrawal"], 10000.0)
         self.assertEqual(result["product_withdrawal"], 10000.0)
-        # CRITICAL VERIFICATION: total_outflows must equal 10000 (NOT 20000 double-counted)
+        self.assertEqual(result["bank_withdrawal"], 0.0)
+        # Vault cash drop must equal -10000 (no phantom bank_withdrawal cancelling it out)
         self.assertEqual(result["total_outflows"], 10000.0)
         self.assertEqual(result["total_inflows"], 0.0)
         self.assertEqual(result["closing_balance"], -10000.0)
@@ -162,10 +163,136 @@ class TestCoCashbookProjectionBuilder(unittest.TestCase):
             self.mock_uow, "branch-01", "off-01", date(2026, 9, 2)
         )
 
-        # Asset loan must route to asset_credit_sales, NOT bank_withdrawal
+        # Asset loan must route to asset_credit_sales and active credit disb_12w, NOT bank_withdrawal or fund_to_product_finance
         self.assertEqual(result["asset_credit_sales"], 68000.0)
+        self.assertEqual(result["disb_12w"], 48000.0)
         self.assertEqual(result["bank_withdrawal"], 0.0)
-        self.assertEqual(result["fund_to_product_finance"], 48000.0)
+        self.assertEqual(result["fund_to_product_finance"], 0.0)
+
+    def test_finance_loan_active_credit_net_of_gap_fee_and_principal_symmetry(self):
+        # Finance Daily 60D loan: Principal = 100k, Gap Fee = 2k, Active Credit = 98k, Markup = 11k
+        entries = [
+            {
+                "account_code": "1000",
+                "side": "Credit",
+                "amount": 100000.0,
+                "financial_transactions": {
+                    "event_id": "ev-fin-disb",
+                    "officer_id": "off-01",
+                    "posting_date": "2026-10-18",
+                    "event_store": {
+                        "event_type": "LoanDisbursed",
+                        "payload": {
+                            "amount": 100000.0,
+                            "active_credit": 98000.0,
+                            "product_type": "Daily 60 Days Finance",
+                            "repayment_cycle": "Daily",
+                            "duration": 60,
+                            "product_category": "Finance",
+                            "narration": "Finance Daily 60D Loan",
+                        },
+                    },
+                },
+            },
+            {
+                "account_code": "1000",
+                "side": "Debit",
+                "amount": 11000.0,
+                "financial_transactions": {
+                    "event_id": "ev-fin-markup",
+                    "officer_id": "off-01",
+                    "posting_date": "2026-10-18",
+                    "narration": "Daily 11% Markup",
+                    "event_store": {
+                        "event_type": "FeeCharged",
+                        "payload": {"narration": "Daily 11% Markup"},
+                    },
+                },
+            },
+            {
+                "account_code": "2000",
+                "side": "Debit",
+                "amount": 13000.0,
+                "financial_transactions": {
+                    "event_id": "ev-fin-upfront",
+                    "officer_id": "off-01",
+                    "posting_date": "2026-10-18",
+                    "event_store": {
+                        "event_type": "SavingsWithdrawn",
+                        "payload": {"narration": "Auto-deducted Upfront Fees (Markup: 11000.0, Gap: 2000.0)"},
+                    },
+                },
+            },
+        ]
+        self.mock_uow.client.table().select().eq().eq().eq().execute().data = entries
+
+        result = CoCashbookProjectionBuilder.rebuild_co_projection(
+            self.mock_uow, "branch-01", "off-01", date(2026, 10, 18)
+        )
+
+        self.assertEqual(result["disb_60d"], 98000.0)
+        self.assertEqual(result["_finance_loan_principal"], 100000.0)
+        self.assertEqual(result["fund_to_product_finance"], 100000.0)
+        self.assertEqual(result["daily_11_pct"], 11000.0)
+        self.assertEqual(result["product_withdrawal"], 13000.0)
+        self.assertEqual(result["bank_withdrawal"], 100000.0)
+        # CO Cashbook balanced on Finance Loan: Left (100k + 11k = 111k) == Right (98k + 13k = 111k)
+        self.assertEqual(result["total_inflows"], 111000.0)
+        self.assertEqual(result["total_outflows"], 111000.0)
+        self.assertEqual(result["closing_balance"], 0.0)
+
+    def test_misc_savings_and_misc_fee_route_into_savings_deposit(self):
+        entries = [
+            {
+                "account_code": "1000",
+                "side": "Debit",
+                "amount": 3500.0,
+                "aggregate_type": "MiscSavings",
+                "financial_transactions": {
+                    "event_id": "ev-misc-1",
+                    "officer_id": "off-01",
+                    "posting_date": "2026-10-18",
+                    "event_store": {
+                        "event_type": "SavingsDeposited",
+                        "aggregate_type": "MiscSavings",
+                        "payload": {"classification": "MISC_FEE", "narration": "Misc savings"},
+                    },
+                },
+            },
+            {
+                "account_code": "1000",
+                "side": "Debit",
+                "amount": 1500.0,
+                "financial_transactions": {
+                    "event_id": "ev-misc-2",
+                    "officer_id": "off-01",
+                    "posting_date": "2026-10-18",
+                    "narration": "MISC_FEE",
+                    "event_store": {"event_type": "FeeCharged", "payload": {"narration": "MISC_FEE"}},
+                },
+            },
+            {
+                "account_code": "1000",
+                "side": "Debit",
+                "amount": 500.0,
+                "financial_transactions": {
+                    "event_id": "ev-pen-1",
+                    "officer_id": "off-01",
+                    "posting_date": "2026-10-18",
+                    "event_store": {"event_type": "PenaltyCharged", "payload": {}},
+                },
+            },
+        ]
+        self.mock_uow.client.table().select().eq().eq().eq().execute().data = entries
+
+        result = CoCashbookProjectionBuilder.rebuild_co_projection(
+            self.mock_uow, "branch-01", "off-01", date(2026, 10, 18)
+        )
+
+        self.assertEqual(result["savings_deposit"], 5000.0)
+        self.assertEqual(result["credit_form_damage"], 500.0)
+        self.assertEqual(result["misc_fees"], 0.0)
+        self.assertEqual(result["total_inflows"], 5500.0)
 
     def test_manual_opening_balance_applied(self):
         # When manual_opening_balance is provided, it is applied directly

@@ -212,7 +212,8 @@ CREATE TABLE public.loans (
     total_due NUMERIC DEFAULT 0 CHECK (total_due >= 0),
     status TEXT DEFAULT 'Pending' CHECK (status IN (
         'Pending', 'Approved', 'Active', 'Completed',
-        'Closed', 'Internal Account', 'Written Off'
+        'Closed', 'Defaulter', 'Internal Account', 'Written Off',
+        'Rejected', 'Cancelled'
     )),
     product_category TEXT DEFAULT 'Finance',
     disbursement_date DATE,
@@ -332,6 +333,7 @@ CREATE TABLE public.fees (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     posting_date DATE NOT NULL,
     client_id UUID REFERENCES public.clients(client_id) ON DELETE SET NULL,
+    group_id UUID REFERENCES public.groups(group_id) ON DELETE SET NULL,
     branch_id UUID REFERENCES public.branches(branch_id) ON DELETE RESTRICT,
     officer_id UUID REFERENCES public.app_users(id) ON DELETE SET NULL,
     fee_type TEXT NOT NULL, -- 'Processing', 'Passbook', 'Credit Form', 'Bonus', 'Penalty'
@@ -354,7 +356,9 @@ CREATE TABLE public.treasury_transactions (
         'BANK_DEPOSIT', 'BANK_WITHDRAWAL',
         'OFFICE_EXPENSE', 'SALARY',
         'FLOAT', 'VAULT_ADJUSTMENT',
-        'INTER_BRANCH_IN', 'INTER_BRANCH_OUT'
+        'INTER_BRANCH_IN', 'INTER_BRANCH_OUT',
+        'INTER_AREA_IN', 'INTER_AREA_OUT',
+        'ASSET_PROGRAM'
     )),
     amount NUMERIC DEFAULT 0 CHECK (amount >= 0),
     reference TEXT,
@@ -738,7 +742,12 @@ INSERT INTO public.posting_rules (event_type, debit_account, credit_account, ver
 ('LapsTransferred', '2000', '2030', 1, TRUE),
 ('LapsPaidOut', '2030', '1000', 1, TRUE),
 ('LapsMigrated', '3000', '2030', 1, TRUE),
-('RepaymentReversed', '1200', '1000', 1, TRUE)
+('RepaymentReversed', '1200', '1000', 1, TRUE),
+('BankWithdrawalReversed', '1050', '1000', 1, TRUE),
+('SavingsDepositReversed', '2000', '1000', 1, TRUE),
+('CashTransferred_HO_In_Reversed', '3100', '1000', 1, TRUE),
+('CashTransferred_HO_Out_Reversed', '1000', '3100', 1, TRUE),
+('ProductWithdrawn', '2000', '1000', 1, TRUE)
 ON CONFLICT (event_type, version) DO UPDATE SET
     debit_account = EXCLUDED.debit_account,
     credit_account = EXCLUDED.credit_account,
@@ -756,7 +765,7 @@ CREATE TABLE public.correction_requests (
     requested_by UUID REFERENCES public.app_users(id),
     branch_id UUID REFERENCES public.branches(branch_id),
     reason TEXT NOT NULL,
-    status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Approved', 'Rejected')),
+    status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Processing', 'Approved', 'Rejected')),
     approved_by UUID REFERENCES public.app_users(id),
     approval_date TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

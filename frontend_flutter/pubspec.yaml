@@ -17,6 +17,7 @@ dependencies:
   path: ^1.9.0
   connectivity_plus: ^6.0.3
   shared_preferences: ^2.5.5
+  device_preview: ^3.0.0
 
 dev_dependencies:
   flutter_test:

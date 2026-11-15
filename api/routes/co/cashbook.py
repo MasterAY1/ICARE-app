@@ -22,8 +22,48 @@ from api.schemas.corrections import ReversalRequestInput, ReversalRequestRespons
 from api.schemas.financial_writes import EodAdjustmentsInput, EodAdjustmentsResponse
 from models.user import CurrentUser
 from services.business_date_service import BusinessDateService
+from services.rbac_scope_service import RBACScopeService
 
 router = APIRouter(prefix="/api/v1/co/cashbook", tags=["CO Cashbook"])
+
+
+def _get_eod_misc_fee_tracked(
+    uow: SupabaseUnitOfWork,
+    branch_name: str,
+    iso_date: str,
+    target_co: str,
+    branch_id: Optional[str] = None,
+) -> float:
+    """Computes net EOD Misc Fee routed via internal_savings for (branch, date, target_co)."""
+    if not target_co or (not branch_name and not branch_id):
+        return 0.0
+    try:
+        marker = f"[EOD_MISC_FEE:{target_co}]"
+        resolved_bid = branch_id or (
+            uow.cashbook._resolve_branch_id(branch_name) if branch_name else None
+        )
+        q = uow.client.table("internal_savings") \
+            .select("deposit_amount, withdrawal_amount, remarks, posting_date, created_at")
+        if resolved_bid:
+            q = q.eq("branch_id", resolved_bid)
+        else:
+            q = q.eq("branch", branch_name)
+        res_ms = q.eq("posting_date", iso_date) \
+            .ilike("remarks", f"%{marker}%") \
+            .execute()
+        total = 0.0
+        rows = getattr(res_ms, "data", None)
+        if not isinstance(rows, list):
+            return 0.0
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            r_dt = str(r.get("posting_date") or r.get("date") or r.get("created_at") or "")[:10]
+            if r_dt == iso_date:
+                total += float(r.get("deposit_amount") or 0.0) - float(r.get("withdrawal_amount") or 0.0)
+        return max(0.0, total)
+    except Exception:
+        return 0.0
 
 
 @router.get("", response_model=CoCashbookResponse)
@@ -76,8 +116,14 @@ def get_co_cashbook(
 
     if can_select_officer:
         try:
-            res_users = uow.client.table("app_users").select("username, full_name").eq("branch_id", branch_id).execute()
-            for u in (res_users.data or []):
+            res_users = uow.client.table("app_users").select("username, full_name, role").eq("branch_id", branch_id).execute()
+            user_rows = getattr(res_users, "data", None)
+            for u in (user_rows if isinstance(user_rows, list) else []):
+                if not isinstance(u, dict):
+                    continue
+                u_role = u.get("role")
+                if u_role and RBACScopeService.normalize_role(str(u_role)) != "CO":
+                    continue
                 u_name = u.get("username", "")
                 f_name = u.get("full_name") or u_name
                 officer_options.append(OfficerOption(
@@ -103,97 +149,94 @@ def get_co_cashbook(
         else:
             officer_id = current_user.id
 
-    # 1. Rebuild projection for fresh live data (app.py L10803)
+    # 1. Check persisted snapshot first; preserve immutable Closed/Verified cashbooks without rebuilding
+    c = {}
+    existing_status = ""
     if officer_id and branch_id:
         try:
-            uow.cashbook.rebuild_projection(branch_id, target_date, officer_id=officer_id)
+            res_co = uow.client.table("co_cashbooks").select("*").eq("date", iso_date).eq("branch_id", branch_id).eq("officer_id", officer_id).execute()
+            ex_rows = getattr(res_co, "data", None)
+            if isinstance(ex_rows, list) and ex_rows and isinstance(ex_rows[0], dict):
+                c = ex_rows[0]
+                existing_status = str(c.get("status") or "").strip().lower()
         except Exception:
-            pass
+            c = {}
 
-    # 2. Query co_cashbooks table (app.py L10805-10834)
-    res_co = uow.client.table("co_cashbooks").select("*").eq("date", iso_date).eq("branch_id", branch_id).eq("officer_id", officer_id).execute()
+        if existing_status not in {"closed", "verified"}:
+            try:
+                from services.co_cashbook_projection_builder import CoCashbookProjectionBuilder
+                from services.master_cashbook_projection_builder import MasterCashbookProjectionBuilder
+                rebuilt = CoCashbookProjectionBuilder.rebuild_co_projection(uow, branch_id, officer_id, target_date) or {}
+                if isinstance(rebuilt, dict) and rebuilt:
+                    c = rebuilt
+                MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, target_date)
+            except Exception:
+                pass
 
-    bf_cash = t_sav = t_r12w = t_r24w = t_r60d = t_rmth = t_cont = t_bwd = t_asale = t_app = t_pb = t_bon = t_cfd = 0.0
-    t_d11 = t_w11 = t_w20 = t_mm = t_pwd = t_exp = t_bdep = t_lres = t_ltrans = t_cc = 0.0
-    d_act = w_act_12 = w_act_24 = m_act = 0.0
+    bf_cash = t_sav = t_r12w = t_r24w = t_r60d = t_r120d = t_rmth = t_cont = t_bwd = t_asale = t_app = t_pb = t_bon = t_cfd = 0.0
+    t_d11 = t_d20 = t_w11 = t_w20 = t_mm = t_misc = t_pwd = t_exp = t_bdep = t_lres = t_ltrans = t_cc = 0.0
+    d_act = d_act_120d = w_act_12 = w_act_24 = m_act = 0.0
 
-    if res_co.data:
-        c = res_co.data[0]
+    if c:
         bf_cash = float(c.get("opening_balance") or 0)
         t_sav = float(c.get("savings_deposit") or 0)
         t_lres = float(c.get("laps_reserve") or 0)
         t_r60d = float(c.get("rep_daily") or 0)
+        t_r120d = float(c.get("rep_120_days") or 0)
         t_r12w = float(c.get("rep_12_weeks") or 0)
         t_r24w = float(c.get("rep_24_weeks") or 0)
         t_rmth = float(c.get("rep_monthly") or 0)
         t_d11 = float(c.get("daily_11_pct") or 0)
+        t_d20 = float(c.get("daily_20_pct") or 0)
         t_w11 = float(c.get("weekly_11_pct") or 0)
         t_w20 = float(c.get("weekly_20_pct") or 0)
         t_mm = float(c.get("risk_premium_returns") or 0)
         t_cont = float(c.get("contingency") or 0)
-        t_app = float(c.get("app_fee") or 0)
+        t_app = float(c.get("app_fee") or 0) + float(c.get("credit_form") or 0)
         t_cfd = float(c.get("credit_form_damage") or 0)
         t_pb = float(c.get("passbook") or 0)
         t_bon = float(c.get("bonus") or 0)
+        t_misc = float(c.get("misc_fees") or 0)
         t_cc = float(c.get("cash_and_carry") or 0)
         t_asale = float(c.get("asset_credit_sales") or 0)
         t_bwd = float(c.get("bank_withdrawal") or 0)
+        d_act = float(c.get("disb_60d") or 0)
+        d_act_120d = float(c.get("disb_120d") or 0)
+        w_act_12 = float(c.get("disb_12w") or 0)
+        w_act_24 = float(c.get("disb_24w") or 0)
+        m_act = float(c.get("disb_mth") or 0)
         t_pwd = float(c.get("product_withdrawal") or 0)
         t_exp = float(c.get("office_expenses") or 0)
         t_bdep = float(c.get("bank_deposit") or 0)
         t_ltrans = float(c.get("laps_returns") or 0)
 
-    # 3. Fetch active disbursements originated today for breakdown (app.py L10835-10854)
-    if officer_id and branch_id:
-        try:
-            res_l = uow.client.table("loans").select("loan_amount, active_credit, disbursement_date, date, extra_fields, loan_products(name, repayment_cycle)") \
-                .eq("officer_id", officer_id).eq("branch_id", branch_id).or_(f"disbursement_date.eq.{iso_date},date.eq.{iso_date}") \
-                .in_("status", ["Active", "Approved", "Completed"]).execute()
-            for l in (res_l.data or []):
-                if isinstance(l.get("extra_fields"), dict) and l["extra_fields"].get("is_legacy") is True:
-                    continue
-                effective_disb_date = l.get("disbursement_date") or l.get("date")
-                if effective_disb_date != iso_date:
-                    continue
-                act_cr = float(l.get("active_credit") or l.get("loan_amount") or 0.0)
-                lp = l.get("loan_products") or {}
-                p_name = str(lp.get("name") or "").lower()
-                cycle = lp.get("repayment_cycle") or ("Daily" if "daily" in p_name else "Weekly")
-                if cycle == "Daily":
-                    d_act += act_cr
-                elif cycle == "Weekly":
-                    if "24" in p_name:
-                        w_act_24 += act_cr
-                    else:
-                        w_act_12 += act_cr
-                elif cycle == "Monthly":
-                    m_act += act_cr
-                else:
-                    w_act_12 += act_cr
-        except Exception:
-            pass
+    eod_misc_tracked = _get_eod_misc_fee_tracked(
+        uow, target_branch, iso_date, target_co, branch_id=branch_id
+    )
 
-    # Compute double-entry totals (app.py L10859-10870)
+    # Compute double-entry totals (note: eod_misc_tracked flows through Misc Savings savings_deposit, never double-added into left_total)
     left_total = (
-        bf_cash + t_lres + t_sav + t_r60d + t_r12w + t_r24w + t_rmth +
-        t_d11 + t_w11 + t_w20 + t_mm + t_cont + t_app + t_cfd + t_pb + t_bon +
+        bf_cash + t_lres + t_sav + t_r60d + t_r120d + t_r12w + t_r24w + t_rmth +
+        t_d11 + t_d20 + t_w11 + t_w20 + t_mm + t_cont + t_app + t_cfd + t_pb + t_bon + t_misc +
         t_asale + t_cc + t_bwd
     )
     right_total = (
-        d_act + w_act_12 + w_act_24 + m_act +
+        d_act + d_act_120d + w_act_12 + w_act_24 + m_act +
         t_pwd + t_exp + t_ltrans + t_bdep
     )
     closing_bal = left_total - right_total
 
     inflows = CashbookInflows(
         opening_balance=bf_cash,
-        savings_deposit=t_sav,
+        savings_deposit=t_sav + t_misc,
         laps_reserve=t_lres,
         rep_daily=t_r60d,
+        rep_120_days=t_r120d,
         rep_12_weeks=t_r12w,
         rep_24_weeks=t_r24w,
         rep_monthly=t_rmth,
         daily_11_pct=t_d11,
+        daily_20_pct=t_d20,
         weekly_11_pct=t_w11,
         weekly_20_pct=t_w20,
         risk_premium_returns=t_mm,
@@ -202,6 +245,8 @@ def get_co_cashbook(
         credit_form_damage=t_cfd,
         passbook=t_pb,
         bonus=t_bon,
+        misc_fees=0.0,
+        eod_misc_fee=eod_misc_tracked,
         cash_and_carry=t_cc,
         asset_credit_sales=t_asale,
         bank_withdrawal=t_bwd
@@ -209,6 +254,7 @@ def get_co_cashbook(
 
     outflows = CashbookOutflows(
         active_loan_daily=d_act,
+        active_loan_120d=d_act_120d,
         active_loan_12w=w_act_12,
         active_loan_24w=w_act_24,
         active_loan_monthly=m_act,
@@ -264,7 +310,7 @@ def get_co_cashbook(
     try:
         q_events = uow.client.table("event_store").select("*") \
             .in_("event_type", ["FeeCharged", "ExpenseRecorded", "BankDeposited", "BankWithdrawn"]) \
-            .order("created_at", desc=True).limit(30)
+            .order("created_at", desc=True).limit(200)
         res_events = q_events.execute()
         raw_events = res_events.data or []
 
@@ -283,12 +329,15 @@ def get_co_cashbook(
                 continue
 
             p = ev.get("payload") or {}
+            ev_dt = str(p.get("date") or p.get("posting_date") or "")[:10]
+            if ev_dt and ev_dt != iso_date:
+                continue
             ev_off = str(p.get("officer") or p.get("officer_id") or "")
             ev_br = str(p.get("branch") or p.get("branch_id") or "")
 
             if not can_select_officer and ev_off not in [str(current_user.username), str(current_user.id), str(officer_id)]:
                 continue
-            if branch_id and ev_br not in [str(current_user.branch), str(branch_id)]:
+            if branch_id and ev_br not in [str(target_branch), str(branch_id)]:
                 continue
 
             ev_type = ev.get("event_type")
@@ -321,7 +370,7 @@ def get_co_cashbook(
 
     return CoCashbookResponse(
         date=iso_date,
-        branch=current_user.branch,
+        branch=target_branch,
         officer=target_co,
         is_open=is_open,
         open_reason=open_reason,
@@ -337,6 +386,7 @@ def get_co_cashbook(
         submitted_reversals=submitted_reversals,
         active_loan_breakdown={
             "daily": d_act,
+            "120d": d_act_120d,
             "12w": w_act_12,
             "24w": w_act_24,
             "monthly": m_act,
@@ -385,7 +435,8 @@ def submit_eod_adjustments(
     from domain.entities.event_store import DomainEvent
     from services.posting_engine import FinancialPostingEngine
 
-    target_date = date.today()
+    b_uuid = uow.cashbook._resolve_branch_id(current_user.branch) or current_user.branch_id
+
     if payload.date:
         try:
             target_date = date.fromisoformat(payload.date)
@@ -394,8 +445,11 @@ def submit_eod_adjustments(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid date format. Use YYYY-MM-DD."
             )
+    else:
+        biz_dt = BusinessDateService.get_business_date(uow, b_uuid or current_user.branch)
+        target_date = biz_dt if isinstance(biz_dt, date) else date.today()
 
-    is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id, target_date)
+    is_open, open_reason = BusinessDateService.is_operational_open(uow, b_uuid or current_user.branch_id, target_date)
     if not is_open:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -403,7 +457,6 @@ def submit_eod_adjustments(
         )
 
     date_str = target_date.isoformat()
-    b_uuid = uow.cashbook._resolve_branch_id(current_user.branch)
 
     # Scoping target officer
     mgr_roles = {"BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin", "Director", "Executive"}
@@ -416,20 +469,43 @@ def submit_eod_adjustments(
         res_u = uow.client.table("app_users").select("id").eq("username", target_co).execute()
         officer_uuid = res_u.data[0]["id"] if res_u.data else current_user.id
 
-    # 1. Fetch current projection to preserve untouched fields and compute deltas
-    cb_res = uow.client.table("co_cashbooks").select("*").eq("branch_id", b_uuid).eq("officer_id", officer_uuid).eq("date", date_str).execute()
-    cur_cb = cb_res.data[0] if cb_res.data else {}
+    # 1. Check persisted status first; preserve immutable Closed/Verified cashbooks
+    from services.co_cashbook_projection_builder import CoCashbookProjectionBuilder
+    from services.master_cashbook_projection_builder import MasterCashbookProjectionBuilder
+    from services.savings_service import SavingsService
 
-    cur_app_fee = float(cur_cb.get("app_fee") or 0.0)
+    cur_cb = {}
+    if b_uuid and officer_uuid:
+        try:
+            cb_res = uow.client.table("co_cashbooks").select("*").eq("branch_id", b_uuid).eq("officer_id", officer_uuid).eq("date", date_str).execute()
+            cb_rows = getattr(cb_res, "data", None)
+            if isinstance(cb_rows, list) and cb_rows and isinstance(cb_rows[0], dict):
+                cur_cb = cb_rows[0]
+                if str(cur_cb.get("status") or "").strip().lower() in {"closed", "verified"}:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Cannot update End of Day inputs: this officer cashbook is already Closed or Verified."
+                    )
+        except HTTPException:
+            raise
+        except Exception:
+            cur_cb = {}
+
+    rebuilt_cb = CoCashbookProjectionBuilder.rebuild_co_projection(uow, b_uuid, officer_uuid, target_date) or {}
+    if isinstance(rebuilt_cb, dict) and rebuilt_cb:
+        cur_cb = rebuilt_cb
+
+    cur_open = float(cur_cb.get("opening_balance") or 0.0)
+    cur_app_fee = float(cur_cb.get("app_fee") or 0.0) + float(cur_cb.get("credit_form") or 0.0)
     cur_pb = float(cur_cb.get("passbook") or 0.0)
     cur_cfd = float(cur_cb.get("credit_form_damage") or 0.0)
     cur_bon = float(cur_cb.get("bonus") or 0.0)
-    cur_misc = float(cur_cb.get("misc_fees") or 0.0)
+    cur_misc = _get_eod_misc_fee_tracked(uow, current_user.branch, date_str, target_co, branch_id=b_uuid)
     cur_exp = float(cur_cb.get("office_expenses") or 0.0)
     cur_bdep = float(cur_cb.get("bank_deposit") or 0.0)
 
     # Resolve effective values: preserve untouched fields if None
-    global_opening_val = float(payload.opening_balance) if payload.opening_balance is not None else float(cur_cb.get("opening_balance") or 0.0)
+    global_opening_val = float(payload.opening_balance) if payload.opening_balance is not None else cur_open
     global_expenses_val = float(payload.office_expenses) if payload.office_expenses is not None else cur_exp
     global_bank_dep_val = float(payload.bank_deposit) if payload.bank_deposit is not None else cur_bdep
     global_app_fee_val = float(payload.app_fee) if payload.app_fee is not None else cur_app_fee
@@ -438,8 +514,10 @@ def submit_eod_adjustments(
     global_cfd_val = float(payload.credit_form_damage) if payload.credit_form_damage is not None else cur_cfd
     global_bonus_val = float(payload.bonus) if payload.bonus is not None else cur_bon
 
-    # 2. Update manual opening balance if provided
-    if payload.opening_balance is not None and global_opening_val > 0:
+    opening_changed = payload.opening_balance is not None and abs(global_opening_val - cur_open) > 0.001
+
+    # 2. Update manual opening balance if changed (including clearing down to 0.0 or negative adjustment)
+    if opening_changed:
         uow.client.table("co_cashbooks").upsert({
             "date": date_str,
             "branch_id": b_uuid,
@@ -447,9 +525,13 @@ def submit_eod_adjustments(
             "opening_balance": global_opening_val
         }, on_conflict="date,branch_id,officer_id").execute()
 
+    adjusted_fields: List[str] = []
+    if opening_changed:
+        adjusted_fields.append(f"opening_balance={global_opening_val:,.2f}")
+
     # Helper function to post delta with proper reversal handling
     def _post_adjustment(d, ev_pos, ev_neg, agg_type, name, cur_val, new_val):
-        if d == 0:
+        if abs(d) <= 0.001:
             return
         if d > 0:
             ev_type = ev_pos
@@ -477,23 +559,77 @@ def submit_eod_adjustments(
         )
         uow.event_store.append(ev)
         FinancialPostingEngine.post_event(uow, ev)
+        adjusted_fields.append(f"{name}={new_val:,.2f}")
 
     # 3. Post Delta Adjustments for each fee/expense/deposit (app.py L10978-10984):
     _post_adjustment(global_app_fee_val - cur_app_fee, "FeeCharged", "FeeReversed", "Fee", "App Fee", cur_app_fee, global_app_fee_val)
     _post_adjustment(global_passbook_val - cur_pb, "FeeCharged", "FeeReversed", "Fee", "Passbook", cur_pb, global_passbook_val)
     _post_adjustment(global_cfd_val - cur_cfd, "FeeCharged", "FeeReversed", "Fee", "Cr Form Damage", cur_cfd, global_cfd_val)
     _post_adjustment(global_bonus_val - cur_bon, "FeeCharged", "FeeReversed", "Fee", "Bonus", cur_bon, global_bonus_val)
-    _post_adjustment(global_misc_fee_val - cur_misc, "FeeCharged", "FeeReversed", "Fee", "Misc Fee", cur_misc, global_misc_fee_val)
+
+    # Misc Fee routes directly to Branch Misc Savings (Account 2020) without double-counting into CO left_total
+    d_misc = global_misc_fee_val - cur_misc
+    managing_id = ""
+    if d_misc > 0.001:
+        managing_id, _ = SavingsService.get_branch_misc_savings_officer(uow, current_user.branch)
+        SavingsService.post_misc_savings(
+            uow=uow,
+            client_id="BRANCH_MISC",
+            client_name=f"Branch Misc - {current_user.branch}",
+            branch=current_user.branch,
+            officer=target_co,
+            deposit_amount=d_misc,
+            withdrawal_amount=0.0,
+            reference=f"EOD-MISC-{date_str}-{uuid.uuid4().hex[:6].upper()}",
+            remarks=f"[EOD_MISC_FEE:{target_co}] EOD Misc Fee Deposit (Added ₦{d_misc:,.2f}, Total: ₦{global_misc_fee_val:,.2f})",
+            posting_date=target_date,
+        )
+        adjusted_fields.append(f"Misc Fee={global_misc_fee_val:,.2f}")
+    elif d_misc < -0.001:
+        amt_rev = abs(d_misc)
+        managing_id, _ = SavingsService.get_branch_misc_savings_officer(uow, current_user.branch)
+        SavingsService.post_misc_savings(
+            uow=uow,
+            client_id="BRANCH_MISC",
+            client_name=f"Branch Misc - {current_user.branch}",
+            branch=current_user.branch,
+            officer=target_co,
+            deposit_amount=0.0,
+            withdrawal_amount=amt_rev,
+            reference=f"EOD-MISC-REV-{date_str}-{uuid.uuid4().hex[:6].upper()}",
+            remarks=f"[EOD_MISC_FEE:{target_co}] [EOD_REVERSAL] EOD Misc Fee Reduction (Reduced ₦{amt_rev:,.2f}, Adjusted from ₦{cur_misc:,.2f} to ₦{global_misc_fee_val:,.2f})",
+            posting_date=target_date,
+        )
+        adjusted_fields.append(f"Misc Fee={global_misc_fee_val:,.2f}")
+
     _post_adjustment(global_expenses_val - cur_exp, "ExpenseRecorded", "ExpenseReversed", "Expense", "Expense", cur_exp, global_expenses_val)
     _post_adjustment(global_bank_dep_val - cur_bdep, "BankDeposited", "BankDepositReversed", "Treasury", "Bank Deposit", cur_bdep, global_bank_dep_val)
 
-    # 4. Rebuild projection (app.py L10987-10993)
+    # 4. Rebuild projection & emit audit log
     if officer_uuid and b_uuid:
-        if payload.opening_balance is not None and global_opening_val > 0:
-            uow.cashbook.rebuild_projection(b_uuid, target_date, officer_id=officer_uuid, manual_opening_balance=global_opening_val)
-            uow.cashbook.cascade_co_projection(b_uuid, officer_uuid, target_date, date.today())
+        if opening_changed:
+            CoCashbookProjectionBuilder.rebuild_co_projection(uow, b_uuid, officer_uuid, target_date, manual_opening_balance=global_opening_val)
+            cascade_end_dt = BusinessDateService.get_business_date(uow, b_uuid or current_user.branch)
+            cascade_end = cascade_end_dt if isinstance(cascade_end_dt, date) else target_date
+            uow.cashbook.cascade_co_projection(b_uuid, officer_uuid, target_date, max(target_date, cascade_end))
+            MasterCashbookProjectionBuilder.rebuild_master_projection(uow, b_uuid, target_date)
         else:
             uow.cashbook.rebuild_projection(b_uuid, target_date, officer_id=officer_uuid)
+        if managing_id and str(managing_id) != str(officer_uuid):
+            uow.cashbook.rebuild_projection(b_uuid, target_date, officer_id=str(managing_id))
+
+    if adjusted_fields:
+        try:
+            uow.client.table("audit_logs").insert({
+                "id": str(uuid.uuid4()),
+                "user_id": current_user.id or officer_uuid,
+                "action": "EOD_ADJUSTMENTS",
+                "description": f"EOD cashbook updates for {target_co} on {date_str}: {', '.join(adjusted_fields)}",
+                "table_name": "co_cashbooks",
+                "record_id": officer_uuid,
+            }).execute()
+        except Exception:
+            pass
 
     return EodAdjustmentsResponse(
         success=True,
@@ -551,7 +687,7 @@ def record_client_fee(
     from domain.entities.event_store import DomainEvent
     from services.posting_engine import FinancialPostingEngine
 
-    target_date = date.today()
+    b_uuid = uow.cashbook._resolve_branch_id(current_user.branch) or current_user.branch_id
     if payload.date:
         try:
             target_date = date.fromisoformat(payload.date)
@@ -560,8 +696,11 @@ def record_client_fee(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid date format. Use YYYY-MM-DD."
             )
+    else:
+        biz_dt = BusinessDateService.get_business_date(uow, b_uuid or current_user.branch)
+        target_date = biz_dt if isinstance(biz_dt, date) else date.today()
 
-    is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id, target_date)
+    is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id or b_uuid, target_date)
     if not is_open:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -569,7 +708,6 @@ def record_client_fee(
         )
 
     date_str = target_date.isoformat()
-    b_uuid = uow.cashbook._resolve_branch_id(current_user.branch)
 
     # Fetch client to verify existence and get details
     res_c = uow.client.table("clients").select("client_id, client_code, name, branch_id").eq("client_id", payload.client_id).execute()
@@ -582,6 +720,22 @@ def record_client_fee(
     check_branch_access(current_user, c_row.get("branch_id"), "record client fee")
     client_name = c_row.get("name") or "Unknown Client"
     client_code = c_row.get("client_code") or "N/A"
+    eff_branch_id = c_row.get("branch_id") or b_uuid
+    eff_branch_name = current_user.branch
+    if eff_branch_id and str(eff_branch_id) != str(b_uuid):
+        is_c_open, c_reason = BusinessDateService.is_operational_open(uow, eff_branch_id, target_date)
+        if not is_c_open:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Cannot record client fee for branch today ({c_reason})."
+            )
+        try:
+            res_br = uow.client.table("branches").select("name").eq("id", eff_branch_id).limit(1).execute()
+            br_rows = getattr(res_br, "data", None)
+            if isinstance(br_rows, list) and br_rows and isinstance(br_rows[0], dict) and br_rows[0].get("name"):
+                eff_branch_name = str(br_rows[0]["name"])
+        except Exception:
+            pass
 
     # Scoping target officer
     mgr_roles = {"BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin", "Director", "Executive"}
@@ -593,6 +747,21 @@ def record_client_fee(
     if not officer_uuid:
         res_u = uow.client.table("app_users").select("id").eq("username", target_co).execute()
         officer_uuid = res_u.data[0]["id"] if res_u.data else current_user.id
+
+    if eff_branch_id and officer_uuid:
+        try:
+            cb_chk = uow.client.table("co_cashbooks").select("status").eq("branch_id", eff_branch_id).eq("officer_id", officer_uuid).eq("date", date_str).limit(1).execute()
+            cb_chk_rows = getattr(cb_chk, "data", None)
+            if isinstance(cb_chk_rows, list) and cb_chk_rows and isinstance(cb_chk_rows[0], dict):
+                if str(cb_chk_rows[0].get("status") or "").strip().lower() in {"closed", "verified"}:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Cannot record client fee: officer cashbook is already Closed or Verified."
+                    )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
 
     # Normalize fee classification & display name
     ft_low = payload.fee_type.lower()
@@ -615,34 +784,45 @@ def record_client_fee(
     fee_id = str(uuid.uuid4())
     ev_ref = f"FEE-{date_str}-{uuid.uuid4().hex[:6].upper()}"
     narr = payload.remarks or f"{fee_name} from {client_code} ({client_name}) recorded at EOD"
+    fee_record = {
+        "id": fee_id,
+        "posting_date": date_str,
+        "client_id": payload.client_id,
+        "branch_id": eff_branch_id,
+        "officer_id": officer_uuid,
+        "fee_type": fee_cls,
+        "amount": payload.amount,
+        "reference": ev_ref,
+        "remarks": narr,
+    }
+    audit_op = {
+        "type": "insert",
+        "table": "audit_logs",
+        "record": {
+            "id": str(uuid.uuid4()),
+            "user_id": current_user.id or officer_uuid,
+            "action": "RECORD_CLIENT_FEE",
+            "description": f"Recorded {fee_name} of ₦{payload.amount:,.2f} for {client_name} ({client_code})",
+            "table_name": "fees",
+            "record_id": fee_id,
+        },
+    }
 
     # Route according to authoritative banking rules (BR-ACCT-001, BR-SAV-001, BR-SAV-002, BR-SAV-005)
     if fee_cls == "MISC_FEE":
         # 1. Misc Fee is Misc Savings (Internal Savings pool) -> Debit 1000 (Vault Cash), Credit 2020 (Internal Savings)
-        try:
-            from services.savings_service import SavingsService
-            SavingsService.post_misc_savings(
-                uow, payload.client_id, client_name, current_user.branch, target_co,
-                payload.amount, reference=ev_ref, remarks=narr, posting_date=target_date
-            )
-        except Exception as ex_misc:
-            print(f"[MISC SAVINGS POST WARNING]: {ex_misc}")
-
-        # 2. Persist operational fee register entry for dashboard/report visibility without double-posting ledger
-        try:
-            uow.client.table("fees").insert({
-                "id": fee_id,
-                "posting_date": date_str,
-                "client_id": payload.client_id,
-                "branch_id": b_uuid,
-                "officer_id": officer_uuid,
-                "fee_type": fee_cls,
-                "amount": payload.amount,
-                "reference": ev_ref,
-                "remarks": narr
-            }).execute()
-        except Exception as ex_ins:
-            print(f"[FEES TABLE INSERT ERROR]: {ex_ins}")
+        from services.savings_service import SavingsService
+        SavingsService.post_misc_savings(
+            uow, payload.client_id, client_name, eff_branch_name, target_co,
+            payload.amount, reference=ev_ref, remarks=narr, posting_date=target_date
+        )
+        # 2. Persist operational fee register + audit log atomically
+        uow.client.rpc("atomic_execute_operations", {
+            "p_operations": [
+                {"type": "insert", "table": "fees", "record": fee_record},
+                audit_op,
+            ]
+        }).execute()
     else:
         # True Fee Revenue (Account 3000: Fee Income) -> Debit 1000 (Vault Cash), Credit 3000 (Fee Income)
         ev = DomainEvent(
@@ -651,8 +831,8 @@ def record_client_fee(
             aggregate_type="Fee",
             event_type="FeeCharged",
             payload={
-                "branch": current_user.branch,
-                "branch_id": b_uuid,
+                "branch": eff_branch_name,
+                "branch_id": eff_branch_id,
                 "officer": target_co,
                 "officer_id": officer_uuid,
                 "client_id": payload.client_id,
@@ -665,28 +845,36 @@ def record_client_fee(
                 "narration": narr
             }
         )
-        uow.event_store.append(ev)
-        FinancialPostingEngine.post_event(uow, ev)
+        operations = [
+            {
+                "type": "insert",
+                "table": "event_store",
+                "record": {
+                    "event_id": ev.event_id,
+                    "aggregate_id": ev.aggregate_id,
+                    "aggregate_type": ev.aggregate_type,
+                    "event_type": ev.event_type,
+                    "version": ev.version,
+                    "payload": ev.payload,
+                    "status": "Completed",
+                },
+            }
+        ]
+        post_res = FinancialPostingEngine.post_event(uow, ev, defer_commit=True)
+        if isinstance(post_res, tuple) and len(post_res) == 2 and isinstance(post_res[1], dict):
+            operations.append(post_res[1])
+        operations.append({"type": "insert", "table": "fees", "record": fee_record})
+        operations.append(audit_op)
+        uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
 
-        # Persist directly into public.fees
+    # Rebuild CO & Master cashbook projections
+    if officer_uuid and eff_branch_id:
+        uow.cashbook.rebuild_projection(eff_branch_id, target_date, officer_id=officer_uuid)
         try:
-            uow.client.table("fees").insert({
-                "id": fee_id,
-                "posting_date": date_str,
-                "client_id": payload.client_id,
-                "branch_id": b_uuid,
-                "officer_id": officer_uuid,
-                "fee_type": fee_cls,
-                "amount": payload.amount,
-                "reference": ev_ref,
-                "remarks": narr
-            }).execute()
-        except Exception as ex_ins:
-            print(f"[FEES TABLE INSERT ERROR]: {ex_ins}")
-
-    # Rebuild projection
-    if officer_uuid and b_uuid:
-        uow.cashbook.rebuild_projection(b_uuid, target_date, officer_id=officer_uuid)
+            from services.master_cashbook_projection_builder import MasterCashbookProjectionBuilder
+            MasterCashbookProjectionBuilder.rebuild_master_projection(uow, eff_branch_id, target_date)
+        except Exception:
+            pass
 
     return RecordClientFeeResponse(
         success=True,
@@ -710,14 +898,6 @@ def get_client_fees(
     """
     Returns all client fees recorded for the given officer and date.
     """
-    target_date = date.today()
-    if date_str:
-        try:
-            target_date = date.fromisoformat(date_str)
-        except ValueError:
-            target_date = date.today()
-    p_date_str = target_date.isoformat()
-
     mgr_roles = {"BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin", "Director", "Executive"}
     can_manage = current_user.role in mgr_roles
 
@@ -730,6 +910,17 @@ def get_client_fees(
     target_branch = branch if (branch and can_manage) else current_user.branch
     b_uuid = uow.cashbook._resolve_branch_id(target_branch)
     check_branch_access(current_user, b_uuid, "view client fees")
+
+    if date_str:
+        try:
+            target_date = date.fromisoformat(date_str)
+        except ValueError:
+            biz_dt = BusinessDateService.get_business_date(uow, b_uuid or target_branch)
+            target_date = biz_dt if isinstance(biz_dt, date) else date.today()
+    else:
+        biz_dt = BusinessDateService.get_business_date(uow, b_uuid or target_branch)
+        target_date = biz_dt if isinstance(biz_dt, date) else date.today()
+    p_date_str = target_date.isoformat()
 
     target_co = current_user.username
     if can_manage and officer:

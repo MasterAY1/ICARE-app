@@ -270,6 +270,18 @@ class CoApiService {
     return response.data as Map<String, dynamic>;
   }
 
+  /// GET /api/v1/co/origination/business-date
+  Future<Map<String, dynamic>> getOriginationBusinessDate() async {
+    final response = await _client.get('/api/v1/co/origination/business-date');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/v1/co/origination/preview-schedule
+  Future<Map<String, dynamic>> previewLoanSchedule(Map<String, dynamic> payload) async {
+    final response = await _client.post('/api/v1/co/origination/preview-schedule', data: payload);
+    return response.data as Map<String, dynamic>;
+  }
+
   /// POST /api/v1/co/origination/check-eligibility
   Future<Map<String, dynamic>> checkLoanEligibility(Map<String, dynamic> payload) async {
     final response = await _client.post('/api/v1/co/origination/check-eligibility', data: payload);

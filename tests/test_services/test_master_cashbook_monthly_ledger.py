@@ -474,6 +474,172 @@ class TestMasterCashbookMonthlyLedger(unittest.TestCase):
             self.assertEqual(tx_record["transaction_type"], "INTER_AREA_OUT")
             self.assertEqual(ev_record["event_type"], "CashTransferred_HO_Out")
 
+    def test_report_service_asset_program_split_and_no_cash_and_carry_double_count(self):
+        """Verify ReportService separates Asset receipt (loan_received_asset) vs payment (fund_to_asset_program) and excludes misc_fees from cash_and_carry"""
+        from services.report_service import ReportService
+
+        mc_rows = [
+            {
+                "cash_and_carry": 175000.0,
+                "misc_fees": 5000.0,  # Legacy field must NOT inflate sales_cash_and_carry
+                "loan_received_asset": 508000.0,
+                "fund_to_asset_program": 683000.0,
+                "funds_received_ho": 0.0,
+                "funds_received_other_branch": 0.0,
+                "funds_received_other_area": 0.0,
+                "fund_transferred_ho": 0.0,
+                "fund_transferred_other_branch": 0.0,
+                "fund_to_other_area": 0.0,
+                "laps_returns": 0.0,
+                "passbook": 0.0,
+                "app_fee": 0.0,
+                "bonus": 0.0,
+                "credit_form_damage": 0.0,
+                "daily_11_pct": 0.0,
+                "daily_20_pct": 0.0,
+                "weekly_11_pct": 0.0,
+                "weekly_20_pct": 0.0,
+            }
+        ]
+
+        mock_uow = MagicMock()
+
+        def table_router(name):
+            tbl = MagicMock()
+            chain = tbl.select.return_value
+            chain.eq.return_value = chain
+            chain.gte.return_value = chain
+            chain.lte.return_value = chain
+            chain.in_.return_value = chain
+            chain.neq.return_value = chain
+            if name == "master_cashbook":
+                chain.execute.return_value.data = mc_rows
+            elif name == "branches":
+                chain.execute.return_value.data = [{"branch_id": "br-ogijo", "name": "Ogijo"}]
+            else:
+                chain.execute.return_value.data = []
+            return tbl
+
+        mock_uow.client.table.side_effect = table_router
+
+        recon = ReportService.get_monthly_statement_reconciliation(mock_uow, "br-ogijo", 2026, 2)
+        self.assertEqual(recon["sales_cash_and_carry"], 175000.0)
+        self.assertEqual(recon["fund_cash_ho_asset_receipt"], 508000.0)
+        self.assertEqual(recon["fund_cash_ho_asset_payment"], 683000.0)
+
+        with patch.object(
+            ReportService,
+            "get_monthly_parity_matrix",
+            return_value={
+                "rows": [],
+                "summary_cards": {
+                    "net_active_credit_balance": 0.0,
+                    "net_savings_balance": 0.0,
+                    "total_principal_disbursed": 0.0,
+                    "total_savings_deposits": 0.0,
+                    "total_repayments": 0.0,
+                    "total_upfront_fees": 0.0,
+                    "total_savings_withdrawals": 0.0,
+                },
+            },
+        ), patch.object(
+            ReportService,
+            "get_monthly_statement_reconciliation",
+            return_value=recon,
+        ):
+            stmt = ReportService.get_official_trial_balance_and_receipts_payments(mock_uow, "br-ogijo", 2026, 2)
+
+        payments = stmt["receipts_and_payments"]["payments"]
+        receipts = stmt["receipts_and_payments"]["receipts"]
+        cc_receipt = next(r for r in receipts if r["item"] == "Sales: Cash and Carry")
+        cc_payment = next(p for p in payments if p["item"] == "Sales: Cash and Carry")
+        fund_remitted = next(p for p in payments if p["item"] == "Fund Cash Remitted (Head Office & Branch)")
+
+        self.assertEqual(cc_receipt["amount"], 175000.0)
+        # Must NOT double-count Cash & Carry alongside fund_cash_ho_asset_payment
+        self.assertEqual(cc_payment["amount"], 0.0)
+        self.assertEqual(fund_remitted["amount"], 683000.0)
+
+    def test_export_monthly_ledger_excel_appends_month_total_and_funds_from_asset(self):
+        import asyncio
+        import io
+        from unittest.mock import MagicMock, patch
+        import pandas as pd
+        from models.user import CurrentUser
+        from api.routes.bm.cashbook import COL_RENAME_EXCEL, export_monthly_ledger_excel
+
+        # Build a 2-day DataFrame matching display_df keys expected by COL_RENAME_EXCEL
+        day1 = {col: 0.0 for col in COL_RENAME_EXCEL.keys()}
+        day1.update({
+            "date": "2026-02-02",
+            "opening_balance": 10000.0,
+            "loan_received_asset": 50000.0,
+            "cash_and_carry": 15000.0,
+            "total_inflows": 75000.0,  # opening 10k + daily receipts 65k
+            "fund_to_asset_program": 40000.0,
+            "total_outflows": 40000.0,
+            "closing_balance": 35000.0,
+        })
+        day2 = {col: 0.0 for col in COL_RENAME_EXCEL.keys()}
+        day2.update({
+            "date": "2026-02-03",
+            "opening_balance": 35000.0,
+            "loan_received_asset": 25000.0,
+            "cash_and_carry": 5000.0,
+            "total_inflows": 65000.0,  # opening 35k + daily receipts 30k
+            "fund_to_asset_program": 55000.0,
+            "total_outflows": 55000.0,
+            "closing_balance": 10000.0,
+        })
+        display_df = pd.DataFrame([day1, day2])
+
+        user = CurrentUser(
+            id="bm-1",
+            username="bm_ogijo",
+            role="BM",
+            branch="Ogijo",
+            branch_id="br-1",
+            full_name="Branch Manager",
+        )
+
+        with patch("api.routes.bm.cashbook._resolve_available_branches", return_value=["Ogijo"]), \
+             patch("api.routes.bm.cashbook._build_monthly_ledger_dataframe", return_value=display_df):
+            resp = export_monthly_ledger_excel(
+                month=2,
+                year=2026,
+                branch="Ogijo",
+                current_user=user,
+                uow=MagicMock(),
+            )
+
+        if hasattr(resp, "body") and resp.body:
+            raw_bytes = resp.body
+        else:
+            async def _collect():
+                chunks = []
+                async for chunk in resp.body_iterator:
+                    chunks.append(chunk)
+                return b"".join(chunks)
+            raw_bytes = asyncio.run(_collect())
+
+        excel_df = pd.read_excel(io.BytesIO(raw_bytes), sheet_name="Ledger Data")
+        self.assertIn("Funds Received from Asset", excel_df.columns)
+        self.assertIn("Fund To Assets", excel_df.columns)
+        self.assertEqual(len(excel_df), 3)
+
+        month_total = excel_df.iloc[-1]
+        self.assertEqual(month_total["Date"], "MONTH TOTAL")
+        # Opening Balance = Day-1 opening; Closing Balance = Month-End closing
+        self.assertAlmostEqual(float(month_total["Opening Balance"]), 10000.0)
+        self.assertAlmostEqual(float(month_total["Closing Balance"]), 10000.0)
+        # Total Inflows = Day-1 opening (10k) + sum of daily inflows excluding opening (65k + 30k) = 105k
+        self.assertAlmostEqual(float(month_total["Total Inflows"]), 105000.0)
+        self.assertAlmostEqual(float(month_total["Total Outflows"]), 95000.0)
+        self.assertAlmostEqual(float(month_total["Funds Received from Asset"]), 75000.0)
+        self.assertAlmostEqual(float(month_total["Cash & Carry"]), 20000.0)
+        self.assertAlmostEqual(float(month_total["Fund To Assets"]), 95000.0)
+
+
 if __name__ == '__main__':
     unittest.main()
 

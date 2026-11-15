@@ -6,8 +6,10 @@ import '../../../core/widgets/icare_section_header.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/auth/auth_controller.dart';
+import '../../../core/errors/app_error_formatter.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../data/datasources/co_api_service.dart';
+import '../../shared/presentation/co_app_scaffold.dart';
 
 /// Riverpod family provider using composite String key "$dateStr||$officer" to guarantee value equality and eliminate infinite refetches
 final coCashbookDataProvider = FutureProvider.family<Map<String, dynamic>, String>((ref, key) async {
@@ -40,8 +42,10 @@ class DailyCashbookScreen extends ConsumerStatefulWidget {
 }
 
 class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
-  DateTime _selectedDate = DateTime.now();
+  DateTime? _userSelectedDate;
+  DateTime _displayDate = DateTime.now();
   String? _selectedOfficer;
+  final Map<String, String> _initialEodTexts = {};
 
   // Mobile Operational Hub Navigation
   int _mobileCashbookTab = 0; // 0: T-Ledger, 1: EOD Outflows & Fees, 2: Field Tally, 3: Reversals
@@ -88,8 +92,16 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     super.dispose();
   }
 
+  DateTime get _selectedDate => _userSelectedDate ?? _displayDate;
+  String get _dateQueryStr =>
+      _userSelectedDate != null ? DateFormat('yyyy-MM-dd').format(_userSelectedDate!) : '';
   String get _dateStr => DateFormat('yyyy-MM-dd').format(_selectedDate);
-  String get _currentKey => '$_dateStr||${_selectedOfficer ?? ""}';
+  String get _currentKey => '$_dateQueryStr||${_selectedOfficer ?? ""}';
+
+  String _formatInputNum(num val) {
+    if (val == 0) return '';
+    return val % 1 == 0 ? val.toStringAsFixed(0) : val.toStringAsFixed(2);
+  }
 
   void _populateEodControllers(Map<String, dynamic> data) {
     final inflows = (data['inflows'] as Map<String, dynamic>?) ?? {};
@@ -100,18 +112,48 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     final bdep = (outflows['bank_deposit'] ?? 0.0) as num;
     final app = (inflows['app_fee'] ?? 0.0) as num;
     final pb = (inflows['passbook'] ?? 0.0) as num;
-    final misc = (inflows['risk_premium_returns'] ?? 0.0) as num;
+    final misc = (inflows['eod_misc_fee'] ?? inflows['misc_fees'] ?? 0.0) as num;
     final cfd = (inflows['credit_form_damage'] ?? 0.0) as num;
     final bon = (inflows['bonus'] ?? 0.0) as num;
 
-    _openingCtrl.text = op > 0 ? op.toStringAsFixed(0) : '';
-    _expensesCtrl.text = exp > 0 ? exp.toStringAsFixed(0) : '';
-    _bankDepCtrl.text = bdep > 0 ? bdep.toStringAsFixed(0) : '';
-    _appFeeCtrl.text = app > 0 ? app.toStringAsFixed(0) : '';
-    _passbookCtrl.text = pb > 0 ? pb.toStringAsFixed(0) : '';
-    _miscFeeCtrl.text = misc > 0 ? misc.toStringAsFixed(0) : '';
-    _cfdCtrl.text = cfd > 0 ? cfd.toStringAsFixed(0) : '';
-    _bonusCtrl.text = bon > 0 ? bon.toStringAsFixed(0) : '';
+    _openingCtrl.text = _formatInputNum(op);
+    _expensesCtrl.text = _formatInputNum(exp);
+    _bankDepCtrl.text = _formatInputNum(bdep);
+    _appFeeCtrl.text = _formatInputNum(app);
+    _passbookCtrl.text = _formatInputNum(pb);
+    _miscFeeCtrl.text = _formatInputNum(misc);
+    _cfdCtrl.text = _formatInputNum(cfd);
+    _bonusCtrl.text = _formatInputNum(bon);
+
+    _initialEodTexts
+      ..['opening_balance'] = _openingCtrl.text
+      ..['office_expenses'] = _expensesCtrl.text
+      ..['bank_deposit'] = _bankDepCtrl.text
+      ..['app_fee'] = _appFeeCtrl.text
+      ..['passbook'] = _passbookCtrl.text
+      ..['misc_fee'] = _miscFeeCtrl.text
+      ..['credit_form_damage'] = _cfdCtrl.text
+      ..['bonus'] = _bonusCtrl.text;
+  }
+
+  void _syncReversalDefaults(List<Map<String, dynamic>> reversalOptions) {
+    if (reversalOptions.isEmpty) {
+      if (_selectedRevOptionId != null || _selectedRevOptionType != null) {
+        setState(() {
+          _selectedRevOptionId = null;
+          _selectedRevOptionType = null;
+        });
+      }
+      return;
+    }
+    final stillValid = reversalOptions.any((o) => o['record_id'] == _selectedRevOptionId);
+    if (!stillValid) {
+      final first = reversalOptions.first;
+      setState(() {
+        _selectedRevOptionId = first['record_id']?.toString();
+        _selectedRevOptionType = first['record_type']?.toString() ?? 'Cashbook';
+      });
+    }
   }
 
   Widget _buildClientFeesList() {
@@ -259,7 +301,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                 if (ctx.mounted) {
                   setModalState(() {
                     isLoadingClients = false;
-                    localError = 'Failed to load branch clients: $err';
+                    localError = 'Failed to load branch clients: ${AppErrorDetails.from(err).message}';
                   });
                 }
               });
@@ -469,13 +511,14 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                                           const Color(0xFFECFDF5),
                                           Icons.check_circle_outline,
                                         );
+                                        _lastLoadedKey = null;
                                         ref.invalidate(coCashbookDataProvider(_currentKey));
                                         ref.invalidate(clientFeesProvider(_currentKey));
                                       } catch (e) {
                                         if (ctx.mounted) {
                                           setModalState(() {
                                             isSubmittingFee = false;
-                                            localError = 'Error recording fee: $e';
+                                            localError = AppErrorDetails.from(e).message;
                                           });
                                         }
                                       }
@@ -516,20 +559,37 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
       return;
     }
 
+    double? changedAmount(String key, TextEditingController ctrl) {
+      final current = ctrl.text.replaceAll(',', '').trim();
+      if (_initialEodTexts[key] == current) {
+        return null;
+      }
+      return current.isEmpty ? 0.0 : (double.tryParse(current) ?? 0.0);
+    }
+
+    final opVal = changedAmount('opening_balance', _openingCtrl);
+    final expVal = changedAmount('office_expenses', _expensesCtrl);
+    final bdepVal = changedAmount('bank_deposit', _bankDepCtrl);
+    final appVal = changedAmount('app_fee', _appFeeCtrl);
+    final pbVal = changedAmount('passbook', _passbookCtrl);
+    final miscVal = changedAmount('misc_fee', _miscFeeCtrl);
+    final cfdVal = changedAmount('credit_form_damage', _cfdCtrl);
+    final bonVal = changedAmount('bonus', _bonusCtrl);
+
     setState(() => _isSubmittingEod = true);
     try {
       final api = ref.read(coApiServiceProvider);
       final payload = <String, dynamic>{
         'date': _dateStr,
         if (_selectedOfficer != null && _selectedOfficer!.isNotEmpty) 'officer': _selectedOfficer,
-        if (_openingCtrl.text.trim().isNotEmpty) 'opening_balance': double.tryParse(_openingCtrl.text.trim()),
-        if (_expensesCtrl.text.trim().isNotEmpty) 'office_expenses': double.tryParse(_expensesCtrl.text.trim()),
-        if (_bankDepCtrl.text.trim().isNotEmpty) 'bank_deposit': double.tryParse(_bankDepCtrl.text.trim()),
-        if (_appFeeCtrl.text.trim().isNotEmpty) 'app_fee': double.tryParse(_appFeeCtrl.text.trim()),
-        if (_passbookCtrl.text.trim().isNotEmpty) 'passbook': double.tryParse(_passbookCtrl.text.trim()),
-        if (_miscFeeCtrl.text.trim().isNotEmpty) 'misc_fee': double.tryParse(_miscFeeCtrl.text.trim()),
-        if (_cfdCtrl.text.trim().isNotEmpty) 'credit_form_damage': double.tryParse(_cfdCtrl.text.trim()),
-        if (_bonusCtrl.text.trim().isNotEmpty) 'bonus': double.tryParse(_bonusCtrl.text.trim()),
+        if (opVal != null) 'opening_balance': opVal,
+        if (expVal != null) 'office_expenses': expVal,
+        if (bdepVal != null) 'bank_deposit': bdepVal,
+        if (appVal != null) 'app_fee': appVal,
+        if (pbVal != null) 'passbook': pbVal,
+        if (miscVal != null) 'misc_fee': miscVal,
+        if (cfdVal != null) 'credit_form_damage': cfdVal,
+        if (bonVal != null) 'bonus': bonVal,
       };
 
       final res = await api.submitEodAdjustments(payload);
@@ -539,10 +599,12 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         const Color(0xFFECFDF5),
         Icons.check_circle_outline,
       );
+      _lastLoadedKey = null;
       ref.invalidate(coCashbookDataProvider(_currentKey));
+      ref.invalidate(clientFeesProvider(_currentKey));
     } catch (e) {
       _showBanner(
-        'Error updating End of Day inputs: $e',
+        'Error updating End of Day inputs: ${AppErrorDetails.from(e).message}',
         const Color(0xFFDC2626),
         const Color(0xFFFEF2F2),
         Icons.error_outline,
@@ -552,7 +614,17 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     }
   }
 
-  Future<void> _handleReversalRequest() async {
+  Future<void> _handleReversalRequest(bool isOpen, String openReason) async {
+    if (!isOpen) {
+      _showBanner(
+        'Cannot submit reversal request today ($openReason).',
+        const Color(0xFFDC2626),
+        const Color(0xFFFEF2F2),
+        Icons.error_outline,
+      );
+      return;
+    }
+
     final reason = _revReasonCtrl.text.trim();
     if (_selectedRevOptionId == null || _selectedRevOptionId!.isEmpty) {
       _showBanner(
@@ -589,6 +661,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         Icons.check_circle_outline,
       );
       _revReasonCtrl.clear();
+      _lastLoadedKey = null;
       setState(() {
         _selectedRevOptionId = null;
         _selectedRevOptionType = null;
@@ -596,7 +669,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
       ref.invalidate(coCashbookDataProvider(_currentKey));
     } catch (e) {
       _showBanner(
-        'Failed to submit reversal request: $e',
+        'Failed to submit reversal request: ${AppErrorDetails.from(e).message}',
         const Color(0xFFDC2626),
         const Color(0xFFFEF2F2),
         Icons.error_outline,
@@ -620,6 +693,12 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     final authState = ref.watch(authControllerProvider);
     final user = authState is AuthStateAuthenticated ? authState.user : null;
     final cashbookAsync = ref.watch(coCashbookDataProvider(_currentKey));
+
+    ref.listen<int>(globalRefreshSignalProvider, (prev, next) {
+      if (prev != next) {
+        _lastLoadedKey = null;
+      }
+    });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -670,13 +749,22 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         // Operational Header Controls (Date & Officer Selector, app.py L10756-10785)
         cashbookAsync.when(
           loading: () => const _LoadingSkeleton(),
-          error: (err, _) => _buildErrorCard(err.toString()),
+          error: (err, _) => _buildErrorCard(AppErrorDetails.from(err).message),
           data: (data) {
-            // Check if key changed to pre-populate inputs
+            // Check if key changed to pre-populate inputs and sync business date / reversal defaults
             if (_lastLoadedKey != _currentKey) {
               _lastLoadedKey = _currentKey;
+              final serverDateStr = (data['date'] ?? '').toString();
+              final serverDate = DateTime.tryParse(serverDateStr);
+              final revOpts = (data['reversal_options'] as List?)?.cast<Map<String, dynamic>>() ?? [];
               WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                if (serverDate != null && _userSelectedDate == null &&
+                    DateFormat('yyyy-MM-dd').format(_displayDate) != serverDateStr) {
+                  setState(() => _displayDate = serverDate);
+                }
                 _populateEodControllers(data);
+                _syncReversalDefaults(revOpts);
               });
             }
             return _buildContent(context, data, user);
@@ -742,6 +830,8 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           mobileTabContent = _buildCorrectionHub(
             reversalOptions,
             submittedReversals,
+            isOpen: isOpen,
+            openReason: openReason,
             isMobile: true,
           );
           break;
@@ -805,7 +895,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         const SizedBox(height: 16),
 
         // 2. Balanced 2-Column T-Account Ledger Display (app.py L11020-11076)
-        _buildTAccountLedger(inflows, outflows),
+        _buildTAccountLedger(inflows, outflows, totalInflows, totalOutflows),
         const SizedBox(height: 20),
 
         // 2. Daily Field Collection & Arrears Reconciliation Tally (app.py L11005-11019)
@@ -819,7 +909,13 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         const SizedBox(height: 20),
 
         // 4. Cashbook Error Correction & Reversal Hub (app.py L11078-11185)
-        _buildCorrectionHub(reversalOptions, submittedReversals, isMobile: false),
+        _buildCorrectionHub(
+          reversalOptions,
+          submittedReversals,
+          isOpen: isOpen,
+          openReason: openReason,
+          isMobile: false,
+        ),
         const SizedBox(height: 32),
       ],
     );
@@ -853,7 +949,11 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
               lastDate: DateTime(2030),
             );
             if (picked != null) {
-              setState(() => _selectedDate = picked);
+              setState(() {
+                _userSelectedDate = picked;
+                _displayDate = picked;
+                _lastLoadedKey = null;
+              });
             }
           },
           child: Container(
@@ -946,6 +1046,24 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
       ],
     );
 
+    final refreshBtn = OutlinedButton.icon(
+      onPressed: () {
+        _lastLoadedKey = null;
+        ref.invalidate(coCashbookDataProvider(_currentKey));
+        ref.invalidate(clientFeesProvider(_currentKey));
+      },
+      icon: const Icon(Icons.refresh, size: 16, color: Color(0xFF0F172A)),
+      label: const Text(
+        'Refresh',
+        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+      ),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        side: const BorderSide(color: Color(0xFFCBD5E1)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+
     return IcareCard(
       padding: const EdgeInsets.all(14),
       child: isMobile
@@ -955,14 +1073,18 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                 dateCol,
                 const SizedBox(height: 12),
                 officerCol,
+                const SizedBox(height: 12),
+                Align(alignment: Alignment.centerRight, child: refreshBtn),
               ],
             )
           : Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Expanded(flex: 1, child: dateCol),
                 const SizedBox(width: 16),
                 Expanded(flex: 2, child: officerCol),
+                const SizedBox(width: 12),
+                refreshBtn,
               ],
             ),
     );
@@ -1410,6 +1532,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
       ('Opening Balance', (inflows['opening_balance'] ?? 0.0) as num),
       ('Savings Deposit', (inflows['savings_deposit'] ?? 0.0) as num),
       ('Credit Rep (Daily)', (inflows['rep_daily'] ?? 0.0) as num),
+      ('Credit Rep (120 Days)', (inflows['rep_120_days'] ?? 0.0) as num),
       ('Credit Rep (12 Weeks)', (inflows['rep_12_weeks'] ?? 0.0) as num),
       ('Credit Rep (24 Weeks)', (inflows['rep_24_weeks'] ?? 0.0) as num),
       ('Credit Rep (Monthly)', (inflows['rep_monthly'] ?? 0.0) as num),
@@ -1417,6 +1540,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
       ('Asset Credit Sales', (inflows['asset_credit_sales'] ?? 0.0) as num),
       ('Cash & Carry', (inflows['cash_and_carry'] ?? 0.0) as num),
       ('Daily 11% Markup', (inflows['daily_11_pct'] ?? 0.0) as num),
+      ('Daily 20% Markup', (inflows['daily_20_pct'] ?? 0.0) as num),
       ('Weekly 11% Markup', (inflows['weekly_11_pct'] ?? 0.0) as num),
       ('Weekly 20% Markup', (inflows['weekly_20_pct'] ?? 0.0) as num),
       ('Monthly / 20% Markup', (inflows['risk_premium_returns'] ?? 0.0) as num),
@@ -1430,6 +1554,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
 
     final outflowItems = [
       ('Active Loan (Daily)', (outflows['active_loan_daily'] ?? 0.0) as num),
+      ('Active Loan (120 Days)', (outflows['active_loan_120d'] ?? 0.0) as num),
       ('Active Loan (12 Weeks)', (outflows['active_loan_12w'] ?? 0.0) as num),
       ('Active Loan (24 Weeks)', (outflows['active_loan_24w'] ?? 0.0) as num),
       ('Active Loan (Monthly)', (outflows['active_loan_monthly'] ?? 0.0) as num),
@@ -1440,12 +1565,12 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     ];
 
     final isInflow = _mobileLedgerSubTab == 0;
-    final activeInflows = inflowItems.where((i) => i.$2 > 0).length;
-    final activeOutflows = outflowItems.where((i) => i.$2 > 0).length;
+    final activeInflows = inflowItems.where((i) => i.$2 != 0).length;
+    final activeOutflows = outflowItems.where((i) => i.$2 != 0).length;
     final currentItems = isInflow ? inflowItems : outflowItems;
     final displayedItems = _mobileShowAllLedgerItems
         ? currentItems
-        : currentItems.where((i) => i.$2 > 0).toList();
+        : currentItems.where((i) => i.$2 != 0).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2475,12 +2600,15 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
   Widget _buildTAccountLedger(
     Map<String, dynamic> inflows,
     Map<String, dynamic> outflows,
+    num totalInflows,
+    num totalOutflows,
   ) {
-    // 19 Authoritative Inflow Items (app.py L11022-11042)
+    // 22 Authoritative Inflow Items
     final inflowItems = [
       ('Opening Balance', (inflows['opening_balance'] ?? 0.0) as num),
       ('Savings Deposit', (inflows['savings_deposit'] ?? 0.0) as num),
       ('Credit Rep (Daily)', (inflows['rep_daily'] ?? 0.0) as num),
+      ('Credit Rep (120 Days)', (inflows['rep_120_days'] ?? 0.0) as num),
       ('Credit Rep (12 Weeks)', (inflows['rep_12_weeks'] ?? 0.0) as num),
       ('Credit Rep (24 Weeks)', (inflows['rep_24_weeks'] ?? 0.0) as num),
       ('Credit Rep (Monthly)', (inflows['rep_monthly'] ?? 0.0) as num),
@@ -2488,6 +2616,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
       ('Asset Credit Sales', (inflows['asset_credit_sales'] ?? 0.0) as num),
       ('Cash & Carry', (inflows['cash_and_carry'] ?? 0.0) as num),
       ('Daily 11% Markup', (inflows['daily_11_pct'] ?? 0.0) as num),
+      ('Daily 20% Markup', (inflows['daily_20_pct'] ?? 0.0) as num),
       ('Weekly 11% Markup', (inflows['weekly_11_pct'] ?? 0.0) as num),
       ('Weekly 20% Markup', (inflows['weekly_20_pct'] ?? 0.0) as num),
       ('Monthly / 20% Markup', (inflows['risk_premium_returns'] ?? 0.0) as num),
@@ -2499,9 +2628,10 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
       ('Bank Withdrawal', (inflows['bank_withdrawal'] ?? 0.0) as num),
     ];
 
-    // 8 Authoritative Outflow Items (app.py L11044-11053)
+    // 9 Authoritative Outflow Items
     final outflowItems = [
       ('Active Loan (Daily)', (outflows['active_loan_daily'] ?? 0.0) as num),
+      ('Active Loan (120 Days)', (outflows['active_loan_120d'] ?? 0.0) as num),
       ('Active Loan (12 Weeks)', (outflows['active_loan_12w'] ?? 0.0) as num),
       ('Active Loan (24 Weeks)', (outflows['active_loan_24w'] ?? 0.0) as num),
       ('Active Loan (Monthly)', (outflows['active_loan_monthly'] ?? 0.0) as num),
@@ -2578,6 +2708,34 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                         ],
                       ),
                     ],
+                    // Totals Footer Row
+                    TableRow(
+                      decoration: const BoxDecoration(color: Color(0xFFF1F5F9)),
+                      children: [
+                        const _TableCell(
+                          'TOTAL INFLOWS (LEFT)',
+                          textColor: Color(0xFF065F46),
+                          fontWeight: FontWeight.w800,
+                        ),
+                        _TableCell(
+                          CurrencyFormatter.formatNaira(totalInflows),
+                          align: TextAlign.right,
+                          textColor: const Color(0xFF065F46),
+                          fontWeight: FontWeight.w800,
+                        ),
+                        const _TableCell(
+                          'TOTAL OUTFLOWS (RIGHT)',
+                          textColor: Color(0xFF991B1B),
+                          fontWeight: FontWeight.w800,
+                        ),
+                        _TableCell(
+                          CurrencyFormatter.formatNaira(totalOutflows),
+                          align: TextAlign.right,
+                          textColor: const Color(0xFF991B1B),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -2665,6 +2823,8 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
   Widget _buildCorrectionHub(
     List<Map<String, dynamic>> reversalOptions,
     List<Map<String, dynamic>> submittedReversals, {
+    required bool isOpen,
+    required String openReason,
     bool isMobile = false,
   }) {
     return Container(
@@ -2765,15 +2925,17 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                                     ),
                                   );
                                 }).toList(),
-                                onChanged: (val) {
-                                  if (val != null) {
-                                    final found = reversalOptions.firstWhere((o) => o['record_id'] == val);
-                                    setState(() {
-                                      _selectedRevOptionId = val;
-                                      _selectedRevOptionType = found['record_type'] as String?;
-                                    });
-                                  }
-                                },
+                                onChanged: !isOpen
+                                    ? null
+                                    : (val) {
+                                        if (val != null) {
+                                          final found = reversalOptions.firstWhere((o) => o['record_id'] == val);
+                                          setState(() {
+                                            _selectedRevOptionId = val;
+                                            _selectedRevOptionType = found['record_type'] as String?;
+                                          });
+                                        }
+                                      },
                               ),
                             ),
                           ),
@@ -2787,12 +2949,13 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                           const SizedBox(height: 6),
                           Container(
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: isOpen ? Colors.white : const Color(0xFFF1F5F9),
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(color: const Color(0xFFCBD5E1)),
                             ),
                             child: TextField(
                               controller: _revReasonCtrl,
+                              enabled: isOpen,
                               style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
                               decoration: const InputDecoration(
                                 hintText: 'e.g., Typo in expense amount',
@@ -2806,7 +2969,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
 
                           // Submit Button (app.py L11135)
                           ElevatedButton.icon(
-                            onPressed: _isSubmittingReversal ? null : _handleReversalRequest,
+                            onPressed: (_isSubmittingReversal || !isOpen)
+                                ? null
+                                : () => _handleReversalRequest(isOpen, openReason),
                             icon: _isSubmittingReversal
                                 ? const SizedBox(
                                     width: 14,

@@ -25,6 +25,86 @@ class BusinessDateService:
     _operational_cache = {}
 
     @staticmethod
+    def get_branch_closures(uow: UnitOfWork, branch_name_or_id: Optional[str] = None) -> list[tuple[date, date, str]]:
+        """
+        Loads active closure windows from public.branch_closures as 3-tuples:
+        (start_date, end_date, reason).
+        Includes system-wide (branch_id IS NULL) and branch-specific closures.
+        """
+        closures: list[tuple[date, date, str]] = []
+        try:
+            b_id = None
+            if branch_name_or_id:
+                b_str = str(branch_name_or_id).strip()
+                if len(b_str) == 36 and b_str.count("-") == 4:
+                    b_id = b_str
+                else:
+                    res_b = uow.client.table("branches").select("branch_id").eq("name", b_str).execute()
+                    if res_b.data:
+                        b_id = res_b.data[0]["branch_id"]
+
+            q = uow.client.table("branch_closures").select("start_date, end_date, reason, branch_id")
+            if b_id:
+                q = q.or_(f"branch_id.is.null,branch_id.eq.{b_id}")
+            else:
+                q = q.is_("branch_id", "null")
+            res = q.execute()
+            for row in (res.data or []):
+                s_raw = row.get("start_date")
+                e_raw = row.get("end_date")
+                if not s_raw:
+                    continue
+                s_dt = date.fromisoformat(str(s_raw)[:10])
+                e_dt = date.fromisoformat(str(e_raw)[:10]) if e_raw else s_dt
+                closures.append((s_dt, e_dt, row.get("reason") or "Branch Closure"))
+        except Exception:
+            pass
+        return closures
+
+    @staticmethod
+    def expand_closure_dates(closures: Optional[list]) -> list[date]:
+        """
+        Expands (start_date, end_date, reason) closure tuples or discrete dates
+        into a flat list of closed date objects for LoanProductEngine schedules.
+        """
+        dates_out: list[date] = []
+        for item in (closures or []):
+            if isinstance(item, date):
+                dates_out.append(item)
+            elif isinstance(item, (tuple, list)) and len(item) >= 2:
+                s_dt = item[0] if isinstance(item[0], date) else date.fromisoformat(str(item[0])[:10])
+                e_dt = item[1] if isinstance(item[1], date) else date.fromisoformat(str(item[1])[:10])
+                curr = s_dt
+                while curr <= e_dt:
+                    dates_out.append(curr)
+                    curr += timedelta(days=1)
+        return dates_out
+
+    @classmethod
+    def invalidate_operational_cache(
+        cls,
+        branch_name_or_id: Optional[str] = None,
+        target_date: Optional[date] = None,
+    ) -> None:
+        """
+        Clears cached operational open/closed status after Day Close, Business Date shift,
+        branch closure updates, or Area Lock changes so closed-day restrictions take effect immediately.
+        """
+        if not branch_name_or_id and not target_date:
+            cls._operational_cache.clear()
+            return
+        target_iso = target_date.isoformat() if target_date and hasattr(target_date, "isoformat") else (str(target_date)[:10] if target_date else None)
+        branch_key = str(branch_name_or_id).strip().lower() if branch_name_or_id else None
+        keys_to_drop = [
+            k for k in list(cls._operational_cache.keys())
+            if (target_iso is None or k[1] == target_iso)
+            and (branch_key is None or k[0] == branch_key or k[0] == "" or len(k[0]) > 0)
+        ]
+        # Clear any matching date entries (since cache key may store branch name OR branch UUID)
+        for k in keys_to_drop:
+            cls._operational_cache.pop(k, None)
+
+    @staticmethod
     def is_working_day(target_date: date, custom_closures: Optional[list] = None) -> tuple[bool, str]:
         """
         Checks if target_date is a working day (returns True if valid, False + reason if weekend/holiday/closure).
@@ -116,8 +196,9 @@ class BusinessDateService:
                 if b_id:
                     q_cl = q_cl.or_(f"branch_id.is.null,branch_id.eq.{b_id}")
                 res_cl = q_cl.execute()
-                if res_cl.data:
-                    c_reason = res_cl.data[0].get("reason") or "Emergency closure"
+                cl_rows = getattr(res_cl, "data", None)
+                if isinstance(cl_rows, list) and cl_rows:
+                    c_reason = cl_rows[0].get("reason") or "Emergency closure"
                     res = (False, f"Branch is closed due to emergency closure ({c_reason})")
                     cls._operational_cache[cache_key] = res
                     return res
@@ -200,8 +281,9 @@ class BusinessDateService:
             except Exception:
                 pass
 
-        # If today is weekend or holiday, return next valid working day
-        next_open = BusinessDateService.get_next_working_day(today)
+        # If today is weekend, holiday, or branch closure, return next valid working day
+        closures = BusinessDateService.get_branch_closures(uow, branch_name_or_id) if uow else []
+        next_open = BusinessDateService.get_next_working_day(today, custom_closures=closures)
         return next_open
 
     @staticmethod
@@ -222,7 +304,8 @@ class BusinessDateService:
                     defaults = {}
                 defaults["business_date"] = date_str
                 uow.client.table("branches").update({"cashbook_defaults": defaults}).eq("branch_id", b_id).execute()
-                return True
+                BusinessDateService.invalidate_operational_cache()
+            return True
         except Exception:
             pass
         return False
@@ -325,6 +408,7 @@ class BusinessDateService:
             except Exception as ex_eod:
                 print(f"[EOD BRIDGE] area_eod_confirmations upsert notice: {ex_eod}")
 
+            BusinessDateService.invalidate_operational_cache(target_date=posting_date)
             return True
         except Exception as ex:
             print("Error closing business date:", ex)

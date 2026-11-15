@@ -1,9 +1,9 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from domain.enums import TransactionClassification
 
 class WithdrawalClassificationEngine:
     @staticmethod
-    def classify_withdrawal(classification: TransactionClassification, amount: float, is_cash_paid: bool = False) -> Dict[str, Any]:
+    def classify_withdrawal(classification: TransactionClassification, amount: float, is_cash_paid: Optional[bool] = None) -> Dict[str, Any]:
         """
         Classifies a savings withdrawal and determines its impact on Product Withdrawal and physical cash vault buckets.
         
@@ -39,11 +39,12 @@ class WithdrawalClassificationEngine:
             TransactionClassification.INDIVIDUAL_SAVINGS_WITHDRAWAL,
             TransactionClassification.GROUP_SAVINGS_WITHDRAWAL,
         ):
-            # Normal Customer cash withdrawal from officer
+            # Normal Customer withdrawal (physical cash unless is_cash_paid=False for Bank Transfer)
+            effective_cash = True if is_cash_paid is None else bool(is_cash_paid)
             result["product_withdrawal"] = amount
-            result["cash_withdrawal"] = amount
-            result["bank_withdrawal"] = amount
-            result["affects_cash_vault"] = True
+            result["cash_withdrawal"] = amount if effective_cash else 0.0
+            result["bank_withdrawal"] = amount if effective_cash else 0.0
+            result["affects_cash_vault"] = effective_cash
 
         elif classification == TransactionClassification.LOAN_OFFSET:
             # Savings used to offset outstanding loan (ZERO physical cash movement)
@@ -67,11 +68,12 @@ class WithdrawalClassificationEngine:
             result["affects_cash_vault"] = bool(is_cash_paid)
 
         else:
-            # Default fallback for unclassified normal cash withdrawals
+            # Default fallback for unclassified normal withdrawals
+            effective_cash = True if is_cash_paid is None else bool(is_cash_paid)
             result["product_withdrawal"] = amount
-            result["cash_withdrawal"] = amount
-            result["bank_withdrawal"] = amount
-            result["affects_cash_vault"] = True
+            result["cash_withdrawal"] = amount if effective_cash else 0.0
+            result["bank_withdrawal"] = amount if effective_cash else 0.0
+            result["affects_cash_vault"] = effective_cash
 
         return result
 

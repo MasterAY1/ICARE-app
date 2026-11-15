@@ -41,7 +41,7 @@ class CoAppScaffold extends ConsumerWidget {
 
   Future<void> _triggerPageRefresh(WidgetRef ref, String activePage, bool isBm, bool isAm, {bool isAdmin = false}) async {
     try {
-      await ref.read(connectivityServiceProvider).checkActualConnection();
+      await ref.read(isOnlineProvider.notifier).refresh();
     } catch (_) {}
 
     ref.read(globalRefreshSignalProvider.notifier).state++;
@@ -57,6 +57,9 @@ class CoAppScaffold extends ConsumerWidget {
           ref.invalidate(amMonthlyWorkflowSubmissionsProvider);
         } else if (isBm) {
           ref.invalidate(bmDashboardDataProvider);
+          ref.invalidate(masterDailyCashbookProvider);
+          ref.invalidate(coAggregationProvider);
+          ref.invalidate(monthlyLedgerProvider);
         } else {
           ref.invalidate(coDashboardProvider);
         }
@@ -84,6 +87,7 @@ class CoAppScaffold extends ConsumerWidget {
         break;
       case 'CO Cashbook':
         ref.invalidate(coCashbookDataProvider);
+        ref.invalidate(clientFeesProvider);
         break;
       case 'Master Cashbook':
         ref.invalidate(masterDailyCashbookProvider);
@@ -196,6 +200,13 @@ class CoAppScaffold extends ConsumerWidget {
         if (pendingCount > 0) {
           final syncMgr = ref.read(offlineSyncManagerProvider);
           final res = await syncMgr.syncOutbox();
+          if (res.syncedCount > 0) {
+            ref.invalidate(collectionSheetFutureProvider);
+            ref.invalidate(singleClientOptionsProvider);
+            ref.invalidate(collectionsHistoryProvider);
+            ref.invalidate(coDashboardProvider);
+            _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
+          }
           if (context.mounted) {
             ScaffoldMessenger.of(context).hideCurrentSnackBar();
             ScaffoldMessenger.of(context).showSnackBar(
@@ -260,7 +271,7 @@ class CoAppScaffold extends ConsumerWidget {
 
     List<String> navItems;
     if (isBm) {
-      navItems = ['Dashboard', 'Portfolio', 'Master Cashbook', 'User Management', 'Audit Ledger', 'Reports & Export'];
+      navItems = ['Dashboard', 'Withdrawal Operations', 'Portfolio', 'Master Cashbook', 'User Management', 'Audit Ledger', 'Reports & Export'];
     } else if (isDirector) {
       navItems = [
         'Dashboard',
@@ -271,12 +282,13 @@ class CoAppScaffold extends ConsumerWidget {
     } else if (isAdmin) {
       navItems = [
         'Dashboard',
+        'Withdrawal Operations',
         'Portfolio',
         'User Management',
         'Reports & Export',
       ];
     } else if (isAm) {
-      navItems = ['Dashboard', 'Portfolio', 'Master Cashbook', 'Branch Onboarding', 'User Management', 'Audit Ledger', 'Reports & Export'];
+      navItems = ['Dashboard', 'Withdrawal Operations', 'Portfolio', 'Master Cashbook', 'Branch Onboarding', 'User Management', 'Audit Ledger', 'Reports & Export'];
     } else {
       navItems = ['Dashboard', 'Loan Origination', 'Collections', 'Withdrawal Operations', 'Portfolio', 'CO Cashbook'];
     }
@@ -348,79 +360,16 @@ class CoAppScaffold extends ConsumerWidget {
               ),
               actions: [
                 // 1. Online / Offline Pill (Interactive Tap-to-Check)
-                Consumer(
-                  builder: (context, ref, child) {
-                    final isOnline = ref.watch(isOnlineProvider);
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () async {
-                        HapticFeedback.lightImpact();
-                        final connected = await ref.read(connectivityServiceProvider).checkActualConnection();
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Row(
-                                children: [
-                                  Icon(
-                                    connected ? Icons.wifi : Icons.wifi_off,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    connected ? 'Connection verified online. Synchronizing...' : 'No internet detected. Working in offline mode.',
-                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                                  ),
-                                ],
-                              ),
-                              backgroundColor: connected ? const Color(0xFF065F46) : const Color(0xFF92400E),
-                              duration: const Duration(seconds: 2),
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                          );
-                        }
-                        if (connected) {
-                          _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
-                        }
-                      },
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(vertical: 13, horizontal: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: isOnline ? const Color(0xFF065F46) : const Color(0xFF92400E),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isOnline ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A),
-                            width: 0.8,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: isOnline ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              isOnline ? 'Online' : 'Offline',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 4),
+                  child: _buildOnlineStatusPill(
+                    context: context,
+                    ref: ref,
+                    activePage: activePage,
+                    isBm: isBm,
+                    isAm: isAm,
+                    isAdmin: isAdmin,
+                  ),
                 ),
 
                 // 2. Explicit Refresh Action Button
@@ -453,30 +402,9 @@ class CoAppScaffold extends ConsumerWidget {
                 ),
 
                 // 2. Outbox Pending Badge & Sync Action
-                Consumer(
-                  builder: (context, ref, child) {
-                    final pendingCount = ref.watch(pendingOutboxCountProvider);
-                    if (pendingCount == 0) return const SizedBox.shrink();
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 3),
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFD97706),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                          minimumSize: const Size(0, 28),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          elevation: 0,
-                        ),
-                        icon: const Icon(Icons.sync, size: 13, color: Colors.white),
-                        label: Text(
-                          '$pendingCount',
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                        ),
-                        onPressed: () => _showSyncDialog(context, ref),
-                      ),
-                    );
-                  },
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 3),
+                  child: _buildOutboxSyncBadge(context, ref),
                 ),
 
                 // 3. User Avatar Pill / Profile Drawer Trigger
@@ -569,6 +497,9 @@ class CoAppScaffold extends ConsumerWidget {
                           badgeColor,
                           navItems,
                           activePage,
+                          isBm: isBm,
+                          isAm: isAm,
+                          isAdmin: isAdmin,
                         ),
                       ),
 
@@ -672,6 +603,7 @@ class CoAppScaffold extends ConsumerWidget {
       destinations = [
         (key: 'Dashboard', shortLabel: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
         (key: 'Loan Origination', shortLabel: 'Origination', icon: Icons.person_add_alt_1_outlined, activeIcon: Icons.person_add_alt_1),
+        (key: 'Collections', shortLabel: 'Collections', icon: Icons.payments_outlined, activeIcon: Icons.payments),
         (key: 'Withdrawal Operations', shortLabel: 'Withdrawals', icon: Icons.currency_exchange_outlined, activeIcon: Icons.currency_exchange),
         (key: 'Portfolio', shortLabel: 'Portfolio', icon: Icons.folder_shared_outlined, activeIcon: Icons.folder_shared),
       ];
@@ -951,6 +883,114 @@ class CoAppScaffold extends ConsumerWidget {
     );
   }
 
+  Widget _buildOnlineStatusPill({
+    required BuildContext context,
+    required WidgetRef ref,
+    required String activePage,
+    required bool isBm,
+    required bool isAm,
+    required bool isAdmin,
+  }) {
+    return Consumer(
+      builder: (context, ref, child) {
+        final isOnline = ref.watch(isOnlineProvider);
+        return InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () async {
+            HapticFeedback.lightImpact();
+            final connected = await ref.read(isOnlineProvider.notifier).refresh();
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(
+                    children: [
+                      Icon(
+                        connected ? Icons.wifi : Icons.wifi_off,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        connected ? 'Connection verified online. Synchronizing...' : 'No internet detected. Working in offline mode.',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                  backgroundColor: connected ? const Color(0xFF065F46) : const Color(0xFF92400E),
+                  duration: const Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              );
+            }
+            if (connected) {
+              _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: isOnline ? const Color(0xFF065F46) : const Color(0xFF92400E),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isOnline ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A),
+                width: 0.8,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isOnline ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
+                  ),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  isOnline ? 'Online' : 'Offline',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOutboxSyncBadge(BuildContext context, WidgetRef ref, {bool expandedLabel = false}) {
+    return Consumer(
+      builder: (context, ref, child) {
+        final pendingCount = ref.watch(pendingOutboxCountProvider);
+        if (pendingCount == 0) return const SizedBox.shrink();
+        return ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFD97706),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+            minimumSize: const Size(0, 28),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            elevation: 0,
+          ),
+          icon: const Icon(Icons.sync, size: 13, color: Colors.white),
+          label: Text(
+            expandedLabel ? 'Sync ($pendingCount)' : '$pendingCount',
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+          ),
+          onPressed: () => _showSyncDialog(context, ref),
+        );
+      },
+    );
+  }
+
   /// Modern Desktop Sidebar Content
   Widget _buildSidebarContent(
     BuildContext context,
@@ -960,15 +1000,19 @@ class CoAppScaffold extends ConsumerWidget {
     String branchName,
     Color badgeColor,
     List<String> navItems,
-    String activePage,
-  ) {
+    String activePage, {
+    required bool isBm,
+    required bool isAm,
+    required bool isAdmin,
+  }) {
     return Column(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         // Top Sidebar Content
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        Expanded(
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             // Circular Logo
             Center(
               child: Container(
@@ -1078,7 +1122,42 @@ class CoAppScaffold extends ConsumerWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
+
+            // Network Connectivity & Outbox Sync Bar (Desktop Visibility)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  _buildOnlineStatusPill(
+                    context: context,
+                    ref: ref,
+                    activePage: activePage,
+                    isBm: isBm,
+                    isAm: isAm,
+                    isAdmin: isAdmin,
+                  ),
+                  const Spacer(),
+                  _buildOutboxSyncBadge(context, ref, expandedLabel: true),
+                  const SizedBox(width: 4),
+                  InkWell(
+                    onTap: () => _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin),
+                    borderRadius: BorderRadius.circular(6),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.refresh, size: 16, color: Color(0xFF475569)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
 
             // OPERATIONS Label
             const Padding(
@@ -1109,8 +1188,11 @@ class CoAppScaffold extends ConsumerWidget {
                 );
               }).toList(),
             ),
-          ],
+              ],
+            ),
+          ),
         ),
+        const SizedBox(height: 10),
 
         // Bottom Sign Out Button
         Column(
@@ -1702,6 +1784,12 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                     _statusMsg = 'Syncing batches to central ledger...';
                   });
                   final res = await syncMgr.syncOutbox();
+                  if (res.syncedCount > 0) {
+                    ref.invalidate(collectionSheetFutureProvider);
+                    ref.invalidate(singleClientOptionsProvider);
+                    ref.invalidate(collectionsHistoryProvider);
+                    ref.invalidate(coDashboardProvider);
+                  }
                   if (mounted) {
                     setState(() {
                       _isSyncing = false;

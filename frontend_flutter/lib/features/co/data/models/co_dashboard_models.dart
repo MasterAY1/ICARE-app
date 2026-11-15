@@ -7,6 +7,7 @@ class CoDashboardData {
   final Map<String, dynamic> repaymentStatus;
   final Map<String, dynamic> cashPosition;
   final List<Map<String, dynamic>> attentionList;
+  final Map<String, dynamic> overduePortfolio;
 
   CoDashboardData({
     required this.welcome,
@@ -17,6 +18,7 @@ class CoDashboardData {
     required this.repaymentStatus,
     required this.cashPosition,
     required this.attentionList,
+    this.overduePortfolio = const {},
   });
 
   factory CoDashboardData.fromJson(Map<String, dynamic> json) {
@@ -35,6 +37,9 @@ class CoDashboardData {
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList() ??
           [],
+      overduePortfolio: json['overdue_portfolio'] is Map
+          ? Map<String, dynamic>.from(json['overdue_portfolio'])
+          : {},
     );
   }
 
@@ -48,6 +53,7 @@ class CoDashboardData {
       'repayment_status': repaymentStatus,
       'cash_position': cashPosition,
       'attention_list': attentionList,
+      'overdue_portfolio': overduePortfolio,
     };
   }
 }

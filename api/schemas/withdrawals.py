@@ -62,6 +62,8 @@ class MiscBalanceResponse(BaseModel):
 
 class LapsOptionRecord(BaseModel):
     client_id: str
+    client_name: Optional[str] = None
+    client_code: Optional[str] = None
     balance: float
     remarks: str
 
@@ -94,13 +96,19 @@ class CreateWithdrawalRequestInput(BaseModel):
     operation_type: str = Field(..., description="Operation type matching exact allowed options")
     client_id: Optional[str] = None
     client_name: Optional[str] = None
+    group_id: Optional[str] = None
     group_name: Optional[str] = None
     loan_id: Optional[str] = None
+    destination_id: Optional[str] = None
+    destination_name: Optional[str] = None
+    destination_type: Optional[str] = None
+    fee_type: Optional[str] = None
     amount: float = Field(..., gt=0, description="Positive withdrawal amount")
     operational_date: Optional[str] = None
     payout_method: Optional[str] = Field("Cash", description="Cash or Bank Transfer")
     remarks: Optional[str] = Field("", description="Reason/description for withdrawal")
     auto_execute: Optional[bool] = Field(False, description="Direct BM/Admin execution")
+    idempotency_key: Optional[str] = Field(None, description="Optional client-supplied idempotency key")
 
 
 class CreateWithdrawalRequestResponse(BaseModel):
@@ -116,6 +124,8 @@ class CreateWithdrawalRequestResponse(BaseModel):
 # ==========================================
 
 class DailyWithdrawalRecord(BaseModel):
+    id: Optional[str] = None
+    table_name: Optional[str] = None
     date: str
     client_name: str
     client_code: str
@@ -125,6 +135,7 @@ class DailyWithdrawalRecord(BaseModel):
     details: str
     loan_ref: str
     reference: str
+    status: str = "ACTIVE"
 
 
 class LoanFeeDeductionRecord(BaseModel):
@@ -169,6 +180,7 @@ class DailyWithdrawalsKpis(BaseModel):
     loan_fees_deducted: float
     cash_bank_paid: float
     debt_fee_offsets: float
+    laps_reserved: float = 0.0
     waiting_for_approval_count: int
     waiting_for_approval_amount: float
 
@@ -191,8 +203,12 @@ class PendingApprovalItem(BaseModel):
     client_name: str
     savings_type: str
     operation_type: str
+    group_id: Optional[str] = None
     group_name: Optional[str] = None
     loan_id: Optional[str] = None
+    destination_id: Optional[str] = None
+    destination_type: Optional[str] = None
+    fee_type: Optional[str] = None
     branch_id: str
     requested_by: str
     amount: float
