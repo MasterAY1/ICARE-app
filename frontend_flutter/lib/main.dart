@@ -2,19 +2,11 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:device_preview/device_preview.dart';
-import 'package:device_preview/presets.dart';
 import 'app.dart';
 import 'core/services/telemetry_service.dart';
 
 void main() {
-  const isPreviewEnabled = bool.fromEnvironment('ENABLE_DEVICE_PREVIEW', defaultValue: true);
-  if (isPreviewEnabled && !kReleaseMode) {
-    DevicePreview.enable();
-    DevicePreview.controller.applyPreset(DevicePresets.iPhone16Pro);
-  } else {
-    WidgetsFlutterBinding.ensureInitialized();
-  }
+  WidgetsFlutterBinding.ensureInitialized();
 
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
