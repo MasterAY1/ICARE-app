@@ -1,17 +1,32 @@
-import 'dart:ui';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/theme/icare_colors.dart';
+import '../../../core/theme/icare_spacing.dart';
 import '../../onboarding/presentation/branch_onboarding_portal_screen.dart';
+import '../../onboarding/presentation/credit_officer_portal_screen.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
+import 'widgets/auth_entry_components.dart';
+import 'widgets/icare_brand_crest.dart';
 
-/// Screen 0: Modernized ICARE Core Banking Authentication Screen
-/// Adheres strictly to the 6 Design Pillars, Zero-Tamper Presentation Sandbox,
-/// and the Row-Text Wrapping & Anti-Clipping Invariant.
+/// Unified Institutional Authentication & Onboarding Entry Screen for ICARE Core Banking.
+///
+/// Supports four live workflows against existing backend APIs:
+/// 1. Staff Sign-In (`POST /api/v1/auth/login`)
+/// 2. First-Time Account Activation / Password Setup (`POST /api/v1/auth/change-initial-password`)
+/// 3. Two-Factor Authentication Challenge (`POST /api/v1/auth/mfa/challenge`)
+/// 4. Token-Gated Branch & Credit Officer Onboarding Access
 class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+  final AuthEntryMode initialMode;
+
+  const LoginScreen({
+    super.key,
+    this.initialMode = AuthEntryMode.signIn,
+  });
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -21,190 +36,129 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     with TickerProviderStateMixin {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _tokenController = TextEditingController();
   final TextEditingController _mfaCodeController = TextEditingController();
-  final TextEditingController _currentTempPasswordController = TextEditingController();
+  final TextEditingController _currentPasswordController =
+      TextEditingController();
   final TextEditingController _newPasswordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
 
   final FocusNode _usernameFocus = FocusNode();
   final FocusNode _passwordFocus = FocusNode();
   final FocusNode _mfaCodeFocus = FocusNode();
-  final FocusNode _currentTempPasswordFocus = FocusNode();
   final FocusNode _newPasswordFocus = FocusNode();
-  final FocusNode _confirmPasswordFocus = FocusNode();
+
+  late AuthEntryMode _entryMode;
 
   bool _obscurePassword = true;
-  bool _obscureCurrentTempPassword = true;
+  bool _obscureCurrentPassword = true;
   bool _obscureNewPassword = true;
   bool _obscureConfirmPassword = true;
   String? _localValidationError;
 
-  // Animation Controllers
-  late final AnimationController _entranceController;
-  late final AnimationController _shakeController;
-  late final AnimationController _pressController;
-
-  // Staggered Entrance Animations
-  late final Animation<double> _brandFade;
-  late final Animation<Offset> _brandSlide;
-  late final Animation<double> _storyFade;
-  late final Animation<Offset> _storySlide;
+  late final AnimationController _entranceCtrl;
+  late final AnimationController _shakeCtrl;
   late final Animation<double> _cardFade;
   late final Animation<Offset> _cardSlide;
-  late final Animation<double> _inputsFade;
-  late final Animation<Offset> _inputsSlide;
-  late final Animation<double> _buttonFade;
-  late final Animation<Offset> _buttonSlide;
 
-  // Interactive Kinetic Animations
-  late final Animation<double> _shakeAnimation;
-  late final Animation<double> _scaleAnimation;
+  bool _disableAnimations = false;
 
   @override
   void initState() {
     super.initState();
+    _entryMode = widget.initialMode;
 
-    // 1. Staggered Entrance Choreography (900ms)
-    _entranceController = AnimationController(
+    _entranceCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 520),
     );
-
-    _brandFade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _entranceController,
-        curve: const Interval(0.0, 0.45, curve: Curves.easeOutCubic),
-      ),
+    _cardFade = CurvedAnimation(
+      parent: _entranceCtrl,
+      curve: Curves.easeOut,
     );
-    _brandSlide = Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero).animate(
+    _cardSlide = Tween<Offset>(
+      begin: const Offset(0, 0.035),
+      end: Offset.zero,
+    ).animate(
       CurvedAnimation(
-        parent: _entranceController,
-        curve: const Interval(0.0, 0.45, curve: Curves.easeOutCubic),
-      ),
-    );
-
-    _storyFade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _entranceController,
-        curve: const Interval(0.15, 0.60, curve: Curves.easeOutCubic),
-      ),
-    );
-    _storySlide = Tween<Offset>(begin: const Offset(0, 0.10), end: Offset.zero).animate(
-      CurvedAnimation(
-        parent: _entranceController,
-        curve: const Interval(0.15, 0.60, curve: Curves.easeOutCubic),
+        parent: _entranceCtrl,
+        curve: Curves.easeOutCubic,
       ),
     );
 
-    _cardFade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _entranceController,
-        curve: const Interval(0.25, 0.75, curve: Curves.easeOutCubic),
-      ),
-    );
-    _cardSlide = Tween<Offset>(begin: const Offset(0, 0.12), end: Offset.zero).animate(
-      CurvedAnimation(
-        parent: _entranceController,
-        curve: const Interval(0.25, 0.75, curve: Curves.easeOutCubic),
-      ),
-    );
-
-    _inputsFade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _entranceController,
-        curve: const Interval(0.40, 0.85, curve: Curves.easeOutCubic),
-      ),
-    );
-    _inputsSlide = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero).animate(
-      CurvedAnimation(
-        parent: _entranceController,
-        curve: const Interval(0.40, 0.85, curve: Curves.easeOutCubic),
-      ),
-    );
-
-    _buttonFade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _entranceController,
-        curve: const Interval(0.55, 1.0, curve: Curves.easeOutCubic),
-      ),
-    );
-    _buttonSlide = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero).animate(
-      CurvedAnimation(
-        parent: _entranceController,
-        curve: const Interval(0.55, 1.0, curve: Curves.easeOutCubic),
-      ),
-    );
-
-    // 2. Button Press Scale Animation (80ms)
-    _pressController = AnimationController(
+    _shakeCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 80),
+      duration: const Duration(milliseconds: 300),
     );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.98).animate(
-      CurvedAnimation(parent: _pressController, curve: Curves.easeInOut),
-    );
+  }
 
-    // 3. Horizontal Error Shake Sequence (350ms)
-    _shakeController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 350),
-    );
-    _shakeAnimation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: -8.0), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: -8.0, end: 8.0), weight: 2),
-      TweenSequenceItem(tween: Tween(begin: 8.0, end: -6.0), weight: 2),
-      TweenSequenceItem(tween: Tween(begin: -6.0, end: 4.0), weight: 2),
-      TweenSequenceItem(tween: Tween(begin: 4.0, end: 0.0), weight: 1),
-    ]).animate(CurvedAnimation(parent: _shakeController, curve: Curves.easeInOut));
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool reduced = MediaQuery.disableAnimationsOf(context);
+    _disableAnimations = reduced;
 
-    _entranceController.forward();
+    if (reduced) {
+      _entranceCtrl.value = 1.0;
+    } else if (!_entranceCtrl.isCompleted && !_entranceCtrl.isAnimating) {
+      _entranceCtrl.forward();
+    }
   }
 
   @override
   void dispose() {
-    _entranceController.dispose();
-    _shakeController.dispose();
-    _pressController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _tokenController.dispose();
     _mfaCodeController.dispose();
-    _currentTempPasswordController.dispose();
+    _currentPasswordController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
     _usernameFocus.dispose();
     _passwordFocus.dispose();
     _mfaCodeFocus.dispose();
-    _currentTempPasswordFocus.dispose();
     _newPasswordFocus.dispose();
-    _confirmPasswordFocus.dispose();
+    _entranceCtrl.dispose();
+    _shakeCtrl.dispose();
     super.dispose();
   }
 
-  void _clearSensitiveInputs() {
-    _passwordController.clear();
+  void _triggerErrorShake(String message) {
+    if (mounted) {
+      setState(() => _localValidationError = message);
+    }
+    if (!_disableAnimations) {
+      _shakeCtrl.forward(from: 0.0);
+    }
+  }
+
+  void _clearChallengeInputs() {
     _mfaCodeController.clear();
-    _currentTempPasswordController.clear();
+    _currentPasswordController.clear();
     _newPasswordController.clear();
     _confirmPasswordController.clear();
+    _obscureCurrentPassword = true;
+    _obscureNewPassword = true;
+    _obscureConfirmPassword = true;
   }
 
-  void _triggerErrorShake(String message) {
-    setState(() => _localValidationError = message);
-    HapticFeedback.vibrate();
-    _shakeController.forward(from: 0.0);
-  }
+  Future<void> _handleLogin() async {
+    final String username = _usernameController.text.trim();
+    final String password = _passwordController.text;
 
-  void _handleLogin() async {
-    final username = _usernameController.text.trim();
-    final password = _passwordController.text.trim();
-
-    if (username.isEmpty || password.isEmpty) {
-      _triggerErrorShake('Please enter both your username and password.');
+    if (username.isEmpty) {
+      _triggerErrorShake('Please enter your staff username to continue.');
+      _usernameFocus.requestFocus();
+      return;
+    }
+    if (password.isEmpty) {
+      _triggerErrorShake('Please enter your password to continue.');
+      _passwordFocus.requestFocus();
       return;
     }
 
     setState(() => _localValidationError = null);
-
     await ref.read(authControllerProvider.notifier).login(
           username: username,
           password: password,
@@ -212,1088 +166,498 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Future<void> _handleMfaSubmit() async {
-    final code = _mfaCodeController.text.trim();
+    final String code = _mfaCodeController.text.trim();
     if (code.isEmpty) {
-      _triggerErrorShake('Please enter your 6-digit authenticator code or backup code.');
+      _triggerErrorShake(
+          'Please enter your 6-digit verification or recovery code.');
+      _mfaCodeFocus.requestFocus();
       return;
     }
 
     setState(() => _localValidationError = null);
-    await ref.read(authControllerProvider.notifier).submitMfaChallenge(code: code);
+    await ref
+        .read(authControllerProvider.notifier)
+        .submitMfaChallenge(code: code);
   }
 
   Future<void> _handleInitialPasswordSubmit() async {
-    final currentPw = _currentTempPasswordController.text;
-    final newPw = _newPasswordController.text.trim();
-    final confirmPw = _confirmPasswordController.text.trim();
+    final String currentPassword = _currentPasswordController.text;
+    final String newPassword = _newPasswordController.text.trim();
+    final String confirmPassword = _confirmPasswordController.text.trim();
 
-    if (currentPw.trim().isEmpty || newPw.isEmpty || confirmPw.isEmpty) {
-      _triggerErrorShake('Please complete all password fields before continuing.');
+    if (currentPassword.trim().isEmpty) {
+      _triggerErrorShake('Please enter your temporary or current password.');
       return;
     }
-    if (newPw.length < 8) {
-      _triggerErrorShake('New password must be at least 8 characters long.');
+    if (newPassword.length < 8) {
+      _triggerErrorShake(
+          'Your new password must be at least 8 characters long.');
       return;
     }
-    if (newPw != confirmPw) {
-      _triggerErrorShake('New password and confirmation password do not match.');
+    if (newPassword == currentPassword.trim()) {
+      _triggerErrorShake(
+        'Your new password cannot match the temporary password.',
+      );
       return;
     }
-    if (newPw == currentPw) {
-      _triggerErrorShake('New password cannot be identical to your temporary password.');
+    if (newPassword != confirmPassword) {
+      _triggerErrorShake('Password confirmation does not match.');
       return;
     }
 
     setState(() => _localValidationError = null);
     await ref.read(authControllerProvider.notifier).submitInitialPasswordChange(
-          currentPassword: currentPw,
-          newPassword: newPw,
+          currentPassword: currentPassword,
+          newPassword: newPassword,
         );
   }
 
   void _handleCancelChallenge() {
-    setState(() {
-      _localValidationError = null;
-      _mfaCodeController.clear();
-      _currentTempPasswordController.clear();
-      _newPasswordController.clear();
-      _confirmPasswordController.clear();
-    });
+    _clearChallengeInputs();
+    setState(() => _localValidationError = null);
     ref.read(authControllerProvider.notifier).cancelChallenge();
   }
 
+  void _handleOnboardingTokenSubmit() {
+    final String token = _tokenController.text.trim();
+    if (token.isEmpty) {
+      _triggerErrorShake(
+        'Enter your onboarding token or select Branch Portal / Officer Portal below.',
+      );
+      return;
+    }
+    setState(() => _localValidationError = null);
+
+    if (token.startsWith('onb_co_')) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => CreditOfficerPortalScreen(coToken: token),
+        ),
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BranchOnboardingPortalScreen(token: token),
+      ),
+    );
+  }
+
+  void _openBranchPortal() {
+    setState(() => _localValidationError = null);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const BranchOnboardingPortalScreen(token: ''),
+      ),
+    );
+  }
+
+  void _openOfficerPortal() {
+    setState(() => _localValidationError = null);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const CreditOfficerPortalScreen(coToken: ''),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     ref.listen<AuthState>(authControllerProvider, (previous, next) {
-      if (next is AuthStateAuthenticated && ModalRoute.of(context)?.isCurrent == true) {
-        _clearSensitiveInputs();
+      if (next is AuthStateAuthenticated) {
+        _passwordController.clear();
+        _clearChallengeInputs();
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const CoAppScaffold()),
+          MaterialPageRoute<void>(builder: (_) => const CoAppScaffold()),
         );
-      } else if (next is AuthStateError) {
-        _triggerErrorShake(next.message);
       } else if (next is AuthStatePasswordChangeRequired) {
         if (previous is! AuthStatePasswordChangeRequired) {
-          _currentTempPasswordController.text = _passwordController.text;
-          _newPasswordController.clear();
-          _confirmPasswordController.clear();
-          setState(() => _localValidationError = null);
+          _clearChallengeInputs();
+          if (_passwordController.text.isNotEmpty) {
+            _currentPasswordController.text = _passwordController.text;
+          }
+          _localValidationError = null;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) _newPasswordFocus.requestFocus();
           });
-        }
-        if (next.errorMessage != null && next.errorMessage!.isNotEmpty) {
-          _triggerErrorShake(next.errorMessage!);
+        } else if (next.errorMessage != null &&
+            next.errorMessage != (previous).errorMessage) {
+          if (!_disableAnimations) _shakeCtrl.forward(from: 0.0);
         }
       } else if (next is AuthStateMfaRequired) {
         if (previous is! AuthStateMfaRequired) {
           _mfaCodeController.clear();
-          setState(() => _localValidationError = null);
+          _localValidationError = null;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) _mfaCodeFocus.requestFocus();
           });
+        } else if (next.errorMessage != null &&
+            next.errorMessage != (previous).errorMessage) {
+          if (!_disableAnimations) _shakeCtrl.forward(from: 0.0);
         }
-        if (next.errorMessage != null && next.errorMessage!.isNotEmpty) {
-          _triggerErrorShake(next.errorMessage!);
+      } else if (next is AuthStateError) {
+        if (!_disableAnimations) {
+          _shakeCtrl.forward(from: 0.0);
         }
       }
     });
 
-    final authState = ref.watch(authControllerProvider);
-    final isLoading = authState is AuthStateLoading;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isDesktop = screenWidth >= 980;
+    final AuthState authState = ref.watch(authControllerProvider);
 
     return Scaffold(
-      body: Stack(
-        children: [
-          // 1. Ambient Institutional Deep Forest Emerald Mesh
-          Container(
+      backgroundColor: IcareColors.canvas,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool isSplitDesktop =
+              constraints.maxWidth >= IcareSpacing.breakpointTablet;
+
+          if (isSplitDesktop) {
+            return _buildDesktopSplitLayout(authState, constraints);
+          }
+          return _buildMobileLayout(authState);
+        },
+      ),
+    );
+  }
+
+  /// Desktop / Landscape Tablet Split Architecture:
+  /// Deep Forest Emerald Story Canopy (left) + High-Clarity Slate Form Canvas (right).
+  Widget _buildDesktopSplitLayout(
+    AuthState authState,
+    BoxConstraints constraints,
+  ) {
+    return Row(
+      children: [
+        // Left Brand Canopy
+        Expanded(
+          flex: 46,
+          child: Container(
+            height: constraints.maxHeight,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Color(0xFF022C22), // Deep Forest Emerald
-                  Color(0xFF064E3B), // Core Primary Emerald
-                  Color(0xFF0F766E), // Teal Emerald
-                  Color(0xFF064E3B),
-                  Color(0xFF022C22),
+                  IcareColors.primaryDark,
+                  Color(0xFF043B2E),
+                  IcareColors.primaryDark,
                 ],
               ),
             ),
-          ),
-
-          // 2. Glowing Radial Mesh Orbs
-          Positioned(
-            top: -120,
-            left: -120,
-            child: Container(
-              width: 520,
-              height: 520,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    const Color(0xFF10B981).withValues(alpha: 0.16),
-                    Colors.transparent,
-                  ],
+            child: Stack(
+              children: [
+                const Positioned.fill(
+                  child: CustomPaint(
+                    painter:
+                        IcareEmeraldBackdropPainter(alignmentYFactor: 0.26),
+                  ),
                 ),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: -140,
-            right: -140,
-            child: Container(
-              width: 540,
-              height: 540,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    const Color(0xFF0F766E).withValues(alpha: 0.20),
-                    Colors.transparent,
-                  ],
+                SafeArea(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 40,
+                        vertical: 32,
+                      ),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 480),
+                        child: _buildDesktopBrandPanel(),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
+        ),
 
-          // 3. Micro Ambient Star Dust Particles
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Stack(
-                children: [
-                  _buildParticle(left: 0.12, top: 0.18, size: 3.0, color: const Color(0xFF10B981).withValues(alpha: 0.35)),
-                  _buildParticle(left: 0.28, top: 0.72, size: 2.5, color: const Color(0xFF34D399).withValues(alpha: 0.30)),
-                  _buildParticle(left: 0.48, top: 0.32, size: 3.5, color: const Color(0xFF0F766E).withValues(alpha: 0.30)),
-                  _buildParticle(left: 0.68, top: 0.82, size: 2.0, color: const Color(0xFF10B981).withValues(alpha: 0.25)),
-                  _buildParticle(left: 0.85, top: 0.14, size: 3.0, color: const Color(0xFF34D399).withValues(alpha: 0.25)),
-                  _buildParticle(left: 0.58, top: 0.62, size: 2.5, color: const Color(0xFF0F766E).withValues(alpha: 0.30)),
-                ],
-              ),
-            ),
-          ),
-
-          // 4. Main Responsive Content Canvas
-          SafeArea(
+        // Right High-Contrast Slate Form Workspace
+        Expanded(
+          flex: 54,
+          child: SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                physics: const ClampingScrollPhysics(),
-                padding: EdgeInsets.symmetric(
-                  horizontal: isDesktop ? 32 : 20,
-                  vertical: isDesktop ? 36 : 24,
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 36,
+                  vertical: 28,
                 ),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1120),
-                  child: isDesktop
-                      ? Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            // Left Story & Values Presentation
-                            Expanded(
-                              flex: 11,
-                              child: SlideTransition(
-                                position: _storySlide,
-                                child: FadeTransition(
-                                  opacity: _storyFade,
-                                  child: _buildStoryPanel(),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 56),
-                            // Right Frosted Glass Login Card
-                            Expanded(
-                              flex: 9,
-                              child: _buildAnimatedLoginCard(isLoading, authState),
-                            ),
-                          ],
-                        )
-                      : Column(
-                          children: [
-                            // Centered Frosted Glass Login Card
-                            _buildAnimatedLoginCard(isLoading, authState),
-                            const SizedBox(height: 36),
-                            // Compact Institutional Info Below
-                            SlideTransition(
-                              position: _storySlide,
-                              child: FadeTransition(
-                                opacity: _storyFade,
-                                child: _buildMobileStorySection(),
-                              ),
-                            ),
-                          ],
-                        ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildParticle({required double left, required double top, required double size, required Color color}) {
-    return Align(
-      alignment: FractionalOffset(left, top),
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-        ),
-      ),
-    );
-  }
-
-  /// Right Frosted Glass Card with Entrance & Kinetic Shake Choreography
-  Widget _buildAnimatedLoginCard(bool isLoading, AuthState authState) {
-    return SlideTransition(
-      position: _cardSlide,
-      child: FadeTransition(
-        opacity: _cardFade,
-        child: AnimatedBuilder(
-          animation: _shakeAnimation,
-          builder: (context, child) {
-            return Transform.translate(
-              offset: Offset(_shakeAnimation.value, 0),
-              child: child,
-            );
-          },
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 440),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.14),
-                width: 1.0,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  blurRadius: 36,
-                  offset: const Offset(0, 12),
-                ),
-                BoxShadow(
-                  color: const Color(0xFF022C22).withValues(alpha: 0.40),
-                  blurRadius: 20,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Brand Lockup with Entrance Animation
-                      SlideTransition(
-                        position: _brandSlide,
-                        child: FadeTransition(
-                          opacity: _brandFade,
-                          child: Column(
-                            children: [
-                              // Institution Crest / Logo
-                              Container(
-                                width: 68,
-                                height: 68,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: const Color(0xFF022C22),
-                                  border: Border.all(
-                                    color: const Color(0xFF10B981).withValues(alpha: 0.35),
-                                    width: 2.5,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFF10B981).withValues(alpha: 0.25),
-                                      blurRadius: 24,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: ClipOval(
-                                  child: Image.asset(
-                                    'assets/icare_logo.png',
-                                    width: 68,
-                                    height: 68,
-                                    fit: BoxFit.contain,
-                                    errorBuilder: (context, error, stackTrace) => const Center(
-                                      child: Text(
-                                        'IC',
-                                        style: TextStyle(
-                                          color: Color(0xFF34D399),
-                                          fontSize: 26,
-                                          fontWeight: FontWeight.w900,
-                                          letterSpacing: -1.0,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              // Core Platform Name
-                              const Text(
-                                'ICARE',
-                                style: TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                  letterSpacing: 4.5,
-                                ),
-                              ),
-                              const SizedBox(height: 3),
-                              const Text(
-                                'Core Banking Platform',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w500,
-                                  color: Color(0xFF94A3B8),
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Decorative Emerald Hairline Divider
-                      Center(
-                        child: Container(
-                          width: 48,
-                          height: 2.5,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF10B981), Color(0xFF0F766E)],
-                            ),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Staggered Form Inputs (Sign-In / First-Time Password Rotation / MFA)
-                      SlideTransition(
-                        position: _inputsSlide,
-                        child: FadeTransition(
-                          opacity: _inputsFade,
-                          child: _buildActiveFormInputs(authState),
-                        ),
-                      ),
-
-                      // Submit Button & Onboarding Section
-                      SlideTransition(
-                        position: _buttonSlide,
-                        child: FadeTransition(
-                          opacity: _buttonFade,
-                          child: Column(
-                            children: [
-                              // Kinetic Morphing Submit Button
-                              _buildActiveSubmitSection(isLoading, authState),
-                              const SizedBox(height: 14),
-
-                              // Branch Onboarding Portal Link (Zero Clipping Enforced)
-                              GestureDetector(
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => const BranchOnboardingPortalScreen(token: ''),
-                                    ),
-                                  );
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.domain_add_outlined, size: 14, color: Color(0xFF94A3B8)),
-                                      SizedBox(width: 6),
-                                      Flexible(
-                                        child: Text(
-                                          'Have an Onboarding Token? Open Branch Portal',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w500,
-                                            color: Color(0xFF94A3B8),
-                                            decoration: TextDecoration.underline,
-                                            decorationColor: Color(0xFF64748B),
-                                          ),
-                                          textAlign: TextAlign.center,
-                                          softWrap: true,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-
-                              // Security & Audit Footer Bar (Anti-Clipping Enforced)
-                              Container(
-                                padding: const EdgeInsets.only(top: 14),
-                                decoration: BoxDecoration(
-                                  border: Border(
-                                    top: BorderSide(
-                                      color: Colors.white.withValues(alpha: 0.08),
-                                      width: 1.0,
-                                    ),
-                                  ),
-                                ),
-                                child: const Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        'Core Banking v2.4.0',
-                                        style: TextStyle(
-                                          color: Color(0xFF64748B),
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                        softWrap: true,
-                                      ),
-                                    ),
-                                    SizedBox(width: 8),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.shield_outlined, size: 11, color: Color(0xFF10B981)),
-                                        SizedBox(width: 4),
-                                        Text(
-                                          '256-Bit SSL Encrypted',
-                                          style: TextStyle(
-                                            color: Color(0xFF64748B),
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                  constraints: const BoxConstraints(maxWidth: 456),
+                  child: _buildAnimatedEntryCard(authState),
                 ),
               ),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 
-  /// Modern Input Field with Sunlight Contrast
-  Widget _buildInputField({
-    required String label,
-    required TextEditingController controller,
-    required FocusNode focusNode,
-    required String hintText,
-    required IconData prefixIcon,
-    bool isPassword = false,
-    bool obscureText = false,
-    VoidCallback? onToggleVisibility,
-    ValueChanged<String>? onSubmitted,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFFE2E8F0),
-            fontSize: 12.5,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.1,
-          ),
-        ),
-        const SizedBox(height: 6),
-        TextField(
-          controller: controller,
-          focusNode: focusNode,
-          obscureText: isPassword && obscureText,
-          onSubmitted: onSubmitted,
-          style: const TextStyle(
-            color: Color(0xFF0F172A),
-            fontSize: 13.5,
-            fontWeight: FontWeight.w600,
-          ),
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: Colors.white,
-            hintText: hintText,
-            hintStyle: const TextStyle(
-              color: Color(0xFF94A3B8),
-              fontSize: 13.0,
-              fontWeight: FontWeight.w400,
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            prefixIcon: Icon(prefixIcon, size: 18, color: const Color(0xFF0F766E)),
-            suffixIcon: isPassword
-                ? IconButton(
-                    icon: Icon(
-                      obscureText ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                      color: const Color(0xFF64748B),
-                      size: 18,
+  /// Mobile / Compact Portrait Layout:
+  /// Emerald Hero Crest Header seamlessly transitioning into crisp high-contrast sheet card.
+  Widget _buildMobileLayout(AuthState authState) {
+    return Container(
+      color: IcareColors.canvas,
+      child: CustomScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        physics: const ClampingScrollPhysics(),
+        slivers: [
+          SliverToBoxAdapter(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    IcareColors.primaryDark,
+                    Color(0xFF054233),
+                  ],
+                ),
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(28),
+                ),
+              ),
+              child: const Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.vertical(
+                        bottom: Radius.circular(28),
+                      ),
+                      child: CustomPaint(
+                        painter: IcareEmeraldBackdropPainter(
+                          alignmentYFactor: 0.45,
+                        ),
+                      ),
                     ),
-                    onPressed: onToggleVisibility,
-                  )
-                : null,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFF0F766E), width: 2.0),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Error Notice Banner strictly adhering to the Row-Text Wrapping Invariant
-  Widget _buildErrorNoticeBanner(String message) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFECACA), width: 1.0),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.error_outline_rounded, color: Color(0xFFB91C1C), size: 16),
-          const SizedBox(width: 8),
-          // MANDATORY ROW-TEXT WRAPPING INVARIANT:
-          Expanded(
-            child: Text(
-              message,
-              style: const TextStyle(
-                color: Color(0xFF991B1B),
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                height: 1.35,
-              ),
-              softWrap: true,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String? _resolveActiveError(AuthState authState) {
-    if (_localValidationError != null) return _localValidationError;
-    if (authState is AuthStateError) return authState.message;
-    if (authState is AuthStateMfaRequired) return authState.errorMessage;
-    if (authState is AuthStatePasswordChangeRequired) return authState.errorMessage;
-    return null;
-  }
-
-  Widget _buildChallengeHeader({
-    required IconData icon,
-    required String title,
-    required String username,
-    required String subtitle,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF10B981).withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: const Color(0xFF10B981).withValues(alpha: 0.28),
-          width: 1.0,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: const Color(0xFF34D399)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w700,
                   ),
-                  softWrap: true,
-                ),
-              ),
-            ],
-          ),
-          if (username.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              'Account: $username',
-              style: const TextStyle(
-                color: Color(0xFF34D399),
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            style: const TextStyle(
-              color: Color(0xFFCBD5E1),
-              fontSize: 12.0,
-              height: 1.4,
-            ),
-            softWrap: true,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActiveFormInputs(AuthState authState) {
-    final activeError = _resolveActiveError(authState);
-
-    if (authState is AuthStateMfaRequired) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildChallengeHeader(
-            icon: Icons.verified_user_outlined,
-            title: 'Two-Factor Verification',
-            username: authState.username,
-            subtitle: authState.message,
-          ),
-          const SizedBox(height: 14),
-          _buildInputField(
-            label: 'Authenticator or Backup Code',
-            controller: _mfaCodeController,
-            focusNode: _mfaCodeFocus,
-            hintText: 'Enter 6-digit code or backup code',
-            prefixIcon: Icons.pin_outlined,
-            onSubmitted: (_) => _handleMfaSubmit(),
-          ),
-          const SizedBox(height: 16),
-          if (activeError != null) ...[
-            _buildErrorNoticeBanner(activeError),
-            const SizedBox(height: 16),
-          ],
-        ],
-      );
-    }
-
-    if (authState is AuthStatePasswordChangeRequired) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildChallengeHeader(
-            icon: Icons.lock_reset_rounded,
-            title: 'Set Your New Password',
-            username: authState.username,
-            subtitle: authState.message,
-          ),
-          const SizedBox(height: 14),
-          _buildInputField(
-            label: 'Current Temporary Password',
-            controller: _currentTempPasswordController,
-            focusNode: _currentTempPasswordFocus,
-            hintText: 'Enter your temporary password',
-            prefixIcon: Icons.lock_clock_outlined,
-            isPassword: true,
-            obscureText: _obscureCurrentTempPassword,
-            onToggleVisibility: () => setState(() => _obscureCurrentTempPassword = !_obscureCurrentTempPassword),
-            onSubmitted: (_) => _newPasswordFocus.requestFocus(),
-          ),
-          const SizedBox(height: 12),
-          _buildInputField(
-            label: 'New Password',
-            controller: _newPasswordController,
-            focusNode: _newPasswordFocus,
-            hintText: 'Minimum 8 characters',
-            prefixIcon: Icons.lock_outline_rounded,
-            isPassword: true,
-            obscureText: _obscureNewPassword,
-            onToggleVisibility: () => setState(() => _obscureNewPassword = !_obscureNewPassword),
-            onSubmitted: (_) => _confirmPasswordFocus.requestFocus(),
-          ),
-          const SizedBox(height: 12),
-          _buildInputField(
-            label: 'Confirm New Password',
-            controller: _confirmPasswordController,
-            focusNode: _confirmPasswordFocus,
-            hintText: 'Re-enter your new password',
-            prefixIcon: Icons.lock_outline_rounded,
-            isPassword: true,
-            obscureText: _obscureConfirmPassword,
-            onToggleVisibility: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
-            onSubmitted: (_) => _handleInitialPasswordSubmit(),
-          ),
-          const SizedBox(height: 16),
-          if (activeError != null) ...[
-            _buildErrorNoticeBanner(activeError),
-            const SizedBox(height: 16),
-          ],
-        ],
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Username Input
-        _buildInputField(
-          label: 'Username / Operator ID',
-          controller: _usernameController,
-          focusNode: _usernameFocus,
-          hintText: 'Enter your assigned username',
-          prefixIcon: Icons.person_outline_rounded,
-          onSubmitted: (_) => _passwordFocus.requestFocus(),
-        ),
-        const SizedBox(height: 14),
-
-        // Password Input
-        _buildInputField(
-          label: 'Access Password',
-          controller: _passwordController,
-          focusNode: _passwordFocus,
-          hintText: 'Enter your password',
-          prefixIcon: Icons.lock_outline_rounded,
-          isPassword: true,
-          obscureText: _obscurePassword,
-          onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
-          onSubmitted: (_) => _handleLogin(),
-        ),
-        const SizedBox(height: 16),
-
-        // Error Banner (Anti-Clipping Invariant Enforced)
-        if (activeError != null) ...[
-          _buildErrorNoticeBanner(activeError),
-          const SizedBox(height: 16),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildActiveSubmitSection(bool isLoading, AuthState authState) {
-    if (authState is AuthStateMfaRequired) {
-      return Column(
-        children: [
-          _buildMorphingSubmitButton(
-            isLoading: authState.isSubmitting,
-            label: 'Verify and Sign In',
-            keyName: 'mfa_idle',
-            onPressed: _handleMfaSubmit,
-          ),
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: authState.isSubmitting ? null : _handleCancelChallenge,
-            child: const Text(
-              'Back to Sign In',
-              style: TextStyle(
-                color: Color(0xFF94A3B8),
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    if (authState is AuthStatePasswordChangeRequired) {
-      return Column(
-        children: [
-          _buildMorphingSubmitButton(
-            isLoading: authState.isSubmitting,
-            label: 'Update Password and Continue',
-            keyName: 'pwd_rotate_idle',
-            onPressed: _handleInitialPasswordSubmit,
-          ),
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: authState.isSubmitting ? null : _handleCancelChallenge,
-            child: const Text(
-              'Cancel and Return to Sign In',
-              style: TextStyle(
-                color: Color(0xFF94A3B8),
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return _buildMorphingSubmitButton(
-      isLoading: isLoading,
-      label: 'Sign In to Core Banking',
-      keyName: 'signin_idle',
-      onPressed: _handleLogin,
-    );
-  }
-
-  /// Morphing Interactive Submit Button
-  Widget _buildMorphingSubmitButton({
-    required bool isLoading,
-    required String label,
-    required String keyName,
-    required VoidCallback onPressed,
-  }) {
-    return AnimatedBuilder(
-      animation: _scaleAnimation,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: _scaleAnimation.value,
-          child: child,
-        );
-      },
-      child: MouseRegion(
-        cursor: isLoading ? SystemMouseCursors.basic : SystemMouseCursors.click,
-        child: GestureDetector(
-          onTapDown: isLoading ? null : (_) => _pressController.forward(),
-          onTapUp: isLoading
-              ? null
-              : (_) {
-                  _pressController.reverse();
-                  HapticFeedback.mediumImpact();
-                  onPressed();
-                },
-          onTapCancel: () => _pressController.reverse(),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeInOutCubic,
-            height: 48,
-            width: isLoading ? 48 : double.infinity,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF059669), Color(0xFF0F766E)],
-              ),
-              borderRadius: BorderRadius.circular(isLoading ? 24 : 10),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF059669).withValues(alpha: 0.35),
-                  blurRadius: 14,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            alignment: Alignment.center,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: isLoading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : Row(
-                      key: ValueKey(keyName),
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            label,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.2,
-                            ),
-                            softWrap: true,
-                            textAlign: TextAlign.center,
+                  SafeArea(
+                    bottom: false,
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(20, 14, 20, 20),
+                      child: Column(
+                        children: [
+                          IcareBrandCrest(
+                            size: 56,
+                            heroTag: 'icare_brand_crest',
+                            animateSweep: false,
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(Icons.arrow_forward_rounded, size: 16, color: Colors.white),
+                          SizedBox(height: 10),
+                          Text(
+                            'ICARE',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 3.0,
+                            ),
+                          ),
+                          SizedBox(height: 3),
+                          Text(
+                            'Core Banking & Field Operations',
+                            textAlign: TextAlign.center,
+                            softWrap: true,
+                            style: TextStyle(
+                              color: Color(0xFFA7F3D0),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 460),
+                    child: Column(
+                      children: [
+                        _buildAnimatedEntryCard(authState),
+                        const SizedBox(height: 20),
+                        _buildMobileInstitutionalFooter(),
                       ],
                     ),
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  /// Left Story & Institutional Values Presentation (Desktop Web)
-  Widget _buildStoryPanel() {
+  Widget _buildDesktopBrandPanel() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Foundation Pill Tag
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-          decoration: BoxDecoration(
-            color: const Color(0xFF10B981).withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: const Color(0xFF10B981).withValues(alpha: 0.30),
-              width: 1.0,
+        Row(
+          children: [
+            const IcareBrandCrest(
+              size: 72,
+              heroTag: 'icare_brand_crest',
+              animateSweep: false,
             ),
-          ),
-          child: const Text(
-            'EST. 2006 • SOUTH-WEST NIGERIA',
-            style: TextStyle(
-              color: Color(0xFF34D399),
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: const Color(0xFF34D399).withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: const Text(
+                      'EST. 2006 • SOUTH-WEST NIGERIA',
+                      style: TextStyle(
+                        color: Color(0xFF6EE7B7),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'ICARE Core Banking',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
         ),
-        const SizedBox(height: 22),
-
-        // Headline
+        const SizedBox(height: 28),
         RichText(
           text: const TextSpan(
             style: TextStyle(
-              fontSize: 34,
+              fontSize: 32,
               fontWeight: FontWeight.w800,
               color: Colors.white,
-              letterSpacing: -0.8,
+              letterSpacing: -0.7,
               height: 1.2,
             ),
             children: [
               TextSpan(text: 'Empowering Communities,\n'),
               TextSpan(
                 text: 'Growing Together',
-                style: TextStyle(color: Color(0xFF34D399)),
+                style: TextStyle(color: Color(0xFF6EE7B7)),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 10),
-
-        // Slogan
+        const SizedBox(height: 12),
         const Text(
           '"Building a better community through inspiration, motivation and empowerment"',
           style: TextStyle(
-            color: Color(0xFF34D399),
+            color: Color(0xFFA7F3D0),
             fontSize: 13.5,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
             fontStyle: FontStyle.italic,
-            letterSpacing: 0.2,
+            height: 1.45,
           ),
         ),
         const SizedBox(height: 20),
-
-        // Institutional Overview
         const Text(
-          'ICARE (Initiative for Community Advancement, Relief and Empowerment) is dedicated to the intellectual and socio-economic advancement of its members. Operating across South-Western Nigeria, ICARE finances micro-credit programmes for traders and artisans, asset acquisition schemes, and community empowerment initiatives.',
+          'ICARE (Initiative for Community Advancement, Relief and Empowerment) operates across South-Western Nigeria, supporting micro-credit programmes for traders and artisans, asset acquisition schemes, and community empowerment.',
           style: TextStyle(
             color: Color(0xFFCBD5E1),
-            fontSize: 13.0,
-            height: 1.7,
+            fontSize: 13,
+            height: 1.65,
           ),
         ),
-        const SizedBox(height: 20),
-
-        // Gradient Divider
+        const SizedBox(height: 22),
         Container(
-          width: 48,
+          width: 52,
           height: 2,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [Color(0xFF10B981), Colors.transparent],
+              colors: [IcareColors.accent, Colors.transparent],
             ),
             borderRadius: BorderRadius.circular(2),
           ),
         ),
         const SizedBox(height: 18),
-
-        // Vision Statement
         const Text(
           'OUR VISION',
           style: TextStyle(
-            color: Color(0xFF64748B),
+            color: Color(0xFF94A3B8),
             fontSize: 10,
             fontWeight: FontWeight.w700,
-            letterSpacing: 1.5,
+            letterSpacing: 1.4,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         const Text(
           'To be among the foremost catalysts in initiating and implementing sustainable programmes focused on empowering people for growth and self-reliance.',
           style: TextStyle(
             color: Color(0xFFE2E8F0),
             fontSize: 12.5,
-            height: 1.6,
+            height: 1.55,
           ),
         ),
         const SizedBox(height: 18),
-
-        // Core Values
-        const Text(
-          'CORE VALUES',
-          style: TextStyle(
-            color: Color(0xFF64748B),
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.5,
-          ),
-        ),
-        const SizedBox(height: 8),
         const Wrap(
           spacing: 8,
           runSpacing: 8,
           children: [
-            _ValuePill('Integrity'),
-            _ValuePill('Commitment'),
-            _ValuePill('Competence'),
-            _ValuePill('Teamwork'),
+            _BrandValueChip('Integrity'),
+            _BrandValueChip('Commitment'),
+            _BrandValueChip('Competence'),
+            _BrandValueChip('Teamwork'),
           ],
         ),
         const SizedBox(height: 24),
-
-        // Headquarters Address (Anti-Clipping Enforced)
         Container(
           padding: const EdgeInsets.only(top: 14),
           decoration: BoxDecoration(
-            border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+            border: Border(
+              top: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+            ),
           ),
           child: const Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.location_on_outlined, size: 14, color: Color(0xFF64748B)),
-              SizedBox(width: 6),
-              // Anti-Clipping Invariant:
+              Icon(
+                Icons.location_on_outlined,
+                size: 15,
+                color: Color(0xFF6EE7B7),
+              ),
+              SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'H.Q: 7 Ibifiele Street, Aiyegbami, Sagamu, Ogun State, Nigeria',
-                  style: TextStyle(
-                    color: Color(0xFF94A3B8),
-                    fontSize: 11.5,
-                    height: 1.5,
-                  ),
+                  'Headquarters: 7 Ibifiele Street, Aiyegbami, Sagamu, Ogun State, Nigeria',
                   softWrap: true,
+                  style: TextStyle(
+                    color: Color(0xFFCBD5E1),
+                    fontSize: 11.5,
+                    height: 1.45,
+                  ),
                 ),
               ),
             ],
@@ -1303,17 +667,576 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-  /// Compact Story Section for Mobile / Small Screens
-  Widget _buildMobileStorySection() {
+  Widget _buildAnimatedEntryCard(AuthState authState) {
+    final bool isLoading = authState is AuthStateLoading ||
+        (authState is AuthStateMfaRequired && authState.isSubmitting) ||
+        (authState is AuthStatePasswordChangeRequired &&
+            authState.isSubmitting);
+
+    final bool isInChallengeState = authState is AuthStateMfaRequired ||
+        authState is AuthStatePasswordChangeRequired;
+
+    final Widget card = Container(
+      decoration: BoxDecoration(
+        color: IcareColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: IcareColors.border, width: 1.0),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F0F172A),
+            blurRadius: 18,
+            offset: Offset(0, 6),
+          ),
+          BoxShadow(
+            color: Color(0x060F172A),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 26),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildCardHeader(authState),
+          if (!isInChallengeState) ...[
+            const SizedBox(height: 18),
+            IcareAuthModeSegmentedBar(
+              activeMode: _entryMode,
+              enabled: !isLoading,
+              onModeChanged: (mode) {
+                if (_entryMode == mode) return;
+                setState(() {
+                  _entryMode = mode;
+                  _localValidationError = null;
+                });
+              },
+            ),
+          ],
+          const SizedBox(height: 20),
+          AnimatedSwitcher(
+            duration: _disableAnimations
+                ? Duration.zero
+                : const Duration(milliseconds: 240),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: KeyedSubtree(
+              key: ValueKey<String>(_activeBodyKey(authState)),
+              child: _buildActiveBody(authState, isLoading),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.only(top: 14),
+            decoration: const BoxDecoration(
+              border: Border(
+                top: BorderSide(color: IcareColors.border),
+              ),
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.shield_outlined,
+                  size: 14,
+                  color: IcareColors.primaryLight,
+                ),
+                SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    'Encrypted Staff Session & Audit Protected Workspace',
+                    softWrap: true,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: IcareColors.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return FadeTransition(
+      opacity: _cardFade,
+      child: SlideTransition(
+        position: _cardSlide,
+        child: AnimatedBuilder(
+          animation: _shakeCtrl,
+          builder: (context, child) {
+            final double dx = _disableAnimations
+                ? 0.0
+                : math.sin(_shakeCtrl.value * math.pi * 5) *
+                    (1.0 - _shakeCtrl.value) *
+                    8.0;
+            return Transform.translate(offset: Offset(dx, 0), child: child);
+          },
+          child: card,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCardHeader(AuthState authState) {
+    String title;
+    String subtitle;
+    IconData badgeIcon;
+
+    if (authState is AuthStateMfaRequired) {
+      title = 'Two-Factor Verification';
+      subtitle =
+          'Enter your 6-digit authenticator or recovery code to continue.';
+      badgeIcon = Icons.verified_user_outlined;
+    } else if (authState is AuthStatePasswordChangeRequired) {
+      title = 'First-Time Account Activation';
+      subtitle = 'Replace your temporary password with a personal password.';
+      badgeIcon = Icons.password_rounded;
+    } else if (_entryMode == AuthEntryMode.onboardingAccess) {
+      title = 'Branch & Officer Onboarding';
+      subtitle =
+          'Activate a newly provisioned branch or Credit Officer workspace.';
+      badgeIcon = Icons.badge_outlined;
+    } else {
+      title = 'Staff Workspace Sign-In';
+      subtitle = 'Access ledgers, client groups, and field collection tools.';
+      badgeIcon = Icons.account_balance_outlined;
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: IcareColors.statusSuccessBg,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: IcareColors.statusSuccessBorder),
+          ),
+          child: Icon(badgeIcon, size: 20, color: IcareColors.primary),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                softWrap: true,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: IcareColors.textPrimary,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                softWrap: true,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  color: IcareColors.textMuted,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _activeBodyKey(AuthState authState) {
+    if (authState is AuthStateMfaRequired) return 'state_mfa';
+    if (authState is AuthStatePasswordChangeRequired) return 'state_pw_change';
+    return _entryMode == AuthEntryMode.onboardingAccess
+        ? 'mode_onboarding'
+        : 'mode_signin';
+  }
+
+  String? _resolveErrorBanner(AuthState authState) {
+    if (_localValidationError != null && _localValidationError!.isNotEmpty) {
+      return _localValidationError;
+    }
+    if (authState is AuthStateError) return authState.message;
+    if (authState is AuthStateMfaRequired) return authState.errorMessage;
+    if (authState is AuthStatePasswordChangeRequired) {
+      return authState.errorMessage;
+    }
+    return null;
+  }
+
+  Widget _buildActiveBody(AuthState authState, bool isLoading) {
+    final String? errorMsg = _resolveErrorBanner(authState);
+
+    if (authState is AuthStateMfaRequired) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildInfoCallout(
+            icon: Icons.security_rounded,
+            title: 'Authenticator Verification Required',
+            description: authState.username.isNotEmpty
+                ? '${authState.username}: ${authState.message}'
+                : authState.message,
+          ),
+          const SizedBox(height: 14),
+          IcareAuthField(
+            controller: _mfaCodeController,
+            focusNode: _mfaCodeFocus,
+            enabled: !isLoading,
+            label: 'Verification / Recovery Code',
+            hint: 'Enter 6-digit code',
+            prefixIcon: Icons.pin_outlined,
+            keyboardType: TextInputType.text,
+            textInputAction: TextInputAction.done,
+            tabularDigits: true,
+            onSubmitted: (_) => _handleMfaSubmit(),
+          ),
+          if (errorMsg != null) ...[
+            const SizedBox(height: 14),
+            _buildErrorBanner(errorMsg),
+          ],
+          const SizedBox(height: 18),
+          IcareTactilePrimaryButton(
+            isLoading: isLoading,
+            label: 'Verify & Complete Sign-In',
+            onPressed: _handleMfaSubmit,
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: isLoading ? null : _handleCancelChallenge,
+            child: const Text(
+              'Cancel & Return to Sign-In',
+              style: TextStyle(
+                color: IcareColors.textMuted,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (authState is AuthStatePasswordChangeRequired) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildInfoCallout(
+            icon: Icons.verified_user_outlined,
+            title: 'Complete First-Time Activation',
+            description: authState.username.isNotEmpty
+                ? '${authState.username}: ${authState.message}'
+                : authState.message,
+          ),
+          const SizedBox(height: 14),
+          IcareAuthField(
+            controller: _currentPasswordController,
+            enabled: !isLoading,
+            label: 'Temporary Password',
+            hint: 'Enter your temporary password',
+            prefixIcon: Icons.lock_clock_outlined,
+            obscureText: _obscureCurrentPassword,
+            onChanged: (_) => setState(() {}),
+            suffixIcon: _visibilityButton(
+              obscured: _obscureCurrentPassword,
+              tooltip: 'Toggle temporary password visibility',
+              onPressed: () {
+                setState(
+                  () => _obscureCurrentPassword = !_obscureCurrentPassword,
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+          IcareAuthField(
+            controller: _newPasswordController,
+            focusNode: _newPasswordFocus,
+            enabled: !isLoading,
+            label: 'New Personal Password',
+            hint: 'Enter 8 or more characters',
+            prefixIcon: Icons.lock_reset_rounded,
+            obscureText: _obscureNewPassword,
+            onChanged: (_) => setState(() {}),
+            suffixIcon: _visibilityButton(
+              obscured: _obscureNewPassword,
+              tooltip: 'Toggle new password visibility',
+              onPressed: () {
+                setState(() => _obscureNewPassword = !_obscureNewPassword);
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+          IcareAuthField(
+            controller: _confirmPasswordController,
+            enabled: !isLoading,
+            label: 'Confirm New Password',
+            hint: 'Re-enter new password',
+            prefixIcon: Icons.check_circle_outline_rounded,
+            obscureText: _obscureConfirmPassword,
+            textInputAction: TextInputAction.done,
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) => _handleInitialPasswordSubmit(),
+            suffixIcon: _visibilityButton(
+              obscured: _obscureConfirmPassword,
+              tooltip: 'Toggle confirmation password visibility',
+              onPressed: () {
+                setState(
+                  () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+          PasswordRequirementsChecklist(
+            currentPassword: _currentPasswordController.text,
+            newPassword: _newPasswordController.text,
+            confirmPassword: _confirmPasswordController.text,
+          ),
+          if (errorMsg != null) ...[
+            const SizedBox(height: 14),
+            _buildErrorBanner(errorMsg),
+          ],
+          const SizedBox(height: 18),
+          IcareTactilePrimaryButton(
+            isLoading: isLoading,
+            label: 'Activate Account & Sign In',
+            onPressed: _handleInitialPasswordSubmit,
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: isLoading ? null : _handleCancelChallenge,
+            child: const Text(
+              'Cancel & Return to Sign-In',
+              style: TextStyle(
+                color: IcareColors.textMuted,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (_entryMode == AuthEntryMode.onboardingAccess) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (errorMsg != null) ...[
+            _buildErrorBanner(errorMsg),
+            const SizedBox(height: 14),
+          ],
+          OnboardingAccessPanel(
+            tokenController: _tokenController,
+            onSubmitToken: _handleOnboardingTokenSubmit,
+            onOpenBranchPortal: _openBranchPortal,
+            onOpenOfficerPortal: _openOfficerPortal,
+            onSwitchToSignIn: () {
+              setState(() {
+                _entryMode = AuthEntryMode.signIn;
+                _localValidationError = null;
+              });
+            },
+          ),
+        ],
+      );
+    }
+
+    // Default: Staff Sign-In
+    return AutofillGroup(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          IcareAuthField(
+            controller: _usernameController,
+            focusNode: _usernameFocus,
+            enabled: !isLoading,
+            label: 'Username or Staff ID',
+            hint: 'Enter your staff username',
+            prefixIcon: Icons.person_outline_rounded,
+            autofillHints: const [AutofillHints.username],
+          ),
+          const SizedBox(height: 14),
+          IcareAuthField(
+            controller: _passwordController,
+            focusNode: _passwordFocus,
+            enabled: !isLoading,
+            label: 'Password',
+            hint: 'Enter your password',
+            prefixIcon: Icons.lock_outline_rounded,
+            obscureText: _obscurePassword,
+            textInputAction: TextInputAction.done,
+            autofillHints: const [AutofillHints.password],
+            onSubmitted: (_) => _handleLogin(),
+            suffixIcon: _visibilityButton(
+              obscured: _obscurePassword,
+              tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+              onPressed: () {
+                setState(() => _obscurePassword = !_obscurePassword);
+              },
+            ),
+          ),
+          if (errorMsg != null) ...[
+            const SizedBox(height: 14),
+            _buildErrorBanner(errorMsg),
+          ],
+          const SizedBox(height: 18),
+          IcareTactilePrimaryButton(
+            isLoading: isLoading,
+            label: 'Sign In to Core Banking',
+            onPressed: _handleLogin,
+          ),
+          const SizedBox(height: 12),
+          Center(
+            child: TextButton.icon(
+              onPressed: isLoading
+                  ? null
+                  : () {
+                      setState(() {
+                        _entryMode = AuthEntryMode.onboardingAccess;
+                        _localValidationError = null;
+                      });
+                    },
+              icon: const Icon(
+                Icons.vpn_key_outlined,
+                size: 15,
+                color: IcareColors.primary,
+              ),
+              label: const Text(
+                'Have a Branch or Officer Onboarding Token?',
+                style: TextStyle(
+                  color: IcareColors.primary,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _visibilityButton({
+    required bool obscured,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return IconButton(
+      tooltip: tooltip,
+      icon: Icon(
+        obscured ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+        size: 18,
+        color: IcareColors.textMuted,
+      ),
+      onPressed: onPressed,
+    );
+  }
+
+  Widget _buildInfoCallout({
+    required IconData icon,
+    required String title,
+    required String description,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: IcareColors.statusSuccessBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: IcareColors.statusSuccessBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: IcareColors.statusSuccessText),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  softWrap: true,
+                  style: const TextStyle(
+                    color: IcareColors.statusSuccessText,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  description,
+                  softWrap: true,
+                  style: const TextStyle(
+                    color: IcareColors.textSecondary,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorBanner(String message) {
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: IcareColors.statusDangerBg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: IcareColors.statusDangerBorder),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              color: IcareColors.statusDangerText,
+              size: 17,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                softWrap: true,
+                style: const TextStyle(
+                  color: IcareColors.statusDangerText,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileInstitutionalFooter() {
     return const Column(
       children: [
         Text(
           'Initiative for Community Advancement, Relief and Empowerment',
           textAlign: TextAlign.center,
+          softWrap: true,
           style: TextStyle(
-            color: Color(0xFF94A3B8),
+            color: IcareColors.textMuted,
             fontSize: 11.5,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w600,
           ),
         ),
         SizedBox(height: 8),
@@ -1322,37 +1245,69 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           runSpacing: 6,
           alignment: WrapAlignment.center,
           children: [
-            _ValuePill('Integrity'),
-            _ValuePill('Commitment'),
-            _ValuePill('Competence'),
-            _ValuePill('Teamwork'),
+            _LightValueChip('Integrity'),
+            _LightValueChip('Commitment'),
+            _LightValueChip('Competence'),
+            _LightValueChip('Teamwork'),
           ],
+        ),
+        SizedBox(height: 10),
+        Text(
+          'HQ: 7 Ibifiele Street, Aiyegbami, Sagamu, Ogun State',
+          textAlign: TextAlign.center,
+          softWrap: true,
+          style: TextStyle(
+            color: IcareColors.textMuted,
+            fontSize: 11,
+          ),
         ),
       ],
     );
   }
 }
 
-class _ValuePill extends StatelessWidget {
+class _BrandValueChip extends StatelessWidget {
   final String label;
-  const _ValuePill(this.label);
+  const _BrandValueChip(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFFE2E8F0),
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _LightValueChip extends StatelessWidget {
+  final String label;
+  const _LightValueChip(this.label);
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.07),
+        color: IcareColors.surface,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.10),
-          width: 0.8,
-        ),
+        border: Border.all(color: IcareColors.border),
       ),
       child: Text(
         label,
         style: const TextStyle(
-          color: Color(0xFFCBD5E1),
+          color: IcareColors.textSecondary,
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
